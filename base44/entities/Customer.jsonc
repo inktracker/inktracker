@@ -1,0 +1,49 @@
+{
+  "name": "Customer",
+  "type": "object",
+  "properties": {
+    "shop_owner": {
+      "type": "string",
+      "description": "Email of the shop owner"
+    },
+    "name": {
+      "type": "string"
+    },
+    "company": {
+      "type": "string"
+    },
+    "email": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "orders": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_id": {
+      "type": "string"
+    },
+    "tax_exempt": {
+      "type": "boolean",
+      "default": false
+    },
+    "saved_imprints": {
+      "type": "array",
+      "description": "Print location presets saved from past quotes",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

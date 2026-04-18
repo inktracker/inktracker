@@ -1,0 +1,135 @@
+{
+  "name": "Quote",
+  "type": "object",
+  "properties": {
+    "quote_id": {
+      "type": "string"
+    },
+    "shop_owner": {
+      "type": "string",
+      "description": "Email of the shop owner this quote belongs to"
+    },
+    "broker_id": {
+      "type": "string",
+      "description": "Email of the broker who submitted this quote, if any"
+    },
+    "broker_name": {
+      "type": "string",
+      "description": "Full name of the broker who submitted this quote"
+    },
+    "broker_company": {
+      "type": "string",
+      "description": "Company name of the broker who submitted this quote"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "customer_email": {
+      "type": "string",
+      "description": "Email address of the customer"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Draft",
+        "Sent",
+        "Pending",
+        "Approved",
+        "Approved and Paid",
+        "Declined",
+        "Shop Approved",
+        "Sent to Client",
+        "Client Approved",
+        "Client Rejected",
+        "Converted to Order"
+      ],
+      "default": "Draft"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "rush_rate": {
+      "type": "number",
+      "default": 0
+    },
+    "extras": {
+      "type": "object"
+    },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "discount": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_rate": {
+      "type": "number",
+      "default": 8.265
+    },
+    "deposit_pct": {
+      "type": "number",
+      "default": 50
+    },
+    "deposit_paid": {
+      "type": "boolean",
+      "default": false
+    },
+    "sent_to": {
+      "type": "string",
+      "description": "Email address the quote was sent to"
+    },
+    "sent_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the quote was sent"
+    },
+    "client_status": {
+      "type": "string",
+      "description": "Client approval status"
+    },
+    "payment_status": {
+      "type": "string",
+      "enum": [
+        "Unpaid",
+        "Deposit Requested",
+        "Deposit Paid",
+        "Paid in Full"
+      ],
+      "default": "Unpaid",
+      "description": "Payment status for broker client quotes"
+    },
+    "sent_to_client_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "client_approved_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "converted_order_id": {
+      "type": "string",
+      "description": "ID of the shop order created from this quote"
+    },
+    "converted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "customer_name"
+  ]
+}

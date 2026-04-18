@@ -1,0 +1,26 @@
+{
+  "name": "TaxCategory",
+  "type": "object",
+  "properties": {
+    "shop_owner": {
+      "type": "string",
+      "description": "Email of the shop owner"
+    },
+    "name": {
+      "type": "string",
+      "description": "Category name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Category description"
+    },
+    "tax_code": {
+      "type": "string",
+      "description": "Tax code for accounting"
+    }
+  },
+  "required": [
+    "shop_owner",
+    "name"
+  ]
+}

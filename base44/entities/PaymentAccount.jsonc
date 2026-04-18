@@ -1,0 +1,18 @@
+{
+  "name": "PaymentAccount",
+  "type": "object",
+  "properties": {
+    "shop_owner": {
+      "type": "string",
+      "description": "Email of the shop owner"
+    },
+    "name": {
+      "type": "string",
+      "description": "Payment account name"
+    }
+  },
+  "required": [
+    "shop_owner",
+    "name"
+  ]
+}

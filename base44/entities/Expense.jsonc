@@ -1,0 +1,95 @@
+{
+  "name": "Expense",
+  "type": "object",
+  "properties": {
+    "shop_owner": {
+      "type": "string",
+      "description": "Email of the shop owner"
+    },
+    "expense_id": {
+      "type": "string",
+      "description": "Unique expense identifier"
+    },
+    "payee": {
+      "type": "string",
+      "description": "Payee name"
+    },
+    "payment_account": {
+      "type": "string",
+      "description": "Payment account used"
+    },
+    "payment_method": {
+      "type": "string",
+      "enum": [
+        "Credit Card",
+        "Bank Transfer",
+        "Check",
+        "Cash",
+        "Other"
+      ],
+      "default": "Credit Card",
+      "description": "Payment method"
+    },
+    "payment_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of payment"
+    },
+    "ref_number": {
+      "type": "string",
+      "description": "Reference number"
+    },
+    "line_items": {
+      "type": "array",
+      "description": "Line items for the expense",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "category_id": {
+            "type": "string"
+          },
+          "category_name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "memo": {
+      "type": "string",
+      "description": "Memo notes"
+    },
+    "attachment_url": {
+      "type": "string",
+      "description": "URL of attached receipt/document"
+    },
+    "total": {
+      "type": "number",
+      "description": "Total expense amount"
+    },
+    "is_recurring": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this expense recurs"
+    },
+    "recurring_end_date": {
+      "type": "string",
+      "format": "date",
+      "description": "When the recurrence should stop"
+    }
+  },
+  "required": [
+    "shop_owner",
+    "payee",
+    "payment_date",
+    "total"
+  ]
+}

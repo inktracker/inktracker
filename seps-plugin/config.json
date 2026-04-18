@@ -1,0 +1,20 @@
+{
+  "jobsRoot": "~/jobs",
+  "photoshopApp": "Adobe Photoshop 2026",
+  "illustratorApp": "Adobe Illustrator 2026",
+  "defaultGarmentColor": "black",
+  "defaultMeshCounts": {
+    "white-underbase": 156,
+    "color-top": 230,
+    "highlight-white": 305,
+    "process-spot": 305
+  },
+  "filmDpi": 360,
+  "registrationMarks": true,
+  "inktracker": {
+    "enabled": true,
+    "apiUrl": "http://localhost:5173/api/seps",
+    "syncOnJobCreate": true,
+    "syncOnFilmExport": true
+  }
+}

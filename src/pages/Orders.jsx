@@ -1,0 +1,350 @@
+import { useState, useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { base44 } from "@/api/supabaseClient";
+import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
+import Badge from "../components/shared/Badge";
+import OrderDetailModal from "../components/orders/OrderDetailModal";
+import AdvancedFilters from "../components/AdvancedFilters";
+
+function getOrderArtworkCount(order) {
+  const keys = new Set();
+
+  (order?.selected_artwork || []).forEach((art) => {
+    const key = art.id || art.url || art.name;
+    if (key) keys.add(key);
+  });
+
+  (order?.line_items || []).forEach((li) => {
+    (li.imprints || []).forEach((imp) => {
+      const key = imp.artwork_id || imp.artwork_url || imp.artwork_name;
+      if (key) keys.add(key);
+    });
+  });
+
+  return keys.size;
+}
+
+export default function Orders() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = new URLSearchParams(location.search);
+  const initialFilter = O_STATUSES.includes(params.get("status")) ? params.get("status") : "All";
+  const initialOrderId = params.get("id") || null;
+
+  const [orders, setOrders] = useState([]);
+  const [customers, setCustomers] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState(initialFilter);
+  const [viewing, setViewing] = useState(null);
+  const [user, setUser] = useState(null);
+  const [advFilters, setAdvFilters] = useState({});
+  const [originFilter, setOriginFilter] = useState("All");
+
+  useEffect(() => {
+    async function loadData() {
+      const currentUser = await base44.auth.me();
+      setUser(currentUser);
+      await Promise.all([
+        base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 100),
+        base44.entities.Customer.filter({ shop_owner: currentUser.email }),
+      ]).then(([o, c]) => {
+        setOrders(o);
+        const custMap = {};
+        c.forEach((cust) => (custMap[cust.id] = cust));
+        setCustomers(custMap);
+        setLoading(false);
+        // Auto-open a specific order if ?id= was passed from the Dashboard
+        if (initialOrderId) {
+          const match = o.find((row) => row.id === initialOrderId || row.order_id === initialOrderId);
+          if (match) setViewing(match);
+          // Clear the query params so reloads don't keep re-opening
+          navigate("/Orders", { replace: true });
+        }
+      });
+    }
+    loadData();
+     
+  }, []);
+
+  const handleAdvFilterChange = (key, value) => {
+    setAdvFilters((prev) => (value ? { ...prev, [key]: value } : { ...prev, [key]: undefined }));
+  };
+
+  let filtered = filter === "All" ? orders : orders.filter((o) => o.status === filter);
+  filtered = filtered.filter((o) => {
+    if (originFilter === "Internal" && o.broker_id) return false;
+    if (originFilter === "Broker" && !o.broker_id) return false;
+    return true;
+  });
+  filtered = filtered.filter((o) => {
+    if (advFilters.customer) {
+      const customerSearch = advFilters.customer.toLowerCase();
+      const haystack = [o.customer_name, o.broker_client_name, o.job_title]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (!haystack.includes(customerSearch)) return false;
+    }
+    if (advFilters.orderId && !o.order_id?.toLowerCase().includes(advFilters.orderId.toLowerCase())) return false;
+    if (advFilters.minTotal && (o.total || 0) < parseFloat(advFilters.minTotal)) return false;
+    if (advFilters.maxTotal && (o.total || 0) > parseFloat(advFilters.maxTotal)) return false;
+    return true;
+  });
+
+  const advFilterOptions = [
+    { key: "customer", label: "Customer / Job Title", type: "text" },
+    { key: "orderId", label: "Order ID", type: "text" },
+    { key: "minTotal", label: "Min Total", type: "text" },
+    { key: "maxTotal", label: "Max Total", type: "text" },
+  ];
+
+  async function handleAdvance(id) {
+    const order = orders.find((o) => o.id === id);
+    const idx = O_STATUSES.indexOf(order.status);
+    const nextStatus = idx >= 0 && idx < O_STATUSES.length - 1 ? O_STATUSES[idx + 1] : null;
+    if (nextStatus) {
+      const updated = await base44.entities.Order.update(id, { status: nextStatus });
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      if (viewing?.id === id) setViewing(updated);
+    }
+  }
+
+  async function handleRevert(id) {
+    const order = orders.find((o) => o.id === id);
+    const idx = O_STATUSES.indexOf(order.status);
+    const prevStatus = idx > 0 ? O_STATUSES[idx - 1] : null;
+    if (prevStatus) {
+      const updated = await base44.entities.Order.update(id, { status: prevStatus });
+      setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
+      if (viewing?.id === id) setViewing(updated);
+    }
+  }
+
+  async function handleComplete(order) {
+    const today = new Date().toISOString().split("T")[0];
+    const inv_id = `INV-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
+    await base44.entities.Invoice.create({
+      invoice_id: inv_id,
+      shop_owner: user.email,
+      order_id: order.order_id,
+      customer_id: order.customer_id,
+      customer_name: order.customer_name,
+      broker_id: order.broker_id || null,
+      broker_name: order.broker_name || null,
+      date: today,
+      due: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+      subtotal: order.subtotal || 0,
+      tax: order.tax || 0,
+      total: order.total || 0,
+      paid: false,
+      status: "Sent",
+      line_items: order.line_items || [],
+      notes: order.notes || "",
+      rush_rate: order.rush_rate || 0,
+      extras: order.extras || {},
+      discount: order.discount || 0,
+      tax_rate: order.tax_rate || 8.265,
+    });
+
+    if (order.broker_id) {
+      await base44.entities.BrokerPerformance.create({
+        broker_id: order.broker_id,
+        shop_owner: user.email,
+        order_id: order.order_id,
+        customer_name: order.customer_name,
+        date: today,
+        total: order.total || 0,
+      });
+
+      if (order.pdf_url) {
+        await base44.entities.BrokerFile.create({
+          broker_id: order.broker_id,
+          shop_owner: user.email,
+          order_id: order.order_id,
+          customer_name: order.customer_name,
+          file_url: order.pdf_url,
+          date: today,
+        });
+      }
+    }
+
+    await base44.entities.ShopPerformance.create({
+      shop_owner: user.email,
+      order_id: order.order_id,
+      customer_name: order.customer_name,
+      customer_id: order.customer_id || "",
+      broker_id: order.broker_id || "",
+      date: today,
+      total: order.total || 0,
+      status: "Completed",
+    });
+
+    await base44.entities.Order.delete(order.id);
+    setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    setViewing(null);
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("Delete this order?")) return;
+    const order = orders.find((o) => o.id === id);
+    await base44.entities.Order.delete(id);
+    setOrders((prev) => prev.filter((o) => o.id !== id));
+    setViewing(null);
+
+    // Cascade: remove any commission rows tied to this order
+    if (order?.order_id) {
+      try {
+        const commissions = await base44.entities.Commission.filter({ order_id: order.order_id });
+        await Promise.all((commissions || []).map((c) => base44.entities.Commission.delete(c.id)));
+      } catch (err) {
+        console.warn("[Orders] commission cleanup failed:", err);
+      }
+    }
+  }
+
+  async function handleTogglePaid(order) {
+    const newPaid = !order.paid;
+    const updated = await base44.entities.Order.update(order.id, {
+      paid: newPaid,
+      paid_date: newPaid ? new Date().toISOString().split("T")[0] : null,
+    });
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+    setViewing(updated);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold text-slate-900">Orders</h2>
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        {["All", ...O_STATUSES].map((s) => (
+          <button
+            key={s}
+            onClick={() => setFilter(s)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"}`}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        {["All", "Internal", "Broker"].map((o) => (
+          <button
+            key={o}
+            onClick={() => setOriginFilter(o)}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${originFilter === o ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-500 hover:border-slate-400"}`}
+          >
+            {o}
+          </button>
+        ))}
+      </div>
+      <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />
+      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 bg-slate-50">
+                {["Order ID", "Customer", "Artwork", "Due", "Total", "Status", ""].map((h) => (
+                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr>
+                  <td colSpan={7} className="px-5 py-8 text-center text-slate-300">
+                    Loading…
+                  </td>
+                </tr>
+              )}
+              {filtered.map((o) => {
+                const artworkCount = getOrderArtworkCount(o);
+                return (
+                  <tr
+                    key={o.id}
+                    className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition"
+                    onClick={() => setViewing(o)}
+                  >
+                    <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{o.order_id}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="font-semibold text-slate-800">
+                        {getOrderDisplayClient(o, customers[o.customer_id])}
+                      </div>
+                      {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {artworkCount > 0 ? (
+                        <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full">
+                          {artworkCount} file{artworkCount === 1 ? "" : "s"}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-500">{o.due_date ? fmtDate(o.due_date) : "—"}</td>
+                    <td className="px-5 py-3.5 font-bold text-slate-800">{fmtMoney(o.total || 0)}</td>
+                    <td className="px-5 py-3.5"><Badge s={o.status} /></td>
+                    <td className="px-5 py-3.5 text-right text-indigo-400 text-xs font-semibold">View →</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
+          {filtered.map((o) => {
+            const artworkCount = getOrderArtworkCount(o);
+            return (
+              <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition" onClick={() => setViewing(o)}>
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="font-mono text-xs text-slate-400">{o.order_id}</div>
+                    <div className="font-semibold text-slate-800">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
+                    {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
+                      </div>
+                    )}
+                  </div>
+                  <Badge s={o.status} />
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
+                  <span>Due: {o.due_date ? fmtDate(o.due_date) : "—"}</span>
+                  <span className="font-bold text-slate-800">{fmtMoney(o.total || 0)}</span>
+                </div>
+                {artworkCount > 0 && (
+                  <div className="mt-2">
+                    <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-full">
+                      {artworkCount} artwork file{artworkCount === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {viewing && (
+        <OrderDetailModal
+          order={orders.find((x) => x.id === viewing.id) || viewing}
+          onClose={() => setViewing(null)}
+          onAdvance={handleAdvance}
+          onRevert={handleRevert}
+          onComplete={handleComplete}
+          onDelete={handleDelete}
+          onTogglePaid={handleTogglePaid}
+        />
+      )}
+    </div>
+  );
+}

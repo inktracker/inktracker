@@ -1,0 +1,17 @@
+{
+  "name": "inktracker-seps",
+  "displayName": "inktracker Seps",
+  "version": "0.1.0",
+  "description": "Streamline color separations, film prep, and production tickets for a screen printing shop. Bundles commands for new-job scaffolding, simulated-process and spot-color separations via ActionSeps, and automatic production ticket generation.",
+  "author": "Joe Grennan",
+  "skills": [
+    "skills/new-job",
+    "skills/prep-sim-process",
+    "skills/prep-spot",
+    "skills/make-ticket"
+  ],
+  "requires": {
+    "apps": ["Adobe Photoshop", "Adobe Illustrator"],
+    "optional": ["AccuRIP Emerald"]
+  }
+}

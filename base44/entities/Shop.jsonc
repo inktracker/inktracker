@@ -1,0 +1,25 @@
+{
+  "name": "Shop",
+  "type": "object",
+  "properties": {
+    "owner_email": {
+      "type": "string",
+      "description": "Email of the shop owner"
+    },
+    "shop_name": {
+      "type": "string",
+      "description": "Name of the shop"
+    },
+    "addons": {
+      "type": "array",
+      "description": "Quote add-on options configured by the shop owner",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "owner_email",
+    "shop_name"
+  ]
+}

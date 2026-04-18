@@ -1,0 +1,55 @@
+{
+  "name": "BrokerNotification",
+  "type": "object",
+  "properties": {
+    "shop_owner": {
+      "type": "string",
+      "description": "Email of the admin/shop owner this notification is for"
+    },
+    "broker_id": {
+      "type": "string",
+      "description": "Email of the broker who triggered this notification"
+    },
+    "broker_name": {
+      "type": "string",
+      "description": "Display name of the broker"
+    },
+    "broker_company": {
+      "type": "string",
+      "description": "Company of the broker"
+    },
+    "action": {
+      "type": "string",
+      "enum": [
+        "submitted_quote",
+        "added_client",
+        "sent_message",
+        "uploaded_file",
+        "client_approved_quote",
+        "client_rejected_quote"
+      ],
+      "description": "What the broker did"
+    },
+    "item_label": {
+      "type": "string",
+      "description": "Human-readable label of the item, e.g. quote number or client name"
+    },
+    "item_id": {
+      "type": "string",
+      "description": "ID of the related entity record"
+    },
+    "item_entity": {
+      "type": "string",
+      "description": "Entity type: Quote, Customer, Message, BrokerDocument"
+    },
+    "read": {
+      "type": "boolean",
+      "default": false
+    }
+  },
+  "required": [
+    "shop_owner",
+    "broker_id",
+    "action"
+  ]
+}

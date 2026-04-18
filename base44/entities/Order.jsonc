@@ -1,0 +1,93 @@
+{
+  "name": "Order",
+  "type": "object",
+  "properties": {
+    "order_id": {
+      "type": "string"
+    },
+    "shop_owner": {
+      "type": "string",
+      "description": "Email of the shop owner"
+    },
+    "broker_id": {
+      "type": "string",
+      "description": "Email of the broker who submitted this order, if any"
+    },
+    "customer_id": {
+      "type": "string"
+    },
+    "customer_name": {
+      "type": "string"
+    },
+    "date": {
+      "type": "string",
+      "format": "date"
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "step_dates": {
+      "type": "object",
+      "description": "Scheduled dates for each production step, e.g. { 'Art Approval': '2026-04-08', 'Printing': '2026-04-12' }"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Art Approval",
+        "Pre-Press",
+        "Printing",
+        "Completed"
+      ],
+      "default": "Art Approval"
+    },
+    "line_items": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "notes": {
+      "type": "string"
+    },
+    "rush_rate": {
+      "type": "number",
+      "default": 0
+    },
+    "extras": {
+      "type": "object"
+    },
+    "discount": {
+      "type": "number",
+      "default": 0
+    },
+    "tax_rate": {
+      "type": "number",
+      "default": 8.265
+    },
+    "subtotal": {
+      "type": "number"
+    },
+    "tax": {
+      "type": "number"
+    },
+    "total": {
+      "type": "number"
+    },
+    "paid": {
+      "type": "boolean",
+      "default": false
+    },
+    "paid_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "pdf_url": {
+      "type": "string",
+      "description": "URL of the attached job PDF file"
+    }
+  },
+  "required": [
+    "customer_name"
+  ]
+}
