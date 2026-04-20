@@ -311,15 +311,33 @@ def detect_ink_colors(
     )
 
     if len(color_lab) < 50:
-        # Too few hue pixels — fall back to clustering all non-edge non-dark
-        # ink pixels, or everything if still too few.
-        color_lab = lab[is_ink_candidate & ~is_edge]
-        if len(color_lab) < 50:
-            color_lab = lab[is_ink_candidate]
-        if len(color_lab) < 50:
-            color_lab = lab
-        log.warning("detect_ink_colors: fell back to %d pixels for color cluster",
-                    len(color_lab))
+        # Too few non-dark ink pixels — the art is essentially single-ink
+        # (everything is either garment, edge, or dark/key). Don't force
+        # spurious color clusters; skip color clustering entirely and
+        # return just the key cluster if reserved. Previously the fallback
+        # would cluster dark pixels AGAIN as a color slot, producing
+        # "light-black" + "dark-black" nonsense from what's really one ink.
+        if reserve_key:
+            log.info(
+                "detect_ink_colors: only dark pixels present — returning key only"
+            )
+            key_lab_centroid = lab[is_dark].mean(axis=0)
+            key_count = int(is_dark.sum())
+            total_ink_only_key = max(key_count, 1)
+            return [{
+                "rgb": (0, 0, 0),
+                "lab": tuple(float(v) for v in key_lab_centroid),
+                "pixel_count": key_count,
+                "fraction": round(key_count / total_ink_only_key, 4),
+                "suggested_name": "black",
+            }]
+        # No dark either — very unusual. Fall through to clustering all
+        # non-edge pixels as a last resort.
+        color_lab = lab[~is_edge] if (~is_edge).any() else lab
+        log.warning(
+            "detect_ink_colors: neither dark nor color pixels — fell back to %d",
+            len(color_lab),
+        )
 
     # --- K-means on the color pool ---
     # OVER-CLUSTER first, then consolidate. Running K-means with exactly

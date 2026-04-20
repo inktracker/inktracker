@@ -163,6 +163,34 @@ def test_08_colored_accents_with_bg():
                  (30, 80, 180), (60, 140, 70), (200, 150, 30)], "multi-accent"
 
 
+def test_09_badge_outline_on_dark_bg():
+    """Seager-style badge: white outline encloses a black-filled interior
+    with white details, sitting on a BLACK outer canvas. Auto-bg must only
+    strip the OUTER frame (stopped by the white outline); interior black
+    + white details must survive as subject. Then the single-ink fallback
+    must not over-split."""
+    img = Image.new('RGB', (800, 900), (8, 8, 8))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([100, 180, 700, 760], radius=40, fill=(8, 8, 8))
+    d.rounded_rectangle([100, 180, 700, 760], radius=40,
+                        outline=(245, 245, 245), width=8)
+    d.rounded_rectangle([120, 200, 680, 740], radius=35,
+                        outline=(245, 245, 245), width=4)
+    for fpath in ('/System/Library/Fonts/Helvetica.ttc',
+                   '/System/Library/Fonts/Supplemental/Arial.ttf'):
+        try:
+            fL = ImageFont.truetype(fpath, 72)
+            fS = ImageFont.truetype(fpath, 32)
+            break
+        except Exception:
+            fL = ImageFont.load_default()
+            fS = fL
+    d.text((220, 260), "SEAGER", fill=(245, 245, 245), font=fL)
+    d.text((240, 660), "SPORTSMAN", fill=(245, 245, 245), font=fS)
+    d.ellipse([350, 400, 500, 500], fill=(245, 245, 245))
+    return img, [(245, 245, 245)], "badge-on-dark"  # 1 ink: white
+
+
 TESTS = [
     test_01_line_art_on_white,
     test_02_flat_3color_logo,
@@ -172,6 +200,7 @@ TESTS = [
     test_06_on_black_background,
     test_07_anti_aliased_edges,
     test_08_colored_accents_with_bg,
+    test_09_badge_outline_on_dark_bg,
 ]
 
 
