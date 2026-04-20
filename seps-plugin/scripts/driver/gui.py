@@ -221,6 +221,8 @@ class FilmSepsApp:
         self.detected_palette: list[dict] = []
         # Eyedropper state
         self._eyedrop_active = False
+        self._bg_pick_active = False
+        self._manual_bg_rgb: tuple[int, int, int] | None = None
         self._preview_source_img: Image.Image | None = None
         self._preview_scale: float = 1.0
         self._preview_offset: tuple[int, int] = (0, 0)
@@ -459,6 +461,22 @@ class FilmSepsApp:
             "to sample that pixel's color and add it as a new ink. Use for "
             "colors the auto-detect missed — e.g. a small accent that fell "
             "below the minimum-coverage threshold."
+        )
+
+        self.bg_pick_btn = ttk.Button(
+            hdr_row, text="+ Mark background",
+            command=self._toggle_bg_picker, state="disabled",
+        )
+        self.bg_pick_btn.grid(row=0, column=2, sticky="w", padx=(6, 0))
+        attach_tooltip(
+            self.bg_pick_btn,
+            "Click this, then click a pixel in the preview that you know is "
+            "background (canvas the art was drawn on, not part of the print). "
+            "The renderer will flood-fill from that color with tight tolerance "
+            "and remove it — so dark background won't contaminate your dark "
+            "ink films, and colored canvas won't become an accidental ink. "
+            "Leaves interior details intact because flood-fill only spreads "
+            "through border-connected regions."
         )
 
         self.palette_frame = ttk.Frame(box)
@@ -734,9 +752,11 @@ class FilmSepsApp:
         self.label_var.set(self.label_var.get() or path.stem)
         # New source — discard any lingering edits from a previous file
         self.edited_image = None
+        self._manual_bg_rgb = None
         try:
             self.edit_btn.configure(state="normal")
             self.eyedrop_btn.configure(state="normal")
+            self.bg_pick_btn.configure(state="normal", text="+ Mark background")
         except Exception:
             pass
         self._log(f"loaded: {path.name}")
@@ -974,10 +994,69 @@ class FilmSepsApp:
             return
         enabled = sum(1 for c in self.detected_palette if c["enabled"])
         total = len(self.detected_palette)
+        bg_suffix = ""
+        if self._manual_bg_rgb:
+            r, g, b = self._manual_bg_rgb
+            bg_suffix = f"  ·  bg marked at RGB ({r},{g},{b})"
         self.palette_hint_var.set(
-            f"{enabled} of {total} inks will be sepped. "
-            "Click a swatch to toggle; + Sample color adds one manually."
+            f"{enabled} of {total} inks will be sepped.{bg_suffix}"
         )
+
+    # --- "mark background" eyedropper --------------------------------------
+
+    def _toggle_bg_picker(self) -> None:
+        # Clicking the button while a bg is already marked → clear it
+        if not self._bg_pick_active and self._manual_bg_rgb is not None:
+            self._manual_bg_rgb = None
+            self.bg_pick_btn.configure(text="+ Mark background")
+            self._update_palette_hint()
+            return
+        # Never arm both pickers at once
+        if self._eyedrop_active:
+            self._toggle_eyedropper()
+        self._bg_pick_active = not self._bg_pick_active
+        if self._bg_pick_active:
+            self.bg_pick_btn.configure(text="Cancel bg pick")
+            self.preview_canvas.configure(cursor="tcross")
+            self.preview_canvas.bind("<ButtonPress-1>", self._on_preview_mark_bg)
+            self.palette_hint_var.set(
+                "Background picker armed — click a pixel you know is "
+                "background/canvas. Border-connected regions of that color "
+                "get stripped at render."
+            )
+        else:
+            self.bg_pick_btn.configure(text="+ Mark background")
+            self.preview_canvas.configure(cursor="")
+            self.preview_canvas.unbind("<ButtonPress-1>")
+            self._update_palette_hint()
+
+    def _on_preview_mark_bg(self, event) -> None:
+        """Sample the pixel under the cursor and stash it as the manual bg
+        color for the next render."""
+        if self._preview_source_img is None:
+            return
+        ox, oy = self._preview_offset
+        sx = (event.x - ox) / max(self._preview_scale, 1e-6)
+        sy = (event.y - oy) / max(self._preview_scale, 1e-6)
+        iw, ih = self._preview_source_img.size
+        if sx < 0 or sy < 0 or sx >= iw or sy >= ih:
+            self.palette_hint_var.set("Clicked outside the image — try again.")
+            return
+        try:
+            px = self._preview_source_img.getpixel((int(sx), int(sy)))
+            if isinstance(px, int):
+                px = (px, px, px)
+            rgb = tuple(int(v) for v in px[:3])
+        except Exception:
+            log.exception("mark bg failed")
+            self._toggle_bg_picker()
+            return
+
+        self._manual_bg_rgb = rgb
+        log.info("manual bg marked: %s at source (%d,%d)", rgb, int(sx), int(sy))
+        self.bg_pick_btn.configure(text=f"bg: RGB ({rgb[0]},{rgb[1]},{rgb[2]}) ✕")
+        self._toggle_bg_picker()
+        self._update_palette_hint()
 
     def _show_preview(self, path: Path) -> None:
         log.info("_show_preview: opening thumbnail for %s", path)
@@ -1120,11 +1199,13 @@ class FilmSepsApp:
                          sum(1 for c in self.detected_palette if c.get("sampled")),
                          sum(1 for c in self.detected_palette if not c.get("enabled", True)))
 
+        manual_bg = self._manual_bg_rgb
+
         t = threading.Thread(
             target=self._render_worker,
             args=(self.source_path, out_films, width, height, cfg, mode,
                   max_colors, label, job_dir, enhance_level, exclude_bg_mode,
-                  edited_snapshot, curated_palette),
+                  edited_snapshot, curated_palette, manual_bg),
             daemon=True,
         )
         t.start()
@@ -1132,7 +1213,7 @@ class FilmSepsApp:
     def _render_worker(self, source, out_films, width, height, cfg, mode,
                        max_colors, label, job_dir, enhance_level="light",
                        exclude_bg_mode="auto", edited_image=None,
-                       curated_palette=None):
+                       curated_palette=None, manual_bg_rgb=None):
         try:
             def progress_cb(step: str, cur: int, total: int) -> None:
                 self._q.put(("progress", step, cur, total))
@@ -1170,7 +1251,9 @@ class FilmSepsApp:
                     log.exception("enhance pass failed — using raw source")
 
             # --- Background exclusion (canvas vs print) ---
-            if exclude_bg_mode and exclude_bg_mode != "off":
+            # Run bg exclusion if the dropdown isn't "off" OR if the
+            # operator manually marked a bg color.
+            if (exclude_bg_mode and exclude_bg_mode != "off") or manual_bg_rgb:
                 self._q.put(("progress", "detecting background", 0, 0))
                 try:
                     from background import (
@@ -1190,6 +1273,7 @@ class FilmSepsApp:
                         pil_for_bg,
                         garment_rgb=garment,
                         mode=exclude_bg_mode,
+                        explicit_bg_rgb=manual_bg_rgb,
                     )
                     if bg_mask is not None:
                         # Replace bg pixels in the working image with garment

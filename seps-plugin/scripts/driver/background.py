@@ -40,6 +40,7 @@ def detect_background_mask(
     garment_rgb: tuple[int, int, int] | None = None,
     mode: Mode = "auto",
     color_tolerance: int = 25,
+    explicit_bg_rgb: tuple[int, int, int] | None = None,
 ) -> np.ndarray | None:
     """Return a (H, W) boolean mask — True where the pixel is canvas/bg.
 
@@ -52,11 +53,37 @@ def detect_background_mask(
     mode : "off" | "auto" | "alpha-only"
     color_tolerance : RGB Euclidean tolerance for corner-color matching
     """
-    if mode == "off":
+    if mode == "off" and explicit_bg_rgb is None:
         return None
 
     w, h = img.size
     mask = np.zeros((h, w), dtype=bool)
+
+    # --- EXPLICIT BACKGROUND COLOR (operator clicked "+ Mark background") ---
+    # Flood-fill from the border using the operator-supplied color with TIGHT
+    # tolerance so it doesn't eat dark ink pixels. This bypasses corner
+    # heuristics entirely since the operator told us exactly what to remove.
+    if explicit_bg_rgb is not None:
+        rgb = img.convert("RGB")
+        arr = np.array(rgb, dtype=np.int16)
+        target = np.array(explicit_bg_rgb, dtype=np.int16)
+        # Tight tolerance: ~12 per channel. A same-color match anywhere in
+        # the image gets marked, then we keep only border-connected regions
+        # so interior detail that happens to match the bg color (black pen
+        # strokes inside a duck drawn on black paper) is preserved.
+        per_channel_tol = 12
+        diff = np.max(np.abs(arr - target), axis=2)
+        close = diff <= per_channel_tol
+        connected = _keep_border_connected(close)
+        mask |= connected
+        log.info(
+            "background: explicit color %s tol=%d → %d/%d border-connected px",
+            tuple(int(x) for x in explicit_bg_rgb), per_channel_tol,
+            int(connected.sum()), connected.size,
+        )
+        # Done — operator gave us an exact command; don't also run the
+        # corner/garment heuristics (they might over-remove).
+        return mask if mask.any() else None
 
     # --- 1. Alpha channel (if present) ---
     alpha_found = False
