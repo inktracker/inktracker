@@ -77,6 +77,10 @@ class InkSpec:
     lpi: int
     rgb: tuple[int, int, int] | None = None
     tolerance: int = 40          # for flat-image color masking
+    halftone: bool = True        # True = halftone dots; False = solid fill
+    # Solid fill is correct for spot-color jobs (each ink is "there or not").
+    # Halftoning is correct for sim-process (each ink is a tone map with dot
+    # patterns representing coverage %).
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +97,11 @@ def layer_density(layer: NamedLayer) -> np.ndarray:
 
 
 def flat_density(flat: Image.Image, target_rgb: tuple[int, int, int], tolerance: int) -> np.ndarray:
-    """Derive a 0..255 density map for one color in a flat image."""
+    """Derive a 0..255 density map for one color in a flat image.
+
+    Used by sim-process mode — each pixel's coverage for an ink is proportional
+    to its proximity to the ink's RGB.
+    """
     arr = np.array(flat.convert("RGB"), dtype=np.float32)
     target = np.array(target_rgb, dtype=np.float32)
     dist = np.sqrt(((arr - target) ** 2).sum(axis=2))
@@ -101,6 +109,46 @@ def flat_density(flat: Image.Image, target_rgb: tuple[int, int, int], tolerance:
     t = max(1.0, float(tolerance))
     coverage = np.clip(1.0 - (dist / t), 0.0, 1.0)
     return (coverage * 255).astype(np.uint8)
+
+
+def _nearest_ink_masks(
+    src: "LoadedSource",
+    specs: list[InkSpec],
+    garment_color: str,
+) -> dict[str, np.ndarray]:
+    """Assign each source pixel to exactly one ink (or garment background).
+
+    Returns a dict: ink name → 2D uint8 mask, 255 where this ink prints,
+    0 where it doesn't. Every pixel ends up on exactly one mask or on the
+    "garment background" (no mask at all).
+
+    This is how real spot-color separations work — hard assignment with no
+    overlaps. Soft ramps would mean partial ink coverage, which in spot
+    printing is wrong (spot colors are "there or not", never halftoned).
+    """
+    if src.flat is None:
+        return {}
+    arr = np.array(src.flat.convert("RGB"), dtype=np.float32)  # (H, W, 3)
+    h, w = arr.shape[:2]
+
+    # Palette: each ink's target color + garment at the end as "no ink"
+    palette = [spec.rgb for spec in specs if spec.rgb is not None]
+    palette.append(_garment_rgb(garment_color))
+    pal = np.array(palette, dtype=np.float32)  # (N+1, 3)
+
+    # Distance from every pixel to every palette entry.
+    # pixels: (H*W, 3); diffs → (H*W, N+1)
+    pixels = arr.reshape(-1, 3)
+    diffs = pixels[:, None, :] - pal[None, :, :]
+    dists = np.sqrt((diffs ** 2).sum(axis=2))  # (H*W, N+1)
+    nearest = dists.argmin(axis=1).reshape(h, w)  # 0..N, where N = garment
+
+    masks: dict[str, np.ndarray] = {}
+    for i, spec in enumerate(specs):
+        if spec.rgb is None:
+            continue
+        masks[spec.name] = ((nearest == i).astype(np.uint8)) * 255
+    return masks
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +347,10 @@ def render_ink(
     )
     d_arr = np.array(d, dtype=np.uint8)
 
-    if spec.purpose in ("underbase", "highlight"):
+    if spec.purpose in ("underbase", "highlight") or not spec.halftone:
+        # Solid fill — pixels above the density midpoint print as solid ink,
+        # pixels below are clear film. No dot pattern. This is the correct
+        # rendering for spot-color work and for underbase/highlight layers.
         film_arr = solid_film(d_arr)
     else:
         film_arr = halftone(
@@ -378,16 +429,35 @@ def drive(
         if not src.layers:
             raise RuntimeError("spot-layered requires a layered source (PSD/PSB)")
         specs = plan_layered(src, cfg)
+        # Layered spot colors: solid fills — each layer is "this ink is here".
+        for spec in specs:
+            if spec.purpose == "color":
+                spec.halftone = False
     elif mode in ("spot-flat", "sim-process"):
         if src.flat is None:
             # Flatten layers to composite
             src = _flatten_layers(src)
         specs = plan_flat(src, cfg, max_colors=max_colors)
+        if mode == "spot-flat":
+            # True spot color — each pixel belongs to one ink (or background),
+            # no halftone, no tone ramp. render_ink() below sees halftone=False
+            # and emits a solid fill. Density maps are computed via nearest-ink
+            # assignment (below) for clean, non-overlapping masks.
+            for spec in specs:
+                spec.halftone = False
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
     if not specs:
         raise RuntimeError("No ink specs were resolved — nothing to render")
+
+    # For spot-flat mode, precompute nearest-ink binary masks once — each
+    # pixel in the flat source gets assigned to its closest ink (or garment
+    # background). This is how real spot-color seps work: no overlapping
+    # coverage, no sparse gaps, each ink prints as a solid where it's needed.
+    nearest_masks: dict[str, np.ndarray] | None = None
+    if mode == "spot-flat":
+        nearest_masks = _nearest_ink_masks(src, specs, cfg.garment_color)
 
     # Compute aspect & print size
     doc_w, doc_h = src.doc_size
@@ -407,7 +477,10 @@ def drive(
         emit(f"rendering {spec.ink} ({spec.mesh} mesh)", i, total_inks)
 
         try:
-            density = _density_for_spec(spec, src)
+            if nearest_masks is not None and spec.name in nearest_masks:
+                density = nearest_masks[spec.name]
+            else:
+                density = _density_for_spec(spec, src)
         except Exception as e:
             warnings.append(f"density: {spec.name}: {e}")
             continue
