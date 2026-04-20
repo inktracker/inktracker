@@ -22,7 +22,7 @@ DRIVER_MODULES = [
     "film_driver", "halftone", "layout",
     "preferences", "preview", "printer",
     "sources", "dotgain", "submit_films", "macdrop",
-    "color_detect", "enhance",
+    "color_detect", "enhance", "background",
     # Copied from seps-plugin/scripts/engine/ at build time (build.sh) —
     # film_driver imports detect_flat_colors + _suggest_color_name from it.
     "utils",

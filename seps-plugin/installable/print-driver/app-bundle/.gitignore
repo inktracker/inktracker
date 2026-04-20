@@ -8,6 +8,7 @@ icon_master.png
 # Driver modules are copied here by build.sh at build time, then cleaned up.
 # In case cleanup fails mid-build, keep these ignored so they don't get committed.
 analyzer.py
+background.py
 color_detect.py
 dotgain.py
 enhance.py

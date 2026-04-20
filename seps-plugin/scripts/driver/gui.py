@@ -29,7 +29,10 @@ if str(_HERE) not in sys.path:
 from PIL import Image, ImageTk  # noqa: E402
 
 from analyzer import Analysis, analyze  # noqa: E402
-from film_driver import _garment_rgb, _load_source_thumbnail, drive  # noqa: E402
+from film_driver import (  # noqa: E402
+    _garment_rgb, _load_source_keep_alpha, _load_source_thumbnail,
+    _source_has_alpha, drive,
+)
 import macdrop  # noqa: E402
 from preferences import DriverConfig, FILM_DPI_DEFAULT  # noqa: E402
 from preview import build_contact_sheet, open_in_preview  # noqa: E402
@@ -108,6 +111,22 @@ TIPS = {
         "and ET-15000 native. Recommended for anything with halftones.\n\n"
         "360 DPI — acceptable only when LPI ≤ 45 (low-detail jobs). Faster to "
         "print, uses less ink. Not recommended for fine halftones."
+    ),
+    "exclude_background": (
+        "Tell the sep engine which pixels are the canvas the art was drawn on "
+        "(not inks you want to print). Common when the source is a stock "
+        "illustration on a beige paper, a scanned sheet, a transparent PNG, "
+        "or anything where the background color isn't the garment you're "
+        "printing on.\n\n"
+        "Off — don't exclude anything; treat every pixel as potentially ink.\n\n"
+        "Auto (recommended) — detect transparent pixels (alpha channel) AND "
+        "any uniform canvas color connected to the image border via "
+        "flood-fill. Leaves holes inside the design intact (e.g. a white "
+        "highlight inside a character's eye stays as ink).\n\n"
+        "Alpha only — trust the source's alpha channel and nothing else. "
+        "Use when your art has a transparent background but the opaque "
+        "pixels include uniform regions you DO want to print (e.g. white "
+        "ink on transparent)."
     ),
     "enhance": (
         "Runs before separation detection. Cleans up the source art so the "
@@ -475,6 +494,16 @@ class FilmSepsApp:
                     TIPS["enhance"])
         row += 1
 
+        # Background exclusion (canvas vs print)
+        self.exclude_bg_var = tk.StringVar(value="auto")
+        self._field(form, row, "Exclude background",
+                    ttk.Combobox(form, textvariable=self.exclude_bg_var,
+                                 state="readonly",
+                                 values=["off", "auto", "alpha-only"],
+                                 width=14),
+                    TIPS["exclude_background"])
+        row += 1
+
         # Max colors
         self.max_colors_var = tk.StringVar(value="6")
         self._field(form, row, "Max colors",
@@ -753,23 +782,26 @@ class FilmSepsApp:
         self._log(f"— render start — {self.source_path.name} → {job_dir}")
 
         enhance_level = self.enhance_var.get()
+        exclude_bg_mode = self.exclude_bg_var.get()
 
         t = threading.Thread(
             target=self._render_worker,
             args=(self.source_path, out_films, width, height, cfg, mode,
-                  max_colors, label, job_dir, enhance_level),
+                  max_colors, label, job_dir, enhance_level, exclude_bg_mode),
             daemon=True,
         )
         t.start()
 
     def _render_worker(self, source, out_films, width, height, cfg, mode,
-                       max_colors, label, job_dir, enhance_level="light"):
+                       max_colors, label, job_dir, enhance_level="light",
+                       exclude_bg_mode="auto"):
         try:
             def progress_cb(step: str, cur: int, total: int) -> None:
                 self._q.put(("progress", step, cur, total))
 
             # --- Enhancement pass (runs before sep detection) ---
             source_for_drive = source
+            working_img = None
             if enhance_level and enhance_level != "none":
                 self._q.put(("progress", f"enhancing ({enhance_level})", 0, 0))
                 try:
@@ -780,16 +812,63 @@ class FilmSepsApp:
                         pil, level=enhance_level,
                         target_colors=max_colors, garment_rgb=garment,
                     )
-                    # Save enhanced source alongside the films for traceability
-                    job_dir.mkdir(parents=True, exist_ok=True)
-                    enhanced_path = job_dir / "enhanced-source.png"
-                    res.image.save(str(enhanced_path), "PNG")
-                    source_for_drive = enhanced_path
+                    working_img = res.image
                     log.info("enhance: %s → %dx%d (%s)",
                              enhance_level, res.image.size[0], res.image.size[1],
                              "; ".join(res.notes))
                 except Exception:
                     log.exception("enhance pass failed — using raw source")
+
+            # --- Background exclusion (canvas vs print) ---
+            if exclude_bg_mode and exclude_bg_mode != "off":
+                self._q.put(("progress", "detecting background", 0, 0))
+                try:
+                    from background import (
+                        detect_background_mask, apply_background_mask,
+                    )
+                    # Work on either the enhanced image OR the raw source if
+                    # enhance was 'none'. Respect alpha on the raw source
+                    # (enhance converts to RGB which drops alpha).
+                    pil_for_bg = working_img or _load_source_thumbnail(source)
+                    # If enhance ran and the original had alpha, we've already
+                    # lost transparency info — reload the raw source for alpha
+                    # detection in this case.
+                    if working_img is not None and _source_has_alpha(source):
+                        pil_for_bg = _load_source_keep_alpha(source)
+                    garment = _garment_rgb(cfg.garment_color)
+                    bg_mask = detect_background_mask(
+                        pil_for_bg,
+                        garment_rgb=garment,
+                        mode=exclude_bg_mode,
+                    )
+                    if bg_mask is not None:
+                        # Replace bg pixels in the working image with garment
+                        # color so downstream filters drop them
+                        base = working_img or _load_source_thumbnail(source)
+                        # bg_mask shape must match base; if not, rescale
+                        if bg_mask.shape != (base.size[1], base.size[0]):
+                            from PIL import Image as _I
+                            bg_img = _I.fromarray(
+                                (bg_mask.astype("uint8") * 255), mode="L",
+                            ).resize(base.size, _I.NEAREST)
+                            import numpy as _np
+                            bg_mask = _np.array(bg_img) > 127
+                        working_img = apply_background_mask(
+                            base, bg_mask, garment,
+                        )
+                        log.info("bg exclusion: replaced %d bg pixels with garment",
+                                 int(bg_mask.sum()))
+                    else:
+                        log.info("bg exclusion: no background detected")
+                except Exception:
+                    log.exception("bg exclusion failed — continuing without it")
+
+            # Save whatever we ended up with as the source the driver will read
+            if working_img is not None:
+                job_dir.mkdir(parents=True, exist_ok=True)
+                processed_path = job_dir / "processed-source.png"
+                working_img.save(str(processed_path), "PNG")
+                source_for_drive = processed_path
 
             result = drive(
                 source_path=source_for_drive,

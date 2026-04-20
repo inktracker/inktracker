@@ -764,5 +764,28 @@ def _load_source_thumbnail(path: Path) -> Image.Image:
     return img.convert("RGB")
 
 
+def _source_has_alpha(path: Path) -> bool:
+    """True if the raw source file carries real transparency info."""
+    ext = path.suffix.lower()
+    if ext in (".psd", ".psb", ".pdf"):
+        return False
+    try:
+        with Image.open(str(path)) as im:
+            return im.mode in ("RGBA", "LA", "PA") or "transparency" in im.info
+    except Exception:
+        return False
+
+
+def _load_source_keep_alpha(path: Path) -> Image.Image:
+    """Same as _load_source_thumbnail but preserves alpha for PNG/TIF."""
+    ext = path.suffix.lower()
+    if ext in (".psd", ".psb", ".pdf"):
+        return _load_source_thumbnail(path)
+    img = Image.open(str(path))
+    if img.mode in ("RGBA", "LA"):
+        return img.convert("RGBA")
+    return img.convert("RGB")
+
+
 if __name__ == "__main__":
     sys.exit(main())
