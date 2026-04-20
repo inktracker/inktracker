@@ -468,15 +468,49 @@ def render_ink(
     label_prefix: str = "",
 ) -> Image.Image:
     """Full pipeline for one ink channel — halftone → sheet layout."""
-    # Scale density to print-size pixels
+    # Scale density to print-size pixels.
+    #
+    # The mask we get from _nearest_ink_masks is effectively binary (0/255)
+    # after despeckle + trap dilation. A naked LANCZOS upscale of a binary
+    # mask at ~9× (common when a 950px JPEG is being printed at 12" × 720DPI
+    # = ~8600px) produces visibly stair-stepped pixelated edges on the film.
+    #
+    # Fix: anti-alias the mask before the upscale. Blur so the edges become
+    # soft (Gaussian falloff), upscale the soft mask with LANCZOS (which
+    # interpolates gradients smoothly), then threshold back to binary. The
+    # upscaled threshold boundary follows the smooth gradient instead of
+    # the original pixel grid — clean curves, no stair-step.
+    #
+    # This is what commercial RIPs do internally. The radius scales with
+    # how much upscale we're doing; 0.8px on a 1000px source gives us ~7px
+    # transition on an 8000px target, which is narrow enough to stay sharp
+    # but wide enough to kill aliasing.
     target_w = int(round(print_w_in * cfg.film_dpi))
     target_h = int(round(print_h_in * cfg.film_dpi))
-    d = Image.fromarray(density, mode="L").resize(
-        (target_w, target_h), Image.LANCZOS,
-    )
-    d_arr = np.array(d, dtype=np.uint8)
 
-    if spec.purpose in ("underbase", "highlight") or not spec.halftone:
+    src_h, src_w = density.shape
+    upscale_factor = max(target_w / src_w, target_h / src_h)
+    mask_img = Image.fromarray(density, mode="L")
+
+    is_solid = spec.purpose in ("underbase", "highlight") or not spec.halftone
+
+    if is_solid and upscale_factor > 1.5:
+        # Blur radius proportional to upscale. Cap at 2.0 so we don't erode
+        # fine features when the upscale is enormous.
+        from PIL import ImageFilter
+
+        blur_r = min(2.0, 0.5 + 0.15 * upscale_factor)
+        soft = mask_img.filter(ImageFilter.GaussianBlur(radius=blur_r))
+        soft = soft.resize((target_w, target_h), Image.LANCZOS)
+        soft_arr = np.array(soft, dtype=np.uint8)
+        # Threshold at 128 — for a symmetric gaussian falloff this recovers
+        # the geometric edge position exactly.
+        d_arr = np.where(soft_arr >= 128, 255, 0).astype(np.uint8)
+    else:
+        d = mask_img.resize((target_w, target_h), Image.LANCZOS)
+        d_arr = np.array(d, dtype=np.uint8)
+
+    if is_solid:
         # Solid fill — pixels above the density midpoint print as solid ink,
         # pixels below are clear film. No dot pattern. This is the correct
         # rendering for spot-color work and for underbase/highlight layers.

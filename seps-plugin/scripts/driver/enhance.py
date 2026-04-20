@@ -33,7 +33,15 @@ Level = Literal["none", "light", "strong", "vectorize"]
 # Target dimensions for the upscaled canvas. Most JPEGs people drop are
 # 600-1500 px; we bring them up so the sep pipeline has enough pixel
 # budget to halftone cleanly at 720 DPI.
-TARGET_MIN_DIM = 2000
+#
+# 4000 px looks aggressive but remember the math: a 12" print at 720 DPI
+# is 8640 px of film. Starting from 1000 px source means an 8.6× upscale
+# at render time — mask edges end up visibly stair-stepped no matter how
+# well we anti-alias. Bringing the working canvas up to 4000 px cuts the
+# render-time upscale to 2.2×, which is what LANCZOS is designed for.
+# Upscaling up-front with LANCZOS (+ sharpen) is cheaper and gives crisper
+# edges than upscaling a binary mask at the back end.
+TARGET_MIN_DIM = 4000
 
 
 @dataclass
