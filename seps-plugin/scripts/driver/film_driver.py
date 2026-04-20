@@ -509,6 +509,7 @@ def drive(
     label_prefix: str = "",
     progress=None,
     user_palette: list[dict] | None = None,
+    auto_bg_detect: bool = True,
 ) -> dict:
     """Run the driver end-to-end on a single source.
 
@@ -546,6 +547,23 @@ def drive(
         if src.flat is None:
             # Flatten layers to composite
             src = _flatten_layers(src)
+
+        # AUTO BACKGROUND DETECTION: if the source image has a distinct
+        # canvas color (sampled from the 4 corners) that differs from the
+        # target garment, the art was drawn on a paper/canvas that's NOT
+        # the shirt. Those pixels should be treated as background, not
+        # clustered as an ink.
+        #
+        # Classic failure case this fixes: a duck illustration drawn on a
+        # BLACK canvas, printed on a WHITE shirt. Previously, the detector
+        # would only filter pixels near white (garment) and cluster the
+        # black canvas as a dominant "ink," starving real colors of slots.
+        #
+        # Callers that already pre-processed the image (the GUI does this
+        # explicitly via the bg module) should pass auto_bg_detect=False.
+        if auto_bg_detect:
+            src = _auto_apply_bg_detection(src, cfg)
+
         if user_palette:
             # Operator curated the palette via the GUI — use exactly their
             # selection. Skip k-means; build specs directly from the list.
@@ -642,6 +660,7 @@ def drive(
                 "name": filename.removesuffix(".tif"),
                 "path": str(out_path),
                 "ink": spec.ink,
+                "ink_rgb": list(spec.rgb) if spec.rgb else None,
                 "mesh": spec.mesh,
                 "purpose": spec.purpose,
                 "angle": spec.angle_deg if spec.purpose == "color" else None,
@@ -701,6 +720,38 @@ def _specs_from_user_palette(
             lpi=lpi, rgb=rgb, halftone=True,
         ))
     return specs
+
+
+def _auto_apply_bg_detection(src: LoadedSource, cfg: DriverConfig) -> LoadedSource:
+    """Detect a distinct canvas color in the source and replace those pixels
+    with the garment color so downstream filters drop them.
+
+    Skips when src.flat is None, when corners disagree (no clear canvas),
+    or when the canvas color is already very close to the garment color
+    (in which case regular garment filtering already handles it).
+    """
+    if src.flat is None:
+        return src
+    try:
+        from background import detect_background_mask, apply_background_mask
+    except Exception:
+        return src
+    garment_rgb = _garment_rgb(cfg.garment_color)
+    mask = detect_background_mask(src.flat, garment_rgb=garment_rgb, mode="auto")
+    if mask is None or not mask.any():
+        return src
+    coverage = mask.sum() / mask.size
+    # Only apply if the detected bg is a meaningful portion of the image
+    # (>5%). Below that it's probably just edge noise, not a real canvas.
+    if coverage < 0.05:
+        return src
+    log.info("auto-bg: replacing %.1f%% of pixels (canvas distinct from garment)",
+             coverage * 100)
+    new_flat = apply_background_mask(src.flat, mask, garment_rgb)
+    return LoadedSource(
+        layers=src.layers, flat=new_flat,
+        doc_size=src.doc_size, dpi=src.dpi,
+    )
 
 
 def _flatten_layers(src: LoadedSource) -> LoadedSource:

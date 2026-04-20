@@ -1315,6 +1315,7 @@ class FilmSepsApp:
                 label_prefix=label,
                 progress=progress_cb,
                 user_palette=curated_palette,
+                auto_bg_detect=False,  # GUI already ran bg exclusion above
             )
             # Remember which source we actually used — preview + label use this
             result["_enhanced_source"] = str(source_for_drive) if source_for_drive != source else None
