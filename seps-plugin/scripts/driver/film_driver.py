@@ -200,54 +200,26 @@ def plan_layered(src: LoadedSource, cfg: DriverConfig) -> list[InkSpec]:
 def plan_flat(src: LoadedSource, cfg: DriverConfig, max_colors: int = 8) -> list[InkSpec]:
     """Build an InkSpec list from a flat image by auto-detecting colors.
 
-    The user tells us how many ink colors they want (max_colors, from the
-    dialog). We quantize to max_colors+2 so the quantizer has room to carve
-    out the garment color plus some margin, then drop the single detected
-    color closest to the garment, then keep top-max_colors by coverage.
+    Uses LAB-space K-means clustering (color_detect.detect_ink_colors) —
+    perceptually uniform, robust against anti-aliased edges, and filters
+    garment pixels out BEFORE clustering so every returned centroid is a
+    real ink.
     """
-    from utils import detect_flat_colors  # engine util
+    from color_detect import detect_ink_colors, resolve_unique_names
 
     garment_rgb = _garment_rgb(cfg.garment_color)
 
-    # Quantize to N + 2 so the garment color + one small noise cluster can
-    # be removed without losing real inks.
-    detected = detect_flat_colors(src.flat, max_colors=max_colors + 2)
+    detected = detect_ink_colors(
+        src.flat, n_colors=max_colors, garment_rgb=garment_rgb,
+    )
     if not detected:
-        raise RuntimeError("No distinct colors detected in flat image")
+        raise RuntimeError("No distinct ink colors detected in flat image")
 
-    # Drop colors that are both "near the garment" AND dominant. The garment
-    # is almost always the most-covered color in the image — so when several
-    # detected colors are near-garment (e.g. white 255,255,255 and off-white
-    # 254,255,249), drop the one with highest coverage (it's the shirt
-    # background) and keep the others (they're genuine ink highlights).
-    if len(detected) > 1:
-        near = [
-            (i, c) for i, c in enumerate(detected)
-            if _color_dist(c["rgb"], garment_rgb) < 60
-        ]
-        if near:
-            # Pick the most-covered near-garment color — that's the shirt.
-            near.sort(key=lambda p: -p[1].get("pixel_count", 0))
-            garment_idx = near[0][0]
-            detected.pop(garment_idx)
+    names = resolve_unique_names(detected)
 
-    # Sort by coverage (most dominant first), take the top N
-    detected.sort(key=lambda c: -c.get("pixel_count", 0))
-    filtered = detected[:max_colors]
-
-    if not filtered:
-        filtered = detected
-
-    # Dedupe + enrich names. When two auto-detected colors fall in the same
-    # hue bucket (e.g. three shades of orange), _suggest_color_name returns
-    # the same string for all of them, and we'd end up with ORANGE / ORANGE /
-    # ORANGE on the films — useless at the light table. Resolve collisions
-    # by appending a luminance-ordered suffix (dark / mid / light).
-    names = _resolve_color_names(filtered)
-
-    angles = assign_angles(len(filtered))
+    angles = assign_angles(len(detected))
     out: list[InkSpec] = []
-    for i, (color, name) in enumerate(zip(filtered, names), start=1):
+    for i, (color, name) in enumerate(zip(detected, names), start=1):
         purpose = "color"
         mesh = DEFAULT_MESH[cfg.ink_system]["color"]
         lpi = pick_lpi(mesh, cfg.ink_system)
