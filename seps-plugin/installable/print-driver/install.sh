@@ -17,12 +17,13 @@ mkdir -p "$config_dir"
 cat > "$config_dir/env.sh" <<EOF
 # Written by install.sh — edit if you move the driver.
 export DRIVER_DIR="$DRIVER_DIR"
+export INSTALL_DIR="$HERE"
 export PY="${PY:-/usr/bin/python3}"
 EOF
 echo "wrote $config_dir/env.sh"
 
 # ---- ensure service is executable & symlinked ---
-chmod +x "$SERVICE_SRC"
+chmod +x "$SERVICE_SRC" "$HERE/process-art.sh"
 mkdir -p "$HOME/Library/PDF Services"
 
 if [[ -L "$SERVICE_DST" || -e "$SERVICE_DST" ]]; then
@@ -31,6 +32,25 @@ if [[ -L "$SERVICE_DST" || -e "$SERVICE_DST" ]]; then
 fi
 ln -s "$SERVICE_SRC" "$SERVICE_DST"
 echo "linked $SERVICE_DST -> $SERVICE_SRC"
+
+# ---- compile the drag-and-drop .app ---
+APP_SRC="$HERE/droplet.applescript"
+APP_DST_DIR="$HOME/Applications"
+APP_DST="$APP_DST_DIR/Film Seps.app"
+
+if command -v osacompile >/dev/null 2>&1; then
+  mkdir -p "$APP_DST_DIR"
+  if [[ -e "$APP_DST" ]]; then
+    echo "removing existing $APP_DST"
+    rm -rf "$APP_DST"
+  fi
+  osacompile -o "$APP_DST" "$APP_SRC"
+  echo "built $APP_DST"
+  # Reveal in Finder so the user can drag it to the Dock
+  open -R "$APP_DST" 2>/dev/null || true
+else
+  echo "osacompile not found — skipped building 'Film Seps.app'"
+fi
 
 # ---- deps ---
 PY="${PY:-/usr/bin/python3}"
@@ -64,12 +84,16 @@ fi
 
 cat <<EOF
 
-✓ Installed. Two ways to use it:
+✓ Installed. Three ways to use it:
 
-1. From any app's Print dialog:
+1. Drag-and-drop:
+     Drop any art file onto "Film Seps.app" in ~/Applications/
+     (Drag the app to your Dock for one-click access.)
+
+2. From any app's Print dialog:
      File → Print → PDF dropdown → "Film Seps"
 
-2. From the command line:
+3. From the command line:
      $PY $DRIVER_DIR/film_driver.py <art.jpg> \\
          --print-width 12 --garment black --print
 
