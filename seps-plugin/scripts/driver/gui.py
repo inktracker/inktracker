@@ -224,13 +224,34 @@ class FilmSepsApp:
         self._bring_to_front()
 
     def _bring_to_front(self) -> None:
+        log.info("_bring_to_front: deiconify + lift + topmost")
         try:
+            # First: un-hide via AppKit, because deiconify alone doesn't reverse
+            # a Cmd-H hide. Also set the regular activation policy in case py2app
+            # initialized us as an accessory.
+            try:
+                from AppKit import (
+                    NSApplication,
+                    NSApp,
+                    NSApplicationActivationPolicyRegular,
+                )
+                app = NSApp() or NSApplication.sharedApplication()
+                app.setActivationPolicy_(NSApplicationActivationPolicyRegular)
+                app.unhide_(None)
+                app.activateIgnoringOtherApps_(True)
+                log.info("_bring_to_front: NSApp unhide + activate")
+            except Exception:
+                log.exception("NSApp activate failed")
+
+            # Then nudge Tk so the window actually appears on top
             self.root.deiconify()
+            self.root.update_idletasks()
             self.root.lift()
+            self.root.focus_force()
             self.root.attributes("-topmost", True)
-            self.root.after(100, lambda: self.root.attributes("-topmost", False))
+            self.root.after(250, lambda: self.root.attributes("-topmost", False))
         except tk.TclError:
-            pass
+            log.exception("_bring_to_front: Tcl error")
 
     # --- UI layout ---------------------------------------------------------
 
@@ -484,19 +505,31 @@ class FilmSepsApp:
             self.output_var.set(d)
 
     def _load_source(self, path: Path) -> None:
+        log.info("_load_source: entering for %s", path)
         self.source_path = path
         self.source_var.set(str(path))
         self.label_var.set(self.label_var.get() or path.stem)
         self._log(f"loaded: {path.name}")
+        log.info("_load_source: Tk vars set")
 
-        # Analyze in the main thread — it's fast
         try:
+            log.info("_load_source: analyzing…")
             self.analysis = analyze(path)
+            log.info("_load_source: analysis → mode=%s colors=%d",
+                     self.analysis.mode, self.analysis.distinct_colors)
             self._update_analysis_display()
+            log.info("_load_source: analysis display updated")
             self._show_preview(path)
-        except Exception as e:
-            messagebox.showerror("Analyze failed", str(e))
-            self._log(f"analyze error: {e}")
+            log.info("_load_source: preview rendered")
+        except Exception:
+            log.exception("_load_source: FAILED")
+            try:
+                messagebox.showerror("Analyze failed",
+                                     f"Could not load {path.name}.\n\n"
+                                     f"See ~/Library/Logs/FilmSeps.log for details.")
+            except Exception:
+                log.exception("messagebox failed too")
+            self._log(f"analyze error: see log")
 
     def _update_analysis_display(self) -> None:
         a = self.analysis
@@ -517,20 +550,28 @@ class FilmSepsApp:
         self.max_colors_var.set(str(a.suggested_color_count or 4))
 
     def _show_preview(self, path: Path) -> None:
+        log.info("_show_preview: opening thumbnail for %s", path)
         try:
             img = _load_source_thumbnail(path)
         except Exception:
+            log.exception("_show_preview: thumbnail load failed")
             return
         self.root.update_idletasks()
         cw = max(320, self.preview_canvas.winfo_width())
         ch = max(200, self.preview_canvas.winfo_height())
+        log.info("_show_preview: canvas %dx%d", cw, ch)
         thumb = img.copy()
         thumb.thumbnail((cw - 16, ch - 16), Image.LANCZOS)
-        self._preview_imgtk = ImageTk.PhotoImage(thumb)
+        try:
+            self._preview_imgtk = ImageTk.PhotoImage(thumb)
+        except Exception:
+            log.exception("_show_preview: PhotoImage failed")
+            return
         self.preview_canvas.delete("all")
         self.preview_canvas.create_image(
             cw // 2, ch // 2, image=self._preview_imgtk, anchor="center",
         )
+        log.info("_show_preview: rendered")
 
     def _on_render(self) -> None:
         if not self.source_path:
