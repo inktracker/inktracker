@@ -1,51 +1,52 @@
 -- Film Seps droplet
 --
--- Drag any art file (JPG / PNG / PSD / PDF / TIF) onto this app icon and
--- it hands the file to the process-art.sh worker, which shows the
--- width/garment/ink dialogs, renders films, pops a preview, and submits
--- to the Epson.
+-- Double-click the icon or drop a file on it — either way, the GUI
+-- (gui.py, Tkinter) opens. Dropped files get passed as argv[0] so the
+-- GUI pre-loads them on launch.
 --
--- Compiled to `Film Seps.app` by install.sh. The install dir is resolved
--- at runtime from ~/.config/biota-film-driver/env.sh so the app bundle
--- can live anywhere (Applications, Dock, Desktop).
+-- Compiled to `Film Seps.app` by install.sh. Install dir is read at
+-- runtime from ~/.config/biota-film-driver/env.sh so the app bundle
+-- can live anywhere.
+
+on run
+	my launchGUI("")
+end run
 
 on open theFiles
+	-- If several files are dropped, open one window per file.
 	repeat with aFile in theFiles
-		set filePath to POSIX path of aFile
-		set fileName to name of (info for aFile)
-		my processOne(filePath, fileName)
+		my launchGUI(POSIX path of aFile)
 	end repeat
 end open
 
-on run
-	-- Launching the app without dropping anything — pick a file instead.
-	set chosen to choose file with prompt "Pick an art file to separate and print" without invisibles
-	set filePath to POSIX path of chosen
-	set fileName to name of (info for chosen)
-	my processOne(filePath, fileName)
-end run
-
-on processOne(filePath, fileName)
+on launchGUI(filePath)
 	set envFile to (POSIX path of (path to home folder)) & ".config/biota-film-driver/env.sh"
-	set installDir to "" -- resolved from env file
+	set driverDir to ""
+	set pyBin to "/usr/bin/python3"
 	try
-		set installDir to do shell script ("source " & quoted form of envFile & " && printf '%s' \"$INSTALL_DIR\"")
+		set driverDir to do shell script ("source " & quoted form of envFile & " && printf '%s' \"$DRIVER_DIR\"")
 	end try
-	if installDir is "" then
-		set installDir to (POSIX path of (path to home folder)) & "Downloads/inktracker/seps-plugin/installable/print-driver"
+	try
+		set pyVal to do shell script ("source " & quoted form of envFile & " && printf '%s' \"$PY\"")
+		if pyVal is not "" then set pyBin to pyVal
+	end try
+	if driverDir is "" then
+		set driverDir to (POSIX path of (path to home folder)) & "Downloads/inktracker/seps-plugin/scripts/driver"
 	end if
-	set worker to installDir & "/process-art.sh"
+	set guiScript to driverDir & "/gui.py"
+
+	-- Build the shell command. When a file was dropped, pass it as the first arg.
+	set shellCmd to quoted form of pyBin & " " & quoted form of guiScript
+	if filePath is not "" then
+		set shellCmd to shellCmd & " " & quoted form of filePath
+	end if
+	-- Detach from the .app launcher so Tk can own the event loop without
+	-- blocking AppleScript / Finder.
+	set shellCmd to shellCmd & " >/dev/null 2>&1 &"
 
 	try
-		-- Run synchronously. The worker shows its own osascript dialogs for
-		-- width/garment/ink/print-confirm, so blocking here is correct —
-		-- dropping several files queues them up, one dialog flow at a time.
-		do shell script quoted form of worker & " " & quoted form of filePath & " " & quoted form of fileName
-	on error errMsg number errNum
-		if errNum is -128 then
-			-- user cancelled a dialog; not an error
-			return
-		end if
-		display alert "Film Seps" message ("Couldn't finish processing " & fileName & "." & return & return & errMsg) as critical
+		do shell script shellCmd
+	on error errMsg
+		display alert "Film Seps" message ("Couldn't launch the GUI." & return & return & errMsg) as critical
 	end try
-end processOne
+end launchGUI

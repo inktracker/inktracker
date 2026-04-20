@@ -267,6 +267,9 @@ def render_ink(
 # Top-level drive
 # ---------------------------------------------------------------------------
 
+ProgressCb = "callable(step: str, current: int, total: int) -> None"
+
+
 def drive(
     source_path: Path,
     output_dir: Path,
@@ -276,19 +279,32 @@ def drive(
     mode: str = "auto",
     max_colors: int = 8,
     label_prefix: str = "",
+    progress=None,
 ) -> dict:
     """Run the driver end-to-end on a single source.
+
+    Optional `progress(step, current, total)` callback fires at each major
+    step so a GUI can update a progress bar.
 
     Returns a dict suitable for JSON serialization:
       { success, films: [...], warnings: [...] }
     """
+    def emit(step: str, cur: int = 0, total: int = 0) -> None:
+        if progress:
+            try:
+                progress(step, cur, total)
+            except Exception:
+                pass
+
     start = time.time()
+    emit("loading source")
     src = load(source_path)
 
     # Decide mode
     if mode == "auto":
         mode = "spot-layered" if src.layers else "spot-flat"
 
+    emit(f"planning inks ({mode})")
     if mode == "spot-layered":
         if not src.layers:
             raise RuntimeError("spot-layered requires a layered source (PSD/PSB)")
@@ -316,8 +332,11 @@ def drive(
 
     films_out = []
     warnings: list[str] = []
+    total_inks = len(specs)
 
-    for spec in specs:
+    for i, spec in enumerate(specs, start=1):
+        emit(f"rendering {spec.ink} ({spec.mesh} mesh)", i, total_inks)
+
         try:
             density = _density_for_spec(spec, src)
         except Exception as e:
