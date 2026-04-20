@@ -590,6 +590,14 @@ class FilmSepsApp:
                                  values=["none", "light", "strong", "vectorize"],
                                  width=14),
                     TIPS["enhance"])
+        # Re-process source + live-preview when enhance changes
+        def _on_enhance_change(*_):
+            if self.source_path:
+                try:
+                    self._refresh_detected_palette()
+                except Exception:
+                    log.exception("enhance trace refresh failed")
+        self.enhance_var.trace_add("write", _on_enhance_change)
         row += 1
 
         # Background exclusion (canvas vs print)
@@ -600,6 +608,13 @@ class FilmSepsApp:
                                  values=["off", "auto", "alpha-only"],
                                  width=14),
                     TIPS["exclude_background"])
+        def _on_bg_change(*_):
+            if self.source_path:
+                try:
+                    self._refresh_detected_palette()
+                except Exception:
+                    log.exception("bg trace refresh failed")
+        self.exclude_bg_var.trace_add("write", _on_bg_change)
         row += 1
 
         # Max colors
@@ -833,21 +848,26 @@ class FilmSepsApp:
         self._refresh_detected_palette()
 
     def _refresh_detected_palette(self) -> None:
-        """Run color_detect on the current source at the currently-selected
-        ink count + garment + bg exclusion, and render swatches."""
+        """Apply enhance + bg exclusion to the source, then run color_detect
+        + render swatches. The processed image is what the renderer will
+        actually sep — the live preview shows it."""
         # Clear previous swatches
         for w in self.palette_frame.winfo_children():
             w.destroy()
 
-        src_img = self.edited_image
-        if src_img is None and self.source_path:
+        raw_img = self.edited_image
+        if raw_img is None and self.source_path:
             try:
-                src_img = _load_source_thumbnail(self.source_path)
+                raw_img = _load_source_thumbnail(self.source_path)
             except Exception:
                 self.palette_hint_var.set("(couldn't load source for palette)")
                 return
-        if src_img is None:
+        if raw_img is None:
             return
+
+        # Apply enhance + bg exclusion preview chain so the swatches reflect
+        # what the actual sep will see — not the raw source.
+        src_img = self._apply_preview_pipeline(raw_img)
 
         try:
             from color_detect import detect_ink_colors, resolve_unique_names
@@ -924,6 +944,43 @@ class FilmSepsApp:
             def make_toggle(idx):
                 return lambda e=None: self._toggle_palette_entry(idx)
             canvas.bind("<Button-1>", make_toggle(col))
+
+    def _apply_preview_pipeline(self, raw_img: "Image.Image") -> "Image.Image":
+        """Run the same enhance + bg-exclusion steps the renderer does so
+        the live preview reflects the actual processed source, not the raw
+        file. Operates on a thumbnail so it's fast enough for live updates."""
+        img = raw_img
+        # 1. Enhance
+        try:
+            level = self.enhance_var.get()
+            if level and level != "none":
+                from enhance import enhance as _enhance
+                garment = _garment_rgb(self.garment_var.get())
+                try:
+                    n = int(self.max_colors_var.get())
+                except ValueError:
+                    n = 4
+                res = _enhance(img, level=level, target_colors=n, garment_rgb=garment)
+                img = res.image
+        except Exception:
+            log.exception("preview enhance failed")
+
+        # 2. Background exclusion
+        try:
+            bg_mode = self.exclude_bg_var.get()
+            if (bg_mode and bg_mode != "off") or self._manual_bg_rgb:
+                from background import detect_background_mask, apply_background_mask
+                garment = _garment_rgb(self.garment_var.get())
+                bg_mask = detect_background_mask(
+                    img, garment_rgb=garment, mode=bg_mode,
+                    explicit_bg_rgb=self._manual_bg_rgb,
+                )
+                if bg_mask is not None and bg_mask.any():
+                    img = apply_background_mask(img, bg_mask, garment)
+        except Exception:
+            log.exception("preview bg exclusion failed")
+
+        return img
 
     def _refresh_live_preview(self, src_img: "Image.Image") -> None:
         """Paint the preview canvas with a live posterize simulation — each

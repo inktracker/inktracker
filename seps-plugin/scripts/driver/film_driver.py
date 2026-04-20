@@ -118,7 +118,7 @@ def _nearest_ink_masks(
     src: "LoadedSource",
     specs: list[InkSpec],
     garment_color: str,
-    max_delta_e: float = 35.0,
+    max_delta_e: float = 50.0,
 ) -> dict[str, np.ndarray]:
     """Assign each source pixel to exactly one ink (or background) in LAB.
 
@@ -215,8 +215,29 @@ def _nearest_ink_masks(
             continue
         m = (nearest_2d == i) & ~bg_2d
         m = _despeckle_mask(m, spec)
+        # Trap: dilate every color mask by 1 pixel so adjacent inks slightly
+        # overlap at boundaries. Eliminates the white shirt-color gaps you'd
+        # otherwise see at color transitions due to anti-aliased pixels being
+        # marked as background. Standard screen-printing technique — pro RIPs
+        # call this "trapping" and it's how AccuRIP/FilmMaker prevent
+        # registration-gap artifacts on press.
+        m = _trap_dilate(m, pixels=1)
         masks[spec.name] = (m.astype(np.uint8)) * 255
     return masks
+
+
+def _trap_dilate(mask: np.ndarray, pixels: int = 1) -> np.ndarray:
+    """4-neighbor binary dilation by `pixels`. Grows each True region
+    outward so adjacent ink masks overlap by `pixels` at their boundaries."""
+    out = mask.copy()
+    for _ in range(pixels):
+        d = out.copy()
+        d[1:, :] |= out[:-1, :]
+        d[:-1, :] |= out[1:, :]
+        d[:, 1:] |= out[:, :-1]
+        d[:, :-1] |= out[:, 1:]
+        out = d
+    return out
 
 
 def _despeckle_mask(mask: np.ndarray, spec: "InkSpec") -> np.ndarray:
