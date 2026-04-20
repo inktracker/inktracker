@@ -150,25 +150,56 @@ def plan_layered(src: LoadedSource, cfg: DriverConfig) -> list[InkSpec]:
 
 
 def plan_flat(src: LoadedSource, cfg: DriverConfig, max_colors: int = 8) -> list[InkSpec]:
-    """Build an InkSpec list from a flat image by auto-detecting colors."""
+    """Build an InkSpec list from a flat image by auto-detecting colors.
+
+    The user tells us how many ink colors they want (max_colors, from the
+    dialog). We quantize to max_colors+2 so the quantizer has room to carve
+    out the garment color plus some margin, then drop the single detected
+    color closest to the garment, then keep top-max_colors by coverage.
+    """
     from utils import detect_flat_colors  # engine util
 
-    detected = detect_flat_colors(src.flat, max_colors=max_colors)
+    garment_rgb = _garment_rgb(cfg.garment_color)
+
+    # Quantize to N + 2 so the garment color + one small noise cluster can
+    # be removed without losing real inks.
+    detected = detect_flat_colors(src.flat, max_colors=max_colors + 2)
     if not detected:
         raise RuntimeError("No distinct colors detected in flat image")
 
-    # Filter out the garment color — it's the background, not an ink.
-    garment_rgb = _garment_rgb(cfg.garment_color)
-    filtered = [c for c in detected if _color_dist(c["rgb"], garment_rgb) > 40]
+    # Drop colors that are both "near the garment" AND dominant. The garment
+    # is almost always the most-covered color in the image — so when several
+    # detected colors are near-garment (e.g. white 255,255,255 and off-white
+    # 254,255,249), drop the one with highest coverage (it's the shirt
+    # background) and keep the others (they're genuine ink highlights).
+    if len(detected) > 1:
+        near = [
+            (i, c) for i, c in enumerate(detected)
+            if _color_dist(c["rgb"], garment_rgb) < 60
+        ]
+        if near:
+            # Pick the most-covered near-garment color — that's the shirt.
+            near.sort(key=lambda p: -p[1].get("pixel_count", 0))
+            garment_idx = near[0][0]
+            detected.pop(garment_idx)
 
-    # If nothing survived, keep the original list (user may want all)
+    # Sort by coverage (most dominant first), take the top N
+    detected.sort(key=lambda c: -c.get("pixel_count", 0))
+    filtered = detected[:max_colors]
+
     if not filtered:
         filtered = detected
 
+    # Dedupe + enrich names. When two auto-detected colors fall in the same
+    # hue bucket (e.g. three shades of orange), _suggest_color_name returns
+    # the same string for all of them, and we'd end up with ORANGE / ORANGE /
+    # ORANGE on the films — useless at the light table. Resolve collisions
+    # by appending a luminance-ordered suffix (dark / mid / light).
+    names = _resolve_color_names(filtered)
+
     angles = assign_angles(len(filtered))
     out: list[InkSpec] = []
-    for i, color in enumerate(filtered, start=1):
-        name = color.get("suggested_name") or f"color-{i}"
+    for i, (color, name) in enumerate(zip(filtered, names), start=1):
         purpose = "color"
         mesh = DEFAULT_MESH[cfg.ink_system]["color"]
         lpi = pick_lpi(mesh, cfg.ink_system)
@@ -178,6 +209,44 @@ def plan_flat(src: LoadedSource, cfg: DriverConfig, max_colors: int = 8) -> list
             rgb=tuple(color["rgb"]),
         ))
     return out
+
+
+def _resolve_color_names(detected: list[dict]) -> list[str]:
+    """Return a list of unique, descriptive names for the detected colors.
+
+    If every detected color has a distinct suggested_name, use them as-is.
+    When two or more share the same bucket, sort those by luminance and
+    add `dark-` / `light-` / `-2` / `-3` suffixes so no two films collide.
+    """
+    raw = [(c.get("suggested_name") or f"color-{i+1}") for i, c in enumerate(detected)]
+
+    # Group indices by bucket name
+    from collections import defaultdict
+    groups: dict[str, list[int]] = defaultdict(list)
+    for i, name in enumerate(raw):
+        groups[name].append(i)
+
+    resolved = list(raw)
+    for name, indices in groups.items():
+        if len(indices) <= 1:
+            continue
+        # Sort these indices by luminance (dark → light)
+        def lum(idx: int) -> float:
+            r, g, b = detected[idx]["rgb"]
+            return 0.299 * r + 0.587 * g + 0.114 * b
+
+        ordered = sorted(indices, key=lum)
+        n = len(ordered)
+        if n == 2:
+            labels = [f"dark-{name}", f"light-{name}"]
+        elif n == 3:
+            labels = [f"dark-{name}", f"mid-{name}", f"light-{name}"]
+        else:
+            # 4+ — just number them dark→light
+            labels = [f"{name}-{k+1}" for k in range(n)]
+        for idx, label in zip(ordered, labels):
+            resolved[idx] = label
+    return resolved
 
 
 def classify_layer(name: str) -> str:

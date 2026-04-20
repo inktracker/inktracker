@@ -61,7 +61,22 @@ set inkChoice to choose from list inkList with prompt "Ink system:" default item
 if inkChoice is false then error number -128
 set inkStr to item 1 of inkChoice
 
-return widthStr & "|" & garmentStr & "|" & inkStr
+-- Spot colors (default) vs sim-process (photoreal)
+set modeList to {"spot — flat-color illustration", "sim-process — photoreal / gradients"}
+set modeChoice to choose from list modeList with prompt "Separation style:" default items {item 1 of modeList} with title "Film Seps"
+if modeChoice is false then error number -128
+if (item 1 of modeChoice) starts with "spot" then
+  set modeStr to "spot-flat"
+else
+  set modeStr to "sim-process"
+end if
+
+-- How many ink colors should the driver extract?
+set defaultColors to "3"
+if modeStr is "sim-process" then set defaultColors to "6"
+set colorsStr to text returned of (display dialog "How many ink colors?" & return & return & "(not counting the shirt — so a 3-color tiger design = 3)" default answer defaultColors with title "Film Seps")
+
+return widthStr & "|" & garmentStr & "|" & inkStr & "|" & modeStr & "|" & colorsStr
 APPLESCRIPT
 
 answer="$(osascript -e "$OSA" 2>/dev/null || true)"
@@ -72,9 +87,15 @@ fi
 width="$(echo "$answer" | awk -F'|' '{print $1}')"
 garment="$(echo "$answer" | awk -F'|' '{print $2}')"
 ink="$(echo "$answer" | awk -F'|' '{print $3}')"
+mode="$(echo "$answer" | awk -F'|' '{print $4}')"
+colors="$(echo "$answer" | awk -F'|' '{print $5}')"
 
 if ! [[ "$width" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
   osascript -e "display alert \"Film Seps\" message \"Invalid print width: $width\" as critical"
+  exit 1
+fi
+if ! [[ "$colors" =~ ^[0-9]+$ ]] || [[ "$colors" -lt 1 ]] || [[ "$colors" -gt 12 ]]; then
+  osascript -e "display alert \"Film Seps\" message \"Invalid color count: $colors (must be 1-12)\" as critical"
   exit 1
 fi
 
@@ -97,6 +118,8 @@ log="$out_root/film-driver.log"
   echo "width:   $width in"
   echo "garment: $garment"
   echo "ink:     $ink"
+  echo "mode:    $mode"
+  echo "colors:  $colors"
   echo "out:     $out_root"
   echo
 } > "$log"
@@ -108,6 +131,8 @@ if ! "$PY" "$DRIVER_DIR/film_driver.py" \
     --print-width "$width" \
     --garment "$garment" \
     --ink-system "$ink" \
+    --mode "$mode" \
+    --max-colors "$colors" \
     --label-prefix "$safe_title" \
     --preview \
     --json >> "$log" 2>&1; then

@@ -368,11 +368,16 @@ def detect_flat_colors(
 
 def _suggest_color_name(r: int, g: int, b: int) -> str:
     """Return a short, human-friendly name for an RGB color."""
-    # Easy cases
+    # Luminance-first pass — catches very dark colors (near-black, dark browns)
+    # before hue classification would lump them in with orange/red.
+    lum = 0.299 * r + 0.587 * g + 0.114 * b
     if r > 240 and g > 240 and b > 240:
         return "white"
-    if r < 30 and g < 30 and b < 30:
+    if lum < 35:
         return "black"
+    # Desaturated darks in the orange/brown hue range get called "brown"
+    # so we don't label dark tiger stripes as "orange".
+
     if abs(r - g) < 15 and abs(g - b) < 15:
         if r < 100:
             return "dark-gray"
@@ -387,6 +392,11 @@ def _suggest_color_name(r: int, g: int, b: int) -> str:
 
     if s < 0.2:
         return "gray"
+
+    # Brown = reddish-orange with low luminance; splits off from "orange"
+    if (hue_deg < 45 or hue_deg >= 345) and lum < 110:
+        return "brown"
+
     if hue_deg < 15 or hue_deg >= 345:
         return "red"
     if hue_deg < 45:
