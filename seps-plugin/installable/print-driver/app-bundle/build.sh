@@ -18,11 +18,22 @@ PY="${PY:-/usr/bin/python3}"
 echo "driver: $DRIVER_DIR"
 echo "py:     $PY"
 
-# ---- py2app ---------------------------------------------------------------
-if ! "$PY" -c "import py2app" >/dev/null 2>&1; then
-  echo "installing py2app…"
-  "$PY" -m pip install --user --quiet py2app
-fi
+# ---- py2app + pyobjc (needed for proper drag-drop handling) ---------------
+# pyobjc-core + pyobjc-framework-Cocoa let us intercept NSApp's
+# application:openFile: AppleEvent. Tk 8.5's ::tk::mac::OpenDocument is
+# unreliable on modern macOS so we go direct through AppKit.
+#
+# Pin pyobjc-framework-Cocoa to <11 so pip grabs a pre-built wheel
+# instead of trying to compile against the newer clang flags that the
+# Apple-shipped Command Line Tools don't support on 10-series macOS.
+for pkg_import in "py2app:py2app" "objc:pyobjc-core<11" "AppKit:pyobjc-framework-Cocoa<11"; do
+  mod="${pkg_import%%:*}"
+  pkg="${pkg_import##*:}"
+  if ! "$PY" -c "import $mod" >/dev/null 2>&1; then
+    echo "installing $pkg…"
+    "$PY" -m pip install --user --quiet "$pkg"
+  fi
+done
 
 # ---- stage driver modules next to launcher.py ----------------------------
 echo "staging driver modules…"

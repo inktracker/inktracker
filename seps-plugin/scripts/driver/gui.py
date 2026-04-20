@@ -10,6 +10,7 @@ to the Epson.
 
 from __future__ import annotations
 
+import logging
 import queue
 import sys
 import threading
@@ -29,10 +30,31 @@ from PIL import Image, ImageTk  # noqa: E402
 
 from analyzer import Analysis, analyze  # noqa: E402
 from film_driver import _load_source_thumbnail, drive  # noqa: E402
+import macdrop  # noqa: E402
 from preferences import DriverConfig, FILM_DPI_DEFAULT  # noqa: E402
 from preview import build_contact_sheet, open_in_preview  # noqa: E402
 from printer import PrinterConfig, PrintJob, submit_many  # noqa: E402
 from tooltip import attach as attach_tooltip  # noqa: E402
+
+
+# ---- Logging — stdout/stderr are swallowed by py2app when the app is
+# launched from the Dock, so every event goes to a rotating file the
+# user can `tail -f`.
+_LOG_DIR = Path.home() / "Library" / "Logs"
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_LOG_FILE = _LOG_DIR / "FilmSeps.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-5s  %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.FileHandler(str(_LOG_FILE), encoding="utf-8"),
+    ],
+)
+log = logging.getLogger("filmseps.gui")
+log.info("=" * 60)
+log.info("Film Seps starting — argv=%s", sys.argv)
 
 
 APP_TITLE = "Film Seps"
@@ -158,36 +180,45 @@ class FilmSepsApp:
             self._load_source(initial_source)
 
     def _register_mac_handlers(self) -> None:
-        """Wire up macOS-specific Tk events: drag-to-Dock-icon opens the file.
+        """Wire up macOS-specific drag-drop handling.
 
-        When the user drops a file on Film Seps.app (Dock icon, Finder
-        'Open With...', or launching by double-clicking a document), macOS
-        sends a `kAEOpenDocuments` AppleEvent. Tk surfaces this as the
-        `::tk::mac::OpenDocument` command — we just register a callback.
+        Primary path: pyobjc injects `application:openFile:` on NSApp's
+        existing Tk delegate class. Drops on the Dock icon and 'Open With...'
+        from Finder go through this.
 
-        Also handle 'Reopen' (Dock icon click with no file) to bring the
+        Fallback path: Tk's `::tk::mac::OpenDocument` command. Flaky on
+        Tk 8.5 but costs nothing to register in case pyobjc is missing.
+
+        Also handles 'Reopen' (Dock click with no drop) to bring the
         window forward instead of silently spawning a new process.
         """
+        ok = macdrop.install(self._on_mac_drop)
+        log.info("macdrop handler install: %s", "ok" if ok else "failed")
+
         try:
-            self.root.createcommand("::tk::mac::OpenDocument", self._on_mac_open)
-        except tk.TclError:
-            pass  # Non-macOS Tk
+            self.root.createcommand("::tk::mac::OpenDocument", self._on_mac_drop)
+            log.info("Tk OpenDocument handler registered")
+        except tk.TclError as e:
+            log.warning("Tk OpenDocument handler skipped: %s", e)
+
         try:
             self.root.createcommand("::tk::mac::ReopenApplication", self._on_mac_reopen)
         except tk.TclError:
             pass
 
-    def _on_mac_open(self, *paths: str) -> None:
-        """Drop-on-Dock handler. Opens the first file in this window; if
-        multiple files are dropped, the rest are loaded in sequence into
-        the same window (the flow is single-file anyway)."""
+    def _on_mac_drop(self, *paths: str) -> None:
+        """Receive a dropped file path from either pyobjc or Tk and load it."""
+        log.info("_on_mac_drop: %s", paths)
         for p in paths:
-            path = Path(p)
-            if not path.exists():
+            if not p:
                 continue
-            self._load_source(path)
-            self._bring_to_front()
-            break  # just take the first file
+            path = Path(str(p))
+            if not path.exists():
+                log.warning("dropped path doesn't exist: %s", path)
+                continue
+            # Hop to the Tk thread — pyobjc calls us from the AppKit thread
+            self._q.put(("open-file", str(path)))
+            break
 
     def _on_mac_reopen(self, *_args) -> None:
         self._bring_to_front()
@@ -711,6 +742,17 @@ class FilmSepsApp:
             self.status_var.set(f"✗ error: {err}")
             self._log(f"✗ {err}")
             self._log(tb)
+        elif kind == "open-file":
+            # Dropped on Dock icon or 'Open With...' from Finder.
+            # Runs on the Tk thread, so it's safe to touch widgets.
+            _, raw_path = msg
+            path = Path(raw_path)
+            log.info("handling open-file: %s (exists=%s)", path, path.exists())
+            if path.exists():
+                self._load_source(path)
+                self._bring_to_front()
+            else:
+                self._log(f"dropped file not found: {path}")
 
     # --- Misc --------------------------------------------------------------
 

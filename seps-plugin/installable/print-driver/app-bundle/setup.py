@@ -63,7 +63,7 @@ OPTIONS = {
     "argv_emulation": False,   # we handle argv ourselves
     "strip": True,
     "includes": existing,
-    "packages": ["PIL", "numpy", "psd_tools", "pypdfium2"],
+    "packages": ["PIL", "numpy", "psd_tools", "pypdfium2", "objc", "AppKit", "Foundation"],
     "iconfile": str(HERE / "FilmSeps.icns") if (HERE / "FilmSeps.icns").exists() else None,
     # Drop these — numpy pulls them in but we don't need them and they bloat the app
     "excludes": ["matplotlib", "scipy", "pandas", "tkinter.test", "unittest"],
