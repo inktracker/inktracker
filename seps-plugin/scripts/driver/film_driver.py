@@ -115,39 +115,78 @@ def _nearest_ink_masks(
     src: "LoadedSource",
     specs: list[InkSpec],
     garment_color: str,
+    max_delta_e: float = 35.0,
 ) -> dict[str, np.ndarray]:
-    """Assign each source pixel to exactly one ink (or garment background).
+    """Assign each source pixel to exactly one ink (or background) in LAB.
 
     Returns a dict: ink name → 2D uint8 mask, 255 where this ink prints,
-    0 where it doesn't. Every pixel ends up on exactly one mask or on the
-    "garment background" (no mask at all).
+    0 where it doesn't. Every pixel ends up on exactly one mask or on
+    "no ink at all".
 
-    This is how real spot-color separations work — hard assignment with no
-    overlaps. Soft ramps would mean partial ink coverage, which in spot
-    printing is wrong (spot colors are "there or not", never halftoned).
+    Two failure modes we fix here:
+
+    1. RGB-space nearest-neighbor was perceptually wrong. A dark pixel
+       (black fruit center) ended up on the CREAM film because in RGB
+       distance, cream was the closest available cluster — even though
+       perceptually "black" and "cream" are maximally different. Switching
+       to LAB delta-E gives a perceptually accurate match.
+
+    2. If a pixel is very far from ALL detected inks (ΔE > max_delta_e),
+       it means the user's palette doesn't include a cluster that matches
+       this region — they asked for too few inks. Rather than miscast
+       those pixels onto the wrong film (see bug #1 above), we leave them
+       UNINKED on every film. Operator sees a blank region where art
+       should be and knows to bump their color count.
     """
+    from color_detect import rgb_to_lab
+
     if src.flat is None:
         return {}
-    arr = np.array(src.flat.convert("RGB"), dtype=np.float32)  # (H, W, 3)
+
+    arr = np.array(src.flat.convert("RGB"), dtype=np.float32) / 255.0
     h, w = arr.shape[:2]
+    lab = rgb_to_lab(arr.reshape(-1, 3))
 
-    # Palette: each ink's target color + garment at the end as "no ink"
-    palette = [spec.rgb for spec in specs if spec.rgb is not None]
-    palette.append(_garment_rgb(garment_color))
-    pal = np.array(palette, dtype=np.float32)  # (N+1, 3)
+    # Build palette LAB — ink centroids + garment at the end
+    palette_rgb = np.array(
+        [spec.rgb for spec in specs if spec.rgb is not None]
+        + [_garment_rgb(garment_color)],
+        dtype=np.float32,
+    ) / 255.0
+    palette_lab = rgb_to_lab(palette_rgb)
 
-    # Distance from every pixel to every palette entry.
-    # pixels: (H*W, 3); diffs → (H*W, N+1)
-    pixels = arr.reshape(-1, 3)
-    diffs = pixels[:, None, :] - pal[None, :, :]
-    dists = np.sqrt((diffs ** 2).sum(axis=2))  # (H*W, N+1)
-    nearest = dists.argmin(axis=1).reshape(h, w)  # 0..N, where N = garment
+    # Per-pixel distance to every palette entry
+    diffs = lab[:, None, :] - palette_lab[None, :, :]
+    dists = np.sqrt((diffs ** 2).sum(axis=2))
+    nearest = dists.argmin(axis=1)
+    nearest_dist = dists.min(axis=1)
+
+    # Pixels too far from any ink OR assigned to garment → leave uninked
+    too_far = nearest_dist > max_delta_e
+    garment_idx = len(specs)
+    is_background = (nearest == garment_idx) | too_far
+
+    nearest_2d = nearest.reshape(h, w)
+    bg_2d = is_background.reshape(h, w)
+
+    # Report how many pixels we're dropping — high drop rates mean the
+    # user should bump their color count.
+    total_pixels = h * w
+    dropped = int(too_far.sum())
+    if total_pixels and dropped / total_pixels > 0.02:
+        import logging
+        logging.getLogger("filmseps.driver").warning(
+            "nearest-ink: dropped %d/%d pixels (%.1f%%) — too far from any ink. "
+            "Consider increasing color count; art may need an ink you didn't request.",
+            dropped, total_pixels, 100 * dropped / total_pixels,
+        )
 
     masks: dict[str, np.ndarray] = {}
     for i, spec in enumerate(specs):
         if spec.rgb is None:
             continue
-        masks[spec.name] = ((nearest == i).astype(np.uint8)) * 255
+        m = (nearest_2d == i) & ~bg_2d
+        masks[spec.name] = (m.astype(np.uint8)) * 255
     return masks
 
 
