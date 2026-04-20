@@ -1211,18 +1211,18 @@ class FilmSepsApp:
             x1 = min(iw, x0 + crop_w)
             y1 = min(ih, y0 + crop_h)
             cropped = img.crop((x0, y0, x1, y1))
+            # LANCZOS on zoom-in shows what the printed film will look like
+            # at that magnification — matches the anti-aliased render.
+            # NEAREST here would make the (now-smooth) preview look blocky.
             disp = cropped.resize(
                 (min(cw, int((x1 - x0) * scale)),
                  min(ch, int((y1 - y0) * scale))),
-                Image.NEAREST,
+                Image.LANCZOS,
             )
             offset_x = (cw - disp.size[0]) // 2
             offset_y = (ch - disp.size[1]) // 2
         else:
-            disp = img.resize(
-                (disp_w, disp_h),
-                Image.LANCZOS if scale < 1 else Image.NEAREST,
-            )
+            disp = img.resize((disp_w, disp_h), Image.LANCZOS)
             offset_x = (cw - disp_w) // 2
             offset_y = (ch - disp_h) // 2
 

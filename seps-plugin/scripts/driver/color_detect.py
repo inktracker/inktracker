@@ -446,21 +446,41 @@ def live_posterize(
     garment_rgb: tuple[int, int, int],
     max_delta_e: float = 35.0,
     downsample_to: int = 800,
+    supersample: int = 2,
 ) -> Image.Image:
     """Return an RGB image where every pixel is painted its nearest palette
     color (or garment color for bg / too-far pixels).
 
     Used for the live source-preview simulation in the GUI — shows the
     operator exactly what the pipeline will sep BEFORE they hit Render.
-    Downsamples for speed (800px long side is plenty for a preview pane).
+
+    Supersampled anti-aliasing
+    --------------------------
+    Naive approach — downsample source to display size, then do the
+    per-pixel palette assignment — produces visibly blocky boundaries.
+    Every color transition snaps to the pixel grid of the 800px preview.
+
+    Instead we do the assignment at `supersample × downsample_to` (1600px
+    by default), then LANCZOS-downscale the posterized result to the
+    display size. LANCZOS averages 2×2 blocks at color boundaries,
+    producing the smooth anti-aliased edges that match what the renderer
+    outputs on film (nearest-ink mask at 4000px → blur → upscale →
+    threshold produces the same visual result at 8640px).
+
+    Supersampling is why the preview and the final film now *look* like
+    the same image at different sizes instead of "preview is blocky,
+    film is smooth — cross your fingers."
     """
     if not palette_rgbs:
         return img.convert("RGB")
 
-    # Downsample for speed
-    thumb = img.convert("RGB").copy()
-    thumb.thumbnail((downsample_to, downsample_to), Image.LANCZOS)
-    arr = np.array(thumb, dtype=np.float32) / 255.0
+    # Work size = supersampled preview size. Clamp to source size so we
+    # don't artificially upscale a small source beyond what it has.
+    work_size = downsample_to * supersample
+    src = img.convert("RGB")
+    work = src.copy()
+    work.thumbnail((work_size, work_size), Image.LANCZOS)
+    arr = np.array(work, dtype=np.float32) / 255.0
     h, w = arr.shape[:2]
     lab = rgb_to_lab(arr.reshape(-1, 3))
 
@@ -483,7 +503,14 @@ def live_posterize(
         list(palette_rgbs) + [garment_rgb], dtype=np.uint8,
     )
     out = palette_u8[nearest].reshape(h, w, 3)
-    return Image.fromarray(out, "RGB")
+    poster = Image.fromarray(out, "RGB")
+
+    # Supersample → display size via LANCZOS. The downscale averages
+    # pixels across palette boundaries, giving us smooth anti-aliased
+    # edges that visually match the final film output.
+    if max(h, w) > downsample_to:
+        poster.thumbnail((downsample_to, downsample_to), Image.LANCZOS)
+    return poster
 
 
 def _suggest_lab_name(lab: np.ndarray) -> str:
