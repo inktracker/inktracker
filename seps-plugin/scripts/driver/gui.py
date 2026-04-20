@@ -29,7 +29,7 @@ if str(_HERE) not in sys.path:
 from PIL import Image, ImageTk  # noqa: E402
 
 from analyzer import Analysis, analyze  # noqa: E402
-from film_driver import _load_source_thumbnail, drive  # noqa: E402
+from film_driver import _garment_rgb, _load_source_thumbnail, drive  # noqa: E402
 import macdrop  # noqa: E402
 from preferences import DriverConfig, FILM_DPI_DEFAULT  # noqa: E402
 from preview import build_contact_sheet, open_in_preview  # noqa: E402
@@ -108,6 +108,21 @@ TIPS = {
         "and ET-15000 native. Recommended for anything with halftones.\n\n"
         "360 DPI — acceptable only when LPI ≤ 45 (low-detail jobs). Faster to "
         "print, uses less ink. Not recommended for fine halftones."
+    ),
+    "enhance": (
+        "Runs before separation detection. Cleans up the source art so the "
+        "sep engine has a better input — especially valuable for low-quality "
+        "JPEGs, compressed scans, or small web-sized images.\n\n"
+        "None — use source as-is. Correct for clean vector/PSD sources.\n\n"
+        "Light — 2× upscale (if source < 2000 px) + mild Gaussian denoise + "
+        "unsharp mask. Safe default for most JPEGs.\n\n"
+        "Strong — 2× upscale + heavy median filter (removes JPEG block noise) "
+        "+ unsharp mask. For heavily-compressed JPEGs, phone screenshots, or "
+        "scanned art.\n\n"
+        "Vectorize — Strong + quantize every pixel to the nearest target ink. "
+        "Produces flat-color regions that look like vector art. Best for "
+        "low-quality stock art or art that's fundamentally a clean "
+        "illustration buried under JPEG noise."
     ),
     "media_size": (
         "Physical film sheet size the driver composes each sep onto. "
@@ -451,6 +466,15 @@ class FilmSepsApp:
                     TIPS["media_size"])
         row += 1
 
+        # Enhancement (pre-processing before sep detection)
+        self.enhance_var = tk.StringVar(value="light")
+        self._field(form, row, "Enhance art",
+                    ttk.Combobox(form, textvariable=self.enhance_var, state="readonly",
+                                 values=["none", "light", "strong", "vectorize"],
+                                 width=14),
+                    TIPS["enhance"])
+        row += 1
+
         # Max colors
         self.max_colors_var = tk.StringVar(value="6")
         self._field(form, row, "Max colors",
@@ -728,22 +752,47 @@ class FilmSepsApp:
         self.status_var.set("starting…")
         self._log(f"— render start — {self.source_path.name} → {job_dir}")
 
+        enhance_level = self.enhance_var.get()
+
         t = threading.Thread(
             target=self._render_worker,
             args=(self.source_path, out_films, width, height, cfg, mode,
-                  max_colors, label, job_dir),
+                  max_colors, label, job_dir, enhance_level),
             daemon=True,
         )
         t.start()
 
     def _render_worker(self, source, out_films, width, height, cfg, mode,
-                       max_colors, label, job_dir):
+                       max_colors, label, job_dir, enhance_level="light"):
         try:
             def progress_cb(step: str, cur: int, total: int) -> None:
                 self._q.put(("progress", step, cur, total))
 
+            # --- Enhancement pass (runs before sep detection) ---
+            source_for_drive = source
+            if enhance_level and enhance_level != "none":
+                self._q.put(("progress", f"enhancing ({enhance_level})", 0, 0))
+                try:
+                    from enhance import enhance as _enhance
+                    pil = _load_source_thumbnail(source)
+                    garment = _garment_rgb(cfg.garment_color)
+                    res = _enhance(
+                        pil, level=enhance_level,
+                        target_colors=max_colors, garment_rgb=garment,
+                    )
+                    # Save enhanced source alongside the films for traceability
+                    job_dir.mkdir(parents=True, exist_ok=True)
+                    enhanced_path = job_dir / "enhanced-source.png"
+                    res.image.save(str(enhanced_path), "PNG")
+                    source_for_drive = enhanced_path
+                    log.info("enhance: %s → %dx%d (%s)",
+                             enhance_level, res.image.size[0], res.image.size[1],
+                             "; ".join(res.notes))
+                except Exception:
+                    log.exception("enhance pass failed — using raw source")
+
             result = drive(
-                source_path=source,
+                source_path=source_for_drive,
                 output_dir=out_films,
                 print_width_in=width,
                 print_height_in=height,
@@ -753,6 +802,9 @@ class FilmSepsApp:
                 label_prefix=label,
                 progress=progress_cb,
             )
+            # Remember which source we actually used — preview + label use this
+            result["_enhanced_source"] = str(source_for_drive) if source_for_drive != source else None
+            result["_enhance_level"] = enhance_level
 
             # Build the contact-sheet PNG for on-disk reference (saved next
             # to the films). The interactive per-film viewer is opened from
