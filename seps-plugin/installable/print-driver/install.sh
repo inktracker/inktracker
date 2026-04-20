@@ -33,23 +33,26 @@ fi
 ln -s "$SERVICE_SRC" "$SERVICE_DST"
 echo "linked $SERVICE_DST -> $SERVICE_SRC"
 
-# ---- compile the drag-and-drop .app ---
-APP_SRC="$HERE/droplet.applescript"
-APP_DST_DIR="$HOME/Applications"
-APP_DST="$APP_DST_DIR/Film Seps.app"
-
-if command -v osacompile >/dev/null 2>&1; then
-  mkdir -p "$APP_DST_DIR"
-  if [[ -e "$APP_DST" ]]; then
-    echo "removing existing $APP_DST"
-    rm -rf "$APP_DST"
+# ---- remove any legacy AppleScript droplet build from an earlier install ---
+for legacy in "/Applications/Film Seps.app" "$HOME/Applications/Film Seps.app"; do
+  if [[ -d "$legacy" ]]; then
+    # If it's the AppleScript droplet (small, no embedded Python), replace.
+    # We detect by looking for Contents/MacOS/applet which only droplet .apps have.
+    if [[ -f "$legacy/Contents/MacOS/applet" ]]; then
+      echo "removing legacy AppleScript droplet: $legacy"
+      rm -rf "$legacy"
+    fi
   fi
-  osacompile -o "$APP_DST" "$APP_SRC"
-  echo "built $APP_DST"
-  # Reveal in Finder so the user can drag it to the Dock
-  open -R "$APP_DST" 2>/dev/null || true
+done
+
+# ---- build the real native .app via py2app ---
+BUILD_SCRIPT="$HERE/app-bundle/build.sh"
+if [[ -x "$BUILD_SCRIPT" ]]; then
+  echo ""
+  echo "Building Film Seps.app (py2app — this takes ~1 minute)…"
+  PY="$PY" "$BUILD_SCRIPT"
 else
-  echo "osacompile not found — skipped building 'Film Seps.app'"
+  echo "$BUILD_SCRIPT not found — skipped .app build" >&2
 fi
 
 # ---- deps ---
@@ -86,9 +89,9 @@ cat <<EOF
 
 ✓ Installed. Three ways to use it:
 
-1. Drag-and-drop:
-     Drop any art file onto "Film Seps.app" in ~/Applications/
-     (Drag the app to your Dock for one-click access.)
+1. Native app — launch "Film Seps" from Launchpad or Spotlight.
+   (Find it in /Applications/ or ~/Applications/ and drag to the Dock for
+   one-click access. Drag any art file onto the icon to open it directly.)
 
 2. From any app's Print dialog:
      File → Print → PDF dropdown → "Film Seps"

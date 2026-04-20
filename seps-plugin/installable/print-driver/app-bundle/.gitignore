@@ -1,0 +1,21 @@
+# py2app build artifacts + staged driver copies
+build/
+dist/
+py2app.log
+FilmSeps.iconset/
+icon_master.png
+
+# Driver modules are copied here by build.sh at build time, then cleaned up.
+# In case cleanup fails mid-build, keep these ignored so they don't get committed.
+analyzer.py
+dotgain.py
+film_driver.py
+gui.py
+halftone.py
+layout.py
+preferences.py
+preview.py
+printer.py
+sources.py
+submit_films.py
+tooltip.py
