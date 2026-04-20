@@ -216,6 +216,9 @@ class FilmSepsApp:
         # image. The render flow uses this in preference to loading the raw
         # source from disk. Cleared on load-source.
         self.edited_image: Image.Image | None = None
+        # Detected palette for the current source. list[dict] with keys:
+        #   rgb, lab, suggested_name, fraction, enabled (bool)
+        self.detected_palette: list[dict] = []
 
         # Background-thread → main-thread message queue
         self._q: queue.Queue = queue.Queue()
@@ -436,6 +439,26 @@ class FilmSepsApp:
             "vs flat, and the driver's recommended mode. The mode dropdown "
             "on the right is pre-filled from this — you can always override."
         )
+
+        # --- Detected palette review ---
+        # Shows swatches for each detected ink. Click a swatch to toggle it on/off;
+        # off inks get excluded from the render. This is the "modify to taste"
+        # step the operator needs before committing to a render.
+        palette_hdr = ttk.Label(
+            box, text="Detected inks  (click to toggle):",
+            font=("Helvetica", 11, "bold"), foreground="#222",
+        )
+        palette_hdr.grid(row=2, column=0, sticky="w", pady=(10, 2))
+
+        self.palette_frame = ttk.Frame(box)
+        self.palette_frame.grid(row=3, column=0, sticky="ew")
+
+        self.palette_hint_var = tk.StringVar(
+            value="(palette appears after a file is loaded)"
+        )
+        ttk.Label(box, textvariable=self.palette_hint_var,
+                  foreground="#888", font=("Helvetica", 10)).grid(
+            row=4, column=0, sticky="w", pady=(4, 0))
 
     def _build_form_panel(self, parent: ttk.Frame) -> None:
         form = ttk.LabelFrame(parent, text="Job settings", padding=10)
@@ -752,6 +775,111 @@ class FilmSepsApp:
         # Pre-fill form from recommendation
         self.mode_var.set(a.mode)
         self.max_colors_var.set(str(a.suggested_color_count or 4))
+        # Re-run full color detection and populate the palette swatches
+        self._refresh_detected_palette()
+
+    def _refresh_detected_palette(self) -> None:
+        """Run color_detect on the current source at the currently-selected
+        ink count + garment + bg exclusion, and render swatches."""
+        # Clear previous swatches
+        for w in self.palette_frame.winfo_children():
+            w.destroy()
+
+        src_img = self.edited_image
+        if src_img is None and self.source_path:
+            try:
+                src_img = _load_source_thumbnail(self.source_path)
+            except Exception:
+                self.palette_hint_var.set("(couldn't load source for palette)")
+                return
+        if src_img is None:
+            return
+
+        try:
+            from color_detect import detect_ink_colors, resolve_unique_names
+            try:
+                n = int(self.max_colors_var.get())
+            except ValueError:
+                n = 4
+            garment = _garment_rgb(self.garment_var.get())
+            detected = detect_ink_colors(src_img, n_colors=n, garment_rgb=garment)
+            names = resolve_unique_names(detected)
+            for c, nm in zip(detected, names):
+                c["suggested_name"] = nm
+                c["enabled"] = True
+            self.detected_palette = detected
+        except Exception:
+            log.exception("palette detection failed")
+            self.palette_hint_var.set("(palette detection failed — see log)")
+            return
+
+        if not self.detected_palette:
+            self.palette_hint_var.set("(no inks detected)")
+            return
+
+        self._render_palette_swatches()
+        enabled = sum(1 for c in self.detected_palette if c["enabled"])
+        total = len(self.detected_palette)
+        self.palette_hint_var.set(
+            f"{enabled} of {total} inks will be sepped. "
+            f"Click a swatch to exclude it."
+        )
+
+    def _render_palette_swatches(self) -> None:
+        SWATCH_W, SWATCH_H = 78, 64
+        for col, c in enumerate(self.detected_palette):
+            r, g, b = c["rgb"]
+            hex_fg = "#fff" if (0.299 * r + 0.587 * g + 0.114 * b) < 110 else "#111"
+            hex_bg = f"#{r:02x}{g:02x}{b:02x}"
+            enabled = c["enabled"]
+
+            tile = tk.Frame(self.palette_frame, cursor="hand2")
+            tile.grid(row=0, column=col, padx=(0, 6))
+
+            canvas = tk.Canvas(
+                tile, width=SWATCH_W, height=SWATCH_H,
+                background=hex_bg if enabled else "#e0e0e0",
+                highlightthickness=2,
+                highlightbackground="#555" if enabled else "#bbb",
+            )
+            canvas.pack()
+
+            # Disabled overlay — big X through the swatch
+            if not enabled:
+                canvas.create_line(2, 2, SWATCH_W - 4, SWATCH_H - 4,
+                                    fill="#888", width=3)
+                canvas.create_line(2, SWATCH_H - 4, SWATCH_W - 4, 2,
+                                    fill="#888", width=3)
+
+            # Name + coverage text on the tile
+            canvas.create_text(
+                SWATCH_W / 2, SWATCH_H / 2 - 6,
+                text=c["suggested_name"],
+                fill=hex_fg if enabled else "#999",
+                font=("Helvetica", 10, "bold"),
+            )
+            canvas.create_text(
+                SWATCH_W / 2, SWATCH_H / 2 + 10,
+                text=f"{c['fraction'] * 100:.1f}%",
+                fill=hex_fg if enabled else "#999",
+                font=("Helvetica", 9),
+            )
+
+            # Click to toggle
+            def make_toggle(idx):
+                return lambda e=None: self._toggle_palette_entry(idx)
+            canvas.bind("<Button-1>", make_toggle(col))
+
+    def _toggle_palette_entry(self, idx: int) -> None:
+        if 0 <= idx < len(self.detected_palette):
+            self.detected_palette[idx]["enabled"] = not self.detected_palette[idx]["enabled"]
+            self._render_palette_swatches()
+            enabled = sum(1 for c in self.detected_palette if c["enabled"])
+            total = len(self.detected_palette)
+            self.palette_hint_var.set(
+                f"{enabled} of {total} inks will be sepped. "
+                f"Click a swatch to toggle."
+            )
 
     def _show_preview(self, path: Path) -> None:
         log.info("_show_preview: opening thumbnail for %s", path)
@@ -858,18 +986,31 @@ class FilmSepsApp:
         # normal file path).
         edited_snapshot = self.edited_image.copy() if self.edited_image else None
 
+        # User-curated palette: only pass through if the operator toggled
+        # anything. If all inks are still enabled (no curation), fall back
+        # to auto-detection so the driver can apply its own cluster merges.
+        curated_palette = None
+        if self.detected_palette:
+            enabled_inks = [dict(c) for c in self.detected_palette if c.get("enabled")]
+            all_enabled = all(c.get("enabled", True) for c in self.detected_palette)
+            if not all_enabled and enabled_inks:
+                curated_palette = enabled_inks
+                log.info("passing curated palette: %d enabled inks (of %d)",
+                         len(enabled_inks), len(self.detected_palette))
+
         t = threading.Thread(
             target=self._render_worker,
             args=(self.source_path, out_films, width, height, cfg, mode,
                   max_colors, label, job_dir, enhance_level, exclude_bg_mode,
-                  edited_snapshot),
+                  edited_snapshot, curated_palette),
             daemon=True,
         )
         t.start()
 
     def _render_worker(self, source, out_films, width, height, cfg, mode,
                        max_colors, label, job_dir, enhance_level="light",
-                       exclude_bg_mode="auto", edited_image=None):
+                       exclude_bg_mode="auto", edited_image=None,
+                       curated_palette=None):
         try:
             def progress_cb(step: str, cur: int, total: int) -> None:
                 self._q.put(("progress", step, cur, total))
@@ -967,6 +1108,7 @@ class FilmSepsApp:
                 max_colors=max_colors,
                 label_prefix=label,
                 progress=progress_cb,
+                user_palette=curated_palette,
             )
             # Remember which source we actually used — preview + label use this
             result["_enhanced_source"] = str(source_for_drive) if source_for_drive != source else None

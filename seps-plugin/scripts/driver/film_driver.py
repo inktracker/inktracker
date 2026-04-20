@@ -29,12 +29,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 import time
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
 import numpy as np
+
+log = logging.getLogger("filmseps.driver")
 from PIL import Image
 
 # Allow running either as `python film_driver.py ...` or as a module
@@ -161,6 +164,31 @@ def _nearest_ink_masks(
     nearest = dists.argmin(axis=1)
     nearest_dist = dists.min(axis=1)
 
+    # --- FORCE-DARK-TO-KEY ---
+    # Pro sep software: any pixel meaningfully darker than the lightest
+    # color ink belongs on the key (black) film — pen strokes, outlines,
+    # anti-aliased transitions. Skip this bias if there's no key ink in
+    # the palette or if one of the color clusters is dark itself (navy,
+    # etc.) in which case plain LAB nearest-neighbor is correct.
+    key_idx = None
+    for i, spec in enumerate(specs):
+        # Key = declared pure black OR any ink whose name is "black"
+        if spec.name == "black" or spec.rgb == (0, 0, 0):
+            key_idx = i
+            break
+    if key_idx is not None:
+        # Threshold = halfway between key L* and the LIGHTEST color ink L*.
+        # Pixels darker than the halfway point are closer to key on the
+        # lightness axis and should print on the key film.
+        key_L = palette_lab[key_idx, 0]
+        color_Ls = [palette_lab[i, 0] for i in range(len(specs)) if i != key_idx]
+        if color_Ls:
+            lightest_L = max(color_Ls)
+            halfway = (key_L + lightest_L) / 2
+            force_to_key = lab[:, 0] < halfway
+            nearest = np.where(force_to_key, key_idx, nearest)
+            nearest_dist = np.where(force_to_key, 0.0, nearest_dist)
+
     # Pixels too far from any ink OR assigned to garment → leave uninked
     too_far = nearest_dist > max_delta_e
     garment_idx = len(specs)
@@ -186,8 +214,41 @@ def _nearest_ink_masks(
         if spec.rgb is None:
             continue
         m = (nearest_2d == i) & ~bg_2d
+        m = _despeckle_mask(m, spec)
         masks[spec.name] = (m.astype(np.uint8)) * 255
     return masks
+
+
+def _despeckle_mask(mask: np.ndarray, spec: "InkSpec") -> np.ndarray:
+    """Morphological opening — remove isolated 1-2 pixel specks that
+    printers can't hold and that come from JPEG noise / anti-aliasing.
+
+    Uses a 3×3 erosion + 3×3 dilation (opening). Implemented in pure
+    numpy via 4-neighbor propagation so we don't need scipy/cv2. Applied
+    uniformly to every film; cheap on typical sizes.
+
+    We skip despeckle for the key/black film — thin pen strokes there
+    are REAL linework and shouldn't get eroded away.
+    """
+    if spec.name == "black" or spec.rgb == (0, 0, 0):
+        return mask
+
+    # Erode: pixel stays True only if all 4 neighbors are also True
+    e = mask.copy()
+    e[1:, :] &= mask[:-1, :]
+    e[:-1, :] &= mask[1:, :]
+    e[:, 1:] &= mask[:, :-1]
+    e[:, :-1] &= mask[:, 1:]
+
+    # Dilate back out: restores the shape minus any specks smaller than
+    # the structuring element
+    d = e.copy()
+    d[1:, :] |= e[:-1, :]
+    d[:-1, :] |= e[1:, :]
+    d[:, 1:] |= e[:, :-1]
+    d[:, :-1] |= e[:, 1:]
+
+    return d
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +393,42 @@ def _garment_rgb(name: str) -> tuple[int, int, int]:
     return table.get((name or "black").lower(), (20, 20, 20))
 
 
+def _is_dark_garment(name: str) -> bool:
+    """Auto-underbase trigger — compute the garment's LAB L* and return
+    True for anything below 50 (i.e. needs a white underbase to hold
+    color inks). Covers black/navy/charcoal/royal/red/brown/dark-gray.
+    """
+    rgb = _garment_rgb(name)
+    # Approximate relative luminance; cheaper than full LAB conversion
+    r, g, b = rgb
+    luma = 0.299 * r + 0.587 * g + 0.114 * b
+    return luma < 128
+
+
+def _build_underbase(masks: dict[str, np.ndarray], choke_pixels: int = 1) -> np.ndarray | None:
+    """Union of every existing color mask, then erode by `choke_pixels` so
+    white underbase doesn't peek out from under color inks at edges.
+
+    Returns a uint8 mask (0/255). The underbase prints SOLID first on press,
+    providing the opaque white base that color inks sit on top of.
+    """
+    if not masks:
+        return None
+    arrays = list(masks.values())
+    union = arrays[0] > 0
+    for a in arrays[1:]:
+        union |= a > 0
+    # Morphological erosion for the choke
+    for _ in range(choke_pixels):
+        e = union.copy()
+        e[1:, :] &= union[:-1, :]
+        e[:-1, :] &= union[1:, :]
+        e[:, 1:] &= union[:, :-1]
+        e[:, :-1] &= union[:, 1:]
+        union = e
+    return (union.astype(np.uint8)) * 255
+
+
 def _color_dist(a, b) -> float:
     return float(np.sqrt(sum((ai - bi) ** 2 for ai, bi in zip(a, b))))
 
@@ -411,6 +508,7 @@ def drive(
     max_colors: int = 8,
     label_prefix: str = "",
     progress=None,
+    user_palette: list[dict] | None = None,
 ) -> dict:
     """Run the driver end-to-end on a single source.
 
@@ -448,7 +546,13 @@ def drive(
         if src.flat is None:
             # Flatten layers to composite
             src = _flatten_layers(src)
-        specs = plan_flat(src, cfg, max_colors=max_colors)
+        if user_palette:
+            # Operator curated the palette via the GUI — use exactly their
+            # selection. Skip k-means; build specs directly from the list.
+            specs = _specs_from_user_palette(user_palette, cfg)
+            log.info("using user-curated palette: %d inks", len(specs))
+        else:
+            specs = plan_flat(src, cfg, max_colors=max_colors)
         if mode == "spot-flat":
             # True spot color — each pixel belongs to one ink (or background),
             # no halftone, no tone ramp. render_ink() below sees halftone=False
@@ -469,6 +573,32 @@ def drive(
     nearest_masks: dict[str, np.ndarray] | None = None
     if mode == "spot-flat":
         nearest_masks = _nearest_ink_masks(src, specs, cfg.garment_color)
+
+        # AUTO UNDERBASE: dark garments need a white underbase printed first
+        # so color inks (which are translucent) show up properly. Standard
+        # screen-printing technique. The underbase is the UNION of all
+        # non-garment ink masks (everywhere an ink will print), slightly
+        # choked so white doesn't peek out from under color at edges.
+        if _is_dark_garment(cfg.garment_color) and nearest_masks:
+            underbase_mask = _build_underbase(nearest_masks, choke_pixels=1)
+            if underbase_mask is not None and (underbase_mask > 0).sum() > 100:
+                ub_spec = InkSpec(
+                    index=0,
+                    name="white_underbase",
+                    ink="white underbase",
+                    mesh=DEFAULT_MESH[cfg.ink_system]["underbase"],
+                    purpose="underbase",
+                    angle_deg=0.0,
+                    lpi=0,
+                    rgb=(255, 255, 255),
+                    halftone=False,
+                )
+                specs.insert(0, ub_spec)
+                nearest_masks = {"white_underbase": underbase_mask, **nearest_masks}
+                # Renumber indices so the underbase is film 01
+                for new_i, s in enumerate(specs, start=1):
+                    s.index = new_i
+                log.info("auto-underbase: added for %s garment", cfg.garment_color)
 
     # Compute aspect & print size
     doc_w, doc_h = src.doc_size
@@ -546,6 +676,31 @@ def _density_for_spec(spec: InkSpec, src: LoadedSource) -> np.ndarray:
         if lyr.name == spec.name:
             return layer_density(lyr)
     raise RuntimeError(f"Could not resolve density source for {spec.name}")
+
+
+def _specs_from_user_palette(
+    palette: list[dict],
+    cfg: DriverConfig,
+) -> list[InkSpec]:
+    """Turn an operator-approved palette list into InkSpecs.
+
+    Skips the detection step entirely — what the user ticked in the GUI is
+    what they get on film, in the order they ticked it. Angles are assigned
+    from the shop's 30°-separation set.
+    """
+    mesh = DEFAULT_MESH[cfg.ink_system]["color"]
+    lpi = pick_lpi(mesh, cfg.ink_system)
+    angles = assign_angles(len(palette))
+    specs: list[InkSpec] = []
+    for i, entry in enumerate(palette, start=1):
+        rgb = tuple(entry["rgb"])
+        name = entry.get("suggested_name") or entry.get("name") or f"ink-{i}"
+        specs.append(InkSpec(
+            index=i, name=name, ink=name, mesh=mesh, purpose="color",
+            angle_deg=angles[i - 1] if i - 1 < len(angles) else 0.0,
+            lpi=lpi, rgb=rgb, halftone=True,
+        ))
+    return specs
 
 
 def _flatten_layers(src: LoadedSource) -> LoadedSource:
