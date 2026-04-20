@@ -79,7 +79,12 @@ fi
 # ---- py2app build ---------------------------------------------------------
 echo "running py2app (this takes a minute)…"
 cd "$HERE"
+# Nuke any previous build/dist + any existing installed .app so py2app
+# writes a fresh bundle. Incremental py2app builds can end up with a
+# partially-overwritten python313.zip that throws ZipImportError at
+# runtime ("bad local file header") on newly-added modules.
 rm -rf build dist
+rm -rf "/Applications/Film Seps.app" "$HOME/Applications/Film Seps.app"
 "$PY" setup.py py2app >"$HERE/py2app.log" 2>&1 || {
   echo "py2app failed — see $HERE/py2app.log" >&2
   tail -30 "$HERE/py2app.log" >&2 || true
