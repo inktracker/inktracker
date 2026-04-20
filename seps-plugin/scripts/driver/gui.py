@@ -36,6 +36,7 @@ from film_driver import (  # noqa: E402
 import macdrop  # noqa: E402
 from preferences import DriverConfig, FILM_DPI_DEFAULT  # noqa: E402
 from preview import build_contact_sheet, open_in_preview  # noqa: E402
+from editor import ArtEditor  # noqa: E402
 from sepviewer import SepViewer  # noqa: E402
 from printer import PrinterConfig, PrintJob, submit_many  # noqa: E402
 from tooltip import attach as attach_tooltip  # noqa: E402
@@ -211,6 +212,10 @@ class FilmSepsApp:
         self.analysis: Analysis | None = None
         self.render_result: dict | None = None
         self.output_root = DEFAULT_OUTPUT_ROOT
+        # If the operator used the Edit window, this holds the edited PIL
+        # image. The render flow uses this in preference to loading the raw
+        # source from disk. Cleared on load-source.
+        self.edited_image: Image.Image | None = None
 
         # Background-thread → main-thread message queue
         self._q: queue.Queue = queue.Queue()
@@ -386,6 +391,17 @@ class FilmSepsApp:
 
         btn = ttk.Button(bar, text="Browse…", command=self._on_pick_source)
         btn.grid(row=0, column=2, padx=(8, 0))
+
+        self.edit_btn = ttk.Button(bar, text="Edit art…",
+                                    command=self._on_edit_art,
+                                    state="disabled")
+        self.edit_btn.grid(row=0, column=3, padx=(6, 0))
+        attach_tooltip(
+            self.edit_btn,
+            "Open a quick editor to crop the art, rotate/flip, or pick and "
+            "remove/replace colors before separation. Edits stay in-memory "
+            "(the original file on disk isn't modified).",
+        )
 
     def _build_middle(self) -> None:
         mid = ttk.Frame(self.root, padding=(12, 0))
@@ -640,11 +656,63 @@ class FilmSepsApp:
         if d:
             self.output_var.set(d)
 
+    def _on_edit_art(self) -> None:
+        """Open the ArtEditor on the current source (or prior edit)."""
+        if not self.source_path:
+            return
+        try:
+            base_img = self.edited_image if self.edited_image is not None \
+                else _load_source_thumbnail(self.source_path)
+        except Exception as e:
+            messagebox.showerror("Load failed",
+                                  f"Could not load the source for editing:\n{e}")
+            return
+        ArtEditor(self.root, base_img, on_apply=self._on_edit_applied)
+
+    def _on_edit_applied(self, edited: "Image.Image") -> None:
+        """Callback from ArtEditor: store edited image + refresh previews."""
+        self.edited_image = edited
+        log.info("edit applied: %dx%d", edited.size[0], edited.size[1])
+        self._log(f"edits applied ({edited.size[0]}×{edited.size[1]})")
+        # Re-run analyzer on the edited image (temp-file path so analyze()
+        # can use its existing file-based signature)
+        try:
+            import tempfile, os
+            tmp = tempfile.NamedTemporaryFile(
+                prefix="filmseps-edited-", suffix=".png", delete=False,
+            )
+            edited.save(tmp.name, "PNG")
+            tmp.close()
+            self.analysis = analyze(Path(tmp.name))
+            self._update_analysis_display()
+            os.unlink(tmp.name)
+        except Exception:
+            log.exception("re-analyze after edit failed")
+        # Refresh preview pane to show the edited image
+        self.root.update_idletasks()
+        cw = max(320, self.preview_canvas.winfo_width())
+        ch = max(200, self.preview_canvas.winfo_height())
+        thumb = edited.copy()
+        thumb.thumbnail((cw - 16, ch - 16), Image.LANCZOS)
+        self._preview_imgtk = ImageTk.PhotoImage(thumb)
+        self.preview_canvas.delete("all")
+        self.preview_canvas.create_image(
+            cw // 2, ch // 2, image=self._preview_imgtk, anchor="center",
+        )
+        # Indicate edited state in the source field
+        self.source_var.set(f"{self.source_path}  (edited)")
+
     def _load_source(self, path: Path) -> None:
         log.info("_load_source: entering for %s", path)
         self.source_path = path
         self.source_var.set(str(path))
         self.label_var.set(self.label_var.get() or path.stem)
+        # New source — discard any lingering edits from a previous file
+        self.edited_image = None
+        try:
+            self.edit_btn.configure(state="normal")
+        except Exception:
+            pass
         self._log(f"loaded: {path.name}")
         log.info("_load_source: Tk vars set")
 
@@ -784,29 +852,48 @@ class FilmSepsApp:
         enhance_level = self.enhance_var.get()
         exclude_bg_mode = self.exclude_bg_var.get()
 
+        # If the operator edited the art in the ArtEditor, we start the
+        # pipeline from that PIL image (saved to a temp PNG so every
+        # downstream component — enhance, bg, drive — can treat it as a
+        # normal file path).
+        edited_snapshot = self.edited_image.copy() if self.edited_image else None
+
         t = threading.Thread(
             target=self._render_worker,
             args=(self.source_path, out_films, width, height, cfg, mode,
-                  max_colors, label, job_dir, enhance_level, exclude_bg_mode),
+                  max_colors, label, job_dir, enhance_level, exclude_bg_mode,
+                  edited_snapshot),
             daemon=True,
         )
         t.start()
 
     def _render_worker(self, source, out_films, width, height, cfg, mode,
                        max_colors, label, job_dir, enhance_level="light",
-                       exclude_bg_mode="auto"):
+                       exclude_bg_mode="auto", edited_image=None):
         try:
             def progress_cb(step: str, cur: int, total: int) -> None:
                 self._q.put(("progress", step, cur, total))
 
-            # --- Enhancement pass (runs before sep detection) ---
+            # If the editor was used, save the edited PIL image to the job
+            # folder and use it as the effective source. Downstream stages
+            # (enhance, bg, drive) all operate on this file going forward.
             source_for_drive = source
             working_img = None
+            if edited_image is not None:
+                job_dir.mkdir(parents=True, exist_ok=True)
+                edited_path = job_dir / "edited-source.png"
+                edited_image.save(str(edited_path), "PNG")
+                source_for_drive = edited_path
+                working_img = edited_image
+                log.info("using edited image: %s", edited_path)
             if enhance_level and enhance_level != "none":
                 self._q.put(("progress", f"enhancing ({enhance_level})", 0, 0))
                 try:
                     from enhance import enhance as _enhance
-                    pil = _load_source_thumbnail(source)
+                    # Use the edited image if the operator ran the editor,
+                    # else load the raw source from disk.
+                    pil = working_img if working_img is not None \
+                        else _load_source_thumbnail(source)
                     garment = _garment_rgb(cfg.garment_color)
                     res = _enhance(
                         pil, level=enhance_level,

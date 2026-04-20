@@ -11,6 +11,7 @@ analyzer.py
 background.py
 color_detect.py
 dotgain.py
+editor.py
 enhance.py
 film_driver.py
 gui.py
