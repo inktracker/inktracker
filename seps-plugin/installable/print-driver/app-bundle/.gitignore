@@ -13,9 +13,11 @@ film_driver.py
 gui.py
 halftone.py
 layout.py
+macdrop.py
 preferences.py
 preview.py
 printer.py
 sources.py
 submit_films.py
 tooltip.py
+utils.py

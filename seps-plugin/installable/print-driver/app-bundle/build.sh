@@ -13,20 +13,36 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 DRIVER_DIR="$(cd "$HERE/../../../scripts/driver" && pwd)"
+
+# Default PY to python.org 3.13 if nothing was passed in.
+if [[ -z "${PY:-}" ]]; then
+  for candidate in \
+    "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3" \
+    "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3" \
+    "/usr/local/bin/python3.13" \
+    "/usr/local/bin/python3.12"; do
+    if [[ -x "$candidate" ]]; then
+      PY="$candidate"
+      break
+    fi
+  done
+fi
 PY="${PY:-/usr/bin/python3}"
 
-echo "driver: $DRIVER_DIR"
-echo "py:     $PY"
+# Hard-guard: py2app MUST build against a Python with Tk 8.6 or the bundled
+# GUI will be invisible on launch. Apple's 3.9 has Tk 8.5 — refuse to build.
+if ! "$PY" -c "import tkinter; assert tkinter.TkVersion>=8.6" 2>/dev/null; then
+  echo "✗ $PY has Tk < 8.6 — the GUI will be unusable if we build with this." >&2
+  echo "  Run install.sh which detects python.org Python 3.13 for you." >&2
+  exit 1
+fi
 
-# ---- py2app + pyobjc (needed for proper drag-drop handling) ---------------
-# pyobjc-core + pyobjc-framework-Cocoa let us intercept NSApp's
-# application:openFile: AppleEvent. Tk 8.5's ::tk::mac::OpenDocument is
-# unreliable on modern macOS so we go direct through AppKit.
-#
-# Pin pyobjc-framework-Cocoa to <11 so pip grabs a pre-built wheel
-# instead of trying to compile against the newer clang flags that the
-# Apple-shipped Command Line Tools don't support on 10-series macOS.
-for pkg_import in "py2app:py2app" "objc:pyobjc-core<11" "AppKit:pyobjc-framework-Cocoa<11"; do
+echo "driver: $DRIVER_DIR"
+echo "py:     $PY ($("$PY" --version))"
+echo "tk:     $("$PY" -c 'import tkinter;print(tkinter.TkVersion)')"
+
+# ---- py2app + pyobjc (needed for drag-drop handling + .app build) ---------
+for pkg_import in "py2app:py2app" "objc:pyobjc-core" "AppKit:pyobjc-framework-Cocoa"; do
   mod="${pkg_import%%:*}"
   pkg="${pkg_import##*:}"
   if ! "$PY" -c "import $mod" >/dev/null 2>&1; then
@@ -44,6 +60,15 @@ for f in "$DRIVER_DIR"/*.py; do
   [[ "$name" == "configure_printer.py" ]] && continue
   cp "$f" "$HERE/$name"
 done
+
+# Also stage engine/utils.py — film_driver.plan_flat imports
+# detect_flat_colors from it, and without a bundle copy py2app can't resolve
+# the import (engine/ lives in a sibling folder, not on sys.path inside
+# the frozen .app).
+ENGINE_DIR="$(cd "$DRIVER_DIR/../engine" && pwd)"
+if [[ -f "$ENGINE_DIR/utils.py" ]]; then
+  cp "$ENGINE_DIR/utils.py" "$HERE/utils.py"
+fi
 
 # ---- icon -----------------------------------------------------------------
 if [[ ! -f "$HERE/FilmSeps.icns" ]]; then
@@ -91,6 +116,7 @@ for f in "$DRIVER_DIR"/*.py; do
   [[ "$name" == "configure_printer.py" ]] && continue
   rm -f "$HERE/$name"
 done
+rm -f "$HERE/utils.py"
 rm -rf "$HERE/build" "$HERE/dist" "$HERE/FilmSeps.iconset"
 
 # Register the new app with LaunchServices so it shows up immediately

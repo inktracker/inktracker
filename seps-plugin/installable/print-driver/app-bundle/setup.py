@@ -22,6 +22,9 @@ DRIVER_MODULES = [
     "film_driver", "halftone", "layout",
     "preferences", "preview", "printer",
     "sources", "dotgain", "submit_films",
+    # Copied from seps-plugin/scripts/engine/ at build time (build.sh) —
+    # film_driver imports detect_flat_colors + _suggest_color_name from it.
+    "utils",
 ]
 
 # If the driver files have been copied next to launcher.py (by build.sh),
