@@ -33,6 +33,7 @@ from film_driver import _load_source_thumbnail, drive  # noqa: E402
 import macdrop  # noqa: E402
 from preferences import DriverConfig, FILM_DPI_DEFAULT  # noqa: E402
 from preview import build_contact_sheet, open_in_preview  # noqa: E402
+from sepviewer import SepViewer  # noqa: E402
 from printer import PrinterConfig, PrintJob, submit_many  # noqa: E402
 from tooltip import attach as attach_tooltip  # noqa: E402
 
@@ -107,6 +108,17 @@ TIPS = {
         "and ET-15000 native. Recommended for anything with halftones.\n\n"
         "360 DPI — acceptable only when LPI ≤ 45 (low-detail jobs). Faster to "
         "print, uses less ink. Not recommended for fine halftones."
+    ),
+    "media_size": (
+        "Physical film sheet size the driver composes each sep onto. "
+        "Registration marks and labels land in the sheet margin; the halftoned "
+        "design is centered.\n\n"
+        "Auto — picks 8.5×11 when the design fits in a 7.5×10 usable area, "
+        "else 13×19.\n\n"
+        "8.5×11 — letter. Economical for small designs (left chest, youth, "
+        "patches). Epson auto-sheet-fed.\n\n"
+        "13×19 — super B. Required for full-front and full-back adult prints "
+        "on most designs."
     ),
     "max_colors": (
         "For sim-process or spot-flat modes: the maximum number of ink colors "
@@ -431,6 +443,14 @@ class FilmSepsApp:
                     TIPS["film_dpi"])
         row += 1
 
+        # Media size (physical sheet to print films on)
+        self.media_var = tk.StringVar(value="auto")
+        self._field(form, row, "Media size",
+                    ttk.Combobox(form, textvariable=self.media_var, state="readonly",
+                                 values=["auto", "8.5 × 11", "13 × 19"], width=14),
+                    TIPS["media_size"])
+        row += 1
+
         # Max colors
         self.max_colors_var = tk.StringVar(value="6")
         self._field(form, row, "Max colors",
@@ -683,12 +703,23 @@ class FilmSepsApp:
         job_dir = root_dir / f"{stamp}-{safe_label or 'untitled'}"
         out_films = job_dir / "films"
 
+        # Resolve media-size choice → SheetSize override (None = auto-pick)
+        media_choice = self.media_var.get()
+        sheet_override = None
+        if media_choice.startswith("8.5"):
+            from preferences import SHEET_SMALL
+            sheet_override = SHEET_SMALL
+        elif media_choice.startswith("13"):
+            from preferences import SHEET_LARGE
+            sheet_override = SHEET_LARGE
+
         cfg = DriverConfig(
             ink_system=ink,
             garment_color=garment,
             film_dpi=dpi,
             mirror=self.mirror_var.get(),
             label_prefix=label,
+            sheet_size=sheet_override,
         )
 
         self.render_btn.configure(state="disabled")
@@ -723,7 +754,9 @@ class FilmSepsApp:
                 progress=progress_cb,
             )
 
-            # Build the preview contact sheet
+            # Build the contact-sheet PNG for on-disk reference (saved next
+            # to the films). The interactive per-film viewer is opened from
+            # the Tk thread in _handle("done") below.
             if result.get("success"):
                 self._q.put(("progress", "building preview", 0, 0))
                 try:
@@ -732,8 +765,9 @@ class FilmSepsApp:
                     header = (f"{label} — {width}\" on {cfg.garment_color} "
                               f"({cfg.ink_system})")
                     build_contact_sheet(src_img, result["films"], header, preview_path)
-                    open_in_preview(preview_path)
                     result["preview_path"] = str(preview_path)
+                    result["_source_path"] = str(source)
+                    result["_header"] = header
                 except Exception as e:
                     result.setdefault("warnings", []).append(f"preview: {e}")
 
@@ -816,10 +850,12 @@ class FilmSepsApp:
                 self.progress.configure(value=self.progress["maximum"])
                 self.status_var.set(f"✓ {len(result['films'])} films rendered")
                 self._log(f"✓ {len(result['films'])} films in "
-                          f"{result['elapsed_seconds']}s — preview open")
+                          f"{result['elapsed_seconds']}s")
                 for w in result.get("warnings", []):
                     self._log(f"  warn: {w}")
                 self.print_btn.configure(state="normal")
+                # Open the interactive sep flipper on the Tk thread
+                self._open_sep_viewer(result)
             else:
                 self.status_var.set("✗ render failed")
                 self._log("✗ render failed — no films produced")
@@ -859,6 +895,28 @@ class FilmSepsApp:
                 self._log(f"dropped file not found: {path}")
 
     # --- Misc --------------------------------------------------------------
+
+    def _open_sep_viewer(self, result: dict) -> None:
+        """Open the per-film flipper window. Runs on the Tk thread."""
+        try:
+            src_path = result.get("_source_path")
+            header = result.get("_header", "Film Seps Preview")
+            if not src_path:
+                return
+            src_img = _load_source_thumbnail(Path(src_path))
+            viewer = SepViewer(
+                parent=self.root,
+                source_image=src_img,
+                films=result.get("films", []),
+                header=header,
+            )
+            # Stack it above the main window
+            viewer.lift(self.root)
+            viewer.focus_set()
+            log.info("opened SepViewer with %d slides", len(result.get('films', [])) + 1)
+        except Exception:
+            log.exception("failed to open SepViewer")
+            self._log("warn: couldn't open sep viewer — see FilmSeps.log")
 
     def _log(self, line: str) -> None:
         self.log_text.configure(state="normal")

@@ -18,10 +18,10 @@ HERE = Path(__file__).resolve().parent
 # Build-time dep: configure_printer.py (CLI) is intentionally excluded from
 # the bundle — it's a shell/install-time tool, not part of the running app.
 DRIVER_MODULES = [
-    "gui", "analyzer", "tooltip",
+    "gui", "analyzer", "tooltip", "sepviewer",
     "film_driver", "halftone", "layout",
     "preferences", "preview", "printer",
-    "sources", "dotgain", "submit_films",
+    "sources", "dotgain", "submit_films", "macdrop",
     # Copied from seps-plugin/scripts/engine/ at build time (build.sh) —
     # film_driver imports detect_flat_colors + _suggest_color_name from it.
     "utils",

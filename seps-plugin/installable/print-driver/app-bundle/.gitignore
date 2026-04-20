@@ -17,6 +17,7 @@ macdrop.py
 preferences.py
 preview.py
 printer.py
+sepviewer.py
 sources.py
 submit_films.py
 tooltip.py
