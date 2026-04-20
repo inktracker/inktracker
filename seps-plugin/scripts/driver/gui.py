@@ -82,17 +82,18 @@ TIPS = {
         "• Sim-process — photoreal mode. Auto-picks up to 8 inks and halftones "
         "each. Use for photos or art with smooth gradients."
     ),
-    "garment": (
-        "Color of the shirt. Drives underbase strategy (any dark color needs "
-        "one) and which pixels get ignored when detecting colors from a flat "
-        "image (garment color is subtracted as 'background')."
-    ),
-    "ink_system": (
-        "Waterbase — the shop default. ~5% dot gain on press; the driver "
-        "holds back midtones on film so they print correctly.\n\n"
-        "Discharge — reactive-dyed cotton only. Near-zero dot gain because "
-        "the ink activates the garment's dye instead of sitting on top. "
-        "Switch to this for dark-garment prints on 100% cotton tees."
+    "underlay": (
+        "Turn ON for dark garments (black, navy, charcoal, etc.). The driver "
+        "automatically generates a white underbase film as the first film in "
+        "the print order — a choked union of every color-fill region. This is "
+        "the standard screen-print technique for printing color inks on dark "
+        "fabric: without a white underbase, translucent color inks look muddy "
+        "on a dark substrate.\n\n"
+        "Turn OFF for white/light garments. No underbase film is generated "
+        "and pixels matching the garment are simply left uninked (shirt "
+        "shows through).\n\n"
+        "Also controls how the detector treats background: ON → garment-match "
+        "filter tuned for dark shirts; OFF → tuned for white shirts."
     ),
     "print_width": (
         "Final print width on the garment, in inches.\n\n"
@@ -505,22 +506,25 @@ class FilmSepsApp:
                     TIPS["mode"])
         row += 1
 
-        # Garment color
-        self.garment_var = tk.StringVar(value="black")
-        self._field(form, row, "Garment color",
-                    ttk.Combobox(form, textvariable=self.garment_var, state="readonly",
-                                 values=["black", "white", "navy", "charcoal",
-                                         "royal", "heather", "red", "natural"],
-                                 width=20),
-                    TIPS["garment"])
-        row += 1
-
-        # Ink system
-        self.ink_var = tk.StringVar(value="waterbase")
-        self._field(form, row, "Ink system",
-                    ttk.Combobox(form, textvariable=self.ink_var, state="readonly",
-                                 values=["waterbase", "discharge"], width=20),
-                    TIPS["ink_system"])
+        # Dark-garment / underbase checkbox — replaces the old "garment color"
+        # and "ink system" fields. When on: pipeline treats garment as black,
+        # auto-generates a white underbase film, uses waterbase ink defaults.
+        # When off: garment is white, no underbase.
+        self.garment_var = tk.StringVar(value="black")   # derived, kept for downstream code
+        self.ink_var = tk.StringVar(value="waterbase")   # fixed — shop default
+        self.underlay_var = tk.BooleanVar(value=True)
+        self._checkbox_field(form, row, "Dark garment — add white underbase",
+                              self.underlay_var, TIPS["underlay"])
+        # When toggled, update the derived garment var so analyzer + detector
+        # see the right color mask
+        def _on_underlay_toggle(*_):
+            self.garment_var.set("black" if self.underlay_var.get() else "white")
+            # Re-analyze/re-palette-detect so the swatches reflect the change
+            try:
+                self._refresh_detected_palette()
+            except Exception:
+                pass
+        self.underlay_var.trace_add("write", _on_underlay_toggle)
         row += 1
 
         # Print width
@@ -601,10 +605,9 @@ class FilmSepsApp:
 
         # Output dir
         self.output_var = tk.StringVar(value=str(DEFAULT_OUTPUT_ROOT))
-        out_label = ttk.Label(form, text="Output folder")
-        out_label.grid(row=row, column=0, sticky="w", pady=2)
-        out_q = self._qmark(form, TIPS["output_dir"])
-        out_q.grid(row=row, column=0, sticky="e", padx=(0, 4), pady=2)
+        out_label = ttk.Label(form, text="Output folder", cursor="question_arrow")
+        out_label.grid(row=row, column=0, sticky="w", pady=2, padx=(0, 8))
+        attach_tooltip(out_label, TIPS["output_dir"])
         out_row = ttk.Frame(form)
         out_row.grid(row=row, column=1, sticky="ew", pady=2)
         out_row.columnconfigure(0, weight=1)
@@ -614,30 +617,20 @@ class FilmSepsApp:
         row += 1
 
     def _field(self, parent, row: int, label: str, widget, tip: str) -> None:
-        lbl = ttk.Label(parent, text=label)
-        lbl.grid(row=row, column=0, sticky="w", pady=2)
-        q = self._qmark(parent, tip)
-        q.grid(row=row, column=0, sticky="e", padx=(0, 4), pady=2)
+        """A form field: label + widget, both wired with a hover tooltip.
+        Question-mark icons are gone — hover the label text to see the help."""
+        lbl = ttk.Label(parent, text=label, cursor="question_arrow")
+        lbl.grid(row=row, column=0, sticky="w", pady=2, padx=(0, 8))
         widget.grid(row=row, column=1, sticky="w", pady=2)
         attach_tooltip(lbl, tip)
         attach_tooltip(widget, tip)
 
     def _checkbox_field(self, parent, row: int, label: str,
                          var: tk.BooleanVar, tip: str) -> None:
-        q = self._qmark(parent, tip)
-        q.grid(row=row, column=0, sticky="e", padx=(0, 4), pady=2)
-        cb = ttk.Checkbutton(parent, text=label, variable=var)
+        cb = ttk.Checkbutton(parent, text=label, variable=var,
+                              cursor="question_arrow")
         cb.grid(row=row, column=1, sticky="w", pady=2)
         attach_tooltip(cb, tip)
-
-    def _qmark(self, parent, tip: str) -> tk.Widget:
-        """A small '?' widget with a tooltip. Uses a ttk.Label so it inherits theme."""
-        lbl = ttk.Label(
-            parent, text="?", foreground="#2d62b3", cursor="question_arrow",
-            font=("Helvetica", 11, "bold"),
-        )
-        attach_tooltip(lbl, tip)
-        return lbl
 
     def _build_bottom_bar(self) -> None:
         bot = ttk.Frame(self.root, padding=(12, 10))
