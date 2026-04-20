@@ -33,26 +33,34 @@ fi
 ln -s "$SERVICE_SRC" "$SERVICE_DST"
 echo "linked $SERVICE_DST -> $SERVICE_SRC"
 
-# ---- remove any legacy AppleScript droplet build from an earlier install ---
+# ---- remove any earlier py2app Film Seps.app (it depended on Apple's
+# system Tk, which is non-functional on current macOS). We're back on
+# the simple osascript-compiled droplet — it uses native macOS dialogs
+# + Preview.app for the sep-approval flow, so no Tk anywhere.
 for legacy in "/Applications/Film Seps.app" "$HOME/Applications/Film Seps.app"; do
   if [[ -d "$legacy" ]]; then
-    # If it's the AppleScript droplet (small, no embedded Python), replace.
-    # We detect by looking for Contents/MacOS/applet which only droplet .apps have.
-    if [[ -f "$legacy/Contents/MacOS/applet" ]]; then
-      echo "removing legacy AppleScript droplet: $legacy"
-      rm -rf "$legacy"
-    fi
+    echo "removing existing $legacy"
+    rm -rf "$legacy"
   fi
 done
 
-# ---- build the real native .app via py2app ---
-BUILD_SCRIPT="$HERE/app-bundle/build.sh"
-if [[ -x "$BUILD_SCRIPT" ]]; then
-  echo ""
-  echo "Building Film Seps.app (py2app — this takes ~1 minute)…"
-  PY="$PY" "$BUILD_SCRIPT"
+# ---- compile droplet.applescript → Film Seps.app ---
+APP_SRC="$HERE/droplet.applescript"
+if [[ -w /Applications ]]; then
+  APP_DST="/Applications/Film Seps.app"
 else
-  echo "$BUILD_SCRIPT not found — skipped .app build" >&2
+  mkdir -p "$HOME/Applications"
+  APP_DST="$HOME/Applications/Film Seps.app"
+fi
+
+if command -v osacompile >/dev/null 2>&1; then
+  osacompile -o "$APP_DST" "$APP_SRC"
+  echo "built $APP_DST"
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+    -f "$APP_DST" >/dev/null 2>&1 || true
+  open -R "$APP_DST" 2>/dev/null || true
+else
+  echo "osacompile not found — skipped .app build" >&2
 fi
 
 # ---- deps ---
@@ -63,6 +71,20 @@ for mod in PIL numpy psd_tools pypdfium2; do
     missing+=("$mod")
   fi
 done
+
+# Auto-install any missing deps so the user doesn't have to
+if (( ${#missing[@]} > 0 )); then
+  echo "installing missing deps: ${missing[*]}"
+  "$PY" -m pip install --user --quiet -r "$DRIVER_DIR/requirements.txt" || true
+  # Re-check
+  still_missing=()
+  for mod in "${missing[@]}"; do
+    if ! "$PY" -c "import $mod" 2>/dev/null; then
+      still_missing+=("$mod")
+    fi
+  done
+  missing=("${still_missing[@]}")
+fi
 
 if (( ${#missing[@]} > 0 )); then
   echo
