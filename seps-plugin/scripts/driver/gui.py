@@ -172,6 +172,27 @@ class FilmSepsApp:
         # Keep a reference to the preview thumbnail so Tk doesn't GC it
         self._preview_imgtk: ImageTk.PhotoImage | None = None
 
+        # Force a ttk theme that paints every widget explicitly.
+        # The macOS 'aqua' theme honors dark mode but renders many ttk widgets
+        # (labels, frames, combobox text) as transparent/blank inside a py2app
+        # bundle — leaves the window looking empty. 'clam' is the cross-
+        # platform default and always draws backgrounds/foregrounds.
+        try:
+            style = ttk.Style(self.root)
+            style.theme_use("clam")
+            # Tune colors so the clam theme feels native-ish on macOS.
+            style.configure(".", background="#ececec", foreground="#222")
+            style.configure("TLabel", background="#ececec")
+            style.configure("TFrame", background="#ececec")
+            style.configure("TLabelframe", background="#ececec", foreground="#222")
+            style.configure("TLabelframe.Label", background="#ececec", foreground="#222")
+            style.configure("TCheckbutton", background="#ececec")
+            style.configure("TButton", padding=(10, 4))
+            self.root.configure(background="#ececec")
+            log.info("ttk theme: clam")
+        except Exception:
+            log.exception("ttk theme switch failed")
+
         self._build_ui()
         self._drain_queue()
         self._register_mac_handlers()
