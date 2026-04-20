@@ -219,6 +219,11 @@ class FilmSepsApp:
         # Detected palette for the current source. list[dict] with keys:
         #   rgb, lab, suggested_name, fraction, enabled (bool)
         self.detected_palette: list[dict] = []
+        # Eyedropper state
+        self._eyedrop_active = False
+        self._preview_source_img: Image.Image | None = None
+        self._preview_scale: float = 1.0
+        self._preview_offset: tuple[int, int] = (0, 0)
 
         # Background-thread → main-thread message queue
         self._q: queue.Queue = queue.Queue()
@@ -427,38 +432,44 @@ class FilmSepsApp:
         )
         self.preview_canvas.grid(row=0, column=0, sticky="nsew")
 
-        self.analysis_var = tk.StringVar(value="Pick a file to begin.")
-        analysis_lbl = ttk.Label(
-            box, textvariable=self.analysis_var, justify="left",
-            wraplength=440, foreground="#333",
-        )
-        analysis_lbl.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        attach_tooltip(
-            analysis_lbl,
-            "Auto-analysis of the source: distinct color count, photoreal "
-            "vs flat, and the driver's recommended mode. The mode dropdown "
-            "on the right is pre-filled from this — you can always override."
-        )
+        # Analysis var is still used internally (mode/color-count pre-fill
+        # comes from it) but no longer displayed — removed per operator
+        # request. If we need to show it again, uncomment the label below.
+        self.analysis_var = tk.StringVar(value="")
 
         # --- Detected palette review ---
-        # Shows swatches for each detected ink. Click a swatch to toggle it on/off;
-        # off inks get excluded from the render. This is the "modify to taste"
-        # step the operator needs before committing to a render.
-        palette_hdr = ttk.Label(
-            box, text="Detected inks  (click to toggle):",
-            font=("Helvetica", 11, "bold"), foreground="#222",
+        # Shows swatches for each detected ink. Click a swatch to toggle
+        # it on/off. Click "+ Sample color" to arm the eyedropper, then
+        # click on the preview to add a sampled pixel color as a new ink.
+        hdr_row = ttk.Frame(box)
+        hdr_row.grid(row=1, column=0, sticky="ew", pady=(10, 2))
+        hdr_row.columnconfigure(1, weight=1)
+
+        ttk.Label(hdr_row, text="Detected inks:",
+                  font=("Helvetica", 11, "bold"),
+                  foreground="#222").grid(row=0, column=0, sticky="w")
+        self.eyedrop_btn = ttk.Button(
+            hdr_row, text="+ Sample color",
+            command=self._toggle_eyedropper, state="disabled",
         )
-        palette_hdr.grid(row=2, column=0, sticky="w", pady=(10, 2))
+        self.eyedrop_btn.grid(row=0, column=1, sticky="w", padx=(10, 0))
+        attach_tooltip(
+            self.eyedrop_btn,
+            "Arm the eyedropper, then click anywhere on the source preview "
+            "to sample that pixel's color and add it as a new ink. Use for "
+            "colors the auto-detect missed — e.g. a small accent that fell "
+            "below the minimum-coverage threshold."
+        )
 
         self.palette_frame = ttk.Frame(box)
-        self.palette_frame.grid(row=3, column=0, sticky="ew")
+        self.palette_frame.grid(row=2, column=0, sticky="ew")
 
         self.palette_hint_var = tk.StringVar(
             value="(palette appears after a file is loaded)"
         )
         ttk.Label(box, textvariable=self.palette_hint_var,
                   foreground="#888", font=("Helvetica", 10)).grid(
-            row=4, column=0, sticky="w", pady=(4, 0))
+            row=3, column=0, sticky="w", pady=(4, 0))
 
     def _build_form_panel(self, parent: ttk.Frame) -> None:
         form = ttk.LabelFrame(parent, text="Job settings", padding=10)
@@ -712,16 +723,7 @@ class FilmSepsApp:
         except Exception:
             log.exception("re-analyze after edit failed")
         # Refresh preview pane to show the edited image
-        self.root.update_idletasks()
-        cw = max(320, self.preview_canvas.winfo_width())
-        ch = max(200, self.preview_canvas.winfo_height())
-        thumb = edited.copy()
-        thumb.thumbnail((cw - 16, ch - 16), Image.LANCZOS)
-        self._preview_imgtk = ImageTk.PhotoImage(thumb)
-        self.preview_canvas.delete("all")
-        self.preview_canvas.create_image(
-            cw // 2, ch // 2, image=self._preview_imgtk, anchor="center",
-        )
+        self._render_preview_image(edited)
         # Indicate edited state in the source field
         self.source_var.set(f"{self.source_path}  (edited)")
 
@@ -734,6 +736,7 @@ class FilmSepsApp:
         self.edited_image = None
         try:
             self.edit_btn.configure(state="normal")
+            self.eyedrop_btn.configure(state="normal")
         except Exception:
             pass
         self._log(f"loaded: {path.name}")
@@ -881,6 +884,101 @@ class FilmSepsApp:
                 f"Click a swatch to toggle."
             )
 
+    # --- eyedropper ---------------------------------------------------------
+
+    def _toggle_eyedropper(self) -> None:
+        """Arm / disarm the eyedropper. While armed, a click on the preview
+        canvas samples that pixel's color and appends it to the palette."""
+        self._eyedrop_active = not self._eyedrop_active
+        if self._eyedrop_active:
+            self.eyedrop_btn.configure(text="Cancel sample")
+            self.preview_canvas.configure(cursor="tcross")
+            self.preview_canvas.bind("<ButtonPress-1>", self._on_preview_sample)
+            self.palette_hint_var.set(
+                "Eyedropper armed — click anywhere on the preview to add that "
+                "color as a new ink. Click Cancel sample to abort."
+            )
+        else:
+            self.eyedrop_btn.configure(text="+ Sample color")
+            self.preview_canvas.configure(cursor="")
+            self.preview_canvas.unbind("<ButtonPress-1>")
+            self._update_palette_hint()
+
+    def _on_preview_sample(self, event) -> None:
+        """Pick the pixel under the cursor, add as a new ink."""
+        if self._preview_source_img is None:
+            return
+        # Map canvas coords back to source image pixels
+        ox, oy = self._preview_offset
+        sx = (event.x - ox) / max(self._preview_scale, 1e-6)
+        sy = (event.y - oy) / max(self._preview_scale, 1e-6)
+        iw, ih = self._preview_source_img.size
+        if sx < 0 or sy < 0 or sx >= iw or sy >= ih:
+            self.palette_hint_var.set("Clicked outside the image — try again.")
+            return
+        try:
+            px = self._preview_source_img.getpixel((int(sx), int(sy)))
+            if isinstance(px, int):
+                px = (px, px, px)
+            rgb = tuple(int(v) for v in px[:3])
+        except Exception:
+            log.exception("sample pixel failed")
+            self._toggle_eyedropper()
+            return
+
+        # Avoid adding a near-duplicate of an existing ink
+        from color_detect import rgb_to_lab, _suggest_lab_name
+        import numpy as _np
+        sampled_lab = rgb_to_lab(
+            _np.array([rgb], dtype=_np.float32) / 255.0
+        ).reshape(3)
+        for existing in self.detected_palette:
+            ex_lab = _np.array(existing["lab"], dtype=_np.float32)
+            if _np.linalg.norm(ex_lab - sampled_lab) < 8:
+                self.palette_hint_var.set(
+                    f"RGB {rgb} is ~the same ink as "
+                    f"'{existing['suggested_name']}' already in the palette."
+                )
+                self._toggle_eyedropper()
+                return
+
+        name = _suggest_lab_name(sampled_lab)
+        # Avoid name collision with existing entries
+        existing_names = {e["suggested_name"] for e in self.detected_palette}
+        if name in existing_names:
+            n = 2
+            while f"{name}-{n}" in existing_names:
+                n += 1
+            name = f"{name}-{n}"
+
+        self.detected_palette.append({
+            "rgb": rgb,
+            "lab": tuple(float(v) for v in sampled_lab),
+            "pixel_count": 0,
+            "fraction": 0.0,
+            "suggested_name": name,
+            "enabled": True,
+            "sampled": True,  # marker: user-added, not auto-detected
+        })
+        log.info("eyedropper: added %s %s (sampled at source %d,%d)",
+                 name, rgb, int(sx), int(sy))
+        self._render_palette_swatches()
+        self.palette_hint_var.set(
+            f"Added '{name}' (RGB {rgb}) from sample at ({int(sx)}, {int(sy)})."
+        )
+        self._toggle_eyedropper()
+
+    def _update_palette_hint(self) -> None:
+        if not self.detected_palette:
+            self.palette_hint_var.set("(no inks detected)")
+            return
+        enabled = sum(1 for c in self.detected_palette if c["enabled"])
+        total = len(self.detected_palette)
+        self.palette_hint_var.set(
+            f"{enabled} of {total} inks will be sepped. "
+            "Click a swatch to toggle; + Sample color adds one manually."
+        )
+
     def _show_preview(self, path: Path) -> None:
         log.info("_show_preview: opening thumbnail for %s", path)
         try:
@@ -888,22 +986,41 @@ class FilmSepsApp:
         except Exception:
             log.exception("_show_preview: thumbnail load failed")
             return
+        self._render_preview_image(img)
+
+    def _render_preview_image(self, img: "Image.Image") -> None:
+        """Draw `img` into the preview canvas and track scale + offset so
+        eyedropper clicks can map canvas coords back to source pixels."""
         self.root.update_idletasks()
         cw = max(320, self.preview_canvas.winfo_width())
         ch = max(200, self.preview_canvas.winfo_height())
-        log.info("_show_preview: canvas %dx%d", cw, ch)
-        thumb = img.copy()
-        thumb.thumbnail((cw - 16, ch - 16), Image.LANCZOS)
+        iw, ih = img.size
+        scale = min((cw - 16) / iw, (ch - 16) / ih, 1.0)
+        disp_w = max(1, int(iw * scale))
+        disp_h = max(1, int(ih * scale))
+        offset_x = (cw - disp_w) // 2
+        offset_y = (ch - disp_h) // 2
+
+        thumb = img.resize((disp_w, disp_h),
+                            Image.LANCZOS if scale < 1 else Image.NEAREST)
         try:
             self._preview_imgtk = ImageTk.PhotoImage(thumb)
         except Exception:
             log.exception("_show_preview: PhotoImage failed")
             return
+
         self.preview_canvas.delete("all")
         self.preview_canvas.create_image(
-            cw // 2, ch // 2, image=self._preview_imgtk, anchor="center",
+            offset_x + disp_w // 2, offset_y + disp_h // 2,
+            image=self._preview_imgtk, anchor="center",
         )
-        log.info("_show_preview: rendered")
+
+        # Remember what's on screen — eyedropper sampling needs this
+        self._preview_source_img = img
+        self._preview_scale = scale
+        self._preview_offset = (offset_x, offset_y)
+        log.info("_show_preview: rendered scale=%.3f offset=(%d,%d)",
+                 scale, offset_x, offset_y)
 
     def _on_render(self) -> None:
         if not self.source_path:
@@ -986,17 +1103,22 @@ class FilmSepsApp:
         # normal file path).
         edited_snapshot = self.edited_image.copy() if self.edited_image else None
 
-        # User-curated palette: only pass through if the operator toggled
-        # anything. If all inks are still enabled (no curation), fall back
-        # to auto-detection so the driver can apply its own cluster merges.
+        # User-curated palette: only pass through if the operator either
+        # toggled a swatch off OR sampled a color with the eyedropper. If
+        # the palette is untouched auto-detect output, let the driver do
+        # its own fresh detection (so cluster merges etc. still apply).
         curated_palette = None
         if self.detected_palette:
             enabled_inks = [dict(c) for c in self.detected_palette if c.get("enabled")]
-            all_enabled = all(c.get("enabled", True) for c in self.detected_palette)
-            if not all_enabled and enabled_inks:
+            any_disabled = any(not c.get("enabled", True) for c in self.detected_palette)
+            any_sampled = any(c.get("sampled") for c in self.detected_palette)
+            if (any_disabled or any_sampled) and enabled_inks:
                 curated_palette = enabled_inks
-                log.info("passing curated palette: %d enabled inks (of %d)",
-                         len(enabled_inks), len(self.detected_palette))
+                log.info("curated palette: %d enabled inks "
+                         "(%d sampled, %d disabled)",
+                         len(enabled_inks),
+                         sum(1 for c in self.detected_palette if c.get("sampled")),
+                         sum(1 for c in self.detected_palette if not c.get("enabled", True)))
 
         t = threading.Thread(
             target=self._render_worker,
