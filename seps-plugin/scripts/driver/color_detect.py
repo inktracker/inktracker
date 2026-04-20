@@ -141,13 +141,89 @@ def _kmeans(data: np.ndarray, k: int, iters: int = 25, seed: int = 42) -> tuple:
 # Main detector
 # ---------------------------------------------------------------------------
 
+MERGE_DELTA_E = 15.0
+"""Two LAB centroids closer than this Euclidean distance are treated as the
+same ink and collapsed into one after K-means. Prevents the detector from
+returning near-duplicate clusters (e.g. "dark-orange" + "dark-orange") when
+the user asks for more colors than the art actually has.
+
+15 in LAB is the threshold for "visually similar but noticeably different."
+For spot-color work that's right — if two inks look this close to the eye,
+they'd mix on press anyway and a printer would combine them.
+"""
+
+# Also drop clusters that end up with < this fraction of ink pixels —
+# they're usually anti-aliased edge transitions, not real inks, and
+# render as near-empty films full of only outline artifacts.
+MIN_CLUSTER_FRACTION = 0.02
+
+
+def _merge_near_duplicates(
+    centers_lab: np.ndarray,
+    labels: np.ndarray,
+    delta_e: float = MERGE_DELTA_E,
+) -> tuple[np.ndarray, np.ndarray, int]:
+    """Fold near-duplicate cluster centers into one.
+
+    For each pair of centers within `delta_e` in LAB, we merge the smaller
+    cluster into the larger one. Returns (new_centers, new_labels, n_dropped).
+    """
+    k = len(centers_lab)
+    if k <= 1:
+        return centers_lab, labels, 0
+
+    # Cluster sizes
+    sizes = np.bincount(labels, minlength=k)
+
+    # Union-find: each center starts in its own group
+    parent = list(range(k))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra == rb:
+            return
+        # Always keep the larger cluster as the survivor
+        if sizes[ra] >= sizes[rb]:
+            parent[rb] = ra
+        else:
+            parent[ra] = rb
+
+    # Pairwise distances between centers
+    for i in range(k):
+        for j in range(i + 1, k):
+            d = float(np.sqrt(((centers_lab[i] - centers_lab[j]) ** 2).sum()))
+            if d < delta_e:
+                union(i, j)
+
+    # Build remap old_label → new_label in survivor order
+    root_of = [find(i) for i in range(k)]
+    unique_roots = sorted(set(root_of), key=lambda r: -sizes[r])  # biggest first
+    remap = {r: new_i for new_i, r in enumerate(unique_roots)}
+
+    new_labels = np.array([remap[root_of[l]] for l in labels], dtype=np.int32)
+    new_centers = np.empty((len(unique_roots), centers_lab.shape[1]),
+                           dtype=centers_lab.dtype)
+    for new_i, root in enumerate(unique_roots):
+        members = np.array([j for j in range(k) if root_of[j] == root])
+        # Weighted centroid — sizes serve as pixel weights
+        weights = sizes[members].astype(np.float32)
+        new_centers[new_i] = (centers_lab[members] * weights[:, None]).sum(axis=0) / weights.sum()
+    return new_centers, new_labels, k - len(unique_roots)
+
+
 def detect_ink_colors(
     img: Image.Image,
     n_colors: int,
     garment_rgb: tuple[int, int, int],
     downsample_to: int = 400,
     garment_delta_e: float = 15.0,
-    min_fraction: float = 0.003,
+    min_fraction: float = MIN_CLUSTER_FRACTION,
 ) -> list[dict]:
     """Detect `n_colors` ink colors in `img` using LAB K-means.
 
@@ -188,6 +264,17 @@ def detect_ink_colors(
     # --- K-means ---
     k = max(1, min(n_colors, len(ink_lab)))
     centers_lab, labels = _kmeans(ink_lab, k=k)
+
+    # --- collapse near-duplicate clusters ---
+    # If the user asked for more colors than the art actually has, k-means
+    # will split a single ink into several nearly-identical centroids, and
+    # nearest-neighbor assignment later will give some films ONLY the
+    # anti-aliased edge pixels between them (looks like "just outlines" on
+    # the preview). Merge anything within ΔE < 10 first.
+    centers_lab, labels, merged = _merge_near_duplicates(centers_lab, labels)
+    if merged:
+        log.info("detect_ink_colors: merged %d near-duplicate cluster(s) "
+                 "(requested %d, returning %d)", merged, n_colors, len(centers_lab))
 
     # --- build results ---
     total_ink = len(ink_lab)
@@ -347,8 +434,10 @@ def resolve_unique_names(detected: list[dict]) -> list[str]:
     """Given the LAB-named detections, emit a list of unique names per film.
 
     If two detections still collide (rare — LAB naming is pretty granular),
-    we disambiguate by lightness rank: ORDER-RAW-1 becomes dark-ORANGE,
-    the middle one stays ORANGE, the lightest becomes light-ORANGE.
+    we disambiguate by lightness rank. For single-word names (e.g. "orange")
+    we prepend dark-/mid-/light-. For names that ALREADY carry a qualifier
+    (e.g. "dark-orange", "light-blue"), we append numeric suffixes instead
+    of doubling up into "dark-dark-orange".
     """
     from collections import defaultdict
 
@@ -364,12 +453,16 @@ def resolve_unique_names(detected: list[dict]) -> list[str]:
         # Sort these collisions by LAB L* (dark → light)
         ordered = sorted(indices, key=lambda idx: detected[idx]["lab"][0])
         n = len(ordered)
-        if n == 2:
-            labels = [f"dark-{name}", f"light-{name}"]
+        already_qualified = "-" in name
+        if already_qualified:
+            # Don't double up "dark-"/"light-"/"mid-" prefixes. Numeric.
+            new_labels = [f"{name}-{k+1}" for k in range(n)]
+        elif n == 2:
+            new_labels = [f"dark-{name}", f"light-{name}"]
         elif n == 3:
-            labels = [f"dark-{name}", f"mid-{name}", f"light-{name}"]
+            new_labels = [f"dark-{name}", f"mid-{name}", f"light-{name}"]
         else:
-            labels = [f"{name}-{k+1}" for k in range(n)]
-        for idx, label in zip(ordered, labels):
+            new_labels = [f"{name}-{k+1}" for k in range(n)]
+        for idx, label in zip(ordered, new_labels):
             resolved[idx] = label
     return resolved
