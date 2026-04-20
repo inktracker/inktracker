@@ -141,21 +141,25 @@ def _kmeans(data: np.ndarray, k: int, iters: int = 25, seed: int = 42) -> tuple:
 # Main detector
 # ---------------------------------------------------------------------------
 
-MERGE_DELTA_E = 15.0
+MERGE_DELTA_E = 12.0
 """Two LAB centroids closer than this Euclidean distance are treated as the
-same ink and collapsed into one after K-means. Prevents the detector from
-returning near-duplicate clusters (e.g. "dark-orange" + "dark-orange") when
-the user asks for more colors than the art actually has.
-
-15 in LAB is the threshold for "visually similar but noticeably different."
-For spot-color work that's right — if two inks look this close to the eye,
-they'd mix on press anyway and a printer would combine them.
+same ink and collapsed into one after K-means. 12 is the "visually similar
+but distinct enough to be separate inks on press" threshold — loose enough
+to merge two near-duplicate oranges, tight enough to preserve green vs olive
+or dark-orange vs brown. Was 15; lowered because real-world art kept having
+distinct accent colors (green + olive; dark-orange + brown) get collapsed.
 """
 
 # Also drop clusters that end up with < this fraction of ink pixels —
 # they're usually anti-aliased edge transitions, not real inks, and
 # render as near-empty films full of only outline artifacts.
-MIN_CLUSTER_FRACTION = 0.02
+#
+# 0.5% is aggressive enough to catch real edge-only phantom clusters
+# (when they slip past the edge pre-filter) but lenient enough to preserve
+# small obvious accent inks — a green badge, a dark-orange logo element —
+# that might only cover 2-4% of the image. Was 2% and that was eating
+# real inks the operator could plainly see.
+MIN_CLUSTER_FRACTION = 0.005
 
 
 # Any pixel with LAB L* below this is treated as potential "key/black ink"
@@ -270,7 +274,13 @@ def detect_ink_colors(
     gx = np.abs(np.diff(L, axis=1, prepend=L[:, :1]))
     gy = np.abs(np.diff(L, axis=0, prepend=L[:1, :]))
     edge_mag = gx + gy
-    is_edge = edge_mag.reshape(-1) > 5.0  # LAB L units; >5 = transition
+    # Edge threshold in LAB-L units. Pixels where neighbor lightness differs
+    # by more than this are treated as transitions (excluded from anchoring
+    # clusters). Was 5; that was too aggressive — small detail regions lost
+    # most of their pixels to the edge filter and never formed a cluster.
+    # 10 still catches genuine solid-to-solid transitions while preserving
+    # most of a small-accent region's interior for clustering.
+    is_edge = edge_mag.reshape(-1) > 10.0
     n_edges = int(is_edge.sum())
 
     # --- drop garment pixels (background) ---
@@ -312,15 +322,41 @@ def detect_ink_colors(
                     len(color_lab))
 
     # --- K-means on the color pool ---
-    n_color_slots = n_colors - 1 if reserve_key else n_colors
-    n_color_slots = max(1, min(n_color_slots, len(color_lab)))
-    centers_lab, labels = _kmeans(color_lab, k=n_color_slots)
+    # OVER-CLUSTER first, then consolidate. Running K-means with exactly
+    # n_color_slots makes small-but-distinct colors (a 3%-coverage green
+    # badge amid a dominant white + black + cream palette) lose their slot
+    # to dominant-color variance. Starting with n_slots + 2 gives k-means
+    # headroom to find small accents; the merge step below collapses any
+    # near-duplicates, and a final top-N prune trims to the requested count.
+    n_target = n_colors - 1 if reserve_key else n_colors
+    n_target = max(1, min(n_target, len(color_lab)))
+    n_initial = min(len(color_lab), n_target + 2)
+    centers_lab, labels = _kmeans(color_lab, k=n_initial)
 
     # --- collapse near-duplicate color clusters ---
     centers_lab, labels, merged = _merge_near_duplicates(centers_lab, labels)
     if merged:
         log.info("detect_ink_colors: merged %d near-duplicate color cluster(s)",
                  merged)
+
+    # --- if we still have more than the user asked for, keep top N by
+    # coverage but NEVER merge two legitimately distinct clusters just to
+    # hit a target. The user can always bump n_colors in the form if the
+    # art genuinely needs more.
+    if len(centers_lab) > n_target:
+        sizes = np.bincount(labels, minlength=len(centers_lab))
+        keep = np.argsort(-sizes)[:n_target]
+        keep_set = set(int(k) for k in keep)
+        # Remap retained clusters to 0..k-1; anything else → -1 (dropped)
+        remap = {old: new for new, old in enumerate(sorted(keep))}
+        new_labels = np.array(
+            [remap.get(int(l), -1) for l in labels], dtype=np.int32,
+        )
+        new_centers = np.stack([centers_lab[i] for i in sorted(keep)])
+        log.info("detect_ink_colors: kept top %d of %d clusters by coverage",
+                 n_target, len(centers_lab))
+        centers_lab = new_centers
+        labels = new_labels
 
     # --- build color cluster results ---
     total_ink = int(is_ink_candidate.sum())
