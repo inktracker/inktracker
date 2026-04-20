@@ -582,6 +582,15 @@ class FilmSepsApp:
                     ttk.Spinbox(form, from_=1, to=8, textvariable=self.max_colors_var,
                                 width=5, state="readonly"),
                     TIPS["max_colors"])
+        # Re-detect palette + refresh live preview when the operator bumps
+        # the color count
+        def _on_max_colors_change(*_):
+            if self.source_path:
+                try:
+                    self._refresh_detected_palette()
+                except Exception:
+                    log.exception("max-colors refresh failed")
+        self.max_colors_var.trace_add("write", _on_max_colors_change)
         row += 1
 
         # Job label
@@ -834,6 +843,7 @@ class FilmSepsApp:
             return
 
         self._render_palette_swatches()
+        self._refresh_live_preview(src_img)
         enabled = sum(1 for c in self.detected_palette if c["enabled"])
         total = len(self.detected_palette)
         self.palette_hint_var.set(
@@ -886,10 +896,38 @@ class FilmSepsApp:
                 return lambda e=None: self._toggle_palette_entry(idx)
             canvas.bind("<Button-1>", make_toggle(col))
 
+    def _refresh_live_preview(self, src_img: "Image.Image") -> None:
+        """Paint the preview canvas with a live posterize simulation — each
+        pixel mapped to its nearest enabled palette color, bg pixels shown
+        as garment color. Updates whenever the palette / garment / enabled
+        inks change so the operator sees the sep plan immediately."""
+        try:
+            from color_detect import live_posterize
+            enabled_rgbs = [
+                tuple(c["rgb"]) for c in self.detected_palette
+                if c.get("enabled")
+            ]
+            if not enabled_rgbs:
+                # No enabled inks — just show the raw source
+                self._render_preview_image(src_img)
+                return
+            garment = _garment_rgb(self.garment_var.get())
+            sim = live_posterize(src_img, enabled_rgbs, garment)
+            self._render_preview_image(sim)
+        except Exception:
+            log.exception("live preview failed — falling back to raw source")
+            self._render_preview_image(src_img)
+
     def _toggle_palette_entry(self, idx: int) -> None:
         if 0 <= idx < len(self.detected_palette):
             self.detected_palette[idx]["enabled"] = not self.detected_palette[idx]["enabled"]
             self._render_palette_swatches()
+            # Live preview should reflect the new palette immediately
+            src = self.edited_image if self.edited_image is not None \
+                else (_load_source_thumbnail(self.source_path)
+                      if self.source_path else None)
+            if src is not None:
+                self._refresh_live_preview(src)
             enabled = sum(1 for c in self.detected_palette if c["enabled"])
             total = len(self.detected_palette)
             self.palette_hint_var.set(

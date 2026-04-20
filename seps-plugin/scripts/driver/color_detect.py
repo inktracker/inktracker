@@ -440,6 +440,52 @@ def detect_ink_colors(
 # lower chroma), "navy" from "royal blue" (same hue, different lightness),
 # etc.
 
+def live_posterize(
+    img: Image.Image,
+    palette_rgbs: list[tuple[int, int, int]],
+    garment_rgb: tuple[int, int, int],
+    max_delta_e: float = 35.0,
+    downsample_to: int = 800,
+) -> Image.Image:
+    """Return an RGB image where every pixel is painted its nearest palette
+    color (or garment color for bg / too-far pixels).
+
+    Used for the live source-preview simulation in the GUI — shows the
+    operator exactly what the pipeline will sep BEFORE they hit Render.
+    Downsamples for speed (800px long side is plenty for a preview pane).
+    """
+    if not palette_rgbs:
+        return img.convert("RGB")
+
+    # Downsample for speed
+    thumb = img.convert("RGB").copy()
+    thumb.thumbnail((downsample_to, downsample_to), Image.LANCZOS)
+    arr = np.array(thumb, dtype=np.float32) / 255.0
+    h, w = arr.shape[:2]
+    lab = rgb_to_lab(arr.reshape(-1, 3))
+
+    palette_arr = np.array(
+        list(palette_rgbs) + [garment_rgb], dtype=np.float32,
+    ) / 255.0
+    palette_lab = rgb_to_lab(palette_arr)
+
+    diffs = lab[:, None, :] - palette_lab[None, :, :]
+    dists = np.sqrt((diffs ** 2).sum(axis=2))
+    nearest = dists.argmin(axis=1)
+    nearest_dist = dists.min(axis=1)
+
+    # Pixels too far from ANY palette entry → show as garment (bg)
+    garment_idx = len(palette_rgbs)
+    too_far = nearest_dist > max_delta_e
+    nearest = np.where(too_far, garment_idx, nearest)
+
+    palette_u8 = np.array(
+        list(palette_rgbs) + [garment_rgb], dtype=np.uint8,
+    )
+    out = palette_u8[nearest].reshape(h, w, 3)
+    return Image.fromarray(out, "RGB")
+
+
 def _suggest_lab_name(lab: np.ndarray) -> str:
     """Map a LAB centroid to a human-friendly ink name.
 
