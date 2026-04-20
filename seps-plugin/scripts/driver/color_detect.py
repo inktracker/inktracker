@@ -239,6 +239,7 @@ def detect_ink_colors(
     thumb.thumbnail((downsample_to, downsample_to), Image.LANCZOS)
     rgb = np.array(thumb, dtype=np.float32) / 255.0
     pixels = rgb.reshape(-1, 3)
+    h, w = rgb.shape[:2]
 
     # --- RGB → LAB ---
     lab = rgb_to_lab(pixels)
@@ -246,20 +247,39 @@ def detect_ink_colors(
         np.array(garment_rgb, dtype=np.float32).reshape(1, 3) / 255.0
     ).reshape(3)
 
+    # --- edge mask: exclude anti-aliased transitions from clustering ---
+    # Transition pixels between two real colors form a midtone "cluster"
+    # that K-means mistakes for a real ink. Film shows up as pure outlines.
+    # Compute an edge mask on the LAB L-channel — any pixel with a
+    # significant gradient is an edge — and drop those from the k-means
+    # input. They still get assigned during mask-building later, naturally
+    # falling to whichever side of the edge they're on.
+    L = lab[:, 0].reshape(h, w)
+    gx = np.abs(np.diff(L, axis=1, prepend=L[:, :1]))
+    gy = np.abs(np.diff(L, axis=0, prepend=L[:1, :]))
+    edge_mag = gx + gy
+    is_edge = edge_mag.reshape(-1) > 5.0  # LAB L units; >5 = transition
+    n_edges = int(is_edge.sum())
+
     # --- drop garment pixels (background) ---
     dist_to_garment = np.sqrt(((lab - garment_lab) ** 2).sum(axis=1))
-    is_ink_pixel = dist_to_garment > garment_delta_e
+    is_ink_pixel = (dist_to_garment > garment_delta_e) & ~is_edge
     ink_lab = lab[is_ink_pixel]
     log.info(
-        "detect_ink_colors: %d/%d pixels are ink (garment Δe > %.1f)",
-        int(is_ink_pixel.sum()), len(pixels), garment_delta_e,
+        "detect_ink_colors: %d ink pixels / %d total (%d edge, %d garment)",
+        int(is_ink_pixel.sum()), len(pixels),
+        n_edges, int((dist_to_garment <= garment_delta_e).sum()),
     )
 
     if len(ink_lab) < 50:
         # Too few ink pixels — probably the garment color is wrong. Fall
-        # back to clustering all pixels (user can re-detect if needed).
-        ink_lab = lab
-        log.warning("detect_ink_colors: <50 ink pixels found — clustering all")
+        # back to clustering all non-edge pixels.
+        ink_lab = lab[~is_edge]
+        log.warning("detect_ink_colors: <50 ink pixels — clustering all non-edge")
+        if len(ink_lab) < 50:
+            # Still too few — cluster everything
+            ink_lab = lab
+            log.warning("detect_ink_colors: clustering all pixels including edges")
 
     # --- K-means ---
     k = max(1, min(n_colors, len(ink_lab)))
