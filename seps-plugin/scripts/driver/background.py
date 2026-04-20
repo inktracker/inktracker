@@ -115,19 +115,30 @@ def detect_background_mask(
         )
     else:
         canvas_color = corners_arr.mean(axis=0).astype(np.int16)
-        diff = np.abs(arr - canvas_color).sum(axis=2)
-        close = diff < color_tolerance * 3  # tolerance is per-channel; sum is 3x
 
-        # Keep only the regions of `close` that are connected to the image
-        # border. A white patch in the center (e.g. white eye in a design)
-        # should stay as ink, not get excluded as bg.
-        border_connected = _keep_border_connected(close)
-        mask |= border_connected
-        log.info(
-            "background: canvas color %s, flood-filled %d/%d pixels",
-            tuple(int(x) for x in canvas_color),
-            int(border_connected.sum()), border_connected.size,
-        )
+        # NEUTRAL-ONLY GUARD: real-world canvases are paper (white / cream /
+        # off-white), photo backdrops (gray / black), or scanned-sheet whites.
+        # They are essentially never SATURATED colors. If the corners are
+        # showing a vivid orange/red/blue/etc., that's almost certainly a
+        # design fill (the operator wants it as an ink), not the canvas.
+        # Skip auto-strip; operator can mark it manually with "+ Mark
+        # background" if they really meant it as bg.
+        if _is_saturated(canvas_color):
+            log.info(
+                "background: corner color %s is saturated — skipping auto-strip "
+                "(use + Mark background to override)",
+                tuple(int(x) for x in canvas_color),
+            )
+        else:
+            diff = np.abs(arr - canvas_color).sum(axis=2)
+            close = diff < color_tolerance * 3
+            border_connected = _keep_border_connected(close)
+            mask |= border_connected
+            log.info(
+                "background: neutral canvas %s, flood-filled %d/%d pixels",
+                tuple(int(x) for x in canvas_color),
+                int(border_connected.sum()), border_connected.size,
+            )
 
     # --- 3. Garment color (belt and suspenders) ---
     if garment_rgb is not None:
@@ -172,6 +183,26 @@ def _keep_border_connected(mask: np.ndarray) -> np.ndarray:
         if np.array_equal(new_seed, seed):
             return seed
         seed = new_seed
+
+
+def _is_saturated(rgb: np.ndarray, chroma_threshold: float = 22.0) -> bool:
+    """True if the RGB color has high enough LAB chroma to be a 'real' design
+    color (orange, red, navy, teal, etc.) rather than a paper/canvas neutral
+    (white, cream, gray, black).
+
+    chroma_threshold of 22 is the empirical line between 'beige/cream paper'
+    (~ΔC 5–18) and 'design fills like dusty pinks/teals/golds' (ΔC 25+).
+    Pure primaries are ΔC 50+; even desaturated brand colors clear 25.
+    """
+    try:
+        from color_detect import rgb_to_lab
+    except Exception:
+        return False
+    rgb_norm = np.array(rgb, dtype=np.float32).reshape(1, 3) / 255.0
+    lab = rgb_to_lab(rgb_norm).reshape(3)
+    a, b = float(lab[1]), float(lab[2])
+    chroma = float(np.sqrt(a * a + b * b))
+    return chroma > chroma_threshold
 
 
 def apply_background_mask(
