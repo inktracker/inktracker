@@ -152,9 +152,54 @@ class FilmSepsApp:
 
         self._build_ui()
         self._drain_queue()
+        self._register_mac_handlers()
 
         if initial_source:
             self._load_source(initial_source)
+
+    def _register_mac_handlers(self) -> None:
+        """Wire up macOS-specific Tk events: drag-to-Dock-icon opens the file.
+
+        When the user drops a file on Film Seps.app (Dock icon, Finder
+        'Open With...', or launching by double-clicking a document), macOS
+        sends a `kAEOpenDocuments` AppleEvent. Tk surfaces this as the
+        `::tk::mac::OpenDocument` command — we just register a callback.
+
+        Also handle 'Reopen' (Dock icon click with no file) to bring the
+        window forward instead of silently spawning a new process.
+        """
+        try:
+            self.root.createcommand("::tk::mac::OpenDocument", self._on_mac_open)
+        except tk.TclError:
+            pass  # Non-macOS Tk
+        try:
+            self.root.createcommand("::tk::mac::ReopenApplication", self._on_mac_reopen)
+        except tk.TclError:
+            pass
+
+    def _on_mac_open(self, *paths: str) -> None:
+        """Drop-on-Dock handler. Opens the first file in this window; if
+        multiple files are dropped, the rest are loaded in sequence into
+        the same window (the flow is single-file anyway)."""
+        for p in paths:
+            path = Path(p)
+            if not path.exists():
+                continue
+            self._load_source(path)
+            self._bring_to_front()
+            break  # just take the first file
+
+    def _on_mac_reopen(self, *_args) -> None:
+        self._bring_to_front()
+
+    def _bring_to_front(self) -> None:
+        try:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.after(100, lambda: self.root.attributes("-topmost", False))
+        except tk.TclError:
+            pass
 
     # --- UI layout ---------------------------------------------------------
 
