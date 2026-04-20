@@ -158,6 +158,18 @@ they'd mix on press anyway and a printer would combine them.
 MIN_CLUSTER_FRACTION = 0.02
 
 
+# Any pixel with LAB L* below this is treated as potential "key/black ink"
+# (linework, outlines, solid dark fills). Professional sep software treats
+# key as its own axis separate from hue-based color clustering — black line
+# art ALWAYS gets its own film, never mixed into a color cluster.
+KEY_INK_L_THRESHOLD = 25.0
+
+# The dark pixels must cover at least this fraction of the image for us to
+# reserve a slot for a key/black ink. Otherwise the user's art has no
+# meaningful linework and we cluster normally.
+KEY_INK_MIN_FRACTION = 0.01
+
+
 def _merge_near_duplicates(
     centers_lab: np.ndarray,
     labels: np.ndarray,
@@ -263,42 +275,58 @@ def detect_ink_colors(
 
     # --- drop garment pixels (background) ---
     dist_to_garment = np.sqrt(((lab - garment_lab) ** 2).sum(axis=1))
-    is_ink_pixel = (dist_to_garment > garment_delta_e) & ~is_edge
-    ink_lab = lab[is_ink_pixel]
+    is_ink_candidate = dist_to_garment > garment_delta_e
+
+    # --- KEY INK EXTRACTION ---
+    # Screen-print technique: the "key" (black/line) ink is separated from
+    # hue-based color clusters, not mixed with them. Pen linework, outlines,
+    # cross-hatching — all dark regardless of what color "family" they're in.
+    # When present, it always gets its own film. Include edge pixels in the
+    # dark cluster (fine lines ARE edges by definition and should go on the
+    # black film; we only want to exclude edges from the HUE clustering).
+    is_dark = (lab[:, 0] < KEY_INK_L_THRESHOLD) & is_ink_candidate
+    key_fraction = is_dark.sum() / max(1, len(pixels))
+    reserve_key = key_fraction >= KEY_INK_MIN_FRACTION and n_colors >= 2
+
+    # Color clustering pool: ink pixels that are NOT dark AND NOT on edges
+    is_color_cluster_pixel = is_ink_candidate & ~is_edge & ~is_dark
+    color_lab = lab[is_color_cluster_pixel]
+
     log.info(
-        "detect_ink_colors: %d ink pixels / %d total (%d edge, %d garment)",
-        int(is_ink_pixel.sum()), len(pixels),
-        n_edges, int((dist_to_garment <= garment_delta_e).sum()),
+        "detect_ink_colors: %d total, %d edge, %d garment, %d dark (key %s)",
+        len(pixels), n_edges,
+        int((~is_ink_candidate).sum()),
+        int(is_dark.sum()),
+        "reserved" if reserve_key else "skipped",
     )
 
-    if len(ink_lab) < 50:
-        # Too few ink pixels — probably the garment color is wrong. Fall
-        # back to clustering all non-edge pixels.
-        ink_lab = lab[~is_edge]
-        log.warning("detect_ink_colors: <50 ink pixels — clustering all non-edge")
-        if len(ink_lab) < 50:
-            # Still too few — cluster everything
-            ink_lab = lab
-            log.warning("detect_ink_colors: clustering all pixels including edges")
+    if len(color_lab) < 50:
+        # Too few hue pixels — fall back to clustering all non-edge non-dark
+        # ink pixels, or everything if still too few.
+        color_lab = lab[is_ink_candidate & ~is_edge]
+        if len(color_lab) < 50:
+            color_lab = lab[is_ink_candidate]
+        if len(color_lab) < 50:
+            color_lab = lab
+        log.warning("detect_ink_colors: fell back to %d pixels for color cluster",
+                    len(color_lab))
 
-    # --- K-means ---
-    k = max(1, min(n_colors, len(ink_lab)))
-    centers_lab, labels = _kmeans(ink_lab, k=k)
+    # --- K-means on the color pool ---
+    n_color_slots = n_colors - 1 if reserve_key else n_colors
+    n_color_slots = max(1, min(n_color_slots, len(color_lab)))
+    centers_lab, labels = _kmeans(color_lab, k=n_color_slots)
 
-    # --- collapse near-duplicate clusters ---
-    # If the user asked for more colors than the art actually has, k-means
-    # will split a single ink into several nearly-identical centroids, and
-    # nearest-neighbor assignment later will give some films ONLY the
-    # anti-aliased edge pixels between them (looks like "just outlines" on
-    # the preview). Merge anything within ΔE < 10 first.
+    # --- collapse near-duplicate color clusters ---
     centers_lab, labels, merged = _merge_near_duplicates(centers_lab, labels)
     if merged:
-        log.info("detect_ink_colors: merged %d near-duplicate cluster(s) "
-                 "(requested %d, returning %d)", merged, n_colors, len(centers_lab))
+        log.info("detect_ink_colors: merged %d near-duplicate color cluster(s)",
+                 merged)
 
-    # --- build results ---
-    total_ink = len(ink_lab)
-    results = []
+    # --- build color cluster results ---
+    total_ink = int(is_ink_candidate.sum())
+    if total_ink == 0:
+        total_ink = len(pixels)  # avoid div-by-zero on edge cases
+    results: list[dict] = []
     for i, c_lab in enumerate(centers_lab):
         count = int((labels == i).sum())
         if count == 0:
@@ -306,7 +334,6 @@ def detect_ink_colors(
         fraction = count / total_ink
         if fraction < min_fraction:
             continue
-        # Convert centroid LAB back to RGB for display + masking
         c_rgb = (lab_to_rgb(c_lab.reshape(1, 3)).reshape(3) * 255)
         c_rgb = tuple(int(round(v)) for v in c_rgb)
         results.append({
@@ -317,7 +344,32 @@ def detect_ink_colors(
             "suggested_name": _suggest_lab_name(c_lab),
         })
 
-    results.sort(key=lambda c: -c["pixel_count"])
+    # --- prepend the key/black cluster if we reserved one ---
+    if reserve_key:
+        key_lab = lab[is_dark].mean(axis=0)
+        # Pin to pure black in LAB (L=0, a=0, b=0) — the detected centroid
+        # averages across pen strokes that may have mixed slightly but the
+        # INK we're going to print is always full black. This prevents
+        # odd RGB values like (28, 24, 18) that look brownish.
+        key_lab_rendered = np.array([0.0, 0.0, 0.0], dtype=np.float32)
+        key_count = int(is_dark.sum())
+        results.insert(0, {
+            "rgb": (0, 0, 0),
+            "lab": tuple(float(v) for v in key_lab),  # the DETECTED centroid
+            "pixel_count": key_count,
+            "fraction": round(key_count / total_ink, 4),
+            "suggested_name": "black",
+        })
+
+    # Sort color clusters by coverage but keep black first — it's the key film
+    # and matches operator expectation (black always prints first/last in the
+    # print order, never buried in the middle of a palette sort).
+    if reserve_key:
+        black = results[0]
+        rest = sorted(results[1:], key=lambda c: -c["pixel_count"])
+        results = [black] + rest
+    else:
+        results.sort(key=lambda c: -c["pixel_count"])
     return results
 
 
