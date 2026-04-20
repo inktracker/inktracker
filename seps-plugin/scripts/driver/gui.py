@@ -176,6 +176,19 @@ class FilmSepsApp:
         self._drain_queue()
         self._register_mac_handlers()
 
+        # Force a sane on-screen position so the window can't end up off-screen
+        # (happens occasionally on multi-display setups / after a space switch).
+        try:
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            x = max(20, (sw - APP_W) // 2)
+            y = max(20, (sh - APP_H) // 3)
+            self.root.geometry(f"{APP_W}x{APP_H}+{x}+{y}")
+            self.root.wm_state("normal")
+            log.info("window placed at +%d+%d (screen %dx%d)", x, y, sw, sh)
+        except Exception:
+            log.exception("window placement failed")
+
         if initial_source:
             self._load_source(initial_source)
 
@@ -224,7 +237,17 @@ class FilmSepsApp:
         self._bring_to_front()
 
     def _bring_to_front(self) -> None:
-        log.info("_bring_to_front: deiconify + lift + topmost")
+        # Log current window state so we can tell if it's hidden, iconified, or
+        # just sitting off-screen somewhere.
+        try:
+            state = self.root.wm_state()
+            geom = self.root.geometry()
+            visible = self.root.winfo_viewable()
+            log.info("_bring_to_front: state=%s geom=%s viewable=%s",
+                     state, geom, visible)
+        except Exception:
+            pass
+
         try:
             # First: un-hide via AppKit, because deiconify alone doesn't reverse
             # a Cmd-H hide. Also set the regular activation policy in case py2app
@@ -243,13 +266,32 @@ class FilmSepsApp:
             except Exception:
                 log.exception("NSApp activate failed")
 
-            # Then nudge Tk so the window actually appears on top
+            # Recenter in case geometry drifted off-screen
+            try:
+                sw = self.root.winfo_screenwidth()
+                sh = self.root.winfo_screenheight()
+                x = max(20, (sw - APP_W) // 2)
+                y = max(20, (sh - APP_H) // 3)
+                self.root.geometry(f"{APP_W}x{APP_H}+{x}+{y}")
+            except Exception:
+                pass
+
+            self.root.wm_state("normal")
             self.root.deiconify()
             self.root.update_idletasks()
             self.root.lift()
             self.root.focus_force()
             self.root.attributes("-topmost", True)
             self.root.after(250, lambda: self.root.attributes("-topmost", False))
+
+            # Re-log state after the whole chain ran
+            try:
+                log.info("_bring_to_front: post-state=%s geom=%s viewable=%s",
+                         self.root.wm_state(),
+                         self.root.geometry(),
+                         self.root.winfo_viewable())
+            except Exception:
+                pass
         except tk.TclError:
             log.exception("_bring_to_front: Tcl error")
 
