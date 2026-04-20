@@ -63,7 +63,7 @@ log.info("Film Seps starting — argv=%s", sys.argv)
 
 
 APP_TITLE = "Film Seps"
-APP_W, APP_H = 980, 720
+APP_W, APP_H = 1400, 920
 DEFAULT_OUTPUT_ROOT = Path.home() / "Downloads" / "film-seps"
 
 
@@ -227,6 +227,7 @@ class FilmSepsApp:
         self._preview_source_img: Image.Image | None = None
         self._preview_scale: float = 1.0
         self._preview_offset: tuple[int, int] = (0, 0)
+        self._preview_zoom: float = 1.0  # 1.0 = fit; 2.0/3.0/4.0 = zoomed in
 
         # Background-thread → main-thread message queue
         self._q: queue.Queue = queue.Queue()
@@ -417,12 +418,13 @@ class FilmSepsApp:
     def _build_middle(self) -> None:
         mid = ttk.Frame(self.root, padding=(12, 0))
         mid.grid(row=1, column=0, sticky="nsew")
-        mid.columnconfigure(0, weight=1)
-        mid.columnconfigure(1, weight=1)
+        # Preview column takes ~60% of width, form/log takes ~40%
+        mid.columnconfigure(0, weight=3)
+        mid.columnconfigure(1, weight=2)
         mid.rowconfigure(0, weight=1)
 
         self._build_preview_panel(mid)
-        self._build_form_panel(mid)
+        self._build_side_panel(mid)  # form + log stacked vertically
 
     def _build_preview_panel(self, parent: ttk.Frame) -> None:
         box = ttk.LabelFrame(parent, text="Source preview", padding=8)
@@ -435,6 +437,21 @@ class FilmSepsApp:
         )
         self.preview_canvas.grid(row=0, column=0, sticky="nsew")
 
+        # Zoom controls — +/− buttons + current level label. Default 1.0 =
+        # fit to canvas; up to 4.0 for inspecting detail.
+        zoom_row = ttk.Frame(box)
+        zoom_row.grid(row=1, column=0, sticky="e", pady=(4, 0))
+        ttk.Button(zoom_row, text="−", width=3,
+                   command=self._preview_zoom_out).grid(row=0, column=0, padx=(0, 2))
+        self.zoom_label_var = tk.StringVar(value="100%")
+        ttk.Label(zoom_row, textvariable=self.zoom_label_var,
+                  width=6, anchor="center",
+                  foreground="#555").grid(row=0, column=1)
+        ttk.Button(zoom_row, text="+", width=3,
+                   command=self._preview_zoom_in).grid(row=0, column=2, padx=(2, 0))
+        ttk.Button(zoom_row, text="Fit", width=4,
+                   command=self._preview_zoom_fit).grid(row=0, column=3, padx=(8, 0))
+
         # Analysis var is still used internally (mode/color-count pre-fill
         # comes from it) but no longer displayed — removed per operator
         # request. If we need to show it again, uncomment the label below.
@@ -445,7 +462,7 @@ class FilmSepsApp:
         # it on/off. Click "+ Sample color" to arm the eyedropper, then
         # click on the preview to add a sampled pixel color as a new ink.
         hdr_row = ttk.Frame(box)
-        hdr_row.grid(row=1, column=0, sticky="ew", pady=(10, 2))
+        hdr_row.grid(row=2, column=0, sticky="ew", pady=(10, 2))
         hdr_row.columnconfigure(1, weight=1)
 
         ttk.Label(hdr_row, text="Detected inks:",
@@ -481,18 +498,27 @@ class FilmSepsApp:
         )
 
         self.palette_frame = ttk.Frame(box)
-        self.palette_frame.grid(row=2, column=0, sticky="ew")
+        self.palette_frame.grid(row=3, column=0, sticky="ew")
 
         self.palette_hint_var = tk.StringVar(
             value="(palette appears after a file is loaded)"
         )
         ttk.Label(box, textvariable=self.palette_hint_var,
                   foreground="#888", font=("Helvetica", 10)).grid(
-            row=3, column=0, sticky="w", pady=(4, 0))
+            row=4, column=0, sticky="w", pady=(4, 0))
+
+    def _build_side_panel(self, parent: ttk.Frame) -> None:
+        """Right column: form on top, log panel below it."""
+        side = ttk.Frame(parent)
+        side.grid(row=0, column=1, sticky="nsew")
+        side.columnconfigure(0, weight=1)
+        side.rowconfigure(1, weight=1)  # log expands to fill remaining height
+        self._build_form_panel(side)
+        self._build_log_panel(side)
 
     def _build_form_panel(self, parent: ttk.Frame) -> None:
         form = ttk.LabelFrame(parent, text="Job settings", padding=10)
-        form.grid(row=0, column=1, sticky="nsew")
+        form.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         form.columnconfigure(1, weight=1)
 
         row = 0
@@ -641,40 +667,43 @@ class FilmSepsApp:
         cb.grid(row=row, column=1, sticky="w", pady=2)
         attach_tooltip(cb, tip)
 
-    def _build_bottom_bar(self) -> None:
-        bot = ttk.Frame(self.root, padding=(12, 10))
-        bot.grid(row=2, column=0, sticky="ew")
-        bot.columnconfigure(0, weight=1)
-
-        # Log area
-        log_frame = ttk.LabelFrame(bot, text="Log", padding=4)
-        log_frame.grid(row=0, column=0, sticky="ew", columnspan=3, pady=(0, 8))
+    def _build_log_panel(self, parent: ttk.Frame) -> None:
+        """Log panel in the right column, below Job settings. Expands to
+        fill remaining vertical space via parent.rowconfigure(1, weight=1)."""
+        log_frame = ttk.LabelFrame(parent, text="Log", padding=4)
+        log_frame.grid(row=1, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
 
         self.log_text = tk.Text(
-            log_frame, height=7, wrap="word",
+            log_frame, height=10, wrap="word",
             background="#1e1e1e", foreground="#d4d4d4",
             font=("Menlo", 10),
         )
-        self.log_text.grid(row=0, column=0, sticky="ew")
+        self.log_text.grid(row=0, column=0, sticky="nsew")
         self.log_text.configure(state="disabled")
         scroll = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         scroll.grid(row=0, column=1, sticky="ns")
         self.log_text.configure(yscrollcommand=scroll.set)
 
+    def _build_bottom_bar(self) -> None:
+        bot = ttk.Frame(self.root, padding=(12, 10))
+        bot.grid(row=2, column=0, sticky="ew")
+        bot.columnconfigure(0, weight=1)
+
         # Progress bar + status text
         self.status_var = tk.StringVar(value="ready")
         ttk.Label(bot, textvariable=self.status_var, foreground="#555").grid(
-            row=1, column=0, sticky="w")
+            row=0, column=0, sticky="w")
 
         self.progress = ttk.Progressbar(
             bot, mode="determinate", length=320,
         )
-        self.progress.grid(row=1, column=1, padx=8, sticky="e")
+        self.progress.grid(row=0, column=1, padx=8, sticky="e")
 
         # Buttons
         btn_frame = ttk.Frame(bot)
-        btn_frame.grid(row=1, column=2, sticky="e")
+        btn_frame.grid(row=0, column=2, sticky="e")
 
         self.render_btn = ttk.Button(
             btn_frame, text="Render & Preview", command=self._on_render,
@@ -1100,28 +1129,56 @@ class FilmSepsApp:
 
     def _render_preview_image(self, img: "Image.Image") -> None:
         """Draw `img` into the preview canvas and track scale + offset so
-        eyedropper clicks can map canvas coords back to source pixels."""
+        eyedropper clicks can map canvas coords back to source pixels.
+
+        Honors self._preview_zoom — 1.0 = fit to canvas; >1 = zoomed in
+        (image gets cropped to the canvas viewport so we don't overflow).
+        """
         self.root.update_idletasks()
         cw = max(320, self.preview_canvas.winfo_width())
         ch = max(200, self.preview_canvas.winfo_height())
         iw, ih = img.size
-        scale = min((cw - 16) / iw, (ch - 16) / ih, 1.0)
+        fit_scale = min((cw - 16) / iw, (ch - 16) / ih, 1.0)
+        scale = fit_scale * self._preview_zoom
         disp_w = max(1, int(iw * scale))
         disp_h = max(1, int(ih * scale))
-        offset_x = (cw - disp_w) // 2
-        offset_y = (ch - disp_h) // 2
 
-        thumb = img.resize((disp_w, disp_h),
-                            Image.LANCZOS if scale < 1 else Image.NEAREST)
+        # When zoomed in, crop centered to the canvas viewport so the
+        # preview canvas isn't overflowed by a giant image.
+        if disp_w > cw or disp_h > ch:
+            crop_w = int(cw / scale)
+            crop_h = int(ch / scale)
+            cx, cy = iw // 2, ih // 2
+            x0 = max(0, cx - crop_w // 2)
+            y0 = max(0, cy - crop_h // 2)
+            x1 = min(iw, x0 + crop_w)
+            y1 = min(ih, y0 + crop_h)
+            cropped = img.crop((x0, y0, x1, y1))
+            disp = cropped.resize(
+                (min(cw, int((x1 - x0) * scale)),
+                 min(ch, int((y1 - y0) * scale))),
+                Image.NEAREST,
+            )
+            offset_x = (cw - disp.size[0]) // 2
+            offset_y = (ch - disp.size[1]) // 2
+        else:
+            disp = img.resize(
+                (disp_w, disp_h),
+                Image.LANCZOS if scale < 1 else Image.NEAREST,
+            )
+            offset_x = (cw - disp_w) // 2
+            offset_y = (ch - disp_h) // 2
+
         try:
-            self._preview_imgtk = ImageTk.PhotoImage(thumb)
+            self._preview_imgtk = ImageTk.PhotoImage(disp)
         except Exception:
             log.exception("_show_preview: PhotoImage failed")
             return
 
         self.preview_canvas.delete("all")
         self.preview_canvas.create_image(
-            offset_x + disp_w // 2, offset_y + disp_h // 2,
+            offset_x + disp.size[0] // 2,
+            offset_y + disp.size[1] // 2,
             image=self._preview_imgtk, anchor="center",
         )
 
@@ -1129,8 +1186,41 @@ class FilmSepsApp:
         self._preview_source_img = img
         self._preview_scale = scale
         self._preview_offset = (offset_x, offset_y)
-        log.info("_show_preview: rendered scale=%.3f offset=(%d,%d)",
-                 scale, offset_x, offset_y)
+        # Update zoom label
+        try:
+            pct = int(round(self._preview_zoom * 100))
+            self.zoom_label_var.set(f"{pct}%" if self._preview_zoom != 1.0 else "Fit")
+        except Exception:
+            pass
+        log.info("_show_preview: rendered scale=%.3f zoom=%.2f offset=(%d,%d)",
+                 scale, self._preview_zoom, offset_x, offset_y)
+
+    # --- Preview zoom controls ---------------------------------------------
+
+    _PREVIEW_ZOOM_STEPS = (0.5, 1.0, 1.5, 2.0, 3.0, 4.0)
+
+    def _preview_zoom_in(self) -> None:
+        for step in self._PREVIEW_ZOOM_STEPS:
+            if step > self._preview_zoom + 1e-3:
+                self._preview_zoom = step
+                self._refresh_preview_canvas()
+                return
+
+    def _preview_zoom_out(self) -> None:
+        for step in reversed(self._PREVIEW_ZOOM_STEPS):
+            if step < self._preview_zoom - 1e-3:
+                self._preview_zoom = step
+                self._refresh_preview_canvas()
+                return
+
+    def _preview_zoom_fit(self) -> None:
+        self._preview_zoom = 1.0
+        self._refresh_preview_canvas()
+
+    def _refresh_preview_canvas(self) -> None:
+        """Re-render whatever's currently in the preview at the new zoom."""
+        if self._preview_source_img is not None:
+            self._render_preview_image(self._preview_source_img)
 
     def _on_render(self) -> None:
         if not self.source_path:
