@@ -960,10 +960,14 @@ def _specs_from_user_palette(
     for i, entry in enumerate(palette, start=1):
         rgb = tuple(entry["rgb"])
         name = entry.get("suggested_name") or entry.get("name") or f"ink-{i}"
+        # density_scale comes from the GUI per-ink slider (Phase 3).
+        # Defaults to 1.0 if the palette entry doesn't carry one.
+        density_scale = float(entry.get("density_scale", 1.0) or 1.0)
         specs.append(InkSpec(
             index=i, name=name, ink=name, mesh=mesh, purpose="color",
             angle_deg=angles[i - 1] if i - 1 < len(angles) else 0.0,
             lpi=lpi, rgb=rgb, halftone=True,
+            density_scale=density_scale,
         ))
     return specs
 

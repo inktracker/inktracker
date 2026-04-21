@@ -228,6 +228,10 @@ class FilmSepsApp:
         self._preview_scale: float = 1.0
         self._preview_offset: tuple[int, int] = (0, 0)
         self._preview_zoom: float = 1.0  # 1.0 = fit; 2.0/3.0/4.0 = zoomed in
+        # When non-None, the preview canvas is showing a single-channel
+        # (grayscale mask) view instead of the composite posterize.
+        # Double-click the preview to return to composite.
+        self._channel_preview_idx: int | None = None
 
         # Background-thread → main-thread message queue
         self._q: queue.Queue = queue.Queue()
@@ -881,6 +885,7 @@ class FilmSepsApp:
             for c, nm in zip(detected, names):
                 c["suggested_name"] = nm
                 c["enabled"] = True
+                c.setdefault("density_scale", 1.0)
             self.detected_palette = detected
         except Exception:
             log.exception("palette detection failed")
@@ -901,7 +906,11 @@ class FilmSepsApp:
         )
 
     def _render_palette_swatches(self) -> None:
-        SWATCH_W, SWATCH_H = 78, 64
+        """Per-ink tiles: swatch + name/coverage + density slider. Each
+        tile is clickable (toggle enable), right-clickable (show that
+        ink's grayscale channel in the preview canvas), and carries a
+        0-150% density slider that maps to InkSpec.density_scale."""
+        SWATCH_W, SWATCH_H = 78, 60
         for col, c in enumerate(self.detected_palette):
             r, g, b = c["rgb"]
             hex_fg = "#fff" if (0.299 * r + 0.587 * g + 0.114 * b) < 110 else "#111"
@@ -940,10 +949,52 @@ class FilmSepsApp:
                 font=("Helvetica", 9),
             )
 
-            # Click to toggle
+            # Left-click: toggle enable. Right-click: preview the channel
+            # (Ctrl-click on macOS trackpads also triggers right-click).
             def make_toggle(idx):
                 return lambda e=None: self._toggle_palette_entry(idx)
+            def make_channel_preview(idx):
+                return lambda e=None: self._preview_ink_channel(idx)
             canvas.bind("<Button-1>", make_toggle(col))
+            canvas.bind("<Button-2>", make_channel_preview(col))  # macOS right
+            canvas.bind("<Button-3>", make_channel_preview(col))  # X11/Win right
+            canvas.bind("<Control-Button-1>", make_channel_preview(col))
+
+            # --- Density slider under the swatch -----------------------------
+            # 0-150% of detected density. This feeds InkSpec.density_scale.
+            # Mirrors ActionSeps's per-channel Levels shaping: knob for "too
+            # light, bump it up" or "ink's too hot, knock it back."
+            scale_val = int(round(c.get("density_scale", 1.0) * 100))
+            dens_var = tk.IntVar(value=scale_val)
+
+            def make_on_change(idx, var):
+                def on_change(_event=None):
+                    new_val = var.get()
+                    if 0 <= idx < len(self.detected_palette):
+                        self.detected_palette[idx]["density_scale"] = new_val / 100.0
+                return on_change
+
+            scale = tk.Scale(
+                tile, from_=0, to=150, orient="horizontal",
+                variable=dens_var,
+                length=SWATCH_W, showvalue=False,
+                sliderlength=10, width=8,
+                troughcolor="#ddd",
+                highlightthickness=0,
+                state="normal" if enabled else "disabled",
+                command=make_on_change(col, dens_var),
+            )
+            scale.pack(pady=(2, 0))
+            # Numeric readout — shows the current % — updates live via the
+            # IntVar trace (trace binds once per row).
+            pct_var = tk.StringVar(value=f"{scale_val}%")
+            def make_pct_update(var, target):
+                def upd(*_a):
+                    target.set(f"{var.get()}%")
+                return upd
+            dens_var.trace_add("write", make_pct_update(dens_var, pct_var))
+            tk.Label(tile, textvariable=pct_var, font=("Helvetica", 8),
+                     fg="#666" if enabled else "#bbb").pack()
 
     def _apply_preview_pipeline(self, raw_img: "Image.Image") -> "Image.Image":
         """Run the same enhance + bg-exclusion steps the renderer does so
@@ -981,6 +1032,91 @@ class FilmSepsApp:
             log.exception("preview bg exclusion failed")
 
         return img
+
+    def _preview_ink_channel(self, idx: int) -> None:
+        """Right-click handler on a palette swatch: render just that
+        ink's grayscale channel mask in the preview canvas. Like
+        Photoshop's Channels palette — shows exactly what will print
+        on that film. Click anywhere else (or any other swatch) to
+        return to the composite live preview.
+
+        This is the "see the sep before you commit" loop that makes
+        ActionSeps feel trustworthy: you can click through each ink
+        and visually verify it's isolating the right pixels.
+        """
+        if not (0 <= idx < len(self.detected_palette)):
+            return
+        entry = self.detected_palette[idx]
+        if not entry.get("enabled", True):
+            self.palette_hint_var.set(
+                f"Enable {entry['suggested_name']} first to see its channel."
+            )
+            return
+
+        src = self.edited_image if self.edited_image is not None \
+            else (_load_source_thumbnail(self.source_path)
+                  if self.source_path else None)
+        if src is None:
+            return
+        src_img = self._apply_preview_pipeline(src)
+
+        try:
+            from film_driver import _nearest_ink_masks, InkSpec, LoadedSource
+            garment_name = self.garment_var.get()
+
+            # Build a spec list from all ENABLED palette entries so the
+            # tonal density correctly accounts for neighbor-ink overlap.
+            specs = []
+            for i, e in enumerate(self.detected_palette):
+                if not e.get("enabled"):
+                    continue
+                specs.append(InkSpec(
+                    index=i, name=e["suggested_name"], ink=e["suggested_name"],
+                    mesh=230, purpose="color", angle_deg=0.0, lpi=55,
+                    rgb=tuple(e["rgb"]), halftone=True,
+                    density_scale=float(e.get("density_scale", 1.0)),
+                ))
+            loaded = LoadedSource(flat=src_img, layers=[],
+                                   doc_size=src_img.size, dpi=300)
+            masks = _nearest_ink_masks(loaded, specs, garment_name)
+            target_name = entry["suggested_name"]
+            mask = masks.get(target_name)
+            if mask is None:
+                self.palette_hint_var.set(
+                    f"No channel data for {target_name} — source may not contain it."
+                )
+                return
+
+            # Invert so the on-screen view looks like the final FILM
+            # (black = ink, white = clear) — operator sees exactly what
+            # will be exposed onto the screen.
+            import numpy as _np
+            from PIL import Image as _Image
+            film_view = (255 - mask).astype(_np.uint8)
+            self._render_preview_image(_Image.fromarray(film_view, mode="L"))
+            self._channel_preview_idx = idx
+            self.palette_hint_var.set(
+                f"Channel preview: {target_name}. "
+                f"Click any other swatch to switch; click the image to return."
+            )
+            # Click on preview canvas → return to composite
+            self.preview_canvas.bind(
+                "<Double-Button-1>", lambda e: self._exit_channel_preview()
+            )
+        except Exception:
+            log.exception("channel preview failed")
+
+    def _exit_channel_preview(self) -> None:
+        """Return from a single-channel preview to the composite live
+        posterize preview."""
+        self._channel_preview_idx = None
+        self.preview_canvas.unbind("<Double-Button-1>")
+        src = self.edited_image if self.edited_image is not None \
+            else (_load_source_thumbnail(self.source_path)
+                  if self.source_path else None)
+        if src is not None:
+            self._refresh_live_preview(self._apply_preview_pipeline(src))
+        self._update_palette_hint()
 
     def _refresh_live_preview(self, src_img: "Image.Image") -> None:
         """Paint the preview canvas with a live posterize simulation — each
@@ -1095,6 +1231,7 @@ class FilmSepsApp:
             "fraction": 0.0,
             "suggested_name": name,
             "enabled": True,
+            "density_scale": 1.0,
             "sampled": True,  # marker: user-added, not auto-detected
         })
         log.info("eyedropper: added %s %s (sampled at source %d,%d)",
@@ -1116,7 +1253,8 @@ class FilmSepsApp:
             r, g, b = self._manual_bg_rgb
             bg_suffix = f"  ·  bg marked at RGB ({r},{g},{b})"
         self.palette_hint_var.set(
-            f"{enabled} of {total} inks will be sepped.{bg_suffix}"
+            f"{enabled} of {total} inks will be sepped.{bg_suffix}  ·  "
+            f"Click swatch to disable · Right-click to see that channel's film"
         )
 
     # --- "mark background" eyedropper --------------------------------------
@@ -1369,7 +1507,13 @@ class FilmSepsApp:
             enabled_inks = [dict(c) for c in self.detected_palette if c.get("enabled")]
             any_disabled = any(not c.get("enabled", True) for c in self.detected_palette)
             any_sampled = any(c.get("sampled") for c in self.detected_palette)
-            if (any_disabled or any_sampled) and enabled_inks:
+            # Non-default density scales also mean "operator curated the palette"
+            # — we need to use the palette path so those values reach InkSpec.
+            any_custom_density = any(
+                abs(c.get("density_scale", 1.0) - 1.0) > 1e-3
+                for c in self.detected_palette
+            )
+            if (any_disabled or any_sampled or any_custom_density) and enabled_inks:
                 curated_palette = enabled_inks
                 log.info("curated palette: %d enabled inks "
                          "(%d sampled, %d disabled)",
