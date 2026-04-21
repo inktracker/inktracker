@@ -85,6 +85,12 @@ class InkSpec:
     # Halftoning is correct for sim-process (each ink is a tone map with dot
     # patterns representing coverage %).
 
+    # Per-ink density multiplier applied to the tonal mask after extraction.
+    # 1.0 = as detected, <1.0 = lighter coverage, >1.0 = heavier. Exposed
+    # in the GUI as a per-ink slider so operators can dial in opacity
+    # without re-detecting (mirrors ActionSeps's per-channel Levels tweak).
+    density_scale: float = 1.0
+
 
 # ---------------------------------------------------------------------------
 # Density extraction
@@ -118,28 +124,64 @@ def _nearest_ink_masks(
     src: "LoadedSource",
     specs: list[InkSpec],
     garment_color: str,
-    max_delta_e: float = 50.0,
+    max_delta_e: float = 60.0,
+    falloff_delta_e: float = 50.0,
 ) -> dict[str, np.ndarray]:
-    """Assign each source pixel to exactly one ink (or background) in LAB.
+    """Compute a tonal density mask for every ink — the core sim-process
+    separation. Each pixel contributes some density to *every* ink
+    based on how close the pixel sits to that ink's color in LAB.
 
-    Returns a dict: ink name → 2D uint8 mask, 255 where this ink prints,
-    0 where it doesn't. Every pixel ends up on exactly one mask or on
-    "no ink at all".
+    Returns a dict: ink name → 2D uint8 mask. 255 = perfect match (full
+    coverage), 0 = ink not needed here. Pixels get density on multiple
+    inks when their color sits between two ink centroids — the physical
+    press then produces the in-between hue via optical mix of overlapping
+    halftone dots. This is *the* reason sim-process can reproduce a
+    photograph with only 6-8 inks.
 
-    Two failure modes we fix here:
+    Why tonal + multi-ink
+    ---------------------
+    The previous version did binary argmin: every pixel got 100% of
+    exactly one ink, 0% of the rest. Result was stencil-style seps —
+    fine for pure spot-color jobs but wrong for anything with gradients
+    or photographic detail. A mid-gradient pixel between red and blue
+    would get 100% red or 100% blue, producing a hard boundary where
+    the gradient should be smooth.
 
-    1. RGB-space nearest-neighbor was perceptually wrong. A dark pixel
-       (black fruit center) ended up on the CREAM film because in RGB
-       distance, cream was the closest available cluster — even though
-       perceptually "black" and "cream" are maximally different. Switching
-       to LAB delta-E gives a perceptually accurate match.
+    Now: every pixel's density on ink i is a linear falloff of its
+    LAB ΔE from ink i's centroid:
 
-    2. If a pixel is very far from ALL detected inks (ΔE > max_delta_e),
-       it means the user's palette doesn't include a cluster that matches
-       this region — they asked for too few inks. Rather than miscast
-       those pixels onto the wrong film (see bug #1 above), we leave them
-       UNINKED on every film. Operator sees a blank region where art
-       should be and knows to bump their color count.
+        ΔE = 0  → density = 255  (exact match → full coverage)
+        ΔE = falloff → density = 0
+        in between → linear
+
+    A pixel midway between two inks (ΔE ≈ 17 from each at falloff=35)
+    gets density ≈ 130 on both — halftone produces ≈50% dots on both
+    films, and the optical mix prints as the correct in-between hue.
+
+    Why this matches ActionSeps
+    ---------------------------
+    Photoshop's Color Range tool with nonzero Fuzziness produces
+    graduated selections — a pixel "near" the sample color gets a
+    partial-alpha inclusion in the channel, not an all-or-nothing
+    flag. ActionSeps's per-channel Color Range runs this way, with
+    overlapping ranges between inks (red's range extends into orange,
+    orange's into yellow, etc.). That's exactly this multi-ink
+    density model.
+
+    Force-dark-to-key
+    -----------------
+    Dark pixels still get priority routing to the key/black film to
+    preserve pen-stroke linework. Key ink gets density based on how
+    dark the pixel is (pure black → 255, halfway-gray → 0), in
+    addition to whatever the ΔE-based density would give. This keeps
+    fine black lines crisp while letting near-black colors (navy,
+    charcoal) mix with key appropriately.
+
+    Too-far pixels
+    --------------
+    Pixels where the nearest ink is > max_delta_e away aren't a real
+    color match to anything in the palette. They drop to zero density
+    on every ink. Operator sees a blank region → knows to add an ink.
     """
     from color_detect import rgb_to_lab
 
@@ -157,73 +199,123 @@ def _nearest_ink_masks(
         dtype=np.float32,
     ) / 255.0
     palette_lab = rgb_to_lab(palette_rgb)
+    n_inks = len(palette_lab) - 1  # last entry is garment
+    garment_idx = n_inks
 
     # Per-pixel distance to every palette entry
     diffs = lab[:, None, :] - palette_lab[None, :, :]
-    dists = np.sqrt((diffs ** 2).sum(axis=2))
-    nearest = dists.argmin(axis=1)
+    dists = np.sqrt((diffs ** 2).sum(axis=2))  # (N_pixels, N_palette)
     nearest_dist = dists.min(axis=1)
+    nearest = dists.argmin(axis=1)
 
-    # --- FORCE-DARK-TO-KEY ---
-    # Pro sep software: any pixel meaningfully darker than the lightest
-    # color ink belongs on the key (black) film — pen strokes, outlines,
-    # anti-aliased transitions. Skip this bias if there's no key ink in
-    # the palette or if one of the color clusters is dark itself (navy,
-    # etc.) in which case plain LAB nearest-neighbor is correct.
+    # --- Multi-ink tonal density ------------------------------------------
+    # Linear ΔE falloff from each ink centroid, clipped to 0..255.
+    # Shape: (N_pixels, N_inks)
+    ink_dists = dists[:, :n_inks]
+    ink_density = np.clip(
+        (falloff_delta_e - ink_dists) / max(falloff_delta_e, 1e-6),
+        0.0, 1.0,
+    ) * 255.0
+
+    # --- FORCE-DARK-TO-KEY ------------------------------------------------
+    # Dark pixels route to the key film with density based on L*. This
+    # is added to (not replaces) the ΔE-based density so near-black
+    # colors can still partially print on other dark inks.
     key_idx = None
     for i, spec in enumerate(specs):
-        # Key = declared pure black OR any ink whose name is "black"
         if spec.name == "black" or spec.rgb == (0, 0, 0):
             key_idx = i
             break
     if key_idx is not None:
-        # Threshold = halfway between key L* and the LIGHTEST color ink L*.
-        # Pixels darker than the halfway point are closer to key on the
-        # lightness axis and should print on the key film.
         key_L = palette_lab[key_idx, 0]
-        color_Ls = [palette_lab[i, 0] for i in range(len(specs)) if i != key_idx]
+        color_Ls = [palette_lab[i, 0] for i in range(n_inks) if i != key_idx]
         if color_Ls:
             lightest_L = max(color_Ls)
-            halfway = (key_L + lightest_L) / 2
-            force_to_key = lab[:, 0] < halfway
-            nearest = np.where(force_to_key, key_idx, nearest)
-            nearest_dist = np.where(force_to_key, 0.0, nearest_dist)
+            halfway = max((key_L + lightest_L) / 2, 1.0)
+            # Where pixels are darker than halfway, boost key density by
+            # the (halfway - L)/halfway ramp.
+            dark_boost = np.clip(
+                (halfway - lab[:, 0]) / halfway * 255.0, 0.0, 255.0,
+            )
+            # Take the max — don't reduce whatever ΔE already gave us,
+            # just add darkness-driven density on top.
+            ink_density[:, key_idx] = np.maximum(
+                ink_density[:, key_idx], dark_boost,
+            )
 
-    # Pixels too far from any ink OR assigned to garment → leave uninked
-    too_far = nearest_dist > max_delta_e
-    garment_idx = len(specs)
-    is_background = (nearest == garment_idx) | too_far
+    # --- Background: the garment is the nearest palette entry --------------
+    # Rule: a pixel only counts as "background / shirt" if the garment
+    # centroid is closer than ANY ink centroid. Being "far from every
+    # ink" isn't enough — mid-gradient pixels between two inks sit far
+    # from each ink's centroid but should still print on both at reduced
+    # density (this is the whole point of sim-process).
+    #
+    # The ΔE falloff already handles "too far" naturally: pixels beyond
+    # `falloff_delta_e` from an ink have zero density on that ink. A
+    # pixel far from every ink just has zero density everywhere — no
+    # special zeroing step needed.
+    is_background = nearest == garment_idx
+    ink_density[is_background, :] = 0.0
 
-    nearest_2d = nearest.reshape(h, w)
-    bg_2d = is_background.reshape(h, w)
-
-    # Report how many pixels we're dropping — high drop rates mean the
-    # user should bump their color count.
     total_pixels = h * w
-    dropped = int(too_far.sum())
-    if total_pixels and dropped / total_pixels > 0.02:
+    # Warn if a lot of pixels are failing to cluster on any ink (density 0
+    # across the board). This means the palette is missing a color.
+    uncovered = int(((ink_density.max(axis=1) < 16) & ~is_background).sum())
+    if total_pixels and uncovered / total_pixels > 0.02:
         import logging
         logging.getLogger("filmseps.driver").warning(
-            "nearest-ink: dropped %d/%d pixels (%.1f%%) — too far from any ink. "
-            "Consider increasing color count; art may need an ink you didn't request.",
-            dropped, total_pixels, 100 * dropped / total_pixels,
+            "tonal-extract: %d/%d pixels (%.1f%%) print at <6%% on every ink. "
+            "Consider more colors; art may need an ink you didn't request.",
+            uncovered, total_pixels, 100 * uncovered / total_pixels,
         )
 
+    # Per-ink: reshape, despeckle (on presence only), trap-dilate, scale
     masks: dict[str, np.ndarray] = {}
     for i, spec in enumerate(specs):
         if spec.rgb is None:
             continue
-        m = (nearest_2d == i) & ~bg_2d
-        m = _despeckle_mask(m, spec)
-        # Trap: dilate every color mask by 1 pixel so adjacent inks slightly
-        # overlap at boundaries. Eliminates the white shirt-color gaps you'd
-        # otherwise see at color transitions due to anti-aliased pixels being
-        # marked as background. Standard screen-printing technique — pro RIPs
-        # call this "trapping" and it's how AccuRIP/FilmMaker prevent
-        # registration-gap artifacts on press.
-        m = _trap_dilate(m, pixels=1)
-        masks[spec.name] = (m.astype(np.uint8)) * 255
+        tonal = ink_density[:, i].reshape(h, w).astype(np.uint8)
+
+        # Despeckle: build a binary "is this ink present above noise?" map,
+        # open it (erode + dilate), and zero the tonal mask where the
+        # opening removed pixels. Kills isolated 1-pixel specks from
+        # JPEG noise without flattening gradient midtones.
+        present = tonal >= 16  # ~6% coverage — below press floor
+        cleaned = _despeckle_mask(present, spec)
+        tonal = np.where(cleaned, tonal, 0).astype(np.uint8)
+
+        # Trap: tonal dilation — edge pixels inherit the max density of
+        # their neighbors. Gives slight overlap at boundaries without
+        # filling in whole regions at arbitrary density.
+        tonal = _trap_dilate_tonal(tonal, pixels=1)
+
+        # Per-ink density multiplier (UI slider). Default 1.0.
+        scale = float(getattr(spec, "density_scale", 1.0) or 1.0)
+        if scale != 1.0:
+            tonal = np.clip(tonal.astype(np.float32) * scale, 0, 255).astype(np.uint8)
+
+        masks[spec.name] = tonal
     return masks
+
+
+def _trap_dilate_tonal(mask: np.ndarray, pixels: int = 1) -> np.ndarray:
+    """Tonal morphological dilation via 4-neighbor max filter.
+
+    Binary version just sets dilated pixels to True. Tonal version: each
+    dilated pixel takes the max density of its 4-neighbors, so density
+    gradients extend smoothly outward instead of jumping to a flat value.
+    This is what makes edge trap invisible on press — the neighbor ink's
+    density fades in exactly where this ink's density fades out.
+    """
+    out = mask.copy()
+    for _ in range(pixels):
+        d = out.copy()
+        d[1:, :] = np.maximum(d[1:, :], out[:-1, :])
+        d[:-1, :] = np.maximum(d[:-1, :], out[1:, :])
+        d[:, 1:] = np.maximum(d[:, 1:], out[:, :-1])
+        d[:, :-1] = np.maximum(d[:, :-1], out[:, 1:])
+        out = d
+    return out
 
 
 def _trap_dilate(mask: np.ndarray, pixels: int = 1) -> np.ndarray:
@@ -426,19 +518,32 @@ def _is_dark_garment(name: str) -> bool:
     return luma < 128
 
 
-def _build_underbase(masks: dict[str, np.ndarray], choke_pixels: int = 1) -> np.ndarray | None:
-    """Union of every existing color mask, then erode by `choke_pixels` so
-    white underbase doesn't peek out from under color inks at edges.
+def _build_underbase(
+    masks: dict[str, np.ndarray],
+    choke_pixels: int = 1,
+    coverage_threshold: int = 24,
+) -> np.ndarray | None:
+    """Union of every color mask at meaningful coverage, then erode by
+    `choke_pixels` so white underbase doesn't peek out from under color
+    inks at edges.
 
-    Returns a uint8 mask (0/255). The underbase prints SOLID first on press,
-    providing the opaque white base that color inks sit on top of.
+    With tonal masks, a pixel with density 5/255 is barely printing —
+    it'd show up as a sub-visible halftone dot at best. Including such
+    pixels in the underbase would make the base extend beyond where
+    color is actually visible, creating a halo of white around the
+    print. We use coverage_threshold=24 (≈10%) to match the press floor
+    — any pixel printing at least 10% on some ink gets a white base
+    under it.
+
+    Returns a uint8 mask (0/255). The underbase prints SOLID first on
+    press, providing the opaque white base that color inks sit on top of.
     """
     if not masks:
         return None
     arrays = list(masks.values())
-    union = arrays[0] > 0
+    union = arrays[0] >= coverage_threshold
     for a in arrays[1:]:
-        union |= a > 0
+        union |= a >= coverage_threshold
     # Morphological erosion for the choke
     for _ in range(choke_pixels):
         e = union.copy()

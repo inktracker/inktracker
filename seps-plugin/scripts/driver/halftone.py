@@ -126,11 +126,20 @@ def halftone(
     return out
 
 
-def solid_film(density: np.ndarray) -> np.ndarray:
+def solid_film(density: np.ndarray, threshold: int = 96) -> np.ndarray:
     """Render a solid (non-halftoned) layer to film polarity.
 
-    density: 0..255 where 255=full coverage. Output: 0..255 film-positive
-    (ink=0, clear=255). We invert and leave continuous tone — the exposure
-    unit treats >50% as a hard edge anyway for solid layers.
+    density: 0..255 tonal mask. Output: 0..255 film-positive (ink=0,
+    clear=255). Solid films are all-or-nothing — if a pixel's density
+    is above the threshold, it gets full ink; otherwise clear.
+
+    Threshold defaults to 96 (≈37.5%) rather than the naive 128 (50%)
+    because the tonal masks from _nearest_ink_masks now represent
+    color-distance falloff. A pixel at ΔE 20 (half the falloff) is
+    visibly "this color" — it should print on the solid film even
+    though its numeric density is only ~128. Using 96 captures those
+    moderate-density pixels without bleeding into obvious non-ink
+    regions (which sit well below 96 after despeckle + falloff).
     """
-    return (255 - density).astype(np.uint8)
+    ink = density >= threshold
+    return np.where(ink, 0, 255).astype(np.uint8)
