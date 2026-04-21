@@ -232,6 +232,8 @@ class FilmSepsApp:
         # (grayscale mask) view instead of the composite posterize.
         # Double-click the preview to return to composite.
         self._channel_preview_idx: int | None = None
+        # Debounce handle for the channels strip refresh (density slider)
+        self._channel_refresh_after: str | None = None
 
         # Background-thread → main-thread message queue
         self._q: queue.Queue = queue.Queue()
@@ -511,14 +513,131 @@ class FilmSepsApp:
                   foreground="#888", font=("Helvetica", 10)).grid(
             row=4, column=0, sticky="w", pady=(4, 0))
 
+        # --- CHANNELS STRIP ---------------------------------------------
+        # Horizontal row of per-ink grayscale thumbnails, like Photoshop's
+        # Channels palette. Each thumbnail is the actual tonal mask that
+        # ink will print — click any thumbnail to zoom it into the main
+        # preview canvas. Density slider under each.
+        #
+        # This is the "always-visible seps" the operator wants: after
+        # detection runs, every channel is visible at a glance, no
+        # need to click through one at a time.
+        channels_hdr = ttk.Frame(box)
+        channels_hdr.grid(row=5, column=0, sticky="ew", pady=(12, 2))
+        ttk.Label(channels_hdr, text="Channels:",
+                  font=("Helvetica", 11, "bold"),
+                  foreground="#222").grid(row=0, column=0, sticky="w")
+        self.channels_hint_var = tk.StringVar(
+            value="(channels appear after detection; click a thumbnail to inspect)"
+        )
+        ttk.Label(channels_hdr, textvariable=self.channels_hint_var,
+                  foreground="#888", font=("Helvetica", 9)).grid(
+            row=0, column=1, sticky="w", padx=(8, 0))
+
+        self.channels_strip = ttk.Frame(box)
+        self.channels_strip.grid(row=6, column=0, sticky="ew")
+        # Cache TK PhotoImage refs so Tk doesn't GC the thumbnails
+        self._channel_thumb_imgs: list = []
+
     def _build_side_panel(self, parent: ttk.Frame) -> None:
-        """Right column: form on top, log panel below it."""
+        """Right column: ink palette picker + job form + log, stacked."""
         side = ttk.Frame(parent)
         side.grid(row=0, column=1, sticky="nsew")
         side.columnconfigure(0, weight=1)
-        side.rowconfigure(1, weight=1)  # log expands to fill remaining height
-        self._build_form_panel(side)
-        self._build_log_panel(side)
+        side.rowconfigure(2, weight=1)  # log expands to fill remaining height
+        self._build_ink_picker_panel(side)   # row 0
+        self._build_form_panel(side)         # row 1
+        self._build_log_panel(side)          # row 2
+
+    def _build_ink_picker_panel(self, parent: ttk.Frame) -> None:
+        """Named-ink palette picker — Separation Studio / ActionSeps style.
+
+        Two modes:
+         - Auto-detect: the existing LAB k-means palette detector runs
+           and the channels strip populates from whatever it finds.
+         - Pick inks: operator checks specific shop inks from the
+           NAMED_INKS catalog; we use exactly those as the separation
+           palette. No guessing.
+        """
+        box = ttk.LabelFrame(parent, text="Ink palette", padding=10)
+        box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        box.columnconfigure(0, weight=1)
+
+        # Mode radio
+        self.ink_mode_var = tk.StringVar(value="auto")
+        mode_row = ttk.Frame(box)
+        mode_row.grid(row=0, column=0, sticky="w", pady=(0, 6))
+        ttk.Radiobutton(
+            mode_row, text="Auto-detect colors", variable=self.ink_mode_var,
+            value="auto", command=self._on_ink_mode_change,
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Radiobutton(
+            mode_row, text="Pick from inks", variable=self.ink_mode_var,
+            value="pick", command=self._on_ink_mode_change,
+        ).grid(row=0, column=1, sticky="w", padx=(16, 0))
+
+        # Picker grid — a compact wrap of named-ink checkboxes with
+        # colored swatches. Only visible when mode == "pick".
+        self.ink_picker_frame = ttk.Frame(box)
+        self.ink_picker_frame.grid(row=1, column=0, sticky="ew")
+        self.ink_picker_vars: dict[str, tk.BooleanVar] = {}
+        self._populate_ink_picker()
+
+        # Starts hidden (mode=auto by default)
+        self.ink_picker_frame.grid_remove()
+
+    def _populate_ink_picker(self) -> None:
+        """Build the ink checkbox grid from the NAMED_INKS catalog."""
+        from ink_library import NAMED_INKS, DEFAULT_SELECTION
+        for w in self.ink_picker_frame.winfo_children():
+            w.destroy()
+        self.ink_picker_vars.clear()
+
+        n_cols = 3
+        for i, ink in enumerate(NAMED_INKS):
+            r, c = divmod(i, n_cols)
+            var = tk.BooleanVar(value=(ink.key in DEFAULT_SELECTION))
+            self.ink_picker_vars[ink.key] = var
+
+            row_frame = ttk.Frame(self.ink_picker_frame)
+            row_frame.grid(row=r, column=c, sticky="w", padx=(0, 8), pady=1)
+
+            # Tiny color swatch so the operator can see the ink hue at a glance
+            rr, gg, bb = ink.rgb
+            sw = tk.Frame(row_frame, width=14, height=14,
+                           background=f"#{rr:02x}{gg:02x}{bb:02x}",
+                           relief="solid", borderwidth=1)
+            sw.grid(row=0, column=0, padx=(0, 4))
+            sw.grid_propagate(False)
+
+            cb = ttk.Checkbutton(
+                row_frame, text=ink.display, variable=var,
+                command=self._on_ink_picker_toggle,
+            )
+            cb.grid(row=0, column=1, sticky="w")
+
+    def _on_ink_mode_change(self) -> None:
+        """Toggle visibility of the ink-picker grid + re-detect palette."""
+        mode = self.ink_mode_var.get()
+        if mode == "pick":
+            self.ink_picker_frame.grid()
+        else:
+            self.ink_picker_frame.grid_remove()
+        # Rebuild palette against the new mode
+        if self.source_path:
+            try:
+                self._refresh_detected_palette()
+            except Exception:
+                log.exception("palette refresh on mode change failed")
+
+    def _on_ink_picker_toggle(self) -> None:
+        """Any ink checkbox toggled — rebuild the palette from the current
+        selection and refresh previews."""
+        if self.source_path:
+            try:
+                self._refresh_detected_palette()
+            except Exception:
+                log.exception("palette refresh on ink toggle failed")
 
     def _build_form_panel(self, parent: ttk.Frame) -> None:
         form = ttk.LabelFrame(parent, text="Job settings", padding=10)
@@ -873,24 +992,60 @@ class FilmSepsApp:
         # what the actual sep will see — not the raw source.
         src_img = self._apply_preview_pipeline(raw_img)
 
-        try:
-            from color_detect import detect_ink_colors, resolve_unique_names
+        # Branch on ink mode: named-ink picker skips auto-detect entirely.
+        mode = getattr(self, "ink_mode_var", None)
+        mode_val = mode.get() if mode else "auto"
+
+        if mode_val == "pick":
+            from ink_library import BY_KEY
+            from color_detect import rgb_to_lab
+            import numpy as _np
+            selected = [
+                k for k, v in self.ink_picker_vars.items() if v.get()
+            ]
+            if not selected:
+                self.palette_hint_var.set(
+                    "Pick at least one ink from the list above."
+                )
+                self.detected_palette = []
+                self._render_channels_strip([])
+                return
+            palette = []
+            for key in selected:
+                ink = BY_KEY[key]
+                lab = rgb_to_lab(
+                    _np.array([ink.rgb], dtype=_np.float32) / 255.0,
+                ).reshape(3)
+                palette.append({
+                    "rgb": ink.rgb,
+                    "lab": tuple(float(v) for v in lab),
+                    "pixel_count": 0,
+                    "fraction": 0.0,
+                    "suggested_name": ink.display,
+                    "enabled": True,
+                    "density_scale": 1.0,
+                    "named_ink": key,
+                })
+            self.detected_palette = palette
+        else:
             try:
-                n = int(self.max_colors_var.get())
-            except ValueError:
-                n = 4
-            garment = _garment_rgb(self.garment_var.get())
-            detected = detect_ink_colors(src_img, n_colors=n, garment_rgb=garment)
-            names = resolve_unique_names(detected)
-            for c, nm in zip(detected, names):
-                c["suggested_name"] = nm
-                c["enabled"] = True
-                c.setdefault("density_scale", 1.0)
-            self.detected_palette = detected
-        except Exception:
-            log.exception("palette detection failed")
-            self.palette_hint_var.set("(palette detection failed — see log)")
-            return
+                from color_detect import detect_ink_colors, resolve_unique_names
+                try:
+                    n = int(self.max_colors_var.get())
+                except ValueError:
+                    n = 4
+                garment = _garment_rgb(self.garment_var.get())
+                detected = detect_ink_colors(src_img, n_colors=n, garment_rgb=garment)
+                names = resolve_unique_names(detected)
+                for c, nm in zip(detected, names):
+                    c["suggested_name"] = nm
+                    c["enabled"] = True
+                    c.setdefault("density_scale", 1.0)
+                self.detected_palette = detected
+            except Exception:
+                log.exception("palette detection failed")
+                self.palette_hint_var.set("(palette detection failed — see log)")
+                return
 
         if not self.detected_palette:
             self.palette_hint_var.set("(no inks detected)")
@@ -898,6 +1053,8 @@ class FilmSepsApp:
 
         self._render_palette_swatches()
         self._refresh_live_preview(src_img)
+        # Populate the channels strip with per-ink grayscale thumbnails
+        self._refresh_channels_strip(src_img)
         enabled = sum(1 for c in self.detected_palette if c["enabled"])
         total = len(self.detected_palette)
         self.palette_hint_var.set(
@@ -972,6 +1129,9 @@ class FilmSepsApp:
                     new_val = var.get()
                     if 0 <= idx < len(self.detected_palette):
                         self.detected_palette[idx]["density_scale"] = new_val / 100.0
+                    # Debounce — refresh 300ms after the last slider movement
+                    # so dragging the slider stays smooth.
+                    self._schedule_channel_refresh()
                 return on_change
 
             scale = tk.Scale(
@@ -1032,6 +1192,143 @@ class FilmSepsApp:
             log.exception("preview bg exclusion failed")
 
         return img
+
+    def _schedule_channel_refresh(self) -> None:
+        """Debounced trigger for _refresh_channels_strip — coalesces rapid
+        density-slider drags into one refresh per 300ms idle window."""
+        try:
+            if self._channel_refresh_after is not None:
+                self.root.after_cancel(self._channel_refresh_after)
+        except Exception:
+            pass
+        self._channel_refresh_after = self.root.after(
+            300, self._do_deferred_channel_refresh,
+        )
+
+    def _do_deferred_channel_refresh(self) -> None:
+        self._channel_refresh_after = None
+        if not self.detected_palette:
+            return
+        src = self.edited_image or (
+            _load_source_thumbnail(self.source_path) if self.source_path else None
+        )
+        if src is None:
+            return
+        src_img = self._apply_preview_pipeline(src)
+        self._refresh_channels_strip(src_img)
+
+    def _refresh_channels_strip(self, src_img: "Image.Image | None" = None) -> None:
+        """Rebuild the channels-strip under the main preview: one small
+        grayscale thumbnail per enabled ink, showing exactly what that
+        film will print. Click a thumbnail to zoom into that channel.
+
+        Operates on a downsized copy of the source so updates are fast;
+        the full-resolution extraction still runs at render time.
+        """
+        # Clear previous thumbnails
+        for w in self.channels_strip.winfo_children():
+            w.destroy()
+        self._channel_thumb_imgs = []
+
+        enabled = [
+            (i, c) for i, c in enumerate(self.detected_palette) if c.get("enabled")
+        ]
+        if not enabled:
+            self.channels_hint_var.set(
+                "(channels appear after detection; enable at least one ink)"
+            )
+            return
+
+        # Get a source image if not provided
+        if src_img is None:
+            raw = self.edited_image or (
+                _load_source_thumbnail(self.source_path)
+                if self.source_path else None
+            )
+            if raw is None:
+                return
+            src_img = self._apply_preview_pipeline(raw)
+
+        # Fast path: work at ≤500px so this stays responsive on live updates
+        work = src_img.copy()
+        work.thumbnail((500, 500), Image.LANCZOS)
+
+        try:
+            from film_driver import _nearest_ink_masks, InkSpec, LoadedSource
+            specs = []
+            for idx, entry in enumerate(self.detected_palette):
+                if not entry.get("enabled"):
+                    continue
+                specs.append(InkSpec(
+                    index=idx, name=entry["suggested_name"],
+                    ink=entry["suggested_name"], mesh=230, purpose="color",
+                    angle_deg=0.0, lpi=55,
+                    rgb=tuple(entry["rgb"]), halftone=True,
+                    density_scale=float(entry.get("density_scale", 1.0)),
+                ))
+            garment_name = self.garment_var.get()
+            loaded = LoadedSource(flat=work, layers=[],
+                                   doc_size=work.size, dpi=150)
+            masks = _nearest_ink_masks(loaded, specs, garment_name)
+        except Exception:
+            log.exception("channels-strip extraction failed")
+            return
+
+        THUMB_W, THUMB_H = 82, 82
+
+        for col_idx, (palette_idx, entry) in enumerate(enabled):
+            ink_name = entry["suggested_name"]
+            mask = masks.get(ink_name)
+            if mask is None:
+                continue
+
+            # Build film-polarity preview: black where ink prints, white film
+            import numpy as _np
+            film_arr = 255 - mask
+            film_pil = Image.fromarray(film_arr.astype(_np.uint8), mode="L")
+            thumb = film_pil.copy()
+            thumb.thumbnail((THUMB_W, THUMB_H), Image.LANCZOS)
+            # Center in a fixed-size canvas so all tiles line up
+            bg = Image.new("L", (THUMB_W, THUMB_H), 255)
+            bg.paste(thumb, (
+                (THUMB_W - thumb.size[0]) // 2,
+                (THUMB_H - thumb.size[1]) // 2,
+            ))
+
+            tk_img = ImageTk.PhotoImage(bg)
+            self._channel_thumb_imgs.append(tk_img)
+
+            tile = ttk.Frame(self.channels_strip)
+            tile.grid(row=0, column=col_idx, padx=(0, 6), pady=2)
+
+            btn = tk.Button(
+                tile, image=tk_img, borderwidth=1, relief="solid",
+                cursor="hand2",
+                command=lambda i=palette_idx: self._preview_ink_channel(i),
+            )
+            btn.grid(row=0, column=0)
+
+            # Swatch + ink name under the thumbnail
+            name_row = ttk.Frame(tile)
+            name_row.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+            rr, gg, bb = entry["rgb"]
+            sw = tk.Frame(name_row, width=10, height=10,
+                           background=f"#{rr:02x}{gg:02x}{bb:02x}",
+                           relief="solid", borderwidth=1)
+            sw.grid(row=0, column=0, padx=(0, 3))
+            sw.grid_propagate(False)
+            ttk.Label(name_row, text=ink_name, font=("Helvetica", 9)).grid(
+                row=0, column=1, sticky="w",
+            )
+
+        self.channels_hint_var.set(
+            f"{len(enabled)} channels. Click a thumbnail to preview full-size; "
+            "double-click preview to return."
+        )
+
+    def _render_channels_strip(self, _placeholder) -> None:
+        """Alias kept in case older code paths call it with palette arg."""
+        self._refresh_channels_strip()
 
     def _preview_ink_channel(self, idx: int) -> None:
         """Right-click handler on a palette swatch: render just that
@@ -1144,12 +1441,14 @@ class FilmSepsApp:
         if 0 <= idx < len(self.detected_palette):
             self.detected_palette[idx]["enabled"] = not self.detected_palette[idx]["enabled"]
             self._render_palette_swatches()
-            # Live preview should reflect the new palette immediately
+            # Live preview + channels strip should reflect the new palette
             src = self.edited_image if self.edited_image is not None \
                 else (_load_source_thumbnail(self.source_path)
                       if self.source_path else None)
             if src is not None:
-                self._refresh_live_preview(src)
+                src_img = self._apply_preview_pipeline(src)
+                self._refresh_live_preview(src_img)
+                self._refresh_channels_strip(src_img)
             enabled = sum(1 for c in self.detected_palette if c["enabled"])
             total = len(self.detected_palette)
             self.palette_hint_var.set(
