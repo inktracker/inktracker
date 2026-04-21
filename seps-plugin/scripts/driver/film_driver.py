@@ -518,6 +518,65 @@ def _is_dark_garment(name: str) -> bool:
     return luma < 128
 
 
+def _build_highlight_white(
+    src: "LoadedSource",
+    underbase_mask: np.ndarray | None,
+    l_threshold: float = 82.0,
+) -> np.ndarray | None:
+    """Build the Highlight White channel — a separate second white print
+    that lays on top of the white base and prints only on the BRIGHTEST
+    pixels. Gives photographic pop on dark garments.
+
+    This is standard pro-shop technique. The white base (156 mesh, soft)
+    provides opaque ink coverage for all color inks to sit on. The
+    highlight white (305+ mesh, fine) is a thin top-print that only
+    hits the areas that should look dazzling-bright on the finished
+    shirt — catch-lights in photos, white text on color backgrounds,
+    bright rim-lighting on illustrations.
+
+    Algorithm
+    ---------
+    Tonal mask = ramp of LAB L* above `l_threshold`. Pixels below the
+    threshold get 0 density; pixels at L=100 (pure white) get 255;
+    linear in between. Then intersected with the underbase region so
+    highlight only ever prints where a white base supports it.
+
+    Why LAB-L* instead of RGB-brightness
+    ------------------------------------
+    L* is perceptually uniform — a "bright yellow" (RGB 255,255,0) has
+    L ≈ 97 which is genuinely very bright, while a "bright purple"
+    (255,0,255) has L ≈ 60 which is only medium-light. Using naive
+    RGB average would incorrectly highlight the purple. LAB gets it
+    right.
+    """
+    if src.flat is None or underbase_mask is None:
+        return None
+    from color_detect import rgb_to_lab
+
+    arr = np.array(src.flat.convert("RGB"), dtype=np.float32) / 255.0
+    h, w = arr.shape[:2]
+    lab = rgb_to_lab(arr.reshape(-1, 3))
+    L = lab[:, 0].reshape(h, w)
+
+    # Linear ramp: L=threshold → 0 density, L=100 → 255 density
+    if 100.0 - l_threshold < 1.0:
+        return None
+    density = np.clip(
+        (L - l_threshold) / (100.0 - l_threshold) * 255.0, 0.0, 255.0,
+    )
+
+    # Clip to underbase region — highlight white only makes sense
+    # where a white base supports it.
+    ub_binary = underbase_mask > 0
+    density = np.where(ub_binary, density, 0.0)
+
+    mask = density.astype(np.uint8)
+    # Drop if nothing meaningful to print
+    if (mask >= 32).sum() < 50:
+        return None
+    return mask
+
+
 def _build_underbase(
     masks: dict[str, np.ndarray],
     choke_pixels: int = 1,
@@ -773,10 +832,37 @@ def drive(
                 )
                 specs.insert(0, ub_spec)
                 nearest_masks = {"white_underbase": underbase_mask, **nearest_masks}
-                # Renumber indices so the underbase is film 01
+                log.info("auto-underbase: added for %s garment", cfg.garment_color)
+
+                # AUTO HIGHLIGHT WHITE: a second high-mesh white that prints
+                # on top of everything, ONLY on the brightest pixels. This is
+                # the industry-standard 2-white setup for pop on dark shirts.
+                # Safe to append: it's the last color in print order so it
+                # hits on top of every other ink.
+                if cfg.auto_highlight_white:
+                    hw_mask = _build_highlight_white(src, underbase_mask)
+                    if hw_mask is not None:
+                        hw_spec = InkSpec(
+                            index=0,  # renumbered below
+                            name="highlight_white",
+                            ink="highlight white",
+                            mesh=DEFAULT_MESH[cfg.ink_system]["highlight"],
+                            purpose="highlight",
+                            angle_deg=0.0,
+                            lpi=0,
+                            rgb=(255, 255, 255),
+                            halftone=False,
+                        )
+                        specs.append(hw_spec)
+                        nearest_masks["highlight_white"] = hw_mask
+                        log.info(
+                            "auto-highlight-white: added (%d bright pixels)",
+                            int((hw_mask >= 32).sum()),
+                        )
+
+                # Renumber indices now that both whites are in place.
                 for new_i, s in enumerate(specs, start=1):
                     s.index = new_i
-                log.info("auto-underbase: added for %s garment", cfg.garment_color)
 
     # Compute aspect & print size
     doc_w, doc_h = src.doc_size

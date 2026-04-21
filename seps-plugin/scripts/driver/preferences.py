@@ -186,3 +186,10 @@ class DriverConfig:
     sheet_size: SheetSize | None = None   # auto-picked if None
     mirror: bool = False                  # right-reading by default
     label_prefix: str = ""                # e.g. job code shown on reg label
+
+    # Two-white setup on dark garments: when True, we emit a Highlight
+    # White film in addition to the White Base. Print order is
+    # underbase-first (opaque base), colors, then highlight-white-last
+    # on top for pop on the brightest areas. Industry-standard for any
+    # dark shirt with photographic or rim-lit artwork.
+    auto_highlight_white: bool = True
