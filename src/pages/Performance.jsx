@@ -16,12 +16,12 @@ function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
     rose: "bg-rose-50 text-rose-600",
   };
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-5 flex items-start gap-4">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-5 flex items-start gap-4">
       <div className={`p-2.5 rounded-xl ${colors[color]}`}>
         <Icon className="w-5 h-5" />
       </div>
       <div>
-        <div className="text-2xl font-bold text-slate-900">{value}</div>
+        <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{value}</div>
         <div className="text-sm font-semibold text-slate-500">{label}</div>
         {sub && <div className="text-xs text-slate-400 mt-0.5">{sub}</div>}
       </div>
@@ -41,6 +41,7 @@ export default function Performance() {
     categoryFilter: "all",
   }));
   const [filtersExpanded, setFiltersExpanded] = useState(false);
+  const [jobCostOrders, setJobCostOrders] = useState([]);
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -137,6 +138,12 @@ export default function Performance() {
         setRecords(perfData);
         setExpenses(expData);
       }
+
+      // Load orders with actual cost data for job costing
+      try {
+        const orders = await base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200);
+        setJobCostOrders(orders.filter(o => o.actual_cost > 0 || o.actual_labor_cost > 0));
+      } catch {}
 
       setLoading(false);
     }
@@ -286,23 +293,23 @@ export default function Performance() {
     <div className="space-y-8">
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Shop Performance</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Shop Performance</h2>
           <p className="text-sm text-slate-500 mt-0.5">Revenue, expenses, and profit analysis with filtering.</p>
         </div>
         <div className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${
           qbConnected
             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-            : "bg-slate-50 text-slate-500 border-slate-200"
+            : "bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700"
         }`}>
           {qbConnected ? "Synced from QuickBooks" : "Local data"}
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
         <button
           onClick={() => setFiltersExpanded(!filtersExpanded)}
-          className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition"
+          className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 dark:bg-slate-800 transition"
         >
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700">Filters</span>
@@ -316,7 +323,7 @@ export default function Performance() {
         </button>
 
         {filtersExpanded && (
-          <div className="border-t border-slate-200 px-5 py-4 bg-slate-50">
+          <div className="border-t border-slate-200 dark:border-slate-700 px-5 py-4 bg-slate-50 dark:bg-slate-800">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div>
                 <label className="text-xs font-semibold text-slate-600 uppercase tracking-widest mb-1.5 block">Date</label>
@@ -363,13 +370,13 @@ export default function Performance() {
                     type="date"
                     value={filters.dateFrom}
                     onChange={(e) => setFilters({ ...filters, dateFrom: e.target.value })}
-                    className="flex-1 border border-slate-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="flex-1 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   />
                   <input
                     type="date"
                     value={filters.dateTo}
                     onChange={(e) => setFilters({ ...filters, dateTo: e.target.value })}
-                    className="flex-1 border border-slate-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="flex-1 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   />
                 </div>
               </div>
@@ -397,8 +404,8 @@ export default function Performance() {
       </div>
 
       {/* Monthly Revenue vs Expenses Trend */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-6">
-        <h3 className="text-base font-bold text-slate-800 mb-4">Revenue vs Expenses</h3>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
+        <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4">Revenue vs Expenses</h3>
         {monthlyTrend.length === 0 ? (
           <div className="text-slate-400 text-sm py-8 text-center">No data yet.</div>
         ) : (
@@ -419,8 +426,8 @@ export default function Performance() {
 
       <div className="grid md:grid-cols-3 gap-6">
         {/* Orders by Status */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <h3 className="text-base font-bold text-slate-800 mb-4">Orders by Status</h3>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4">Orders by Status</h3>
           {byStatus.length === 0 ? (
             <div className="text-slate-400 text-sm py-8 text-center">No data yet.</div>
           ) : (
@@ -435,7 +442,7 @@ export default function Performance() {
                         style={{ width: `${totalOrders ? (count / totalOrders) * 100 : 0}%` }}
                       />
                     </div>
-                    <span className="text-sm font-bold text-slate-800 w-5 text-right">{count}</span>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-200 w-5 text-right">{count}</span>
                   </div>
                 </div>
               ))}
@@ -444,8 +451,8 @@ export default function Performance() {
         </div>
 
         {/* Expenses by Category */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <h3 className="text-base font-bold text-slate-800 mb-4">Expenses by Category</h3>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4">Expenses by Category</h3>
           {expensesByCategory.length === 0 ? (
             <div className="text-slate-400 text-sm py-8 text-center">No expenses recorded yet.</div>
           ) : (
@@ -453,7 +460,7 @@ export default function Performance() {
               {expensesByCategory.map(({ name, amount }) => (
                 <div key={name} className="flex items-center justify-between">
                   <span className="text-sm font-medium text-slate-700">{name}</span>
-                  <span className="text-sm font-bold text-slate-800">{fmtMoney(amount)}</span>
+                  <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmtMoney(amount)}</span>
                 </div>
               ))}
             </div>
@@ -461,8 +468,8 @@ export default function Performance() {
         </div>
 
         {/* Broker Performance Summary */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <h3 className="text-base font-bold text-slate-800 mb-4">Broker Performance</h3>
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4">Broker Performance</h3>
           {brokerSummary.length === 0 ? (
             <div className="text-slate-400 text-sm py-8 text-center">No broker orders recorded yet.</div>
           ) : (
@@ -470,7 +477,7 @@ export default function Performance() {
               {brokerSummary.map(b => (
                 <div key={b.broker} className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-800 truncate">{b.broker}</div>
+                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{b.broker}</div>
                     <div className="text-xs text-slate-400">{b.orders} order{b.orders !== 1 ? "s" : ""}</div>
                   </div>
                   <div className="text-sm font-bold text-emerald-600 shrink-0">{fmtMoney(b.total)}</div>
@@ -482,17 +489,17 @@ export default function Performance() {
       </div>
 
       {/* Top Clients */}
-      <div className="bg-white rounded-2xl border border-slate-100 p-6">
-        <h3 className="text-base font-bold text-slate-800 mb-4">Top Clients by Revenue</h3>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
+        <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4">Top Clients by Revenue</h3>
         {topClients.length === 0 ? (
           <div className="text-slate-400 text-sm py-8 text-center">No data yet.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100">
+                <tr className="border-b border-slate-100 dark:border-slate-700">
                   <th className="text-left py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">#</th>
-                  <th className="text-left py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">Client</th>
+                  <th className="text-left py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">Customer</th>
                   <th className="text-right py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">Orders</th>
                   <th className="text-right py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">Total Revenue</th>
                 </tr>
@@ -501,9 +508,9 @@ export default function Performance() {
                 {topClients.map((c, i) => (
                   <tr key={c.name} className="border-b border-slate-50">
                     <td className="py-3 text-slate-300 font-bold">{i + 1}</td>
-                    <td className="py-3 font-semibold text-slate-800">{c.name}</td>
+                    <td className="py-3 font-semibold text-slate-800 dark:text-slate-200">{c.name}</td>
                     <td className="py-3 text-right text-slate-500">{c.orders}</td>
-                    <td className="py-3 text-right font-bold text-slate-900">{fmtMoney(c.total)}</td>
+                    <td className="py-3 text-right font-bold text-slate-900 dark:text-slate-100">{fmtMoney(c.total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -512,12 +519,78 @@ export default function Performance() {
         )}
       </div>
 
+      {/* Job Costing */}
+      {jobCostOrders.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700">
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">Job Costing</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Orders with actual costs tracked — quoted vs actual profitability</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase">Order</th>
+                  <th className="text-left px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase">Customer</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase">Revenue</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase">Material</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase">Labor</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase">Profit</th>
+                  <th className="text-right px-4 py-2.5 text-xs font-semibold text-slate-400 uppercase">Margin</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobCostOrders.map(o => {
+                  const rev = o.total || 0;
+                  const mat = o.actual_cost || 0;
+                  const lab = o.actual_labor_cost || 0;
+                  const profit = rev - mat - lab;
+                  const margin = rev > 0 ? ((profit / rev) * 100).toFixed(1) : 0;
+                  return (
+                    <tr key={o.id} className="border-b border-slate-50 dark:border-slate-800">
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-400">{o.order_id}</td>
+                      <td className="px-4 py-2.5 text-slate-700 dark:text-slate-300">{o.customer_name}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-800 dark:text-slate-200">{fmtMoney(rev)}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-500">−{fmtMoney(mat)}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-500">−{fmtMoney(lab)}</td>
+                      <td className={`px-4 py-2.5 text-right font-bold ${profit >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(profit)}</td>
+                      <td className={`px-4 py-2.5 text-right text-xs font-semibold ${parseFloat(margin) >= 30 ? "text-emerald-600" : parseFloat(margin) >= 15 ? "text-amber-600" : "text-red-600"}`}>{margin}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-50 dark:bg-slate-800 border-t border-slate-200 dark:border-slate-700">
+                  {(() => {
+                    const totRev = jobCostOrders.reduce((s, o) => s + (o.total || 0), 0);
+                    const totMat = jobCostOrders.reduce((s, o) => s + (o.actual_cost || 0), 0);
+                    const totLab = jobCostOrders.reduce((s, o) => s + (o.actual_labor_cost || 0), 0);
+                    const totProfit = totRev - totMat - totLab;
+                    const totMargin = totRev > 0 ? ((totProfit / totRev) * 100).toFixed(1) : 0;
+                    return (
+                      <>
+                        <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-300" colSpan={2}>Totals ({jobCostOrders.length} jobs)</td>
+                        <td className="px-4 py-3 text-right font-bold text-slate-800 dark:text-slate-200">{fmtMoney(totRev)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-slate-500">−{fmtMoney(totMat)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-slate-500">−{fmtMoney(totLab)}</td>
+                        <td className={`px-4 py-3 text-right font-bold ${totProfit >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtMoney(totProfit)}</td>
+                        <td className={`px-4 py-3 text-right font-bold ${parseFloat(totMargin) >= 30 ? "text-emerald-600" : parseFloat(totMargin) >= 15 ? "text-amber-600" : "text-red-600"}`}>{totMargin}%</td>
+                      </>
+                    );
+                  })()}
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* QuickBooks Reports */}
       {qbConnected && (
-        <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-5">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6 space-y-5">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-base font-bold text-slate-800">QuickBooks Reports</h3>
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">QuickBooks Reports</h3>
           </div>
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-48">
@@ -525,7 +598,7 @@ export default function Performance() {
               <select
                 value={selectedReport}
                 onChange={(e) => setSelectedReport(e.target.value)}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
               >
                 {QB_REPORTS.map((r) => (
                   <option key={r.id} value={r.id}>{r.label}</option>
@@ -535,12 +608,12 @@ export default function Performance() {
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">From</label>
               <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">To</label>
               <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)}
-                className="text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             </div>
             <button
               onClick={() => fetchQbReport(selectedReport, reportStartDate, reportEndDate)}
@@ -571,7 +644,7 @@ export default function Performance() {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="font-semibold text-slate-800">{header.ReportName}</div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">{header.ReportName}</div>
                     {header.StartPeriod && <div className="text-xs text-slate-400">{header.StartPeriod} — {header.EndPeriod}</div>}
                   </div>
                   <a href="https://app.qbo.intuit.com/app/reports" target="_blank" rel="noopener noreferrer"
@@ -583,9 +656,9 @@ export default function Performance() {
                   {rows.map((row, i) => (
                     <div key={i}
                       className={`grid items-center py-1.5 text-sm rounded-lg px-2 ${
-                        row.type === "header" ? "font-bold text-slate-800 bg-slate-50 mt-2"
-                        : row.type === "total" ? "font-bold text-slate-900 border-t border-slate-200 mt-1"
-                        : "text-slate-600 hover:bg-slate-50"}`}
+                        row.type === "header" ? "font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 mt-2"
+                        : row.type === "total" ? "font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 mt-1"
+                        : "text-slate-600 hover:bg-slate-50 dark:bg-slate-800"}`}
                       style={{ gridTemplateColumns: `1fr ${row.cols.map(() => "120px").join(" ")}`, paddingLeft: `${(row.depth * 16) + 8}px` }}
                     >
                       <span className="truncate">{row.label}</span>
@@ -620,15 +693,15 @@ export default function Performance() {
 
       {/* QuickBooks Invoices */}
       {qbConnected && records.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
           <div className="flex items-center gap-2 mb-4">
             <FileText className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-base font-bold text-slate-800">QuickBooks Invoices</h3>
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">QuickBooks Invoices</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-100">
+                <tr className="border-b border-slate-100 dark:border-slate-700">
                   <th className="text-left py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">Invoice #</th>
                   <th className="text-left py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">Date</th>
                   <th className="text-left py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">Customer</th>
@@ -639,11 +712,11 @@ export default function Performance() {
               </thead>
               <tbody>
                 {[...records].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 50).map((inv) => (
-                  <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50">
+                  <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800">
                     <td className="py-3 text-slate-500 font-mono">{inv.invoice_id || inv.id}</td>
                     <td className="py-3 text-slate-600">{inv.date}</td>
-                    <td className="py-3 font-medium text-slate-800">{inv.customer_name}</td>
-                    <td className="py-3 text-right font-bold text-slate-900">{fmtMoney(inv.total)}</td>
+                    <td className="py-3 font-medium text-slate-800 dark:text-slate-200">{inv.customer_name}</td>
+                    <td className="py-3 text-right font-bold text-slate-900 dark:text-slate-100">{fmtMoney(inv.total)}</td>
                     <td className="py-3 text-right text-slate-500">{fmtMoney(inv.balance ?? 0)}</td>
                     <td className="py-3 text-right">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import OrderWizard from "../components/wizard/OrderWizard";
 import { fmtMoney, calcQuoteTotals } from "../components/shared/pricing";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
@@ -127,12 +127,16 @@ function ClientReviewPage({ quoteId }) {
           <div className="flex justify-between text-sm text-slate-600">
             <span>Subtotal</span><span>{fmtMoney(totals.sub)}</span>
           </div>
-          {parseFloat(quote?.discount) > 0 && (
-            <div className="flex justify-between text-sm text-emerald-600">
-              <span>Discount ({quote.discount}%)</span>
-              <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
-            </div>
-          )}
+          {parseFloat(quote?.discount) > 0 && (() => {
+            const dv = parseFloat(quote.discount);
+            const isFlat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
+            return (
+              <div className="flex justify-between text-sm text-emerald-600">
+                <span>Discount {isFlat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
+                <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
+              </div>
+            );
+          })()}
           <div className="flex justify-between text-sm text-slate-600">
             <span>Tax ({quote?.tax_rate || 0}%)</span><span>{fmtMoney(totals.tax)}</span>
           </div>
@@ -209,21 +213,50 @@ export default function QuoteRequest() {
   }
 
   async function handleSubmit(quote) {
-    await base44.entities.Quote.create({ ...quote, shop_owner: shopOwner });
+    await base44.entities.Quote.create({ ...quote, shop_owner: shopOwner, source: "wizard" });
+
+    // Send notification emails — failures don't block the submission
+    try {
+      const linesSummary = (quote.line_items || [])
+        .map(li => `${li.style} · ${li.garmentColor} (${Object.values(li.sizes || {}).reduce((s,v) => s + (parseInt(v) || 0), 0)} pcs)`)
+        .join("\n");
+
+      // Notify the shop owner
+      const { data: ownerRes, error: ownerErr } = await supabase.functions.invoke("sendQuoteEmail", {
+        body: {
+          customerEmails: [shopOwner],
+          customerName: quote.customer_name || "Customer",
+          quoteId: quote.quote_id,
+          shopName: shop?.shop_name || "Your Shop",
+          subject: `New Quote Request from ${quote.customer_name || "a customer"}`,
+          body: `A new quote request has been submitted through your order wizard.\n\nCustomer: ${quote.customer_name}\nEmail: ${quote.customer_email || "—"}\nPhone: ${quote.phone || "—"}\nCompany: ${quote.company || "—"}\n\nItems:\n${linesSummary}\n\nLog in to InkTracker to review and send a quote.`,
+        },
+      });
+      if (ownerErr) console.error("[QuoteRequest] owner email error:", ownerErr);
+      if (ownerRes?.error) console.error("[QuoteRequest] owner email failed:", ownerRes.error);
+
+      // Confirm to the customer
+      if (quote.customer_email) {
+        const { error: custErr } = await supabase.functions.invoke("sendQuoteEmail", {
+          body: {
+            customerEmails: [quote.customer_email],
+            customerName: quote.customer_name || "Customer",
+            quoteId: quote.quote_id,
+            shopName: shop?.shop_name || "Print Shop",
+            subject: `We received your quote request — ${shop?.shop_name || "Print Shop"}`,
+            body: `Hi ${quote.customer_name || "there"},\n\nThank you for your order request! We've received it and will follow up within 1 business day with a finalized quote.\n\nItems requested:\n${linesSummary}\n\nIf you have any questions, just reply to this email.`,
+          },
+        });
+        if (custErr) console.error("[QuoteRequest] customer email error:", custErr);
+      }
+    } catch (err) {
+      console.error("[QuoteRequest] notification email failed:", err?.message);
+    }
   }
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-4xl mx-auto px-4 py-10">
-        <div className="text-center mb-8">
-          {shop?.logo_url && (
-            <img src={shop.logo_url} alt="" className="w-16 h-16 rounded-full mx-auto mb-4 border border-slate-200" />
-          )}
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">
-            {shop?.shop_name ? `${shop.shop_name} — Request a Quote` : "Request a Quote"}
-          </h1>
-          <p className="text-slate-500">Fill out the form below and we'll get back to you within 1 business day.</p>
-        </div>
         <OrderWizard
           onSubmit={handleSubmit}
           styles={wizardStyles}
@@ -231,7 +264,7 @@ export default function QuoteRequest() {
           shopOwner={shopOwner}
         />
         <div className="text-center mt-10 text-xs text-slate-400">
-          Questions? Call or text us at your shop phone number.
+          Questions? Reach out and we'll get back to you within 1 business day.
         </div>
       </div>
     </div>

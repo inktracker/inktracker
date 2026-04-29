@@ -143,6 +143,7 @@ export default function Orders() {
       rush_rate: order.rush_rate || 0,
       extras: order.extras || {},
       discount: order.discount || 0,
+      discount_type: order.discount_type || "percent",
       tax_rate: order.tax_rate || 8.265,
     });
 
@@ -215,14 +216,14 @@ export default function Orders() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-900">Orders</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Orders</h2>
       </div>
       <div className="flex gap-2 flex-wrap">
         {["All", ...O_STATUSES].map((s) => (
           <button
             key={s}
             onClick={() => setFilter(s)}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"}`}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"}`}
           >
             {s}
           </button>
@@ -233,18 +234,18 @@ export default function Orders() {
           <button
             key={o}
             onClick={() => setOriginFilter(o)}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${originFilter === o ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-500 hover:border-slate-400"}`}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${originFilter === o ? "bg-slate-800 text-white border-slate-800" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-400"}`}
           >
             {o}
           </button>
         ))}
       </div>
       <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
         <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50">
+              <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                 {["Order ID", "Customer", "Artwork", "Due", "Total", "Status", ""].map((h) => (
                   <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">
                     {h}
@@ -265,12 +266,12 @@ export default function Orders() {
                 return (
                   <tr
                     key={o.id}
-                    className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition"
+                    className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition"
                     onClick={() => setViewing(o)}
                   >
                     <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{o.order_id}</td>
                     <td className="px-5 py-3.5">
-                      <div className="font-semibold text-slate-800">
+                      <div className="font-semibold text-slate-800 dark:text-slate-200">
                         {getOrderDisplayClient(o, customers[o.customer_id])}
                       </div>
                       {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
@@ -289,7 +290,7 @@ export default function Orders() {
                       )}
                     </td>
                     <td className="px-5 py-3.5 text-slate-500">{o.due_date ? fmtDate(o.due_date) : "—"}</td>
-                    <td className="px-5 py-3.5 font-bold text-slate-800">{fmtMoney(o.total || 0)}</td>
+                    <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</td>
                     <td className="px-5 py-3.5"><Badge s={o.status} /></td>
                     <td className="px-5 py-3.5 text-right text-indigo-400 text-xs font-semibold">View →</td>
                   </tr>
@@ -304,11 +305,11 @@ export default function Orders() {
           {filtered.map((o) => {
             const artworkCount = getOrderArtworkCount(o);
             return (
-              <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition" onClick={() => setViewing(o)}>
+              <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(o)}>
                 <div className="flex justify-between items-start mb-2">
                   <div>
                     <div className="font-mono text-xs text-slate-400">{o.order_id}</div>
-                    <div className="font-semibold text-slate-800">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
                     {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
                       <div className="text-xs text-slate-400 mt-0.5">
                         Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
@@ -319,7 +320,7 @@ export default function Orders() {
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                   <span>Due: {o.due_date ? fmtDate(o.due_date) : "—"}</span>
-                  <span className="font-bold text-slate-800">{fmtMoney(o.total || 0)}</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</span>
                 </div>
                 {artworkCount > 0 && (
                   <div className="mt-2">

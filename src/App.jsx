@@ -288,19 +288,33 @@ const AuthenticatedApp = () => {
   );
 };
 
+function PublicRouteGuard() {
+  const location = useLocation();
+  const pathname = (location.pathname || "/").toLowerCase();
+  const isPublic = PUBLIC_PATHS.has(pathname);
+
+  if (isPublic) {
+    return <AppRoutes />;
+  }
+
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <QueryClientProvider client={queryClientInstance}>
-          <Router>
-            <ErrorBoundary>
-              <AuthenticatedApp />
-            </ErrorBoundary>
-          </Router>
-          <Toaster />
-        </QueryClientProvider>
-      </AuthProvider>
+      <QueryClientProvider client={queryClientInstance}>
+        <Router>
+          <ErrorBoundary>
+            <PublicRouteGuard />
+          </ErrorBoundary>
+        </Router>
+        <Toaster />
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }

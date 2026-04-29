@@ -1,32 +1,38 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { base44 } from "@/api/supabaseClient";
 
 const APP_URL = window.location.origin;
-const WIZARD_URL = `${APP_URL}/quote-request`;
-
-const iframeSnippet = `<!-- InkShop Quote Request Widget -->
-<iframe 
-  src="${APP_URL}/quote-request"
-  width="100%" 
-  height="850" 
-  frameborder="0" 
-  style="border-radius:16px; border:none; display:block;"
-  title="Request a Quote">
-</iframe>`;
-
-const shopifySnippet = `<!-- Add this to a Custom HTML section in Shopify -->
-<div style="max-width:900px; margin:0 auto; padding:0 16px;">
-  <iframe 
-    src="${APP_URL}/quote-request"
-    width="100%" 
-    height="850" 
-    frameborder="0" 
-    style="border-radius:16px; border:none; display:block;"
-    title="Request a Quote">
-  </iframe>
-</div>`;
 
 export default function Embed() {
   const [copied, setCopied] = useState(null);
+  const [userEmail, setUserEmail] = useState("");
+
+  useEffect(() => {
+    base44.auth.me().then(u => {
+      if (u?.email) setUserEmail(u.email);
+    }).catch(() => {});
+  }, []);
+
+  const shopParam = encodeURIComponent(userEmail);
+  const WIZARD_URL = `${APP_URL}/QuoteRequest?shop=${shopParam}`;
+
+  const iframeSnippet = `<!-- InkTracker Quote Request Widget -->
+<iframe
+  src="${APP_URL}/QuoteRequest?shop=${shopParam}"
+  style="width:100%; min-height:1000px; border:none;"
+  allow="clipboard-write"
+  title="Request a Quote">
+</iframe>`;
+
+  const shopifySnippet = `<!-- Add to Shopify: Theme Editor → Custom Liquid section -->
+<div style="max-width:960px; margin:0 auto; padding:0 16px;">
+  <iframe
+    src="${APP_URL}/QuoteRequest?shop=${shopParam}"
+    style="width:100%; min-height:1000px; border:none;"
+    allow="clipboard-write"
+    title="Request a Quote">
+  </iframe>
+</div>`;
 
   function copy(text, key) {
     navigator.clipboard.writeText(text);
@@ -70,7 +76,7 @@ export default function Embed() {
           </div>
           <pre className="bg-slate-50 rounded-xl p-4 text-xs text-slate-500 overflow-x-auto whitespace-pre border border-slate-100">{shopifySnippet}</pre>
           <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-700">
-            <strong>Shopify tip:</strong> Go to <em>Online Store → Pages → Add page</em>, click the <strong>&lt;&gt;</strong> source code button in the editor, and paste this code. Then add the page to your navigation menu.
+            <strong>Shopify tip:</strong> In your Theme Editor, add a <strong>Custom Liquid</strong> section to your quote page and paste this code. The rich text editor may strip iframes — Custom Liquid is the most reliable method.
           </div>
         </div>
 
@@ -98,7 +104,7 @@ export default function Embed() {
             <li>A new <strong>Pending</strong> quote instantly appears in your Quotes page</li>
             <li>You review, price-confirm, and approve it — all from this app</li>
           </ol>
-          <div className="mt-3 text-xs text-indigo-500">⚠️ Make sure your app visibility is set to <strong>Public</strong> in your app settings so customers don't need to log in.</div>
+          <div className="mt-3 text-xs text-indigo-500">The wizard works without login — customers can submit directly from your website.</div>
         </div>
       </div>
     </div>

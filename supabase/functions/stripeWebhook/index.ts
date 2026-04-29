@@ -239,11 +239,20 @@ Deno.serve(async (req) => {
       }
 
       // Update quote status (authoritative server-side confirmation)
-      const newStatus = isDeposit ? "Approved" : "Approved and Paid";
-      await supabase
-        .from("quotes")
-        .update({ status: newStatus, deposit_paid: true })
-        .eq("id", quoteId);
+      // Don't overwrite if already converted to an order
+      if (quote.status === "Converted to Order" || quote.converted_order_id) {
+        console.log(`[stripeWebhook] Quote ${quote.quote_id} already converted to order — skipping status update`);
+        await supabase
+          .from("quotes")
+          .update({ deposit_paid: true })
+          .eq("id", quoteId);
+      } else {
+        const newStatus = isDeposit ? "Approved" : "Approved and Paid";
+        await supabase
+          .from("quotes")
+          .update({ status: newStatus, deposit_paid: true })
+          .eq("id", quoteId);
+      }
 
       // Look up shop name for customer email
       const { data: shops } = await supabase

@@ -319,16 +319,27 @@ function buildInvoiceLinesFromPayload(
     });
   }
 
-  const discount = Number(payload?.discountPercent) || 0;
-  if (discount > 0 && lines.length > 0) {
+  const discountPct = Number(payload?.discountPercent) || 0;
+  const discountFlat = Number(payload?.discountAmount) || 0;
+  const isFlat = payload?.discountType === "flat" || discountFlat > 0;
+
+  if (isFlat && discountFlat > 0 && lines.length > 0) {
+    lines.push({
+      DetailType: "DiscountLineDetail",
+      Amount: discountFlat,
+      DiscountLineDetail: {
+        PercentBased: false,
+      },
+    });
+  } else if (discountPct > 0 && lines.length > 0) {
     const subtotal = lines.reduce((s, l) => s + l.Amount, 0);
-    const discountAmount = Number(((subtotal * discount) / 100).toFixed(2));
+    const discountAmount = Number(((subtotal * discountPct) / 100).toFixed(2));
     lines.push({
       DetailType: "DiscountLineDetail",
       Amount: discountAmount,
       DiscountLineDetail: {
         PercentBased: true,
-        DiscountPercent: discount,
+        DiscountPercent: discountPct,
       },
     });
   }
@@ -351,10 +362,10 @@ function extractPaymentLink(invoiceData: any, realmId: string) {
 
   if (candidates.length > 0) return candidates[0];
 
-  // Fallback: construct the QB-hosted invoice payment URL
+  // Fallback: construct the QB-hosted customer payment URL
   const txnId = inv?.Id;
   if (txnId && realmId) {
-    return `https://app.qbo.intuit.com/app/invoice?txnId=${txnId}`;
+    return `https://connect.intuit.com/portal/asei/CommerceNetwork/consumer/view-invoice?businessId=${realmId}&invoiceId=${txnId}`;
   }
   return null;
 }
@@ -408,12 +419,49 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     invoiceBody.GlobalTaxCalculation = "NotApplicable";
   }
 
-  const created = await qbCreate(token, realmId, "invoice", invoiceBody);
-  const qbInvoiceId = created?.Invoice?.Id;
-  if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
+  let created: any;
+  let qbInvoiceId: string;
+  let qbInvoiceFinal: any;
+
+  try {
+    created = await qbCreate(token, realmId, "invoice", invoiceBody);
+    qbInvoiceId = created?.Invoice?.Id;
+    if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
+    qbInvoiceFinal = created?.Invoice ?? created;
+  } catch (createErr: any) {
+    // Handle duplicate DocNumber — find and update the existing invoice
+    const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
+    if (!isDuplicate) throw createErr;
+
+    console.error(`[createInvoice] Duplicate DocNumber ${quote.quote_id} — updating existing invoice`);
+    const existing = await qbQuery(token, realmId,
+      `SELECT * FROM Invoice WHERE DocNumber = '${(quote.quote_id || "").replace(/'/g, "\\'")}'`
+    );
+    const found = existing?.QueryResponse?.Invoice?.[0];
+    if (!found) throw new Error(`Duplicate invoice exists but could not be found: ${quote.quote_id}`);
+
+    // Update the existing invoice with the new line items and amounts
+    try {
+      const updateBody = {
+        ...invoiceBody,
+        Id: found.Id,
+        SyncToken: found.SyncToken,
+        sparse: false,
+      };
+      const updated = await qbUpdate(token, realmId, "invoice", updateBody);
+      qbInvoiceId = found.Id;
+      qbInvoiceFinal = updated?.Invoice ?? found;
+      created = updated;
+      console.error(`[createInvoice] Updated existing invoice ${found.Id} with new amounts`);
+    } catch (updateErr) {
+      console.error("[createInvoice] update failed, returning existing:", updateErr);
+      qbInvoiceId = found.Id;
+      qbInvoiceFinal = found;
+      created = { Invoice: found };
+    }
+  }
 
   // Re-read the invoice to ensure we have the final AST-computed tax/total
-  let qbInvoiceFinal = created?.Invoice ?? created;
   try {
     const re = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
     const fetched = re?.QueryResponse?.Invoice?.[0];
@@ -447,16 +495,25 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }
   }
 
-  // 5. Save QB invoice ID + payment link + final QB-computed totals back to the quote
-  await supabase.from("quotes").update({
-    qb_invoice_id:   qbInvoiceId,
-    qb_payment_link: paymentLink,
-    qb_synced_at:    new Date().toISOString(),
-    qb_subtotal:     qbSubtotal,
-    qb_tax_amount:   qbTaxAmount,
-    qb_total:        qbTotal,
-    status:          quote.status === "Draft" ? "Sent" : quote.status,
-  }).eq("id", quote.id);
+  // 5. Save QB invoice ID + payment link + final QB-computed totals back to the source record
+  if (quote.id) {
+    // Try quotes table first (quote-originated invoices)
+    await supabase.from("quotes").update({
+      qb_invoice_id:   qbInvoiceId,
+      qb_payment_link: paymentLink,
+      qb_synced_at:    new Date().toISOString(),
+      qb_subtotal:     qbSubtotal,
+      qb_tax_amount:   qbTaxAmount,
+      qb_total:        qbTotal,
+      status:          quote.status === "Draft" ? "Sent" : quote.status,
+    }).eq("id", quote.id);
+
+    // Also try invoices table (invoice-originated, same ID format)
+    await supabase.from("invoices").update({
+      qb_invoice_id:   qbInvoiceId,
+      qb_payment_link: paymentLink,
+    }).eq("id", quote.id);
+  }
 
   return { qbInvoiceId, paymentLink, qbSubtotal, qbTaxAmount, qbTotal, customerRef: qbCustomerId };
 }

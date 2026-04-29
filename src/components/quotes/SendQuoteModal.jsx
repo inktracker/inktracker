@@ -172,6 +172,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           brokerEmail: quote.broker_id || quote.broker_email || "",
           pdfBase64,
           pdfFilename: `Quote-${quote.quote_id || "draft"}.pdf`,
+          shopOwnerEmail: quote.shop_owner || "",
         },
       });
 
@@ -295,12 +296,16 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   <span>{fmtMoney(totals.sub)}</span>
                 </div>
 
-                {parseFloat(quote?.discount) > 0 && (
-                  <div className="flex justify-between text-sm text-emerald-600">
-                    <span>Discount ({quote.discount}%)</span>
-                    <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
-                  </div>
-                )}
+                {parseFloat(quote?.discount) > 0 && (() => {
+                  const dv = parseFloat(quote.discount);
+                  const isFlat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
+                  return (
+                    <div className="flex justify-between text-sm text-emerald-600">
+                      <span>Discount {isFlat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
+                      <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex justify-between text-sm text-slate-500">
                   <span>Tax ({isBrokerQuote(quote) ? 0 : quote?.tax_rate || 0}%)</span>

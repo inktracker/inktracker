@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
+
+const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import { createPageUrl } from "@/utils";
 import { fmtMoney, fmtDate, O_STATUSES } from "../components/shared/pricing";
 import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign } from "lucide-react";
@@ -20,11 +22,11 @@ function MetricCard({ label, value, sub, color = "text-indigo-600", onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md hover:border-slate-300 transition text-left"
+      className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition text-left min-w-0"
     >
-      <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">{label}</div>
-      <div className={`text-3xl font-bold ${color}`}>{value}</div>
-      {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
+      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">{label}</div>
+      <div className={`text-xl sm:text-2xl font-bold ${color} truncate`}>{value}</div>
+      {sub && <div className="text-[10px] text-slate-400 mt-1">{sub}</div>}
     </button>
   );
 }
@@ -95,11 +97,11 @@ function BrokerCard({ broker, shopOwners, currentUser, orders }) {
   const threadId = currentUser ? `${broker.email}:${currentUser.email}` : null;
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      <button onClick={toggle} className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition text-left">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+      <button onClick={toggle} className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 dark:bg-slate-800 transition text-left">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="font-semibold text-slate-800 text-sm">{broker.display_name || broker.full_name || broker.email}</div>
+            <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{broker.display_name || broker.full_name || broker.email}</div>
             {broker.company_name && <span className="text-xs text-slate-400">{broker.company_name}</span>}
             {assignedShopNames.length > 0 && assignedShopNames.map((name, i) => (
               <span key={i} className="text-xs bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded-full">{name}</span>
@@ -111,7 +113,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders }) {
         <div className="flex items-center gap-4 shrink-0 ml-4">
           <div className="text-right hidden sm:block">
             <div className="text-xs text-slate-400">Orders</div>
-            <div className="font-bold text-slate-800 text-sm">{brokerOrders.length}</div>
+            <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">{brokerOrders.length}</div>
           </div>
           <div className="text-right hidden sm:block">
             <div className="text-xs text-slate-400">Revenue</div>
@@ -122,8 +124,8 @@ function BrokerCard({ broker, shopOwners, currentUser, orders }) {
       </button>
 
       {open && (
-        <div className="border-t border-slate-100">
-          <div className="flex border-b border-slate-100 bg-slate-50 px-5">
+        <div className="border-t border-slate-100 dark:border-slate-700">
+          <div className="flex border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-5">
             {[
               { id: "performance", label: "Performance", icon: BarChart2 },
               { id: "clients", label: "Clients", icon: Users },
@@ -140,24 +142,24 @@ function BrokerCard({ broker, shopOwners, currentUser, orders }) {
             ))}
           </div>
 
-          <div className="px-5 py-4 bg-slate-50">
+          <div className="px-5 py-4 bg-slate-50 dark:bg-slate-800">
             {/* Performance */}
             {subTab === "performance" && (
               <div className="space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-center">
                     <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Total Orders</div>
-                    <div className="text-2xl font-bold text-slate-800">{brokerOrders.length}</div>
+                    <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">{brokerOrders.length}</div>
                   </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-center">
                     <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Revenue</div>
                     <div className="text-lg font-bold text-indigo-700">{fmtMoney(totalRevenue)}</div>
                   </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-center">
                     <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Avg. Order</div>
                     <div className="text-lg font-bold text-slate-700">{fmtMoney(avgOrderValue)}</div>
                   </div>
-                  <div className="bg-white border border-slate-200 rounded-xl p-3">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3">
                     <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1.5">Status</div>
                     <div className="flex flex-wrap gap-1">
                       <span className="text-xs font-semibold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">{pending} Pending</span>
@@ -167,7 +169,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders }) {
                   </div>
                 </div>
                 {monthlyData.length > 0 ? (
-                  <div className="bg-white border border-slate-200 rounded-xl p-4">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
                     <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Monthly Activity (Last 12 Months)</div>
                     <ResponsiveContainer width="100%" height={160}>
                       <BarChart data={monthlyData} margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
@@ -198,9 +200,9 @@ function BrokerCard({ broker, shopOwners, currentUser, orders }) {
                 ) : (
                   <div className="space-y-2">
                     {clients.map(c => (
-                      <div key={c.id} className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 flex items-start justify-between">
+                      <div key={c.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 flex items-start justify-between">
                         <div>
-                          <div className="text-sm font-semibold text-slate-800">{c.name}</div>
+                          <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{c.name}</div>
                           {c.company && <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5"><Building2 className="w-3 h-3" /> {c.company}</div>}
                         </div>
                         <div className="text-right text-xs text-slate-400 space-y-0.5">
@@ -256,18 +258,34 @@ export default function Dashboard() {
         if (currentUser.role === "broker") { navigate(createPageUrl("BrokerDashboard")); return; }
         setUser(currentUser);
 
-        const [q, o, inv, invItems, allUsers] = await Promise.all([
+        const [q, o, invItems, allUsers] = await Promise.all([
           base44.entities.Quote.filter({ shop_owner: currentUser.email }, "-created_date", 100),
           base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 50),
-          base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-created_date", 20),
           base44.entities.InventoryItem.filter({ shop_owner: currentUser.email }),
           base44.entities.User.list(),
         ]);
 
         setQuotes(q);
         setOrders(o);
-        setInvoices(inv);
         setInventory(invItems);
+
+        // Fetch live invoice data from QB (non-blocking)
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "getPerformanceData", accessToken: session.access_token }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              setInvoices(data.revenue || []);
+            }
+          }
+        } catch (err) {
+          console.warn("[Dashboard] QB data failed:", err?.message);
+        }
         setBrokers(allUsers.filter(u => u.role === "broker" && (u.assigned_shops || []).includes(currentUser.email)));
         setShopOwners(allUsers.filter(u => u.role !== "broker"));
         setLoading(false);
@@ -286,20 +304,20 @@ export default function Dashboard() {
   const activeOrders = orders.filter(o => !["Ready for Pickup", "Completed"].includes(o.status)).length;
   const openOrdersCount = orders.filter(o => o.status !== "Completed").length;
   const openOrdersValue = orders.filter(o => o.status !== "Completed").reduce((sum, o) => sum + (o.total || 0), 0);
-  const unpaidInvoices = invoices.filter(i => !i.paid).reduce((sum, i) => sum + (i.total || 0), 0);
+  const unpaidInvoices = invoices.reduce((sum, i) => sum + (i.balance || 0), 0);
   const lowStockItems = inventory.filter(i => (i.qty || 0) <= (i.reorder || 0));
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
           <p className="text-slate-500 text-sm mt-1">{user?.shop_name || "My Shop"} · Overview & broker management</p>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-0 border-b border-slate-200">
+      <div className="flex gap-0 border-b border-slate-200 dark:border-slate-700">
         {[
           { id: "overview", label: "Overview", icon: TrendingUp },
           { id: "brokers", label: "Brokers", icon: Users, badge: brokerUnreadCount },
@@ -308,7 +326,7 @@ export default function Dashboard() {
             key={id}
             onClick={() => setTab(id)}
             className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition ${
-              tab === id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800"
+              tab === id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-200"
             }`}
           >
             <NavIcon className="w-4 h-4" /> {label}
@@ -341,22 +359,22 @@ export default function Dashboard() {
               {O_STATUSES.map(status => {
                 const inStage = orders.filter((o) => o.status === status);
                 return (
-                  <div key={status} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                  <div key={status} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                     <button
                       onClick={() => navigate(`/Orders?status=${encodeURIComponent(status)}`)}
-                      className="w-full text-left bg-slate-50 border-b border-slate-200 px-4 py-3 hover:bg-slate-100 transition"
+                      className="w-full text-left bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 hover:bg-slate-100 transition"
                     >
                       <div className="text-xs font-bold text-slate-600 uppercase tracking-widest">{status}</div>
-                      <div className="text-2xl font-bold text-slate-900">{inStage.length}</div>
+                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{inStage.length}</div>
                     </button>
                     <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
                       {inStage.map((o) => (
                         <button
                           key={o.id}
                           onClick={() => navigate(`/Orders?id=${o.id}`)}
-                          className="w-full text-left text-xs bg-slate-50 rounded-lg px-3 py-2 border border-slate-100 hover:bg-indigo-50 hover:border-indigo-200 transition"
+                          className="w-full text-left text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700 hover:bg-indigo-50 hover:border-indigo-200 transition"
                         >
-                          <div className="font-semibold text-slate-800 truncate">{o.customer_name}</div>
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{o.customer_name}</div>
                           <div className="text-slate-500">{o.order_id}</div>
                         </button>
                       ))}
@@ -369,10 +387,10 @@ export default function Dashboard() {
 
           {/* Recent Quotes & Low Stock */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
               <button
                 onClick={() => navigate(createPageUrl("Quotes"))}
-                className="w-full bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center justify-between hover:bg-slate-100 transition"
+                className="w-full bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-5 py-3 flex items-center justify-between hover:bg-slate-100 transition"
               >
                 <h3 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Recent Quotes</h3>
                 <span className="text-xs font-semibold text-slate-400">{quotes.length} total</span>
@@ -385,10 +403,10 @@ export default function Dashboard() {
                     <button
                       key={q.id}
                       onClick={() => navigate(`/Quotes?id=${q.id}`)}
-                      className="w-full text-left px-5 py-3 flex items-center justify-between hover:bg-slate-50 transition"
+                      className="w-full text-left px-5 py-3 flex items-center justify-between hover:bg-slate-50 dark:bg-slate-800 transition"
                     >
                       <div>
-                        <div className="font-semibold text-slate-800 text-sm">{q.customer_name || "—"}</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{q.customer_name || "—"}</div>
                         <div className="text-xs text-slate-400 mt-0.5">
                           {q.quote_id}
                           {q.broker_id && <span className="ml-2 text-indigo-500 font-semibold">via broker</span>}
@@ -406,10 +424,10 @@ export default function Dashboard() {
               )}
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
               <button
                 onClick={() => navigate(createPageUrl("Inventory"))}
-                className="w-full bg-slate-50 border-b border-slate-200 px-5 py-3 flex items-center justify-between hover:bg-slate-100 transition text-left"
+                className="w-full bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-5 py-3 flex items-center justify-between hover:bg-slate-100 transition text-left"
               >
                 <h3 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Low Stock Items</h3>
                 <span className="text-xs font-semibold text-slate-400">{lowStockItems.length} flagged</span>
@@ -422,10 +440,10 @@ export default function Dashboard() {
                     <button
                       key={item.id}
                       onClick={() => navigate(createPageUrl("Inventory"))}
-                      className="w-full text-left px-5 py-3 hover:bg-slate-50 transition"
+                      className="w-full text-left px-5 py-3 hover:bg-slate-50 dark:bg-slate-800 transition"
                     >
                       <div className="flex justify-between items-start mb-1">
-                        <div className="font-semibold text-slate-800 text-sm">{item.item}</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{item.item}</div>
                         <span className="text-xs text-slate-500">{item.sku}</span>
                       </div>
                       <div className="flex justify-between text-xs text-slate-500">
@@ -491,7 +509,7 @@ export default function Dashboard() {
             </div>
           )}
           {brokers.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-2xl py-16 text-center">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl py-16 text-center">
               <Users className="w-12 h-12 text-slate-200 mx-auto mb-3" />
               <p className="text-slate-400 text-sm">Brokers can be assigned to your shop from the <strong>Account</strong> page by an admin.</p>
             </div>

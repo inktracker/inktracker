@@ -2,7 +2,7 @@ import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
-import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, CreditCard, ShieldCheck } from "lucide-react";
+import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, CreditCard, ShieldCheck, Menu, X } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 
 const ICON_MAP = {
@@ -25,7 +25,7 @@ const NAV = [
   { label: "Dashboard", page: "Dashboard" },
   { label: "Quotes", page: "Quotes" },
   { label: "Production", page: "Production" },
-  { label: "Clients", page: "Customers" },
+  { label: "Customers", page: "Customers" },
   { label: "Inventory", page: "Inventory" },
   { label: "Invoices", page: "Invoices" },
   { label: "Expenses", page: "Expenses" },
@@ -41,6 +41,11 @@ export default function Layout({ children, currentPageName }) {
   const [shopName, setShopName] = useState("Loading...");
   const [logoUrl, setLogoUrl] = useState("");
   const [user, setUser] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  useEffect(() => {
+    document.documentElement.classList.remove("dark");
+    localStorage.removeItem("inktracker-dark");
+  }, []);
 
   // Public pages that bypass auth entirely
   const PUBLIC_PAGES = ["BrokerDashboard", "BrokerOnboarding", "QuotePayment", "QuotePaymentSuccess", "QuotePaymentCancel", "QuoteRequest"];
@@ -81,19 +86,19 @@ export default function Layout({ children, currentPageName }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex">
       {/* Sidebar — desktop only */}
-      <aside className="hidden md:flex w-56 bg-white border-r border-slate-100 flex-col fixed h-full z-20">
-        <div className="px-5 py-5 border-b border-slate-100">
+      <aside className="hidden md:flex w-56 bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 flex-col fixed h-full z-20">
+        <div className="px-5 py-5 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center gap-2">
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain" />
             ) : (
               <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png" alt="InkTracker" className="w-8 h-8 object-contain" />
             )}
-            <div className="text-base font-bold text-slate-900">{shopName}</div>
+            <div className="text-base font-bold text-slate-900 dark:text-slate-100">{shopName}</div>
           </div>
-          <div className="text-xs text-slate-400 mt-0.5">Shop Manager</div>
+          <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Shop Manager</div>
         </div>
         <nav className="flex-1 py-4 space-y-0.5 px-2">
           {NAV.map(n => {
@@ -101,7 +106,7 @@ export default function Layout({ children, currentPageName }) {
             const IconComponent = ICON_MAP[n.page];
             return (
               <Link key={n.page} to={createPageUrl(n.page)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}>
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"}`}>
                 <IconComponent className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
                 {n.label}
               </Link>
@@ -116,60 +121,73 @@ export default function Layout({ children, currentPageName }) {
           )}
         </nav>
 
-        <div className="px-2 py-4 border-t border-slate-100">
+        <div className="px-2 py-4 border-t border-slate-100 dark:border-slate-800">
           <GlobalSearch />
         </div>
-        <div className="px-5 py-4 border-t border-slate-100">
+        <div className="px-4 py-3 border-t border-slate-100">
           <div className="text-xs text-slate-300">v1.0</div>
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 md:ml-56 min-h-screen pb-20 md:pb-0">
+      <main className="flex-1 md:ml-56 min-h-screen">
         {/* Mobile header */}
-        <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 sticky top-0 z-10">
-          {logoUrl ? (
-            <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain" />
-          ) : (
-            <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png" alt="InkTracker" className="w-8 h-8 object-contain" />
-          )}
-          <div className="flex-1">
-            <div className="text-sm font-bold text-slate-900">{shopName}</div>
-            <div className="text-xs text-slate-400">{NAV.find(n=>n.page===currentPageName)?.label || ""}</div>
+        <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 sticky top-0 z-30">
+          <button onClick={() => setMobileMenuOpen(true)} className="p-1 text-slate-500 hover:text-slate-700">
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-slate-900 truncate">{shopName}</div>
           </div>
           <GlobalSearch />
         </div>
+
+        {/* Mobile slide-out menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden fixed inset-0 z-40">
+            <div className="absolute inset-0 bg-slate-900/50" onClick={() => setMobileMenuOpen(false)} />
+            <div className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl flex flex-col">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {logoUrl ? (
+                    <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain" />
+                  ) : (
+                    <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png" alt="InkTracker" className="w-8 h-8 object-contain" />
+                  )}
+                  <div className="text-sm font-bold text-slate-900">{shopName}</div>
+                </div>
+                <button onClick={() => setMobileMenuOpen(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+                {NAV.map(n => {
+                  const active = currentPageName === n.page;
+                  const IconComponent = ICON_MAP[n.page];
+                  return (
+                    <Link key={n.page} to={createPageUrl(n.page)} onClick={() => setMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}>
+                      <IconComponent className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
+                      {n.label}
+                    </Link>
+                  );
+                })}
+                {user?.role === "admin" && (
+                  <Link to={createPageUrl("AdminPanel")} onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-indigo-600 text-white" : "text-violet-600 hover:bg-violet-50"}`}>
+                    <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-violet-500"}`} />
+                    Admin
+                  </Link>
+                )}
+              </nav>
+            </div>
+          </div>
+        )}
         <div className="max-w-7xl mx-auto px-4 md:px-8 py-6 md:py-8">
           {children}
         </div>
       </main>
 
-      {/* Bottom swipeable nav — mobile only */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 z-20">
-        <div
-          className="flex overflow-x-auto"
-          style={{ scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch" }}
-        >
-          {NAV.map(n => {
-            const active = currentPageName === n.page;
-            const IconComponent = ICON_MAP[n.page];
-            return (
-              <Link key={n.page} to={createPageUrl(n.page)}
-                className={`flex flex-col items-center justify-center py-3 px-4 gap-0.5 text-center transition shrink-0 ${active ? "text-indigo-600 border-t-2 border-indigo-600" : "text-slate-400 border-t-2 border-transparent"}`}>
-                <IconComponent className="w-5 h-5" />
-                <span className="text-[10px] font-semibold whitespace-nowrap">{n.label}</span>
-              </Link>
-            );
-          })}
-          {user?.role === "admin" && (
-            <Link to={createPageUrl("AdminPanel")}
-              className={`flex flex-col items-center justify-center py-3 px-4 gap-0.5 text-center transition shrink-0 ${currentPageName === "AdminPanel" ? "text-indigo-600 border-t-2 border-indigo-600" : "text-violet-500 border-t-2 border-transparent"}`}>
-              <ShieldCheck className="w-5 h-5" />
-              <span className="text-[10px] font-semibold whitespace-nowrap">Admin</span>
-            </Link>
-          )}
-        </div>
-      </nav>
     </div>
   );
 }

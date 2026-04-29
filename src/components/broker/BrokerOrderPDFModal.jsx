@@ -3,9 +3,14 @@ import { fmtDate, fmtMoney, getQty, BIG_SIZES, SIZES, calcGroupPrice, BROKER_MAR
 import { exportOrderToPDF } from "../shared/pdfExport";
 
 export default function BrokerOrderPDFModal({ order, onClose }) {
+  const brokerDiscVal = parseFloat(order.discount || 0);
+  const brokerDiscType = order.discount_type || 'percent';
+  const brokerIsFlat = brokerDiscType === 'flat' || (brokerDiscVal > 100 && brokerDiscType !== 'percent');
   const totals = {
     sub: order.subtotal || 0,
-    afterDisc: (order.subtotal || 0) * (1 - (order.discount || 0) / 100),
+    afterDisc: brokerIsFlat
+      ? Math.max(0, (order.subtotal || 0) - brokerDiscVal)
+      : (order.subtotal || 0) * (1 - brokerDiscVal / 100),
     tax: order.tax || 0,
     total: order.total || 0,
   };
@@ -121,7 +126,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
               <div className="flex justify-between text-sm text-slate-500"><span>Subtotal</span><span>{fmtMoney(totals.sub)}</span></div>
               {parseFloat(order.discount) > 0 && (
                 <div className="flex justify-between text-sm text-emerald-600">
-                  <span>Discount ({order.discount}%)</span>
+                  <span>Discount {brokerIsFlat ? `(${fmtMoney(brokerDiscVal)})` : `(${order.discount}%)`}</span>
                   <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
                 </div>
               )}

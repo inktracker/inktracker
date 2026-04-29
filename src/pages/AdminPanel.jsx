@@ -132,6 +132,10 @@ export default function AdminPanel() {
   }
 
   async function deleteUser(profileId, authId) {
+    if (profileId === user.id) {
+      alert("You cannot delete your own account.");
+      return;
+    }
     const key = profileId || authId;
     setActionLoading(prev => ({ ...prev, [key]: true }));
     setConfirmDelete(null);

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import {
-  calcGroupPrice,
   calcQuoteTotals,
+  calcLinkedLinePrice,
+  buildLinkedQtyMap,
   buildQBInvoicePayload,
   fmtDate,
   fmtMoney,
@@ -12,6 +13,7 @@ import {
   getDisplayName,
   getTier,
   BROKER_MARKUP,
+  STANDARD_MARKUP,
 } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import Badge from "../shared/Badge";
@@ -28,15 +30,18 @@ function getQuoteTotalsForDisplay(q) {
 }
 
 function getLinePrice(li, quote) {
-  const markup = isBrokerQuote(quote) ? BROKER_MARKUP : undefined;
-  const r = calcGroupPrice(
-    li.garmentCost,
-    getQty(li),
-    li.imprints,
-    quote.rush_rate,
-    quote.extras,
-    markup
-  );
+  const markup = isBrokerQuote(quote) ? BROKER_MARKUP : STANDARD_MARKUP;
+  const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
+  const qty = getQty(li);
+  const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
+
+  // Respect clientPpp override
+  const override = Number(li?.clientPpp);
+  if (markup === STANDARD_MARKUP && Number.isFinite(override) && override > 0 && qty > 0) {
+    return { sub: override * qty, ppp: override, gCost: 0, printCost: 0, rushFee: 0, tier: getTier(qty), garment: 0, imprint: 0, overridden: true };
+  }
+
+  const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
   if (!r) return null;
   return { ...r, garment: r.gCost, imprint: r.printCost };
 }
@@ -352,32 +357,32 @@ export default function QuoteDetailModal({
         onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       >
         <div
-          className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-4"
+          className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl my-4"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="flex justify-between items-start px-6 py-5 border-b border-slate-200">
-            <div>
+          <div className="flex justify-between items-start px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+            <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
                 {quote.quote_id}
               </div>
-              <h2 className="text-lg font-bold text-slate-900">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
                 {getDisplayName(quote.customer_name)}
               </h2>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 {quote.date && (
-                  <div className="text-sm text-slate-400">
+                  <div className="text-xs sm:text-sm text-slate-400">
                     Quote Date: {fmtDate(quote.date)}
                   </div>
                 )}
                 {quote.due_date && (
-                  <div className="text-sm text-slate-400">
+                  <div className="text-xs sm:text-sm text-slate-400">
                     · In-Hands: {fmtDate(quote.due_date)}
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <Badge s={quote.status} />
               {quote.deposit_paid ? (
                 <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
@@ -393,13 +398,13 @@ export default function QuoteDetailModal({
             </div>
           </div>
 
-          <div className="p-6 space-y-5">
+          <div className="p-4 sm:p-6 space-y-5">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
                   Customer
                 </div>
-                <div className="text-sm font-semibold text-slate-900">
+                <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {getDisplayName(quote.customer_name) || "—"}
                 </div>
                 <div className="text-sm text-slate-500">
@@ -407,29 +412,29 @@ export default function QuoteDetailModal({
                 </div>
               </div>
 
-              <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
                   Quote Summary
                 </div>
                 <div className="flex justify-between text-sm text-slate-500">
                   <span>Quantity</span>
-                  <span className="font-semibold text-slate-800">{totalQty} pcs</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{totalQty} pcs</span>
                 </div>
                 <div className="flex justify-between text-sm text-slate-500">
                   <span>Tier</span>
-                  <span className="font-semibold text-slate-800">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
                     {totalQty > 0 ? getTier(totalQty) : "—"}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm text-slate-500">
                   <span>Rush</span>
-                  <span className="font-semibold text-slate-800">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
                     {Number(quote.rush_rate) > 0 ? "Yes" : "No"}
                   </span>
                 </div>
                 <div className="flex justify-between text-sm text-slate-500">
                   <span>Deposit</span>
-                  <span className="font-semibold text-slate-800">
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">
                     {quote.deposit_pct || 50}%
                   </span>
                 </div>
@@ -445,7 +450,7 @@ export default function QuoteDetailModal({
                   {activeExtras.map(([key]) => (
                     <span
                       key={key}
-                      className="text-xs font-semibold text-indigo-700 bg-white border border-indigo-200 px-2.5 py-1 rounded-full"
+                      className="text-xs font-semibold text-indigo-700 bg-white dark:bg-slate-900 border border-indigo-200 px-2.5 py-1 rounded-full"
                     >
                       {key}
                     </span>
@@ -470,11 +475,11 @@ export default function QuoteDetailModal({
                   return (
                     <div
                       key={li.id}
-                      className="border border-slate-200 rounded-xl overflow-hidden"
+                      className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden"
                     >
-                      <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <div className="text-sm font-bold text-slate-900">
+                          <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
                             {getGarmentHeader(li)}
                           </div>
                           {getGarmentMeta(li) && (
@@ -485,7 +490,7 @@ export default function QuoteDetailModal({
                         </div>
 
                         <div className="flex items-center gap-4 sm:flex-col sm:items-end sm:gap-0">
-                          <div className="text-sm font-semibold text-slate-900">{qty} pcs</div>
+                          <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{qty} pcs</div>
                           <div className="text-xs text-slate-500">
                             Tier {qty > 0 ? getTier(qty) : "—"}
                           </div>
@@ -505,7 +510,7 @@ export default function QuoteDetailModal({
                       </div>
 
                       <div className="p-4 space-y-4">
-                        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+                        <div className="grid gap-4 grid-cols-1 lg:grid-cols-[1.2fr_0.8fr]">
                           <div className="space-y-3">
                             {activeSizes.length > 0 && (
                               <div>
@@ -516,7 +521,7 @@ export default function QuoteDetailModal({
                                   {activeSizes.map((sz) => (
                                     <div
                                       key={sz}
-                                      className="text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1"
+                                      className="text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1"
                                     >
                                       {sz}: {li.sizes[sz]}
                                     </div>
@@ -537,11 +542,11 @@ export default function QuoteDetailModal({
                                   return (
                                     <div
                                       key={imp.id || idx}
-                                      className="border border-slate-200 rounded-xl p-3 space-y-3"
+                                      className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-3"
                                     >
                                       <div className="flex items-start justify-between gap-3">
                                         <div className="space-y-1">
-                                          <div className="text-sm font-semibold text-slate-800">
+                                          <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                                             {imp.location || "Imprint"}{imp.title ? ` — ${imp.title}` : ""}
                                           </div>
 
@@ -576,7 +581,7 @@ export default function QuoteDetailModal({
 
                                             <div className="flex items-center justify-between gap-3">
                                               <div className="min-w-0">
-                                                <div className="text-sm font-semibold text-slate-800 truncate">
+                                                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
                                                   {art.name}
                                                 </div>
 
@@ -619,14 +624,14 @@ export default function QuoteDetailModal({
                               <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 space-y-1">
                                 <div className="flex justify-between text-xs text-slate-600">
                                   <span>Garment Cost</span>
-                                  <span className="font-semibold text-slate-800">
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
                                     {fmtMoney(pricing.garment)}
                                   </span>
                                 </div>
 
                                 <div className="flex justify-between text-xs text-slate-600">
                                   <span>Imprint Cost</span>
-                                  <span className="font-semibold text-slate-800">
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
                                     {fmtMoney(pricing.imprint)}
                                   </span>
                                 </div>
@@ -634,7 +639,7 @@ export default function QuoteDetailModal({
                                 {twoXL > 0 && (
                                   <div className="flex justify-between text-xs text-slate-600">
                                     <span>2XL+ Upcharge</span>
-                                    <span className="font-semibold text-slate-800">
+                                    <span className="font-semibold text-slate-800 dark:text-slate-200">
                                       {fmtMoney(twoXL * 2)}
                                     </span>
                                   </div>
@@ -642,37 +647,11 @@ export default function QuoteDetailModal({
 
                                 <div className="flex justify-between text-xs text-slate-600 border-t border-indigo-200 pt-1">
                                   <span>Line Subtotal</span>
-                                  <span className="font-semibold text-slate-800">
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
                                     {fmtMoney(pricing.sub + twoXL * 2)}
                                   </span>
                                 </div>
 
-                                {parseFloat(quote.discount) > 0 && (
-                                  <div className="flex justify-between text-xs text-emerald-600">
-                                    <span>After Discount</span>
-                                    <span className="font-semibold">
-                                      {fmtMoney(
-                                        (pricing.sub + twoXL * 2) *
-                                          (1 - parseFloat(quote.discount) / 100)
-                                      )}
-                                    </span>
-                                  </div>
-                                )}
-
-                                <div className="flex justify-between text-xs text-slate-600 border-t border-indigo-200 pt-1">
-                                  <span>Final Cost (incl. tax)</span>
-                                  <span className="font-bold text-indigo-700">
-                                    {fmtMoney(
-                                      (pricing.sub + twoXL * 2) *
-                                        (1 - parseFloat(quote.discount || 0) / 100) *
-                                        (1 +
-                                          parseFloat(
-                                            isBrokerQuote(quote) ? 0 : quote.tax_rate || 0
-                                          ) /
-                                            100)
-                                    )}
-                                  </span>
-                                </div>
                               </div>
                             )}
                           </div>
@@ -682,18 +661,22 @@ export default function QuoteDetailModal({
                   );
                 })}
 
-                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
                   <div className="flex justify-between text-sm text-slate-500">
                     <span>Subtotal</span>
                     <span>{fmtMoney(totals.sub)}</span>
                   </div>
 
-                  {parseFloat(quote.discount) > 0 && (
-                    <div className="flex justify-between text-sm text-emerald-600">
-                      <span>Discount ({quote.discount}%)</span>
-                      <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
-                    </div>
-                  )}
+                  {parseFloat(quote.discount) > 0 && (() => {
+                    const dv = parseFloat(quote.discount);
+                    const flat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
+                    return (
+                      <div className="flex justify-between text-sm text-emerald-600">
+                        <span>Discount {flat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
+                        <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
+                      </div>
+                    );
+                  })()}
 
                   {(() => {
                     const hasQb = quote.qb_total != null;
@@ -705,7 +688,7 @@ export default function QuoteDetailModal({
                           <span>{hasQb ? "Tax" : `Est. Tax (${isBrokerQuote(quote) ? 0 : quote.tax_rate}%)`}</span>
                           <span>{fmtMoney(taxVal)}</span>
                         </div>
-                        <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-2">
+                        <div className="flex justify-between font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 pt-2">
                           <span>{hasQb ? "Total" : "Est. Total"}</span>
                           <span className="text-xl">{fmtMoney(totalVal)}</span>
                         </div>
@@ -755,10 +738,10 @@ export default function QuoteDetailModal({
             </div>
           )}
 
-          <div className="flex flex-wrap gap-2 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+          <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
             <button
               onClick={onEdit}
-              className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-100 transition"
+              className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
             >
               Edit Quote
             </button>
@@ -772,7 +755,7 @@ export default function QuoteDetailModal({
 
             <button
               onClick={openQBPanel}
-              className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] bg-white rounded-xl hover:bg-green-50 transition"
+              className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] bg-white dark:bg-slate-900 rounded-xl hover:bg-green-50 transition"
             >
               {qbInvoiceId ? "QB Invoice Status" : "Send via QuickBooks"}
             </button>
@@ -788,7 +771,7 @@ export default function QuoteDetailModal({
                   quote.customer_phone || customer?.phone || ""
                 )
               }
-              className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-100 transition"
+              className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
             >
               📥 Download PDF
             </button>
@@ -829,7 +812,7 @@ export default function QuoteDetailModal({
                 disabled={saving}
                 className={`px-4 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 ${
                   quote.deposit_paid
-                    ? "text-slate-600 border-slate-200 hover:bg-slate-100"
+                    ? "text-slate-600 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                     : "text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
                 }`}
               >
@@ -876,18 +859,18 @@ export default function QuoteDetailModal({
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onMouseDown={(e) => { if (e.target === e.currentTarget) setShowQBPanel(false); }}
           />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+          <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-[#2CA01C] flex items-center justify-center text-white font-black text-xs">QB</div>
-                <h3 className="font-bold text-slate-900 text-lg">QuickBooks Status</h3>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg">QuickBooks Status</h3>
               </div>
               <button onClick={() => setShowQBPanel(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
             </div>
 
             {/* Connection status */}
-            <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50">
+            <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
               {qbCheckingConn ? (
                 <>
                   <div className="w-2.5 h-2.5 rounded-full bg-slate-300 animate-pulse" />
@@ -919,7 +902,7 @@ export default function QuoteDetailModal({
                   </div>
                 </div>
               ) : (
-                <div className="p-3 rounded-xl border border-slate-200 bg-white text-sm text-slate-500">
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm text-slate-500">
                   No invoice created yet
                 </div>
               )}
@@ -929,7 +912,7 @@ export default function QuoteDetailModal({
             {qbPaymentLink && (
               <div className="space-y-2">
                 <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Payment Link</div>
-                <div className="flex items-center gap-2 p-3 rounded-xl border border-slate-200 bg-white">
+                <div className="flex items-center gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
                   <a
                     href={qbPaymentLink}
                     target="_blank"
@@ -940,7 +923,7 @@ export default function QuoteDetailModal({
                   </a>
                   <button
                     onClick={copyQBLink}
-                    className="shrink-0 text-xs font-semibold text-slate-600 border border-slate-200 px-2.5 py-1 rounded-lg hover:bg-slate-50 transition"
+                    className="shrink-0 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-lg hover:bg-slate-50 dark:bg-slate-800 transition"
                   >
                     {qbCopied ? "Copied!" : "Copy"}
                   </button>
@@ -951,11 +934,11 @@ export default function QuoteDetailModal({
 
             {/* Quote details */}
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
                 <div className="text-xs text-slate-400 mb-0.5">Quote</div>
-                <div className="font-bold text-slate-800">#{quote.quote_id}</div>
+                <div className="font-bold text-slate-800 dark:text-slate-200">#{quote.quote_id}</div>
               </div>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-100">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
                 <div className="text-xs text-slate-400 mb-0.5">Amount</div>
                 <div className="font-bold text-indigo-700">{fmtMoney(getQuoteTotalsForDisplay(quote).total)}</div>
               </div>

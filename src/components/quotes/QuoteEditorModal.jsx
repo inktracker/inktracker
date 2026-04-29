@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import {
   Q_STATUSES,
   calcQuoteTotals,
@@ -9,6 +9,8 @@ import {
   newLineItem,
 } from "../shared/pricing";
 import LineItemEditor from "./LineItemEditor";
+
+const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
 const DEFAULT_ADDONS = [
   { key: "tags", label: "Custom Tags", rate: 1.5 },
@@ -28,7 +30,7 @@ function addBusinessDays(date, days) {
   return d.toISOString().split("T")[0];
 }
 
-function blankQuote() {
+function blankQuote(defaultTaxRate = 8.265) {
   return {
     quote_id: `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`,
     customer_id: "",
@@ -43,7 +45,8 @@ function blankQuote() {
     extras: {},
     line_items: [newLineItem()],
     discount: 0,
-    tax_rate: 8.265,
+    discount_type: "percent",
+    tax_rate: defaultTaxRate,
     deposit_pct: 0,
     deposit_paid: false,
     imprints: [
@@ -69,9 +72,10 @@ export default function QuoteEditorModal({
   onSave,
   onClose,
   onAddCustomer,
+  defaultTaxRate,
 }) {
   const [q, setQ] = useState(() => {
-    const base = quote ? { ...quote } : blankQuote();
+    const base = quote ? { ...quote } : blankQuote(defaultTaxRate || 8.265);
     if (!quote && prefillLineItem) {
       // Replace the default blank line item with one pre-filled from the catalog
       const blank = newLineItem();
@@ -111,6 +115,12 @@ export default function QuoteEditorModal({
   const [addonsMeta, setAddonsMeta] = useState(DEFAULT_ADDONS);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+
+  // Paste Order: paste an email/spreadsheet and have the parser prefill line_items
+  const [showPaste, setShowPaste] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasting, setPasting] = useState(false);
+  const [pasteError, setPasteError] = useState("");
 
   const totals = calcQuoteTotals(q);
 
@@ -168,6 +178,71 @@ export default function QuoteEditorModal({
     }));
   }
 
+  // Send the pasted text to emailScanner.parseOnly, then merge the returned
+  // line items into the modal's state. The user reviews + edits + saves
+  // through the normal flow — no quote is created until they click Save.
+  async function handlePasteOrder() {
+    if (!pasteText.trim()) {
+      setPasteError("Paste some text first.");
+      return;
+    }
+    setPasting(true);
+    setPasteError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setPasteError("Not signed in. Please refresh and try again.");
+        return;
+      }
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "parseOnly",
+          text: pasteText,
+          accessToken: session.access_token,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setPasteError(data.error);
+        return;
+      }
+      const parsed = (data.lineItems || []).map((li) => ({ ...newLineItem(), ...li }));
+      if (parsed.length === 0) {
+        setPasteError("Couldn't extract any line items from the text. Try adding more detail (sizes, garment names, style numbers).");
+        return;
+      }
+
+      // Merge: replace existing items if the only one is blank, otherwise append.
+      setQ((prev) => {
+        const onlyBlank =
+          prev.line_items.length === 1 &&
+          !prev.line_items[0].style &&
+          !prev.line_items[0].brand &&
+          Object.keys(prev.line_items[0].sizes || {}).length === 0;
+        return {
+          ...prev,
+          line_items: onlyBlank ? parsed : [...prev.line_items, ...parsed],
+          // If the modal didn't have a customer yet and the parser found one, suggest it
+          ...(!prev.customer_name && data.customerName ? { customer_name: data.customerName } : {}),
+          ...(!prev.customer_email && data.customerEmail ? { customer_email: data.customerEmail } : {}),
+          // Append parser notes/summary to existing notes
+          notes: [prev.notes, data.summary, data.notes].filter(Boolean).join("\n\n").trim(),
+          ...(data.rushNeeded && !prev.rush_rate ? { rush_rate: 0.2 } : {}),
+        };
+      });
+
+      setPasteText("");
+      setShowPaste(false);
+    } catch (err) {
+      console.error("Paste Order failed:", err);
+      setPasteError(err.message || "Something went wrong.");
+    } finally {
+      setPasting(false);
+    }
+  }
+
   function removeLineItem(idx) {
     setQ((prev) => ({
       ...prev,
@@ -209,7 +284,7 @@ export default function QuoteEditorModal({
       ...prev,
       customer_id: saved.id,
       customer_name: saved.name,
-      tax_rate: saved.tax_exempt ? 0 : prev.tax_rate || 8.265,
+      tax_rate: saved.tax_exempt ? 0 : prev.tax_rate || defaultTaxRate || 8.265,
     }));
 
     setShowNewClient(false);
@@ -261,20 +336,20 @@ export default function QuoteEditorModal({
 
   return (
     <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-4">
-        <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-2xl">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl my-4">
+        <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-t-2xl">
           <div>
             <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
               {q.quote_id}
             </div>
-            <h2 className="text-xl font-bold text-slate-900">Quote Builder</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Quote Builder</h2>
           </div>
 
           <div className="flex gap-2 items-center">
             <select
               value={q.status}
               onChange={(e) => setQ({ ...q, status: e.target.value })}
-              className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none"
+              className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-900 focus:outline-none"
             >
               {Q_STATUSES.map((s) => (
                 <option key={s}>{s}</option>
@@ -290,10 +365,10 @@ export default function QuoteEditorModal({
           </div>
         </div>
 
-        <div className="p-6 space-y-6 overflow-auto" style={{ maxHeight: "80vh" }}>
+        <div className="p-4 sm:p-6 space-y-6 overflow-auto" style={{ maxHeight: "80vh" }}>
           <div className="space-y-3">
-            <div className="grid gap-4 grid-cols-4">
-              <div className="col-span-2">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
+              <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
                   Customer *
                 </label>
@@ -308,12 +383,12 @@ export default function QuoteEditorModal({
                         ...q,
                         customer_id: e.target.value,
                         customer_name: c ? c.name : "",
-                        tax_rate: c?.tax_exempt ? 0 : q.tax_rate || 8.265,
+                        tax_rate: c?.tax_exempt ? 0 : q.tax_rate || defaultTaxRate || 8.265,
                         // Apply the client's default payment terms to this new quote
                         deposit_pct: c ? Number(c.default_deposit_pct ?? 0) : q.deposit_pct,
                       });
                     }}
-                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="flex-1 min-w-0 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300 truncate"
                   >
                     <option value="">Select customer…</option>
                     {[...customers].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })).map((c) => (
@@ -332,7 +407,7 @@ export default function QuoteEditorModal({
                         : "border-indigo-200 text-indigo-600 hover:bg-indigo-50"
                     }`}
                   >
-                    {showNewClient ? "✕ Cancel" : "+ New Client"}
+                    {showNewClient ? "✕ Cancel" : "+ New Customer"}
                   </button>
                 </div>
               </div>
@@ -346,10 +421,12 @@ export default function QuoteEditorModal({
                   value={q.job_title || ""}
                   onChange={(e) => setQ({ ...q, job_title: e.target.value })}
                   placeholder="Business Cards, Event Shirts, etc."
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 />
               </div>
+            </div>
 
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
                   Quote Date
@@ -358,7 +435,7 @@ export default function QuoteEditorModal({
                   type="date"
                   value={q.date}
                   onChange={(e) => setQ({ ...q, date: e.target.value })}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 />
               </div>
 
@@ -386,7 +463,7 @@ export default function QuoteEditorModal({
                       rush_rate: isRush ? 0.2 : q.rush_rate,
                     });
                   }}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 />
                 {q.due_date &&
                   q.date &&
@@ -408,7 +485,7 @@ export default function QuoteEditorModal({
                   type="date"
                   value={q.expires_date || ""}
                   onChange={(e) => setQ({ ...q, expires_date: e.target.value })}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 />
                 {q.expires_date && new Date(q.expires_date) < new Date() && (
                   <div className="text-xs text-rose-500 font-semibold mt-1">
@@ -424,7 +501,7 @@ export default function QuoteEditorModal({
                   New Client
                 </div>
 
-                <div className="grid gap-3 grid-cols-2">
+                <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
                   {[
                     { key: "name", label: "Name *", placeholder: "Jane Smith" },
                     {
@@ -464,12 +541,12 @@ export default function QuoteEditorModal({
                         value={nc[f.key]}
                         onChange={(e) => setNc({ ...nc, [f.key]: e.target.value })}
                         placeholder={f.placeholder}
-                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                       />
                     </div>
                   ))}
 
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
                       Notes
                     </label>
@@ -478,7 +555,7 @@ export default function QuoteEditorModal({
                       onChange={(e) => setNc({ ...nc, notes: e.target.value })}
                       placeholder="Terms, preferences…"
                       rows={2}
-                      className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                      className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
                     />
                   </div>
                 </div>
@@ -509,7 +586,7 @@ export default function QuoteEditorModal({
 
           </div>
 
-          <div className="grid gap-6 grid-cols-2">
+          <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                 Turnaround
@@ -525,7 +602,7 @@ export default function QuoteEditorModal({
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
                       q.rush_rate === opt.val
                         ? "border-indigo-600 bg-indigo-50"
-                        : "border-slate-200 hover:border-slate-300 bg-white"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-white dark:bg-slate-900"
                     }`}
                   >
                     <div
@@ -562,7 +639,7 @@ export default function QuoteEditorModal({
                       className={`rounded-xl border-2 px-3 py-2 text-left transition ${
                         isOn
                           ? "border-indigo-600 bg-indigo-50"
-                          : "border-slate-200 hover:border-slate-300 bg-white"
+                          : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-white dark:bg-slate-900"
                       }`}
                     >
                       <div className={`text-xs font-bold ${isOn ? "text-indigo-700" : "text-slate-700"}`}>
@@ -581,13 +658,57 @@ export default function QuoteEditorModal({
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                 Line Items
               </h3>
-              <button
-                onClick={addLineItem}
-                className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
-              >
-                + Add Garment Group
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => { setShowPaste((v) => !v); setPasteError(""); }}
+                  className="text-xs font-semibold text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition"
+                  title="Paste an email or spreadsheet to auto-fill line items"
+                >
+                  📋 Paste Order
+                </button>
+                <button
+                  onClick={addLineItem}
+                  className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
+                >
+                  + Add Garment Group
+                </button>
+              </div>
             </div>
+
+            {showPaste && (
+              <div className="border border-emerald-200 bg-emerald-50/40 rounded-xl p-4 space-y-2">
+                <div className="text-xs font-semibold text-slate-700">
+                  Paste a customer email or order list — sizes, style numbers, garment names. The parser will extract line items.
+                </div>
+                <textarea
+                  rows={8}
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder={"Hi, I need a quote for:\n- Bella 3001 Heather Grey: S 5, M 5, L 10\n- Independent SS4500 Black hoodie L: 2\nPrint: 1 color back. Need by Friday."}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-y"
+                  disabled={pasting}
+                />
+                {pasteError && (
+                  <div className="text-xs text-rose-600">{pasteError}</div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => { setShowPaste(false); setPasteText(""); setPasteError(""); }}
+                    disabled={pasting}
+                    className="text-xs font-semibold text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handlePasteOrder}
+                    disabled={pasting || !pasteText.trim()}
+                    className="text-xs font-semibold text-white bg-emerald-600 px-4 py-1.5 rounded-lg hover:bg-emerald-700 transition disabled:opacity-50"
+                  >
+                    {pasting ? "Parsing…" : "Parse & Prefill"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {q.line_items.map((li, idx) => (
               <LineItemEditor
@@ -605,7 +726,7 @@ export default function QuoteEditorModal({
             ))}
           </div>
 
-          <div className="grid gap-6 grid-cols-2">
+          <div className="grid gap-6 grid-cols-1 md:grid-cols-2">
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
                 Job Notes
@@ -615,11 +736,11 @@ export default function QuoteEditorModal({
                 value={q.notes}
                 onChange={(e) => setQ({ ...q, notes: e.target.value })}
                 placeholder="Rush instructions, art notes, client communication…"
-                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
               />
             </div>
 
-            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-2.5">
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 space-y-2.5">
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Subtotal</span>
                 <span className="font-semibold text-slate-700">
@@ -630,15 +751,22 @@ export default function QuoteEditorModal({
               <div className="flex justify-between items-center text-sm gap-2">
                 <span className="text-slate-500 whitespace-nowrap">Discount</span>
                 <div className="flex items-center gap-1">
+                  {q.discount_type === "flat" && <span className="text-slate-400 text-xs">$</span>}
                   <input
                     type="number"
                     min="0"
-                    max="100"
+                    max={q.discount_type === "flat" ? undefined : 100}
                     value={q.discount}
                     onChange={(e) => setQ({ ...q, discount: e.target.value })}
-                    className="w-14 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="w-16 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   />
-                  <span className="text-slate-400 text-xs">%</span>
+                  {q.discount_type !== "flat" && <span className="text-slate-400 text-xs">%</span>}
+                  <button
+                    onClick={() => setQ({ ...q, discount_type: q.discount_type === "flat" ? "percent" : "flat", discount: 0 })}
+                    className="text-[10px] font-semibold text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded hover:bg-indigo-50 ml-1"
+                  >
+                    {q.discount_type === "flat" ? "%" : "$"}
+                  </button>
                 </div>
               </div>
 
@@ -671,7 +799,7 @@ export default function QuoteEditorModal({
                     step="0.001"
                     value={q.tax_rate}
                     onChange={(e) => setQ({ ...q, tax_rate: e.target.value })}
-                    className="w-20 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="w-20 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   />
                   <span className="text-slate-400 text-xs">%</span>
                 </div>
@@ -684,9 +812,9 @@ export default function QuoteEditorModal({
                 </span>
               </div>
 
-              <div className="border-t border-slate-200 pt-2.5 flex justify-between items-center">
-                <span className="font-bold text-slate-800">Total</span>
-                <span className="font-bold text-2xl text-slate-900">
+              <div className="border-t border-slate-200 dark:border-slate-700 pt-2.5 flex justify-between items-center">
+                <span className="font-bold text-slate-800 dark:text-slate-200">Total</span>
+                <span className="font-bold text-2xl text-slate-900 dark:text-slate-100">
                   {fmtMoney(totals.total)}
                 </span>
               </div>
@@ -718,7 +846,7 @@ export default function QuoteEditorModal({
                           const v = parseInt(e.target.value, 10);
                           setQ({ ...q, deposit_pct: Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 50 });
                         }}
-                        className="w-10 text-xs text-center border border-indigo-200 rounded px-1 py-0.5 bg-white focus:outline-none"
+                        className="w-10 text-xs text-center border border-indigo-200 rounded px-1 py-0.5 bg-white dark:bg-slate-900 focus:outline-none"
                       />
                       <span className="text-indigo-400 text-xs">%</span>
                     </>
@@ -734,7 +862,7 @@ export default function QuoteEditorModal({
           </div>
         </div>
 
-        <div className="flex gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl flex-wrap">
+        <div className="flex gap-3 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl flex-wrap">
           {saveError && (
             <div className="w-full text-sm text-red-600 font-semibold bg-red-50 border border-red-200 rounded-xl px-4 py-2">
               {saveError}
@@ -749,7 +877,7 @@ export default function QuoteEditorModal({
           </button>
           <button
             onClick={onClose}
-            className="px-5 border border-slate-200 text-slate-500 text-sm font-semibold py-2.5 rounded-xl hover:bg-slate-100 transition"
+            className="px-5 border border-slate-200 dark:border-slate-700 text-slate-500 text-sm font-semibold py-2.5 rounded-xl hover:bg-slate-100 transition"
           >
             Cancel
           </button>

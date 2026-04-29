@@ -290,7 +290,8 @@ function renderLineItems(
   yPos,
   isBroker = false,
   isClientMode = false,
-  priceScale = 1
+  priceScale = 1,
+  discountType = 'percent'
 ) {
   const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -382,9 +383,12 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
+        const basePpp = (isClientMode && Number.isFinite(Number(li?.clientPpp)) && Number(li.clientPpp) > 0)
+          ? Number(li.clientPpp)
+          : r.ppp * priceScale;
         activeSizes.forEach((sz) => {
           xPos += colW;
-          const price = r.ppp + (BIG_SIZES.includes(sz) ? 2 : 0);
+          const price = basePpp + (BIG_SIZES.includes(sz) ? 2 : 0);
           doc.text(fmtMoney(price), xPos, yPos, { align: 'center' });
         });
         yPos += 4;
@@ -490,10 +494,13 @@ function renderLineItems(
       const useLineOverrideForSubtotal = isClientMode
         && Number.isFinite(overrideForSubtotal) && overrideForSubtotal > 0 && qty > 0;
       const lineSubtotal = useLineOverrideForSubtotal
-        ? overrideForSubtotal * qty
+        ? overrideForSubtotal * qty + twoXL * 2
         : (r.sub + twoXL * 2) * priceScale;
-      const afterDisc =
-        lineSubtotal * (1 - parseFloat(discount || 0) / 100);
+      const discNum = parseFloat(discount || 0);
+      const isFlatDisc = discountType === 'flat' || (discNum > 100 && discountType !== 'percent');
+      const afterDisc = isFlatDisc
+        ? Math.max(0, lineSubtotal - discNum)
+        : lineSubtotal * (1 - discNum / 100);
       const final =
         afterDisc * (1 + parseFloat(taxRate || 0) / 100);
 
@@ -510,7 +517,8 @@ function renderLineItems(
       if (parseFloat(discount) > 0) {
         doc.setFont(undefined, 'normal');
         doc.setTextColor(16, 160, 100);
-        doc.text(`After Discount (${discount}%):`, margin + 4, yPos);
+        const discLabel = isFlatDisc ? `After Discount (${moneyNoWeirdMinus(discNum)}):` : `After Discount (${discount}%):`;
+        doc.text(discLabel, margin + 4, yPos);
 
         doc.setFont(undefined, 'bold');
         doc.text(fmtMoney(afterDisc), pageWidth - margin - 4, yPos, {
@@ -536,7 +544,7 @@ function renderLineItems(
   return yPos;
 }
 
-function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false) {
+function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent') {
   doc.setDrawColor(180, 180, 200);
   doc.setLineWidth(0.4);
   doc.line(margin, yPos, pageWidth - margin, yPos);
@@ -552,11 +560,13 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
 
   if (parseFloat(discount) > 0) {
     const discountAmount = totals.sub - totals.afterDisc;
+    const discNum = parseFloat(discount);
+    const isFlatDisc = discountType === 'flat' || (discNum > 100 && discountType !== 'percent');
 
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(16, 160, 100);
-    doc.text(`Discount (${discount}%):`, margin, yPos);
+    doc.text(isFlatDisc ? `Discount (${moneyNoWeirdMinus(discNum)}):` : `Discount (${discount}%):`, margin, yPos);
 
     doc.setFont(undefined, 'bold');
     doc.text(moneyNoWeirdMinus(-discountAmount), pageWidth - margin - 2, yPos, {
@@ -679,6 +689,7 @@ export async function exportQuoteToPDF(
     customerPhone || ''
   );
 
+  const quoteDiscType = quote.discount_type || 'percent';
   if (quote.line_items && quote.line_items.length > 0) {
     yPos = renderLineItems(
       doc,
@@ -692,7 +703,8 @@ export async function exportQuoteToPDF(
       yPos,
       hasBroker && !isClientMode, // broker shop form → BROKER_MARKUP; all others → STANDARD_MARKUP
       isClientMode,
-      scale // scale per-line totals when broker has set a client_total_override
+      scale, // scale per-line totals when broker has set a client_total_override
+      quoteDiscType
     );
   }
 
@@ -734,7 +746,8 @@ export async function exportQuoteToPDF(
     pageWidth,
     margin,
     yPos,
-    isClientMode
+    isClientMode,
+    quoteDiscType
   );
 
   const fileId = quote.quote_id || 'quote';
@@ -778,9 +791,14 @@ export async function exportOrderToPDF(order, shopName, logoUrl) {
     headerEmail = order.customer_email || "";
   }
 
+  const orderDiscVal = parseFloat(order.discount || 0);
+  const orderDiscType = order.discount_type || 'percent';
+  const orderIsFlat = orderDiscType === 'flat' || (orderDiscVal > 100 && orderDiscType !== 'percent');
   const totals = {
     sub: order.subtotal || 0,
-    afterDisc: (order.subtotal || 0) * (1 - (order.discount || 0) / 100),
+    afterDisc: orderIsFlat
+      ? Math.max(0, (order.subtotal || 0) - orderDiscVal)
+      : (order.subtotal || 0) * (1 - orderDiscVal / 100),
     tax: order.tax || 0,
     total: order.total || 0,
     deposit: null
@@ -811,7 +829,10 @@ export async function exportOrderToPDF(order, shopName, logoUrl) {
       pageHeight,
       margin,
       yPos,
-      isBrokerOrder
+      isBrokerOrder,
+      false,
+      1,
+      orderDiscType
     );
   }
 
@@ -850,7 +871,9 @@ export async function exportOrderToPDF(order, shopName, logoUrl) {
       null,
       pageWidth,
       margin,
-      yPos
+      yPos,
+      false,
+      orderDiscType
     );
 
     yPos += 2;
@@ -869,15 +892,20 @@ export async function exportOrderToPDF(order, shopName, logoUrl) {
   doc.save(`Order-${order.order_id}.pdf`);
 }
 
-export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl) {
+export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl, output) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
 
+  const invDiscVal = parseFloat(invoice.discount || 0);
+  const invDiscType = invoice.discount_type || 'percent';
+  const invIsFlat = invDiscType === 'flat' || (invDiscVal > 100 && invDiscType !== 'percent');
   const totals = {
     sub: invoice.subtotal || 0,
-    afterDisc: (invoice.subtotal || 0) * (1 - (invoice.discount || 0) / 100),
+    afterDisc: invIsFlat
+      ? Math.max(0, (invoice.subtotal || 0) - invDiscVal)
+      : (invoice.subtotal || 0) * (1 - invDiscVal / 100),
     tax: invoice.tax || 0,
     total: invoice.total || 0,
     deposit: null
@@ -905,7 +933,10 @@ export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl) {
       pageHeight,
       margin,
       yPos,
-      false
+      false,
+      false,
+      1,
+      invDiscType
     );
   }
 
@@ -943,7 +974,9 @@ export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl) {
     null,
     pageWidth,
     margin,
-    yPos
+    yPos,
+    false,
+    invDiscType
   );
 
   if (customer) {
@@ -983,5 +1016,10 @@ export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl) {
     }
   }
 
+  if (output === 'base64') {
+    const raw = doc.output('datauristring');
+    return raw.split(',')[1];
+  }
   doc.save(`Invoice-${invoice.invoice_id}.pdf`);
+  return null;
 }

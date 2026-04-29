@@ -116,6 +116,7 @@ async function convertQuoteToOrder(supabase: any, quote: any) {
     rush_rate:          quote.rush_rate,
     extras:             quote.extras,
     discount:           quote.discount,
+    discount_type:      quote.discount_type || "percent",
     tax_rate:           isBroker ? 0 : quote.tax_rate,
     subtotal,
     tax,

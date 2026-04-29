@@ -615,7 +615,7 @@ export default function LineItemEditor({
 
   return (
     <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white">
-      <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 space-y-3">
+      <div className="bg-slate-50 px-3 sm:px-5 py-3 border-b border-slate-200 space-y-3">
         <div>
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
@@ -625,7 +625,7 @@ export default function LineItemEditor({
           </button>
         </div>
 
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
           <div>
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
               Style #
@@ -754,7 +754,7 @@ export default function LineItemEditor({
       </div>
 
       {!isCollapsed && (
-        <div className="grid grid-cols-2 divide-x divide-slate-100">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:divide-x divide-slate-100">
           <div className="p-5 space-y-5">
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
               <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 mb-1">

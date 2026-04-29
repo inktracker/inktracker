@@ -2,8 +2,24 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
-import { User, LogOut, Upload, X, Plus, Trash2, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud } from "lucide-react";
+import { User, LogOut, Upload, X, Plus, Trash2, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2 } from "lucide-react";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
+
+function Section({ icon: IconComp, title, defaultOpen = false, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between py-2 group">
+        <div className="flex items-center gap-2">
+          {IconComp && <IconComp className="w-5 h-5 text-indigo-600" />}
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
+        </div>
+        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="pt-3">{children}</div>}
+    </div>
+  );
+}
 
 const QB_CLIENT_ID   = import.meta.env.VITE_QB_CLIENT_ID;
 const QB_REDIRECT_URI = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qbOAuthCallback`;
@@ -350,17 +366,12 @@ export default function Account() {
   return (
     <div className="space-y-6 max-w-5xl">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">My Account</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">My Account</h2>
         <p className="text-slate-500 mt-1">Manage your shop, profile, and broker settings</p>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 p-6 space-y-6">
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <User className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-lg font-semibold text-slate-900">Shop Information</h3>
-          </div>
-
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6 space-y-2">
+        <Section icon={User} title="Shop Information" defaultOpen={true}>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">
@@ -370,7 +381,7 @@ export default function Account() {
                 type="text"
                 value={shopName}
                 onChange={(e) => setShopName(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
 
@@ -384,7 +395,7 @@ export default function Account() {
                   <img
                     src={logoUrl}
                     alt="Logo"
-                    className="w-24 h-24 object-contain rounded-lg border border-slate-200"
+                    className="w-24 h-24 object-contain rounded-lg border border-slate-200 dark:border-slate-700"
                   />
                   <button
                     onClick={handleRemoveLogo}
@@ -395,7 +406,7 @@ export default function Account() {
                 </div>
               )}
 
-              <label className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 hover:border-indigo-400 cursor-pointer transition bg-slate-50 hover:bg-indigo-50">
+              <label className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-400 cursor-pointer transition bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50">
                 <Upload className="w-4 h-4 text-slate-500" />
                 <span className="text-sm font-semibold text-slate-600">
                   {uploading ? "Uploading..." : logoUrl ? "Change Logo" : "Upload Logo"}
@@ -430,36 +441,23 @@ export default function Account() {
               {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
-        </div>
+        </Section>
 
-        <div className="border-t border-slate-100 pt-6">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Account</h3>
+        <Section icon={User} title="Account">
           <div className="space-y-3">
             <div>
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
-                Email
-              </div>
-              <div className="text-sm text-slate-700 font-semibold">
-                {user?.email}
-              </div>
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Email</div>
+              <div className="text-sm text-slate-700 font-semibold">{user?.email}</div>
             </div>
             <div>
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
-                Role
-              </div>
-              <div className="text-sm text-slate-700 font-semibold capitalize">
-                {user?.role || "user"}
-              </div>
+              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Role</div>
+              <div className="text-sm text-slate-700 font-semibold capitalize">{user?.role || "user"}</div>
             </div>
           </div>
-        </div>
+        </Section>
 
         {user?.role === "admin" && (
-          <div className="border-t border-slate-100 pt-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Package className="w-5 h-5 text-indigo-600" />
-              <h3 className="text-lg font-semibold text-slate-900">Quote Add-ons</h3>
-            </div>
+          <Section icon={Package} title="Quote Add-ons">
             <p className="text-sm text-slate-500 mb-4">
               These add-on options appear on the broker quote form. Changes apply to all new quotes.
             </p>
@@ -471,7 +469,7 @@ export default function Account() {
                     value={addon.label}
                     onChange={(e) => updateAddon(idx, "label", e.target.value)}
                     placeholder="Label (e.g. Pantone Match)"
-                    className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400"
                   />
                   <div className="flex items-center gap-1">
                     <span className="text-slate-400 text-xs">+$</span>
@@ -481,7 +479,7 @@ export default function Account() {
                       min="0"
                       value={addon.rate}
                       onChange={(e) => updateAddon(idx, "rate", parseFloat(e.target.value) || 0)}
-                      className="w-20 px-2 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-right"
+                      className="w-20 px-2 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 text-right"
                     />
                     <span className="text-slate-400 text-xs">/pc</span>
                   </div>
@@ -509,68 +507,43 @@ export default function Account() {
                 {savingAddons ? "Saving..." : "Save Add-ons"}
               </button>
             </div>
-          </div>
+          </Section>
         )}
 
-        {/* ── Order Wizard Config ────────────────────────────────────── */}
         {user && (
-          <div className="border-t border-slate-100 pt-6">
-            <div className="mb-3">
-              <h3 className="text-lg font-semibold text-slate-900">Order Wizard</h3>
-              <p className="text-sm text-slate-400">
-                Curate the styles and print setups walk-in customers see on the Wizard page.
-              </p>
-            </div>
+          <Section icon={Wand2} title="Order Wizard">
+            <p className="text-sm text-slate-400 mb-3">
+              Curate the styles and print setups walk-in customers see on the Wizard page.
+            </p>
             <WizardConfigEditor user={user} shop={shopRecord} onSaved={() => {}} />
-          </div>
+          </Section>
         )}
 
-        {/* ── Quote Email Template ───────────────────────────────────── */}
-        <div className="border-t border-slate-100 pt-6">
-          <div className="flex items-center gap-2 mb-1">
-            <Mail className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-lg font-semibold text-slate-900">Quote Email Template</h3>
-          </div>
+        <Section icon={Mail} title="Quote Email Template">
           <p className="text-sm text-slate-400 mb-4">
             Customize the subject and message sent with every quote. Use <code className="bg-slate-100 px-1 rounded text-xs">{"{{customer_name}}"}</code>, <code className="bg-slate-100 px-1 rounded text-xs">{"{{quote_id}}"}</code>, <code className="bg-slate-100 px-1 rounded text-xs">{"{{total}}"}</code>, and <code className="bg-slate-100 px-1 rounded text-xs">{"{{payment_link}}"}</code> as placeholders.
           </p>
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Subject</label>
-              <input
-                type="text"
-                value={emailSubject}
-                onChange={(e) => setEmailSubject(e.target.value)}
+              <input type="text" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)}
                 placeholder="Your Quote from {{shop_name}} - Quote #{{quote_id}}"
-                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              />
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Message Body</label>
-              <textarea
-                rows={5}
-                value={emailBody}
-                onChange={(e) => setEmailBody(e.target.value)}
+              <textarea rows={5} value={emailBody} onChange={(e) => setEmailBody(e.target.value)}
                 placeholder={"Hi {{customer_name}},\n\nYour quote is ready. Total: {{total}}.\n\nClick below to view, approve, or pay:\n{{payment_link}}"}
-                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none font-mono"
-              />
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none font-mono" />
             </div>
-            <button
-              onClick={handleSaveTemplate}
-              disabled={savingTemplate}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold px-4 py-2 rounded-xl text-sm transition"
-            >
+            <button onClick={handleSaveTemplate} disabled={savingTemplate}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold px-4 py-2 rounded-xl text-sm transition">
               {savingTemplate ? "Saving..." : "Save Template"}
             </button>
           </div>
-        </div>
+        </Section>
 
-        {/* ── QuickBooks Integration ─────────────────────────────────── */}
-        <div className="border-t border-slate-100 pt-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Link2 className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-lg font-semibold text-slate-900">QuickBooks Integration</h3>
-          </div>
+        <Section icon={Link2} title="QuickBooks Integration">
 
           {qbMessage && (
             <div className={`flex items-center gap-2 text-sm font-semibold py-2.5 px-4 rounded-xl mb-4 ${
@@ -697,12 +670,12 @@ export default function Account() {
               </p>
             </div>
           )}
-        </div>
+        </Section>
 
-        <div className="border-t border-slate-100 pt-6">
+        <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
           <button
             onClick={handleLogout}
-            className="flex items-center gap-2 text-red-600 hover:text-red-700 font-semibold text-sm"
+            className="flex items-center gap-2 text-red-600 hover:text-red-700 font-semibold text-sm py-2"
           >
             <LogOut className="w-4 h-4" />
             Sign Out

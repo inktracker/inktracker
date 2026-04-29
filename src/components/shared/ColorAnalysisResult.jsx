@@ -158,7 +158,16 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
         </div>
         {onApplyCount && totalColors > 0 && (
           <button
-            onClick={() => onApplyCount(Math.min(8, totalColors))}
+            onClick={() => {
+              const allPantones = [
+                ...spotColors.map(c => {
+                  const adjusted = adjustedColors[spotColors.indexOf(c)];
+                  return adjusted?.pantone || c.pantone;
+                }).filter(Boolean),
+                ...manualColors.map(c => c.pantone).filter(Boolean),
+              ];
+              onApplyCount(Math.min(8, totalColors), allPantones.join(", "));
+            }}
             className="text-[11px] font-semibold text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-lg hover:bg-indigo-50"
           >
             Use {Math.min(8, totalColors)} color{totalColors !== 1 ? "s" : ""}
@@ -166,7 +175,7 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
         )}
         {result.isPhoto && onApplyCount && (
           <button
-            onClick={() => onApplyCount(4)}
+            onClick={() => onApplyCount(4, "")}
             className="text-[11px] font-semibold text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-lg hover:bg-indigo-50"
           >
             Use 4-color process

@@ -317,12 +317,15 @@ export default function QuotePayment() {
       return;
     }
 
-    // Prefer the QB-hosted invoice payment page when we have one (QB invoice is
-    // the source of truth for totals and bookkeeping). Stripe is the fallback.
+    // Redirect to QB payment page — QB is the source of truth for invoicing
     if (quote?.qb_payment_link) {
       window.location.href = quote.qb_payment_link;
       return;
     }
+
+    // No QB link available — show error instead of Stripe fallback
+    setCheckoutError("Payment link is being generated. Please check your email or contact us.");
+    return;
 
     setCheckoutLoading(true);
 
@@ -645,7 +648,7 @@ export default function QuotePayment() {
             {(parseFloat(quote.discount) || 0) > 0 && (
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">
-                  Discount ({quote.discount}%)
+                  Discount {(quote.discount_type === "flat" || (parseFloat(quote.discount) > 100 && quote.discount_type !== "percent")) ? `($${parseFloat(quote.discount).toFixed(2)})` : `(${quote.discount}%)`}
                 </span>
                 <span className="font-semibold text-emerald-600">
                   −{fmtMoney(totals.sub - totals.afterDisc)}

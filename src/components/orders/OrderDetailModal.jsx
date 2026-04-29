@@ -9,6 +9,8 @@ import {
   SIZES,
   getDisplayName,
   BROKER_MARKUP,
+  STANDARD_MARKUP,
+  O_STATUSES,
 } from "../shared/pricing";
 import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
@@ -114,6 +116,38 @@ export default function OrderDetailModal({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [localArtwork, setLocalArtwork] = useState(order.selected_artwork || []);
+  const [showJobCost, setShowJobCost] = useState(false);
+  const [actualCost, setActualCost] = useState(order.actual_cost ?? "");
+  const [laborHours, setLaborHours] = useState(order.actual_labor_hours ?? "");
+  const [laborCost, setLaborCost] = useState(order.actual_labor_cost ?? "");
+  const [assignedPress, setAssignedPress] = useState(order.assigned_press || "");
+  const [assignedOperator, setAssignedOperator] = useState(order.assigned_operator || "");
+  const [stepNotes, setStepNotes] = useState(order.step_notes || {});
+  const [savingCost, setSavingCost] = useState(false);
+  const [costSaved, setCostSaved] = useState(false);
+
+  async function handleSaveJobCost() {
+    setSavingCost(true);
+    try {
+      const ac = parseFloat(actualCost) || 0;
+      const lh = parseFloat(laborHours) || 0;
+      const lc = parseFloat(laborCost) || 0;
+      await base44.entities.Order.update(order.id, {
+        actual_cost: ac,
+        actual_labor_hours: lh,
+        actual_labor_cost: lc,
+        assigned_press: assignedPress,
+        assigned_operator: assignedOperator,
+        step_notes: stepNotes,
+      });
+      setCostSaved(true);
+      setTimeout(() => setCostSaved(false), 2000);
+    } catch (err) {
+      console.error("Failed to save job cost:", err);
+    } finally {
+      setSavingCost(false);
+    }
+  }
 
   async function handleArtworkUpload(e) {
     const files = Array.from(e.target.files || []);
@@ -182,6 +216,7 @@ export default function OrderDetailModal({
         extras: order.extras || {},
         line_items: order.line_items || [],
         discount: order.discount || 0,
+        discount_type: order.discount_type || "percent",
         tax_rate: order.tax_rate || 8.265,
         deposit_pct: 50,
         deposit_paid: false,
@@ -225,10 +260,12 @@ export default function OrderDetailModal({
     ? (order?.job_title || order?.broker_client_name || "")
     : "";
 
+  const discVal = parseFloat(order.discount) || 0;
+  const isFlat = order.discount_type === "flat" || (discVal > 100 && order.discount_type !== "percent");
   const totals = order.line_items
     ? {
         sub: order.subtotal,
-        afterDisc: order.subtotal - order.subtotal * (order.discount / 100),
+        afterDisc: isFlat ? Math.max(0, order.subtotal - discVal) : order.subtotal * (1 - discVal / 100),
         tax: order.tax,
         total: order.total,
       }
@@ -243,18 +280,18 @@ export default function OrderDetailModal({
   return (
     <div
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-auto"
-      onClick={onClose}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-4"
-        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl my-4"
+        onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-start px-6 py-5 border-b border-slate-200">
-          <div>
+        <div className="flex justify-between items-start px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+          <div className="min-w-0 flex-1">
             <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
               {order.order_id} {order.quote_id && `· ${order.quote_id}`}
             </div>
-            <h2 className="text-sm font-semibold text-slate-900">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
               {displayClient}
             </h2>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
@@ -269,9 +306,19 @@ export default function OrderDetailModal({
                   {artworkFiles.length} artwork file{artworkFiles.length === 1 ? "" : "s"}
                 </span>
               )}
+              {order.assigned_press && (
+                <span className="text-[11px] font-semibold text-violet-700 bg-violet-50 border border-violet-100 px-2.5 py-1 rounded-full">
+                  {order.assigned_press}
+                </span>
+              )}
+              {order.assigned_operator && (
+                <span className="text-[11px] font-semibold text-cyan-700 bg-cyan-50 border border-cyan-100 px-2.5 py-1 rounded-full">
+                  {order.assigned_operator}
+                </span>
+              )}
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Badge s={order.status} />
             {order.paid ? (
               <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
@@ -291,7 +338,63 @@ export default function OrderDetailModal({
           </div>
         </div>
 
-        <div className="p-6 space-y-5">
+        {/* Production Progress Pipeline */}
+        <div className="px-4 sm:px-6 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 overflow-x-auto">
+          <div className="flex items-center gap-0 min-w-max">
+            {O_STATUSES.map((s, i) => {
+              const currentIdx = O_STATUSES.indexOf(order.status);
+              const done = i < currentIdx;
+              const active = i === currentIdx;
+              const future = i > currentIdx;
+              return (
+                <div key={s} className="flex items-center">
+                  <div className="relative group">
+                    <button
+                      onClick={() => {
+                        if (i === currentIdx) return;
+                        if (onAdvance && i === currentIdx + 1) onAdvance(order.id);
+                        else if (onRevert && i === currentIdx - 1) onRevert(order.id);
+                      }}
+                      disabled={Math.abs(i - currentIdx) > 1}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
+                        active ? "bg-indigo-600 text-white shadow-sm" :
+                        done ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer" :
+                        i === currentIdx + 1 ? "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 hover:text-indigo-600 cursor-pointer" :
+                        "bg-white dark:bg-slate-900 text-slate-300 border border-slate-100 dark:border-slate-700"
+                      }`}
+                    >
+                      {done && <span>✓</span>}
+                      {s}
+                      {stepNotes[s] && <span className="text-amber-500 ml-0.5">•</span>}
+                    </button>
+                    {(done || active) && (
+                      <div className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-30">
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">{s} Note</div>
+                        <input
+                          type="text"
+                          value={stepNotes[s] || ""}
+                          onClick={e => e.stopPropagation()}
+                          onChange={e => {
+                            const val = e.target.value;
+                            setStepNotes(prev => ({ ...prev, [s]: val }));
+                          }}
+                          onBlur={handleSaveJobCost}
+                          placeholder="Add note..."
+                          className="w-full text-xs border border-slate-200 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {i < O_STATUSES.length - 1 && (
+                    <div className={`w-4 h-0.5 mx-0.5 ${done ? "bg-emerald-300" : "bg-slate-200"}`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="p-4 sm:p-6 space-y-5">
           <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -330,10 +433,10 @@ export default function OrderDetailModal({
                   {artworkFiles.map((art) => (
                     <div
                       key={art.id || art.url || art.name}
-                      className="bg-white border border-indigo-200 rounded-xl p-3 flex items-start justify-between gap-3"
+                      className="bg-white dark:bg-slate-900 border border-indigo-200 rounded-xl p-3 flex items-start justify-between gap-3"
                     >
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-800 truncate">
+                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
                           {art.name}
                         </div>
 
@@ -350,7 +453,7 @@ export default function OrderDetailModal({
                             </span>
                           )}
                           {art.source && (
-                            <span className="text-slate-500 bg-slate-50 border border-slate-200 px-2 py-1 rounded-full">
+                            <span className="text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-full">
                               {art.source}
                             </span>
                           )}
@@ -387,22 +490,27 @@ export default function OrderDetailModal({
                   (s, sz) => s + (parseInt((li.sizes || {})[sz]) || 0),
                   0
                 );
-                const r = calcGroupPrice(
-                  li.garmentCost,
-                  qty,
-                  li.imprints,
-                  order.rush_rate,
-                  order.extras,
-                  isBrokerOrder ? BROKER_MARKUP : undefined
-                );
+                const markup = isBrokerOrder ? BROKER_MARKUP : undefined;
+                const clientPppOverride = Number(li?.clientPpp);
+                const useClientPpp = markup === undefined && Number.isFinite(clientPppOverride) && clientPppOverride > 0 && qty > 0;
+                const r = useClientPpp
+                  ? { sub: clientPppOverride * qty, ppp: clientPppOverride, overridden: true }
+                  : calcGroupPrice(
+                      li.garmentCost,
+                      qty,
+                      li.imprints,
+                      order.rush_rate,
+                      order.extras,
+                      markup
+                    );
                 const activeSizes = SIZES.filter(
                   (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
                 );
                 return (
-                  <div key={li.id} className="border border-slate-200 rounded-xl overflow-hidden">
-                    <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex justify-between items-center">
+                  <div key={li.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                    <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
                       <div>
-                        <span className="font-bold text-slate-800 text-sm">
+                        <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">
                           {li.style || "Garment"}
                         </span>
                         {li.garmentColor && (
@@ -423,7 +531,7 @@ export default function OrderDetailModal({
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
-                            <tr className="border-b border-slate-100 bg-slate-50/50">
+                            <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
                               <td className="px-4 py-2 text-xs text-slate-400 font-semibold">
                                 Size
                               </td>
@@ -446,12 +554,12 @@ export default function OrderDetailModal({
                               {activeSizes.map((sz) => (
                                 <td
                                   key={sz}
-                                  className="px-3 py-2 text-center font-semibold text-slate-800"
+                                  className="px-3 py-2 text-center font-semibold text-slate-800 dark:text-slate-200"
                                 >
                                   {(li.sizes || {})[sz] || 0}
                                 </td>
                               ))}
-                              <td className="px-4 py-2 text-center font-bold text-slate-800">
+                              <td className="px-4 py-2 text-center font-bold text-slate-800 dark:text-slate-200">
                                 {qty}
                               </td>
                             </tr>
@@ -479,15 +587,15 @@ export default function OrderDetailModal({
                       </div>
                     )}
 
-                    <div className="border-t border-slate-200 p-4 space-y-3">
+                    <div className="border-t border-slate-200 dark:border-slate-700 p-4 space-y-3">
                       {(li.imprints || []).map((imp) => {
                         const art = getImprintArtwork(imp);
 
                         return (
                           <div key={imp.id} className="space-y-2.5">
-                            {imp.title && <div className="text-xs font-bold text-slate-800">{imp.title}</div>}
-                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                              <span className="font-bold text-slate-800">{imp.location}</span>
+                            {imp.title && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{imp.title}</div>}
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
+                              <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
                               <span className="text-slate-500">
                                 {imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}
                               </span>
@@ -512,7 +620,7 @@ export default function OrderDetailModal({
                                 </div>
                                 <div className="flex items-center justify-between gap-3">
                                   <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-slate-800 truncate">
+                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
                                       {art.name}
                                     </div>
                                     {art.note && (
@@ -548,24 +656,27 @@ export default function OrderDetailModal({
                         <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 space-y-1">
                           <div className="flex justify-between text-xs text-slate-600">
                             <span>Line Subtotal</span>
-                            <span className="font-semibold text-slate-800">
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
                               {fmtMoney(r.sub + twoXL * 2)}
                             </span>
                           </div>
-                          {parseFloat(order.discount) > 0 && (
-                            <div className="flex justify-between text-xs text-emerald-600">
-                              <span>After Discount</span>
-                              <span className="font-semibold">
-                                {fmtMoney((r.sub + twoXL * 2) * (1 - parseFloat(order.discount) / 100))}
-                              </span>
-                            </div>
-                          )}
+                          {parseFloat(order.discount) > 0 && (() => {
+                            const lineSub = r.sub + twoXL * 2;
+                            const lineAfterDisc = isFlat ? Math.max(0, lineSub - discVal) : lineSub * (1 - discVal / 100);
+                            return (
+                              <div className="flex justify-between text-xs text-emerald-600">
+                                <span>After Discount</span>
+                                <span className="font-semibold">
+                                  {fmtMoney(lineAfterDisc)}
+                                </span>
+                              </div>
+                            );
+                          })()}
                           <div className="flex justify-between text-xs text-slate-600 border-t border-indigo-200 pt-1">
                             <span>Final Cost (incl. tax)</span>
                             <span className="font-bold text-indigo-700">
                               {fmtMoney(
-                                (r.sub + twoXL * 2) *
-                                  (1 - parseFloat(order.discount) / 100) *
+                                (isFlat ? Math.max(0, (r.sub + twoXL * 2) - discVal) : (r.sub + twoXL * 2) * (1 - discVal / 100)) *
                                   (1 + parseFloat(order.tax_rate) / 100)
                               )}
                             </span>
@@ -578,14 +689,14 @@ export default function OrderDetailModal({
               })}
 
               {totals && (
-                <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
                   <div className="flex justify-between text-sm text-slate-500">
                     <span>Subtotal</span>
                     <span>{fmtMoney(totals.sub)}</span>
                   </div>
                   {parseFloat(order.discount) > 0 && (
                     <div className="flex justify-between text-sm text-emerald-600">
-                      <span>Discount ({order.discount}%)</span>
+                      <span>Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${order.discount}%)`}</span>
                       <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
                     </div>
                   )}
@@ -593,7 +704,7 @@ export default function OrderDetailModal({
                     <span>Tax ({order.tax_rate}%)</span>
                     <span>{fmtMoney(totals.tax)}</span>
                   </div>
-                  <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-2">
+                  <div className="flex justify-between font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 pt-2">
                     <span>Total</span>
                     <span className="text-xl">{fmtMoney(totals.total)}</span>
                   </div>
@@ -606,6 +717,93 @@ export default function OrderDetailModal({
                   {order.notes}
                 </div>
               )}
+
+              {/* Job Costing & Production Assignment */}
+              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                <button onClick={() => setShowJobCost(!showJobCost)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition text-left">
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Job Costing & Production</div>
+                  <div className="flex items-center gap-3">
+                    {(parseFloat(actualCost) > 0 || order.actual_cost > 0) && (
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        (order.total || 0) - (parseFloat(actualCost) || order.actual_cost || 0) > 0
+                          ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"
+                      }`}>
+                        {fmtMoney((order.total || 0) - (parseFloat(actualCost) || order.actual_cost || 0))} margin
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-400">{showJobCost ? "▲" : "▼"}</span>
+                  </div>
+                </button>
+                {showJobCost && (
+                  <div className="p-4 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Actual Material Cost</label>
+                        <div className="relative mt-0.5">
+                          <span className="absolute left-2 top-1.5 text-slate-400 text-sm">$</span>
+                          <input type="number" min="0" step="0.01" value={actualCost} onChange={e => setActualCost(e.target.value)}
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Labor Hours</label>
+                        <input type="number" min="0" step="0.25" value={laborHours} onChange={e => setLaborHours(e.target.value)}
+                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Labor Cost</label>
+                        <div className="relative mt-0.5">
+                          <span className="absolute left-2 top-1.5 text-slate-400 text-sm">$</span>
+                          <input type="number" min="0" step="0.01" value={laborCost} onChange={e => setLaborCost(e.target.value)}
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Assigned Press</label>
+                        <input type="text" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}
+                          placeholder="e.g. Manual Press 1, Auto Press"
+                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Assigned Operator</label>
+                        <input type="text" value={assignedOperator} onChange={e => setAssignedOperator(e.target.value)}
+                          placeholder="e.g. John, Maria"
+                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                      </div>
+                    </div>
+
+                    {/* Job P&L summary */}
+                    {(parseFloat(actualCost) > 0 || parseFloat(laborCost) > 0) && (() => {
+                      const totalCost = (parseFloat(actualCost) || 0) + (parseFloat(laborCost) || 0);
+                      const revenue = order.total || 0;
+                      const margin = revenue - totalCost;
+                      const marginPct = revenue > 0 ? ((margin / revenue) * 100).toFixed(1) : 0;
+                      return (
+                        <div className="bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-1.5">
+                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Job P&L</div>
+                          <div className="flex justify-between text-sm"><span className="text-slate-500">Revenue</span><span className="font-semibold text-slate-800 dark:text-slate-200">{fmtMoney(revenue)}</span></div>
+                          <div className="flex justify-between text-sm"><span className="text-slate-500">Material Cost</span><span className="font-semibold text-slate-800 dark:text-slate-200">−{fmtMoney(parseFloat(actualCost) || 0)}</span></div>
+                          <div className="flex justify-between text-sm"><span className="text-slate-500">Labor Cost</span><span className="font-semibold text-slate-800 dark:text-slate-200">−{fmtMoney(parseFloat(laborCost) || 0)}</span></div>
+                          <div className={`flex justify-between text-sm font-bold border-t border-slate-200 dark:border-slate-600 pt-1.5 ${margin >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                            <span>Profit ({marginPct}%)</span><span>{fmtMoney(margin)}</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="flex items-center gap-2">
+                      <button onClick={handleSaveJobCost} disabled={savingCost}
+                        className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                        {savingCost ? "Saving…" : "Save"}
+                      </button>
+                      {costSaved && <span className="text-xs text-emerald-600 font-semibold">Saved</span>}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             <div className="text-center py-8 text-slate-300 text-sm">
@@ -614,14 +812,14 @@ export default function OrderDetailModal({
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl space-y-2">
+        <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl space-y-2">
           {/* Row 1: workflow actions (status flow + payment) */}
           <div className="flex flex-wrap items-center gap-2">
             {onRevert && prevStatus && (
               <button
                 onClick={() => callAction(onRevert, order.id).then(onClose)}
                 disabled={saving}
-                className="px-3 py-2 text-sm font-semibold text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-100 transition disabled:opacity-50"
+                className="px-3 py-2 text-sm font-semibold text-slate-500 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition disabled:opacity-50"
               >
                 ← {prevStatus}
               </button>
@@ -650,7 +848,7 @@ export default function OrderDetailModal({
                 disabled={saving}
                 className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 ${
                   order.paid
-                    ? "text-slate-500 border-slate-200 hover:bg-slate-100"
+                    ? "text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                     : "text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
                 }`}
               >
@@ -671,7 +869,7 @@ export default function OrderDetailModal({
             <button
               onClick={() => copyLink("art")}
               title="Share art approval link"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
             >
               <Link2 className="w-3.5 h-3.5" />
               {copied === "art" ? "Copied!" : "Art Approval Link"}
@@ -679,7 +877,7 @@ export default function OrderDetailModal({
             <button
               onClick={() => copyLink("status")}
               title="Share status link"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
             >
               <Link2 className="w-3.5 h-3.5" />
               {copied === "status" ? "Copied!" : "Status Link"}
@@ -687,7 +885,7 @@ export default function OrderDetailModal({
             <button
               onClick={() => exportOrderToPDF(order, shopName, logoUrl)}
               title="Download PDF"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
             >
               <Download className="w-3.5 h-3.5" /> PDF
             </button>

@@ -232,7 +232,7 @@ export default function Customers() {
   });
 
   const filterOptions = [
-    { key: "name", label: "Client Name", type: "text" },
+    { key: "name", label: "Customer Name", type: "text" },
     { key: "company", label: "Company", type: "text" },
     { key: "email", label: "Email", type: "text" },
     { key: "taxExempt", label: "Tax Exempt Only", type: "checkbox" },
@@ -241,12 +241,12 @@ export default function Customers() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-900">Clients</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Customers</h2>
         <button
           onClick={() => setShowForm((v) => !v)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
         >
-          {showForm ? "✕ Cancel" : "+ Add Client"}
+          {showForm ? "✕ Cancel" : "+ Add Customer"}
         </button>
       </div>
 
@@ -259,7 +259,7 @@ export default function Customers() {
       {showForm && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 space-y-3">
           <div className="text-xs font-bold text-indigo-700 uppercase tracking-widest">
-            New Client
+            New Customer
           </div>
 
           <div className="grid gap-3 grid-cols-2">
@@ -281,7 +281,7 @@ export default function Customers() {
                   value={form[f.key]}
                   onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
                   placeholder={f.placeholder}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 />
               </div>
             ))}
@@ -334,7 +334,7 @@ export default function Customers() {
                       const v = parseInt(e.target.value, 10);
                       setForm({ ...form, default_deposit_pct: Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 50 });
                     }}
-                    className="w-14 text-xs text-center border border-slate-200 rounded px-1.5 py-1"
+                    className="w-14 text-xs text-center border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1"
                   />
                   <span className="text-slate-400">%</span>
                 </div>
@@ -342,15 +342,15 @@ export default function Customers() {
             </div>
           </div>
 
-          <div className="text-xs text-slate-500 bg-white/70 border border-indigo-100 rounded-xl px-3 py-2">
-            Add the client first. Then open Edit Client to upload artwork files that persist after reload.
+          <div className="text-xs text-slate-500 bg-white dark:bg-slate-900/70 border border-indigo-100 rounded-xl px-3 py-2">
+            Add the customer first. Then open Edit Customer to upload artwork files that persist after reload.
           </div>
 
           <button
             onClick={handleAdd}
             className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
           >
-            Add Client
+            Add Customer
           </button>
         </div>
       )}
@@ -369,14 +369,14 @@ export default function Customers() {
             return (
               <div
                 key={c.id}
-                className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition-shadow"
+                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm p-5 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-center gap-3 mb-4">
                   <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 font-bold text-sm flex items-center justify-center flex-shrink-0">
                     {(c.company || c.name || "").split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("")}
                   </div>
                   <div>
-                    <div className="font-bold text-slate-800 text-sm">{c.company || c.name}</div>
+                    <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">{c.company || c.name}</div>
                     {c.company && c.name && <div className="text-xs text-slate-400">{c.name}</div>}
                   </div>
                 </div>
@@ -411,13 +411,13 @@ export default function Customers() {
                   </div>
                 )}
 
-                <div className="mb-3 text-xs text-slate-500 bg-slate-50 rounded-lg border border-slate-200 px-3 py-2">
+                <div className="mb-3 text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2">
                   Artwork files: <span className="font-bold text-slate-700">{artCount}</span>
                 </div>
 
-                <div className="flex gap-3 border-t border-slate-100 pt-3 items-center">
+                <div className="flex gap-3 border-t border-slate-100 dark:border-slate-700 pt-3 items-center">
                   <div className="text-center flex-1">
-                    <div className="text-lg font-bold text-slate-800">{orderCount}</div>
+                    <div className="text-lg font-bold text-slate-800 dark:text-slate-200">{orderCount}</div>
                     <div className="text-xs text-slate-400">orders</div>
                   </div>
 
@@ -439,7 +439,7 @@ export default function Customers() {
                       setArtworkNote("");
                       setArtworkColorCount("");
                     }}
-                    className="text-xs text-slate-400 hover:text-slate-600 border border-slate-200 hover:border-slate-300 px-2.5 py-1 rounded-lg transition"
+                    className="text-xs text-slate-400 hover:text-slate-600 border border-slate-200 dark:border-slate-700 hover:border-slate-300 px-2.5 py-1 rounded-lg transition"
                   >
                     Edit
                   </button>
@@ -461,11 +461,11 @@ export default function Customers() {
           }}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+            className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl p-6 space-y-5 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-900">Edit Client</h3>
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Edit Customer</h3>
               <button
                 onClick={() => {
                   setEditing(null);
@@ -497,7 +497,7 @@ export default function Customers() {
                     value={editing[f.key] || ""}
                     onChange={(e) => setEditing({ ...editing, [f.key]: e.target.value })}
                     placeholder={f.placeholder}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   />
                 </div>
               ))}
@@ -550,7 +550,7 @@ export default function Customers() {
                         const v = parseInt(e.target.value, 10);
                         setEditing({ ...editing, default_deposit_pct: Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 50 });
                       }}
-                      className="w-14 text-xs text-center border border-slate-200 rounded px-1.5 py-1"
+                      className="w-14 text-xs text-center border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1"
                     />
                     <span className="text-slate-400">%</span>
                   </div>
@@ -559,7 +559,7 @@ export default function Customers() {
             </div>
 
             {/* Saved Imprints Editor */}
-            <div className="border border-slate-200 rounded-2xl p-4 space-y-3">
+            <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3">
               <div className="flex justify-between items-center">
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Saved Imprints</div>
                 <button
@@ -574,13 +574,13 @@ export default function Customers() {
               </div>
 
               {(editing.saved_imprints || []).length === 0 ? (
-                <div className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl p-4 text-center">
+                <div className="text-sm text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-4 text-center">
                   No saved imprints yet. They are added automatically when saving quotes.
                 </div>
               ) : (
                 <div className="space-y-2">
                   {(editing.saved_imprints || []).map((imp, i) => (
-                    <div key={i} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                    <div key={i} className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-2">
                       <div className="flex gap-2 flex-wrap">
                         <div className="flex-1 min-w-28">
                           <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Title</label>
@@ -592,7 +592,7 @@ export default function Customers() {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder="e.g. Front Logo"
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                           />
                         </div>
                         <div className="w-28">
@@ -604,7 +604,7 @@ export default function Customers() {
                               updated[i] = { ...updated[i], location: e.target.value };
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 focus:outline-none"
                           >
                             {["Front","Back","Left Chest","Right Chest","Left Sleeve","Right Sleeve","Pocket","Hood","Other"].map(l => <option key={l}>{l}</option>)}
                           </select>
@@ -619,7 +619,7 @@ export default function Customers() {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder='4"'
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                           />
                         </div>
                         <div className="w-16">
@@ -632,7 +632,7 @@ export default function Customers() {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder='2"'
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                           />
                         </div>
                         <div className="w-16">
@@ -647,7 +647,7 @@ export default function Customers() {
                               updated[i] = { ...updated[i], colors: parseInt(e.target.value) || 1 };
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                           />
                         </div>
                         <div className="w-28">
@@ -659,7 +659,7 @@ export default function Customers() {
                               updated[i] = { ...updated[i], technique: e.target.value };
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 focus:outline-none"
                           >
                             {["Screen Print","DTG","Embroidery","DTF","Heat Transfer","Sublimation"].map(t => <option key={t}>{t}</option>)}
                           </select>
@@ -680,23 +680,23 @@ export default function Customers() {
               )}
             </div>
 
-            <div className="border border-slate-200 rounded-2xl p-4 space-y-4">
+            <div className="border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-4">
               <div>
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  Client Artwork Library
+                  Customer Artwork Library
                 </div>
                 <div className="text-sm text-slate-400 mt-1">
                   These files are stored in BrokerDocument so they survive page reloads.
                 </div>
               </div>
 
-              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+              <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl p-4 space-y-3">
                 <input
                   type="text"
                   value={artworkNote}
                   onChange={(e) => setArtworkNote(e.target.value)}
                   placeholder="Optional note (example: Front chest logo)"
-                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 />
 
                 <input
@@ -706,7 +706,7 @@ export default function Customers() {
                   value={artworkColorCount}
                   onChange={(e) => setArtworkColorCount(e.target.value)}
                   placeholder="Production color count (example: 3)"
-                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 />
 
                 <div className="text-xs text-slate-500">
@@ -716,7 +716,7 @@ export default function Customers() {
                 <label
                   className={`flex items-center gap-2 cursor-pointer w-fit text-sm font-semibold px-4 py-2 rounded-xl border transition ${
                     uploadingArtwork
-                      ? "bg-slate-100 text-slate-400 border-slate-200"
+                      ? "bg-slate-100 text-slate-400 border-slate-200 dark:border-slate-700"
                       : "bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700"
                   }`}
                 >
@@ -731,7 +731,7 @@ export default function Customers() {
               </div>
 
               {currentEditingArtwork.length === 0 ? (
-                <div className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl p-6 text-center">
+                <div className="text-sm text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 text-center">
                   No artwork saved for this client yet.
                 </div>
               ) : (
@@ -739,10 +739,10 @@ export default function Customers() {
                   {currentEditingArtwork.map((art) => (
                     <div
                       key={art.id}
-                      className="bg-white border border-slate-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 flex items-center justify-between gap-3"
                     >
                       <div className="min-w-0">
-                        <div className="font-semibold text-slate-800 text-sm truncate">
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm truncate">
                           {art.name}
                         </div>
                         {art.note && (
@@ -802,7 +802,7 @@ export default function Customers() {
                   </button>
                   <button
                     onClick={() => setConfirmDelete(false)}
-                    className="text-slate-600 border border-slate-200 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-slate-50 transition"
+                    className="text-slate-600 border border-slate-200 dark:border-slate-700 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-slate-50 dark:bg-slate-800 transition"
                   >
                     No, Go Back
                   </button>

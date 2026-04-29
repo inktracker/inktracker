@@ -1,8 +1,17 @@
-import { useState, useEffect } from "react";
-import { base44 } from "@/api/supabaseClient";
+import { useState, useEffect, useMemo } from "react";
+import { base44, supabase } from "@/api/supabaseClient";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
+
+const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
+
+function getThisMonth() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+  return { from, to };
+}
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState([]);
@@ -11,22 +20,44 @@ export default function Invoices() {
   const [filter, setFilter] = useState("All");
   const [selected, setSelected] = useState(null);
   const [user, setUser] = useState(null);
+  const thisMonth = getThisMonth();
+  const [dateFrom, setDateFrom] = useState(thisMonth.from);
+  const [dateTo, setDateTo] = useState(thisMonth.to);
   const [advFilters, setAdvFilters] = useState({});
+  const [qbOutstanding, setQbOutstanding] = useState(null);
 
   useEffect(() => {
     async function loadData() {
       const currentUser = await base44.auth.me();
       setUser(currentUser);
-      Promise.all([
-        base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-created_date", 100),
+      const [inv, c] = await Promise.all([
+        base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-date", 1000),
         base44.entities.Customer.filter({ shop_owner: currentUser.email })
-      ]).then(([inv, c]) => {
-        setInvoices(inv);
-        const custMap = {};
-        c.forEach(cust => custMap[cust.id] = cust);
-        setCustomers(custMap);
-        setLoading(false);
-      });
+      ]);
+      setInvoices(inv);
+      const custMap = {};
+      c.forEach(cust => custMap[cust.id] = cust);
+      setCustomers(custMap);
+      setLoading(false);
+
+      // Pull live outstanding from QB (same source as Dashboard)
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "getPerformanceData", accessToken: session.access_token }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const qbInvoices = data.revenue || [];
+            const outstanding = qbInvoices.reduce((s, i) => s + (i.balance || 0), 0);
+            const unpaidCount = qbInvoices.filter(i => (i.balance || 0) > 0).length;
+            setQbOutstanding({ total: outstanding, count: unpaidCount });
+          }
+        }
+      } catch {}
     }
     loadData();
   }, []);
@@ -35,14 +66,21 @@ export default function Invoices() {
     setAdvFilters(prev => value ? { ...prev, [key]: value } : { ...prev, [key]: undefined });
   };
 
-  let filtered = filter==="All" ? invoices : filter==="Paid" ? invoices.filter(i=>i.paid) : invoices.filter(i=>!i.paid);
-  filtered = filtered.filter(i => {
-    if (advFilters.customer && !i.customer_name.toLowerCase().includes(advFilters.customer.toLowerCase())) return false;
-    if (advFilters.invoiceId && !i.invoice_id?.toLowerCase().includes(advFilters.invoiceId.toLowerCase())) return false;
-    if (advFilters.minTotal && (i.total || 0) < parseFloat(advFilters.minTotal)) return false;
-    if (advFilters.maxTotal && (i.total || 0) > parseFloat(advFilters.maxTotal)) return false;
-    return true;
-  });
+  const filtered = useMemo(() => {
+    let result = invoices;
+    // Date filter
+    if (dateFrom) result = result.filter(i => (i.date || i.created_at?.split("T")[0] || "") >= dateFrom);
+    if (dateTo) result = result.filter(i => (i.date || i.created_at?.split("T")[0] || "") <= dateTo);
+    // Status filter
+    if (filter === "Paid") result = result.filter(i => i.paid);
+    else if (filter === "Unpaid") result = result.filter(i => !i.paid);
+    // Advanced filters
+    if (advFilters.customer) result = result.filter(i => i.customer_name?.toLowerCase().includes(advFilters.customer.toLowerCase()));
+    if (advFilters.invoiceId) result = result.filter(i => i.invoice_id?.toLowerCase().includes(advFilters.invoiceId.toLowerCase()));
+    if (advFilters.minTotal) result = result.filter(i => (i.total || 0) >= parseFloat(advFilters.minTotal));
+    if (advFilters.maxTotal) result = result.filter(i => (i.total || 0) <= parseFloat(advFilters.maxTotal));
+    return result;
+  }, [invoices, dateFrom, dateTo, filter, advFilters]);
 
   const advFilterOptions = [
     { key: "customer", label: "Customer Name", type: "text" },
@@ -51,8 +89,10 @@ export default function Invoices() {
     { key: "maxTotal", label: "Max Total", type: "text" },
   ];
 
-  const unpaidTotal = invoices.filter(i=>!i.paid).reduce((s,i)=>s+i.total,0);
-  const paidTotal = invoices.filter(i=>i.paid).reduce((s,i)=>s+i.total,0);
+  const allUnpaid = invoices.filter(i => !i.paid);
+  const allUnpaidTotal = allUnpaid.reduce((s, i) => s + (i.total || 0), 0);
+  const paidTotal = filtered.filter(i => i.paid).reduce((s, i) => s + (i.total || 0), 0);
+  const filteredTotal = filtered.reduce((s, i) => s + (i.total || 0), 0);
 
   async function markPaid(id) {
     const updated = await base44.entities.Invoice.update(id, { paid: true, paid_date: tod() });
@@ -87,34 +127,57 @@ export default function Invoices() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-900">Invoices</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Invoices</h2>
       </div>
-      <div className="grid gap-4 grid-cols-1 md:grid-cols-3">
-        <div className="bg-red-50 border border-red-100 rounded-2xl p-5">
-          <div className="text-xs font-bold text-red-400 uppercase tracking-widest mb-1">Outstanding</div>
-          <div className="text-2xl font-bold text-red-600">{fmtMoney(unpaidTotal)}</div>
-          <div className="text-xs text-red-400">{invoices.filter(i=>!i.paid).length} unpaid</div>
+      <div className="grid gap-3 grid-cols-3">
+        <div className="bg-red-50 border border-red-100 rounded-xl p-4 min-w-0">
+          <div className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">Outstanding</div>
+          <div className="text-lg sm:text-2xl font-bold text-red-600 truncate">{fmtMoney(qbOutstanding ? qbOutstanding.total : allUnpaidTotal)}</div>
+          <div className="text-[10px] text-red-400">{qbOutstanding ? qbOutstanding.count : allUnpaid.length} unpaid</div>
         </div>
-        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5">
-          <div className="text-xs font-bold text-emerald-500 uppercase tracking-widest mb-1">Collected</div>
-          <div className="text-2xl font-bold text-emerald-600">{fmtMoney(paidTotal)}</div>
-          <div className="text-xs text-emerald-400">{invoices.filter(i=>i.paid).length} paid</div>
+        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 min-w-0">
+          <div className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Collected</div>
+          <div className="text-lg sm:text-2xl font-bold text-emerald-600 truncate">{fmtMoney(paidTotal)}</div>
+          <div className="text-[10px] text-emerald-400">{filtered.filter(i=>i.paid).length} paid</div>
         </div>
-        <div className="bg-slate-50 border border-slate-100 rounded-2xl p-5">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Total Billed</div>
-          <div className="text-2xl font-bold text-slate-700">{fmtMoney(unpaidTotal+paidTotal)}</div>
-          <div className="text-xs text-slate-400">{invoices.length} invoices</div>
+        <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 min-w-0">
+          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Billed</div>
+          <div className="text-lg sm:text-2xl font-bold text-slate-700 truncate">{fmtMoney(filteredTotal)}</div>
+          <div className="text-[10px] text-slate-400">{filtered.length} invoices</div>
         </div>
       </div>
-      <div className="flex gap-2">
-        {["All","Paid","Unpaid"].map(f=>(
-          <button key={f} onClick={()=>setFilter(f)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter===f?"bg-indigo-600 text-white border-indigo-600":"bg-white border-slate-200 text-slate-500 hover:border-indigo-300"}`}>{f}</button>
-        ))}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-2">
+          {["All","Paid","Unpaid"].map(f=>(
+            <button key={f} onClick={()=>setFilter(f)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter===f?"bg-indigo-600 text-white border-indigo-600":"bg-white border-slate-200 text-slate-500 hover:border-indigo-300"}`}>{f}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          {[
+            { label: "This Month", fn: () => { const m = getThisMonth(); setDateFrom(m.from); setDateTo(m.to); } },
+            { label: "Last Month", fn: () => { const d = new Date(); d.setMonth(d.getMonth()-1); const from = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0]; const to = new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().split("T")[0]; setDateFrom(from); setDateTo(to); } },
+            { label: "This Year", fn: () => { setDateFrom(`${new Date().getFullYear()}-01-01`); setDateTo(new Date().toISOString().split("T")[0]); } },
+            { label: "All Time", fn: () => { setDateFrom(""); setDateTo(""); } },
+          ].map(p => (
+            <button key={p.label} onClick={p.fn}
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${
+                (p.label === "This Month" && dateFrom === thisMonth.from && dateTo === thisMonth.to) ||
+                (p.label === "All Time" && !dateFrom && !dateTo)
+                  ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
+              }`}>{p.label}</button>
+          ))}
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+          <span className="text-xs text-slate-400">to</span>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        </div>
       </div>
       <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="border-b border-slate-100 bg-slate-50">
+          <thead><tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
             {["Invoice","Customer","Issued","Due","Subtotal","Tax","Total","Status",""].map(h=>(
               <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">{h}</th>
             ))}
@@ -122,14 +185,14 @@ export default function Invoices() {
           <tbody>
             {loading && <tr><td colSpan={9} className="px-5 py-8 text-center text-slate-300">Loading…</td></tr>}
             {filtered.map(inv=>(
-              <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 transition cursor-pointer" onClick={() => setSelected(inv)}>
+              <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 transition cursor-pointer" onClick={() => setSelected(inv)}>
                 <td className="px-4 py-3.5 font-mono text-xs text-slate-400">{inv.invoice_id}</td>
-                <td className="px-4 py-3.5 font-semibold text-slate-800">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</td>
+                <td className="px-4 py-3.5 font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</td>
                 <td className="px-4 py-3.5 text-slate-500">{fmtDate(inv.date)}</td>
                 <td className="px-4 py-3.5 text-slate-500">{fmtDate(inv.due)}</td>
                 <td className="px-4 py-3.5 text-slate-600">{fmtMoney(inv.subtotal)}</td>
                 <td className="px-4 py-3.5 text-slate-400">{fmtMoney(inv.tax)}</td>
-                <td className="px-4 py-3.5 font-bold text-slate-800">{fmtMoney(inv.total)}</td>
+                <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(inv.total)}</td>
                 <td className="px-4 py-3.5">
                   {inv.paid
                     ?<span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Paid {fmtDate(inv.paid_date)}</span>
@@ -145,6 +208,29 @@ export default function Invoices() {
             ))}
           </tbody>
         </table>
+        </div>
+
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
+          {filtered.map(inv => (
+            <div key={inv.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setSelected(inv)}>
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <div className="font-mono text-xs text-slate-400">{inv.invoice_id}</div>
+                  <div className="font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</div>
+                </div>
+                {inv.paid
+                  ? <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Paid</span>
+                  : <span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">Unpaid</span>
+                }
+              </div>
+              <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
+                <span>Due: {fmtDate(inv.due)}</span>
+                <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(inv.total)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
       {selected && (
         <InvoiceDetailModal

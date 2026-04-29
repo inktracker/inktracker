@@ -308,14 +308,16 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
     const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
     const override = Number(li?.clientPpp);
     if (respectOverride && Number.isFinite(override) && override > 0 && qty > 0) {
-      sub += override * qty;
+      sub += override * qty + twoXL * 2;
       return;
     }
     const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, markup, linkedQtyMap);
     if (r) sub += r.sub + twoXL * 2;
   });
 
-  const afterDisc = sub * (1 - (parseFloat(q.discount) || 0) / 100);
+  const discVal = parseFloat(q.discount) || 0;
+  const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
+  const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
   const tax = afterDisc * ((parseFloat(q.tax_rate) || 0) / 100);
 
   return {
@@ -402,12 +404,15 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
   const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
   const lines = [];
 
+  const respectOverride = markup === STANDARD_MARKUP;
+
   (quote.line_items || []).forEach((li) => {
     const qty = getQty(li);
     if (qty === 0) return;
 
-    const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
-    if (!r) return;
+    const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
+    const override = Number(li?.clientPpp);
+    const useOverride = respectOverride && Number.isFinite(override) && override > 0;
 
     const styleLabel = [li.brand, li.style, li.garmentColor].filter(Boolean).join(" ") || "Garment";
     const sizeBreakdown = Object.entries(li.sizes || {})
@@ -422,17 +427,29 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
 
     const itemName = resolveLineCategory(li);
 
-    const unitPrice = qty > 0 ? r.sub / qty : 0;
-    lines.push({
-      description,
-      qty,
-      unitPrice: Number(unitPrice.toFixed(4)),
-      amount: Number(r.sub.toFixed(2)),
-      itemName,
-    });
+    if (useOverride) {
+      const lineSub = override * qty;
+      lines.push({
+        description,
+        qty,
+        unitPrice: Number(override.toFixed(4)),
+        amount: Number(lineSub.toFixed(2)),
+        itemName,
+      });
+    } else {
+      const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
+      if (!r) return;
+      const unitPrice = qty > 0 ? r.sub / qty : 0;
+      lines.push({
+        description,
+        qty,
+        unitPrice: Number(unitPrice.toFixed(4)),
+        amount: Number(r.sub.toFixed(2)),
+        itemName,
+      });
+    }
 
-    // 2XL+ upcharge — $2/shirt, as used in calcQuoteTotalsWithLinking
-    const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
+    // 2XL+ upcharge — $2/shirt, always added on top
     if (twoXL > 0) {
       lines.push({
         description: `${styleLabel} — 2XL+ upcharge (${twoXL} @ $2.00)`,
@@ -447,9 +464,14 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
   const totals = calcQuoteTotalsWithLinking(quote, markup);
   const depositAmount = quote.deposit_paid ? Number(totals.deposit.toFixed(2)) : 0;
 
+  const discVal = parseFloat(quote.discount) || 0;
+  const isFlat = quote.discount_type === "flat" || (discVal > 100 && quote.discount_type !== "percent");
+
   return {
     lines,
-    discountPercent: parseFloat(quote.discount) || 0,
+    discountPercent: isFlat ? 0 : discVal,
+    discountAmount: isFlat ? discVal : 0,
+    discountType: isFlat ? "flat" : "percent",
     taxPercent: parseFloat(quote.tax_rate) || 0,
     depositAmount,
   };

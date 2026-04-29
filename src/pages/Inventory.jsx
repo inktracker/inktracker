@@ -1,8 +1,11 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../components/shared/pricing";
 import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
+import { Loader2, RefreshCw, ShoppingBag, Check } from "lucide-react";
+
+const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
 const DEFAULT_CATEGORIES = ["Blanks", "Chemicals", "Ink", "Other", "Screens", "Tools"];
 
@@ -22,6 +25,10 @@ export default function Inventory() {
   const [newCat, setNewCat] = useState("");
   const [showCatEditor, setShowCatEditor] = useState(false);
   const [advFilters, setAdvFilters] = useState({});
+  const [shopifyConnected, setShopifyConnected] = useState(false);
+  const [shopifySyncing, setShopifySyncing] = useState(false);
+  const [shopifyProducts, setShopifyProducts] = useState(null);
+  const [shopifyImporting, setShopifyImporting] = useState(false);
 
   function saveCategories(cats) {
     setCategories(cats);
@@ -44,7 +51,93 @@ export default function Inventory() {
       setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
       setLoading(false);
     });
+    // Check if Shopify is connected
+    base44.auth.me().then(u => {
+      if (u?.shopify_access_token) setShopifyConnected(true);
+    }).catch(() => {});
+    // Check URL params for OAuth callback result
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("shopify_connected") === "1") {
+      setShopifyConnected(true);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    if (params.get("shopify_error")) {
+      alert("Shopify connection failed: " + params.get("shopify_error"));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
+
+  async function connectShopify() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/shopifySync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: "getAuthUrl" }),
+      });
+      const data = await res.json();
+      if (data.authUrl) window.location.href = data.authUrl;
+      else alert("Failed to get Shopify auth URL");
+    } catch (err) {
+      alert("Error connecting to Shopify: " + err.message);
+    }
+  }
+
+  async function syncShopify() {
+    setShopifySyncing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/shopifySync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ action: "syncProducts" }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        alert("Sync failed: " + data.error);
+      } else {
+        setShopifyProducts(data.products || []);
+      }
+    } catch (err) {
+      alert("Sync error: " + err.message);
+    } finally {
+      setShopifySyncing(false);
+    }
+  }
+
+  async function importShopifyProducts(selected) {
+    setShopifyImporting(true);
+    try {
+      const existing = items.map(i => i.sku?.toLowerCase()).filter(Boolean);
+      let imported = 0;
+      for (const sp of selected) {
+        if (sp.sku && existing.includes(sp.sku.toLowerCase())) continue;
+        const created = await base44.entities.InventoryItem.create({
+          item: sp.title,
+          sku: sp.sku || `SHOP-${sp.shopify_variant_id}`,
+          category: sp.product_type || "Shopify",
+          qty: sp.inventory_quantity || 0,
+          reorder: 0,
+          cost: sp.price || 0,
+          unit: "pcs",
+        });
+        setItems(prev => [...prev, created].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
+        imported++;
+      }
+      alert(`Imported ${imported} items. ${selected.length - imported} skipped (duplicate SKU).`);
+      setShopifyProducts(null);
+    } catch (err) {
+      alert("Import error: " + err.message);
+    } finally {
+      setShopifyImporting(false);
+    }
+  }
 
   const handleAdvFilterChange = (key, value) => {
     setAdvFilters(prev => value ? { ...prev, [key]: value } : { ...prev, [key]: undefined });
@@ -98,6 +191,18 @@ export default function Inventory() {
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900">Inventory</h2>
         <div className="flex gap-2">
+          {shopifyConnected ? (
+            <button onClick={syncShopify} disabled={shopifySyncing}
+              className="flex items-center gap-2 bg-white border border-emerald-200 text-emerald-700 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-emerald-400 disabled:opacity-60">
+              {shopifySyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {shopifySyncing ? "Syncing…" : "Sync Shopify"}
+            </button>
+          ) : (
+            <button onClick={connectShopify}
+              className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-green-300">
+              <ShoppingBag className="w-4 h-4" /> Connect Shopify
+            </button>
+          )}
           <button onClick={() => setShowCatEditor(v=>!v)} className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-indigo-300">
             {showCatEditor ? "✕ Categories" : "⚙ Categories"}
           </button>
@@ -212,6 +317,16 @@ export default function Inventory() {
         </table>
       </div>
 
+      {shopifyProducts && (
+        <ShopifyImportModal
+          products={shopifyProducts}
+          existingSkus={items.map(i => i.sku?.toLowerCase()).filter(Boolean)}
+          onImport={importShopifyProducts}
+          onClose={() => setShopifyProducts(null)}
+          importing={shopifyImporting}
+        />
+      )}
+
       {editing && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
@@ -260,6 +375,71 @@ export default function Inventory() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ShopifyImportModal({ products, existingSkus, onImport, onClose, importing }) {
+  const [selected, setSelected] = useState(() => new Set(products.map((_, i) => i)));
+
+  const toggle = (idx) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    setSelected(prev => prev.size === products.length ? new Set() : new Set(products.map((_, i) => i)));
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Shopify Products</h3>
+            <p className="text-xs text-slate-400 mt-0.5">{products.length} products found · {selected.size} selected</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto divide-y divide-slate-50">
+          <div className="px-6 py-2 bg-slate-50 flex items-center gap-3">
+            <input type="checkbox" checked={selected.size === products.length} onChange={toggleAll}
+              className="rounded border-slate-300" />
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Select All</span>
+          </div>
+          {products.map((p, idx) => {
+            const isDupe = p.sku && existingSkus.includes(p.sku.toLowerCase());
+            return (
+              <div key={idx} className={`px-6 py-3 flex items-center gap-4 ${isDupe ? "opacity-50" : ""}`}>
+                <input type="checkbox" checked={selected.has(idx)} onChange={() => toggle(idx)}
+                  className="rounded border-slate-300" />
+                {p.image && <img src={p.image} alt="" className="w-10 h-10 rounded-lg object-cover border border-slate-100" />}
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm text-slate-800 truncate">{p.title}</div>
+                  <div className="text-xs text-slate-400">
+                    SKU: {p.sku || "—"} · Stock: {p.inventory_quantity} · {fmtMoney(p.price)}
+                    {isDupe && <span className="ml-2 text-orange-500 font-semibold">Already exists</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
+          <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+          <button onClick={() => onImport(products.filter((_, i) => selected.has(i)))} disabled={importing || selected.size === 0}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-60">
+            {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+            {importing ? "Importing…" : `Import ${selected.size} Items`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

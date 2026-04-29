@@ -339,12 +339,12 @@ export default function Production() {
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">Production</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Production</h2>
           <p className="text-slate-400 text-sm mt-0.5">View and manage orders in calendar or table view</p>
         </div>
         <button
           onClick={() => setViewMode(v => v === "calendar" ? "table" : "calendar")}
-          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:bg-slate-800 transition"
         >
           {viewMode === "calendar" ? <List className="w-4 h-4" /> : <CalendarDays className="w-4 h-4" />}
           {viewMode === "calendar" ? "Table View" : "Calendar View"}
@@ -358,7 +358,7 @@ export default function Production() {
               <button
                 key={s}
                 onClick={() => setFilter(s)}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"}`}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"}`}
               >
                 {s}
               </button>
@@ -369,7 +369,7 @@ export default function Production() {
               <button
                 key={o}
                 onClick={() => setOriginFilter(o)}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${originFilter === o ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200 text-slate-500 hover:border-slate-400"}`}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${originFilter === o ? "bg-slate-800 text-white border-slate-800" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-slate-400"}`}
               >
                 {o}
               </button>
@@ -383,7 +383,7 @@ export default function Production() {
               <select
                 value={bulkStatus}
                 onChange={(e) => setBulkStatus(e.target.value)}
-                className="text-sm border border-indigo-200 rounded-lg px-2 py-1 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                className="text-sm border border-indigo-200 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
               >
                 <option value="">Set status…</option>
                 {O_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -404,11 +404,11 @@ export default function Production() {
             </div>
           )}
 
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50">
+                  <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                     <th className="px-4 py-3">
                       <input
                         type="checkbox"
@@ -417,7 +417,7 @@ export default function Production() {
                         className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
                       />
                     </th>
-                    {["Order ID", "Customer", "Artwork", "Due", "Total", "Status", ""].map((h) => (
+                    {["Order ID", "Customer", "Due", "Press", "Status", ""].map((h) => (
                       <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">
                         {h}
                       </th>
@@ -431,12 +431,12 @@ export default function Production() {
                     </tr>
                   )}
                   {filteredTable.map((o) => {
-                    const artworkCount = getOrderArtworkCount(o);
                     const isChecked = selectedIds.has(o.id);
+                    const isOverdue = o.due_date && o.due_date < today && !["Ready for Pickup", "Completed"].includes(o.status);
                     return (
                       <tr
                         key={o.id}
-                        className={`border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition ${isChecked ? "bg-indigo-50/50" : ""}`}
+                        className={`border-b border-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition ${isChecked ? "bg-indigo-50/50" : ""} ${isOverdue ? "bg-red-50/50 dark:bg-red-950/20" : ""}`}
                         onClick={() => setViewing(o)}
                       >
                         <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
@@ -449,7 +449,7 @@ export default function Production() {
                         </td>
                         <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{o.order_id}</td>
                         <td className="px-5 py-3.5">
-                          <div className="font-semibold text-slate-800">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200">
                             {getOrderDisplayClient(o, customers[o.customer_id])}
                           </div>
                           {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
@@ -459,16 +459,18 @@ export default function Production() {
                           )}
                         </td>
                         <td className="px-5 py-3.5">
-                          {artworkCount > 0 ? (
-                            <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full">
-                              {artworkCount} file{artworkCount === 1 ? "" : "s"}
+                          {o.due_date ? (
+                            <span className={`text-sm ${isOverdue ? "text-red-600 font-bold" : "text-slate-500"}`}>
+                              {fmtDate(o.due_date)}
+                              {isOverdue && <span className="ml-1 text-[10px] text-red-500 font-semibold">LATE</span>}
                             </span>
-                          ) : (
-                            <span className="text-xs text-slate-300">—</span>
-                          )}
+                          ) : <span className="text-xs text-slate-300">—</span>}
                         </td>
-                        <td className="px-5 py-3.5 text-slate-500">{o.due_date ? fmtDate(o.due_date) : "—"}</td>
-                        <td className="px-5 py-3.5 font-bold text-slate-800">{fmtMoney(o.total || 0)}</td>
+                        <td className="px-5 py-3.5">
+                          {o.assigned_press ? (
+                            <span className="text-[11px] font-semibold text-violet-700 bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-full">{o.assigned_press}</span>
+                          ) : <span className="text-xs text-slate-300">—</span>}
+                        </td>
                         <td className="px-5 py-3.5"><Badge s={o.status} /></td>
                         <td className="px-5 py-3.5 text-right text-indigo-400 text-xs font-semibold">View →</td>
                       </tr>
@@ -483,11 +485,11 @@ export default function Production() {
               {filteredTable.map((o) => {
                 const artworkCount = getOrderArtworkCount(o);
                 return (
-                  <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition" onClick={() => setViewing(o)}>
+                  <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(o)}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <div className="font-mono text-xs text-slate-400">{o.order_id}</div>
-                        <div className="font-semibold text-slate-800">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
                         {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
                           <div className="text-xs text-slate-400 mt-0.5">
                             Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
@@ -498,7 +500,7 @@ export default function Production() {
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                       <span>Due: {o.due_date ? fmtDate(o.due_date) : "—"}</span>
-                      <span className="font-bold text-slate-800">{fmtMoney(o.total || 0)}</span>
+                      <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</span>
                     </div>
                     {artworkCount > 0 && (
                       <div className="mt-2">
@@ -518,22 +520,22 @@ export default function Production() {
       {viewMode === "calendar" && (
         <>
           <div className="flex items-center gap-3">
-            <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 transition">
+            <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition">
               <ChevronLeft className="w-4 h-4 text-slate-600" />
             </button>
             <button onClick={goToday} className="text-sm font-semibold text-indigo-600 hover:underline">Today</button>
-            <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 transition">
+            <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition">
               <ChevronRight className="w-4 h-4 text-slate-600" />
             </button>
-            <h3 className="text-lg font-bold text-slate-900 ml-2">{MONTH_NAMES[month]} {year}</h3>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 ml-2">{MONTH_NAMES[month]} {year}</h3>
           </div>
 
           {loading ? (
             <div className="py-20 text-center text-slate-300 text-sm">Loading…</div>
           ) : (
             <>
-              <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                <div className="grid grid-cols-7 border-b border-slate-100">
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+                <div className="grid grid-cols-7 border-b border-slate-100 dark:border-slate-700">
                   {DAY_LABELS.map((d) => (
                     <div key={d} className="py-2 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest">{d}</div>
                   ))}
@@ -544,7 +546,7 @@ export default function Production() {
                      <div key={wIdx} className="relative">
                        <div className="grid grid-cols-7 divide-x divide-y divide-slate-100">
                          {week.map((day, dIdx) => {
-                           if (!day) return <div key={`empty-${wIdx}-${dIdx}`} className="min-h-[110px] bg-slate-50/50" />;
+                           if (!day) return <div key={`empty-${wIdx}-${dIdx}`} className="min-h-[110px] bg-slate-50 dark:bg-slate-800/50" />;
                            const dateStr = toDateStr(year, month, day);
                            const isToday = dateStr === today;
                            const events = pointEvents[dateStr] || [];
@@ -553,7 +555,7 @@ export default function Production() {
                           return (
                             <div
                               key={dateStr}
-                              className={`min-h-[110px] p-1.5 flex flex-col transition ${isDragOver ? "bg-indigo-50 ring-2 ring-inset ring-indigo-400" : "hover:bg-slate-50"}`}
+                              className={`min-h-[110px] p-1.5 flex flex-col transition ${isDragOver ? "bg-indigo-50 ring-2 ring-inset ring-indigo-400" : "hover:bg-slate-50 dark:bg-slate-800"}`}
                               onDrop={(e) => handleDrop(e, dateStr)}
                               onDragOver={(e) => handleDragOver(e, dateStr)}
                               onDragLeave={() => setDragOverDate(null)}
@@ -575,7 +577,7 @@ export default function Production() {
                                     className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border cursor-grab truncate ${
                                       ev.isDue
                                         ? "bg-rose-50 border-rose-300 text-rose-700"
-                                        : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 text-slate-600"
+                                        : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 dark:border-slate-700 text-slate-600"
                                     }`}
                                     title={`${companyName(ev.order)} — ${ev.step}`}
                                   >
@@ -597,8 +599,8 @@ export default function Production() {
               </div>
 
               {allActiveOrders.length > 0 && (
-                <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                  <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+                  <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
                     <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">All Active Orders ({allActiveOrders.length}) — Click to expand & schedule</div>
                   </div>
                   {allActiveOrders.map((o) => (

@@ -330,12 +330,16 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
             <div className="flex justify-between text-sm text-slate-500">
               <span>Subtotal</span><span>{fmtMoney(brokerTotals.sub)}</span>
             </div>
-            {parseFloat(quote.discount) > 0 && (
-              <div className="flex justify-between text-sm text-emerald-600">
-                <span>Discount ({quote.discount}%)</span>
-                <span>−{fmtMoney(brokerTotals.sub - brokerTotals.afterDisc)}</span>
-              </div>
-            )}
+            {parseFloat(quote.discount) > 0 && (() => {
+              const dv = parseFloat(quote.discount);
+              const isFlat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
+              return (
+                <div className="flex justify-between text-sm text-emerald-600">
+                  <span>Discount {isFlat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
+                  <span>−{fmtMoney(brokerTotals.sub - brokerTotals.afterDisc)}</span>
+                </div>
+              );
+            })()}
             <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-2 text-lg">
               <span>Your Price</span><span>{fmtMoney(brokerTotals.total)}</span>
             </div>

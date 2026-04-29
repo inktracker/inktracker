@@ -29,6 +29,8 @@ Deno.serve(async (req) => {
       brokerEmail,
       pdfBase64,
       pdfFilename,
+      buttonLabel,
+      shopOwnerEmail,
     } = await req.json();
 
     if (!customerEmails?.length) {
@@ -48,12 +50,12 @@ Deno.serve(async (req) => {
       <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
         <h2 style="color:#1e293b">${emailSubject}</h2>
         <p style="color:#475569;line-height:1.6">${htmlBody}</p>
-        <div style="margin:32px 0">
-          <a href="${approveLink}"
+        ${(paymentLink || approveLink) ? `<div style="margin:32px 0">
+          <a href="${paymentLink || approveLink}"
             style="background:#4f46e5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">
-            View Quote &amp; Pay Online
+            ${buttonLabel || "View Quote &amp; Pay Online"}
           </a>
-        </div>
+        </div>` : ""}
         ${brokerName ? `<p style="color:#94a3b8;font-size:13px">Submitted by ${brokerName}${brokerEmail ? ` · ${brokerEmail}` : ""}</p>` : ""}
         <div style="color:#94a3b8;font-size:11px;font-style:italic;margin-top:28px;line-height:1.5">
           <p style="margin:0 0 8px 0">
@@ -102,8 +104,11 @@ Deno.serve(async (req) => {
             subject: emailSubject,
             html,
             ...(replyTo ? { reply_to: replyTo } : {}),
-            // BCC the broker so they have a copy in their own inbox
-            ...(brokerEmail ? { bcc: [brokerEmail] } : {}),
+            // BCC the shop owner + broker so they have copies
+            ...(() => {
+              const bccList = [shopOwnerEmail, brokerEmail].filter(Boolean);
+              return bccList.length > 0 ? { bcc: bccList } : {};
+            })(),
             ...(pdfBase64 ? {
               attachments: [{
                 filename: pdfFilename || `Quote-${quoteId}.pdf`,

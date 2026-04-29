@@ -176,8 +176,23 @@ CREATE TABLE IF NOT EXISTS invoices (
   total         NUMERIC,
   paid          BOOLEAN DEFAULT FALSE,
   paid_date     DATE,
-  status        TEXT DEFAULT 'Pending' CHECK (status IN ('Pending','Completed')),
-  created_at    TIMESTAMPTZ DEFAULT NOW()
+  status        TEXT DEFAULT 'Pending',
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  date          DATE,
+  due           DATE,
+  subtotal      NUMERIC,
+  tax           NUMERIC,
+  line_items    JSONB DEFAULT '[]',
+  notes         TEXT,
+  rush_rate     NUMERIC,
+  extras        JSONB DEFAULT '{}',
+  discount      NUMERIC DEFAULT 0,
+  discount_type TEXT DEFAULT 'percent',
+  tax_rate      NUMERIC,
+  broker_id     TEXT,
+  broker_name   TEXT,
+  qb_invoice_id TEXT,
+  qb_payment_link TEXT
 );
 
 -- ──────────────────────────────────────────────────────────

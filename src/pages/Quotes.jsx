@@ -39,6 +39,7 @@ export default function Quotes() {
   const [showNew, setShowNew] = useState(false);
   const [user, setUser] = useState(null);
   const [brokerMap, setBrokerMap] = useState({});
+  const [converting, setConverting] = useState(false);
   const [advFilters, setAdvFilters] = useState({});
   const [brokerFilter, setBrokerFilter] = useState("All");
   const [page, setPage] = useState(1);
@@ -148,7 +149,8 @@ export default function Quotes() {
     }
 
     if (brokerFilter === "Broker" && !q.broker_id) return false;
-    if (brokerFilter === "Internal" && q.broker_id) return false;
+    if (brokerFilter === "Internal" && (q.broker_id || q.source === "wizard")) return false;
+    if (brokerFilter === "Wizard" && q.source !== "wizard") return false;
 
     return true;
   });
@@ -234,6 +236,13 @@ export default function Quotes() {
   }
 
   async function handleConvert(q) {
+    if (converting) return;
+    if (q.converted_order_id) {
+      alert("This quote has already been converted to an order.");
+      return;
+    }
+    setConverting(true);
+    try {
     const t = getQuoteTotalsForDisplay(q);
     const orderId = `ORD-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
 
@@ -259,6 +268,7 @@ export default function Quotes() {
       rush_rate: q.rush_rate,
       extras: q.extras,
       discount: q.discount,
+      discount_type: q.discount_type || "percent",
       tax_rate: brokerOrder ? 0 : q.tax_rate,
       subtotal: t.sub,
       tax: t.tax,
@@ -284,6 +294,9 @@ export default function Quotes() {
       setQuotes((prev) => prev.filter((x) => x.id !== q.id));
     }
     setViewing(null);
+    } finally {
+      setConverting(false);
+    }
   }
 
   async function handleTogglePaid(quote) {
@@ -306,7 +319,7 @@ export default function Quotes() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-900">Quotes</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Quotes</h2>
         <button
           onClick={() => setShowNew(true)}
           className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
@@ -324,7 +337,7 @@ export default function Quotes() {
               className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
                 filter === s
                   ? "bg-indigo-600 text-white border-indigo-600"
-                  : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"
+                  : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"
               }`}
             >
               {s}
@@ -333,14 +346,14 @@ export default function Quotes() {
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          {["All", "Internal", "Broker"].map((b) => (
+          {["All", "Internal", "Broker", "Wizard"].map((b) => (
             <button
               key={b}
               onClick={() => setBrokerFilter(b)}
               className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
                 brokerFilter === b
                   ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white border-slate-200 text-slate-500 hover:border-blue-300"
+                  : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300"
               }`}
             >
               {b}
@@ -360,10 +373,11 @@ export default function Quotes() {
         {totalPages > 1 && ` · page ${page} of ${totalPages}`}
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
+        <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-100 bg-slate-50">
+            <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
               {["Quote ID", "Customer", "Date", "In-Hands", "Qty", "Total", "Tier", "Status", ""].map(
                 (h) => (
                   <th
@@ -393,7 +407,7 @@ export default function Quotes() {
               return (
                 <tr
                   key={q.id}
-                  className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer transition"
+                  className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition"
                   onClick={() => setViewing(q)}
                 >
                   <td className="px-5 py-3.5 font-mono text-xs text-slate-400">
@@ -410,7 +424,7 @@ export default function Quotes() {
                     )}
                   </td>
 
-                  <td className="px-5 py-3.5 font-semibold text-slate-800">
+                  <td className="px-5 py-3.5 font-semibold text-slate-800 dark:text-slate-200">
                     {getDisplayName(customerMap[q.customer_id] || q.customer_name) || "—"}
                   </td>
 
@@ -422,7 +436,7 @@ export default function Quotes() {
 
                   <td className="px-5 py-3.5 text-slate-600">{qty} pcs</td>
 
-                  <td className="px-5 py-3.5 font-bold text-slate-800">
+                  <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-200">
                     {fmtMoney(t.total)}
                   </td>
 
@@ -451,6 +465,31 @@ export default function Quotes() {
             })}
           </tbody>
         </table>
+        </div>
+
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
+          {pagedQuotes.map((q) => {
+            const t = getQuoteTotalsForDisplay(q);
+            return (
+              <div key={q.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(q)}>
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="font-mono text-xs text-slate-400">{q.quote_id}</div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">
+                      {getDisplayName(customerMap[q.customer_id] || q.customer_name) || "—"}
+                    </div>
+                  </div>
+                  <Badge s={q.status} />
+                </div>
+                <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
+                  <span>Due: {q.due_date ? fmtDate(q.due_date) : "—"}</span>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(t.total)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {totalPages > 1 && (
@@ -458,7 +497,7 @@ export default function Quotes() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1.5 text-sm font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition"
+            className="px-3 py-1.5 text-sm font-semibold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 disabled:opacity-40 transition"
           >
             ← Prev
           </button>
@@ -466,7 +505,7 @@ export default function Quotes() {
           <button
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="px-3 py-1.5 text-sm font-semibold rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition"
+            className="px-3 py-1.5 text-sm font-semibold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 disabled:opacity-40 transition"
           >
             Next →
           </button>

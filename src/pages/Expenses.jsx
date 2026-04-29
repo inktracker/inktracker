@@ -141,7 +141,7 @@ export default function ExpensesPage() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-slate-900">Expenses</h1>
+        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Expenses</h1>
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -209,9 +209,10 @@ export default function ExpensesPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
+        <div className="hidden md:block overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-slate-50 border-b border-slate-200">
+          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
             <tr>
               <th className="px-4 py-3 text-left">
                 <Checkbox
@@ -263,12 +264,32 @@ export default function ExpensesPage() {
             )}
           </tbody>
         </table>
+        </div>
+
+        <div className="md:hidden divide-y divide-slate-100">
+          {filteredExpenses.length === 0 ? (
+            <div className="px-4 py-8 text-center text-slate-500">No expenses found</div>
+          ) : (
+            filteredExpenses.map(expense => (
+              <div key={expense.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewingExpense(expense)}>
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">{expense.payee || "—"}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{expense.line_items?.[0]?.category_name || "—"}</div>
+                  </div>
+                  <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(expense.total || 0)}</span>
+                </div>
+                <div className="text-xs text-slate-500">{expense.payment_date || "—"}</div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
-      <div className="bg-slate-50 rounded-lg border border-slate-200 p-4">
+      <div className="bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-4">
         <div className="flex justify-between items-center">
           <span className="text-sm font-semibold text-slate-700">Total Expenses</span>
-          <span className="text-2xl font-bold text-slate-900">{fmtMoney(totalExpenses)}</span>
+          <span className="text-2xl font-bold text-slate-900 dark:text-slate-100">{fmtMoney(totalExpenses)}</span>
         </div>
       </div>
 
