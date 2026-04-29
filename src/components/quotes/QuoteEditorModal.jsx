@@ -684,7 +684,7 @@ export default function QuoteEditorModal({
                   rows={8}
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
-                  placeholder={"Hi, I need a quote for:\n- Bella 3001 Heather Grey: S 5, M 5, L 10\n- Independent SS4500 Black hoodie L: 2\nPrint: 1 color back. Need by Friday."}
+                  placeholder={"Womens Crop Tee 1580\nXS: 4\nS: 3\nM: 3\n\nMens Hammer Tee 75000\nS: 4\nM: 4\nL: 4\nXL: 2"}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-y"
                   disabled={pasting}
                 />

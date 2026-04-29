@@ -48,96 +48,142 @@ async function refreshGmailToken(profile: any) {
   return tokens.access_token;
 }
 
-// Parse email content with Gemini to extract quote details
+// ── Signal detection (used both for "is this a quote request" and routing) ──
+const GARMENT_WORDS = /shirt|tee|hoodie|sweatshirt|sweater|tank|polo|cap|hat|beanie|crop\s*top|crewneck|crew|jersey|jacket|long\s*sleeve|longsleeve|pullover/i;
+const PRINT_WORDS = /print|screen|dtg|dtf|embroid|logo|artwork|design|color.*(front|back|sleeve|chest)/i;
+const ORDER_WORDS = /quote|pricing|order|sizes|quantity|quantities|how much|need.*printed|want.*printed/i;
+// Style numbers — Apparel SKUs are 3-5 digits, sometimes with a letter prefix/suffix
+const STYLE_NUMBER_RE = /\b([A-Z]{0,3}\d{3,5}[A-Z0-9]{0,3})\b/i;
+const SIZE_LINE_RE = /^\s*(XS|S|M|L|XL|XXL|2XL|3XL|4XL|5XL)\s*[:\-=]\s*(\d+)\s*$/i;
+const BRAND_WORDS = /bella.*canvas|comfort\s*colors|next\s*level|gildan|hanes|champion|independent|tultex|american\s*apparel|alstyle|royal\s*apparel|fruit\s*of\s*the\s*loom|jerzees|district|threadfast|adidas|nike|columbia/i;
+
+function countSignals(text: string): number {
+  return [
+    GARMENT_WORDS.test(text),
+    PRINT_WORDS.test(text),
+    ORDER_WORDS.test(text),
+    STYLE_NUMBER_RE.test(text),
+    /\b(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]\s*\d+/i.test(text),
+    BRAND_WORDS.test(text),
+  ].filter(Boolean).length;
+}
+
+// Deterministic structured-text parser. Handles "size list" style input —
+// the format shop owners actually paste. Walks lines, treats anything that
+// looks like a garment description as a header that opens a new line item,
+// and assigns subsequent size lines to the current item.
+function structuredParse(body: string): any[] {
+  const lines = body.split(/\n/);
+  const items: any[] = [];
+  let current: any = null;
+
+  const blank = () => ({
+    garment: "",
+    style: "",
+    color: "",
+    sizes: {} as Record<string, number>,
+    description: "",
+    colors: 1,
+    printLocations: "Front",
+  });
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    const sizeMatch = line.match(SIZE_LINE_RE);
+    if (sizeMatch) {
+      if (!current) current = blank();
+      const sz = sizeMatch[1].toUpperCase().replace("XXL", "2XL");
+      current.sizes[sz] = parseInt(sizeMatch[2]);
+      continue;
+    }
+
+    // It's a header if it looks like garment description: any of
+    //   - contains a garment word ("tee", "hoodie", etc.)
+    //   - contains a brand name
+    //   - contains something that looks like a style number (3-5 digits, optional letter prefix)
+    // AND it isn't a size line (already handled above) and isn't pure metadata.
+    const looksLikeHeader =
+      GARMENT_WORDS.test(line) ||
+      BRAND_WORDS.test(line) ||
+      STYLE_NUMBER_RE.test(line);
+
+    // Skip lines that are pure metadata like "SIZES FOR ORDER" or "Order details:"
+    // These contain order keywords but no garment-y signal.
+    const isMetadata =
+      !GARMENT_WORDS.test(line) &&
+      !BRAND_WORDS.test(line) &&
+      !STYLE_NUMBER_RE.test(line);
+
+    if (isMetadata) continue;
+
+    if (looksLikeHeader) {
+      if (current && Object.keys(current.sizes).length > 0) items.push(current);
+      current = blank();
+      const styleMatch = line.match(STYLE_NUMBER_RE);
+      current.style = styleMatch ? styleMatch[1].replace(/^[:\s]+|[:\s]+$/g, "") : "";
+      // Garment name = the line without the trailing style number and trailing punctuation
+      let garment = line;
+      if (styleMatch) garment = garment.replace(styleMatch[0], "");
+      current.garment = garment.replace(/[:\-–\s]+$/g, "").trim();
+
+      // Try to extract a color from the header itself (e.g. "Womens Crop Tee 1580 Black")
+      const colorMatch = line.match(/\b(black|white|navy|red|royal|forest|kelly|olive|charcoal|heather|grey|gray|berry|jade|coral|indigo|rust|sage|pink|orange|yellow|green|blue|tan|cream|natural|maroon|burgundy)\b/i);
+      if (colorMatch) current.color = colorMatch[1];
+      continue;
+    }
+  }
+
+  if (current && Object.keys(current.sizes).length > 0) items.push(current);
+  return items;
+}
+
+// Parse email content — try deterministic parser first, fall back to Gemini for prose.
 async function parseEmailForQuote(from: string, subject: string, body: string): Promise<any> {
   const customerName = from.split("<")[0].trim().replace(/"/g, "") || from;
   const customerEmail = from.match(/<([^>]+)>/)?.[1] || from;
   const fullText = (subject + " " + body).toLowerCase();
-
-  // Smart keyword detection — check for apparel/printing signals
-  const garmentWords = /shirt|tee|hoodie|sweatshirt|tank|polo|cap|hat|beanie|crop top|crewneck|jersey|jacket/i;
-  const printWords = /print|screen|dtg|embroid|logo|artwork|design|color.*(front|back|sleeve|chest)/i;
-  const orderWords = /quote|pricing|order|sizes|quantity|quantities|how much|need.*printed|want.*printed/i;
-  const styleNumbers = /\b\d{4}\b/; // 4-digit style numbers like 1580, 3001, 5000
-  const sizePatterns = /\b(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]\s*\d+/i;
-  const brandNames = /bella.*canvas|comfort\s*colors|next\s*level|gildan|hanes|champion|independent/i;
-
-  const signals = [
-    garmentWords.test(fullText),
-    printWords.test(fullText),
-    orderWords.test(fullText),
-    styleNumbers.test(fullText),
-    sizePatterns.test(fullText),
-    brandNames.test(fullText),
-  ].filter(Boolean).length;
-
-  // If 2+ signals match, it's likely a quote request (even without AI)
+  const signals = countSignals(fullText);
   const keywordMatch = signals >= 2;
 
-  if (!GEMINI_API_KEY) {
-    if (!keywordMatch) {
-      return { isQuoteRequest: false, customerName, customerEmail };
-    }
+  // First, try the deterministic structured parser. If it finds at least one
+  // line item with sizes, trust it — the input was structured enough that we
+  // don't need to roll the dice on an LLM. This is the path Joe paste-orders take.
+  const structured = structuredParse(body);
+  const hasStructuredItems = structured.length > 0 &&
+    structured.some((it) => Object.keys(it.sizes).length > 0);
 
-    // Split body into sections by garment headers and extract sizes per section
-    const lines = body.split(/\n/);
-    const lineItems: any[] = [];
-    let currentItem: any = null;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      // Detect garment header lines (contain garment words or style numbers but not size patterns)
-      const isHeader = (garmentWords.test(trimmed) || brandNames.test(trimmed) || /\b\d{4}\b/.test(trimmed))
-        && !/^\s*(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]/i.test(trimmed);
-
-      if (isHeader) {
-        if (currentItem) lineItems.push(currentItem);
-        const styleMatch = trimmed.match(/\b(\d{4})\b/);
-        currentItem = {
-          garment: trimmed.replace(/\s*[-–]\s*\d{4}.*/, "").trim(),
-          style: styleMatch ? styleMatch[1] : "",
-          color: "",
-          sizes: {},
-          description: "",
-          colors: 1,
-          printLocations: "Front",
-        };
-        continue;
-      }
-
-      // Detect size lines
-      const sizeMatch = trimmed.match(/^\s*(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]\s*(\d+)/i);
-      if (sizeMatch) {
-        if (!currentItem) currentItem = { garment: "", style: "", color: "", sizes: {}, description: "", colors: 1, printLocations: "Front" };
-        currentItem.sizes[sizeMatch[1].toUpperCase()] = parseInt(sizeMatch[2]);
-      }
-    }
-    if (currentItem && Object.keys(currentItem.sizes).length > 0) lineItems.push(currentItem);
-
-    // Fallback: if no structured items found, create one with all sizes
-    if (lineItems.length === 0) {
-      const sizeMap: Record<string, number> = {};
-      const sizeRegex = /\b(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]\s*(\d+)/gi;
-      let m;
-      while ((m = sizeRegex.exec(body)) !== null) sizeMap[m[1].toUpperCase()] = parseInt(m[2]);
-      lineItems.push({ garment: "", style: "", color: "", sizes: sizeMap, description: "", colors: 1, printLocations: "Front" });
-    }
-
+  if (hasStructuredItems) {
     return {
       isQuoteRequest: true,
       customerName,
       customerEmail,
       summary: subject,
-      lineItems,
+      lineItems: structured,
       notes: body.slice(0, 500),
     };
   }
 
-  // Skip Gemini for emails that clearly aren't quote-related (saves API quota)
   if (!keywordMatch) {
     return { isQuoteRequest: false, customerName, customerEmail };
+  }
+
+  // No structured line items found — body is probably prose. Hand to Gemini if available.
+  if (!GEMINI_API_KEY) {
+    // No AI available; emit a single lumped item from any sizes we can find.
+    const sizeMap: Record<string, number> = {};
+    const sizeRegex = /\b(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]\s*(\d+)/gi;
+    let m;
+    while ((m = sizeRegex.exec(body)) !== null) sizeMap[m[1].toUpperCase()] = parseInt(m[2]);
+    return {
+      isQuoteRequest: true,
+      customerName,
+      customerEmail,
+      summary: subject,
+      lineItems: [{ garment: "", style: "", color: "", sizes: sizeMap, description: "", colors: 1, printLocations: "Front" }],
+      notes: body.slice(0, 500),
+    };
   }
 
   const prompt = `Analyze this email and determine if it could be related to a screen printing or custom apparel order. Be LIBERAL in your assessment — if the email mentions ANY of the following, mark it as a quote request:
