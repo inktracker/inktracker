@@ -3,10 +3,11 @@
 //       https://api.ssactivewear.com/V2/Styles.aspx
 // Auth: HTTP Basic, username = account number, password = API key
 
+import { createClient } from "npm:@supabase/supabase-js@2";
+
 const SS_BASE = "https://api.ssactivewear.com/v2";
-const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER") ?? "61047";
-const SS_KEY = Deno.env.get("SS_API_KEY") ?? "e3fde568-dd4a-4b7a-9258-02e92fac3498";
-const AUTH = btoa(`${SS_ACCOUNT}:${SS_KEY}`);
+const GLOBAL_SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
+const GLOBAL_SS_KEY = Deno.env.get("SS_API_KEY")!;
 const FETCH_TIMEOUT_MS = 20_000;
 
 const CORS = {
@@ -14,8 +15,32 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Resolve per-shop or global S&S credentials
+async function resolveSSAuth(accessToken?: string): Promise<string> {
+  if (accessToken) {
+    try {
+      const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      });
+      const { data: { user } } = await supabase.auth.getUser(accessToken);
+      if (user) {
+        const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        const { data: profile } = await admin.from("profiles").select("ss_account_number, ss_api_key").eq("auth_id", user.id).single();
+        if (profile?.ss_account_number && profile?.ss_api_key) {
+          return btoa(`${profile.ss_account_number}:${profile.ss_api_key}`);
+        }
+      }
+    } catch (err) {
+      console.error("[ssLookupStyle] per-shop auth failed, using global:", err.message);
+    }
+  }
+  return btoa(`${GLOBAL_SS_ACCOUNT}:${GLOBAL_SS_KEY}`);
+}
+
+let currentAuth = btoa(`${GLOBAL_SS_ACCOUNT}:${GLOBAL_SS_KEY}`);
+
 function ssHeaders() {
-  return { Authorization: `Basic ${AUTH}`, Accept: "application/json" };
+  return { Authorization: `Basic ${currentAuth}`, Accept: "application/json" };
 }
 
 async function ssFetch(url: string): Promise<{ ok: boolean; status: number; data: any }> {
@@ -86,17 +111,16 @@ function groupRowsByBrand(rows: any[]): any[] {
       if (!colorName) continue;
 
       if (!colorMap[colorName]) {
+        const frontRaw = row.colorFrontImage ?? row.colorImage ?? "";
+        const backRaw = row.colorBackImage ?? row.colorSideImage ?? "";
         colorMap[colorName] = {
           colorName,
           colorCode: row.colorCode ?? "",
           sku: String(row.sku ?? "").replace(/-[^-]+$/, ""),
           piecePrice: Number(row.piecePrice ?? row.piece_price ?? 0),
           casePrice:  Number(row.casePrice  ?? row.case_price  ?? 0),
-          imageUrl:   (() => {
-            const raw = row.colorFrontImage ?? row.colorImage ?? "";
-            if (!raw) return "";
-            return raw.startsWith("http") ? raw : `https://www.ssactivewear.com/${raw}`;
-          })(),
+          imageUrl: frontRaw ? (frontRaw.startsWith("http") ? frontRaw : `https://www.ssactivewear.com/${frontRaw}`) : "",
+          backImageUrl: backRaw ? (backRaw.startsWith("http") ? backRaw : `https://www.ssactivewear.com/${backRaw}`) : "",
           sizeQuantities: {},
         };
       }
@@ -121,6 +145,13 @@ function groupRowsByBrand(rows: any[]): any[] {
 
     const styleImage = colors.find(c => c.imageUrl)?.imageUrl || "";
 
+    // Build images array with front/back per color (matches AS Colour format)
+    const images: any[] = [];
+    for (const c of colors) {
+      if (c.imageUrl) images.push({ colour: c.colorName.toUpperCase(), url: c.imageUrl, type: c.colorName.toUpperCase() });
+      if (c.backImageUrl) images.push({ colour: c.colorName.toUpperCase() + " - BACK", url: c.backImageUrl, type: c.colorName.toUpperCase() + " - BACK" });
+    }
+
     products.push({
       id:                  styleID || `${brandName}-${partNumber}`,
       styleNumber:         partNumber,
@@ -135,6 +166,7 @@ function groupRowsByBrand(rows: any[]): any[] {
       styleCategory,
       styleImage,
       colors,
+      images,
       inventoryMap,
       priceMap,
       piecePrice: prices.length     ? Math.min(...prices)     : 0,
@@ -150,7 +182,45 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { styleNumber, debug = false } = body;
+    const { styleNumber, action, color, debug = false, accessToken } = body;
+
+    // Resolve per-shop or global S&S credentials
+    // accessToken can come from the body or from the Authorization header
+    const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
+    currentAuth = await resolveSSAuth(accessToken || authHeader);
+
+    // Raw SKU lookup: returns per-size SKUs for a style+color
+    if (action === "rawSkus") {
+      if (!styleNumber) return Response.json({ error: "styleNumber required" }, { status: 400, headers: CORS });
+      const q = String(styleNumber).trim();
+      // Find the styleID first
+      const stylesUrl = `${SS_BASE}/styles?search=${encodeURIComponent(q)}`;
+      const { ok: sOk, data: sData } = await ssFetch(stylesUrl);
+      if (!sOk || !Array.isArray(sData) || !sData.length) {
+        return Response.json({ error: "Style not found" }, { status: 404, headers: CORS });
+      }
+      const qUpper = q.toUpperCase();
+      const style = sData.find((s: any) =>
+        String(s.styleName ?? "").toUpperCase() === qUpper ||
+        String(s.partNumber ?? "").toUpperCase() === qUpper
+      ) || sData[0];
+      // Fetch raw product rows
+      const productsUrl = `${SS_BASE}/products?styleid=${style.styleID}`;
+      const { ok: pOk, data: pData } = await ssFetch(productsUrl);
+      if (!pOk || !Array.isArray(pData)) {
+        return Response.json({ error: "Failed to fetch products" }, { status: 502, headers: CORS });
+      }
+      // Filter by color if specified, return size→sku map
+      const targetColor = (color || "").toLowerCase();
+      const skuMap: Record<string, { sku: string; price: number }> = {};
+      for (const row of pData) {
+        const cn = (row.colorName ?? row.color ?? "").toLowerCase();
+        if (targetColor && cn !== targetColor) continue;
+        const size = String(row.sizeName ?? row.size ?? "").toUpperCase();
+        skuMap[size] = { sku: row.sku, price: row.piecePrice ?? row.piece_price ?? 0 };
+      }
+      return Response.json({ skus: skuMap, style: style.styleName, brand: style.brandName }, { headers: CORS });
+    }
 
     if (!styleNumber) {
       return Response.json({ error: "styleNumber required" }, { status: 400, headers: CORS });

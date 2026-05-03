@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { calcGroupPrice, calcQuoteTotalsWithLinking, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid } from "../shared/pricing";
+import { calcGroupPrice, calcQuoteTotalsWithLinking, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques } from "../shared/pricing";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
@@ -8,59 +8,59 @@ import ColorAnalysisResult from "../shared/ColorAnalysisResult";
 
 export const DEFAULT_WIZARD_STYLES = [
   // T-Shirts
-  { id:"ts-budget", garment:"T-Shirts", styleNumber:"3001", brand:"Bella+Canvas", tag:"Budget",
-    hoverDescription:"WRAP-certified, 100% ring-spun cotton" },
-  { id:"ts-mid", garment:"T-Shirts", styleNumber:"1717", brand:"Comfort Colors", tag:"Mid",
-    hoverDescription:"100% cotton, garment-dyed" },
-  { id:"ts-premium", garment:"T-Shirts", styleNumber:"EC1000", brand:"econscious", tag:"Premium",
-    hoverDescription:"100% organic cotton" },
-  { id:"ts-luxury", garment:"T-Shirts", styleNumber:"LS19001", brand:"Lane Seven", tag:"Luxury",
-    hoverDescription:"Heavyweight garment-dyed, premium cotton" },
+  { id:"ts-staple", garment:"T-Shirts", styleNumber:"5001", brand:"AS Colour", tag:"Staple",
+    hoverDescription:"Mid weight, 5.3 oz, 100% combed cotton, 70+ colours" },
+  { id:"ts-classic", garment:"T-Shirts", styleNumber:"5026", brand:"AS Colour", tag:"Classic",
+    hoverDescription:"Mid weight, 5.3 oz, regular fit classic tee" },
+  { id:"ts-heavy", garment:"T-Shirts", styleNumber:"5080", brand:"AS Colour", tag:"Heavy",
+    hoverDescription:"Heavy weight, 7.1 oz, 100% combed cotton" },
+  { id:"ts-organic", garment:"T-Shirts", styleNumber:"5001G", brand:"AS Colour", tag:"Organic",
+    hoverDescription:"Mid weight, 5.3 oz, 100% organic combed cotton" },
   // Long Sleeve
-  { id:"ls-budget", garment:"Long Sleeve", styleNumber:"3501", brand:"Bella+Canvas", tag:"Budget",
-    hoverDescription:"WRAP-certified, 100% ring-spun cotton" },
-  { id:"ls-mid", garment:"Long Sleeve", styleNumber:"6014", brand:"Comfort Colors", tag:"Mid",
-    hoverDescription:"100% cotton, garment-dyed" },
-  { id:"ls-premium", garment:"Long Sleeve", styleNumber:"EC1080", brand:"econscious", tag:"Premium",
-    hoverDescription:"100% organic cotton" },
-  { id:"ls-luxury", garment:"Long Sleeve", styleNumber:"LS13001", brand:"Lane Seven", tag:"Luxury",
-    hoverDescription:"Heavyweight premium garment-dyed" },
+  { id:"ls-staple", garment:"Long Sleeve", styleNumber:"5020", brand:"AS Colour", tag:"Staple",
+    hoverDescription:"Mid weight, 5.3 oz, 100% combed cotton L/S" },
+  { id:"ls-ink", garment:"Long Sleeve", styleNumber:"5009", brand:"AS Colour", tag:"Ink",
+    hoverDescription:"Mid weight, durable L/S tee" },
+  { id:"ls-base", garment:"Long Sleeve", styleNumber:"5029", brand:"AS Colour", tag:"Base",
+    hoverDescription:"Mid weight, versatile long sleeve" },
+  { id:"ls-organic", garment:"Long Sleeve", styleNumber:"5020G", brand:"AS Colour", tag:"Organic",
+    hoverDescription:"Mid weight, 100% organic combed cotton L/S" },
   // Hoodies
-  { id:"hd-budget", garment:"Hoodies", styleNumber:"3719", brand:"Bella+Canvas", tag:"Budget",
-    hoverDescription:"WRAP-certified, sponge fleece" },
-  { id:"hd-mid", garment:"Hoodies", styleNumber:"SS4500", brand:"Independent Trading Co.", tag:"Mid",
-    hoverDescription:"Cotton-dominant heavyweight, quality-built to last" },
-  { id:"hd-premium", garment:"Hoodies", styleNumber:"1567", brand:"Comfort Colors", tag:"Premium",
-    hoverDescription:"100% cotton, garment-dyed" },
-  { id:"hd-luxury", garment:"Hoodies", styleNumber:"LS14001", brand:"Lane Seven", tag:"Luxury",
-    hoverDescription:"13+ oz heavyweight cotton fleece" },
+  { id:"hd-supply", garment:"Hoodies", styleNumber:"5101", brand:"AS Colour", tag:"Supply",
+    hoverDescription:"Mid weight, cotton-rich pullover hood" },
+  { id:"hd-stencil", garment:"Hoodies", styleNumber:"5102", brand:"AS Colour", tag:"Stencil",
+    hoverDescription:"Mid-heavy weight, premium hood" },
+  { id:"hd-heavy", garment:"Hoodies", styleNumber:"5146", brand:"AS Colour", tag:"Heavy",
+    hoverDescription:"Heavy weight, 13 oz premium hood" },
+  { id:"hd-relax", garment:"Hoodies", styleNumber:"5161", brand:"AS Colour", tag:"Relax",
+    hoverDescription:"Relaxed fit, heavyweight hood" },
   // Crewnecks
-  { id:"cn-budget", garment:"Crewnecks", styleNumber:"3901", brand:"Bella+Canvas", tag:"Budget",
-    hoverDescription:"WRAP-certified, sponge fleece" },
-  { id:"cn-mid", garment:"Crewnecks", styleNumber:"SS3000", brand:"Independent Trading Co.", tag:"Mid",
-    hoverDescription:"Cotton-dominant midweight, durable construction" },
-  { id:"cn-premium", garment:"Crewnecks", styleNumber:"1566", brand:"Comfort Colors", tag:"Premium",
-    hoverDescription:"100% cotton, garment-dyed" },
-  { id:"cn-luxury", garment:"Crewnecks", styleNumber:"LS14004", brand:"Lane Seven", tag:"Luxury",
-    hoverDescription:"Heavyweight garment-dyed fleece" },
+  { id:"cn-supply", garment:"Crewnecks", styleNumber:"5100S", brand:"AS Colour", tag:"Supply",
+    hoverDescription:"Mid weight, cotton-rich crew" },
+  { id:"cn-stencil", garment:"Crewnecks", styleNumber:"5103", brand:"AS Colour", tag:"Stencil",
+    hoverDescription:"Mid-heavy weight, premium crew" },
+  { id:"cn-united", garment:"Crewnecks", styleNumber:"5130S", brand:"AS Colour", tag:"United",
+    hoverDescription:"Heavy weight, premium crew" },
+  { id:"cn-heavy", garment:"Crewnecks", styleNumber:"5145", brand:"AS Colour", tag:"Heavy",
+    hoverDescription:"Heavy weight, 13 oz crew" },
   // Tank Tops
-  { id:"tk-budget", garment:"Tank Tops", styleNumber:"3480", brand:"Bella+Canvas", tag:"Budget",
-    hoverDescription:"WRAP-certified, 100% ring-spun cotton" },
-  { id:"tk-mid", garment:"Tank Tops", styleNumber:"3633", brand:"Next Level", tag:"Mid",
-    hoverDescription:"Cotton blend, responsible manufacturing" },
-  { id:"tk-premium", garment:"Tank Tops", styleNumber:"6030", brand:"Comfort Colors", tag:"Premium",
-    hoverDescription:"100% cotton, garment-dyed tank" },
-  { id:"tk-luxury", garment:"Tank Tops", styleNumber:"9360", brand:"Comfort Colors", tag:"Luxury",
-    hoverDescription:"Garment-dyed heavyweight tank" },
+  { id:"tk-barnard", garment:"Tank Tops", styleNumber:"5025", brand:"AS Colour", tag:"Barnard",
+    hoverDescription:"Light weight, cotton singlet" },
+  { id:"tk-classic", garment:"Tank Tops", styleNumber:"5073", brand:"AS Colour", tag:"Classic",
+    hoverDescription:"Mid weight, 220 GSM classic tank" },
+  { id:"tk-staple", garment:"Tank Tops", styleNumber:"5090", brand:"AS Colour", tag:"Staple",
+    hoverDescription:"Regular fit staple tank" },
+  { id:"tk-stonewash", garment:"Tank Tops", styleNumber:"5039", brand:"AS Colour", tag:"Stone Wash",
+    hoverDescription:"Stone wash barnard tank" },
   // Hats
-  { id:"ht-budget", garment:"Hats", styleNumber:"EC7000", brand:"econscious", tag:"Budget",
-    hoverDescription:"Organic cotton twill" },
-  { id:"ht-mid", garment:"Hats", styleNumber:"EC7070", brand:"econscious", tag:"Mid",
-    hoverDescription:"Recycled poly + organic cotton blend" },
-  { id:"ht-premium", garment:"Hats", styleNumber:"EC7090", brand:"econscious", tag:"Premium",
-    hoverDescription:"Organic/recycled blend cap" },
-  { id:"ht-luxury", garment:"Hats", styleNumber:"LS15009", brand:"Lane Seven", tag:"Luxury",
-    hoverDescription:"Premium garment-washed cap" },
+  { id:"ht-stock", garment:"Hats", styleNumber:"1100", brand:"AS Colour", tag:"Stock",
+    hoverDescription:"6-panel cotton twill cap" },
+  { id:"ht-trucker", garment:"Hats", styleNumber:"1102", brand:"AS Colour", tag:"Trucker",
+    hoverDescription:"Faded trucker cap" },
+  { id:"ht-finn", garment:"Hats", styleNumber:"1103", brand:"AS Colour", tag:"Finn",
+    hoverDescription:"5-panel cap" },
+  { id:"ht-cord", garment:"Hats", styleNumber:"1110", brand:"AS Colour", tag:"Cord",
+    hoverDescription:"Corduroy cap" },
 ];
 
 export const DEFAULT_WIZARD_SETUPS = [
@@ -275,6 +275,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
   const [samePrint, setSamePrint] = useState(false);
   const [contact, setContact] = useState({ name:"", email:"", phone:"", company:"", notes:"", dueDate:"", taxExempt:false, taxId:"" });
   const [submitted, setSubmitted] = useState(false);
+  const mockupRefs = useRef({});
   const sizesRef = useRef(null);
   const [uploading, setUploading] = useState({});
   const [openSection, setOpenSection] = useState("style"); // style | color | sizes | print | turnaround
@@ -286,24 +287,63 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
   function setSelectedGarment(v) { setG({ selectedGarment: v }); }
   const [previewStyle, setPreviewStyle] = useState(null);
   const [enrichingStyle, setEnrichingStyle] = useState(false);
-  const [enrichedPreviews, setEnrichedPreviews] = useState({});
+  const [enrichedPreviews, setEnrichedPreviews] = useState({
+    // Pre-cached AS Colour previews so style cards render instantly
+    "ts-staple":    { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/182/images/10681/5001_STAPLE_TEE_BLACK__80682.1774216143.386.513.jpg?c=1", name: "AS Colour 5001", description: "Staple Tee", weight: "180 GSM" },
+    "ts-classic":   { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/201/images/7079/5026_CLASSIC_TEE_BLACK__28327.1751340338.386.513.jpg?c=1", name: "AS Colour 5026", description: "Classic Tee", weight: "220 GSM" },
+    "ts-heavy":     { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/497/images/4897/5080_HEAVY_TEE_BLACK__25837.1731177423.386.513.jpg?c=1", name: "AS Colour 5080", description: "Heavy Tee", weight: "280 GSM" },
+    "ts-organic":   { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/185/images/1086/5001G_STAPLE_ORGANIC_TEE_BLACK__71236.1751514117.386.513.jpg?c=1", name: "AS Colour 5001G", description: "Staple Organic Tee", weight: "180 GSM" },
+    "ls-staple":    { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/569/images/6036/5020_STAPLE_LS_BLACK__17085.1747803774.386.513.jpg?c=1", name: "AS Colour 5020", description: "Staple L/S Tee", weight: "180 GSM" },
+    "ls-ink":       { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/193/images/1208/5009_INK_LS_TEE_BLACK__76383.1741652261.386.513.jpg?c=1", name: "AS Colour 5009", description: "Ink L/S Tee", weight: "180 GSM" },
+    "ls-base":      { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/204/images/2112/5029_BASE_LS_TEE_BLACK__65265.1775794150.386.513.jpg?c=1", name: "AS Colour 5029", description: "Base L/S Tee", weight: "200 GSM" },
+    "ls-organic":   { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/813/images/11297/5020G_STAPLE_ORGANIC_LS_TEE_BLACK__30593.1724726738.386.513.jpg?c=1", name: "AS Colour 5020G", description: "Staple Organic L/S Tee", weight: "180 GSM" },
+    "hd-supply":    { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/1139/images/20408/5101_SUPPLY_HOOD_BLACK__57986.1773368382.386.513.jpg?c=1", name: "AS Colour 5101", description: "Supply Hood", weight: "290 GSM" },
+    "hd-stencil":   { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/222/images/1575/5102_STENCIL_HOOD_BLACK__00726.1767564698.386.513.jpg?c=1", name: "AS Colour 5102", description: "Stencil Hood", weight: "350 GSM" },
+    "hd-heavy":     { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/523/images/5244/5146_HEAVY_HOOD_BLACK__73666.1759358031.386.513.jpg?c=1", name: "AS Colour 5146", description: "Heavy Hood", weight: "400 GSM" },
+    "hd-relax":     { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/593/images/22024/5161_RELAX_HOOD_BLACK__85476.1747261794.386.513.jpg?c=1", name: "AS Colour 5161", description: "Relax Hood", weight: "350 GSM" },
+    "cn-supply":    { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/1335/images/25073/5100_SUPPLY_CREW_BLACK__53989.1775794150.386.513.jpg?c=1", name: "AS Colour 5100S", description: "Supply Crew", weight: "290 GSM" },
+    "cn-stencil":   { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/1098/images/18712/5103_STENCIL_CREW_BLACK__72031.1736128748.386.513.jpg?c=1", name: "AS Colour 5103", description: "Stencil Crew", weight: "350 GSM" },
+    "cn-united":    { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/973/images/19752/5130_UNITED_CREW_BLACK__02447.1747261794.386.513.jpg?c=1", name: "AS Colour 5130S", description: "United Crew", weight: "380 GSM" },
+    "cn-heavy":     { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/522/images/5221/5145_HEAVY_CREW_BLACK__25599.1761164372.386.513.jpg?c=1", name: "AS Colour 5145", description: "Heavy Crew", weight: "400 GSM" },
+    "tk-barnard":   { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/199/images/1294/5025_BARNARD_TANK_BLACK__52846.1724726963.386.513.jpg?c=1", name: "AS Colour 5025", description: "Barnard Tank", weight: "150 GSM" },
+    "tk-classic":   { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/562/images/5851/5073_CLASSIC_TANK_BLACK__63099.1724726963.386.513.jpg?c=1", name: "AS Colour 5073", description: "Classic Tank", weight: "220 GSM" },
+    "tk-staple":    { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/835/images/11751/5090_STAPLE_TANK_BLACK__43816.1724726963.386.513.jpg?c=1", name: "AS Colour 5090", description: "Staple Tank", weight: "180 GSM" },
+    "tk-stonewash": { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/209/images/1421/5039_STONE_WASH_BARNARD_TANK_BLACK_STONE__05765.1713301808.386.513.jpg?c=1", name: "AS Colour 5039", description: "Stone Wash Barnard Tank", weight: "160 GSM" },
+    "ht-stock":     { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/129/images/16217/1100_STOCK_CAP_BLACK__94465.1753757510.386.513.jpg?c=1", name: "AS Colour 1100", description: "Stock Cap", weight: "" },
+    "ht-trucker":   { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/1092/images/19455/1102_STOCK_FADED_TRUCKER_FADED_BLACK__42887.1738899005.386.513.jpg?c=1", name: "AS Colour 1102", description: "Stock Faded Trucker", weight: "" },
+    "ht-finn":      { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/130/images/15986/1103_FINN_FIVE_PANEL_CAP_BLACK__25992.1761001973.386.513.jpg?c=1", name: "AS Colour 1103", description: "Finn Five Panel Cap", weight: "" },
+    "ht-cord":      { styleImage: "https://cdn11.bigcommerce.com/s-hsi95a83fz/products/897/images/15161/1110_STOCK_CONTRAST_TRUCKER_BLACK_ECRU_FRONT__42625.1757543399.386.513.jpg?c=1", name: "AS Colour 1110", description: "Stock Contrast Trucker", weight: "" },
+  });
+  const [colorPreview, setColorPreview] = useState(null); // { colorName, images[] }
 
   async function enrichStylePreviews(stylesToEnrich) {
     const toEnrich = stylesToEnrich.filter(s => s.styleNumber && !enrichedPreviews[s.id]);
     if (toEnrich.length === 0) return;
     const results = await Promise.allSettled(
       toEnrich.map(async (s) => {
-        const { data } = await supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: s.styleNumber } });
-        const matches = data?.matches || [];
+        const [ssRes, acRes] = await Promise.allSettled([
+          supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: s.styleNumber } }),
+          supabase.functions.invoke("acLookupStyle", { body: { styleCode: s.styleNumber } }),
+        ]);
+        const allMatches = [
+          ...(ssRes.status === "fulfilled" ? ssRes.value?.data?.matches || [] : []),
+          ...(acRes.status === "fulfilled" ? acRes.value?.data?.matches || [] : []),
+        ];
         const match = (s.brand
-          ? matches.find(m => m.brandName?.toLowerCase().includes(s.brand.toLowerCase()))
-          : null) || matches[0];
+          ? allMatches.find(m => m.brandName?.toLowerCase().includes(s.brand.toLowerCase()))
+          : null) || allMatches[0];
         const blackColor = match?.colors?.find(c => c.colorName?.toLowerCase() === "black");
+        // Grab a few color swatches for preview
+        const swatches = (match?.colors || [])
+          .filter(c => c.imageUrl)
+          .slice(0, 5)
+          .map(c => ({ name: c.colorName, img: c.imageUrl }));
         return {
           id: s.id,
           styleImage: blackColor?.imageUrl || match?.styleImage || match?.colors?.[0]?.imageUrl || "",
-          name: match ? `${match.brandName} ${match.styleNumber}` : "",
-          description: match?.description || "",
+          swatches,
+          name: match ? `${match.brandName} ${match.styleNumber || match.resolvedStyleNumber || ""}`.trim() : "",
+          description: match?.resolvedTitle || match?.description || "",
           weight: match?.colors?.[0]?.weight || "",
         };
       })
@@ -331,10 +371,14 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     if (!styleNum) return;
     setEnrichingStyle(true);
     try {
-      const { data } = await supabase.functions.invoke("ssLookupStyle", {
-        body: { styleNumber: styleNum },
-      });
-      const matches = data?.matches || [];
+      const [ssRes, acRes] = await Promise.allSettled([
+        supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: styleNum } }),
+        supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNum } }),
+      ]);
+      const matches = [
+        ...(ssRes.status === "fulfilled" ? ssRes.value?.data?.matches || [] : []),
+        ...(acRes.status === "fulfilled" ? acRes.value?.data?.matches || [] : []),
+      ];
       const match = (s.brand
         ? matches.find(m => m.brandName?.toLowerCase().includes(s.brand.toLowerCase()))
         : matches.find(m => s.name?.toLowerCase().includes(m.brandName?.toLowerCase()))
@@ -358,6 +402,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
           description: prev.description || match.description || "",
           weight: prev.weight || (match.colors?.[0]?.weight) || "",
           colorImages,
+          allImages: match.images || [],
           priceMap,
           inventoryMap: match.inventoryMap || {},
           styleImage: colorImages["Black"] || match.styleImage || prev.styleImage || prev.image,
@@ -382,18 +427,27 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     setSsLookupError("");
     setSsMatches([]);
     try {
-      const { data, error } = await supabase.functions.invoke("ssLookupStyle", {
-        body: { styleNumber },
-      });
-      if (error) throw error;
-      const matches = (data?.matches || []).map((m) => ({
+      // Query both S&S and AS Colour in parallel
+      const [ssRes, acRes] = await Promise.allSettled([
+        supabase.functions.invoke("ssLookupStyle", { body: { styleNumber } }),
+        supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNumber } }),
+      ]);
+      const grabMatches = (r) => {
+        if (r.status !== "fulfilled") return [];
+        const d = r.value?.data;
+        if (!d || d.error) return [];
+        return d.matches || [];
+      };
+      const allRaw = [...grabMatches(ssRes), ...grabMatches(acRes)];
+      const matches = allRaw.map((m) => ({
         id: m.id || `${m.brandName}-${m.styleNumber}`,
         brandName: m.brandName,
-        styleNumber: m.styleNumber,
-        description: m.description || m.resolvedTitle || "",
-        colors: (m.colors || []).map((c) => ({ colorName: c.colorName, imageUrl: c.imageUrl })).filter(c => c.colorName),
+        styleNumber: m.styleNumber || m.resolvedStyleNumber || "",
+        description: m.resolvedTitle || m.description || "",
+        colors: (m.colors || []).map((c) => ({ colorName: c.colorName, imageUrl: c.imageUrl, piecePrice: c.piecePrice })).filter(c => c.colorName),
         colorNames: (m.colors || []).map((c) => c.colorName).filter(Boolean),
         garmentCost: Number(m.piecePrice) || 0,
+        priceMap: m.priceMap || {},
         styleImage: m.styleImage || (m.colors?.[0]?.imageUrl) || "",
         inventoryMap: m.inventoryMap || {},
         icon: "tee",
@@ -550,6 +604,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     setSubmitting(true);
     const validG = garments.filter(g => g.style && g.color);
     setSubmittedGarments(validG);
+
     const allArtwork = [];
     const line_items = validG.map(g => ({
       id: uid(),
@@ -568,6 +623,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
           artwork_url: art?.url || "",
           artwork_name: art?.name || "",
           artwork_id: art?.url || "",
+          mockup_url: "",
         };
       }),
       category: g.style.garment || "",
@@ -611,6 +667,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
 
   const validGarments = garments.filter(gg => gg.style && gg.color);
   const totalQtyAll = garments.reduce((s, gg) => s + Object.values(gg.sizes).reduce((a,v) => a + (parseInt(v) || 0), 0), 0);
+
 
   // Validation helper — returns list of issues preventing Continue
   function getValidationIssues() {
@@ -657,29 +714,19 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     );
   }
 
-  // Calculate pricing examples using typical wholesale costs per category
-  const categoryBaseCosts = { "T-Shirts": 4.50, "Long Sleeve": 6.50, "Hoodies": 18.00, "Crewnecks": 12.00, "Tank Tops": 4.00, "Hats": 8.00 };
-  const availableCategories = [...new Set(POPULAR_STYLES.map(s => s.garment))];
-  const exampleData = availableCategories.slice(0, 3).map(cat => {
-    const cost = categoryBaseCosts[cat] || 5.00;
-    const r = calcGroupPrice(cost, 50, [{colors:1}], 0, {});
-    const unitLabel = cat === "Hoodies" ? "hoodie" : cat === "Hats" ? "hat" : cat === "Crewnecks" ? "crewneck" : cat === "Tank Tops" ? "tank" : "shirt";
-    return r ? { label: `50 ${cat} · 1 color front print`, ppp: r.ppp, total: r.sub, unit: unitLabel } : null;
-  }).filter(Boolean);
-
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Intro — show before any garment is configured */}
       {step === 1 && !garments.some(gg => gg.style) && (
         <div className="space-y-5">
           <div className="text-center space-y-1">
-            <h2 className="text-2xl font-bold text-slate-900">Get Instant Pricing</h2>
+            <h2 className="text-2xl font-bold text-slate-900">Request a Quote</h2>
             <p className="text-sm text-slate-400">No commitment required</p>
           </div>
           <div className="grid grid-cols-3 gap-3 text-center">
             {[
               { num: "1", title: "Build your order", sub: "Select garments, styles & quantities" },
-              { num: "2", title: "Get an estimate", sub: "We'll send a detailed quote by email" },
+              { num: "2", title: "Get a quote", sub: "We'll send a detailed quote by email" },
               { num: "3", title: "Approve & we print", sub: "Approve when you're ready" },
             ].map(s => (
               <div key={s.num} className="bg-white rounded-xl border border-slate-100 p-4">
@@ -688,21 +735,6 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                 <div className="text-[10px] text-slate-400 mt-0.5">{s.sub}</div>
               </div>
             ))}
-          </div>
-          <div className="bg-white rounded-xl border border-slate-100 px-5 py-4">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 text-center">A few pricing examples</div>
-            <div className="space-y-2 text-sm max-w-md mx-auto">
-              {exampleData.map((ex, i) => (
-                <div key={i} className="flex items-center justify-between py-1.5 border-b border-slate-50 last:border-0">
-                  <span className="text-slate-600">{ex.label}</span>
-                  <div className="text-right">
-                    <span className="font-bold text-slate-800">{fmtMoney(ex.ppp || 0)}/{ex.unit}</span>
-                    <span className="text-slate-400 text-xs ml-2">{fmtMoney(ex.total || 0)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="text-[10px] text-slate-400 text-center mt-3">Prices vary by style, color count & quantity</div>
           </div>
         </div>
       )}
@@ -726,42 +758,25 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
         })}
       </div>
 
-      {/* Live pricing bar — visible whenever any garment has a style */}
+      {/* Live pricing bar — sticks to top on scroll */}
       {liveTotals && garments.some(gg => gg.style) && (
-        <div className="bg-slate-900 rounded-2xl sticky top-2 z-10 shadow-lg overflow-hidden">
-          <div className="px-5 py-3 space-y-1.5">
-            {garments.filter(gg => gg.style).map(gg => {
-              const gQty = Object.values(gg.sizes).reduce((a,v) => a + (parseInt(v) || 0), 0);
-              const gCost = getEffectiveCost(gg);
-              const gPrice = calcGroupPrice(gCost, gQty || 50, gg.imprints.length ? gg.imprints : [{colors:1}], rush ? 0.20 : 0, {});
-              const gBig = BIG_SIZES.reduce((s,sz) => s + (parseInt(gg.sizes[sz]) || 0), 0);
-              const gTotal = gPrice ? gPrice.sub + gBig * 2 : 0;
-              const gPpp = (gQty || 50) > 0 && gPrice ? gTotal / (gQty || 50) : 0;
-              return (
-                <div key={gg.id} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-white font-semibold truncate">{gg.style.name}{gg.color ? ` · ${gg.color}` : ""}</span>
-                  </div>
-                  <div className="flex items-center gap-4 flex-shrink-0 ml-3">
-                    <span className="text-slate-400">{gQty > 0 ? `${gQty} pcs` : "50 (est.)"}</span>
-                    <span className="text-slate-300 font-semibold">{fmtMoney(gPpp)}/pc</span>
-                    <span className="text-white font-bold">{fmtMoney(gTotal)}</span>
-                  </div>
-                </div>
-              );
-            })}
-            {!garments.some(gg => gg.style) && (
-              <div className="text-xs text-slate-500">Select a garment to see pricing</div>
-            )}
-          </div>
-          <div className="bg-slate-800 px-5 py-2.5 flex items-center justify-between border-t border-slate-700">
-            <div className="flex items-center gap-4 text-xs">
-              <span className="text-slate-400">{totalAllQty > 0 ? `${totalAllQty} pcs total` : "50 pcs (est.)"}</span>
-              {rush && <span className="text-orange-400 font-semibold">Rush +20%</span>}
+        <div className="bg-slate-900 rounded-2xl sticky top-0 z-10 shadow-lg">
+          <div className="px-4 py-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="text-xs text-slate-400 hidden sm:block">
+                {garments.filter(gg => gg.style).map(gg => {
+                  const gQty = Object.values(gg.sizes).reduce((a,v) => a + (parseInt(v) || 0), 0);
+                  return `${gg.style.name}${gg.color ? ` · ${gg.color}` : ""} (${gQty > 0 ? gQty : "50 est."})`;
+                }).join(" | ")}
+              </div>
+              <div className="text-xs text-slate-400 sm:hidden">
+                {totalAllQty > 0 ? `${totalAllQty} pcs` : "50 pcs (est.)"}
+                {rush && <span className="text-orange-400 ml-2">Rush</span>}
+              </div>
             </div>
-            <div className="text-right">
-              <span className="text-[10px] text-slate-500 uppercase tracking-wide mr-3">{liveIsEstimate ? "Est. Total" : "Total"}</span>
-              <span className="text-xl font-bold text-white">{fmtMoney(liveTotals.total)}</span>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <span className="text-xs text-slate-400">{fmtMoney(livePpp)}/pc</span>
+              <span className="text-lg font-bold text-white">{fmtMoney(liveTotals.total)}</span>
             </div>
           </div>
         </div>
@@ -870,7 +885,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Or search by style #</label>
                   <form onSubmit={handleSSLookup} className="flex gap-1.5">
-                    <input value={ssLookupInput} onChange={(e) => setSsLookupInput(e.target.value)} placeholder="e.g. IND4000"
+                    <input value={ssLookupInput} onChange={(e) => setSsLookupInput(e.target.value)} placeholder="e.g. 5001"
                       className="flex-1 text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" disabled={ssLookupLoading} />
                     <button type="submit" disabled={ssLookupLoading||!ssLookupInput.trim()}
                       className="text-sm font-semibold text-indigo-600 border border-indigo-200 px-3 py-2 rounded-xl hover:bg-indigo-50 disabled:opacity-50">
@@ -944,12 +959,30 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                     const baseImg = style.colorImages?.["Black"] || style.styleImage || Object.values(style.colorImages || {})[0] || "";
                     return style.colors.filter(c => style.colorImages?.[c] || colorNameToHex(c)).map(c => {
                       const colorImg = style.colorImages?.[c];
+                      const isSelected = color === c;
                       return (
-                        <button key={c} onClick={() => { setColor(c); setTimeout(() => { if (sizesRef.current) { const y = sizesRef.current.getBoundingClientRect().top + window.scrollY - 120; window.scrollTo({ top: y, behavior: "smooth" }); } }, 100); }}
-                          className={`rounded-xl border-2 p-2 text-center transition hover:shadow-md ${color===c?"border-indigo-500 bg-indigo-50":"border-slate-200 hover:border-indigo-300"}`}>
+                        <button key={c} onClick={() => {
+                          if (isSelected) {
+                            // Second click — open photo preview with all angles
+                            const cUpper = c.toUpperCase();
+                            const apiImages = (style.allImages || [])
+                              .filter(img => {
+                                const t = (img.colour || img.type || "").toUpperCase();
+                                return t === cUpper || t.startsWith(cUpper + " -") || t.startsWith(cUpper + " ");
+                              })
+                              .map(img => ({ url: img.url, label: (img.colour || img.type || "").replace(new RegExp("^" + cUpper + "\\s*-?\\s*", "i"), "").trim() || "Front" }));
+                            // Fallback to the single colorImages entry
+                            if (apiImages.length === 0 && colorImg) apiImages.push({ url: colorImg, label: "Front" });
+                            setColorPreview({ colorName: c, images: apiImages });
+                          } else {
+                            setColor(c);
+                          }
+                        }}
+                          className={`rounded-xl border-2 p-2 text-center transition hover:shadow-md ${isSelected?"border-indigo-500 bg-indigo-50":"border-slate-200 hover:border-indigo-300"}`}>
                           {colorImg ? <img src={colorImg} alt={c} className="w-full aspect-square rounded-lg object-contain bg-white mb-2" />
                             : <TintedImage baseImg={baseImg} colorName={c} className="w-full aspect-square mb-2" />}
                           <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{c}</div>
+                          {isSelected && <div className="text-[10px] text-indigo-500 mt-0.5">Tap to preview</div>}
                         </button>);
                     });
                   })()}
@@ -961,37 +994,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
             </div>
           )}
 
-          {/* ── Sizes ── */}
-          {style && (
-            <div ref={sizesRef} className="border-t border-slate-100 dark:border-slate-700 pt-5">
-              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Sizes</div>
-              {(() => {
-                const inv = color ? (style.inventoryMap?.[color] || {}) : {};
-                const hasInv = Object.keys(inv).length > 0;
-                return (<>
-                  <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3 mb-3">
-                    {SIZES.map(sz => {
-                      const stock = inv[sz] ?? inv[sz.replace("XL","X")] ?? null;
-                      return (<div key={sz} className="text-center">
-                        <div className={`text-xs font-bold mb-1 ${BIG_SIZES.includes(sz)?"text-amber-600":"text-slate-500"}`}>{sz}</div>
-                        <input type="number" min="0" value={sizes[sz]||""} onChange={e=>setSizes(prev=>({...prev,[sz]:parseInt(e.target.value)||0}))}
-                          placeholder="0" className={`w-full text-center text-sm border rounded-xl py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:text-slate-200 ${BIG_SIZES.includes(sz)?"border-amber-200 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700":"border-slate-200 dark:border-slate-600 dark:bg-slate-800"}`} />
-                        {hasInv && <div className={`text-[10px] mt-1 ${stock!=null&&stock>0?(stock<50?"text-amber-500":"text-emerald-500"):"text-red-400"}`}>
-                          {stock!=null?(stock>0?`${stock} avail`:"out"):"—"}</div>}
-                      </div>);
-                    })}
-                  </div>
-                  <div className="flex justify-between items-center border-t border-slate-100 pt-3">
-                    <div className="text-sm text-slate-500">Total: <span className="font-bold text-slate-900">{qty} pcs</span>
-                      {twoXL > 0 && <span className="ml-3 text-amber-600 text-xs font-semibold">+$2/pc on {twoXL} oversized</span>}</div>
-                    {qty > 0 && qty < 25 && <span className="text-xs font-semibold text-red-500 bg-red-50 px-3 py-1 rounded-full border border-red-100">Min 25 pcs</span>}
-                  </div>
-                </>);
-              })()}
-            </div>
-          )}
-
-          {/* ── Print ── */}
+          {/* ── Print (Artwork) ── */}
           {style && (!samePrint || idx === activeIdx || garments.filter(gg => gg.style).length <= 1) && (
             <div className="border-t border-slate-100 dark:border-slate-700 pt-5 space-y-3">
               <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
@@ -1011,7 +1014,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                     <div><label className="block text-[11px] text-slate-400 mb-1">Technique</label>
                       <select value={imp.technique} onChange={e=>updateImprint(idx,{technique:e.target.value})}
                         className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300">
-                        {["Screen Print","Embroidery"].map(t=><option key={t}>{t}</option>)}</select></div>
+                        {getEnabledTechniques().map(t=><option key={t}>{t}</option>)}</select></div>
                   </div>
                   <div><label className="block text-[11px] text-slate-400 mb-1.5">Colors</label>
                     <div className="flex gap-1.5">{COLOR_COUNTS.map(n=>(
@@ -1054,6 +1057,45 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
               <div className="text-xs text-indigo-500 bg-indigo-50 border border-indigo-200 rounded-lg px-3 py-2">
                 Same print as other garments — {imprints.map(i => `${i.location} (${i.colors}c)`).join(", ")}
               </div>
+            </div>
+          )}
+
+
+
+          {/* ── Sizes ── */}
+          {style && (
+            <div ref={sizesRef} className="border-t border-slate-100 dark:border-slate-700 pt-5">
+              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Sizes</div>
+              {(() => {
+                const rawInv = color ? (style.inventoryMap?.[color] || {}) : {};
+                // Normalize OS aliases
+                const inv = {};
+                const osAliases = ["adjustable", "osfa", "one size", "os", "osfm", "one_size", "uni", "n/a"];
+                for (const [k, v] of Object.entries(rawInv)) {
+                  if (osAliases.includes(k.toLowerCase())) inv["OS"] = (inv["OS"] || 0) + v;
+                  else inv[k] = v;
+                }
+                const hasInv = Object.keys(inv).length > 0;
+                return (<>
+                  <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3 mb-3">
+                    {SIZES.map(sz => {
+                      const stock = inv[sz] ?? inv[sz.replace("XL","X")] ?? null;
+                      return (<div key={sz} className="text-center">
+                        <div className={`text-xs font-bold mb-1 ${BIG_SIZES.includes(sz)?"text-amber-600":"text-slate-500"}`}>{sz}</div>
+                        <input type="number" min="0" value={sizes[sz]||""} onChange={e=>setSizes(prev=>({...prev,[sz]:parseInt(e.target.value)||0}))}
+                          placeholder="0" className={`w-full text-center text-sm border rounded-xl py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:text-slate-200 ${BIG_SIZES.includes(sz)?"border-amber-200 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700":"border-slate-200 dark:border-slate-600 dark:bg-slate-800"}`} />
+                        {hasInv && <div className={`text-[10px] mt-1 ${stock!=null&&stock>0?(stock<50?"text-amber-500":"text-emerald-500"):"text-red-400"}`}>
+                          {stock!=null?(stock>0?`${stock} avail`:"out"):"—"}</div>}
+                      </div>);
+                    })}
+                  </div>
+                  <div className="flex justify-between items-center border-t border-slate-100 pt-3">
+                    <div className="text-sm text-slate-500">Total: <span className="font-bold text-slate-900">{qty} pcs</span>
+                      {twoXL > 0 && <span className="ml-3 text-amber-600 text-xs font-semibold">+$2/pc on {twoXL} oversized</span>}</div>
+                    {qty > 0 && qty < 25 && <span className="text-xs font-semibold text-red-500 bg-red-50 px-3 py-1 rounded-full border border-red-100">Min 25 pcs</span>}
+                  </div>
+                </>);
+              })()}
             </div>
           )}
 
@@ -1297,6 +1339,43 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
           </div>
         </div>
       )}
+      {/* Color photo preview modal */}
+      {colorPreview && (() => {
+        const imgs = colorPreview.images || [];
+        const previewIdx = colorPreview.idx || 0;
+        const current = imgs[previewIdx];
+        return (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4"
+          onClick={() => setColorPreview(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-900">{colorPreview.colorName}</h3>
+              <button onClick={() => setColorPreview(null)} className="text-slate-400 hover:text-slate-600 text-lg font-bold px-2">✕</button>
+            </div>
+            {imgs.length > 1 && (
+              <div className="flex justify-center gap-1 px-5 pt-3">
+                {imgs.map((img, i) => (
+                  <button key={i} onClick={() => setColorPreview(prev => ({ ...prev, idx: i }))}
+                    className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition ${previewIdx === i ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                    {img.label || `View ${i + 1}`}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="p-4">
+              {current ? (
+                <img src={current.url || current} alt={`${colorPreview.colorName} ${current.label || ""}`}
+                  className="w-full rounded-xl object-contain bg-slate-50" />
+              ) : (
+                <div className="text-center text-slate-400 py-8 text-sm">No photos available</div>
+              )}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
     </div>
   );
 }

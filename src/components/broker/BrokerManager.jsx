@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import {
   Users,
   ChevronDown,
@@ -150,7 +150,20 @@ export default function BrokerManager() {
   async function loadData() {
     setLoading(true);
     try {
-      const allUsers = await base44.entities.User.list();
+      // Use admin function to bypass RLS and get all users
+      const session = await supabase.auth.getSession();
+      const token = session?.data?.session?.access_token;
+      let allUsers = [];
+      if (token) {
+        const { data } = await supabase.functions.invoke("adminAction", {
+          body: { action: "listUsers" },
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        allUsers = data?.users || [];
+      }
+      if (!allUsers.length) {
+        allUsers = await base44.entities.User.list();
+      }
 
       const brokerUsers = allUsers
         .filter((u) => u.role === "broker")

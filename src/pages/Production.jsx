@@ -1,12 +1,35 @@
 import { useState, useEffect, useMemo } from "react";
-import { base44 } from "@/api/supabaseClient";
-import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
+import { base44, supabase } from "@/api/supabaseClient";
+import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle, sortSizeEntries } from "../components/shared/pricing";
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import SSOrderModal from "../components/orders/SSOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
-import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, List, Hammer, Send, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+
+const FLOOR_STEPS = ["Art Approval", "Order Goods", "Pre-Press", "Printing", "Finishing", "Quality Check", "Packing", "Completed"];
+
+const FLOOR_TASKS = {
+  "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
+  "Order Goods": ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
+  "Pre-Press": ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
+  "Printing": ["Mount screens on press", "Run test prints", "Get test approval", "Run full batch", "Spot check quality"],
+  "Finishing": ["Flash/cure prints", "Quality inspect", "Fold & tag", "Count pieces"],
+  "Quality Check": ["Verify quantities", "Check print quality", "Match against order", "Flag any issues"],
+  "Packing": ["Sort by size", "Bag/box order", "Label packages", "Stage for pickup/shipping"],
+};
+
+const FLOOR_COLORS = {
+  "Art Approval": { bg: "bg-purple-500", light: "bg-purple-50 text-purple-700 border-purple-200" },
+  "Order Goods": { bg: "bg-amber-500", light: "bg-amber-50 text-amber-700 border-amber-200" },
+  "Pre-Press": { bg: "bg-blue-500", light: "bg-blue-50 text-blue-700 border-blue-200" },
+  "Printing": { bg: "bg-indigo-500", light: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  "Finishing": { bg: "bg-teal-500", light: "bg-teal-50 text-teal-700 border-teal-200" },
+  "Quality Check": { bg: "bg-orange-500", light: "bg-orange-50 text-orange-700 border-orange-200" },
+  "Packing": { bg: "bg-emerald-500", light: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  "Completed": { bg: "bg-slate-400", light: "bg-slate-50 text-slate-600 border-slate-200" },
+};
 
 const STATUS_COLORS = {
   "Art Approval":     "bg-slate-100 border-slate-300 text-slate-700",
@@ -89,6 +112,12 @@ export default function Production() {
   const [user, setUser] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
+  // Floor view state
+  const [floorSelected, setFloorSelected] = useState(null);
+  const [floorNote, setFloorNote] = useState("");
+  const [floorSending, setFloorSending] = useState(false);
+  const [floorUpdating, setFloorUpdating] = useState(false);
+  const [floorFilter, setFloorFilter] = useState("Active");
 
   useEffect(() => {
     async function load() {
@@ -105,7 +134,90 @@ export default function Production() {
       setLoading(false);
     }
     load();
+
+    // Real-time: update orders when employees make progress
+    const channel = supabase.channel("production-orders")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "orders" }, (payload) => {
+        const updated = payload.new;
+        setOrders(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o));
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
+
+  // Keep floorSelected in sync with real-time updates
+  useEffect(() => {
+    if (floorSelected) {
+      const fresh = orders.find(o => o.id === floorSelected.id);
+      if (fresh) setFloorSelected(fresh);
+    }
+  }, [orders]);
+
+  // Floor view action functions
+  async function floorUpdateStatus(order, newStatus) {
+    setFloorUpdating(true);
+    try {
+      const stepNotes = { ...(order.step_notes || {}) };
+      if (!stepNotes[newStatus]) stepNotes[newStatus] = [];
+      stepNotes[newStatus].push({
+        text: `Status changed to ${newStatus}`,
+        by: user?.full_name || user?.email || "Admin",
+        at: new Date().toISOString(),
+      });
+      const updated = await base44.entities.Order.update(order.id, { status: newStatus, step_notes: stepNotes });
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
+      setFloorSelected(updated);
+    } catch (err) { alert("Update failed: " + err.message); }
+    finally { setFloorUpdating(false); }
+  }
+
+  async function floorToggleTask(order, task) {
+    try {
+      const step = order.status || "Pre-Press";
+      const checklist = { ...(order.checklist || {}) };
+      if (!checklist[step]) checklist[step] = {};
+      const wasDone = !!checklist[step][task];
+      checklist[step][task] = wasDone ? null : { by: user?.full_name || user?.email || "Admin", at: new Date().toISOString() };
+      const updated = await base44.entities.Order.update(order.id, { checklist });
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
+      setFloorSelected(updated);
+    } catch (err) { alert("Failed: " + err.message); }
+  }
+
+  async function floorTogglePrint(order, liIdx, size, impIdx) {
+    try {
+      const checklist = { ...(order.checklist || {}) };
+      const printProgress = { ...(checklist.print_progress || {}) };
+      const key = `${liIdx}-${size}-${impIdx}`;
+      printProgress[key] = printProgress[key] ? null : { by: user?.full_name || user?.email || "Admin", at: new Date().toISOString() };
+      checklist.print_progress = printProgress;
+      const updated = await base44.entities.Order.update(order.id, { checklist });
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
+      setFloorSelected(updated);
+    } catch (err) { alert("Failed: " + err.message); }
+  }
+
+  async function floorSendNote(order) {
+    if (!floorNote.trim()) return;
+    setFloorSending(true);
+    try {
+      const stepNotes = { ...(order.step_notes || {}) };
+      const step = order.status || "Pre-Press";
+      if (!stepNotes[step]) stepNotes[step] = [];
+      stepNotes[step].push({ text: floorNote.trim(), by: user?.full_name || user?.email || "Admin", at: new Date().toISOString() });
+      const updated = await base44.entities.Order.update(order.id, { step_notes: stepNotes });
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
+      setFloorSelected(updated);
+      setFloorNote("");
+    } catch (err) { alert("Failed: " + err.message); }
+    finally { setFloorSending(false); }
+  }
+
+  const floorGetQty = (order) => (order.line_items || []).reduce((sum, li) =>
+    sum + Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0), 0);
+
+  const floorIsOverdue = (order) => order.due_date && order.due_date < new Date().toISOString().split("T")[0] && order.status !== "Completed";
 
   const pointEvents = useMemo(() => {
     const map = {};
@@ -234,7 +346,7 @@ export default function Production() {
       subtotal: order.subtotal || 0, tax: order.tax || 0, total: order.total || 0,
       paid: false, status: "Sent", line_items: order.line_items || [],
       notes: order.notes || "", rush_rate: order.rush_rate || 0,
-      extras: order.extras || {}, discount: order.discount || 0, tax_rate: order.tax_rate || 8.265,
+      extras: order.extras || {}, discount: order.discount || 0, tax_rate: order.tax_rate || 0,
     });
     if (order.broker_id) {
       await base44.entities.BrokerPerformance.create({
@@ -342,13 +454,18 @@ export default function Production() {
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Production</h2>
           <p className="text-slate-400 text-sm mt-0.5">View and manage orders in calendar or table view</p>
         </div>
-        <button
-          onClick={() => setViewMode(v => v === "calendar" ? "table" : "calendar")}
-          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:bg-slate-800 transition"
-        >
-          {viewMode === "calendar" ? <List className="w-4 h-4" /> : <CalendarDays className="w-4 h-4" />}
-          {viewMode === "calendar" ? "Table View" : "Calendar View"}
-        </button>
+        <div className="flex gap-2">
+          {[
+            { id: "calendar", icon: CalendarDays, label: "Calendar" },
+            { id: "table", icon: List, label: "Table" },
+            { id: "floor", icon: Hammer, label: "Floor" },
+          ].map(v => (
+            <button key={v.id} onClick={() => setViewMode(v.id)}
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl transition ${viewMode === v.id ? "bg-indigo-600 text-white" : "border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:bg-slate-800 text-slate-600"}`}>
+              <v.icon className="w-4 h-4" /> {v.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {viewMode === "table" && (
@@ -620,6 +737,283 @@ export default function Production() {
           )}
         </>
       )}
+
+      {viewMode === "floor" && (() => {
+        const floorOrders = floorFilter === "Active"
+          ? orders.filter(o => o.status !== "Completed" && o.status !== "Shipped")
+          : floorFilter === "Completed"
+            ? orders.filter(o => o.status === "Completed" || o.status === "Shipped")
+            : orders;
+        const sel = floorSelected;
+        const currentStepIdx = sel ? FLOOR_STEPS.indexOf(sel.status || "Pre-Press") : -1;
+        const nextStep = currentStepIdx >= 0 && currentStepIdx < FLOOR_STEPS.length - 1 ? FLOOR_STEPS[currentStepIdx + 1] : null;
+        const prevStep = currentStepIdx > 0 ? FLOOR_STEPS[currentStepIdx - 1] : null;
+
+        return (
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden" style={{ minHeight: "70vh" }}>
+            {/* Filter tabs */}
+            <div className="border-b border-slate-200 dark:border-slate-700 px-5 py-2 flex gap-1">
+              {["Active", "All", "Completed"].map(f => (
+                <button key={f} onClick={() => { setFloorFilter(f); setFloorSelected(null); }}
+                  className={`text-sm font-semibold px-5 py-2 rounded-lg transition ${floorFilter === f ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+                  {f} {f === "Active" && `(${orders.filter(o => o.status !== "Completed" && o.status !== "Shipped").length})`}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex" style={{ minHeight: "65vh" }}>
+              {/* Order list — collapses when a job is selected */}
+              <div className={`${sel ? "hidden md:block md:w-14" : "md:w-96"} border-r border-slate-200 dark:border-slate-700 overflow-y-auto transition-all`} style={{ maxHeight: "70vh" }}>
+                {!sel ? (
+                  <>
+                    {floorOrders.length === 0 && <div className="p-8 text-center text-slate-400 text-sm">No orders</div>}
+                    {floorOrders.map(order => {
+                      const overdue = floorIsOverdue(order);
+                      const colors = FLOOR_COLORS[order.status] || FLOOR_COLORS["Pre-Press"];
+                      return (
+                        <button key={order.id} onClick={() => setFloorSelected(order)}
+                          className={`w-full text-left px-5 py-4 border-b border-slate-100 dark:border-slate-700 transition hover:bg-slate-50 dark:hover:bg-slate-800 ${overdue ? "bg-red-50 dark:bg-red-950" : ""}`}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-slate-800 dark:text-slate-200">{companyName(order)}</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${colors.light}`}>{order.status || "Pre-Press"}</span>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-slate-400">
+                            <span>{order.order_id} · {floorGetQty(order)} pcs</span>
+                            <span className={overdue ? "text-red-500 font-semibold" : ""}>{overdue && "LATE · "}Due {fmtDate(order.due_date)}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </>
+                ) : (
+                  /* Collapsed: vertical dots for each order */
+                  <div className="flex flex-col items-center py-2 gap-1">
+                    {floorOrders.map(order => {
+                      const active = sel?.id === order.id;
+                      const colors = FLOOR_COLORS[order.status] || FLOOR_COLORS["Pre-Press"];
+                      return (
+                        <button key={order.id} onClick={() => setFloorSelected(order)}
+                          title={`${companyName(order)} — ${order.order_id}`}
+                          className={`w-9 h-9 rounded-lg flex items-center justify-center text-[10px] font-bold transition ${active ? "bg-indigo-600 text-white" : `${colors.light} border hover:opacity-80`}`}>
+                          {(companyName(order) || "?")[0]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Order detail */}
+              <div className="flex-1 overflow-y-auto" style={{ maxHeight: "70vh" }}>
+                {!sel ? (
+                  <div className="flex items-center justify-center h-full p-8">
+                    <div className="text-center text-slate-300">
+                      <Hammer className="w-16 h-16 mx-auto mb-3 opacity-30" />
+                      <p className="text-lg font-semibold">Select an order</p>
+                      <p className="text-sm">Click a job to see details and update progress</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-5 space-y-4 max-w-2xl mx-auto">
+                    <button onClick={() => setFloorSelected(null)} className="md:hidden text-sm text-indigo-600 font-semibold mb-2">&larr; Back to list</button>
+
+                    {/* Header */}
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{companyName(sel)}</h2>
+                          <p className="text-sm text-slate-400">{sel.order_id} · {floorGetQty(sel)} pieces</p>
+                        </div>
+                        {floorIsOverdue(sel) && (
+                          <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-full">
+                            <AlertTriangle className="w-3 h-3" /> OVERDUE
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                        {sel.due_date && <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> Due {fmtDate(sel.due_date)}</span>}
+                      </div>
+                    </div>
+
+                    {/* Status pipeline */}
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Production Status</h3>
+                      <div className="flex gap-1 mb-4">
+                        {FLOOR_STEPS.map(step => {
+                          const isCurrent = step === (sel.status || "Pre-Press");
+                          const isDone = FLOOR_STEPS.indexOf(step) < FLOOR_STEPS.indexOf(sel.status || "Pre-Press");
+                          const c = FLOOR_COLORS[step];
+                          return <div key={step} className={`flex-1 h-2 rounded-full transition ${isCurrent ? c.bg : isDone ? c.bg + " opacity-40" : "bg-slate-200"}`} title={step} />;
+                        })}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-bold px-3 py-1.5 rounded-lg border ${FLOOR_COLORS[sel.status]?.light || "bg-slate-50"}`}>{sel.status || "Pre-Press"}</span>
+                        <div className="flex gap-2">
+                          {prevStep && (
+                            <button onClick={() => floorUpdateStatus(sel, prevStep)} disabled={floorUpdating}
+                              className="text-xs font-semibold text-slate-500 border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50 transition disabled:opacity-50">&larr; {prevStep}</button>
+                          )}
+                          {nextStep && (
+                            <button onClick={() => floorUpdateStatus(sel, nextStep)} disabled={floorUpdating}
+                              className="flex items-center gap-1 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition disabled:opacity-50">
+                              {floorUpdating ? "..." : <>Move to {nextStep} <ChevronRight className="w-4 h-4" /></>}
+                            </button>
+                          )}
+                          {!nextStep && sel.status === "Completed" && (
+                            <span className="flex items-center gap-1 text-sm font-bold text-emerald-600"><CheckCircle2 className="w-5 h-5" /> Complete</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Checklist */}
+                    {(() => {
+                      const step = sel.status || "Pre-Press";
+                      const tasks = FLOOR_TASKS[step] || [];
+                      if (tasks.length === 0) return null;
+                      const checklist = sel.checklist || {};
+                      const stepChecks = checklist[step] || {};
+                      const doneCount = tasks.filter(t => !!stepChecks[t]).length;
+                      return (
+                        <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Checklist — {step}</h3>
+                            <span className="text-xs font-bold text-indigo-600">{doneCount}/{tasks.length}</span>
+                          </div>
+                          <div className="flex gap-1 mb-4">
+                            {tasks.map((_, i) => <div key={i} className={`flex-1 h-1.5 rounded-full ${i < doneCount ? "bg-emerald-400" : "bg-slate-200"}`} />)}
+                          </div>
+                          <div className="space-y-1">
+                            {tasks.map(task => {
+                              const done = !!stepChecks[task];
+                              const info = stepChecks[task];
+                              return (
+                                <button key={task} onClick={() => floorToggleTask(sel, task)}
+                                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-white dark:bg-slate-900 hover:bg-slate-100 border border-transparent"}`}>
+                                  <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                                    {done && <CheckCircle2 className="w-4 h-4 text-white" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <span className={`text-sm font-medium ${done ? "text-emerald-700 line-through" : "text-slate-700 dark:text-slate-300"}`}>{task}</span>
+                                    {done && info?.by && <p className="text-[10px] text-emerald-500 mt-0.5">{info.by} · {info.at ? new Date(info.at).toLocaleTimeString() : ""}</p>}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Job ticket with print tracking */}
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Job Ticket</h3>
+                      <div className="space-y-3">
+                        {(sel.line_items || []).map((li, idx) => {
+                          const qty = Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
+                          const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
+                          const printProgress = sel.checklist?.print_progress || {};
+                          return (
+                            <div key={idx} className="bg-white dark:bg-slate-900 rounded-xl p-4">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="font-bold text-slate-800 dark:text-slate-200">{li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}</div>
+                                <span className="text-lg font-bold text-indigo-600">{qty}</span>
+                              </div>
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                {imprints.map((imp, ii) => (
+                                  <span key={ii} className="text-xs font-semibold text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1">
+                                    {imp.location} · {imp.colors}c · {imp.technique || "Screen Print"}
+                                  </span>
+                                ))}
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
+                                  const totalPrints = imprints.length;
+                                  const donePrints = imprints.filter((_, ii) => !!printProgress[`${idx}-${size}-${ii}`]).length;
+                                  const allDone = totalPrints > 0 && donePrints === totalPrints;
+                                  const partial = donePrints > 0 && !allDone;
+                                  return (
+                                    <div key={size} className="flex flex-col items-center">
+                                      <button onClick={() => {
+                                        if (allDone) { imprints.forEach((_, ii) => floorTogglePrint(sel, idx, size, ii)); }
+                                        else { const ni = imprints.findIndex((_, ii) => !printProgress[`${idx}-${size}-${ii}`]); if (ni !== -1) floorTogglePrint(sel, idx, size, ni); }
+                                      }} className={`text-sm rounded-xl px-4 py-2.5 font-bold border-2 transition ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white dark:bg-slate-900 border-slate-200 text-slate-700 hover:border-indigo-300"}`}>
+                                        {size}: {count}{allDone && <span className="ml-1">✓</span>}
+                                      </button>
+                                      {totalPrints > 1 && (
+                                        <div className="flex gap-0.5 mt-1">
+                                          {imprints.map((imp, ii) => (
+                                            <button key={ii} onClick={() => floorTogglePrint(sel, idx, size, ii)}
+                                              title={`${imp.location}: ${printProgress[`${idx}-${size}-${ii}`] ? "Done" : "Not done"}`}
+                                              className={`w-3 h-3 rounded-full transition ${printProgress[`${idx}-${size}-${ii}`] ? "bg-emerald-400" : "bg-slate-300 hover:bg-slate-400"}`} />
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Job notes */}
+                    {sel.notes && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+                        <h3 className="text-xs font-bold text-amber-600 uppercase tracking-widest mb-2">Job Notes</h3>
+                        <p className="text-sm text-amber-800 leading-relaxed">{sel.notes}</p>
+                      </div>
+                    )}
+
+                    {/* Updates */}
+                    {(() => {
+                      const allNotes = [];
+                      Object.entries(sel.step_notes || {}).forEach(([step, notes]) => {
+                        (notes || []).forEach(n => allNotes.push({ ...n, step }));
+                      });
+                      allNotes.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+                      if (allNotes.length === 0) return null;
+                      return (
+                        <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
+                          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Updates</h3>
+                          <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {allNotes.map((n, i) => (
+                              <div key={i} className="flex gap-3 text-sm">
+                                <div className="w-2 h-2 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
+                                <div>
+                                  <p className="text-slate-700 dark:text-slate-300">{n.text}</p>
+                                  <p className="text-xs text-slate-400">{n.by} · {n.step} · {n.at ? new Date(n.at).toLocaleString() : ""}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Add note */}
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 p-5">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Add Update</h3>
+                      <div className="flex gap-2">
+                        <input value={floorNote} onChange={e => setFloorNote(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && floorSendNote(sel)}
+                          placeholder="Add a note or update..."
+                          className="flex-1 text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-300 dark:bg-slate-900 dark:text-slate-200" />
+                        <button onClick={() => floorSendNote(sel)} disabled={floorSending || !floorNote.trim()}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl transition disabled:opacity-50">
+                          <Send className="w-5 h-5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {viewing && (
         <OrderDetailModal

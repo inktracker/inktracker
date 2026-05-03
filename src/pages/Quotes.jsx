@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
+import { Loader2, Mail, Trash2 } from "lucide-react";
+import EmptyState from "../components/shared/EmptyState";
+import HintTip from "../components/shared/HintTip";
 import {
   Q_STATUSES,
   calcQuoteTotals,
@@ -44,6 +47,14 @@ export default function Quotes() {
   const [brokerFilter, setBrokerFilter] = useState("All");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
+  const [bulkSelect, setBulkSelect] = useState(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [sortKey, setSortKey] = useState("date");
+  const [sortDir, setSortDir] = useState("desc");
+  const [showEmailPaste, setShowEmailPaste] = useState(false);
+  const [emailText, setEmailText] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
   useEffect(() => {
     async function loadData() {
@@ -93,6 +104,14 @@ export default function Quotes() {
 
     loadData();
   }, []);
+
+  // Auto-open quote from ?id= param (e.g. from Dashboard click)
+  useEffect(() => {
+    if (searchId && quotes.length > 0 && !viewing) {
+      const match = quotes.find(q => q.id === searchId);
+      if (match) setViewing(match);
+    }
+  }, [searchId, quotes]);
 
   // Handle "Use in Quote" coming from the Catalog page
   useEffect(() => {
@@ -153,6 +172,36 @@ export default function Quotes() {
     if (brokerFilter === "Wizard" && q.source !== "wizard") return false;
 
     return true;
+  });
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+  const sortArrow = (key) => sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+
+  filtered = [...filtered].sort((a, b) => {
+    let av, bv;
+    if (sortKey === "customer") {
+      av = (getDisplayName(customerMap[a.customer_id] || a.customer_name) || "").toLowerCase();
+      bv = (getDisplayName(customerMap[b.customer_id] || b.customer_name) || "").toLowerCase();
+    } else if (sortKey === "total") {
+      av = getQuoteTotalsForDisplay(a).total; bv = getQuoteTotalsForDisplay(b).total;
+    } else if (sortKey === "date") {
+      av = a.date || ""; bv = b.date || "";
+    } else if (sortKey === "due_date") {
+      av = a.due_date || ""; bv = b.due_date || "";
+    } else if (sortKey === "quote_id") {
+      av = (a.quote_id || "").toLowerCase(); bv = (b.quote_id || "").toLowerCase();
+    } else if (sortKey === "qty") {
+      av = (a.line_items || []).reduce((s, li) => s + getQty(li), 0);
+      bv = (b.line_items || []).reduce((s, li) => s + getQty(li), 0);
+    } else if (sortKey === "status") {
+      av = a.status || ""; bv = b.status || "";
+    }
+    if (av < bv) return sortDir === "asc" ? -1 : 1;
+    if (av > bv) return sortDir === "asc" ? 1 : -1;
+    return 0;
   });
 
   // Reset to page 1 when filters change
@@ -319,22 +368,88 @@ export default function Quotes() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Quotes</h2>
-        <button
-          onClick={() => setShowNew(true)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
-        >
-          + New Quote
-        </button>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">Quotes</h2>
+        <div className="flex gap-2">
+          {bulkSelect.size > 0 && (
+            <button onClick={async () => {
+              if (!window.confirm(`Delete ${bulkSelect.size} selected quote(s)?`)) return;
+              setBulkDeleting(true);
+              for (const id of bulkSelect) {
+                try { await base44.entities.Quote.delete(id); } catch {}
+              }
+              setQuotes(prev => prev.filter(q => !bulkSelect.has(q.id)));
+              setBulkSelect(new Set());
+              setBulkDeleting(false);
+            }} disabled={bulkDeleting}
+              className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-50">
+              <Trash2 className="w-4 h-4" />
+              {bulkDeleting ? "Deleting..." : `Delete ${bulkSelect.size}`}
+            </button>
+          )}
+          <button
+            onClick={() => setShowNew(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+          >
+            + New Quote
+          </button>
+        </div>
       </div>
+      {showEmailPaste && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onMouseDown={e => { if (e.target === e.currentTarget) setShowEmailPaste(false); }}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onMouseDown={e => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900">Quote from Email</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Paste the email content and we'll create a draft quote</p>
+            </div>
+            <div className="px-6 py-4">
+              <textarea value={emailText} onChange={e => setEmailText(e.target.value)}
+                placeholder={"Paste the email here...\n\nExample:\nHey Joe,\nNeed 50 Gildan 5000 Black t-shirts\nFront print, 3 colors\nSizes: S:5 M:15 L:15 XL:10 2XL:5"}
+                rows={10}
+                className="w-full text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none" />
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
+              <button onClick={() => { setShowEmailPaste(false); setEmailText(""); }}
+                className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+              <button onClick={async () => {
+                if (!emailText.trim()) return;
+                setParsing(true);
+                try {
+                  const { data: { session } } = await supabase.auth.getSession();
+                  const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "parseAndCreate", accessToken: session?.access_token, emailBody: emailText.trim() }),
+                  });
+                  const data = await res.json();
+                  if (data.error) { alert(data.error); }
+                  else if (data.quoteId) {
+                    const fresh = await base44.entities.Quote.list("-created_date", 500);
+                    setQuotes(fresh);
+                    setShowEmailPaste(false);
+                    setEmailText("");
+                    const created = fresh.find(q => q.quote_id === data.quoteId);
+                    if (created) setViewing(created);
+                  }
+                } catch (err) { alert("Failed: " + err.message); }
+                setParsing(false);
+              }} disabled={parsing || !emailText.trim()}
+                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
+                {parsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                {parsing ? "Creating Quote..." : "Create Draft Quote"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-3">
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-1.5 flex-wrap">
           {["All", ...Q_STATUSES].map((s) => (
             <button
               key={s}
               onClick={() => setFilter(s)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition ${
                 filter === s
                   ? "bg-indigo-600 text-white border-indigo-600"
                   : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"
@@ -345,7 +460,7 @@ export default function Quotes() {
           ))}
         </div>
 
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap items-center">
           {["All", "Internal", "Broker", "Wizard"].map((b) => (
             <button
               key={b}
@@ -359,6 +474,7 @@ export default function Quotes() {
               {b}
             </button>
           ))}
+          <HintTip text="Internal = created by your shop. Broker = submitted by a sales rep. Wizard = from your website's quote form." side="bottom" />
         </div>
 
         <AdvancedFilters
@@ -378,16 +494,23 @@ export default function Quotes() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-              {["Quote ID", "Customer", "Date", "In-Hands", "Qty", "Total", "Tier", "Status", ""].map(
-                (h) => (
-                  <th
-                    key={h}
-                    className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest"
-                  >
-                    {h}
-                  </th>
-                )
-              )}
+              {[
+                { label: "", key: null },
+                { label: "Quote ID", key: "quote_id" },
+                { label: "Customer", key: "customer" },
+                { label: "Date", key: "date" },
+                { label: "In-Hands", key: "due_date" },
+                { label: "Qty", key: "qty" },
+                { label: "Total", key: "total" },
+                { label: "Tier", key: null },
+                { label: "Status", key: "status" },
+                { label: "", key: null },
+              ].map((h, idx) => (
+                <th key={h.label || `col-${idx}`} onClick={h.key ? () => toggleSort(h.key) : undefined}
+                  className={`text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                  {h.label}{h.key ? sortArrow(h.key) : ""}
+                </th>
+              ))}
             </tr>
           </thead>
 
@@ -396,6 +519,14 @@ export default function Quotes() {
               <tr>
                 <td colSpan={9} className="px-5 py-8 text-center text-slate-300">
                   Loading…
+                </td>
+              </tr>
+            )}
+
+            {!loading && quotes.length === 0 && (
+              <tr>
+                <td colSpan={9}>
+                  <EmptyState type="quotes" onAction={() => setShowNew(true)} />
                 </td>
               </tr>
             )}
@@ -410,8 +541,20 @@ export default function Quotes() {
                   className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition"
                   onClick={() => setViewing(q)}
                 >
+                  <td className="px-2 py-3.5 w-8" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={bulkSelect.has(q.id)}
+                      onChange={e => {
+                        setBulkSelect(prev => {
+                          const next = new Set(prev);
+                          e.target.checked ? next.add(q.id) : next.delete(q.id);
+                          return next;
+                        });
+                      }}
+                      className="rounded border-slate-300 accent-indigo-600" />
+                  </td>
                   <td className="px-5 py-3.5 font-mono text-xs text-slate-400">
                     {q.quote_id}
+                    {q.source === "email" && <span className="ml-1 text-indigo-500" title="From email">✉</span>}
                     {q.broker_id && (
                       <div className="text-indigo-500 font-semibold mt-0.5">
                         🤝 {brokerMap[q.broker_id]?.full_name || q.broker_name || q.broker_id}
@@ -441,7 +584,7 @@ export default function Quotes() {
                   </td>
 
                   <td className="px-5 py-3.5">
-                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                       {qty > 0 ? getTier(qty) : "—"}+
                     </span>
                   </td>
@@ -450,7 +593,7 @@ export default function Quotes() {
                     <div className="flex flex-col gap-1">
                       <Badge s={q.status} />
                       {q.expires_date && new Date(q.expires_date) < new Date() && q.status === "Pending" && (
-                        <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-full w-fit">
+                        <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-full w-fit whitespace-nowrap">
                           Expired
                         </span>
                       )}
@@ -469,6 +612,7 @@ export default function Quotes() {
 
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
+          {!loading && quotes.length === 0 && <EmptyState type="quotes" onAction={() => setShowNew(true)} />}
           {pagedQuotes.map((q) => {
             const t = getQuoteTotalsForDisplay(q);
             return (
@@ -527,6 +671,15 @@ export default function Quotes() {
           onDelete={handleDelete}
           onSend={handleQuoteSent}
           onTogglePaid={handleTogglePaid}
+          onDuplicate={async (q) => {
+            const newId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
+            const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, ...rest } = q;
+            const dup = { ...rest, quote_id: newId, status: "Draft", date: new Date().toISOString().split("T")[0] };
+            const created = await base44.entities.Quote.create(dup);
+            setQuotes(prev => [created, ...prev]);
+            setViewing(null);
+            setEditing(created);
+          }}
         />
       )}
 
@@ -541,6 +694,7 @@ export default function Quotes() {
             setEditing(null);
           }}
           onAddCustomer={addCustomer}
+          defaultTaxRate={user?.default_tax_rate || 8.265}
         />
       )}
     </div>

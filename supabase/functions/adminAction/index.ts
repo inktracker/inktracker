@@ -45,13 +45,12 @@ serve(async (req) => {
     // Use service-role client to look up profile — avoids any RLS restrictions
     const { data: callerProfile } = await adminClient
       .from("profiles")
-      .select("role")
+      .select("role, email, shop_name")
       .eq("auth_id", user.id)
       .maybeSingle();
 
     if (callerProfile?.role !== "admin") {
-      return new Response(JSON.stringify({ error: "Forbidden: admin only", role: callerProfile?.role ?? null }), {
-        status: 403,
+      return new Response(JSON.stringify({ error: "Forbidden: admin only", yourRole: callerProfile?.role ?? null }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -60,10 +59,26 @@ serve(async (req) => {
     const { action, profileId, role } = body;
 
     if (action === "listUsers") {
-      const { data: profiles, error } = await adminClient
+      const adminEmail = callerProfile?.email || user.email;
+      // Get ALL profiles, then filter in JS for this admin's shop
+      // (Supabase .or() with array containment is unreliable)
+      const { data: allProfiles, error } = await adminClient
         .from("profiles")
-        .select("id, auth_id, role, shop_name, logo_url, created_at")
+        .select("id, auth_id, role, shop_name, logo_url, created_at, email, shop_owner, assigned_shops, full_name")
         .order("created_at", { ascending: false });
+
+      // Only show: the admin's own profile, users whose shop_owner is this admin,
+      // and users who have this admin's email in their assigned_shops.
+      // Do NOT show unrelated users (other shop owners, users with shop_owner=NULL from other shops).
+      const profiles = (allProfiles || []).filter(p => {
+        // Always show own profile
+        if (p.auth_id === user.id) return true;
+        // Show users assigned to this admin's shop
+        if (p.shop_owner === adminEmail) return true;
+        // Show users who list this admin in assigned_shops (brokers/employees)
+        if (Array.isArray(p.assigned_shops) && p.assigned_shops.includes(adminEmail)) return true;
+        return false;
+      });
 
       if (error) throw error;
 
@@ -86,22 +101,7 @@ serve(async (req) => {
         email: emailMap[p.auth_id] || "",
       }));
 
-      // Also include auth users who signed up but have no profile yet
-      const profileAuthIds = new Set(profiles.map((p: { auth_id: string }) => p.auth_id));
-      const orphans = Object.entries(emailMap)
-        .filter(([authId]) => !profileAuthIds.has(authId))
-        .map(([authId, email]) => ({
-          id: null,
-          auth_id: authId,
-          role: "user",
-          shop_name: "",
-          logo_url: null,
-          created_at: null,
-          email,
-          _no_profile: true,
-        }));
-
-      return new Response(JSON.stringify({ users: [...enriched, ...orphans] }), {
+      return new Response(JSON.stringify({ users: enriched }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -109,37 +109,39 @@ serve(async (req) => {
     if (action === "setRole") {
       if (!role) {
         return new Response(JSON.stringify({ error: "role required" }), {
-          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // profileId may be null for orphan auth users — use authId to upsert instead
       const { authId } = body;
 
+      const adminEmail = callerProfile?.email || user.email;
       let data, error;
       if (!profileId && authId) {
-        // No profile yet — create one
         ({ data, error } = await adminClient
           .from("profiles")
-          .insert({ auth_id: authId, role, shop_name: "", created_at: new Date().toISOString() })
+          .insert({ auth_id: authId, role, shop_name: callerProfile?.shop_name || "", shop_owner: adminEmail, created_at: new Date().toISOString() })
           .select()
           .single());
       } else if (profileId) {
         ({ data, error } = await adminClient
           .from("profiles")
-          .update({ role })
+          .update({ role, shop_owner: adminEmail })
           .eq("id", profileId)
           .select()
           .single());
       } else {
         return new Response(JSON.stringify({ error: "profileId or authId required" }), {
-          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      if (error) throw error;
+      if (error) {
+        console.error("setRole error:", JSON.stringify(error));
+        return new Response(JSON.stringify({ error: error.message || "Failed to set role", detail: JSON.stringify(error) }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
 
       return new Response(JSON.stringify({ profile: data }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -147,7 +149,8 @@ serve(async (req) => {
     }
 
     if (action === "inviteBroker") {
-      const { email, fullName } = body;
+      const { email, fullName, role: inviteRole } = body;
+      const assignRole = inviteRole || "broker";
       const cleanEmail = (email ?? "").trim().toLowerCase();
       if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
         return new Response(JSON.stringify({ error: "Valid email required" }), {
@@ -172,9 +175,9 @@ serve(async (req) => {
       // Send the invite via Supabase Auth admin API FIRST — that's the most
       // likely thing to fail (rate limits, SMTP config, etc). If it succeeds,
       // create the pre-linked profile.
-      const redirectTo = Deno.env.get("APP_URL")
-        ? `${Deno.env.get("APP_URL")}/BrokerOnboarding`
-        : undefined;
+      const appUrl = Deno.env.get("APP_URL");
+      const redirectPage = assignRole === "broker" ? "BrokerOnboarding" : assignRole === "employee" ? "ShopFloor" : assignRole === "manager" ? "Dashboard" : "Dashboard";
+      const redirectTo = appUrl ? `${appUrl}/${redirectPage}` : undefined;
       const { data: inviteData, error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(
         cleanEmail,
         redirectTo ? { redirectTo } : undefined,
@@ -194,48 +197,52 @@ serve(async (req) => {
       const invitedAuthId = inviteData?.user?.id ?? null;
 
       if (invitedAuthId) {
-        // handle_new_user may have already created a profile — upgrade it
-        const { data: existingByAuth } = await adminClient
-          .from("profiles")
-          .select("id")
-          .eq("auth_id", invitedAuthId)
-          .maybeSingle();
-
-        // Auto-assign the inviting admin's shop so the broker can see/submit
-        // quotes against it immediately — no separate "Assign Shop" step.
-        const assignedShops = user.email ? [user.email] : [];
-
-        if (existingByAuth) {
-          const { data: updated, error: updErr } = await adminClient
+        try {
+          const { data: existingByAuth } = await adminClient
             .from("profiles")
-            .update({
-              role: "broker",
+            .select("id")
+            .eq("auth_id", invitedAuthId)
+            .maybeSingle();
+
+          const assignedShops = user.email ? [user.email] : [];
+
+          // Get admin's shop info so invited users inherit it
+          const { data: adminProfile } = await adminClient
+            .from("profiles")
+            .select("shop_name, logo_url")
+            .eq("auth_id", user.id)
+            .maybeSingle();
+
+          if (existingByAuth) {
+            const updatePayload: any = {
+              role: assignRole,
               full_name: fullName || null,
               email: cleanEmail,
-              assigned_shops: assignedShops,
-            })
-            .eq("id", existingByAuth.id)
-            .select()
-            .single();
-          if (updErr) throw updErr;
-          return new Response(JSON.stringify({ profile: updated }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+              shop_name: adminProfile?.shop_name || "",
+              shop_owner: user.email,
+            };
+            if (assignRole === "broker" || assignRole === "manager" || assignRole === "employee") updatePayload.assigned_shops = assignedShops;
+            await adminClient
+              .from("profiles")
+              .update(updatePayload)
+              .eq("id", existingByAuth.id);
+          } else {
+            const insertPayload: any = {
+              auth_id: invitedAuthId,
+              email: cleanEmail,
+              role: assignRole,
+              full_name: fullName || null,
+              shop_name: adminProfile?.shop_name || "",
+              shop_owner: user.email,
+            };
+            if (assignRole === "broker" || assignRole === "manager" || assignRole === "employee") insertPayload.assigned_shops = assignedShops;
+            await adminClient.from("profiles").insert(insertPayload);
+          }
+        } catch (profileErr) {
+          console.error("Profile create/update failed (invite was sent):", profileErr);
         }
 
-        const { data: profile, error: profileErr } = await adminClient
-          .from("profiles")
-          .insert({
-            auth_id: invitedAuthId,
-            email: cleanEmail,
-            role: "broker",
-            full_name: fullName || null,
-            assigned_shops: assignedShops,
-          })
-          .select()
-          .single();
-        if (profileErr) throw profileErr;
-        return new Response(JSON.stringify({ profile }), {
+        return new Response(JSON.stringify({ invited: true, email: cleanEmail, role: assignRole }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -260,11 +267,29 @@ serve(async (req) => {
 
     if (action === "deleteUser") {
       const { authId } = body;
+      const adminEmail = callerProfile?.email || user.email;
       if (!profileId && !authId) {
         return new Response(JSON.stringify({ error: "profileId or authId required" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+
+      // Verify the target user belongs to this admin's shop before deleting
+      const targetQuery = profileId
+        ? adminClient.from("profiles").select("auth_id, email, shop_owner, assigned_shops").eq("id", profileId).single()
+        : adminClient.from("profiles").select("auth_id, email, shop_owner, assigned_shops").eq("auth_id", authId).single();
+      const { data: targetProfile } = await targetQuery;
+
+      if (targetProfile) {
+        const isOwnShop = targetProfile.shop_owner === adminEmail ||
+          (Array.isArray(targetProfile.assigned_shops) && targetProfile.assigned_shops.includes(adminEmail));
+        if (!isOwnShop && targetProfile.email !== adminEmail) {
+          return new Response(JSON.stringify({ error: "Cannot delete a user from another shop" }), {
+            status: 403,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
 
       let resolvedAuthId = authId;

@@ -194,7 +194,7 @@ export default function Calendar() {
       subtotal: order.subtotal || 0, tax: order.tax || 0, total: order.total || 0,
       paid: false, status: "Sent", line_items: order.line_items || [],
       notes: order.notes || "", rush_rate: order.rush_rate || 0,
-      extras: order.extras || {}, discount: order.discount || 0, tax_rate: order.tax_rate || 8.265,
+      extras: order.extras || {}, discount: order.discount || 0, tax_rate: order.tax_rate || 0,
     });
     if (order.broker_id) {
       await base44.entities.BrokerPerformance.create({

@@ -4,11 +4,11 @@
 
 import { PANTONE_TABLE } from "./pantoneColors";
 
-const MAX_DIMENSION = 120; // downsample aggressively to reduce noise
-const DISTANCE_THRESHOLD = 75; // colors within this RGB distance are "same" ink
-const MERGE_THRESHOLD = 75; // second-pass merge — match first-pass aggressiveness
-const PHOTO_THRESHOLD = 6; // above this many clusters → probably a photo
-const MIN_PERCENTAGE = 5; // ignore colors under this % of pixels (noise/antialiasing)
+const MAX_DIMENSION = 200; // higher resolution for better color separation
+const DISTANCE_THRESHOLD = 45; // tighter clustering — keep distinct colors separate
+const MERGE_THRESHOLD = 45; // second-pass merge — match first-pass
+const PHOTO_THRESHOLD = 8; // above this many clusters → probably a photo
+const MIN_PERCENTAGE = 2; // lower threshold to catch accent colors
 const BG_BRIGHTNESS = 230; // RGB avg above this = background (white/near-white)
 
 function rgbDistance(a, b) {

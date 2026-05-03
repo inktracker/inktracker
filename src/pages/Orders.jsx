@@ -5,6 +5,8 @@ import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJo
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
+import EmptyState from "../components/shared/EmptyState";
+import HintTip from "../components/shared/HintTip";
 
 function getOrderArtworkCount(order) {
   const keys = new Set();
@@ -30,6 +32,7 @@ export default function Orders() {
   const params = new URLSearchParams(location.search);
   const initialFilter = O_STATUSES.includes(params.get("status")) ? params.get("status") : "All";
   const initialOrderId = params.get("id") || null;
+  const initialCustomer = params.get("customer") || "";
 
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState({});
@@ -37,8 +40,10 @@ export default function Orders() {
   const [filter, setFilter] = useState(initialFilter);
   const [viewing, setViewing] = useState(null);
   const [user, setUser] = useState(null);
-  const [advFilters, setAdvFilters] = useState({});
+  const [advFilters, setAdvFilters] = useState(initialCustomer ? { customer: initialCustomer } : {});
   const [originFilter, setOriginFilter] = useState("All");
+  const [sortKey, setSortKey] = useState("due_date");
+  const [sortDir, setSortDir] = useState("desc");
 
   useEffect(() => {
     async function loadData() {
@@ -89,6 +94,31 @@ export default function Orders() {
     if (advFilters.minTotal && (o.total || 0) < parseFloat(advFilters.minTotal)) return false;
     if (advFilters.maxTotal && (o.total || 0) > parseFloat(advFilters.maxTotal)) return false;
     return true;
+  });
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+  const sortArrow = (key) => sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+
+  filtered = [...filtered].sort((a, b) => {
+    let av, bv;
+    if (sortKey === "customer") {
+      av = (getOrderDisplayClient(a, customers[a.customer_id]) || "").toLowerCase();
+      bv = (getOrderDisplayClient(b, customers[b.customer_id]) || "").toLowerCase();
+    } else if (sortKey === "total") {
+      av = a.total || 0; bv = b.total || 0;
+    } else if (sortKey === "due_date") {
+      av = a.due_date || ""; bv = b.due_date || "";
+    } else if (sortKey === "order_id") {
+      av = (a.order_id || "").toLowerCase(); bv = (b.order_id || "").toLowerCase();
+    } else if (sortKey === "status") {
+      av = a.status || ""; bv = b.status || "";
+    }
+    if (av < bv) return sortDir === "asc" ? -1 : 1;
+    if (av > bv) return sortDir === "asc" ? 1 : -1;
+    return 0;
   });
 
   const advFilterOptions = [
@@ -144,7 +174,7 @@ export default function Orders() {
       extras: order.extras || {},
       discount: order.discount || 0,
       discount_type: order.discount_type || "percent",
-      tax_rate: order.tax_rate || 8.265,
+      tax_rate: order.tax_rate || 0,
     });
 
     if (order.broker_id) {
@@ -180,8 +210,11 @@ export default function Orders() {
       status: "Completed",
     });
 
-    await base44.entities.Order.delete(order.id);
-    setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    const updated = await base44.entities.Order.update(order.id, {
+      status: "Completed",
+      completed_date: today,
+    });
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(null);
   }
 
@@ -216,20 +249,20 @@ export default function Orders() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Orders</h2>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">Orders</h2>
       </div>
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-1.5 flex-wrap">
         {["All", ...O_STATUSES].map((s) => (
           <button
             key={s}
             onClick={() => setFilter(s)}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"}`}
+            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"}`}
           >
             {s}
           </button>
         ))}
       </div>
-      <div className="flex gap-2">
+      <div className="flex gap-2 items-center">
         {["All", "Internal", "Broker"].map((o) => (
           <button
             key={o}
@@ -239,6 +272,7 @@ export default function Orders() {
             {o}
           </button>
         ))}
+        <HintTip text="Internal = orders your shop created. Broker = orders submitted by your sales reps." side="bottom" />
       </div>
       <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
@@ -246,9 +280,18 @@ export default function Orders() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                {["Order ID", "Customer", "Artwork", "Due", "Total", "Status", ""].map((h) => (
-                  <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">
-                    {h}
+                {[
+                  { label: "Order ID", key: "order_id" },
+                  { label: "Customer", key: "customer" },
+                  { label: "Artwork", key: null },
+                  { label: "Due", key: "due_date" },
+                  { label: "Total", key: "total" },
+                  { label: "Status", key: "status" },
+                  { label: "", key: null },
+                ].map((h) => (
+                  <th key={h.label || "action"} onClick={h.key ? () => toggleSort(h.key) : undefined}
+                    className={`text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                    {h.label}{h.key ? sortArrow(h.key) : ""}
                   </th>
                 ))}
               </tr>
@@ -258,6 +301,13 @@ export default function Orders() {
                 <tr>
                   <td colSpan={7} className="px-5 py-8 text-center text-slate-300">
                     Loading…
+                  </td>
+                </tr>
+              )}
+              {!loading && orders.length === 0 && (
+                <tr>
+                  <td colSpan={7}>
+                    <EmptyState type="orders" />
                   </td>
                 </tr>
               )}
@@ -282,7 +332,7 @@ export default function Orders() {
                     </td>
                     <td className="px-5 py-3.5">
                       {artworkCount > 0 ? (
-                        <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full">
+                        <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full whitespace-nowrap">
                           {artworkCount} file{artworkCount === 1 ? "" : "s"}
                         </span>
                       ) : (
@@ -302,6 +352,7 @@ export default function Orders() {
 
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
+          {!loading && orders.length === 0 && <EmptyState type="orders" />}
           {filtered.map((o) => {
             const artworkCount = getOrderArtworkCount(o);
             return (

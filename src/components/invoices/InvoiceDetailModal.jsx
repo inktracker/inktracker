@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { fmtDate, fmtMoney, calcGroupPrice, calcLinkedLinePrice, buildLinkedQtyMap, getQty, BIG_SIZES, SIZES, buildQBInvoicePayload } from "../shared/pricing";
+import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getQty, BIG_SIZES, SIZES, buildQBInvoicePayload } from "../shared/pricing";
 import { exportInvoiceToPDF } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
+import OrderDetailModal from "../orders/OrderDetailModal";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice }) {
   const [loading, setLoading] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [reordered, setReordered] = useState(false);
+  const [viewingOrder, setViewingOrder] = useState(null);
 
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -19,9 +21,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
 
   async function handleCreateInQB() {
     if (invoice.qb_invoice_id || invoice.qb_payment_link) {
-      setQbStatus({ type: "info", text: "This invoice already exists in QuickBooks." });
-      setTimeout(() => setQbStatus(null), 4000);
-      return;
+      if (!window.confirm("This invoice was previously synced to QuickBooks. Create a new one anyway?")) return;
     }
     setQbCreating(true);
     setQbStatus(null);
@@ -35,7 +35,44 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         quote_id: invoice.invoice_id,
         customer_email: customer?.email || "",
       };
-      const invoicePayload = buildQBInvoicePayload(quoteShape);
+      let invoicePayload = buildQBInvoicePayload(quoteShape);
+
+      // If buildQBInvoicePayload produced no lines (e.g. invoice from QB pull or
+      // order with no sizes object), build a simple single-line payload from the
+      // invoice totals so the QB sync still works.
+      if (!invoicePayload?.lines?.length) {
+        const lineItems = invoice.line_items || [];
+        const lines = lineItems.length > 0
+          ? lineItems.map(li => {
+              const qty = getQty(li) || Number(li.qty) || 1;
+              const amount = Number(li.total) || Number(li.amount) || (invoice.subtotal || invoice.total || 0);
+              return {
+                description: [li.brand, li.style, li.garmentColor, li.description].filter(Boolean).join(" ") || "Service",
+                qty,
+                unitPrice: Number((amount / qty).toFixed(4)),
+                amount: Number(amount.toFixed(2)),
+                itemName: "Screen Print",
+              };
+            }).filter(l => l.amount > 0)
+          : [{
+              description: "Invoice",
+              qty: 1,
+              unitPrice: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
+              amount: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
+              itemName: "Screen Print",
+            }];
+
+        const discVal = parseFloat(invoice.discount) || 0;
+        const isFlat = invoice.discount_type === "flat";
+        invoicePayload = {
+          lines,
+          discountPercent: isFlat ? 0 : discVal,
+          discountAmount: isFlat ? discVal : 0,
+          discountType: isFlat ? "flat" : "percent",
+          taxPercent: parseFloat(invoice.tax_rate) || 0,
+          depositAmount: 0,
+        };
+      }
 
       const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
         method: "POST",
@@ -86,7 +123,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         line_items: invoice.line_items || [],
         discount: invoice.discount || 0,
         discount_type: invoice.discount_type || "percent",
-        tax_rate: invoice.tax_rate || 8.265,
+        tax_rate: invoice.tax_rate || 0,
         deposit_pct: 0,
         deposit_paid: false,
       });
@@ -297,11 +334,56 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               Send Invoice
             </button>
           )}
+          {invoice.order_id && (
+            <button onClick={async () => {
+              try {
+                const order = await base44.entities.Order.filter({ order_id: invoice.order_id });
+                if (order?.[0]) setViewingOrder(order[0]);
+                else alert("Order not found");
+              } catch { alert("Could not load order"); }
+            }}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
+              View Order
+            </button>
+          )}
           <button onClick={handleCreateInQB} disabled={qbCreating}
             className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50">
             {qbCreating ? "Creating…" : "Create in QB"}
           </button>
-          <button onClick={() => exportInvoiceToPDF(invoice, customer, shopName, logoUrl)}
+          <button onClick={async () => {
+            const url = await exportInvoiceToPDF(invoice, customer, shopName, logoUrl, "blob");
+            if (url) window.open(url, "_blank");
+          }}
+            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
+            Preview PDF
+          </button>
+          <button onClick={async () => {
+            if (invoice.qb_invoice_id) {
+              try {
+                const { data: { session } } = await supabase.auth.getSession();
+                const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "getInvoicePDF", accessToken: session.access_token, qbInvoiceId: invoice.qb_invoice_id }),
+                });
+                const data = await res.json();
+                if (data.pdf) {
+                  const byteChars = atob(data.pdf);
+                  const byteArray = new Uint8Array(byteChars.length);
+                  for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+                  const blob = new Blob([byteArray], { type: "application/pdf" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `Invoice-${invoice.invoice_id || invoice.qb_invoice_id}.pdf`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  return;
+                }
+              } catch {}
+            }
+            exportInvoiceToPDF(invoice, customer, shopName, logoUrl);
+          }}
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
             Download PDF
           </button>
@@ -331,6 +413,12 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             customer={customer}
             onClose={() => setShowSendModal(false)}
             onSuccess={() => setShowSendModal(false)}
+          />
+        )}
+        {viewingOrder && (
+          <OrderDetailModal
+            order={viewingOrder}
+            onClose={() => setViewingOrder(null)}
           />
         )}
       </div>

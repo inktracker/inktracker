@@ -7,6 +7,7 @@ import {
   fmtMoney,
   BIG_SIZES,
   BROKER_MARKUP,
+  sortSizeEntries,
 } from "@/components/shared/pricing";
 
 /**
@@ -158,7 +159,7 @@ export function generateQuotePDF({ quote, shopName, paymentLink, markup }) {
     y += 12;
 
     // Sizes summary
-    const activeSizes = Object.entries(li.sizes || {}).filter(([, v]) => parseInt(v, 10) > 0);
+    const activeSizes = sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v, 10) > 0);
     if (activeSizes.length > 0) {
       doc.setFontSize(8.5);
       doc.setFont("helvetica", "normal");

@@ -1,8 +1,8 @@
 // S&S Activewear catalog search — Supabase Edge Function
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
-const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER") ?? "61047";
-const SS_KEY = Deno.env.get("SS_API_KEY") ?? "e3fde568-dd4a-4b7a-9258-02e92fac3498";
+const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
+const SS_KEY = Deno.env.get("SS_API_KEY")!;
 const AUTH = btoa(`${SS_ACCOUNT}:${SS_KEY}`);
 
 const CORS = {

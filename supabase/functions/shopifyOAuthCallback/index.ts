@@ -2,7 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SHOPIFY_CLIENT_ID     = Deno.env.get("SHOPIFY_CLIENT_ID")!;
 const SHOPIFY_CLIENT_SECRET = Deno.env.get("SHOPIFY_CLIENT_SECRET")!;
-const APP_URL               = Deno.env.get("VITE_APP_URL") ?? "https://inktracker.vercel.app";
+const APP_URL               = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
 
 Deno.serve(async (req) => {
   const url   = new URL(req.url);

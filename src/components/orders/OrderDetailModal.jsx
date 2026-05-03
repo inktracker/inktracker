@@ -9,12 +9,22 @@ import {
   SIZES,
   getDisplayName,
   BROKER_MARKUP,
-  STANDARD_MARKUP,
   O_STATUSES,
+  sortSizeEntries,
 } from "../shared/pricing";
 import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
-import { Link2, Download, Trash2, ShoppingCart, CheckCircle2 } from "lucide-react";
+import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer } from "lucide-react";
+
+const STEP_TASKS = {
+  "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
+  "Order Goods": ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
+  "Pre-Press": ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
+  "Printing": ["Mount screens on press", "Run test prints", "Get test approval", "Run full batch", "Spot check quality"],
+  "Finishing": ["Flash/cure prints", "Quality inspect", "Fold & tag", "Count pieces"],
+  "Quality Check": ["Verify quantities", "Check print quality", "Match against order", "Flag any issues"],
+  "Packing": ["Sort by size", "Bag/box order", "Label packages", "Stage for pickup/shipping"],
+};
 
 const STATUS_ORDER = [
   "Art Approval",
@@ -125,6 +135,27 @@ export default function OrderDetailModal({
   const [stepNotes, setStepNotes] = useState(order.step_notes || {});
   const [savingCost, setSavingCost] = useState(false);
   const [costSaved, setCostSaved] = useState(false);
+  const [floorMode, setFloorMode] = useState(false);
+  const [liveOrder, setLiveOrder] = useState(order);
+
+  async function floorToggleTask(task) {
+    const step = liveOrder.status || "Pre-Press";
+    const checklist = { ...(liveOrder.checklist || {}) };
+    if (!checklist[step]) checklist[step] = {};
+    checklist[step][task] = checklist[step][task] ? null : { by: shopName || "Admin", at: new Date().toISOString() };
+    const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
+    setLiveOrder(prev => ({ ...prev, ...updated }));
+  }
+
+  async function floorTogglePrint(liIdx, size, impIdx) {
+    const checklist = { ...(liveOrder.checklist || {}) };
+    const pp = { ...(checklist.print_progress || {}) };
+    const key = `${liIdx}-${size}-${impIdx}`;
+    pp[key] = pp[key] ? null : { by: shopName || "Admin", at: new Date().toISOString() };
+    checklist.print_progress = pp;
+    const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
+    setLiveOrder(prev => ({ ...prev, ...updated }));
+  }
 
   async function handleSaveJobCost() {
     setSavingCost(true);
@@ -217,7 +248,7 @@ export default function OrderDetailModal({
         line_items: order.line_items || [],
         discount: order.discount || 0,
         discount_type: order.discount_type || "percent",
-        tax_rate: order.tax_rate || 8.265,
+        tax_rate: order.tax_rate || 0,
         deposit_pct: 50,
         deposit_paid: false,
       });
@@ -718,6 +749,207 @@ export default function OrderDetailModal({
                 </div>
               )}
 
+              {/* Shop Floor Progress */}
+              {(() => {
+                const checklist = order.checklist || {};
+                const printProgress = checklist.print_progress || {};
+                const stepTasks = checklist;
+                const hasPrintData = Object.keys(printProgress).length > 0;
+                const hasChecklistData = Object.keys(stepTasks).some(k => k !== "print_progress" && Object.keys(stepTasks[k] || {}).length > 0);
+                const hasStepNotes = Object.keys(order.step_notes || {}).some(k => ((order.step_notes || {})[k] || []).length > 0);
+
+                if (!hasPrintData && !hasChecklistData && !hasStepNotes) return null;
+
+                return (
+                  <div className="border border-indigo-200 rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 bg-indigo-50 flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                      <span className="text-xs font-bold text-indigo-700 uppercase tracking-widest">Shop Floor Progress</span>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      {/* Print progress per line item */}
+                      {hasPrintData && (order.line_items || []).map((li, liIdx) => {
+                        const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
+                        if (imprints.length === 0) return null;
+                        const sizes = Object.entries(li.sizes || {}).filter(([, v]) => parseInt(v) > 0);
+                        const totalSlots = sizes.length * imprints.length;
+                        const doneSlots = sizes.reduce((sum, [size]) =>
+                          sum + imprints.filter((_, ii) => !!printProgress[`${liIdx}-${size}-${ii}`]).length, 0);
+                        if (totalSlots === 0) return null;
+                        const pct = Math.round((doneSlots / totalSlots) * 100);
+
+                        return (
+                          <div key={liIdx} className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-semibold text-slate-700">
+                                {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
+                              </span>
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${pct === 100 ? "bg-emerald-100 text-emerald-700" : pct > 0 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                                {pct}% printed
+                              </span>
+                            </div>
+                            <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full transition-all ${pct === 100 ? "bg-emerald-400" : "bg-indigo-400"}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {sizes.map(([size]) => {
+                                const done = imprints.filter((_, ii) => !!printProgress[`${liIdx}-${size}-${ii}`]).length;
+                                const all = done === imprints.length;
+                                const partial = done > 0 && !all;
+                                return (
+                                  <span key={size} className={`text-[10px] font-bold px-2 py-0.5 rounded ${all ? "bg-emerald-100 text-emerald-700" : partial ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-400"}`}>
+                                    {size} {all ? "✓" : partial ? `${done}/${imprints.length}` : ""}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Step checklist progress */}
+                      {hasChecklistData && Object.entries(stepTasks).filter(([k]) => k !== "print_progress").map(([step, tasks]) => {
+                        if (!tasks || typeof tasks !== "object") return null;
+                        const entries = Object.entries(tasks);
+                        const done = entries.filter(([, v]) => !!v).length;
+                        const total = entries.length;
+                        if (total === 0) return null;
+                        return (
+                          <div key={step} className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">{step} checklist</span>
+                            <span className={`text-xs font-bold ${done === total ? "text-emerald-600" : "text-amber-600"}`}>{done}/{total} tasks</span>
+                          </div>
+                        );
+                      })}
+
+                      {/* Employee notes */}
+                      {hasStepNotes && (() => {
+                        const allNotes = [];
+                        Object.entries(order.step_notes || {}).forEach(([step, notes]) => {
+                          (notes || []).forEach(n => allNotes.push({ ...n, step }));
+                        });
+                        allNotes.sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+                        return allNotes.length > 0 ? (
+                          <div>
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5">Employee Updates</div>
+                            <div className="space-y-1 max-h-40 overflow-y-auto">
+                              {allNotes.slice(0, 10).map((n, i) => (
+                                <div key={i} className="flex gap-2 text-xs group">
+                                  <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <span className="text-slate-700">{n.text}</span>
+                                    <span className="text-slate-400 ml-1.5">{n.by} · {n.step}{n.at ? ` · ${new Date(n.at).toLocaleString()}` : ""}</span>
+                                  </div>
+                                  <button onClick={async (e) => {
+                                    e.currentTarget.closest('.group').style.display = 'none';
+                                    try {
+                                      const notes = { ...(order.step_notes || {}) };
+                                      const stepArr = notes[n.step] || [];
+                                      notes[n.step] = stepArr.filter(sn => sn.at !== n.at || sn.text !== n.text);
+                                      await base44.entities.Order.update(order.id, { step_notes: notes });
+                                      order.step_notes = notes;
+                                    } catch {}
+                                  }} className="text-slate-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition flex-shrink-0">
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Floor Mode Panel */}
+              {floorMode && (() => {
+                const step = liveOrder.status || "Pre-Press";
+                const tasks = STEP_TASKS[step] || [];
+                const checklist = liveOrder.checklist || {};
+                const stepChecks = checklist[step] || {};
+                const printProgress = checklist.print_progress || {};
+
+                return (
+                  <div className="border-2 border-indigo-400 rounded-xl overflow-hidden">
+                    <div className="px-4 py-3 bg-indigo-600 text-white flex items-center gap-2">
+                      <Hammer className="w-4 h-4" />
+                      <span className="text-sm font-bold">Floor Mode — {step}</span>
+                    </div>
+                    <div className="p-4 space-y-4">
+                      {/* Checklist */}
+                      {tasks.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Checklist</span>
+                            <span className="text-xs font-bold text-indigo-600">{tasks.filter(t => !!stepChecks[t]).length}/{tasks.length}</span>
+                          </div>
+                          <div className="space-y-1">
+                            {tasks.map(task => {
+                              const done = !!stepChecks[task];
+                              return (
+                                <button key={task} onClick={() => floorToggleTask(task)}
+                                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
+                                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                                    {done && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                                  </div>
+                                  <span className={`text-sm ${done ? "text-emerald-700 line-through" : "text-slate-700"}`}>{task}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Print tracking */}
+                      {(liveOrder.line_items || []).map((li, liIdx) => {
+                        const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
+                        if (imprints.length === 0) return null;
+                        return (
+                          <div key={liIdx}>
+                            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                              {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
+                                const donePrints = imprints.filter((_, ii) => !!printProgress[`${liIdx}-${size}-${ii}`]).length;
+                                const allDone = imprints.length > 0 && donePrints === imprints.length;
+                                const partial = donePrints > 0 && !allDone;
+                                return (
+                                  <div key={size} className="flex flex-col items-center">
+                                    <button onClick={() => {
+                                      if (allDone) {
+                                        imprints.forEach((_, ii) => floorTogglePrint(liIdx, size, ii));
+                                      } else {
+                                        const next = imprints.findIndex((_, ii) => !printProgress[`${liIdx}-${size}-${ii}`]);
+                                        if (next !== -1) floorTogglePrint(liIdx, size, next);
+                                      }
+                                    }}
+                                      className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300"}`}>
+                                      {size}: {count}{allDone && " ✓"}
+                                    </button>
+                                    {imprints.length > 1 && (
+                                      <div className="flex gap-0.5 mt-1">
+                                        {imprints.map((imp, ii) => (
+                                          <button key={ii} onClick={() => floorTogglePrint(liIdx, size, ii)}
+                                            title={imp.location}
+                                            className={`w-2.5 h-2.5 rounded-full transition ${printProgress[`${liIdx}-${size}-${ii}`] ? "bg-emerald-400" : "bg-slate-300 hover:bg-slate-400"}`} />
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Job Costing & Production Assignment */}
               <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
                 <button onClick={() => setShowJobCost(!showJobCost)}
@@ -883,11 +1115,27 @@ export default function OrderDetailModal({
               {copied === "status" ? "Copied!" : "Status Link"}
             </button>
             <button
+              onClick={async () => {
+                const url = await exportOrderToPDF(order, shopName, logoUrl, "blob");
+                if (url) window.open(url, "_blank");
+              }}
+              title="Preview PDF"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
+            >
+              <Eye className="w-3.5 h-3.5" /> Preview
+            </button>
+            <button
               onClick={() => exportOrderToPDF(order, shopName, logoUrl)}
               title="Download PDF"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
             >
               <Download className="w-3.5 h-3.5" /> PDF
+            </button>
+            <button
+              onClick={() => setFloorMode(f => !f)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${floorMode ? "bg-indigo-600 text-white" : "text-slate-600 border border-slate-200 dark:border-slate-700 hover:bg-slate-100"}`}
+            >
+              <Hammer className="w-3.5 h-3.5" /> {floorMode ? "Exit Floor Mode" : "Floor Mode"}
             </button>
             {onOrderFromSS && (
               <button

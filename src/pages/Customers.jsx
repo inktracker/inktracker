@@ -1,10 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { fmtMoney } from "../components/shared/pricing";
 import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
+import { Loader2, GitMerge, Check } from "lucide-react";
+import EmptyState from "../components/shared/EmptyState";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -37,6 +40,7 @@ function normalizeArtworkDoc(doc) {
 }
 
 export default function Customers() {
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [artworkDocs, setArtworkDocs] = useState([]);
@@ -53,6 +57,7 @@ export default function Customers() {
   const [artworkColorCount, setArtworkColorCount] = useState("");
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
   const [qbStats, setQbStats] = useState({});
+  const [showMerge, setShowMerge] = useState(false);
 
   useEffect(() => {
     async function loadData() {
@@ -242,12 +247,18 @@ export default function Customers() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Customers</h2>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
-        >
-          {showForm ? "✕ Cancel" : "+ Add Customer"}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowMerge(true)}
+            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-indigo-300">
+            <GitMerge className="w-4 h-4" /> Merge Duplicates
+          </button>
+          <button
+            onClick={() => setShowForm((v) => !v)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+          >
+            {showForm ? "✕ Cancel" : "+ Add Customer"}
+          </button>
+        </div>
       </div>
 
       <AdvancedFilters
@@ -357,6 +368,8 @@ export default function Customers() {
 
       {loading ? (
         <div className="text-center text-slate-300 py-10">Loading…</div>
+      ) : customers.length === 0 ? (
+        <EmptyState type="customers" onAction={() => { setForm(emptyCustomerForm); setShowForm(true); }} />
       ) : (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((c) => {
@@ -416,9 +429,12 @@ export default function Customers() {
                 </div>
 
                 <div className="flex gap-3 border-t border-slate-100 dark:border-slate-700 pt-3 items-center">
-                  <div className="text-center flex-1">
-                    <div className="text-lg font-bold text-slate-800 dark:text-slate-200">{orderCount}</div>
-                    <div className="text-xs text-slate-400">orders</div>
+                  <div className={`text-center flex-1 ${orderCount > 0 ? "cursor-pointer hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg py-1 transition" : ""}`}
+                    onClick={() => {
+                      if (orderCount > 0) navigate(`/Invoices?customer=${encodeURIComponent(c.company || c.name)}`);
+                    }}>
+                    <div className={`text-lg font-bold ${orderCount > 0 ? "text-indigo-600" : "text-slate-800 dark:text-slate-200"}`}>{orderCount}</div>
+                    <div className="text-xs text-slate-400">invoices</div>
                   </div>
 
                   <div className="text-center flex-1">
@@ -834,6 +850,202 @@ export default function Customers() {
           </div>
         </div>
       )}
+
+      {showMerge && (
+        <MergeDuplicatesModal
+          customers={customers}
+          user={user}
+          onMerge={async (primary, duplicates) => {
+            let totalMoved = 0;
+            for (const dup of duplicates) {
+              // Also match by customer_name since some records might not have customer_id
+              const [quotesById, ordersByName, invoicesById] = await Promise.all([
+                base44.entities.Quote.filter({ customer_id: dup.id }),
+                base44.entities.Order.filter({ customer_name: dup.name }),
+                base44.entities.Invoice.filter({ customer_id: dup.id }),
+              ]);
+              // Also search quotes/invoices by name for records without customer_id
+              const [quotesByName, invoicesByName] = await Promise.all([
+                base44.entities.Quote.filter({ customer_name: dup.name }),
+                base44.entities.Invoice.filter({ customer_name: dup.name }),
+              ]);
+              // Deduplicate by id
+              const allQuotes = [...new Map([...quotesById, ...quotesByName].map(q => [q.id, q])).values()];
+              const allInvoices = [...new Map([...invoicesById, ...invoicesByName].map(i => [i.id, i])).values()];
+
+              for (const q of allQuotes) {
+                try { await base44.entities.Quote.update(q.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; } catch (e) { console.error("Quote reassign failed:", e); }
+              }
+              for (const o of ordersByName) {
+                try { await base44.entities.Order.update(o.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; } catch (e) { console.error("Order reassign failed:", e); }
+              }
+              for (const inv of allInvoices) {
+                try { await base44.entities.Invoice.update(inv.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; } catch (e) { console.error("Invoice reassign failed:", e); }
+              }
+
+              // Merge any useful data from duplicate into primary
+              const mergeFields = {};
+              if (!primary.email && dup.email) mergeFields.email = dup.email;
+              if (!primary.phone && dup.phone) mergeFields.phone = dup.phone;
+              if (!primary.address && dup.address) mergeFields.address = dup.address;
+              if (!primary.company && dup.company) mergeFields.company = dup.company;
+              if (!primary.qb_customer_id && dup.qb_customer_id) mergeFields.qb_customer_id = dup.qb_customer_id;
+              if (Object.keys(mergeFields).length) {
+                try { await base44.entities.Customer.update(primary.id, mergeFields); Object.assign(primary, mergeFields); } catch {}
+              }
+
+              await base44.entities.Customer.delete(dup.id);
+            }
+            alert(`Merged ${duplicates.length} duplicate(s) into ${primary.name}. ${totalMoved} records reassigned.`);
+            setCustomers(prev => prev.filter(c => !duplicates.some(d => d.id === c.id)));
+          }}
+          onClose={() => setShowMerge(false)}
+          supabaseFuncUrl={SUPABASE_FUNC_URL}
+        />
+      )}
+    </div>
+  );
+}
+
+function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncUrl }) {
+  const [merging, setMerging] = useState(false);
+  const [merged, setMerged] = useState([]);
+
+  const duplicateGroups = useMemo(() => {
+    const groups = [];
+    const used = new Set();
+    const normalize = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    for (let i = 0; i < customers.length; i++) {
+      if (used.has(customers[i].id)) continue;
+      const group = [customers[i]];
+      const companyKey = normalize(customers[i].company);
+      const emailKey = (customers[i].email || "").toLowerCase().trim();
+
+      for (let j = i + 1; j < customers.length; j++) {
+        if (used.has(customers[j].id)) continue;
+        const c2 = normalize(customers[j].company);
+        const e2 = (customers[j].email || "").toLowerCase().trim();
+
+        const companyMatch = companyKey && c2 && (companyKey === c2 || companyKey.includes(c2) || c2.includes(companyKey));
+        const emailMatch = emailKey && e2 && emailKey === e2;
+
+        if (companyMatch || emailMatch) {
+          group.push(customers[j]);
+          used.add(customers[j].id);
+        }
+      }
+      if (group.length > 1) {
+        used.add(customers[i].id);
+        groups.push(group);
+      }
+    }
+    return groups;
+  }, [customers]);
+
+  const [selected, setSelected] = useState(() => {
+    const s = {};
+    duplicateGroups.forEach((g, gi) => { s[gi] = 0; });
+    return s;
+  });
+
+  async function handleMerge(groupIdx) {
+    const group = duplicateGroups[groupIdx];
+    const primaryIdx = selected[groupIdx] || 0;
+    const primary = group[primaryIdx];
+    const duplicates = group.filter((_, i) => i !== primaryIdx);
+    setMerging(true);
+    try {
+      await onMerge(primary, duplicates);
+      setMerged(prev => [...prev, groupIdx]);
+
+      // Deactivate duplicates in QB
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          for (const dup of duplicates) {
+            if (!dup.qb_customer_id) continue;
+            await fetch(`${supabaseFuncUrl}/functions/v1/qbSync`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "deactivateCustomer",
+                accessToken: session.access_token,
+                customerId: dup.qb_customer_id,
+              }),
+            });
+          }
+        }
+      } catch {}
+    } catch (err) {
+      alert("Merge failed: " + err.message);
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <GitMerge className="w-5 h-5 text-indigo-600" /> Merge Duplicate Customers
+          </h3>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {duplicateGroups.length} potential duplicate group{duplicateGroups.length !== 1 ? "s" : ""} found
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {duplicateGroups.length === 0 && (
+            <div className="px-6 py-12 text-center text-sm text-slate-400">No duplicates detected.</div>
+          )}
+
+          {duplicateGroups.map((group, gi) => {
+            if (merged.includes(gi)) return (
+              <div key={gi} className="px-6 py-4 border-b border-slate-50 bg-emerald-50 flex items-center gap-2 text-sm text-emerald-700 font-semibold">
+                <Check className="w-4 h-4" /> Merged
+              </div>
+            );
+            return (
+              <div key={gi} className="px-6 py-4 border-b border-slate-100">
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                  Group {gi + 1} — {group.length} records
+                </div>
+                <div className="space-y-2">
+                  {group.map((c, ci) => (
+                    <label key={c.id}
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${selected[gi] === ci ? "border-indigo-400 bg-indigo-50" : "border-slate-100 hover:border-slate-200"}`}>
+                      <input type="radio" name={`group-${gi}`} checked={selected[gi] === ci}
+                        onChange={() => setSelected(prev => ({ ...prev, [gi]: ci }))}
+                        className="accent-indigo-600" />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-slate-800">{c.name}</div>
+                        <div className="text-xs text-slate-400">
+                          {[c.company, c.email, c.phone].filter(Boolean).join(" · ") || "No details"}
+                          {c.qb_customer_id && <span className="ml-2 text-emerald-600 font-semibold">QB linked</span>}
+                        </div>
+                      </div>
+                      {selected[gi] === ci && <span className="text-xs font-semibold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">Keep</span>}
+                    </label>
+                  ))}
+                </div>
+                <button onClick={() => handleMerge(gi)} disabled={merging}
+                  className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">
+                  {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
+                  Merge into selected
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
+          <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Close</button>
+          <div className="text-xs text-slate-400">Select the record to keep, others will be merged into it</div>
+        </div>
+      </div>
     </div>
   );
 }

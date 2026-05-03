@@ -19,40 +19,34 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const { action, accessToken } = await req.json();
+    const body = await req.json();
+    const { action, accessToken, shop: shopOverride } = body;
 
     const supabaseAdmin = createClient(
       SUPABASE_URL,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Resolve the calling user's profile
-    const supabaseUser = createClient(
-      SUPABASE_URL,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: req.headers.get("Authorization")! } } },
-    );
-    const { data: { user }, error: authErr } = await supabaseUser.auth.getUser();
+    const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("*")
-      .eq("id", user.id)
+      .eq("auth_id", user.id)
       .single();
 
     if (!profile) return json({ error: "Profile not found" }, 404);
 
     // ── getAuthUrl ──────────────────────────────────────────────────────
     if (action === "getAuthUrl") {
-      const { shop } = await req.json().catch(() => ({}));
-      const store = shop || profile.shopify_store || "m3cfl9-aa.myshopify.com";
+      const store = shopOverride || profile.shopify_store || "m2cf9p-aa.myshopify.com";
       const state = crypto.randomUUID();
 
       await supabaseAdmin
         .from("profiles")
         .update({ shopify_oauth_state: state })
-        .eq("id", user.id);
+        .eq("id", profile.id);
 
       const authUrl = `https://${store}/admin/oauth/authorize?` +
         `client_id=${SHOPIFY_CLIENT_ID}&scope=${SCOPES}` +
@@ -70,7 +64,6 @@ Deno.serve(async (req) => {
       const base = `https://${store}/admin/api/${API_VERSION}`;
       const headers = { "X-Shopify-Access-Token": token, "Content-Type": "application/json" };
 
-      // Fetch all products (paginated)
       let products: any[] = [];
       let pageUrl: string | null = `${base}/products.json?limit=250&fields=id,title,variants,images,product_type`;
       while (pageUrl) {
@@ -83,25 +76,18 @@ Deno.serve(async (req) => {
         const data = await res.json();
         products = products.concat(data.products || []);
 
-        // Pagination via Link header
         const link = res.headers.get("Link") || "";
         const next = link.match(/<([^>]+)>;\s*rel="next"/);
         pageUrl = next ? next[1] : null;
       }
 
-      // Collect all inventory_item_ids for inventory levels lookup
       const invItemIds: number[] = [];
-      const variantMap: Record<number, any> = {};
       for (const p of products) {
         for (const v of (p.variants || [])) {
-          if (v.inventory_item_id) {
-            invItemIds.push(v.inventory_item_id);
-            variantMap[v.inventory_item_id] = { product: p, variant: v };
-          }
+          if (v.inventory_item_id) invItemIds.push(v.inventory_item_id);
         }
       }
 
-      // Fetch inventory levels in batches of 50
       const inventoryLevels: Record<number, number> = {};
       for (let i = 0; i < invItemIds.length; i += 50) {
         const batch = invItemIds.slice(i, i + 50);
@@ -118,7 +104,6 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Map to a simplified format for the frontend
       const items = products.flatMap(p =>
         (p.variants || []).map((v: any) => ({
           shopify_product_id: p.id,

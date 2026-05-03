@@ -126,6 +126,7 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
   const [showEyedropper, setShowEyedropper] = useState(false);
   const [manualColors, setManualColors] = useState([]);
   const [adjustedColors, setAdjustedColors] = useState({}); // idx → {hex, pantone}
+  const [removedSpots, setRemovedSpots] = useState(new Set());
 
   function handlePickedColor(picked) {
     setManualColors(prev => {
@@ -147,7 +148,8 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
     );
   }
 
-  const spotColors = (result.spotColors || result.colors || []).filter(c => !c.isBackground);
+  const allSpotColors = (result.spotColors || result.colors || []).filter(c => !c.isBackground);
+  const spotColors = allSpotColors.filter((_, i) => !removedSpots.has(i));
   const totalColors = spotColors.length + manualColors.length;
 
   return (
@@ -160,8 +162,9 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
           <button
             onClick={() => {
               const allPantones = [
-                ...spotColors.map(c => {
-                  const adjusted = adjustedColors[spotColors.indexOf(c)];
+                ...allSpotColors.map((c, origIdx) => {
+                  if (removedSpots.has(origIdx)) return null;
+                  const adjusted = adjustedColors[origIdx];
                   return adjusted?.pantone || c.pantone;
                 }).filter(Boolean),
                 ...manualColors.map(c => c.pantone).filter(Boolean),
@@ -183,15 +186,16 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
         )}
       </div>
 
-      {/* Auto-detected spot colors — each is adjustable */}
+      {/* Auto-detected spot colors — each is adjustable and removable */}
       {spotColors.length > 0 && (
         <div className="space-y-1.5">
-          {spotColors.slice(0, 8).map((c, i) => {
-            const adj = adjustedColors[i];
+          {allSpotColors.slice(0, 8).map((c, origIdx) => {
+            if (removedSpots.has(origIdx)) return null;
+            const adj = adjustedColors[origIdx];
             const displayHex = adj?.hex || c.hex;
             const displayPantone = adj?.pantone || c.pantone;
             return (
-              <div key={i} className="flex items-center gap-2">
+              <div key={origIdx} className="flex items-center gap-2">
                 <input
                   type="color"
                   value={displayHex}
@@ -199,18 +203,18 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
                     const newHex = e.target.value;
                     const newRgb = hexToRgb(newHex);
                     const newPms = nearestPantone(newRgb);
-                    setAdjustedColors(prev => ({ ...prev, [i]: { hex: newHex, pantone: newPms } }));
+                    setAdjustedColors(prev => ({ ...prev, [origIdx]: { hex: newHex, pantone: newPms } }));
                   }}
                   className="w-6 h-6 rounded-md border border-slate-300 flex-shrink-0 cursor-pointer p-0"
                   title="Click to adjust this color"
                 />
                 {displayPantone ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="text-xs font-semibold text-slate-700">{displayPantone.name}</span>
                     <div className="w-3 h-3 rounded-sm border border-slate-200 flex-shrink-0" style={{ backgroundColor: displayPantone.hex }} />
                     {adj && (
                       <button
-                        onClick={() => setAdjustedColors(prev => { const n = {...prev}; delete n[i]; return n; })}
+                        onClick={() => setAdjustedColors(prev => { const n = {...prev}; delete n[origIdx]; return n; })}
                         className="text-[10px] text-slate-400 hover:text-red-500"
                       >
                         reset
@@ -218,8 +222,14 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
                     )}
                   </div>
                 ) : (
-                  <span className="text-xs text-slate-500">{displayHex} · {c.percentage}%</span>
+                  <span className="text-xs text-slate-500 flex-1">{displayHex} · {c.percentage}%</span>
                 )}
+                <button
+                  onClick={() => setRemovedSpots(prev => new Set([...prev, origIdx]))}
+                  className="text-[10px] text-red-400 hover:text-red-600 flex-shrink-0"
+                >
+                  Remove
+                </button>
               </div>
             );
           })}

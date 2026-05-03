@@ -27,10 +27,29 @@ export const EXTRA_RATES = {
   tags: 1.5,
 };
 
-export const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
-export const BIG_SIZES = ["2XL", "3XL", "4XL"];
+export const SIZES = ["OS", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
+export const BIG_SIZES = ["2XL", "3XL", "4XL", "5XL"];
+
+export function sortSizeEntries(entries) {
+  return [...entries].sort(([a], [b]) => {
+    const ia = SIZES.indexOf(a);
+    const ib = SIZES.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
 export const LOCATIONS = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve", "Pocket", "Hood", "Other"];
-export const TECHNIQUES = ["Screen Print", "DTG", "Embroidery", "DTF", "Heat Transfer", "Sublimation"];
+export const ALL_TECHNIQUES = ["Screen Print", "DTG", "Embroidery", "DTF", "Heat Transfer", "Sublimation"];
+// Returns only techniques the shop has enabled. Screen Print is always available.
+export function getEnabledTechniques() {
+  const enabled = ["Screen Print"];
+  if (_pc?.embroidery?.enabled) enabled.push("Embroidery");
+  // Future: add DTG, DTF, etc. when those pricing tabs are built
+  return enabled;
+}
+export const TECHNIQUES = ALL_TECHNIQUES; // backward compat for code that imports it directly
 export const Q_STATUSES = ["Draft", "Sent", "Pending", "Approved", "Approved and Paid", "Declined"];
 export const O_STATUSES = ["Art Approval", "Order Goods", "Pre-Press", "Printing", "Finishing", "QC", "Ready for Pickup", "Completed"];
 
@@ -38,11 +57,26 @@ export const STANDARD_MARKUP = 1.4;
 export const BROKER_MARKUP = 1.2;
 export const BROKER_MARKUP_SHARE = 0.2;
 
+// Per-shop pricing config — set via loadShopPricingConfig() on app startup.
+// When null, all functions use the hardcoded defaults above.
+let _pc = null;
+
+export function loadShopPricingConfig(config) {
+  _pc = config && Object.keys(config).length > 0 ? config : null;
+}
+
+export function getShopPricingConfig() { return _pc; }
+
+export function getOversizeUpcharge() { return _pc?.oversizeUpcharge ?? 2; }
+
 export function getTier(qty) {
-  if (qty >= 200) return 200;
-  if (qty >= 100) return 100;
-  if (qty >= 50) return 50;
-  return 25;
+  const tiers = _pc?.tiers || [25, 50, 100, 200];
+  // Find the highest tier the qty meets or exceeds
+  const sorted = [...tiers].sort((a, b) => b - a);
+  for (const t of sorted) {
+    if (qty >= t) return t;
+  }
+  return sorted[sorted.length - 1] || 25;
 }
 
 export function getQty(li) {
@@ -51,7 +85,16 @@ export function getQty(li) {
 
 export function getAdminMarkup(garmentCost) {
   const cost = parseFloat(garmentCost) || 0;
-
+  const tiers = _pc?.garmentMarkup;
+  if (tiers && Array.isArray(tiers)) {
+    // Config tiers: [{ above: 25, markup: 1.15 }, ...] sorted desc by "above"
+    const sorted = [...tiers].sort((a, b) => b.above - a.above);
+    for (const t of sorted) {
+      if (cost > t.above) return t.markup;
+    }
+    return sorted[sorted.length - 1]?.markup || 1.4;
+  }
+  // Defaults
   if (cost > 25) return 1.15;
   if (cost > 15) return 1.22;
   if (cost > 8) return 1.3;
@@ -150,22 +193,73 @@ export function newLineItem() {
   };
 }
 
+// Get embroidery price per piece for a given stitch tier index and quantity
+// Default embroidery pricing (used when shop hasn't saved custom config yet)
+const DEFAULT_EMB_PRICING = {
+  "Under 5K": { 12: 8.50, 24: 7.50, 48: 6.50, 72: 5.75, 144: 5.25 },
+  "5K-10K":   { 12: 10.50, 24: 9.00, 48: 8.00, 72: 7.00, 144: 6.50 },
+  "10K-15K":  { 12: 12.50, 24: 11.00, 48: 9.75, 72: 8.75, 144: 8.00 },
+  "15K+":     { 12: 15.00, 24: 13.50, 48: 12.00, 72: 10.75, 144: 9.75 },
+};
+const DEFAULT_EMB_STITCH_TIERS = ["Under 5K", "5K-10K", "10K-15K", "15K+"];
+const DEFAULT_EMB_QTY_TIERS = [12, 24, 48, 72, 144];
+
+function getEmbroideryPPP(stitchIdx, qty) {
+  const emb = _pc?.embroidery;
+  const pricing = emb?.pricing || DEFAULT_EMB_PRICING;
+  const stitchTiers = emb?.stitchTiers || DEFAULT_EMB_STITCH_TIERS;
+  const qtyTiers = emb?.qtyTiers || DEFAULT_EMB_QTY_TIERS;
+
+  if (!stitchTiers.length) return 0;
+  const stitchTier = stitchTiers[Math.min(stitchIdx, stitchTiers.length - 1)];
+  // Find the best matching qty tier
+  const sorted = [...qtyTiers].sort((a, b) => b - a);
+  let tier = sorted[sorted.length - 1];
+  for (const t of sorted) { if (qty >= t) { tier = t; break; } }
+  // Try both number and string key (JSONB keys are strings)
+  const tierPricing = pricing[stitchTier];
+  if (!tierPricing) return 0;
+  return tierPricing[tier] ?? tierPricing[String(tier)] ?? 0;
+}
+
 export function calcGroupPrice(garmentCost, qty, imprints, rushRate, extras, markup = STANDARD_MARKUP) {
   if (!qty || qty < 1 || !imprints || imprints.length === 0) return null;
 
   const active = imprints.filter((i) => (i.colors || 0) > 0);
   if (active.length === 0) return null;
 
-  const tier = getTier(qty);
-  const sorted = [...active].sort((a, b) => a.colors - b.colors);
-  const firstColors = Math.min(8, Math.max(1, sorted[0].colors || 1));
+  // Check if this is an embroidery job (first imprint technique)
+  const technique = active[0]?.technique || "Screen Print";
+  const isEmbroidery = technique === "Embroidery";
 
-  let printPPP = FIRST_PRINT[firstColors][tier];
-  for (let i = 1; i < sorted.length; i += 1) {
-    const c = Math.min(8, Math.max(1, sorted[i].colors || 1));
-    printPPP += ADDL_PRINT[c][tier];
+  const sorted = [...active].sort((a, b) => a.colors - b.colors);
+  const fp = _pc?.firstPrint || FIRST_PRINT;
+  const ap = _pc?.addlPrint || ADDL_PRINT;
+  const maxColors = _pc?.maxColors || 8;
+  const firstColors = Math.min(maxColors, Math.max(1, sorted[0].colors || 1));
+  let printPPP = 0;
+  let tier;
+
+  if (isEmbroidery) {
+    for (let i = 0; i < sorted.length; i++) {
+      const stitchIdx = Math.max(0, (sorted[i].colors || 1) - 1);
+      const rate = getEmbroideryPPP(stitchIdx, qty);
+      printPPP += i === 0 ? rate : rate * 0.7;
+    }
+    const embTiers = _pc?.embroidery?.qtyTiers || [12, 24, 48, 72, 144];
+    const stiers = [...embTiers].sort((a, b) => b - a);
+    tier = stiers[stiers.length - 1];
+    for (const t of stiers) { if (qty >= t) { tier = t; break; } }
+  } else {
+    tier = getTier(qty);
+    printPPP = fp[firstColors]?.[tier] ?? fp[Math.min(firstColors, 8)]?.[tier] ?? 0;
+    for (let i = 1; i < sorted.length; i += 1) {
+      const c = Math.min(maxColors, Math.max(1, sorted[i].colors || 1));
+      printPPP += ap[c]?.[tier] ?? ap[Math.min(c, 8)]?.[tier] ?? 0;
+    }
   }
 
+  const er = isEmbroidery ? (_pc?.embroidery?.extras || {}) : (_pc?.extras || EXTRA_RATES);
   const printCost = printPPP * qty;
   const isBroker = markup === BROKER_MARKUP;
   const garmentMarkup = getMarkup(garmentCost, isBroker);
@@ -173,7 +267,7 @@ export function calcGroupPrice(garmentCost, qty, imprints, rushRate, extras, mar
 
   let extraPPP = 0;
   Object.entries(extras || {}).forEach(([k, on]) => {
-    if (on) extraPPP += typeof on === "number" ? on : (EXTRA_RATES[k] || 0);
+    if (on) extraPPP += typeof on === "number" ? on : (er[k] || EXTRA_RATES[k] || 0);
   });
   const extraCost = extraPPP * qty;
 
@@ -189,12 +283,12 @@ export function calcGroupPrice(garmentCost, qty, imprints, rushRate, extras, mar
     rushFee,
     sub,
     ppp: qty > 0 ? sub / qty : 0,
-    firstPPP: FIRST_PRINT[firstColors][tier],
+    firstPPP: fp[firstColors]?.[tier] ?? 0,
   };
 }
 
 export function getPrintKey(imp) {
-  return `${imp?.title || ""}|${imp?.width || ""}|${imp?.height || ""}`;
+  return `${imp?.technique || "Screen Print"}|${imp?.title || ""}|${imp?.width || ""}|${imp?.height || ""}`;
 }
 
 export function findLinkedPrints(lineItems) {
@@ -238,12 +332,30 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
   let firstPPP = 0;
   let displayTier = getTier(qty);
 
+  const technique = sorted[0]?.technique || "Screen Print";
+  const isEmbroidery = technique === "Embroidery";
+  const fp = _pc?.firstPrint || FIRST_PRINT;
+  const ap = _pc?.addlPrint || ADDL_PRINT;
+  const maxColors = _pc?.maxColors || 8;
+
   sorted.forEach((imp, index) => {
-    const colors = Math.min(8, Math.max(1, imp.colors || 1));
+    const colors = Math.min(maxColors, Math.max(1, imp.colors || 1));
     const linkedKey = imp.linked ? getPrintKey(imp) : null;
     const tierQty = linkedKey && linkedQtyMap[linkedKey] ? linkedQtyMap[linkedKey] : qty;
-    const tier = getTier(tierQty);
-    const rate = index === 0 ? FIRST_PRINT[colors][tier] : ADDL_PRINT[colors][tier];
+    let tier, rate;
+    if (isEmbroidery) {
+      const stitchIdx = Math.max(0, colors - 1);
+      rate = getEmbroideryPPP(stitchIdx, tierQty);
+      if (index > 0) rate *= 0.7;
+      const embTiers = _pc?.embroidery?.qtyTiers || [12, 24, 48, 72, 144];
+      const stiers = [...embTiers].sort((a, b) => b - a);
+      tier = stiers[stiers.length - 1];
+      for (const t of stiers) { if (tierQty >= t) { tier = t; break; } }
+    } else {
+      tier = getTier(tierQty);
+      const table = index === 0 ? fp : ap;
+      rate = table[colors]?.[tier] ?? table[Math.min(colors, 8)]?.[tier] ?? 0;
+    }
     const lineCost = rate * qty;
 
     if (index === 0) {
@@ -271,9 +383,10 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
   const garmentMarkup = getMarkup(li.garmentCost, isBroker);
   const gCost = (parseFloat(li.garmentCost) || 0) * garmentMarkup * qty;
 
+  const er = isEmbroidery ? (_pc?.embroidery?.extras || {}) : (_pc?.extras || EXTRA_RATES);
   let extraPPP = 0;
   Object.entries(extras || {}).forEach(([k, on]) => {
-    if (on) extraPPP += typeof on === "number" ? on : (EXTRA_RATES[k] || 0);
+    if (on) extraPPP += typeof on === "number" ? on : (er[k] || EXTRA_RATES[k] || 0);
   });
   const extraCost = extraPPP * qty;
 
@@ -307,12 +420,13 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
     const qty = getQty(li);
     const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
     const override = Number(li?.clientPpp);
+    const osUp = getOversizeUpcharge();
     if (respectOverride && Number.isFinite(override) && override > 0 && qty > 0) {
-      sub += override * qty + twoXL * 2;
+      sub += override * qty + twoXL * osUp;
       return;
     }
     const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, markup, linkedQtyMap);
-    if (r) sub += r.sub + twoXL * 2;
+    if (r) sub += r.sub + twoXL * osUp;
   });
 
   const discVal = parseFloat(q.discount) || 0;
@@ -354,22 +468,24 @@ export const GARMENT_CATEGORIES = [
 // for keywords. Returns "" if we can't confidently classify (caller should leave the
 // dropdown blank rather than guess).
 export function mapSSCategoryToGarment(ssCategory, productDescription = "") {
-  // IMPORTANT: check more specific keywords first. "Hooded" must beat "Sweatshirt"
-  // (both map to same bucket here, but pattern matters for t-shirt vs tank vs long sleeve).
+  // IMPORTANT: check more specific keywords first. "Hooded" must beat "Sweatshirt".
   const s = `${ssCategory || ""} ${productDescription || ""}`.toLowerCase();
   if (!s.trim()) return "";
-  if (s.includes("hood") || s.includes("sweatshirt") || s.includes("fleece") || s.includes("pullover") || s.includes("crewneck"))
+  if (s.includes("hood") || s.includes("sweatshirt") || s.includes("fleece") || s.includes("pullover") || s.includes("crewneck") || s.includes("crew sweat"))
                                                 return "Hoodies & Sweatshirts";
   if (s.includes("jacket") || s.includes("outer") || s.includes("vest") || s.includes("coat") || s.includes("windbreaker"))
                                                 return "Jackets";
   if (s.includes("polo"))                       return "Polos";
-  if (s.includes("long sleeve") || s.includes("long-sleeve")) return "Long Sleeve";
-  if (s.includes("tank"))                       return "Tank Tops";
-  if (s.includes("hat") || s.includes("cap") || s.includes("beanie") || s.includes("headwear") || s.includes("visor"))
+  if (s.includes("long sleeve") || s.includes("long-sleeve") || s.includes("longsleeve") || s.includes("l/s"))
+                                                return "Long Sleeve";
+  if (s.includes("tank") || s.includes("singlet") || s.includes("muscle"))
+                                                return "Tank Tops";
+  if (s.includes("hat") || s.includes("cap") || s.includes("beanie") || s.includes("headwear") || s.includes("visor") || s.includes("trucker") || s.includes("panel"))
                                                 return "Hats & Caps";
-  if (s.includes("bag") || s.includes("tote") || s.includes("backpack") || s.includes("accessor") || s.includes("scarf") || s.includes("glove"))
+  if (s.includes("bag") || s.includes("tote") || s.includes("backpack") || s.includes("accessor") || s.includes("scarf") || s.includes("glove") || s.includes("apron"))
                                                 return "Bags & Accessories";
-  if (s.includes("t-shirt") || s.includes("tee") || s.includes("t shirt")) return "T-Shirts";
+  if (s.includes("t-shirt") || s.includes("tee") || s.includes("t shirt"))
+                                                return "T-Shirts";
   return "";
 }
 
@@ -415,7 +531,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
     const useOverride = respectOverride && Number.isFinite(override) && override > 0;
 
     const styleLabel = [li.brand, li.style, li.garmentColor].filter(Boolean).join(" ") || "Garment";
-    const sizeBreakdown = Object.entries(li.sizes || {})
+    const sizeBreakdown = sortSizeEntries(Object.entries(li.sizes || {}))
       .filter(([, v]) => Number(v) > 0)
       .map(([k, v]) => `${k}:${v}`)
       .join(", ");
@@ -449,13 +565,14 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
       });
     }
 
-    // 2XL+ upcharge — $2/shirt, always added on top
-    if (twoXL > 0) {
+    // 2XL+ upcharge — configurable per shop, always added on top
+    const osUp = getOversizeUpcharge();
+    if (twoXL > 0 && osUp > 0) {
       lines.push({
-        description: `${styleLabel} — 2XL+ upcharge (${twoXL} @ $2.00)`,
+        description: `${styleLabel} — 2XL+ upcharge (${twoXL} @ $${osUp.toFixed(2)})`,
         qty: twoXL,
-        unitPrice: 2,
-        amount: Number((twoXL * 2).toFixed(2)),
+        unitPrice: osUp,
+        amount: Number((twoXL * osUp).toFixed(2)),
         itemName,
       });
     }

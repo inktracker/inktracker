@@ -2,7 +2,8 @@ import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 
 export default function AdvancedFilters({ filters, onFilterChange, filterOptions }) {
-  const [expanded, setExpanded] = useState(false);
+  const hasActiveFilters = Object.values(filters).some(v => v != null && v !== "");
+  const [expanded, setExpanded] = useState(hasActiveFilters);
 
   return (
     <div className="space-y-3">

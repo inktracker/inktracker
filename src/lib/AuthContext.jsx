@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
 import { supabase } from "@/api/supabaseClient";
+import { loadShopPricingConfig } from "@/components/shared/pricing";
 
 const AuthContext = createContext();
 
@@ -12,8 +13,21 @@ async function fetchUserWithProfile() {
     .select("*")
     .eq("auth_id", user.id)
     .maybeSingle();
-
   if (!profile) return null;
+
+  // Load per-shop pricing config
+  try {
+    const shopOwner = profile.shop_owner || profile.email || user.email;
+    const { data: shop } = await supabase
+      .from("shops")
+      .select("pricing_config")
+      .eq("owner_email", shopOwner)
+      .maybeSingle();
+    loadShopPricingConfig(shop?.pricing_config || null);
+  } catch {
+    loadShopPricingConfig(null);
+  }
+
   return { ...profile, email: user.email };
 }
 
@@ -65,11 +79,16 @@ export const AuthProvider = ({ children }) => {
     // the app tree (which was causing the "everything reloads on tab switch" UX).
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN" || event === "USER_UPDATED") {
-        checkAppState({ silent: true });
+        // If URL has auth tokens (email confirmation link), do a full non-silent check
+        const hasTokens = window.location.hash?.includes("access_token") || window.location.search?.includes("code=");
+        checkAppState({ silent: !hasTokens });
+        // Clean up the URL hash after processing
+        if (hasTokens && window.location.hash) {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
       } else if (event === "SIGNED_OUT") {
         setLoggedOut();
       }
-      // TOKEN_REFRESHED / INITIAL_SESSION: ignore — already handled by initial check
     });
 
     return () => subscription.unsubscribe();

@@ -11,9 +11,9 @@ import {
 } from "../shared/pricing";
 import BrokerPricePanel from "./BrokerPricePanel";
 import Icon from "../shared/Icon";
+import { supabase } from "@/api/supabaseClient";
 
 async function lookupStyle(styleNumber) {
-  const { supabase } = await import("@/api/supabaseClient");
   const { data, error } = await supabase.functions.invoke("ssLookupStyle", {
     body: { styleNumber: String(styleNumber || "").trim().toUpperCase() },
   });

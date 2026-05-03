@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 
-export default function LoginModal({ isOpen, onClose }) {
-  const [mode, setMode] = useState("signin"); // "signin" | "signup"
+export default function LoginModal({ isOpen, onClose, defaultMode }) {
+  const [mode, setMode] = useState(defaultMode || "signin");
+
+  useEffect(() => {
+    if (isOpen && defaultMode) setMode(defaultMode);
+  }, [isOpen, defaultMode]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -28,11 +32,14 @@ export default function LoginModal({ isOpen, onClose }) {
 
     try {
       if (mode === "signup") {
-        const { error: signUpError } = await supabase.auth.signUp({ email, password });
+        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
         if (signUpError) throw signUpError;
-        setSuccess(
-          "Account created! Your access is pending approval. You will gain access once an admin approves your account."
-        );
+        // If email confirmation is disabled, user is immediately signed in
+        if (data?.session) {
+          onClose();
+        } else {
+          setSuccess("Check your email to confirm your account, then sign in.");
+        }
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;

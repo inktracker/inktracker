@@ -329,8 +329,10 @@ function renderLineItems(
       // Client PDF (priceScale is set when client_total_override, else 1;
       // AND per-line clientPpp override takes precedence when client mode).
       const override = Number(li?.clientPpp);
-      const useLineOverride = isClientMode && Number.isFinite(override) && override > 0 && qty > 0;
-      const lineAmount = useLineOverride ? override * qty : (r.sub + twoXL * 2) * priceScale;
+      const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
+      const rrH = parseFloat(rushRate) || 0;
+      const fullLineWithRush = (r.sub + twoXL * 2) * priceScale;
+      const lineAmount = useLineOverride ? override * qty + twoXL * 2 : (rrH > 0 ? fullLineWithRush / (1 + rrH) : fullLineWithRush);
       doc.text(fmtMoney(lineAmount), pageWidth - margin - 2, yPos, {
         align: 'right'
       });
@@ -383,12 +385,17 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
-        const basePpp = (isClientMode && Number.isFinite(Number(li?.clientPpp)) && Number(li.clientPpp) > 0)
+        const hasOverride = Number.isFinite(Number(li?.clientPpp)) && Number(li.clientPpp) > 0;
+        const rrP = parseFloat(rushRate) || 0;
+        // r.ppp includes rush + 2XL averaged in. Strip rush, strip 2XL, show base only.
+        const fullPpp = r.ppp * priceScale;
+        const pppWithoutRush = rrP > 0 ? fullPpp / (1 + rrP) : fullPpp;
+        const basePpp = hasOverride
           ? Number(li.clientPpp)
-          : r.ppp * priceScale;
+          : pppWithoutRush;
         activeSizes.forEach((sz) => {
           xPos += colW;
-          const price = basePpp + (BIG_SIZES.includes(sz) ? 2 : 0);
+          const price = BIG_SIZES.includes(sz) ? basePpp + 2 : basePpp;
           doc.text(fmtMoney(price), xPos, yPos, { align: 'center' });
         });
         yPos += 4;
@@ -477,66 +484,6 @@ function renderLineItems(
       });
     }
 
-    if (r && !isClientMode) {
-      yPos += 1;
-      doc.setFillColor(235, 238, 255);
-      doc.rect(
-        margin + 2,
-        yPos - 2,
-        pageWidth - 2 * margin - 4,
-        parseFloat(discount) > 0 ? 16 : 12,
-        'F'
-      );
-
-      doc.setFontSize(7.5);
-
-      const overrideForSubtotal = Number(li?.clientPpp);
-      const useLineOverrideForSubtotal = isClientMode
-        && Number.isFinite(overrideForSubtotal) && overrideForSubtotal > 0 && qty > 0;
-      const lineSubtotal = useLineOverrideForSubtotal
-        ? overrideForSubtotal * qty + twoXL * 2
-        : (r.sub + twoXL * 2) * priceScale;
-      const discNum = parseFloat(discount || 0);
-      const isFlatDisc = discountType === 'flat' || (discNum > 100 && discountType !== 'percent');
-      const afterDisc = isFlatDisc
-        ? Math.max(0, lineSubtotal - discNum)
-        : lineSubtotal * (1 - discNum / 100);
-      const final =
-        afterDisc * (1 + parseFloat(taxRate || 0) / 100);
-
-      doc.setTextColor(80, 80, 100);
-      doc.text('Line Subtotal:', margin + 4, yPos + 1);
-
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(30, 30, 40);
-      doc.text(fmtMoney(lineSubtotal), pageWidth - margin - 4, yPos + 1, {
-        align: 'right'
-      });
-      yPos += 5;
-
-      if (parseFloat(discount) > 0) {
-        doc.setFont(undefined, 'normal');
-        doc.setTextColor(16, 160, 100);
-        const discLabel = isFlatDisc ? `After Discount (${moneyNoWeirdMinus(discNum)}):` : `After Discount (${discount}%):`;
-        doc.text(discLabel, margin + 4, yPos);
-
-        doc.setFont(undefined, 'bold');
-        doc.text(fmtMoney(afterDisc), pageWidth - margin - 4, yPos, {
-          align: 'right'
-        });
-        yPos += 5;
-      }
-
-      doc.setFont(undefined, 'normal');
-      doc.setTextColor(67, 56, 202);
-      doc.text('Final (incl. tax):', margin + 4, yPos);
-
-      doc.setFont(undefined, 'bold');
-      doc.text(fmtMoney(final), pageWidth - margin - 4, yPos, {
-        align: 'right'
-      });
-      yPos += 5;
-    }
 
     yPos += 8;
   });
@@ -544,19 +491,33 @@ function renderLineItems(
   return yPos;
 }
 
-function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent') {
+function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0) {
   doc.setDrawColor(180, 180, 200);
   doc.setLineWidth(0.4);
   doc.line(margin, yPos, pageWidth - margin, yPos);
   yPos += 6;
+
+  const rr = parseFloat(rushRate) || 0;
+  const subWithoutRush = rr > 0 ? totals.sub / (1 + rr) : totals.sub;
+  const rushAmount = totals.sub - subWithoutRush;
 
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 120);
   doc.text('Subtotal:', margin, yPos);
   doc.setTextColor(30, 30, 40);
-  doc.text(fmtMoney(totals.sub), pageWidth - margin - 2, yPos, { align: 'right' });
+  doc.text(fmtMoney(subWithoutRush), pageWidth - margin - 2, yPos, { align: 'right' });
   yPos += 5;
+
+  if (rr > 0) {
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(200, 100, 20);
+    doc.text(`Rush Fee (${Math.round(rr * 100)}%):`, margin, yPos);
+    doc.setFont(undefined, 'bold');
+    doc.text(fmtMoney(rushAmount), pageWidth - margin - 2, yPos, { align: 'right' });
+    yPos += 5;
+  }
 
   if (parseFloat(discount) > 0) {
     const discountAmount = totals.sub - totals.afterDisc;
@@ -710,24 +671,62 @@ export async function exportQuoteToPDF(
 
   // Notes: only show in shop mode
   if (!isClientMode && quote.notes) {
-    if (yPos > pageHeight - 30) {
+    doc.setFontSize(8);
+    const noteLines = doc.splitTextToSize(quote.notes, pageWidth - 2 * margin - 8);
+    const noteH = noteLines.length * 4.5 + 8;
+
+    // If notes don't fit on this page, start a new page
+    if (yPos + noteH > pageHeight - 20) {
       doc.addPage();
       yPos = margin;
     }
 
-    doc.setFillColor(255, 248, 220);
-    const noteLines = doc.splitTextToSize(quote.notes, pageWidth - 2 * margin - 8);
-    const noteH = noteLines.length * 4.5 + 8;
+    // If notes are taller than a full page, split across pages
+    const maxLinesPerPage = Math.floor((pageHeight - yPos - 20) / 4.5);
 
-    doc.rect(margin, yPos - 2, pageWidth - 2 * margin, noteH, 'F');
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'bold');
-    doc.setTextColor(120, 80, 20);
-    doc.text('Notes:', margin + 3, yPos + 2);
+    if (noteLines.length <= maxLinesPerPage) {
+      doc.setFillColor(255, 248, 220);
+      doc.rect(margin, yPos - 2, pageWidth - 2 * margin, noteH, 'F');
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(120, 80, 20);
+      doc.text('Notes:', margin + 3, yPos + 2);
+      doc.setFont(undefined, 'normal');
+      doc.text(noteLines, margin + 3, yPos + 7);
+      yPos += noteH + 4;
+    } else {
+      // Multi-page notes
+      let remaining = [...noteLines];
+      let isFirst = true;
+      while (remaining.length > 0) {
+        const available = Math.floor((pageHeight - yPos - 20) / 4.5);
+        const batch = remaining.splice(0, Math.max(1, available));
+        const batchH = batch.length * 4.5 + (isFirst ? 8 : 4);
 
-    doc.setFont(undefined, 'normal');
-    doc.text(noteLines, margin + 3, yPos + 7);
-    yPos += noteH + 4;
+        doc.setFillColor(255, 248, 220);
+        doc.rect(margin, yPos - 2, pageWidth - 2 * margin, batchH, 'F');
+        doc.setFontSize(8);
+        doc.setTextColor(120, 80, 20);
+
+        if (isFirst) {
+          doc.setFont(undefined, 'bold');
+          doc.text('Notes:', margin + 3, yPos + 2);
+          doc.setFont(undefined, 'normal');
+          doc.text(batch, margin + 3, yPos + 7);
+        } else {
+          doc.setFont(undefined, 'normal');
+          doc.text(batch, margin + 3, yPos + 2);
+        }
+
+        yPos += batchH + 2;
+        isFirst = false;
+
+        if (remaining.length > 0) {
+          doc.addPage();
+          yPos = margin;
+        }
+      }
+      yPos += 2;
+    }
   }
 
   // Broker info now lives in the header (name + contact email).
@@ -747,21 +746,25 @@ export async function exportQuoteToPDF(
     margin,
     yPos,
     isClientMode,
-    quoteDiscType
+    quoteDiscType,
+    parseFloat(quote.rush_rate) || 0
   );
 
   const fileId = quote.quote_id || 'quote';
   const fileName = isClientMode ? `Quote-Client-${fileId}.pdf` : `Quote-Shop-${fileId}.pdf`;
   if (output === 'base64') {
-    // jsPDF returns a data-URI; strip the "data:application/pdf;base64," prefix
     const raw = doc.output('datauristring');
     return raw.split(',')[1];
+  }
+  if (output === 'blob') {
+    const blob = doc.output('blob');
+    return URL.createObjectURL(blob);
   }
   doc.save(fileName);
   return null;
 }
 
-export async function exportOrderToPDF(order, shopName, logoUrl) {
+export async function exportOrderToPDF(order, shopName, logoUrl, output) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -873,7 +876,8 @@ export async function exportOrderToPDF(order, shopName, logoUrl) {
       margin,
       yPos,
       false,
-      orderDiscType
+      orderDiscType,
+      parseFloat(order.rush_rate) || 0
     );
 
     yPos += 2;
@@ -889,6 +893,10 @@ export async function exportOrderToPDF(order, shopName, logoUrl) {
     }
   }
 
+  if (output === 'blob') {
+    const blob = doc.output('blob');
+    return URL.createObjectURL(blob);
+  }
   doc.save(`Order-${order.order_id}.pdf`);
 }
 
@@ -976,7 +984,8 @@ export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl, o
     margin,
     yPos,
     false,
-    invDiscType
+    invDiscType,
+    parseFloat(invoice.rush_rate) || 0
   );
 
   if (customer) {
@@ -1019,6 +1028,10 @@ export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl, o
   if (output === 'base64') {
     const raw = doc.output('datauristring');
     return raw.split(',')[1];
+  }
+  if (output === 'blob') {
+    const blob = doc.output('blob');
+    return URL.createObjectURL(blob);
   }
   doc.save(`Invoice-${invoice.invoice_id}.pdf`);
   return null;

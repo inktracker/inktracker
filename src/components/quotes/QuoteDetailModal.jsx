@@ -198,6 +198,7 @@ export default function QuoteDetailModal({
   onDelete,
   onSend,
   onTogglePaid,
+  onDuplicate,
 }) {
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -679,9 +680,9 @@ export default function QuoteDetailModal({
                   })()}
 
                   {(() => {
-                    const hasQb = quote.qb_total != null;
-                    const taxVal = hasQb ? Number(quote.qb_tax_amount || 0) : totals.tax;
-                    const totalVal = hasQb ? Number(quote.qb_total || 0) : totals.total;
+                    const hasQb = quote.qb_total != null && Number(quote.qb_tax_amount || 0) > 0;
+                    const taxVal = hasQb ? Number(quote.qb_tax_amount) : totals.tax;
+                    const totalVal = hasQb ? Number(quote.qb_total) : totals.total;
                     return (
                       <>
                         <div className="flex justify-between text-sm text-slate-500">
@@ -761,6 +762,18 @@ export default function QuoteDetailModal({
             </button>
 
             <button
+              onClick={async () => {
+                const url = await exportQuoteToPDF(
+                  quote,
+                  { shopName, logoUrl, customerCompany: customer?.company || "", customerEmail: quote.customer_email || customer?.email || "", customerPhone: quote.customer_phone || customer?.phone || "", output: "blob" }
+                );
+                if (url) window.open(url, "_blank");
+              }}
+              className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
+            >
+              Preview PDF
+            </button>
+            <button
               onClick={() =>
                 exportQuoteToPDF(
                   quote,
@@ -773,7 +786,7 @@ export default function QuoteDetailModal({
               }
               className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
             >
-              📥 Download PDF
+              Download PDF
             </button>
 
             {STATUS_ACTIONABLE.includes(quote.status) && (
@@ -817,6 +830,15 @@ export default function QuoteDetailModal({
                 }`}
               >
                 {saving ? "Saving…" : quote.deposit_paid ? "Mark as Unpaid" : "✓ Mark as Paid"}
+              </button>
+            )}
+
+            {onDuplicate && (
+              <button
+                onClick={() => onDuplicate(quote)}
+                className="px-4 py-2 text-sm font-semibold text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+              >
+                Duplicate
               </button>
             )}
 

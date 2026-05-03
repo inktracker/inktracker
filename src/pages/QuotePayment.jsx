@@ -15,6 +15,7 @@ import {
   fmtDate,
   getQty,
   BIG_SIZES,
+  sortSizeEntries,
 } from "../components/shared/pricing";
 
 function cleanText(value) {
@@ -282,7 +283,7 @@ export default function QuotePayment() {
   async function handleCheckout() {
     setCheckoutError("");
 
-    // Verify reCAPTCHA before anything else
+    // Verify reCAPTCHA
     if (recaptchaReady && window.grecaptcha) {
       try {
         const token = await window.grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: "checkout" });
@@ -293,11 +294,11 @@ export default function QuotePayment() {
         });
         const verifyData = await verifyRes.json();
         if (!verifyData.success) {
-          setCheckoutError("Security check failed. Please try again.");
+          setCheckoutError("Security check failed. Please refresh the page and try again.");
           return;
         }
       } catch {
-        // If verification errors, allow through
+        // If reCAPTCHA itself errors (blocked, network), allow through
       }
     }
 
@@ -323,8 +324,18 @@ export default function QuotePayment() {
       return;
     }
 
-    // No QB link available — show error instead of Stripe fallback
-    setCheckoutError("Payment link is being generated. Please check your email or contact us.");
+    // No QB link — try to reload the quote in case it was generated after page load
+    try {
+      const response = await base44.functions.invoke("createCheckoutSession", {
+        action: "getQuote",
+        quoteId: quote.id,
+      });
+      if (response?.data?.quote?.qb_payment_link) {
+        window.location.href = response.data.quote.qb_payment_link;
+        return;
+      }
+    } catch {}
+    setCheckoutError("Payment link is not ready yet. Please contact us or check your email for a direct payment link.");
     return;
 
     setCheckoutLoading(true);
@@ -498,7 +509,7 @@ export default function QuotePayment() {
             </h3>
 
             {quote.line_items.map((li, idx) => {
-              const activeSizes = Object.entries(li.sizes || {}).filter(
+              const activeSizes = sortSizeEntries(Object.entries(li.sizes || {})).filter(
                 ([, v]) => parseInt(v, 10) > 0
               );
               const { qty, lineTotal, perPiece } = getLineItemPricing(li, quote);

@@ -4,11 +4,14 @@ import { base44, supabase } from "@/api/supabaseClient";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import { createPageUrl } from "@/utils";
-import { fmtMoney, fmtDate, O_STATUSES } from "../components/shared/pricing";
-import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign } from "lucide-react";
+import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig } from "../components/shared/pricing";
+import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText } from "lucide-react";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerDocuments from "../components/broker/BrokerDocuments";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
+import GettingStartedChecklist from "../components/GettingStartedChecklist";
+import FeatureTour from "../components/FeatureTour";
+import HintTip from "../components/shared/HintTip";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 const STATUS_COLORS = {
@@ -22,7 +25,7 @@ function MetricCard({ label, value, sub, color = "text-indigo-600", onClick }) {
   return (
     <button
       onClick={onClick}
-      className="w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition text-left min-w-0"
+      className="w-full bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition text-left"
     >
       <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">{label}</div>
       <div className={`text-xl sm:text-2xl font-bold ${color} truncate`}>{value}</div>
@@ -249,6 +252,7 @@ export default function Dashboard() {
   const [shopOwners, setShopOwners] = useState([]);
   const [tab, setTab] = useState("overview");
   const [brokerUnreadCount, setBrokerUnreadCount] = useState(0);
+  const [customerCount, setCustomerCount] = useState(0);
 
   useEffect(() => {
     async function loadData() {
@@ -258,16 +262,18 @@ export default function Dashboard() {
         if (currentUser.role === "broker") { navigate(createPageUrl("BrokerDashboard")); return; }
         setUser(currentUser);
 
-        const [q, o, invItems, allUsers] = await Promise.all([
+        const [q, o, invItems, allUsers, custs] = await Promise.all([
           base44.entities.Quote.filter({ shop_owner: currentUser.email }, "-created_date", 100),
           base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 50),
           base44.entities.InventoryItem.filter({ shop_owner: currentUser.email }),
           base44.entities.User.list(),
+          base44.entities.Customer.filter({ shop_owner: currentUser.email }),
         ]);
 
         setQuotes(q);
         setOrders(o);
         setInventory(invItems);
+        setCustomerCount(custs.length);
 
         // Fetch live invoice data from QB (non-blocking)
         try {
@@ -276,7 +282,7 @@ export default function Dashboard() {
             const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "getPerformanceData", accessToken: session.access_token }),
+              body: JSON.stringify({ action: "getPerformanceData", accessToken: session.access_token, dateFrom: new Date(Date.now() - 30*86400000).toISOString().split("T")[0], dateTo: new Date().toISOString().split("T")[0] }),
             });
             if (res.ok) {
               const data = await res.json();
@@ -311,8 +317,8 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-1">{user?.shop_name || "My Shop"} · Overview & broker management</p>
+          <h1 className="text-xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">Dashboard</h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">{user?.shop_name || "My Shop"}</p>
         </div>
       </div>
 
@@ -320,8 +326,8 @@ export default function Dashboard() {
       <div className="flex gap-0 border-b border-slate-200 dark:border-slate-700">
         {[
           { id: "overview", label: "Overview", icon: TrendingUp },
-          { id: "brokers", label: "Brokers", icon: Users, badge: brokerUnreadCount },
-        ].map(({ id, label, icon: NavIcon, badge }) => (
+          { id: "brokers", label: "Brokers", icon: Users, badge: brokerUnreadCount, hint: "Sales reps who submit orders on behalf of your shop. Manage brokers from Account > Admin Panel." },
+        ].map(({ id, label, icon: NavIcon, badge, hint }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -330,6 +336,7 @@ export default function Dashboard() {
             }`}
           >
             <NavIcon className="w-4 h-4" /> {label}
+            {hint && <HintTip text={hint} side="bottom" />}
             {badge > 0 && (
               <span className="bg-indigo-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">
                 {badge}
@@ -343,7 +350,7 @@ export default function Dashboard() {
       {tab === "overview" && (
         <div className="space-y-6">
           {/* Metrics */}
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          <div data-tour="metrics" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
             <MetricCard label="Pending Quotes" value={pendingQuotes} sub="Awaiting approval" color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
             <MetricCard label="Approved" value={approvedQuotes} sub="Ready to convert" color="text-emerald-600" onClick={() => navigate(createPageUrl("Quotes"))} />
             <MetricCard label="Broker Quotes" value={brokerQuotes} sub="Submitted by brokers" color="text-indigo-600" onClick={() => navigate(createPageUrl("Quotes"))} />
@@ -352,22 +359,36 @@ export default function Dashboard() {
             <MetricCard label="Low Stock Items" value={lowStockItems.length} sub="Need reorder" color="text-red-600" onClick={() => navigate(createPageUrl("Inventory"))} />
           </div>
 
+          {/* Getting Started Checklist */}
+          <div data-tour="checklist">
+          <GettingStartedChecklist
+            quotes={quotes}
+            orders={orders}
+            customers={customerCount}
+            inventory={inventory}
+            hasPricing={!!getShopPricingConfig()}
+          />
+          </div>
+
           {/* Order Pipeline */}
-          <div>
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">Order Pipeline</h3>
-            <div className="grid gap-4 grid-cols-2 md:grid-cols-4 lg:grid-cols-8">
+          <div data-tour="pipeline" className="overflow-hidden">
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Order Pipeline</h3>
+              <HintTip text="Orders move through these stages from left to right. Click a stage to see its orders, or click an individual order to view details." />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
               {O_STATUSES.map(status => {
                 const inStage = orders.filter((o) => o.status === status);
                 return (
-                  <div key={status} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                  <div key={status} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                     <button
                       onClick={() => navigate(`/Orders?status=${encodeURIComponent(status)}`)}
-                      className="w-full text-left bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 hover:bg-slate-100 transition"
+                      className="w-full text-left bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-3 py-2 hover:bg-slate-100 transition"
                     >
-                      <div className="text-xs font-bold text-slate-600 uppercase tracking-widest">{status}</div>
-                      <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{inStage.length}</div>
+                      <div className="text-[10px] font-bold text-slate-600 uppercase tracking-widest truncate">{status}</div>
+                      <div className="text-xl font-bold text-slate-900 dark:text-slate-100">{inStage.length}</div>
                     </button>
-                    <div className="p-3 space-y-2 max-h-48 overflow-y-auto">
+                    <div className="p-2 space-y-1.5 max-h-36 overflow-y-auto">
                       {inStage.map((o) => (
                         <button
                           key={o.id}
@@ -396,7 +417,13 @@ export default function Dashboard() {
                 <span className="text-xs font-semibold text-slate-400">{quotes.length} total</span>
               </button>
               {quotes.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 text-sm">No quotes yet.</div>
+                <div className="py-12 text-center">
+                  <FileText className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+                  <p className="text-sm text-slate-400 mb-3">No quotes yet</p>
+                  <button onClick={() => navigate(createPageUrl("Quotes"))} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition">
+                    Create your first quote &rarr;
+                  </button>
+                </div>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {quotes.slice(0, 6).map(q => (
@@ -522,6 +549,8 @@ export default function Dashboard() {
           )}
         </div>
       )}
+
+      <FeatureTour />
     </div>
   );
 }

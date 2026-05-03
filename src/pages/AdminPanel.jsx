@@ -8,10 +8,12 @@ import BrokerManager from "@/components/broker/BrokerManager";
 
 function roleBadge(role) {
   const map = {
-    admin:  { label: "Admin",   cls: "bg-violet-100 text-violet-700" },
-    shop:   { label: "Approved", cls: "bg-emerald-100 text-emerald-700" },
-    user:   { label: "Pending", cls: "bg-amber-100 text-amber-700" },
-    broker: { label: "Broker",  cls: "bg-sky-100 text-sky-700" },
+    admin:    { label: "Owner",    cls: "bg-violet-100 text-violet-700" },
+    shop:     { label: "Owner",    cls: "bg-violet-100 text-violet-700" },
+    manager:  { label: "Manager",  cls: "bg-emerald-100 text-emerald-700" },
+    user:     { label: "Pending",  cls: "bg-amber-100 text-amber-700" },
+    broker:   { label: "Broker",   cls: "bg-sky-100 text-sky-700" },
+    employee: { label: "Employee", cls: "bg-indigo-100 text-indigo-700" },
   };
   const { label, cls } = map[role] ?? { label: role, cls: "bg-slate-100 text-slate-500" };
   return (
@@ -33,6 +35,7 @@ export default function AdminPanel() {
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteName, setInviteName] = useState("");
+  const [inviteRole, setInviteRole] = useState("manager");
   const [inviteSending, setInviteSending] = useState(false);
   const [inviteError, setInviteError] = useState("");
   const [inviteSuccess, setInviteSuccess] = useState("");
@@ -83,10 +86,11 @@ export default function AdminPanel() {
       });
 
       if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
       setUsers(prev =>
         prev.map(u => {
           const matchId = u.id === profileId || u.auth_id === authId;
-          return matchId ? { ...u, id: data.profile.id, role: data.profile.role, _no_profile: false } : u;
+          return matchId ? { ...u, id: data.profile?.id || u.id, role: data.profile?.role || role, _no_profile: false } : u;
         })
       );
     } catch (err) {
@@ -110,6 +114,7 @@ export default function AdminPanel() {
           action: "inviteBroker",
           email: inviteEmail.trim(),
           fullName: inviteName.trim() || null,
+          role: inviteRole,
         },
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -180,7 +185,7 @@ export default function AdminPanel() {
             className="flex items-center gap-1.5 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-3 py-1.5 transition"
           >
             <Mail className="w-4 h-4" />
-            Invite Broker
+            Invite User
           </button>
           <button
             onClick={loadUsers}
@@ -297,6 +302,13 @@ export default function AdminPanel() {
                         {actionLoading[key] ? "…" : "Broker"}
                       </button>
                       <button
+                        onClick={() => setRole(u.id, u.auth_id, "employee")}
+                        disabled={actionLoading[key]}
+                        className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                      >
+                        {actionLoading[key] ? "…" : "Employee"}
+                      </button>
+                      <button
                         onClick={() => setConfirmDelete({ id: u.id, auth_id: u.auth_id })}
                         disabled={actionLoading[key]}
                         className="text-xs text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition disabled:opacity-50"
@@ -306,7 +318,7 @@ export default function AdminPanel() {
                       </button>
                     </>
                   )}
-                  {(u.role === "shop" || u.role === "broker") && (
+                  {(u.role === "shop" || u.role === "broker" || u.role === "employee") && (
                     <button
                       onClick={() => setRole(u.id, u.auth_id, "user")}
                       disabled={actionLoading[key]}
@@ -377,8 +389,8 @@ export default function AdminPanel() {
                   <Mail className="w-5 h-5 text-indigo-600" />
                 </div>
                 <div>
-                  <div className="font-semibold text-slate-900">Invite Broker</div>
-                  <div className="text-xs text-slate-500">Sends a sign-in email with broker access preset.</div>
+                  <div className="font-semibold text-slate-900">Invite User</div>
+                  <div className="text-xs text-slate-500">Sends a sign-in email with the selected role.</div>
                 </div>
               </div>
               <button
@@ -409,6 +421,21 @@ export default function AdminPanel() {
                   placeholder="Jane Doe"
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Role</label>
+                <div className="flex gap-2">
+                  {[
+                    { value: "manager", label: "Manager", color: "emerald" },
+                    { value: "employee", label: "Employee", color: "indigo" },
+                    { value: "broker", label: "Broker", color: "sky" },
+                  ].map(r => (
+                    <button key={r.value} type="button" onClick={() => setInviteRole(r.value)}
+                      className={`flex-1 text-xs font-semibold py-2 rounded-lg border transition ${inviteRole === r.value ? `bg-${r.color}-600 text-white border-${r.color}-600` : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {inviteError && (

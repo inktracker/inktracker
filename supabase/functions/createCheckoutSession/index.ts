@@ -228,7 +228,7 @@ async function handleCreateSession(params: any) {
   const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
   const supabase = serviceClient();
 
-  const origin = params.origin ?? "https://biotamfg.co";
+  const origin = params.origin ?? "https://www.inktracker.app";
   const successUrl = `${origin}/quotepaymentSuccess?session_id={CHECKOUT_SESSION_ID}&quote_id=${params.quoteId}&is_deposit=${params.isDeposit ? "1" : "0"}&amount=${params.amountPaid || 0}&shop_owner=${encodeURIComponent(params.shopOwnerEmail || "")}`;
   const cancelUrl  = `${origin}/quotepaymentCancel`;
 

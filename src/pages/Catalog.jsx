@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { supabase } from "@/api/supabaseClient";
+import { searchCatalog, SUPPLIERS } from "@/api/suppliers";
 import { fmtMoney } from "../components/shared/pricing";
 import { Search, Package, ChevronRight, X, AlertCircle, Loader2, ShoppingCart } from "lucide-react";
 
@@ -183,6 +183,7 @@ function ProductDetailPanel({ product, onClose, onAddToQuote }) {
 export default function Catalog() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
+  const [supplier, setSupplier] = useState(SUPPLIERS.SS);
   const [products, setProducts] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -190,19 +191,13 @@ export default function Catalog() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const search = useCallback(async (q = query, cat = category) => {
+  const search = useCallback(async (q = query, cat = category, sup = supplier) => {
     setLoading(true);
     setError("");
     setHasSearched(true);
 
     try {
-      const { data, error: fnError } = await supabase.functions.invoke("ssSearchCatalog", {
-        body: { query: q.trim(), category: cat, limit: 48, page: 1 },
-      });
-
-      if (fnError) throw fnError;
-      if (data?.error) throw new Error(data.error);
-
+      const data = await searchCatalog(sup, { query: q.trim(), category: cat, limit: 48, page: 1 });
       setProducts(data?.products ?? []);
       setTotal(data?.total ?? 0);
     } catch (err) {
@@ -211,7 +206,15 @@ export default function Catalog() {
     } finally {
       setLoading(false);
     }
-  }, [query, category]);
+  }, [query, category, supplier]);
+
+  function handleSupplierChange(sup) {
+    setSupplier(sup);
+    setProducts([]);
+    setTotal(0);
+    setHasSearched(false);
+    if (query || category) search(query, category, sup);
+  }
 
   function handleCategoryClick(cat) {
     setCategory(cat);
@@ -221,16 +224,16 @@ export default function Catalog() {
   function handleAddToQuote({ product, selectedColor, piecePrice }) {
     // Store in sessionStorage so Quotes page can read it and open a pre-filled editor
     sessionStorage.setItem("ss_prefill", JSON.stringify({
-      style: product.styleNumber,
-      brand: product.brandName,
+      style: product.styleNumber ?? product.styleCode,
+      brand: product.brandName ?? (supplier === SUPPLIERS.AC ? "AS Colour" : ""),
       garmentColor: selectedColor,
       garmentCost: piecePrice,
       styleName: product.title,
-      resolvedStyleNumber: product.styleNumber,
-      supplierStyleNumber: product.styleNumber,
+      resolvedStyleNumber: product.styleNumber ?? product.styleCode,
+      supplierStyleNumber: product.styleNumber ?? product.styleCode,
       productNumber: product.id,
       resolvedTitle: product.title,
-      supplier: "S&S Activewear",
+      supplier,
       inventoryMap: product.inventoryMap,
       priceMap: product.priceMap,
       colors: product.colors,
@@ -241,9 +244,26 @@ export default function Catalog() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">S&S Activewear Catalog</h1>
-        <p className="text-sm text-slate-500 mt-1">Live dealer pricing and real-time inventory</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">{supplier} Catalog</h1>
+          <p className="text-sm text-slate-500 mt-1">Live dealer pricing and real-time inventory</p>
+        </div>
+        <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1">
+          {[SUPPLIERS.SS, SUPPLIERS.AC].map((s) => (
+            <button
+              key={s}
+              onClick={() => handleSupplierChange(s)}
+              className={`px-3 py-1.5 text-sm font-medium rounded-lg transition ${
+                supplier === s
+                  ? "bg-indigo-600 text-white"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Search bar */}

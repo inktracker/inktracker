@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   SIZES,
   BIG_SIZES,
   LOCATIONS,
-  TECHNIQUES,
+  getEnabledTechniques,
+  getShopPricingConfig,
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
   getQty,
@@ -12,14 +13,31 @@ import {
 } from "../shared/pricing";
 import PricePanel from "./PricePanel";
 import Icon from "../shared/Icon";
+import { supabase } from "@/api/supabaseClient";
 
+// Query both S&S Activewear and AS Colour in parallel and merge results.
+// AS Colour uses `styleCode`, S&S uses `styleNumber` — same wire format on the
+// way out, so the brandOptions dropdown ends up with one entry per (brand, style)
+// regardless of supplier. Either supplier failing/returning empty doesn't break
+// the lookup; we just use whatever came back.
 async function lookupStyle(styleNumber) {
-  const { supabase } = await import("@/api/supabaseClient");
-  const { data, error } = await supabase.functions.invoke("ssLookupStyle", {
-    body: { styleNumber: String(styleNumber || "").trim().toUpperCase() },
-  });
-  if (error) throw error;
-  return data;
+  const code = String(styleNumber || "").trim().toUpperCase();
+  if (!code) return { matches: [] };
+
+  const [ssRes, acRes] = await Promise.allSettled([
+    supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: code } }),
+    supabase.functions.invoke("acLookupStyle", { body: { styleCode: code } }),
+  ]);
+
+  const grab = (r) => {
+    if (r.status !== "fulfilled") return [];
+    const data = r.value?.data;
+    if (!data || data.error) return [];
+    return data.matches || data.results || data.items || data.products || [];
+  };
+
+  const matches = [...grab(ssRes), ...grab(acRes)];
+  return { matches };
 }
 
 function normalizeImprint(imprint) {
@@ -248,16 +266,19 @@ function getCanonicalStyleNumber(typedStyleNumber, selectedMatch) {
 }
 
 function getBestDescription(selectedMatch) {
+  // Use resolvedTitle first — it's a clean product name for both S&S and AS Colour.
+  // Only use raw.description if it's short (S&S style names are short, AS Colour's are paragraphs).
+  const rawDesc = cleanText(selectedMatch?.raw?.description);
+  const shortRawDesc = rawDesc && rawDesc.length < 80 ? rawDesc : "";
+
   const candidates = [
-    // Prefer the raw S&S product description (e.g. "Unisex Garment-Dyed Heavyweight T")
-    // over resolvedTitle which is just "Brand — PartNumber"
-    cleanText(selectedMatch?.raw?.description),
+    stripTrailingCode(selectedMatch?.resolvedTitle),
+    stripTrailingCode(selectedMatch?.title),
+    shortRawDesc,
     cleanText(selectedMatch?.raw?.resolvedDescription),
     cleanText(selectedMatch?.raw?.resolved_description),
     cleanText(selectedMatch?.raw?.productDescription),
     cleanText(selectedMatch?.raw?.product_description),
-    stripTrailingCode(selectedMatch?.resolvedTitle),
-    stripTrailingCode(selectedMatch?.title),
     stripTrailingCode(selectedMatch?.raw?.resolvedTitle),
     stripTrailingCode(selectedMatch?.raw?.resolved_title),
     stripTrailingCode(selectedMatch?.raw?.title),
@@ -409,12 +430,14 @@ function applySelectedMatch(li, selectedMatch) {
   const styleNumber = cleanText(selectedMatch.styleNumber).toUpperCase();
   const brand = cleanText(selectedMatch.brandName || li.brand || "");
 
-  // Try raw.description first (S&S styleName field = product description)
-  // but reject it if it's just the part number or looks like a code
+  // Use resolvedTitle as the product name (clean title without style code).
+  // Fall back to raw.description only if it's short (S&S uses description as
+  // a style name, but AS Colour puts a full paragraph there).
+  const resolvedTitle = cleanText(selectedMatch.resolvedTitle || selectedMatch.raw?.resolvedTitle || "");
   const rawDesc = cleanText(selectedMatch.raw?.description || "");
-  let productName = (rawDesc && !looksLikeCode(rawDesc) && rawDesc.toUpperCase() !== styleNumber)
-    ? rawDesc
-    : "";
+  const isShortDesc = rawDesc && rawDesc.length < 80 && !looksLikeCode(rawDesc) && rawDesc.toUpperCase() !== styleNumber;
+
+  let productName = resolvedTitle || (isShortDesc ? rawDesc : "");
 
   // Fall back: extract the middle segment from "Brand — Desc — PartNumber" in resolvedTitle
   if (!productName) {
@@ -466,7 +489,7 @@ function applySelectedMatch(li, selectedMatch) {
       selectedMatch.styleCategory,
       productName || selectedMatch.description
     ) || li.category || "",
-    supplier: "S&S Activewear",
+    supplier: selectedMatch.brandName === "AS Colour" ? "AS Colour" : "S&S Activewear",
     supplierLastLookupAt: new Date().toISOString(),
   };
 }
@@ -489,12 +512,29 @@ export default function LineItemEditor({
   const [ssLoading, setSsLoading] = useState(false);
   const [ssError, setSsError] = useState(null);
   const [brandOptions, setBrandOptions] = useState([]);
+  // Track which line item ids we've already auto-looked-up so we don't loop.
+  const autoLookedUpRef = useRef(new Set());
 
   const qty = getQty(li);
 
   const previewLineItems = (allLineItems || []).map((item) =>
     item.id === li.id ? li : item
   );
+
+  // Auto-lookup on mount when a line item arrived with a style # but no
+  // resolved brand options yet — for example, after the "Paste Order" parser
+  // dropped raw style numbers into a fresh quote. This mirrors the tab-out
+  // flow so the brand dropdown shows up populated with every matching brand
+  // for the user to pick from.
+  useEffect(() => {
+    const styleNumber = normalizeTypedStyleNumber(li.style);
+    if (!styleNumber) return;
+    if (brandOptions.length > 0) return; // already looked up
+    if (autoLookedUpRef.current.has(li.id)) return;
+    autoLookedUpRef.current.add(li.id);
+    handleStyleBlur();
+     
+  }, [li.id, li.style]);
 
   async function handleStyleBlur() {
     const typedStyleNumber = normalizeTypedStyleNumber(li.style);
@@ -510,27 +550,37 @@ export default function LineItemEditor({
 
       setBrandOptions(options);
 
-      const selected =
-        options.find(
-          (option) =>
-            cleanText(option.brandName).toLowerCase() === cleanText(li.brand).toLowerCase()
-        ) || options[0];
-
-      if (!selected) {
-        throw new Error("No valid S&S results found");
+      if (options.length === 0) {
+        throw new Error("No results found");
       }
 
-      // Always populate brandOptions so dropdown shows for multiple matches
-      setSsColors(selected.colors || []);
-      setSsInventory(selected.inventoryMap || {});
-      setSsPriceMap(selected.priceMap || {});
-      onChange(applySelectedMatch(li, selected));
+      // If the current brand matches one of the options, auto-select it.
+      // If there's only one option, auto-select it.
+      // If there are multiple, don't auto-apply — let the user pick from the dropdown.
+      const brandMatch = options.find(
+        (option) =>
+          cleanText(option.brandName).toLowerCase() === cleanText(li.brand).toLowerCase()
+      );
+      const selected = brandMatch || (options.length === 1 ? options[0] : null);
+
+      if (selected) {
+        setSsColors(selected.colors || []);
+        setSsInventory(selected.inventoryMap || {});
+        setSsPriceMap(selected.priceMap || {});
+        onChange(applySelectedMatch(li, selected));
+      } else {
+        // Multiple options, no brand match — show first option's colors as preview
+        // but don't apply until user selects
+        setSsColors(options[0].colors || []);
+        setSsInventory(options[0].inventoryMap || {});
+        setSsPriceMap(options[0].priceMap || {});
+      }
     } catch (e) {
       setBrandOptions([]);
       setSsColors([]);
       setSsInventory({});
       setSsPriceMap({});
-      setSsError("Style not found on S&S");
+      setSsError("Style not found");
     } finally {
       setSsLoading(false);
     }
@@ -562,7 +612,17 @@ export default function LineItemEditor({
     });
   }
 
-  const currentInventory = ssInventory[li.garmentColor] || {};
+  const rawInventory = ssInventory[li.garmentColor] || {};
+  // Normalize inventory keys: map "Adjustable", "OSFA", "One Size", etc. to "OS"
+  const OS_ALIASES = ["adjustable", "osfa", "one size", "os", "osfm", "one_size", "uni", "n/a"];
+  const currentInventory = {};
+  for (const [k, v] of Object.entries(rawInventory)) {
+    if (OS_ALIASES.includes(k.toLowerCase())) {
+      currentInventory["OS"] = (currentInventory["OS"] || 0) + v;
+    } else {
+      currentInventory[k] = v;
+    }
+  }
   const selectedBrandOption =
     brandOptions.find(
       (option) =>
@@ -668,10 +728,11 @@ export default function LineItemEditor({
             </label>
             {brandOptions.length > 1 ? (
               <select
-                value={selectedBrandOption?.id || ""}
+                value={selectedBrandOption && cleanText(selectedBrandOption.brandName).toLowerCase() === cleanText(li.brand).toLowerCase() ? selectedBrandOption.id : ""}
                 onChange={(e) => handleBrandSelection(e.target.value)}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
               >
+                {!li.brand && <option value="">Select brand…</option>}
                 {[...brandOptions].sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' })).map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.label}
@@ -966,36 +1027,63 @@ export default function LineItemEditor({
                           </select>
                         </div>
 
-                        <div className="w-20">
-                          <label className="block text-xs text-slate-400 mb-0.5">Colors</label>
-                          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
-                            <button
-                              onClick={() => updateImprint(idx, { colors: Math.max(1, imp.colors - 1) })}
-                              className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
-                            >
-                              −
-                            </button>
-                            <div className="flex-1 text-center font-bold text-slate-800 text-sm">
-                              {imp.colors}
+                        {imp.technique === "Embroidery" ? (
+                          <>
+                            <div className="w-28">
+                              <label className="block text-xs text-slate-400 mb-0.5">Stitch Count</label>
+                              <select
+                                value={imp.colors || 1}
+                                onChange={(e) => updateImprint(idx, { colors: parseInt(e.target.value) || 1 })}
+                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              >
+                                {(getShopPricingConfig()?.embroidery?.stitchTiers || ["Under 5K", "5K-10K", "10K-15K", "15K+"]).map((st, i) => (
+                                  <option key={st} value={i + 1}>{st}</option>
+                                ))}
+                              </select>
                             </div>
-                            <button
-                              onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
-                              className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
-                            >
-                              +
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex-1 min-w-28">
-                          <label className="block text-xs text-slate-400 mb-0.5">Pantone(s)</label>
-                          <input
-                            value={imp.pantones || ""}
-                            onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
-                            placeholder="e.g. PMS 286 C, White"
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                          />
-                        </div>
+                            <div className="flex-1 min-w-28">
+                              <label className="block text-xs text-slate-400 mb-0.5">Thread Colors</label>
+                              <input
+                                value={imp.pantones || ""}
+                                onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
+                                placeholder="e.g. Navy, White, Gold"
+                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-20">
+                              <label className="block text-xs text-slate-400 mb-0.5">Colors</label>
+                              <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
+                                <button
+                                  onClick={() => updateImprint(idx, { colors: Math.max(1, imp.colors - 1) })}
+                                  className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
+                                >
+                                  −
+                                </button>
+                                <div className="flex-1 text-center font-bold text-slate-800 text-sm">
+                                  {imp.colors}
+                                </div>
+                                <button
+                                  onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
+                                  className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex-1 min-w-28">
+                              <label className="block text-xs text-slate-400 mb-0.5">Pantone(s)</label>
+                              <input
+                                value={imp.pantones || ""}
+                                onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
+                                placeholder="e.g. PMS 286 C, White"
+                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                              />
+                            </div>
+                          </>
+                        )}
 
                         <div className="w-28">
                           <label className="block text-xs text-slate-400 mb-0.5">Technique</label>
@@ -1004,7 +1092,7 @@ export default function LineItemEditor({
                             onChange={(e) => updateImprint(idx, { technique: e.target.value })}
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
                           >
-                            {TECHNIQUES.map((t) => (
+                            {getEnabledTechniques().map((t) => (
                               <option key={t}>{t}</option>
                             ))}
                           </select>
@@ -1038,7 +1126,9 @@ export default function LineItemEditor({
 
               <div className="mt-2 space-y-2">
                 <div className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-100">
-                  Pricing note: First print = location with fewest colors. All pricing includes setup.
+                  {(li.imprints || [])[0]?.technique === "Embroidery"
+                    ? "Pricing note: Embroidery priced by stitch count. Additional locations at 70%. Digitizing fee may apply."
+                    : "Pricing note: First print = location with fewest colors. All pricing includes setup."}
                 </div>
               </div>
             </div>

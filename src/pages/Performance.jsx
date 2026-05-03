@@ -2,9 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../components/shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
-} from "recharts";
 import { TrendingUp, ShoppingBag, Users, DollarSign, TrendingDown, ChevronDown, ChevronUp, FileText, RefreshCw, ExternalLink } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -124,12 +121,19 @@ export default function Performance() {
       setQbConnected(isConnected);
 
       if (isConnected) {
-        const qbData = await callQbSync("getPerformanceData");
+        const { dateFrom, dateTo } = getDateRangeValues("thisMonth");
+        const [qbData, plData] = await Promise.all([
+          callQbSync("getPerformanceData", { dateFrom, dateTo }),
+          callQbSync("getReport", { reportName: "ProfitAndLoss", startDate: dateFrom, endDate: dateTo }),
+        ]);
         if (qbData?.error) {
           console.error("getPerformanceData error:", qbData.error);
         }
         setRecords(qbData?.revenue ?? []);
         setExpenses(qbData?.expenses ?? []);
+        if (plData && !plData.error) {
+          setQbPLTotals(extractPLTotals(plData));
+        }
       } else {
         const [perfData, expData] = await Promise.all([
           base44.entities.ShopPerformance.filter({ shop_owner: u.email }, "-date", 1000),
@@ -149,6 +153,50 @@ export default function Performance() {
     }
     load();
   }, []);
+
+  // QB P&L totals for stat cards (single source of truth)
+  const [qbPLTotals, setQbPLTotals] = useState(null);
+
+  // Refetch QB data when date filters change
+  useEffect(() => {
+    if (!qbConnected) return;
+    const from = filters.dateFrom || getDateRangeValues(filters.dateRange).dateFrom;
+    const to = filters.dateTo || getDateRangeValues(filters.dateRange).dateTo;
+    if (!from || !to) return;
+    let cancelled = false;
+    (async () => {
+      const [qbData, plData] = await Promise.all([
+        callQbSync("getPerformanceData", { dateFrom: from, dateTo: to }),
+        callQbSync("getReport", { reportName: "ProfitAndLoss", startDate: from, endDate: to }),
+      ]);
+      if (cancelled) return;
+      if (!qbData?.error) {
+        setRecords(qbData?.revenue ?? []);
+        setExpenses(qbData?.expenses ?? []);
+      }
+      // Extract Total Income and Total Expenses from P&L report
+      if (plData && !plData.error) {
+        const totals = extractPLTotals(plData);
+        setQbPLTotals(totals);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [filters.dateRange, filters.dateFrom, filters.dateTo, qbConnected]);
+
+  function extractPLTotals(report) {
+    let totalIncome = 0, totalExpenses = 0, netIncome = 0;
+    const rows = report?.Rows?.Row ?? [];
+    for (const row of rows) {
+      const summary = row.Summary?.ColData;
+      const header = row.Header?.ColData;
+      const label = (summary?.[0]?.value || header?.[0]?.value || "").toLowerCase();
+      const value = Number(summary?.[1]?.value || 0);
+      if (label.includes("total income")) totalIncome = value;
+      else if (label.includes("total expenses")) totalExpenses = value;
+      else if (label.includes("net income") || label.includes("net operating income")) netIncome = value;
+    }
+    return { totalIncome, totalExpenses, netIncome };
+  }
 
   // ── Date filtering ──
   const filteredRecords = useMemo(() => {
@@ -179,9 +227,11 @@ export default function Performance() {
   }, [expenses, filters]);
 
   // ── KPIs ──
-  const totalRevenue = useMemo(() => filteredRecords.reduce((s, r) => s + (r.total || 0), 0), [filteredRecords]);
-  const totalExpenses = useMemo(() => filteredExpenses.reduce((s, e) => s + (e.total || 0), 0), [filteredExpenses]);
-  const profit = totalRevenue - totalExpenses;
+  const localRevenue = useMemo(() => filteredRecords.reduce((s, r) => s + (r.total || 0), 0), [filteredRecords]);
+  const localExpenses = useMemo(() => filteredExpenses.reduce((s, e) => s + (e.total || 0), 0), [filteredExpenses]);
+  const totalRevenue = qbPLTotals ? qbPLTotals.totalIncome : localRevenue;
+  const totalExpenses = qbPLTotals ? qbPLTotals.totalExpenses : localExpenses;
+  const profit = qbPLTotals ? qbPLTotals.netIncome : (totalRevenue - totalExpenses);
   const profitMargin = totalRevenue ? ((profit / totalRevenue) * 100).toFixed(1) : 0;
   
   const totalOrders = filteredRecords.length;
@@ -212,33 +262,6 @@ export default function Performance() {
     });
     return Object.entries(map).map(([name, count]) => ({ name, count }));
   }, [filteredRecords]);
-
-  // ── Monthly revenue trend with expenses ──
-  const monthlyTrend = useMemo(() => {
-    const map = {};
-    filteredRecords.forEach(r => {
-      if (!r.date) return;
-      const key = r.date.slice(0, 7); // "YYYY-MM"
-      if (!map[key]) map[key] = { revenue: 0, expenses: 0 };
-      map[key].revenue += r.total || 0;
-    });
-    filteredExpenses.forEach(e => {
-      if (!e.payment_date) return;
-      const key = e.payment_date.slice(0, 7);
-      if (!map[key]) map[key] = { revenue: 0, expenses: 0 };
-      map[key].expenses += e.total || 0;
-    });
-    const sorted = Object.entries(map)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-12)
-      .map(([month, data]) => ({
-        month: new Date(month + "-01").toLocaleString("default", { month: "short", year: "2-digit" }),
-        revenue: data.revenue,
-        expenses: data.expenses,
-        profit: data.revenue - data.expenses,
-      }));
-    return sorted;
-  }, [filteredRecords, filteredExpenses]);
 
   // ── Top clients by total order value ──
   const topClients = useMemo(() => {
@@ -403,26 +426,107 @@ export default function Performance() {
         <StatCard icon={Users} label="Total Clients" value={uniqueClients} color="amber" />
       </div>
 
-      {/* Monthly Revenue vs Expenses Trend */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
-        <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4">Revenue vs Expenses</h3>
-        {monthlyTrend.length === 0 ? (
-          <div className="text-slate-400 text-sm py-8 text-center">No data yet.</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={monthlyTrend} barSize={28}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#94a3b8" }} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
-              <Tooltip formatter={v => fmtMoney(v)} />
-              <Legend />
-              <Bar dataKey="revenue" fill="#10b981" radius={[4, 4, 0, 0]} name="Revenue" />
-              <Bar dataKey="expenses" fill="#ef4444" radius={[4, 4, 0, 0]} name="Expenses" />
-              <Bar dataKey="profit" fill="#6366f1" radius={[4, 4, 0, 0]} name="Profit" />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
+      {/* QuickBooks Reports */}
+      {qbConnected && (
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6 space-y-5">
+          <div className="flex items-center gap-2">
+            <FileText className="w-5 h-5 text-indigo-600" />
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">QuickBooks Reports</h3>
+          </div>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex-1 min-w-48">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Report</label>
+              <select
+                value={selectedReport}
+                onChange={(e) => setSelectedReport(e.target.value)}
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              >
+                {QB_REPORTS.map((r) => (
+                  <option key={r.id} value={r.id}>{r.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">From</label>
+              <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)}
+                className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">To</label>
+              <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)}
+                className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            </div>
+            <button
+              onClick={() => fetchQbReport(selectedReport, reportStartDate, reportEndDate)}
+              disabled={qbReportLoading}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+            >
+              <RefreshCw className={`w-4 h-4 ${qbReportLoading ? "animate-spin" : ""}`} />
+              {qbReportLoading ? "Loading…" : "Run Report"}
+            </button>
+          </div>
+
+          {qbReportError && (
+            <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              Reports are not yet available — Intuit typically enables full API access within a few days of app approval.
+              <a href="https://app.qbo.intuit.com/app/reports" target="_blank" rel="noopener noreferrer"
+                className="ml-2 inline-flex items-center gap-1 font-semibold text-indigo-600 hover:underline">
+                Open reports in QuickBooks <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
+
+          {qbReport && (() => {
+            const header = qbReport.Header ?? {};
+            const columns = qbReport.Columns?.Column ?? [];
+            const rows = parseReportRows(qbReport.Rows);
+            const summary = qbReport.Summary?.ColData ?? [];
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">{header.ReportName}</div>
+                    {header.StartPeriod && <div className="text-xs text-slate-400">{header.StartPeriod} — {header.EndPeriod}</div>}
+                  </div>
+                  <a href="https://app.qbo.intuit.com/app/reports" target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
+                    <ExternalLink className="w-3.5 h-3.5" /> Open in QuickBooks
+                  </a>
+                </div>
+                <div className="space-y-0.5 max-h-[500px] overflow-y-auto">
+                  {rows.map((row, i) => (
+                    <div key={i}
+                      className={`grid items-center py-1.5 text-sm rounded-lg px-2 ${
+                        row.type === "header" ? "font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 mt-2"
+                        : row.type === "total" ? "font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 mt-1"
+                        : "text-slate-600 hover:bg-slate-50 dark:bg-slate-800"}`}
+                      style={{ gridTemplateColumns: `1fr ${row.cols.map(() => "120px").join(" ")}`, paddingLeft: `${(row.depth * 16) + 8}px` }}
+                    >
+                      <span className="truncate">{row.label}</span>
+                      {row.cols.map((col, ci) => (
+                        <span key={ci} className="text-right font-mono tabular-nums">
+                          {col.value && !isNaN(parseFloat(col.value)) ? fmtMoney(parseFloat(col.value)) : col.value ?? ""}
+                        </span>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+                {summary.length > 0 && summary[0]?.value && (
+                  <div className="grid items-center py-2.5 px-3 bg-indigo-50 border border-indigo-100 rounded-xl font-bold text-indigo-900 text-sm"
+                    style={{ gridTemplateColumns: `1fr ${summary.slice(1).map(() => "120px").join(" ")}` }}>
+                    <span>{summary[0].value}</span>
+                    {summary.slice(1).map((col, ci) => (
+                      <span key={ci} className="text-right font-mono tabular-nums">
+                        {col.value && !isNaN(parseFloat(col.value)) ? fmtMoney(parseFloat(col.value)) : col.value ?? ""}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       <div className="grid md:grid-cols-3 gap-6">
         {/* Orders by Status */}
@@ -582,112 +686,6 @@ export default function Performance() {
               </tfoot>
             </table>
           </div>
-        </div>
-      )}
-
-      {/* QuickBooks Reports */}
-      {qbConnected && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6 space-y-5">
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">QuickBooks Reports</h3>
-          </div>
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="flex-1 min-w-48">
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Report</label>
-              <select
-                value={selectedReport}
-                onChange={(e) => setSelectedReport(e.target.value)}
-                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              >
-                {QB_REPORTS.map((r) => (
-                  <option key={r.id} value={r.id}>{r.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">From</label>
-              <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)}
-                className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">To</label>
-              <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)}
-                className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-            </div>
-            <button
-              onClick={() => fetchQbReport(selectedReport, reportStartDate, reportEndDate)}
-              disabled={qbReportLoading}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
-            >
-              <RefreshCw className={`w-4 h-4 ${qbReportLoading ? "animate-spin" : ""}`} />
-              {qbReportLoading ? "Loading…" : "Run Report"}
-            </button>
-          </div>
-
-          {qbReportError && (
-            <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-              Reports are not yet available — Intuit typically enables full API access within a few days of app approval.
-              <a href="https://app.qbo.intuit.com/app/reports" target="_blank" rel="noopener noreferrer"
-                className="ml-2 inline-flex items-center gap-1 font-semibold text-indigo-600 hover:underline">
-                Open reports in QuickBooks <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          )}
-
-          {qbReport && (() => {
-            const header = qbReport.Header ?? {};
-            const columns = qbReport.Columns?.Column ?? [];
-            const rows = parseReportRows(qbReport.Rows);
-            const summary = qbReport.Summary?.ColData ?? [];
-            return (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">{header.ReportName}</div>
-                    {header.StartPeriod && <div className="text-xs text-slate-400">{header.StartPeriod} — {header.EndPeriod}</div>}
-                  </div>
-                  <a href="https://app.qbo.intuit.com/app/reports" target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
-                    <ExternalLink className="w-3.5 h-3.5" /> Open in QuickBooks
-                  </a>
-                </div>
-                <div className="space-y-0.5 max-h-[500px] overflow-y-auto">
-                  {rows.map((row, i) => (
-                    <div key={i}
-                      className={`grid items-center py-1.5 text-sm rounded-lg px-2 ${
-                        row.type === "header" ? "font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 mt-2"
-                        : row.type === "total" ? "font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 mt-1"
-                        : "text-slate-600 hover:bg-slate-50 dark:bg-slate-800"}`}
-                      style={{ gridTemplateColumns: `1fr ${row.cols.map(() => "120px").join(" ")}`, paddingLeft: `${(row.depth * 16) + 8}px` }}
-                    >
-                      <span className="truncate">{row.label}</span>
-                      {row.cols.map((col, ci) => (
-                        <span key={ci} className="text-right font-mono tabular-nums">
-                          {col.value && !isNaN(parseFloat(col.value)) ? fmtMoney(parseFloat(col.value)) : col.value ?? ""}
-                        </span>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                {summary.length > 0 && summary[0]?.value && (
-                  <div className="grid items-center py-2.5 px-3 bg-indigo-50 border border-indigo-100 rounded-xl font-bold text-indigo-900 text-sm"
-                    style={{ gridTemplateColumns: `1fr ${summary.slice(1).map(() => "120px").join(" ")}` }}>
-                    <span>{summary[0].value}</span>
-                    {summary.slice(1).map((col, i) => (
-                      <span key={i} className="text-right font-mono">
-                        {col.value && !isNaN(parseFloat(col.value)) ? fmtMoney(parseFloat(col.value)) : col.value ?? ""}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {!qbReport && !qbReportLoading && !qbReportError && (
-            <div className="text-center py-6 text-slate-400 text-sm">Select a report and click Run Report.</div>
-          )}
         </div>
       )}
 

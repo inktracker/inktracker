@@ -1,11 +1,12 @@
 import { useState, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { uploadFile } from "@/lib/uploadFile";
 import {
   Store, Image, Mail, CheckCircle2, ChevronRight,
-  Loader2, Upload, X
+  Loader2, Upload, X, FileText, Package, Users, Settings
 } from "lucide-react";
 
-const QB_CLIENT_ID    = import.meta.env.VITE_QB_CLIENT_ID ?? "ABJLeI2LHqN4eXU90P8rozRsksp5DqdjYvIrzZQ9P7jhIeN7Cf";
+const QB_CLIENT_ID    = import.meta.env.VITE_QB_CLIENT_ID;
 const QB_REDIRECT_URI = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qbOAuthCallback`;
 const SUPABASE_URL    = import.meta.env.VITE_SUPABASE_URL;
 
@@ -21,6 +22,12 @@ export default function OnboardingWizard({ user, onComplete }) {
   const [step, setStep] = useState(0);
   const [shopName, setShopName] = useState(user?.shop_name || "");
   const [contactEmail, setContactEmail] = useState(user?.email || "");
+  const [phone, setPhone] = useState(user?.phone || "");
+  const [address, setAddress] = useState(user?.address || "");
+  const [city, setCity] = useState(user?.city || "");
+  const [stateVal, setStateVal] = useState(user?.state || "");
+  const [zip, setZip] = useState(user?.zip || "");
+  const [taxRate, setTaxRate] = useState(user?.default_tax_rate || "");
   const [logoUrl, setLogoUrl] = useState(user?.logo_url || "");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -48,8 +55,7 @@ export default function OnboardingWizard({ user, onComplete }) {
     } catch {
       // fallback using shared upload helper
       try {
-        const { uploadFile: upload } = await import("@/lib/uploadFile");
-        const { file_url } = await upload(file);
+        const { file_url } = await uploadFile(file);
         if (file_url) setLogoUrl(file_url);
       } catch {}
     } finally {
@@ -95,27 +101,47 @@ export default function OnboardingWizard({ user, onComplete }) {
   async function saveAndFinish() {
     setSaving(true);
     try {
-      await base44.auth.updateMe({
+      const profileData = {
         shop_name: shopName.trim() || user.email,
         logo_url: logoUrl,
-      });
+        phone: phone.trim(),
+        address: address.trim(),
+        city: city.trim(),
+        state: stateVal.trim().toUpperCase(),
+        zip: zip.trim(),
+        default_tax_rate: parseFloat(taxRate) || 0,
+        subscription_tier: user.subscription_tier || "trial",
+        subscription_status: user.subscription_status || "trialing",
+        trial_ends_at: user.trial_ends_at || new Date(Date.now() + 14 * 86400000).toISOString(),
+      };
+      await base44.auth.updateMe(profileData);
 
       // Also upsert a Shop entity so quotes/orders can find it
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
-      const shopPayload = {
-        owner_email: user.email,
-        shop_name: shopName.trim() || user.email,
-        logo_url: logoUrl,
-      };
-      if (shops?.length) {
-        await base44.entities.Shop.update(shops[0].id, shopPayload);
-      } else {
-        await base44.entities.Shop.create(shopPayload);
+      try {
+        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+        const shopPayload = {
+          owner_email: user.email,
+          shop_name: profileData.shop_name,
+          logo_url: logoUrl,
+        };
+        if (shops?.length) {
+          await base44.entities.Shop.update(shops[0].id, shopPayload);
+        } else {
+          await base44.entities.Shop.create(shopPayload);
+        }
+      } catch (shopErr) {
+        console.warn("Shop upsert failed (non-blocking):", shopErr);
       }
 
-      onComplete?.();
+      if (onComplete) {
+        await onComplete();
+      }
+      // Force reload to ensure fresh state
+      window.location.href = "/";
     } catch (err) {
       console.error("Onboarding save error:", err);
+      // Still try to proceed — profile may have saved even if shop failed
+      window.location.href = "/";
     } finally {
       setSaving(false);
     }
@@ -146,12 +172,13 @@ export default function OnboardingWizard({ user, onComplete }) {
           </div>
           <div className="flex justify-between mt-2">
             {STEPS.map((s, i) => (
-              <div
+              <button
                 key={s.id}
-                className={`text-[10px] font-semibold transition ${i <= step ? "text-indigo-300" : "text-slate-600"}`}
+                onClick={() => { if (i < step) setStep(i); }}
+                className={`text-[10px] font-semibold transition ${i < step ? "text-indigo-300 hover:text-indigo-100 cursor-pointer" : i === step ? "text-indigo-300" : "text-slate-600 cursor-default"}`}
               >
                 {s.title.split(" ")[0]}
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -161,9 +188,8 @@ export default function OnboardingWizard({ user, onComplete }) {
           {/* Step header */}
           <div className="px-8 pt-8 pb-6 border-b border-slate-100">
             <div className="flex items-center gap-3 mb-1">
-              <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center">
-                <current.icon className="w-5 h-5 text-white" />
-              </div>
+              <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png"
+                alt="InkTracker" className="w-9 h-9 rounded-xl" />
               <h2 className="text-xl font-bold text-slate-900">{current.title}</h2>
             </div>
           </div>
@@ -175,51 +201,60 @@ export default function OnboardingWizard({ user, onComplete }) {
             {step === 0 && (
               <div className="flex-1 flex flex-col gap-5">
                 <p className="text-slate-600 leading-relaxed">
-                  Hi{user?.email ? ` ${user.email.split("@")[0]}` : ""}! InkTracker is your all-in-one platform for quotes, orders, and production tracking.
+                  Hi{user?.email ? ` ${user.email.split("@")[0].charAt(0).toUpperCase() + user.email.split("@")[0].slice(1)}` : ""}! InkTracker is your all-in-one platform for quotes, orders, and production tracking.
                 </p>
                 <p className="text-slate-600 leading-relaxed">
                   This quick setup takes about 2 minutes. You can change everything later in your Account settings.
                 </p>
-                <div className="grid grid-cols-3 gap-3 mt-2">
-                  {[
-                    { icon: "📋", label: "Quotes & Orders" },
-                    { icon: "📅", label: "Production Calendar" },
-                    { icon: "📊", label: "Performance Reports" },
-                  ].map(({ icon, label }) => (
-                    <div key={label} className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-center">
-                      <div className="text-2xl mb-1">{icon}</div>
-                      <div className="text-xs font-semibold text-indigo-800">{label}</div>
-                    </div>
-                  ))}
-                </div>
               </div>
             )}
 
             {/* ── Step 1: Shop Details ────────────────────────────────────── */}
             {step === 1 && (
               <div className="flex-1 flex flex-col gap-4">
-                <p className="text-sm text-slate-500">This name appears on quotes, invoices, and emails sent to your customers.</p>
+                <p className="text-sm text-slate-500">This info appears on quotes, invoices, and customer emails.</p>
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Shop Name *</label>
-                  <input
-                    type="text"
-                    value={shopName}
-                    onChange={e => setShopName(e.target.value)}
-                    placeholder="Biota MFG, Custom Ink Co., etc."
-                    autoFocus
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900"
-                  />
+                  <input type="text" value={shopName} onChange={e => setShopName(e.target.value)}
+                    placeholder="" autoFocus
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Phone</label>
+                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+                      placeholder=""
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Sales Tax %</label>
+                    <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)}
+                      placeholder=""
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Contact Email</label>
-                  <input
-                    type="email"
-                    value={contactEmail}
-                    onChange={e => setContactEmail(e.target.value)}
-                    placeholder="you@yourshop.com"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900"
-                  />
-                  <p className="text-xs text-slate-400 mt-1.5">This is your login email — customers won't see it.</p>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Street Address</label>
+                  <input type="text" value={address} onChange={e => setAddress(e.target.value)}
+                    placeholder=""
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">City</label>
+                    <input type="text" value={city} onChange={e => setCity(e.target.value)} placeholder=""
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">State</label>
+                    <input type="text" value={stateVal} onChange={e => setStateVal(e.target.value)} placeholder="" maxLength={2}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900 uppercase" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">ZIP</label>
+                    <input type="text" value={zip} onChange={e => setZip(e.target.value)} placeholder=""
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                  </div>
                 </div>
               </div>
             )}
@@ -325,13 +360,13 @@ export default function OnboardingWizard({ user, onComplete }) {
                 </div>
                 <div className="grid grid-cols-2 gap-2 w-full mt-2">
                   {[
-                    { emoji: "📋", label: "Create a Quote" },
-                    { emoji: "📦", label: "Add an Order" },
-                    { emoji: "👥", label: "Add Customers" },
-                    { emoji: "⚙️", label: "Account Settings" },
-                  ].map(({ emoji, label }) => (
+                    { Icon: FileText, label: "Create a Quote" },
+                    { Icon: Package, label: "Add an Order" },
+                    { Icon: Users, label: "Add Customers" },
+                    { Icon: Settings, label: "Account Settings" },
+                  ].map(({ Icon: CardIcon, label }) => (
                     <div key={label} className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
-                      <div className="text-xl mb-0.5">{emoji}</div>
+                      <CardIcon className="w-5 h-5 text-indigo-600 mx-auto mb-1" />
                       <div className="text-xs font-semibold text-slate-600">{label}</div>
                     </div>
                   ))}
@@ -371,14 +406,22 @@ export default function OnboardingWizard({ user, onComplete }) {
                 </button>
               </>
             ) : (
-              <button
-                onClick={saveAndFinish}
-                disabled={saving}
-                className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                {saving ? "Saving…" : "Go to Dashboard"}
-              </button>
+              <>
+                <button
+                  onClick={back}
+                  className="px-4 py-2.5 text-sm font-semibold text-slate-500 border border-slate-200 rounded-xl hover:bg-white transition"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={saveAndFinish}
+                  disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-50"
+                >
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  {saving ? "Saving…" : "Go to Dashboard"}
+                </button>
+              </>
             )}
           </div>
         </div>

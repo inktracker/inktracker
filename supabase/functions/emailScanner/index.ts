@@ -68,23 +68,53 @@ function countSignals(text: string): number {
   ].filter(Boolean).length;
 }
 
+// Strip quoted/threaded portions of an email so the structured parser only
+// sees the latest message. Cuts off at common reply/forward markers and
+// drops any line beginning with ">" (the gmail / standard quote prefix).
+// Gemini gets the full body for its revision-aware reasoning; this helper
+// is only used for the regex parser.
+function latestMessageOnly(body: string): string {
+  const lines = body.split(/\n/);
+  const out: string[] = [];
+  // Reply markers that delimit older quoted replies. We deliberately do
+  // NOT include "Forwarded message" or "From:" lines — forwards have
+  // those at the top, and the order content lives below them. We also
+  // widen the "On X wrote:" length cap to handle long sender lines.
+  const cutoffPatterns = [
+    /^\s*On .{3,140} wrote:\s*$/i,                  // "On Mon, Jan 1, 2026 at 3:00 PM Joe <joe@x.co> wrote:"
+    /^\s*-{3,}\s*Original Message\s*-{3,}\s*$/i,    // "----- Original Message -----"
+  ];
+  for (const line of lines) {
+    if (cutoffPatterns.some((p) => p.test(line))) break;
+    if (line.trim().startsWith(">")) continue;
+    out.push(line);
+  }
+  return out.join("\n");
+}
+
 // Deterministic structured-text parser. Handles "size list" style input —
 // the format shop owners actually paste. Walks lines, treats anything that
 // looks like a garment description as a header that opens a new line item,
 // and assigns subsequent size lines to the current item.
 function structuredParse(body: string): any[] {
-  const lines = body.split(/\n/);
+  const cleaned = latestMessageOnly(body);
+  const lines = cleaned.split(/\n/);
   const items: any[] = [];
   let current: any = null;
 
   const blank = () => ({
     garment: "",
     style: "",
+    brand: "",
     color: "",
     sizes: {} as Record<string, number>,
     description: "",
     colors: 1,
     printLocations: "Front",
+    // imprints array: structured parser fills this in when a header line
+    // contains print details (e.g. "5 color graphic on front, back logo").
+    // Falls back to a single Front 1c imprint if nothing was extracted.
+    imprints: [] as any[],
   });
 
   for (const raw of lines) {
@@ -128,9 +158,44 @@ function structuredParse(body: string): any[] {
       if (styleMatch) garment = garment.replace(styleMatch[0], "");
       current.garment = garment.replace(/[:\-–\s]+$/g, "").trim();
 
+      // Try to extract a brand from the header. If the customer wrote
+      // "Bella Crop Tee 1580" we want to lock the brand to Bella+Canvas
+      // so the catalog lookup picks the right product. Map regex hits to
+      // the canonical brand names InkTracker uses.
+      const brandMap: [RegExp, string][] = [
+        [/bella.*canvas|bella\b/i, "Bella+Canvas"],
+        [/comfort\s*colors/i, "Comfort Colors"],
+        [/next\s*level/i, "Next Level"],
+        [/gildan/i, "Gildan"],
+        [/hanes/i, "Hanes"],
+        [/champion/i, "Champion"],
+        [/independent(\s*trading)?/i, "Independent Trading Co"],
+        [/tultex/i, "Tultex"],
+        [/american\s*apparel/i, "American Apparel"],
+        [/alstyle/i, "Alstyle"],
+        [/royal\s*apparel/i, "Royal Apparel"],
+        [/fruit\s*of\s*the\s*loom/i, "Fruit of the Loom"],
+        [/jerzees/i, "Jerzees"],
+        [/district/i, "District"],
+        [/threadfast/i, "Threadfast"],
+        [/adidas/i, "Adidas"],
+        [/nike/i, "Nike"],
+        [/columbia/i, "Columbia"],
+      ];
+      for (const [re, name] of brandMap) {
+        if (re.test(line)) { current.brand = name; break; }
+      }
+
       // Try to extract a color from the header itself (e.g. "Womens Crop Tee 1580 Black")
-      const colorMatch = line.match(/\b(black|white|navy|red|royal|forest|kelly|olive|charcoal|heather|grey|gray|berry|jade|coral|indigo|rust|sage|pink|orange|yellow|green|blue|tan|cream|natural|maroon|burgundy)\b/i);
+      const colorMatch = line.match(/\b(black|white|navy|red|royal|forest|kelly|olive|charcoal|heather|grey|gray|silver|berry|jade|coral|indigo|rust|sage|pink|orange|yellow|green|blue|tan|cream|natural|maroon|burgundy|stone|bone|sand|khaki|peach|mint|lavender|purple|teal|aqua|brown|chocolate|espresso|sage|moss|brick|wine)\b/i);
       if (colorMatch) current.color = colorMatch[1];
+
+      // Try to extract per-print/imprint info from the header line. Common
+      // shop phrasings: "5 color graphic on front", "back logo", "pocket
+      // logo", "sleeve graphic". Any matches replace the default single
+      // Front imprint.
+      const headerImprints = parseImprintsFromText(line);
+      if (headerImprints.length > 0) current.imprints = headerImprints;
       continue;
     }
   }
@@ -139,136 +204,289 @@ function structuredParse(body: string): any[] {
   return items;
 }
 
-// Parse email content — try deterministic parser first, fall back to Gemini for prose.
-async function parseEmailForQuote(from: string, subject: string, body: string): Promise<any> {
-  const customerName = from.split("<")[0].trim().replace(/"/g, "") || from;
-  const customerEmail = from.match(/<([^>]+)>/)?.[1] || from;
-  const fullText = (subject + " " + body).toLowerCase();
-  const signals = countSignals(fullText);
-  const keywordMatch = signals >= 2;
+// Pull imprint phrases out of a free-text line. Recognises:
+//   "5 color graphic on front"  → Front, 5 colors
+//   "back logo"                 → Back, 1 color
+//   "upper mid back logo"       → Back, 1 color
+//   "pocket logo"               → Pocket, 1 color
+//   "big foot sleeve graphic"   → Right Sleeve, 1 color
+//   "front 3 color"             → Front, 3 colors
+//   "1 color front, 2 color back" → 2 imprints
+function parseImprintsFromText(text: string): any[] {
+  const t = text.toLowerCase();
+  const found: any[] = [];
 
-  // First, try the deterministic structured parser. If it finds at least one
-  // line item with sizes, trust it — the input was structured enough that we
-  // don't need to roll the dice on an LLM. This is the path Joe paste-orders take.
-  const structured = structuredParse(body);
-  const hasStructuredItems = structured.length > 0 &&
-    structured.some((it) => Object.keys(it.sizes).length > 0);
+  const locationFor = (m: string) => {
+    if (/left\s*chest/.test(m)) return "Left Chest";
+    if (/right\s*chest/.test(m)) return "Right Chest";
+    if (/chest/.test(m)) return "Left Chest";
+    if (/left\s*sleeve/.test(m)) return "Left Sleeve";
+    if (/right\s*sleeve/.test(m)) return "Right Sleeve";
+    if (/sleeve/.test(m)) return "Right Sleeve";
+    if (/pocket/.test(m)) return "Pocket";
+    if (/hood/.test(m)) return "Hood";
+    if (/back/.test(m)) return "Back";
+    if (/front/.test(m)) return "Front";
+    return null;
+  };
 
-  if (hasStructuredItems) {
-    return {
-      isQuoteRequest: true,
-      customerName,
-      customerEmail,
-      summary: subject,
-      lineItems: structured,
-      notes: body.slice(0, 500),
-    };
+  // Pattern A: "{N} color {something} {on}? {LOCATION}"
+  // e.g. "5 color graphic on front", "1 color back print"
+  const reA = /(\d+)\s*color[^,;.]{0,40}?(front|back|left\s*chest|right\s*chest|chest|left\s*sleeve|right\s*sleeve|sleeve|pocket|hood)/gi;
+  let m;
+  while ((m = reA.exec(t)) !== null) {
+    const loc = locationFor(m[2]);
+    if (!loc) continue;
+    found.push({ location: loc, colors: parseInt(m[1]), description: "" });
   }
 
-  if (!keywordMatch) {
-    return { isQuoteRequest: false, customerName, customerEmail };
+  // Pattern B: "{LOCATION} {N} color"  e.g. "back 5 color graphic"
+  const reB = /(front|back|left\s*chest|right\s*chest|chest|left\s*sleeve|right\s*sleeve|sleeve|pocket|hood)\s+(\d+)\s*color/gi;
+  while ((m = reB.exec(t)) !== null) {
+    const loc = locationFor(m[1]);
+    if (!loc) continue;
+    // De-dupe if Pattern A already picked it up
+    if (found.some((f) => f.location === loc && f.colors === parseInt(m[2]))) continue;
+    found.push({ location: loc, colors: parseInt(m[2]), description: "" });
   }
 
-  // No structured line items found — body is probably prose. Hand to Gemini if available.
-  if (!GEMINI_API_KEY) {
-    // No AI available; emit a single lumped item from any sizes we can find.
-    const sizeMap: Record<string, number> = {};
-    const sizeRegex = /\b(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]\s*(\d+)/gi;
-    let m;
-    while ((m = sizeRegex.exec(body)) !== null) sizeMap[m[1].toUpperCase()] = parseInt(m[2]);
-    return {
-      isQuoteRequest: true,
-      customerName,
-      customerEmail,
-      summary: subject,
-      lineItems: [{ garment: "", style: "", color: "", sizes: sizeMap, description: "", colors: 1, printLocations: "Front" }],
-      notes: body.slice(0, 500),
-    };
+  // Pattern C: "{LOCATION} (logo|graphic|design|print)" with no color count
+  // — defaults to 1 color. Matches "back logo", "pocket logo", "sleeve graphic"
+  const reC = /(?:upper\s+mid\s+|upper\s+|lower\s+|center\s+|big\s+foot\s+)?(front|back|left\s*chest|right\s*chest|chest|left\s*sleeve|right\s*sleeve|sleeve|pocket|hood)\s+(logo|graphic|design|print|wordmark|crest|emblem)/gi;
+  while ((m = reC.exec(t)) !== null) {
+    const loc = locationFor(m[1]);
+    if (!loc) continue;
+    if (found.some((f) => f.location === loc)) continue;
+    found.push({ location: loc, colors: 1, description: m[2] });
   }
 
-  const prompt = `Analyze this email and determine if it could be related to a screen printing or custom apparel order. Be LIBERAL in your assessment — if the email mentions ANY of the following, mark it as a quote request:
-- Garment types (shirts, tees, hoodies, tanks, crop tops, hats, etc.)
-- Style numbers (like 1580, 3001, 5000)
-- Sizes or quantities (S, M, L, XL, or any numbers)
-- Printing, logos, artwork, designs, colors
-- Pricing, quotes, orders
-- Brand names (Bella Canvas, Comfort Colors, Next Level, Gildan, etc.)
+  // Pattern D: "(logo|graphic) on {LOCATION}" — "logo on back"
+  const reD = /(logo|graphic|design|print|wordmark|crest|emblem)\s+on\s+(?:the\s+)?(front|back|left\s*chest|right\s*chest|chest|left\s*sleeve|right\s*sleeve|sleeve|pocket|hood)/gi;
+  while ((m = reD.exec(t)) !== null) {
+    const loc = locationFor(m[2]);
+    if (!loc) continue;
+    if (found.some((f) => f.location === loc)) continue;
+    found.push({ location: loc, colors: 1, description: m[1] });
+  }
 
-Even casual/conversational emails from existing customers discussing garments or orders should be marked as quote requests.
+  return found;
+}
+
+// Call Gemini to extract the contextual fields (customer info, dates, ship-tos,
+// ink colors, special instructions). Even when the deterministic parser nails
+// the line items, Gemini fills in the rest of the quote. Returns null on any
+// failure so the caller can fall back gracefully.
+async function geminiExtract(from: string, subject: string, body: string): Promise<any | null> {
+  if (!GEMINI_API_KEY) return null;
+
+  const prompt = `You are extracting structured data from a screen-print shop's customer email so a quote can be drafted automatically.
+
+Be LIBERAL about marking it as a quote request — any mention of garments, sizes, style numbers, printing, brand names, or "how much for X" qualifies.
+
+EMAIL THREAD HANDLING (CRITICAL): The pasted text may include a full email thread with replies, forwards, and quoted history — older messages typically appear lower in the text, sometimes prefixed with ">" or "On [date] X wrote:". When the customer revises quantities, sizes, colors, designs, or print specs across the thread, use ONLY THE MOST RECENT (newest) values. Drop superseded numbers entirely; do not include them anywhere in the output.
+
+Examples of revisions you should resolve to the latest:
+  - Earlier: "I need 50 shirts: S 20, M 20, L 10". Later: "Actually let's do S 10, M 30, L 20." → Use S:10, M:30, L:20.
+  - Earlier: "Bella 3001 in heather grey." Later: "Switch to Comfort Colors 1717 in espresso instead." → Use Comfort Colors 1717 espresso.
+  - Earlier: "1 color front print." Later: "Add a back print too, 1 color." → 2 imprints (Front + Back).
+  - Earlier: "Need by Friday." Later: "Push to next Wednesday." → Use the Wednesday date.
+
+When in doubt, prefer the most recent unambiguous statement. If a revision changes only one field (e.g. just sizes), keep the unchanged fields from the earlier message.
+
+LINE ITEMS: each distinct garment SKU (style + color) gets its own row. Sizes listed under a garment header belong to that garment.
+
+IMPRINTS (CRITICAL): each line item has an "imprints" array — ONE ENTRY PER PRINT LOCATION. Examples of how to interpret common phrasings:
+  - "1 color front print" → imprints: [{location: "Front", colors: 1}]
+  - "2 prints, front and back" → imprints: [{location: "Front", colors: 1}, {location: "Back", colors: 1}]
+  - "Front: 3 colors, Back: 1 color" → imprints: [{location: "Front", colors: 3}, {location: "Back", colors: 1}]
+  - "Logo on left chest, wordmark on back" → imprints: [{location: "Left Chest", colors: 1, description: "logo"}, {location: "Back", colors: 1, description: "wordmark"}]
+  - "Full back print, 4 color" → imprints: [{location: "Back", colors: 4}]
+  - "Same print on front and sleeve" → imprints: [{location: "Front", colors: 1}, {location: "Right Sleeve", colors: 1}]
+
+Print locations should be exactly one of: Front, Back, Left Chest, Right Chest, Left Sleeve, Right Sleeve, Pocket, Hood. If a print is described differently, pick the closest of these.
+
+If a print's color count or location applies to all line items uniformly, repeat the same imprints array on each item.
+
+If the email says nothing about prints, default to a single {location: "Front", colors: 1} imprint.
+
+Style numbers are 3–5 digit codes like 1580, 3001, G500, 6210, 75000. Brand examples: Bella+Canvas, Comfort Colors, Next Level, Gildan, Hanes, Champion, Independent Trading Co, Tultex, American Apparel.
+
+For dates, return ISO format (YYYY-MM-DD). If they say "by Friday" without a year, infer the next upcoming Friday from today's date.
 
 From: ${from}
 Subject: ${subject}
-Body: ${body}
+Body:
+${body}
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 {
   "isQuoteRequest": true/false,
-  "customerName": "name from email",
-  "customerEmail": "email address",
-  "company": "company name if mentioned",
-  "phone": "phone if mentioned",
-  "summary": "brief summary of what they want",
+  "customerName": "person's name from signature/from line",
+  "customerEmail": "their email address",
+  "company": "company or organization name if mentioned",
+  "phone": "phone number if mentioned",
+  "summary": "1-sentence summary of what they want",
+  "inHandsDate": "YYYY-MM-DD when they need it by, or null",
+  "rushNeeded": true/false,
   "lineItems": [
     {
-      "garment": "type of garment (t-shirt, hoodie, etc)",
-      "style": "specific style number if mentioned (e.g. 1580, 3001)",
-      "color": "color if mentioned",
-      "quantity": estimated total quantity or 0,
-      "sizes": {"XS": 0, "S": 0, "M": 0, "L": 0, "XL": 0, "2XL": 0},
-      "printLocations": "front, back, etc if mentioned",
-      "colors": number of print colors if mentioned or 1,
-      "description": "print/design description"
+      "garment": "type/description (t-shirt, hoodie, womens crop tee, etc)",
+      "style": "style number (e.g. 1580, 3001, G500)",
+      "brand": "brand name if mentioned (Bella+Canvas, Gildan, etc)",
+      "color": "garment color if mentioned",
+      "sizes": {"XS": 0, "S": 0, "M": 0, "L": 0, "XL": 0, "2XL": 0, "3XL": 0},
+      "imprints": [
+        {
+          "location": "Front | Back | Left Chest | Right Chest | Left Sleeve | Right Sleeve | Pocket | Hood",
+          "colors": <number of print colors, 1 if not stated>,
+          "inkColors": "ink colors if mentioned (e.g. 'white', 'black + red')",
+          "description": "design description if mentioned (e.g. 'logo', 'wordmark', 'crest')",
+          "width": "width if mentioned (e.g. '4\"')",
+          "height": "height if mentioned"
+        }
+      ],
+      "description": "any other notes for this line item"
     }
   ],
-  "rushNeeded": true/false,
-  "notes": "any other relevant details"
+  "shipToAddresses": [
+    {"name": "recipient name", "address": "street, city, state zip", "items": "summary of what they get"}
+  ],
+  "specialInstructions": "any other notes from the email — folding, hangtags, packaging, etc",
+  "notes": "raw paste of anything else relevant from the email"
 }
 
-For sizes, fill in actual numbers from the email if provided. For garment style, extract the style number (like 1580, 3001) if mentioned.`;
+If a field is unknown, return null or omit it. Do not invent data.`;
 
   try {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+          // Match the working debugFullGemini config: thinking off so all
+          // the output budget goes to the response, JSON mime mode so we
+          // don't have to strip ```json fences, generous max tokens for
+          // multi-item threads.
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 8192,
+            thinkingConfig: { thinkingBudget: 0 },
+            responseMimeType: "application/json",
+          },
         }),
       }
     );
-
     if (!res.ok) {
-      console.error("Gemini API failed:", res.status);
-      // Fall back to keyword matcher on API failure
-      if (keywordMatch) {
-        const sizeMap: Record<string, number> = {};
-        const sizeRegex = /\b(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]\s*(\d+)/gi;
-        let m;
-        while ((m = sizeRegex.exec(body)) !== null) sizeMap[m[1].toUpperCase()] = parseInt(m[2]);
-        return { isQuoteRequest: true, customerName, customerEmail, summary: subject, lineItems: [{ garment: "", style: "", color: "", sizes: sizeMap, description: "", colors: 1, printLocations: "Front" }], notes: body.slice(0, 500) };
-      }
-      return { isQuoteRequest: false };
+      const errBody = await res.text();
+      console.error("Gemini API failed:", res.status, errBody.slice(0, 300));
+      return null;
     }
-
     const data = await res.json();
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-    // Strip markdown code fences if present
+    const finishReason = data.candidates?.[0]?.finishReason;
+    if (finishReason && finishReason !== "STOP") {
+      console.error("Gemini finished early:", finishReason);
+    }
     const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-
-    try {
-      return JSON.parse(cleaned);
-    } catch {
+    try { return JSON.parse(cleaned); } catch (e) {
+      console.error("Gemini JSON parse failed:", (e as Error).message, "raw:", cleaned.slice(0, 300));
       const match = cleaned.match(/\{[\s\S]*\}/);
-      if (match) return JSON.parse(match[0]);
-      return { isQuoteRequest: false };
+      if (match) { try { return JSON.parse(match[0]); } catch { /* fall through */ } }
+      return null;
     }
   } catch (err) {
     console.error("Gemini parse error:", err);
-    return { isQuoteRequest: false };
+    return null;
   }
+}
+
+// Parse email content — run BOTH the deterministic structured parser and the
+// Gemini-based contextual extractor in parallel. Use structured line items
+// when available (more reliable for sizes); use Gemini for everything else
+// (customer info, ship-tos, dates, ink colors, special instructions).
+async function parseEmailForQuote(from: string, subject: string, body: string): Promise<any> {
+  const customerNameFallback = from.split("<")[0].trim().replace(/"/g, "") || from;
+  const customerEmailFallback = from.match(/<([^>]+)>/)?.[1] || from;
+  const fullText = (subject + " " + body).toLowerCase();
+  const signals = countSignals(fullText);
+  const keywordMatch = signals >= 2;
+
+  // Always call Gemini if available — it's the smarter extractor for
+  // prose-heavy emails where customers don't follow any consistent format.
+  // Structured parser is a fallback for when Gemini fails (no API key,
+  // network error, malformed response).
+  const gemini: any = await geminiExtract(from, subject, body);
+  const structured = structuredParse(body);
+  const hasStructuredItems = structured.length > 0 &&
+    structured.some((it) => Object.keys(it.sizes).length > 0);
+  const hasGeminiItems = Array.isArray(gemini?.lineItems) && gemini.lineItems.length > 0;
+
+  const isQuoteRequest = hasStructuredItems || hasGeminiItems || gemini?.isQuoteRequest === true || keywordMatch;
+
+  // Pick line items: prefer Gemini (handles prose), fall back to structured
+  // parser if Gemini didn't return anything usable.
+  let lineItems: any[] = hasGeminiItems ? gemini.lineItems : structured;
+
+  // Even when the parser thinks this isn't a quote request, return whatever
+  // contextual data Gemini did pick up plus a blank line item so the modal
+  // can prefill notes/customer/dates and let Joe build out the items by hand.
+  // This avoids the dead-end "couldn't extract" error on prose-style emails.
+  if (!isQuoteRequest) {
+    return {
+      isQuoteRequest: false,
+      customerName: gemini?.customerName || customerNameFallback,
+      customerEmail: gemini?.customerEmail || customerEmailFallback,
+      company: gemini?.company || "",
+      phone: gemini?.phone || "",
+      summary: gemini?.summary || subject,
+      inHandsDate: gemini?.inHandsDate || null,
+      rushNeeded: !!gemini?.rushNeeded,
+      lineItems: [{ garment: "", style: "", brand: "", color: "", sizes: {}, description: "", colors: 1, printLocations: "Front" }],
+      shipToAddresses: Array.isArray(gemini?.shipToAddresses) ? gemini.shipToAddresses : [],
+      specialInstructions: gemini?.specialInstructions || "",
+      notes: gemini?.notes || body.slice(0, 1500),
+    };
+  }
+
+  // When Gemini is primary, supplement with sizes from the structured parser
+  // (the regex parser is more reliable for clean size lists). Match by style.
+  if (hasGeminiItems && hasStructuredItems) {
+    lineItems = lineItems.map((it: any) => {
+      const struct = structured.find((s: any) =>
+        s.style && it.style && String(s.style).toUpperCase() === String(it.style).toUpperCase()
+      );
+      if (!struct) return it;
+      // Only fill in sizes that Gemini missed; don't override Gemini's values.
+      const mergedSizes = { ...(struct.sizes || {}), ...(it.sizes || {}) };
+      return { ...it, sizes: mergedSizes };
+    });
+  }
+
+  // If we still have nothing, lump any sizes we can find into one blank item.
+  if (lineItems.length === 0) {
+    const sizeMap: Record<string, number> = {};
+    const sizeRegex = /\b(XS|S|M|L|XL|2XL|3XL|XXL)\s*[:\-]\s*(\d+)/gi;
+    let m;
+    while ((m = sizeRegex.exec(body)) !== null) sizeMap[m[1].toUpperCase()] = parseInt(m[2]);
+    lineItems = [{ garment: "", style: "", brand: "", color: "", sizes: sizeMap, description: "", colors: 1, printLocations: "Front" }];
+  }
+
+  return {
+    isQuoteRequest: true,
+    customerName: gemini?.customerName || customerNameFallback,
+    customerEmail: gemini?.customerEmail || customerEmailFallback,
+    company: gemini?.company || "",
+    phone: gemini?.phone || "",
+    summary: gemini?.summary || subject,
+    inHandsDate: gemini?.inHandsDate || null,
+    rushNeeded: !!gemini?.rushNeeded,
+    lineItems,
+    shipToAddresses: Array.isArray(gemini?.shipToAddresses) ? gemini.shipToAddresses : [],
+    specialInstructions: gemini?.specialInstructions || "",
+    notes: gemini?.notes || body.slice(0, 1500),
+  };
 }
 
 Deno.serve(async (req) => {
@@ -538,6 +756,103 @@ Deno.serve(async (req) => {
     // WITHOUT inserting a quote. The frontend's "Paste Order" button uses
     // this to prefill the modal — the user reviews, then saves through
     // the normal flow.
+    // ── listGeminiModels ────────────────────────────────────────────
+    // List models available to this Gemini API key so we can pick one
+    // that's actually accessible (free-tier vs paid-tier vs deprecated).
+    if (action === "listGeminiModels") {
+      if (!GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY not set" });
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}`);
+        const data = await r.json();
+        const models = (data.models || [])
+          .filter((m: any) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes("generateContent"))
+          .map((m: any) => ({ name: m.name, displayName: m.displayName }));
+        return json({ status: r.status, count: models.length, models });
+      } catch (err) {
+        return json({ error: (err as Error).message });
+      }
+    }
+
+    // ── debugFullGemini ─────────────────────────────────────────────
+    // Run the EXACT same Gemini call geminiExtract makes (same config,
+    // same prompt), then return the raw HTTP response + parsed parseEmailForQuote
+    // output. Lets us see whether the issue is the call config, the prompt,
+    // or the post-processing.
+    if (action === "debugFullGemini") {
+      const text = body.text || body.emailBody || "";
+      if (!GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY not set" });
+      // Re-build the SAME prompt geminiExtract uses
+      const prompt = `Extract this email's order. Reply with ONLY JSON: {"customerName": "...", "lineItems": [{"style": "...", "brand": "...", "color": "...", "sizes": {"S": 0}}]}\n\n${text}`;
+      try {
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 0.1,
+                maxOutputTokens: 8192,
+                thinkingConfig: { thinkingBudget: 0 },
+                responseMimeType: "application/json",
+              },
+            }),
+          }
+        );
+        const rawText = await r.text();
+        // Also call geminiExtract via the actual function path so we can
+        // compare what extraction produces.
+        const fromExtract = await geminiExtract(body.from || "", body.subject || "", text);
+        return json({
+          fetchStatus: r.status,
+          fetchOk: r.ok,
+          rawResponseFirst2000: rawText.slice(0, 2000),
+          extractResultNull: fromExtract === null,
+          extractResultSummary: fromExtract && {
+            customerName: fromExtract.customerName,
+            itemCount: fromExtract.lineItems?.length,
+            firstItemStyle: fromExtract.lineItems?.[0]?.style,
+          },
+        });
+      } catch (err) {
+        return json({ fetchError: (err as Error).message });
+      }
+    }
+
+    // ── debugGemini ─────────────────────────────────────────────────
+    // Direct Gemini call so we can see what the LLM actually returns for
+    // a given paste. Useful for diagnosing why fields come back empty.
+    if (action === "debugGemini") {
+      const text = body.text || body.emailBody || "";
+      const hasKey = !!GEMINI_API_KEY;
+      if (!hasKey) return json({ error: "GEMINI_API_KEY not set on the function", hasKey });
+      // Hit Gemini directly with a minimal prompt and surface the raw response
+      // so we can see why parseEmailForQuote is getting null back.
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: `Reply with the JSON {"ok": true, "echo": "${text.slice(0, 100).replace(/"/g, "'")}"}` }] }],
+              generationConfig: { temperature: 0, maxOutputTokens: 256 },
+            }),
+          }
+        );
+        const rawText = await res.text();
+        return json({
+          hasKey,
+          fetchStatus: res.status,
+          fetchOk: res.ok,
+          rawResponse: rawText.slice(0, 1500),
+        });
+      } catch (err) {
+        return json({ hasKey, fetchError: (err as Error).message });
+      }
+    }
+
     if (action === "parseOnly") {
       const text = body.text || body.emailBody || "";
       if (!text) return json({ error: "No text provided" });
@@ -552,24 +867,65 @@ Deno.serve(async (req) => {
             if (num > 0) sizes[k] = num;
           }
         }
+
+        // Build imprints array. The structured parser may have already
+        // extracted imprints from header lines (e.g. "5 color graphic on
+        // front, back logo"). Otherwise honor Gemini's array if it sent one.
+        // Final fallback: single Front 1c imprint.
+        let imprintsArr: any[] = [];
+        if (Array.isArray(li.imprints) && li.imprints.length > 0) {
+          imprintsArr = li.imprints.map((imp: any, j: number) => ({
+            id: `imp-${idx}-${j}-${Date.now()}`,
+            location: imp.location || "Front",
+            colors: Number(imp.colors) || 1,
+            technique: "Screen Print",
+            // Title combines design description + ink colors so it's visible
+            // on the line item card without losing either piece of context.
+            title: [imp.description, imp.inkColors ? `Ink: ${imp.inkColors}` : ""]
+              .filter(Boolean).join(" — "),
+            width: imp.width || "",
+            height: imp.height || "",
+            pantones: imp.pantones || "",
+            linked: false,
+          }));
+        }
+        if (imprintsArr.length === 0) {
+          imprintsArr = [{
+            id: `imp-${idx}-${Date.now()}`,
+            location: li.printLocations || "Front",
+            colors: Number(li.colors) || 1,
+            technique: "Screen Print",
+            title: li.description || "",
+            linked: false,
+          }];
+        }
+
         return {
           id: `paste-${idx}-${Date.now()}`,
           style: li.style || "",
-          brand: "",
+          brand: li.brand || "",
           category: li.garment || "",
           garmentColor: li.color || "",
           garmentCost: 0,
           sizes,
-          imprints: [{
-            id: `imp-${idx}-${Date.now()}`,
-            location: li.printLocations || "Front",
-            colors: li.colors || 1,
-            technique: "Screen Print",
-            title: li.description || "",
-            linked: false,
-          }],
+          imprints: imprintsArr,
         };
       });
+
+      // Compose a notes blob that captures special instructions + ship-to
+      // breakdown so Joe can see where each line item is going.
+      let composedNotes = parsed.notes || "";
+      if (parsed.specialInstructions) {
+        composedNotes = [parsed.specialInstructions, composedNotes].filter(Boolean).join("\n\n");
+      }
+      if (Array.isArray(parsed.shipToAddresses) && parsed.shipToAddresses.length > 0) {
+        const shipToBlock = parsed.shipToAddresses
+          .map((s: any, i: number) =>
+            `Ship-to ${i + 1}: ${s.name || ""}${s.address ? " — " + s.address : ""}${s.items ? "\n  " + s.items : ""}`,
+          )
+          .join("\n\n");
+        composedNotes = [shipToBlock, composedNotes].filter(Boolean).join("\n\n");
+      }
 
       return json({
         isQuoteRequest: !!parsed.isQuoteRequest,
@@ -578,8 +934,11 @@ Deno.serve(async (req) => {
         company: parsed.company || "",
         phone: parsed.phone || "",
         summary: parsed.summary || "",
+        inHandsDate: parsed.inHandsDate || null,
         rushNeeded: !!parsed.rushNeeded,
-        notes: parsed.notes || "",
+        shipToAddresses: parsed.shipToAddresses || [],
+        specialInstructions: parsed.specialInstructions || "",
+        notes: composedNotes,
         lineItems,
       });
     }

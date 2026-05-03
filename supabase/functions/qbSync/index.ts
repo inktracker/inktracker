@@ -293,9 +293,11 @@ function buildInvoiceLinesFromPayload(
   payload: any,
   itemIdMap: Map<string, string>,
   defaultItemName: string,
+  taxExempt = false,
 ) {
   const lines: any[] = [];
   const fallbackId = itemIdMap.get(defaultItemName);
+  const taxCode = taxExempt ? "NON" : "TAX";
 
   for (const line of payload?.lines ?? []) {
     const qty = Number(line.qty) || 0;
@@ -315,33 +317,38 @@ function buildInvoiceLinesFromPayload(
         ItemRef: { value: itemId },
         UnitPrice: unitPrice,
         Qty: qty,
+        TaxCodeRef: { value: taxCode },
       },
     });
   }
 
+  // Apply discount directly to line amounts so QB taxes the discounted total
+  // (instead of a separate DiscountLineDetail which QB taxes before applying)
   const discountPct = Number(payload?.discountPercent) || 0;
   const discountFlat = Number(payload?.discountAmount) || 0;
   const isFlat = payload?.discountType === "flat" || discountFlat > 0;
 
-  if (isFlat && discountFlat > 0 && lines.length > 0) {
-    lines.push({
-      DetailType: "DiscountLineDetail",
-      Amount: discountFlat,
-      DiscountLineDetail: {
-        PercentBased: false,
-      },
-    });
-  } else if (discountPct > 0 && lines.length > 0) {
-    const subtotal = lines.reduce((s, l) => s + l.Amount, 0);
-    const discountAmount = Number(((subtotal * discountPct) / 100).toFixed(2));
-    lines.push({
-      DetailType: "DiscountLineDetail",
-      Amount: discountAmount,
-      DiscountLineDetail: {
-        PercentBased: true,
-        DiscountPercent: discountPct,
-      },
-    });
+  if ((isFlat && discountFlat > 0) || discountPct > 0) {
+    const subtotal = lines.reduce((s: number, l: any) => s + (l.DetailType === "SalesItemLineDetail" ? l.Amount : 0), 0);
+    const discountTotal = isFlat ? discountFlat : Number(((subtotal * discountPct) / 100).toFixed(2));
+    const discountLabel = isFlat ? ` (less $${discountFlat.toFixed(2)} discount)` : ` (less ${discountPct}% discount)`;
+
+    // Distribute discount proportionally across line items
+    if (subtotal > 0 && discountTotal > 0) {
+      let remaining = discountTotal;
+      const salesLines = lines.filter((l: any) => l.DetailType === "SalesItemLineDetail");
+      salesLines.forEach((line: any, i: number) => {
+        const share = i === salesLines.length - 1
+          ? remaining  // last line gets the remainder to avoid rounding issues
+          : Number(((line.Amount / subtotal) * discountTotal).toFixed(2));
+        line.Amount = Number((line.Amount - share).toFixed(2));
+        line.Description = (line.Description || "") + discountLabel;
+        if (line.SalesItemLineDetail) {
+          line.SalesItemLineDetail.UnitPrice = Number((line.Amount / (line.SalesItemLineDetail.Qty || 1)).toFixed(4));
+        }
+        remaining = Number((remaining - share).toFixed(2));
+      });
+    }
   }
 
   return lines;
@@ -386,11 +393,22 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // 2. Resolve every QB item referenced by the payload (one per technique)
   const itemIdMap = await resolveItemIdMap(token, realmId, invoicePayload);
 
-  // 3. Build invoice lines from the precomputed payload (matches UI totals)
-  const lines = buildInvoiceLinesFromPayload(invoicePayload, itemIdMap, DEFAULT_ITEM_NAME);
+  // 3. Check QB customer's tax status
+  let isTaxExempt = !!customer?.tax_exempt;
+  try {
+    const qbCustData = await qbQuery(token, realmId, `SELECT * FROM Customer WHERE Id = '${qbCustomerId}'`);
+    const qbCust = qbCustData?.QueryResponse?.Customer?.[0];
+    if (qbCust?.Taxable === false) isTaxExempt = true;
+    console.error(`[createInvoice] QB customer ${qbCustomerId} Taxable=${qbCust?.Taxable}, isTaxExempt=${isTaxExempt}`);
+  } catch (e) {
+    console.error("[createInvoice] QB customer tax check failed (non-fatal):", e);
+  }
+
+  // 4. Build invoice lines from the precomputed payload (matches UI totals)
+  const lines = buildInvoiceLinesFromPayload(invoicePayload, itemIdMap, DEFAULT_ITEM_NAME, isTaxExempt);
   if (lines.length === 0) throw new Error("Invoice payload has no valid lines");
 
-  // 4. Create the invoice
+  // 5. Create the invoice
   const billEmail = quote.customer_email || customer?.email;
   const billAddress = customer?.address;
 
@@ -408,16 +426,24 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 
   if (billEmail) {
     invoiceBody.BillEmail = { Address: billEmail };
-    // Tells QB the invoice is ready to be emailed to the customer
     invoiceBody.EmailStatus = "NeedToSend";
   }
   if (billAddress) {
     invoiceBody.BillAddr = { Line1: billAddress };
     invoiceBody.ShipAddr = { Line1: billAddress };
   }
-  if (customer?.tax_exempt) {
-    invoiceBody.GlobalTaxCalculation = "NotApplicable";
-  }
+  // Tax handling: let QB auto-calculate tax using its own tax codes/rates.
+  // Just mark lines as TAX or NON and QB applies the customer's tax setting.
+  const taxPercent = parseFloat(invoicePayload?.taxPercent) || 0;
+  const taxCode = (isTaxExempt || taxPercent === 0) ? "NON" : "TAX";
+
+  lines.forEach((l: any) => {
+    if (l.SalesItemLineDetail) {
+      l.SalesItemLineDetail.TaxCodeRef = { value: taxCode };
+    }
+  });
+
+  console.error(`[createInvoice] Tax: rate=${taxPercent}%, taxCode=${taxCode}, isTaxExempt=${isTaxExempt}`);
 
   let created: any;
   let qbInvoiceId: string;
@@ -446,7 +472,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         ...invoiceBody,
         Id: found.Id,
         SyncToken: found.SyncToken,
-        sparse: false,
+        sparse: true,
       };
       const updated = await qbUpdate(token, realmId, "invoice", updateBody);
       qbInvoiceId = found.Id;
@@ -976,12 +1002,12 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     if (c.qb_customer_id) custByQbId.set(String(c.qb_customer_id), c);
   }
 
-  // Check existing invoices to avoid duplicates (by invoice_id)
+  // Check existing invoices to deduplicate (by invoice_id)
   const { data: existingInvoices } = await supabase
     .from("invoices")
     .select("id, invoice_id")
     .eq("shop_owner", shopOwner);
-  const existingIds = new Set((existingInvoices ?? []).map((i: any) => i.invoice_id));
+  const existingMap = new Map((existingInvoices ?? []).map((i: any) => [i.invoice_id, i.id]));
 
   let imported = 0;
   let skipped = 0;
@@ -990,8 +1016,8 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   for (const qbInv of all) {
     const docNumber = qbInv.DocNumber || `QB-${qbInv.Id}`;
 
-    // Skip if already imported
-    if (existingIds.has(docNumber)) { skipped++; continue; }
+    // Update if already exists, insert if new
+    const existingId = existingMap.get(docNumber);
 
     const qbCustId = qbInv.CustomerRef?.value;
     const custMatch = qbCustId ? custByQbId.get(String(qbCustId)) : null;
@@ -1026,6 +1052,7 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
 
     const payload: any = {
       invoice_id: docNumber,
+      qb_invoice_id: String(qbInv.Id),
       shop_owner: shopOwner,
       customer_id: custMatch?.id || null,
       customer_name: custMatch?.name || customerName,
@@ -1045,12 +1072,14 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       extras: {},
     };
 
-    const { error } = await supabase.from("invoices").insert(payload);
-    if (error) {
-      console.error("[pullInvoices] insert failed:", error.message, docNumber);
-      skipped++;
+    if (existingId) {
+      const { error } = await supabase.from("invoices").update(payload).eq("id", existingId);
+      if (error) { console.error("[pullInvoices] update failed:", error.message, docNumber); skipped++; }
+      else { updated++; }
     } else {
-      imported++;
+      const { error } = await supabase.from("invoices").insert(payload);
+      if (error) { console.error("[pullInvoices] insert failed:", error.message, docNumber); skipped++; }
+      else { imported++; }
     }
   }
 
@@ -1091,11 +1120,19 @@ async function handleGetCustomerStats(token: string, realmId: string) {
 
 // ── Action: getPerformanceData ──────────────────────────────────────────────
 
-async function handleGetPerformanceData(token: string, realmId: string) {
-  // Fetch paid invoices (Balance = 0) and all purchases in parallel
+async function handleGetPerformanceData(token: string, realmId: string, params: any = {}) {
+  const { dateFrom, dateTo } = params;
+  // Default to last 30 days if no dates provided
+  const now = new Date();
+  const defaultFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30).toISOString().split("T")[0];
+  const defaultTo = now.toISOString().split("T")[0];
+  const from = dateFrom || defaultFrom;
+  const to = dateTo || defaultTo;
+  const dateFilter = `TxnDate >= '${from}' AND TxnDate <= '${to}'`;
+
   const [invoiceRes, purchaseRes] = await Promise.all([
-    qbQuery(token, realmId, "SELECT Id, TxnDate, CustomerRef, TotalAmt, DocNumber, Balance FROM Invoice MAXRESULTS 1000"),
-    qbQuery(token, realmId, "SELECT Id, TxnDate, TotalAmt, PrivateNote, Line FROM Purchase MAXRESULTS 1000"),
+    qbQuery(token, realmId, `SELECT Id, TxnDate, CustomerRef, TotalAmt, DocNumber, Balance FROM Invoice WHERE ${dateFilter} ORDERBY TxnDate DESC MAXRESULTS 1000`),
+    qbQuery(token, realmId, `SELECT Id, TxnDate, TotalAmt, PrivateNote, Line FROM Purchase WHERE ${dateFilter} ORDERBY TxnDate DESC MAXRESULTS 1000`),
   ]);
 
   const allInvoices: any[] = invoiceRes?.QueryResponse?.Invoice ?? [];
@@ -1224,12 +1261,44 @@ Deno.serve(async (req) => {
       case "getCustomerStats":
         result = await handleGetCustomerStats(qbToken, realmId);
         break;
+      case "getInvoicePDF": {
+        const invId = params.qbInvoiceId;
+        if (!invId) throw new Error("qbInvoiceId required");
+        const pdfRes = await fetch(
+          `${QB_BASE}/${realmId}/invoice/${invId}/pdf?minorversion=65`,
+          { headers: { ...qbHeaders(qbToken), Accept: "application/pdf" } }
+        );
+        if (!pdfRes.ok) throw new Error(`QB PDF fetch failed: ${pdfRes.status}`);
+        const pdfBuffer = await pdfRes.arrayBuffer();
+        const base64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
+        result = { pdf: base64, filename: `Invoice-${invId}.pdf` };
+        break;
+      }
       case "getPerformanceData":
-        result = await handleGetPerformanceData(qbToken, realmId);
+        result = await handleGetPerformanceData(qbToken, realmId, params);
         break;
       case "getReport":
         result = await handleGetReport(qbToken, realmId, params);
         break;
+      case "deactivateCustomer": {
+        const custId = params.customerId;
+        if (!custId) throw new Error("customerId required");
+        const custRes = await qbQuery(qbToken, realmId, `SELECT * FROM Customer WHERE Id = '${custId}'`);
+        const cust = custRes?.QueryResponse?.Customer?.[0];
+        if (cust) {
+          await qbUpdate(qbToken, realmId, "customer", {
+            Id: cust.Id,
+            SyncToken: cust.SyncToken,
+            Active: false,
+            DisplayName: cust.DisplayName,
+            sparse: true,
+          });
+          result = { deactivated: true, customerId: custId };
+        } else {
+          result = { deactivated: false, reason: "Customer not found in QB" };
+        }
+        break;
+      }
       default:
         return Response.json({ error: `Unknown action: ${action}` }, { status: 400, headers: CORS });
     }

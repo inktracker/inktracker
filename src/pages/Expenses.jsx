@@ -10,6 +10,7 @@ import ExpenseFormModal from "@/components/expenses/ExpenseFormModal";
 import ExpenseDetailModal from "@/components/expenses/ExpenseDetailModal";
 import ExpenseFilters from "@/components/expenses/ExpenseFilters";
 import { syncExpensesBatch, pullExpensesFromQB } from "@/lib/qbExpenseSync";
+import EmptyState from "@/components/shared/EmptyState";
 
 export default function ExpensesPage() {
   const [user, setUser] = useState(null);
@@ -140,33 +141,35 @@ export default function ExpensesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Expenses</h1>
-        <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <h1 className="text-xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">Expenses</h1>
+        <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
+            size="sm"
             onClick={handlePullQB}
             disabled={qbPull === "running"}
-            className="gap-2 border-[#2CA01C] text-[#2CA01C] hover:bg-[#2CA01C]/5"
+            className="gap-1.5 border-[#2CA01C] text-[#2CA01C] hover:bg-[#2CA01C]/5 text-xs"
           >
-            <DownloadCloud className={`w-4 h-4 ${qbPull === "running" ? "animate-pulse" : ""}`} />
-            {qbPull === "running" ? "Pulling…" : "Pull from QB"}
+            <DownloadCloud className={`w-3.5 h-3.5 ${qbPull === "running" ? "animate-pulse" : ""}`} />
+            {qbPull === "running" ? "Pulling…" : "Pull QB"}
           </Button>
           <Button
             variant="outline"
+            size="sm"
             onClick={handleBulkSyncQB}
             disabled={unsyncedCount === 0 || !!qbBulk}
-            className="gap-2 border-[#2CA01C] text-[#2CA01C] hover:bg-[#2CA01C]/5"
+            className="gap-1.5 border-[#2CA01C] text-[#2CA01C] hover:bg-[#2CA01C]/5 text-xs"
           >
-            <RefreshCw className={`w-4 h-4 ${qbBulk ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${qbBulk ? "animate-spin" : ""}`} />
             {qbBulk
-              ? `Syncing ${qbBulk.done}/${qbBulk.total}…`
+              ? `${qbBulk.done}/${qbBulk.total}`
               : unsyncedCount > 0
-                ? `Sync ${unsyncedCount} to QB`
-                : "All synced to QB"}
+                ? `Sync ${unsyncedCount}`
+                : "Synced"}
           </Button>
-          <Button variant="outline" onClick={handleExport} className="gap-2">
-            <Download className="w-4 h-4" />
+          <Button variant="outline" size="sm" onClick={handleExport} className="gap-1.5 text-xs">
+            <Download className="w-3.5 h-3.5" />
             Export
           </Button>
         </div>
@@ -236,8 +239,10 @@ export default function ExpensesPage() {
           <tbody>
             {filteredExpenses.length === 0 ? (
               <tr>
-                 <td colSpan="6" className="px-4 py-8 text-center text-slate-500">
-                   No expenses found
+                 <td colSpan="6">
+                   {expenses.length === 0
+                     ? <EmptyState type="expenses" onAction={() => { setEditingExpense(null); setShowFormModal(true); }} />
+                     : <div className="px-4 py-8 text-center text-slate-500">No expenses found</div>}
                  </td>
                </tr>
             ) : (
@@ -268,7 +273,9 @@ export default function ExpensesPage() {
 
         <div className="md:hidden divide-y divide-slate-100">
           {filteredExpenses.length === 0 ? (
-            <div className="px-4 py-8 text-center text-slate-500">No expenses found</div>
+            expenses.length === 0
+              ? <EmptyState type="expenses" onAction={() => { setEditingExpense(null); setShowFormModal(true); }} />
+              : <div className="px-4 py-8 text-center text-slate-500">No expenses found</div>
           ) : (
             filteredExpenses.map(expense => (
               <div key={expense.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewingExpense(expense)}>

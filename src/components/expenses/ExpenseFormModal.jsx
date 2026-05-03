@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { Button } from "@/components/ui/button";
-import { X, Plus, Trash2, Upload } from "lucide-react";
+import { X, Plus, Trash2, Upload, Camera } from "lucide-react";
 import { syncExpenseToQB } from "@/lib/qbExpenseSync";
 
 export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
@@ -157,9 +157,9 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
   const total = calculateTotal();
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg w-full h-[90vh] max-h-[90vh] overflow-y-auto shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sticky top-0 bg-white">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-lg w-full sm:max-w-2xl h-[92vh] sm:h-[90vh] max-h-[92vh] sm:max-h-[90vh] overflow-y-auto overflow-x-hidden shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 py-4 sticky top-0 bg-white">
           <h2 className="text-lg font-bold text-slate-900">
             {expense ? "Edit Expense" : "New Expense"}
           </h2>
@@ -168,9 +168,9 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="px-3 py-4 sm:p-6 space-y-5 max-w-full overflow-hidden">
           {/* Top Section */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 min-w-0">
             <div>
               <label className="text-sm font-semibold text-slate-700 block mb-1.5">Payee</label>
               {isAddingPayee ? (
@@ -203,11 +203,11 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
                   </button>
                 </div>
               ) : (
-                <div className="flex gap-2">
+                <div className="flex gap-1.5">
                   <select
                     value={formData.payee}
                     onChange={(e) => setFormData({ ...formData, payee: e.target.value })}
-                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2"
+                    className="flex-1 min-w-0 text-sm border border-slate-200 rounded-lg px-3 py-2"
                     required
                   >
                     <option value="">Select payee…</option>
@@ -220,7 +220,7 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
                   <button
                     type="button"
                     onClick={() => setIsAddingPayee(true)}
-                    className="px-3 py-2 bg-slate-100 text-slate-700 text-sm rounded-lg hover:bg-slate-200 font-semibold whitespace-nowrap"
+                    className="px-2 py-2 bg-slate-100 text-slate-700 text-sm rounded-lg hover:bg-slate-200 font-semibold"
                   >
                     +
                   </button>
@@ -259,11 +259,11 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
                   </button>
                 </div>
               ) : (
-                <div className="flex gap-2">
+                <div className="flex gap-1.5">
                   <select
                     value={formData.payment_account}
                     onChange={(e) => setFormData({ ...formData, payment_account: e.target.value })}
-                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2"
+                    className="flex-1 min-w-0 text-sm border border-slate-200 rounded-lg px-3 py-2"
                   >
                     <option value="">Select account…</option>
                     {paymentAccounts.map((a) => (
@@ -275,20 +275,20 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
                   <button
                     type="button"
                     onClick={() => setIsAddingAccount(true)}
-                    className="px-3 py-2 bg-slate-100 text-slate-700 text-sm rounded-lg hover:bg-slate-200 font-semibold whitespace-nowrap"
+                    className="px-2 py-2 bg-slate-100 text-slate-700 text-sm rounded-lg hover:bg-slate-200 font-semibold"
                   >
                     +
                   </button>
                 </div>
               )}
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="text-sm font-semibold text-slate-700 block mb-1.5">Payment Date</label>
               <input
                 type="date"
                 value={formData.payment_date}
                 onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+                className="w-full min-w-0 max-w-full text-sm border border-slate-200 rounded-lg px-3 py-2 box-border"
                 required
               />
             </div>
@@ -332,15 +332,15 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
               }
             `}</style>
             <div className="space-y-3">
-              <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-slate-600 uppercase mb-2">
+              <div className="hidden sm:grid grid-cols-12 gap-2 text-xs font-semibold text-slate-600 uppercase mb-2">
                 <div className="col-span-3">Category</div>
                 <div className="col-span-6">Description</div>
                 <div className="col-span-2">Amount</div>
                 <div className="col-span-1"></div>
               </div>
               {formData.line_items.map((item, idx) => (
-                <div key={item.id} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-3">
+                <div key={item.id} className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center border border-slate-100 sm:border-0 rounded-lg sm:rounded-none p-3 sm:p-0">
+                  <div className="sm:col-span-3">
                     {isAddingCategory ? (
                       <div className="flex gap-1">
                         <input
@@ -385,7 +385,8 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
                       </div>
                     )}
                   </div>
-                  <div className="col-span-6">
+                  <div className="sm:col-span-6">
+                    <label className="text-xs text-slate-500 sm:hidden mb-1 block">Description</label>
                     <input
                       type="text"
                       value={item.description}
@@ -394,7 +395,9 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
                       className="w-full text-sm border border-slate-200 rounded px-2 py-1.5"
                     />
                   </div>
-                  <div className="col-span-2">
+                  <div className="flex items-center gap-2 sm:contents">
+                  <div className="flex-1 sm:col-span-2">
+                    <label className="text-xs text-slate-500 sm:hidden mb-1 block">Amount</label>
                     <div className="relative">
                       <span className="absolute left-2 top-1.5 text-sm text-slate-600">$</span>
                       <input
@@ -407,7 +410,7 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
                       />
                     </div>
                   </div>
-                  <div className="col-span-1 flex justify-end">
+                  <div className="sm:col-span-1 flex justify-end pt-5 sm:pt-0">
                     <button
                       type="button"
                       onClick={() => removeLineItem(idx)}
@@ -415,6 +418,7 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                  </div>
                   </div>
                 </div>
               ))}
@@ -471,37 +475,35 @@ export default function ExpenseFormModal({ expense, onSave, onClose, user }) {
             />
           </div>
 
-          {/* Attachments */}
+          {/* Receipt / Attachments */}
           <div className="border-t border-slate-200 pt-6">
-            <label className="text-sm font-semibold text-slate-700 block mb-3">Attachments</label>
-            <div className="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center">
-              {formData.attachment_url ? (
-                <div className="text-sm text-slate-600">
-                  ✓ File attached
-                  <button
-                    type="button"
-                    onClick={() => setFormData({ ...formData, attachment_url: "" })}
-                    className="ml-2 text-indigo-600 hover:text-indigo-700"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ) : (
-                <label className="cursor-pointer">
-                  <Upload className="w-6 h-6 text-slate-400 mx-auto mb-2" />
-                  <div className="text-sm text-slate-600">
-                    <span className="text-indigo-600 font-semibold">Add attachment</span>
+            <label className="text-sm font-semibold text-slate-700 block mb-3">Receipt / Attachment</label>
+            {formData.attachment_url ? (
+              <div className="space-y-3">
+                {formData.attachment_url.match(/\.(jpg|jpeg|png|gif|webp|heic)$/i) || formData.attachment_url.includes("image") ? (
+                  <img src={formData.attachment_url} alt="Receipt" className="max-h-48 rounded-xl border border-slate-200 object-contain" />
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-slate-600 bg-slate-50 rounded-lg px-4 py-3 border border-slate-200">
+                    <Upload className="w-4 h-4" /> File attached
                   </div>
-                  <div className="text-xs text-slate-400 mt-1">Max file size: 20 MB</div>
-                  <input
-                    type="file"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    accept="image/*,.pdf,.doc,.docx"
-                  />
+                )}
+                <button type="button" onClick={() => setFormData({ ...formData, attachment_url: "" })}
+                  className="text-sm text-red-500 hover:text-red-600 font-semibold">Remove</button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="cursor-pointer border-2 border-dashed border-slate-200 rounded-xl p-4 sm:p-6 text-center hover:border-indigo-300 transition">
+                  <Camera className="w-5 h-5 text-slate-400 mx-auto mb-1.5" />
+                  <div className="text-xs sm:text-sm font-semibold text-indigo-600">Take Photo</div>
+                  <input type="file" accept="image/*" capture="environment" onChange={handleFileUpload} className="hidden" />
                 </label>
-              )}
-            </div>
+                <label className="cursor-pointer border-2 border-dashed border-slate-200 rounded-xl p-4 sm:p-6 text-center hover:border-indigo-300 transition">
+                  <Upload className="w-5 h-5 text-slate-400 mx-auto mb-1.5" />
+                  <div className="text-xs sm:text-sm font-semibold text-indigo-600">Upload File</div>
+                  <input type="file" accept="image/*,.pdf,.doc,.docx" onChange={handleFileUpload} className="hidden" />
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Actions */}

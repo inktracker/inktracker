@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
+import EmptyState from "../components/shared/EmptyState";
 
 function getThisMonth() {
   const now = new Date();
@@ -14,6 +16,10 @@ function getThisMonth() {
 }
 
 export default function Invoices() {
+  const location = useLocation();
+  const urlParams = new URLSearchParams(location.search);
+  const initialCustomer = urlParams.get("customer") || "";
+
   const [invoices, setInvoices] = useState([]);
   const [customers, setCustomers] = useState({});
   const [loading, setLoading] = useState(true);
@@ -21,33 +27,47 @@ export default function Invoices() {
   const [selected, setSelected] = useState(null);
   const [user, setUser] = useState(null);
   const thisMonth = getThisMonth();
-  const [dateFrom, setDateFrom] = useState(thisMonth.from);
-  const [dateTo, setDateTo] = useState(thisMonth.to);
-  const [advFilters, setAdvFilters] = useState({});
+  const [dateFrom, setDateFrom] = useState(initialCustomer ? "" : thisMonth.from);
+  const [dateTo, setDateTo] = useState(initialCustomer ? "" : thisMonth.to);
+  const [advFilters, setAdvFilters] = useState(initialCustomer ? { customer: initialCustomer } : {});
   const [qbOutstanding, setQbOutstanding] = useState(null);
+  const [sortKey, setSortKey] = useState("date");
+  const [sortDir, setSortDir] = useState("desc");
 
   useEffect(() => {
     async function loadData() {
       const currentUser = await base44.auth.me();
       setUser(currentUser);
-      const [inv, c] = await Promise.all([
-        base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-date", 1000),
-        base44.entities.Customer.filter({ shop_owner: currentUser.email })
-      ]);
-      setInvoices(inv);
+
+      const c = await base44.entities.Customer.filter({ shop_owner: currentUser.email });
       const custMap = {};
       c.forEach(cust => custMap[cust.id] = cust);
       setCustomers(custMap);
+
+      // Load local invoices first, then sync with QB in background
+      const inv = await base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-date", 1000);
+      setInvoices(inv);
       setLoading(false);
 
-      // Pull live outstanding from QB (same source as Dashboard)
+      // Pull live stats and sync from QB (non-blocking)
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
+          // Sync invoices from QB (updates existing, creates new — no duplicates)
+          await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "pullInvoices", accessToken: session.access_token }),
+          });
+          // Reload with fresh data
+          const freshInv = await base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-date", 1000);
+          setInvoices(freshInv);
+
+          // Get live outstanding stats from QB
           const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "getPerformanceData", accessToken: session.access_token }),
+            body: JSON.stringify({ action: "getPerformanceData", accessToken: session.access_token, dateFrom: new Date(new Date().getFullYear(), 0, 1).toISOString().split("T")[0], dateTo: new Date().toISOString().split("T")[0] }),
           });
           if (res.ok) {
             const data = await res.json();
@@ -75,7 +95,14 @@ export default function Invoices() {
     if (filter === "Paid") result = result.filter(i => i.paid);
     else if (filter === "Unpaid") result = result.filter(i => !i.paid);
     // Advanced filters
-    if (advFilters.customer) result = result.filter(i => i.customer_name?.toLowerCase().includes(advFilters.customer.toLowerCase()));
+    if (advFilters.customer) {
+      const q = advFilters.customer.toLowerCase();
+      result = result.filter(i => {
+        const cust = customers[i.customer_id];
+        const hay = [i.customer_name, cust?.company, cust?.name].filter(Boolean).join(" ").toLowerCase();
+        return hay.includes(q);
+      });
+    }
     if (advFilters.invoiceId) result = result.filter(i => i.invoice_id?.toLowerCase().includes(advFilters.invoiceId.toLowerCase()));
     if (advFilters.minTotal) result = result.filter(i => (i.total || 0) >= parseFloat(advFilters.minTotal));
     if (advFilters.maxTotal) result = result.filter(i => (i.total || 0) <= parseFloat(advFilters.maxTotal));
@@ -88,6 +115,39 @@ export default function Invoices() {
     { key: "minTotal", label: "Min Total", type: "text" },
     { key: "maxTotal", label: "Max Total", type: "text" },
   ];
+
+  const toggleSort = (key) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+  const sortArrow = (key) => sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "";
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      let av, bv;
+      if (sortKey === "customer") {
+        av = (getDisplayName(customers[a.customer_id] || a.customer_name) || "").toLowerCase();
+        bv = (getDisplayName(customers[b.customer_id] || b.customer_name) || "").toLowerCase();
+      } else if (sortKey === "total") {
+        av = a.total || 0; bv = b.total || 0;
+      } else if (sortKey === "subtotal") {
+        av = a.subtotal || 0; bv = b.subtotal || 0;
+      } else if (sortKey === "tax") {
+        av = a.tax || 0; bv = b.tax || 0;
+      } else if (sortKey === "date") {
+        av = a.date || ""; bv = b.date || "";
+      } else if (sortKey === "due") {
+        av = a.due || ""; bv = b.due || "";
+      } else if (sortKey === "invoice_id") {
+        av = (a.invoice_id || "").toLowerCase(); bv = (b.invoice_id || "").toLowerCase();
+      } else if (sortKey === "status") {
+        av = a.paid ? 1 : 0; bv = b.paid ? 1 : 0;
+      }
+      if (av < bv) return sortDir === "asc" ? -1 : 1;
+      if (av > bv) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+  }, [filtered, sortKey, sortDir, customers]);
 
   const allUnpaid = invoices.filter(i => !i.paid);
   const allUnpaidTotal = allUnpaid.reduce((s, i) => s + (i.total || 0), 0);
@@ -127,26 +187,26 @@ export default function Invoices() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Invoices</h2>
+        <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">Invoices</h2>
       </div>
-      <div className="grid gap-3 grid-cols-3">
-        <div className="bg-red-50 border border-red-100 rounded-xl p-4 min-w-0">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="bg-red-50 border border-red-100 rounded-xl p-2.5 sm:p-4">
           <div className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">Outstanding</div>
           <div className="text-lg sm:text-2xl font-bold text-red-600 truncate">{fmtMoney(qbOutstanding ? qbOutstanding.total : allUnpaidTotal)}</div>
           <div className="text-[10px] text-red-400">{qbOutstanding ? qbOutstanding.count : allUnpaid.length} unpaid</div>
         </div>
-        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 min-w-0">
+        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 sm:p-4">
           <div className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mb-1">Collected</div>
           <div className="text-lg sm:text-2xl font-bold text-emerald-600 truncate">{fmtMoney(paidTotal)}</div>
           <div className="text-[10px] text-emerald-400">{filtered.filter(i=>i.paid).length} paid</div>
         </div>
-        <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 min-w-0">
+        <div className="bg-slate-50 border border-slate-100 rounded-xl p-2.5 sm:p-4">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Billed</div>
           <div className="text-lg sm:text-2xl font-bold text-slate-700 truncate">{fmtMoney(filteredTotal)}</div>
           <div className="text-[10px] text-slate-400">{filtered.length} invoices</div>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="flex gap-2">
           {["All","Paid","Unpaid"].map(f=>(
             <button key={f} onClick={()=>setFilter(f)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter===f?"bg-indigo-600 text-white border-indigo-600":"bg-white border-slate-200 text-slate-500 hover:border-indigo-300"}`}>{f}</button>
@@ -178,13 +238,29 @@ export default function Invoices() {
         <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-sm">
           <thead><tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-            {["Invoice","Customer","Issued","Due","Subtotal","Tax","Total","Status",""].map(h=>(
-              <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">{h}</th>
+            {[
+              { label: "Invoice", key: "invoice_id" },
+              { label: "Customer", key: "customer" },
+              { label: "Issued", key: "date" },
+              { label: "Due", key: "due" },
+              { label: "Subtotal", key: "subtotal" },
+              { label: "Tax", key: "tax" },
+              { label: "Total", key: "total" },
+              { label: "Status", key: "status" },
+              { label: "", key: null },
+            ].map(h=>(
+              <th key={h.label || "action"} onClick={h.key ? () => toggleSort(h.key) : undefined}
+                className={`text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                {h.label}{h.key ? sortArrow(h.key) : ""}
+              </th>
             ))}
           </tr></thead>
           <tbody>
             {loading && <tr><td colSpan={9} className="px-5 py-8 text-center text-slate-300">Loading…</td></tr>}
-            {filtered.map(inv=>(
+            {!loading && invoices.length === 0 && (
+              <tr><td colSpan={9}><EmptyState type="invoices" /></td></tr>
+            )}
+            {sorted.map(inv=>(
               <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 transition cursor-pointer" onClick={() => setSelected(inv)}>
                 <td className="px-4 py-3.5 font-mono text-xs text-slate-400">{inv.invoice_id}</td>
                 <td className="px-4 py-3.5 font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</td>
@@ -195,13 +271,13 @@ export default function Invoices() {
                 <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(inv.total)}</td>
                 <td className="px-4 py-3.5">
                   {inv.paid
-                    ?<span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Paid {fmtDate(inv.paid_date)}</span>
-                    :<span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">Unpaid</span>
+                    ?<span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full whitespace-nowrap">Paid</span>
+                    :<span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full whitespace-nowrap">Unpaid</span>
                   }
                 </td>
                 <td className="px-4 py-3.5">
                   {!inv.paid && (
-                    <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }} className="text-xs font-semibold text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-lg hover:bg-emerald-50 transition">Mark Paid</button>
+                    <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }} className="text-xs font-semibold text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-lg hover:bg-emerald-50 transition whitespace-nowrap">Mark Paid</button>
                   )}
                 </td>
               </tr>
@@ -212,7 +288,8 @@ export default function Invoices() {
 
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
-          {filtered.map(inv => (
+          {!loading && invoices.length === 0 && <EmptyState type="invoices" />}
+          {sorted.map(inv => (
             <div key={inv.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setSelected(inv)}>
               <div className="flex justify-between items-start mb-2">
                 <div>

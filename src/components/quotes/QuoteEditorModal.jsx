@@ -214,6 +214,17 @@ export default function QuoteEditorModal({
         return;
       }
 
+      // If the backend wasn't confident this was a quote-request format,
+      // keep going — we still want to apply whatever customer / notes data
+      // it did pick up, since the user may just be jotting context first.
+      const lowConfidence = data.isQuoteRequest === false;
+
+      // The lookup happens inside LineItemEditor itself when an item mounts
+      // with a style # but no resolved brand — see the autoLookup useEffect
+      // there. This way the brand dropdown shows up populated with all
+      // matching brands and the user can pick the right one.
+      const finalItems = parsed;
+
       // Merge: replace existing items if the only one is blank, otherwise append.
       setQ((prev) => {
         const onlyBlank =
@@ -221,20 +232,39 @@ export default function QuoteEditorModal({
           !prev.line_items[0].style &&
           !prev.line_items[0].brand &&
           Object.keys(prev.line_items[0].sizes || {}).length === 0;
+
+        // Build a header block summarizing the email's intent so it's the
+        // first thing visible in Job Notes.
+        const headerLines = [];
+        if (data.summary) headerLines.push(data.summary);
+        if (data.inHandsDate) headerLines.push(`In-hands: ${data.inHandsDate}`);
+        if (data.phone) headerLines.push(`Phone: ${data.phone}`);
+        if (data.company) headerLines.push(`Company: ${data.company}`);
+        const header = headerLines.join("\n");
+
         return {
           ...prev,
-          line_items: onlyBlank ? parsed : [...prev.line_items, ...parsed],
-          // If the modal didn't have a customer yet and the parser found one, suggest it
+          line_items: onlyBlank ? finalItems : [...prev.line_items, ...finalItems],
+          // Customer info — only set if not already populated
           ...(!prev.customer_name && data.customerName ? { customer_name: data.customerName } : {}),
           ...(!prev.customer_email && data.customerEmail ? { customer_email: data.customerEmail } : {}),
-          // Append parser notes/summary to existing notes
-          notes: [prev.notes, data.summary, data.notes].filter(Boolean).join("\n\n").trim(),
+          // Job title — pull from summary if blank
+          ...(!prev.job_title && data.summary ? { job_title: data.summary.slice(0, 80) } : {}),
+          // In-hands date — only override if currently the auto-default
+          ...(data.inHandsDate ? { due_date: data.inHandsDate } : {}),
+          // Rush flag
           ...(data.rushNeeded && !prev.rush_rate ? { rush_rate: 0.2 } : {}),
+          // Notes — prepend the parsed header, then any existing notes, then the raw paste body
+          notes: [header, prev.notes, data.notes].filter(Boolean).join("\n\n").trim(),
         };
       });
 
       setPasteText("");
       setShowPaste(false);
+      if (lowConfidence) {
+        // soft toast — the prefill landed but parser wasn't sure
+        setPasteError("");
+      }
     } catch (err) {
       console.error("Paste Order failed:", err);
       setPasteError(err.message || "Something went wrong.");

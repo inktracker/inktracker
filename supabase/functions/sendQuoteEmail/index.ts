@@ -1,10 +1,9 @@
-// Send quote email via Resend
-// Set RESEND_API_KEY in Supabase secrets to enable email sending.
-// Without it, the function returns success but logs instead of sending.
+// Send quote/invoice email via Resend
+// Sends FROM quotes@inktracker.app (verified domain) with Reply-To set to the
+// shop owner or broker's actual email so replies go directly to them.
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-const FROM_EMAIL     = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
-const FROM_NAME      = Deno.env.get("FROM_NAME")  ?? "InkTracker";
+const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@biotamfg.co";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -37,61 +36,83 @@ Deno.serve(async (req) => {
       return Response.json({ error: "No recipient emails provided" }, { status: 400, headers: CORS });
     }
 
-    const emailSubject = subject || `Quote ${quoteId} from ${shopName}`;
-    const emailBody = body || `Hi ${customerName},\n\nPlease find your quote attached.\n\nTotal: $${Number(quoteTotal).toFixed(2)}\n\nView & Pay: ${paymentLink}`;
+    const emailSubject = subject || `Your Quote from ${shopName} - Quote #${quoteId}`;
+    const total = Number(quoteTotal || 0).toFixed(2);
+    const firstName = (customerName || "").split(" ")[0] || "there";
 
-    const htmlBody = emailBody
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/\n/g, "<br>");
+    // If a custom body was provided, use it. Otherwise build a clean default.
+    const customBody = body ? body
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") : "";
 
     const html = `
-      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-        <h2 style="color:#1e293b">${emailSubject}</h2>
-        <p style="color:#475569;line-height:1.6">${htmlBody}</p>
-        ${(paymentLink || approveLink) ? `<div style="margin:32px 0">
-          <a href="${paymentLink || approveLink}"
-            style="background:#4f46e5;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;display:inline-block">
-            ${buttonLabel || "View Quote &amp; Pay Online"}
-          </a>
-        </div>` : ""}
-        ${brokerName ? `<p style="color:#94a3b8;font-size:13px">Submitted by ${brokerName}${brokerEmail ? ` · ${brokerEmail}` : ""}</p>` : ""}
-        <div style="color:#94a3b8;font-size:11px;font-style:italic;margin-top:28px;line-height:1.5">
-          <p style="margin:0 0 8px 0">
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:520px;margin:0 auto;padding:0;">
+        <!-- Header -->
+        <div style="background:#1e293b;padding:28px 32px;border-radius:16px 16px 0 0;text-align:center;">
+          <h1 style="color:#ffffff;font-size:20px;font-weight:700;margin:0;">${shopName || "Your Quote"}</h1>
+          <p style="color:#94a3b8;font-size:13px;margin:6px 0 0;">Quote #${quoteId || ""}</p>
+        </div>
+
+        <!-- Body -->
+        <div style="background:#ffffff;padding:32px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
+          ${customBody ? `<p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px;">${customBody}</p>` : `
+            <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 8px;">Hi ${firstName},</p>
+            <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px;">Your quote is ready for review. Click below to view, approve, or pay online.</p>
+          `}
+
+          <!-- Total -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;text-align:center;margin-bottom:28px;">
+            <p style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin:0 0 4px;">Quote Total</p>
+            <p style="color:#1e293b;font-size:32px;font-weight:800;margin:0;">$${total}</p>
+          </div>
+
+          <!-- CTA Button -->
+          ${(paymentLink || approveLink) ? `
+            <div style="text-align:center;margin-bottom:24px;">
+              <a href="${paymentLink || approveLink}"
+                style="display:inline-block;background:#4f46e5;color:#ffffff;font-size:15px;font-weight:600;padding:14px 36px;border-radius:12px;text-decoration:none;">
+                ${buttonLabel || "View Quote &amp; Pay Online"}
+              </a>
+            </div>
+          ` : ""}
+
+          ${brokerName ? `<p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Submitted by ${brokerName}${brokerEmail ? ` &middot; ${brokerEmail}` : ""}</p>` : ""}
+        </div>
+
+        <!-- Footer -->
+        <div style="background:#f8fafc;padding:20px 32px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 16px 16px;">
+          <p style="color:#94a3b8;font-size:11px;line-height:1.5;margin:0 0 12px;">
             Sales tax shown reflects jurisdictions where we are registered to collect.
             Buyer is responsible for any use tax owed to their home jurisdiction.
           </p>
-          <p style="margin:0">
-            Production tolerance: industry-standard spoilage applies. Orders short up to 3%
-            will receive a credit to your account. Defect rates above 3% will be reprinted
-            at no charge within 7–10 business days. Claims must be submitted with photos
-            within 72 hours of delivery. Misprinted garments do not need to be returned.
-            Approved proofs are final.
+          <p style="color:#cbd5e1;font-size:11px;margin:0;">
+            Powered by <a href="https://www.inktracker.app" style="color:#94a3b8;text-decoration:none;">InkTracker</a>
           </p>
         </div>
-        <p style="color:#cbd5e1;font-size:12px;margin-top:16px">Powered by InkTracker</p>
       </div>
     `;
 
     if (!RESEND_API_KEY) {
-      // Log and return success so the UI still marks the quote as sent
       console.log("[sendQuoteEmail] No RESEND_API_KEY set — email not sent");
       console.log("[sendQuoteEmail] Would have sent to:", customerEmails);
       console.log("[sendQuoteEmail] Subject:", emailSubject);
       return Response.json({ sent: false, reason: "no_api_key" }, { headers: CORS });
     }
 
-    // If a broker sent this quote, show the broker's name on the From line and
-    // route replies to their actual inbox. Send domain stays on our verified
-    // biotamfg.co so SPF/DKIM pass.
+    // From: shows the shop or broker name, sends from verified inktracker.app domain
+    // Reply-To: the actual person's email so customer replies go directly to them
     const escapeQuotes = (s: string) => String(s || "").replace(/"/g, "");
-    const fromName = brokerName ? escapeQuotes(brokerName) : FROM_NAME;
-    const fromHeader = `${fromName} <${FROM_EMAIL}>`;
-    const replyTo = brokerEmail || undefined;
+    const isBrokerSend = !!brokerName;
+    const displayName = isBrokerSend
+      ? escapeQuotes(brokerName)
+      : escapeQuotes(shopName || "InkTracker");
+    const fromHeader = `${displayName} <${SEND_FROM}>`;
+    const replyTo = isBrokerSend
+      ? (brokerEmail || shopOwnerEmail)
+      : (shopOwnerEmail || undefined);
 
     const results = await Promise.all(
       customerEmails.map(async (to: string) => {
+        const bccList = [shopOwnerEmail, brokerEmail].filter(Boolean);
         const res = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
@@ -104,11 +125,7 @@ Deno.serve(async (req) => {
             subject: emailSubject,
             html,
             ...(replyTo ? { reply_to: replyTo } : {}),
-            // BCC the shop owner + broker so they have copies
-            ...(() => {
-              const bccList = [shopOwnerEmail, brokerEmail].filter(Boolean);
-              return bccList.length > 0 ? { bcc: bccList } : {};
-            })(),
+            ...(bccList.length > 0 ? { bcc: bccList } : {}),
             ...(pdfBase64 ? {
               attachments: [{
                 filename: pdfFilename || `Quote-${quoteId}.pdf`,
