@@ -34,6 +34,9 @@ verify_jwt = false
 [functions.createQuoteFromPayload]
 verify_jwt = false
 
+[functions.fedexShipping]
+verify_jwt = false
+
 [functions.hello-world]
 enabled = true
 verify_jwt = true

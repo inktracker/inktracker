@@ -14,7 +14,7 @@ import {
 } from "../shared/pricing";
 import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
-import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer } from "lucide-react";
+import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2 } from "lucide-react";
 
 const STEP_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
@@ -138,6 +138,28 @@ export default function OrderDetailModal({
   const [floorMode, setFloorMode] = useState(false);
   const [liveOrder, setLiveOrder] = useState(order);
 
+  // Shipping
+  const [showShipping, setShowShipping] = useState(false);
+  const [shipStreet, setShipStreet] = useState(order.shipping_address_street || "");
+  const [shipCity, setShipCity] = useState(order.shipping_address_city || "");
+  const [shipState, setShipState] = useState(order.shipping_address_state || "");
+  const [shipZip, setShipZip] = useState(order.shipping_address_zip || "");
+  const [shipCountry, setShipCountry] = useState(order.shipping_address_country || "US");
+  const [shipWeight, setShipWeight] = useState(order.shipping_weight || "");
+  const [shipLength, setShipLength] = useState(order.shipping_length || "");
+  const [shipWidth, setShipWidth] = useState(order.shipping_width || "");
+  const [shipHeight, setShipHeight] = useState(order.shipping_height || "");
+  const [shipService, setShipService] = useState(order.shipping_service_type || "");
+  const [shipRates, setShipRates] = useState([]);
+  const [loadingRates, setLoadingRates] = useState(false);
+  const [creatingLabel, setCreatingLabel] = useState(false);
+  const [shipTracking, setShipTracking] = useState(order.tracking_number || "");
+  const [shipLabelUrl, setShipLabelUrl] = useState(order.shipping_label_url || "");
+  const [shipStatus, setShipStatus] = useState(order.shipping_status || "");
+  const [savingShipping, setSavingShipping] = useState(false);
+  const [shippingSaved, setShippingSaved] = useState(false);
+  const [shipError, setShipError] = useState("");
+
   async function floorToggleTask(task) {
     const step = liveOrder.status || "Pre-Press";
     const checklist = { ...(liveOrder.checklist || {}) };
@@ -178,6 +200,90 @@ export default function OrderDetailModal({
     } finally {
       setSavingCost(false);
     }
+  }
+
+  const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
+
+  async function callFedEx(action, params) {
+    setShipError("");
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/fedexShipping`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, accessToken: session?.access_token, ...params }),
+    });
+    const data = await res.json();
+    if (data.error) setShipError(data.error);
+    return data;
+  }
+
+  async function handleGetRates() {
+    setLoadingRates(true);
+    setShipRates([]);
+    const data = await callFedEx("getRates", {
+      shipTo: { street: shipStreet, city: shipCity, state: shipState, zip: shipZip, country: shipCountry },
+      weight: shipWeight, length: shipLength, width: shipWidth, height: shipHeight,
+    });
+    if (data.rates) setShipRates(data.rates);
+    setLoadingRates(false);
+  }
+
+  async function handleCreateLabel() {
+    if (!shipService) { setShipError("Select a shipping service first"); return; }
+    setCreatingLabel(true);
+    const data = await callFedEx("createShipment", {
+      shipTo: {
+        street: shipStreet, city: shipCity, state: shipState, zip: shipZip, country: shipCountry,
+        name: order.customer_name, company: "",
+      },
+      weight: shipWeight, length: shipLength, width: shipWidth, height: shipHeight,
+      serviceType: shipService,
+      orderId: order.id,
+      customerName: order.customer_name,
+    });
+    if (data.trackingNumber) {
+      setShipTracking(data.trackingNumber);
+      setShipLabelUrl(data.labelUrl || "");
+      setShipStatus("Label Created");
+      // Also open the label for immediate printing
+      if (data.encodedLabel) {
+        const w = window.open("", "_blank");
+        if (w) {
+          w.document.write(`<iframe src="${data.encodedLabel}" style="width:100%;height:100%;border:none"></iframe>`);
+        }
+      }
+    }
+    setCreatingLabel(false);
+  }
+
+  async function handleSaveShipping() {
+    setSavingShipping(true);
+    try {
+      await base44.entities.Order.update(order.id, {
+        shipping_address_street: shipStreet,
+        shipping_address_city: shipCity,
+        shipping_address_state: shipState,
+        shipping_address_zip: shipZip,
+        shipping_address_country: shipCountry,
+        shipping_weight: parseFloat(shipWeight) || null,
+        shipping_length: parseFloat(shipLength) || null,
+        shipping_width: parseFloat(shipWidth) || null,
+        shipping_height: parseFloat(shipHeight) || null,
+        shipping_service_type: shipService,
+      });
+      setShippingSaved(true);
+      setTimeout(() => setShippingSaved(false), 2000);
+    } catch (err) {
+      console.error("Failed to save shipping:", err);
+    } finally {
+      setSavingShipping(false);
+    }
+  }
+
+  async function handleTrackShipment() {
+    if (!shipTracking) return;
+    const data = await callFedEx("trackShipment", { trackingNumber: shipTracking });
+    if (data.status) setShipStatus(data.status);
   }
 
   async function handleArtworkUpload(e) {
@@ -949,6 +1055,161 @@ export default function OrderDetailModal({
                   </div>
                 );
               })()}
+
+              {/* Shipping */}
+              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                <button onClick={() => setShowShipping(!showShipping)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition text-left">
+                  <div className="flex items-center gap-2">
+                    <Truck className="w-4 h-4 text-slate-400" />
+                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Shipping</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {shipTracking && (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-blue-700 bg-blue-50">{shipTracking}</span>
+                    )}
+                    <span className="text-xs text-slate-400">{showShipping ? "▲" : "▼"}</span>
+                  </div>
+                </button>
+                {showShipping && (
+                  <div className="p-4 space-y-4">
+                    {shipError && (
+                      <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{shipError}</div>
+                    )}
+
+                    {/* Already shipped — show tracking info */}
+                    {shipTracking ? (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-bold text-slate-800">Shipment Created</div>
+                            <div className="text-xs text-slate-500 mt-0.5">
+                              Tracking: <span className="font-mono font-semibold text-slate-700">{shipTracking}</span>
+                            </div>
+                            {shipStatus && <div className="text-xs text-slate-400 mt-0.5">Status: {shipStatus}</div>}
+                          </div>
+                          <div className="flex gap-2 shrink-0">
+                            <a
+                              href={`https://www.fedex.com/fedextrack/?trknbr=${shipTracking}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                            >
+                              Track <ExternalLink className="w-3 h-3" />
+                            </a>
+                            {shipLabelUrl && (
+                              <a href={shipLabelUrl} target="_blank" rel="noopener noreferrer"
+                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+                                Label <Download className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                        <button onClick={handleTrackShipment}
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition">
+                          Refresh tracking status
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Ship-to Address */}
+                        <div>
+                          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Ship To</div>
+                          <div className="space-y-2">
+                            <input type="text" placeholder="Street address" value={shipStreet} onChange={e => setShipStreet(e.target.value)}
+                              className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              <input type="text" placeholder="City" value={shipCity} onChange={e => setShipCity(e.target.value)}
+                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                              <input type="text" placeholder="State" value={shipState} onChange={e => setShipState(e.target.value)} maxLength={2}
+                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 uppercase" />
+                              <input type="text" placeholder="ZIP" value={shipZip} onChange={e => setShipZip(e.target.value)}
+                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                              <select value={shipCountry} onChange={e => setShipCountry(e.target.value)}
+                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                                <option value="US">US</option>
+                                <option value="CA">CA</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Package Dimensions */}
+                        <div>
+                          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Package</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            <div>
+                              <label className="text-[10px] text-slate-400">Weight (lbs)</label>
+                              <input type="number" min="0" step="0.1" value={shipWeight} onChange={e => setShipWeight(e.target.value)}
+                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400">Length (in)</label>
+                              <input type="number" min="0" step="1" value={shipLength} onChange={e => setShipLength(e.target.value)}
+                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400">Width (in)</label>
+                              <input type="number" min="0" step="1" value={shipWidth} onChange={e => setShipWidth(e.target.value)}
+                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                            </div>
+                            <div>
+                              <label className="text-[10px] text-slate-400">Height (in)</label>
+                              <input type="number" min="0" step="1" value={shipHeight} onChange={e => setShipHeight(e.target.value)}
+                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Get Rates */}
+                        <div className="flex items-center gap-3">
+                          <button onClick={handleGetRates} disabled={loadingRates || !shipStreet || !shipCity || !shipState || !shipZip || !shipWeight}
+                            className="text-xs font-bold text-white bg-slate-700 hover:bg-slate-800 px-4 py-2 rounded-lg transition disabled:opacity-40">
+                            {loadingRates ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Getting rates...</span> : "Get Rates"}
+                          </button>
+                          <button onClick={handleSaveShipping} disabled={savingShipping}
+                            className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition">
+                            {savingShipping ? "Saving..." : shippingSaved ? "Saved" : "Save address"}
+                          </button>
+                        </div>
+
+                        {/* Rate Results */}
+                        {shipRates.length > 0 && (
+                          <div>
+                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Select Service</div>
+                            <div className="space-y-1.5">
+                              {shipRates.map(r => (
+                                <button key={r.serviceType} onClick={() => setShipService(r.serviceType)}
+                                  className={`w-full text-left flex items-center justify-between px-3 py-2.5 rounded-lg border transition text-sm ${
+                                    shipService === r.serviceType
+                                      ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                                      : "border-slate-200 hover:border-slate-300 text-slate-700"
+                                  }`}>
+                                  <div>
+                                    <span className="font-semibold">{r.serviceName}</span>
+                                    {r.transitDays && <span className="text-xs text-slate-400 ml-2">{r.transitDays}</span>}
+                                  </div>
+                                  <span className="font-bold">${r.totalCharge.toFixed(2)}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Create Label */}
+                        {shipService && (
+                          <button onClick={handleCreateLabel} disabled={creatingLabel}
+                            className="text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-5 py-2.5 rounded-xl transition disabled:opacity-50 w-full sm:w-auto">
+                            {creatingLabel
+                              ? <span className="flex items-center justify-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Creating label...</span>
+                              : "Create Shipping Label"}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Job Costing & Production Assignment */}
               <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
