@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
+import { seedDemoData } from "@/lib/demoSeed";
 import {
   Store, Image, Mail, CheckCircle2, ChevronRight,
   Loader2, Upload, X, FileText, Package, Users, Settings
@@ -33,6 +34,7 @@ export default function OnboardingWizard({ user, onComplete }) {
   const [saving, setSaving] = useState(false);
   const [qbChecking, setQbChecking] = useState(false);
   const [qbConnected, setQbConnected] = useState(false);
+  const [seedDemo, setSeedDemo] = useState(true);
   const fileRef = useRef();
 
   const totalSteps = STEPS.length;
@@ -133,6 +135,16 @@ export default function OnboardingWizard({ user, onComplete }) {
         console.warn("Shop upsert failed (non-blocking):", shopErr);
       }
 
+      // Seed demo data if the user opted in. Non-blocking on failure —
+      // we'd rather drop them into the app than fail the whole flow.
+      if (seedDemo && user?.email) {
+        try {
+          await seedDemoData(user.email);
+        } catch (seedErr) {
+          console.warn("Demo seed failed (non-blocking):", seedErr);
+        }
+      }
+
       if (onComplete) {
         await onComplete();
       }
@@ -206,6 +218,21 @@ export default function OnboardingWizard({ user, onComplete }) {
                 <p className="text-slate-600 leading-relaxed">
                   This quick setup takes about 2 minutes. You can change everything later in your Account settings.
                 </p>
+
+                <label className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition">
+                  <input
+                    type="checkbox"
+                    checked={seedDemo}
+                    onChange={(e) => setSeedDemo(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 accent-indigo-600 cursor-pointer"
+                  />
+                  <span className="text-sm text-slate-700">
+                    <span className="font-semibold">Add sample data so I can explore</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">
+                      Creates 3 demo customers, 5 quotes, and 2 orders. Each is prefixed "Demo —" so they're easy to delete.
+                    </span>
+                  </span>
+                </label>
               </div>
             )}
 

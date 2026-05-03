@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../components/shared/pricing";
-import { Loader2, RefreshCw, ShoppingBag, Check, ChevronDown, ChevronRight, Package, Search, Plus, X, Edit3, Trash2, ShoppingCart } from "lucide-react";
+import { Loader2, RefreshCw, ShoppingBag, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Trash2, ShoppingCart } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;

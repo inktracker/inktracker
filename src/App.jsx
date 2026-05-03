@@ -4,6 +4,8 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/toaster";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
+import Changelog from "./pages/Changelog.jsx";
+import Security from "./pages/Security.jsx";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import { pagesConfig } from "./pages.config";
@@ -33,6 +35,8 @@ const PUBLIC_PAGE_NAMES = [
   "ShopFloor",
   "privacy",
   "terms",
+  "changelog",
+  "security",
 ];
 
 const PUBLIC_PATHS = new Set(
@@ -307,6 +311,8 @@ function PublicLandingPage() {
               <span className="text-xs text-slate-600 ml-2">Built by screen printers in Reno, NV</span>
             </div>
             <div className="flex gap-6 text-xs text-slate-600">
+              <a href="/changelog" className="hover:text-slate-400">Changelog</a>
+              <a href="/security" className="hover:text-slate-400">Security</a>
               <a href="/privacy" className="hover:text-slate-400">Privacy</a>
               <a href="/terms" className="hover:text-slate-400">Terms</a>
               <a href="mailto:support@inktracker.app" className="hover:text-slate-400">Support</a>
@@ -435,6 +441,8 @@ function AppRoutes() {
 
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/terms" element={<Terms />} />
+        <Route path="/changelog" element={<Changelog />} />
+        <Route path="/security" element={<Security />} />
 
         <Route path="*" element={<PageNotFound />} />
       </Routes>
