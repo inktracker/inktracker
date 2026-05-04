@@ -3,6 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { Mail, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { calcQuoteTotals, buildQBInvoicePayload, fmtMoney, BROKER_MARKUP } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
+import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -157,6 +158,13 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         console.warn("[SendQuoteModal] PDF generation failed:", pdfErr);
       }
 
+      // Inject [Ref: <quoteId>] into the subject so customer replies can be
+      // routed back to this thread by emailScanner (PR2).
+      const taggedSubject = addRefTag(
+        subject || `Your Quote from ${shopName || "Your Shop"} - Quote #${quote.quote_id}`,
+        quote.quote_id
+      );
+
       const { data: res, error: invokeErr } = await supabase.functions.invoke("sendQuoteEmail", {
         body: {
           customerEmails: recipientEmails,
@@ -166,7 +174,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           paymentLink,
           approveLink: paymentLink,
           shopName: shopName || "Your Shop",
-          subject,
+          subject: taggedSubject,
           body,
           brokerName: quote.broker_name || "",
           brokerEmail: quote.broker_id || quote.broker_email || "",
@@ -189,6 +197,24 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         tax_rate: isBrokerQuote(quote) ? 0 : quote.tax_rate,
         customer_email: recipientEmails[0],
       });
+
+      // Log the sent email into the per-job message thread.
+      // Best-effort: don't fail the whole flow if this errors.
+      const threadId = quoteThreadId(quote);
+      if (threadId) {
+        await Promise.all(
+          recipientEmails.map((to) =>
+            logOutboundMessage({
+              threadId,
+              fromEmail: quote.shop_owner || "",
+              fromName: shopName || "Your Shop",
+              toEmail: to,
+              subject: taggedSubject,
+              body: body || `Quote ${quote.quote_id} sent to ${to}.`,
+            })
+          )
+        );
+      }
 
       setSent(true);
       onSuccess?.();

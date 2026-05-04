@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import MessagesTab from "../shared/MessagesTab";
+import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
+import { MessageSquare } from "lucide-react";
 import {
   calcGroupPrice,
   fmtDate,
@@ -1301,6 +1304,29 @@ export default function OrderDetailModal({
           ) : (
             <div className="text-center py-8 text-slate-300 text-sm">
               No line items in this order.
+            </div>
+          )}
+        </div>
+
+        {/* Messages — combined thread for the originating quote AND this order. */}
+        <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-2 mb-3">
+            <MessageSquare className="w-4 h-4 text-slate-500" />
+            <h3 className="text-sm font-semibold text-slate-700">Messages</h3>
+          </div>
+          <MessagesTab
+            threadId={orderThreadId(order)}
+            currentUserEmail={order.shop_owner}
+          />
+          {order.quote_id && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="text-xs font-semibold text-slate-500 mb-2">
+                From originating quote {order.quote_id}
+              </div>
+              <MessagesTab
+                threadId={quoteThreadId(order.quote_id)}
+                currentUserEmail={order.shop_owner}
+              />
             </div>
           )}
         </div>

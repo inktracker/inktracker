@@ -4,6 +4,9 @@ import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getQty, BIG_
 import { exportInvoiceToPDF } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
+import MessagesTab from "../shared/MessagesTab";
+import { invoiceThreadId } from "@/lib/messageThreads";
+import { MessageSquare } from "lucide-react";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice }) {
   const [loading, setLoading] = useState(false);
@@ -312,6 +315,15 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               <span className="text-2xl">{fmtMoney(invoice.total)}</span>
             </div>
           </div>
+        </div>
+
+        {/* Messages — outbound history, read-only in PR1. */}
+        <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
+          <div className="flex items-center gap-2 mb-3">
+            <MessageSquare className="w-4 h-4 text-slate-500" />
+            <h3 className="text-sm font-semibold text-slate-700">Messages</h3>
+          </div>
+          <MessagesTab threadId={invoiceThreadId(invoice)} currentUserEmail={invoice.shop_owner} />
         </div>
 
         {/* Footer */}

@@ -3,6 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { Mail, Loader2, CheckCircle2, X } from "lucide-react";
 import { fmtMoney, buildQBInvoicePayload } from "../shared/pricing";
 import { exportInvoiceToPDF } from "../shared/pdfExport";
+import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -108,13 +109,15 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
         : body;
       setPaymentLink(qbPayLink);
 
+      const taggedSubject = addRefTag(subject, invoice.invoice_id);
+
       const { data: res, error: invokeErr } = await supabase.functions.invoke("sendQuoteEmail", {
         body: {
           customerEmails: recipientEmails,
           customerName: invoice.customer_name || "Customer",
           quoteId: invoice.invoice_id,
           shopName: shopName || "Your Shop",
-          subject,
+          subject: taggedSubject,
           body: finalBody,
           paymentLink: qbPayLink || "",
           approveLink: qbPayLink || "",
@@ -132,6 +135,23 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       await base44.entities.Invoice.update(invoice.id, {
         status: "Sent",
       });
+
+      // Log to per-job message thread (best-effort).
+      const threadId = invoiceThreadId(invoice);
+      if (threadId) {
+        await Promise.all(
+          recipientEmails.map((to) =>
+            logOutboundMessage({
+              threadId,
+              fromEmail: invoice.shop_owner || "",
+              fromName: shopName || "Your Shop",
+              toEmail: to,
+              subject: taggedSubject,
+              body: finalBody || `Invoice ${invoice.invoice_id} sent to ${to}.`,
+            })
+          )
+        );
+      }
 
       setSent(true);
       onSuccess?.();

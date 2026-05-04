@@ -18,6 +18,9 @@ import {
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
+import MessagesTab from "../shared/MessagesTab";
+import { quoteThreadId } from "@/lib/messageThreads";
+import { MessageSquare } from "lucide-react";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
@@ -738,6 +741,15 @@ export default function QuoteDetailModal({
               </button>
             </div>
           )}
+
+          {/* Messages — outbound history, read-only in PR1. Reply UI ships in PR2. */}
+          <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
+            <div className="flex items-center gap-2 mb-3">
+              <MessageSquare className="w-4 h-4 text-slate-500" />
+              <h3 className="text-sm font-semibold text-slate-700">Messages</h3>
+            </div>
+            <MessagesTab threadId={quoteThreadId(quote)} currentUserEmail={quote.shop_owner} />
+          </div>
 
           <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
             <button
