@@ -52,14 +52,23 @@ Deno.serve(async (req) => {
       return Response.redirect(`${APP_URL}/Account?gmail_error=state_mismatch`);
     }
 
+    const tokenFields = {
+      gmail_access_token:     tokens.access_token,
+      gmail_refresh_token:    tokens.refresh_token,
+      gmail_token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
+      gmail_oauth_state:      null,
+    };
+
+    // Authoritative write to profile_secrets (RLS-locked to service-role).
+    await supabaseAdmin
+      .from("profile_secrets")
+      .upsert({ profile_id: profile.id, ...tokenFields, updated_at: new Date().toISOString() },
+              { onConflict: "profile_id" });
+
+    // Dual-write to profiles during the migration window.
     await supabaseAdmin
       .from("profiles")
-      .update({
-        gmail_access_token: tokens.access_token,
-        gmail_refresh_token: tokens.refresh_token,
-        gmail_token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-        gmail_oauth_state: null,
-      })
+      .update(tokenFields)
       .eq("id", profile.id);
 
     return Response.redirect(`${APP_URL}/Account?gmail_connected=1`);

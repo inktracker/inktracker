@@ -74,11 +74,20 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
   }
 
   const fresh = await refreshToken(profile.qb_refresh_token);
-  await supabase.from("profiles").update({
+  const refreshedFields = {
     qb_access_token:     fresh.access_token,
     qb_refresh_token:    fresh.refresh_token ?? profile.qb_refresh_token,
     qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
-  }).eq("id", profile.id);
+  };
+
+  // Authoritative write — profile_secrets (RLS-locked to service-role).
+  await supabase.from("profile_secrets").upsert(
+    { profile_id: profile.id, ...refreshedFields, updated_at: new Date().toISOString() },
+    { onConflict: "profile_id" },
+  );
+
+  // Dual-write to old columns until they're dropped in a follow-up migration.
+  await supabase.from("profiles").update(refreshedFields).eq("id", profile.id);
 
   return { accessToken: fresh.access_token, realmId: profile.qb_realm_id };
 }
