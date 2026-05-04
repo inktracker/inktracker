@@ -80,3 +80,16 @@ export function parseStoredBody(stored) {
   if (match) return { subject: match[1].trim(), body: match[2] };
   return { subject: null, body: stored };
 }
+
+// Internal notes: tagged inline in the body so we don't need a new column.
+// MessagesTab strips this on display.
+export const INTERNAL_PREFIX = "[INTERNAL]\n\n";
+
+export function isInternalBody(stored) {
+  return typeof stored === "string" && stored.startsWith(INTERNAL_PREFIX);
+}
+
+export function stripInternalPrefix(stored) {
+  if (!stored) return "";
+  return stored.startsWith(INTERNAL_PREFIX) ? stored.slice(INTERNAL_PREFIX.length) : stored;
+}

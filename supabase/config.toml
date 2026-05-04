@@ -28,6 +28,9 @@ verify_jwt = false
 [functions.sendQuoteEmail]
 verify_jwt = false
 
+[functions.sendReply]
+verify_jwt = false
+
 [functions.adminAction]
 verify_jwt = false
 
