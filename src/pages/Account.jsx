@@ -1375,17 +1375,19 @@ function PricingConfigSection({ user }) {
       {/* Garment Markup — applies to all decoration types */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Garment Markup</h4>
-        <p className="text-[10px] text-slate-400 mb-2">Multiplier applied to wholesale garment cost. Higher markup for cheaper garments.</p>
+        <p className="text-[10px] text-slate-400 mb-2">Percentage added to wholesale garment cost. Higher markup for cheaper garments.</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {config.garmentMarkup.map((tier, i) => (
             <div key={i} className="border border-slate-200 rounded-lg p-2">
               <label className="text-[10px] text-slate-400 block mb-1">
                 {tier.above > 0 ? `Above $${tier.above}` : "Default"}
               </label>
-              <input type="number" step="0.01" value={tier.markup}
-                onChange={e => updateMarkup(i, "markup", e.target.value)}
-                className={inputCls} />
-              <div className="text-[9px] text-slate-400 text-center mt-0.5">{Math.round((tier.markup - 1) * 100)}% markup</div>
+              <div className="relative">
+                <input type="number" step="1" value={Math.round((tier.markup - 1) * 100)}
+                  onChange={e => updateMarkup(i, "markup", (parseFloat(e.target.value) || 0) / 100 + 1)}
+                  className={inputCls} />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
+              </div>
             </div>
           ))}
         </div>
@@ -1425,24 +1427,38 @@ function PricingConfigSection({ user }) {
       {/* Extras & Fees */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Extra Fees (per piece)</h4>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[
-            { key: "colorMatch", label: "Color Match" },
-            { key: "difficultPrint", label: "Difficult Print" },
-            { key: "waterbased", label: "Waterbased Ink" },
-            { key: "tags", label: "Printed Tags" },
-          ].map(({ key, label }) => (
-            <div key={key}>
-              <label className="text-[10px] text-slate-400 block mb-1">{label}</label>
-              <div className="relative">
+        <p className="text-[10px] text-slate-400 mb-2">Rename, reprice, or remove fees. Add new ones with the button below.</p>
+        <div className="space-y-2">
+          {Object.entries(config.extras || {}).map(([key, val]) => (
+            <div key={key} className="flex items-center gap-2">
+              <input type="text" value={config.extraLabels?.[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()}
+                onChange={e => setConfig(prev => ({ ...prev, extraLabels: { ...(prev.extraLabels || {}), [key]: e.target.value } }))}
+                className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+              <div className="relative w-24 shrink-0">
                 <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-                <input type="number" step="0.01" value={config.extras[key] || ""}
+                <input type="number" step="0.01" value={val}
                   onChange={e => updateExtra(key, e.target.value)}
-                  className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
               </div>
+              <button onClick={() => setConfig(prev => {
+                const next = { ...prev, extras: { ...prev.extras } };
+                delete next.extras[key];
+                if (next.extraLabels) { next.extraLabels = { ...next.extraLabels }; delete next.extraLabels[key]; }
+                return next;
+              })} className="text-slate-300 hover:text-red-500 transition text-sm px-1" title="Remove">&times;</button>
             </div>
           ))}
         </div>
+        <button onClick={() => {
+          const id = `custom_${Date.now()}`;
+          setConfig(prev => ({
+            ...prev,
+            extras: { ...(prev.extras || {}), [id]: 0 },
+            extraLabels: { ...(prev.extraLabels || {}), [id]: "New Fee" },
+          }));
+        }} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 mt-2 transition">
+          + Add fee
+        </button>
       </div>
 
       {/* Other Rates */}
