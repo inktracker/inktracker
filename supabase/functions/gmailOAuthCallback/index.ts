@@ -59,17 +59,22 @@ Deno.serve(async (req) => {
       gmail_oauth_state:      null,
     };
 
-    // Authoritative write to profile_secrets (RLS-locked to service-role).
-    await supabaseAdmin
-      .from("profile_secrets")
-      .upsert({ profile_id: profile.id, ...tokenFields, updated_at: new Date().toISOString() },
-              { onConflict: "profile_id" });
-
-    // Dual-write to profiles during the migration window.
+    // PRIMARY write — profiles (the proven path that all readers still use).
     await supabaseAdmin
       .from("profiles")
       .update(tokenFields)
       .eq("id", profile.id);
+
+    // SECONDARY write — profile_secrets (new RLS-locked home). Best-effort
+    // during migration; a failure here doesn't break the user's connection.
+    try {
+      await supabaseAdmin
+        .from("profile_secrets")
+        .upsert({ profile_id: profile.id, ...tokenFields, updated_at: new Date().toISOString() },
+                { onConflict: "profile_id" });
+    } catch (secretsErr) {
+      console.warn("[gmailOAuthCallback] dual-write to profile_secrets failed (non-fatal):", secretsErr);
+    }
 
     return Response.redirect(`${APP_URL}/Account?gmail_connected=1`);
   } catch (err) {

@@ -80,14 +80,31 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
     qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
   };
 
-  // Authoritative write — profile_secrets (RLS-locked to service-role).
-  await supabase.from("profile_secrets").upsert(
-    { profile_id: profile.id, ...refreshedFields, updated_at: new Date().toISOString() },
-    { onConflict: "profile_id" },
-  );
+  // PRIMARY write — the legacy profiles columns. We must persist the rotated
+  // refresh token here because QB invalidates the old one the moment it issues
+  // a new one. If this write fails, every future QB call is dead until the
+  // user reconnects, so it's the highest-priority operation.
+  const { error: profilesErr } = await supabase
+    .from("profiles")
+    .update(refreshedFields)
+    .eq("id", profile.id);
+  if (profilesErr) {
+    console.error("[qbSync] CRITICAL: failed to persist refreshed QB tokens to profiles:", profilesErr);
+    throw new Error(`Token persist failed: ${profilesErr.message}`);
+  }
 
-  // Dual-write to old columns until they're dropped in a follow-up migration.
-  await supabase.from("profiles").update(refreshedFields).eq("id", profile.id);
+  // SECONDARY write — profile_secrets (the new home). Best-effort during the
+  // migration window. If this fails, the next call will simply read from the
+  // (still-correct) profiles columns. Don't let a secondary write failure
+  // invalidate a successfully-rotated token.
+  try {
+    await supabase.from("profile_secrets").upsert(
+      { profile_id: profile.id, ...refreshedFields, updated_at: new Date().toISOString() },
+      { onConflict: "profile_id" },
+    );
+  } catch (secretsErr) {
+    console.warn("[qbSync] dual-write to profile_secrets failed (non-fatal):", secretsErr);
+  }
 
   return { accessToken: fresh.access_token, realmId: profile.qb_realm_id };
 }

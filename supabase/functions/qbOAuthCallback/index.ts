@@ -78,9 +78,6 @@ Deno.serve(async (req) => {
       return Response.redirect(`${appBaseUrl}/Account?qb_error=state_mismatch`);
     }
 
-    // Write tokens to profile_secrets (the new home — RLS-locked to service-role only).
-    // We also dual-write to the old profiles columns until they're dropped, so any
-    // other code path that hasn't been updated yet still sees the new values.
     const tokenFields = {
       qb_access_token:     tokens.access_token,
       qb_refresh_token:    tokens.refresh_token,
@@ -89,25 +86,28 @@ Deno.serve(async (req) => {
       qb_oauth_state:      null,  // clear the one-time state
     };
 
-    const { error: secretsErr } = await supabaseAdmin
-      .from("profile_secrets")
-      .upsert({ profile_id: profile.id, ...tokenFields, updated_at: new Date().toISOString() },
-              { onConflict: "profile_id" });
-
-    if (secretsErr) {
-      console.error("Failed to store QB tokens in profile_secrets:", secretsErr);
-      return Response.redirect(`${appBaseUrl}/Account?qb_error=storage_failed`);
-    }
-
-    // Dual-write to profiles (will be removed once columns are dropped).
+    // PRIMARY write — profiles (the legacy path that all readers still use).
+    // If this fails the connection is broken regardless of where else we write,
+    // so it's the operation that must succeed.
     const { error: updateErr } = await supabaseAdmin
       .from("profiles")
       .update(tokenFields)
       .eq("id", profile.id);
 
     if (updateErr) {
-      // Non-fatal — the authoritative copy is already in profile_secrets.
-      console.warn("[qbOAuthCallback] dual-write to profiles failed (non-fatal):", updateErr.message);
+      console.error("Failed to store QB tokens in profiles:", updateErr);
+      return Response.redirect(`${appBaseUrl}/Account?qb_error=storage_failed`);
+    }
+
+    // SECONDARY write — profile_secrets (new RLS-locked home). Best-effort
+    // during migration. A failure here doesn't break the user's connection.
+    try {
+      await supabaseAdmin
+        .from("profile_secrets")
+        .upsert({ profile_id: profile.id, ...tokenFields, updated_at: new Date().toISOString() },
+                { onConflict: "profile_id" });
+    } catch (secretsErr) {
+      console.warn("[qbOAuthCallback] dual-write to profile_secrets failed (non-fatal):", secretsErr);
     }
 
     console.error("QB OAuth success for profile:", profile.id, "realmId:", realmId);
