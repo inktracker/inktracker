@@ -1308,7 +1308,7 @@ export default function OrderDetailModal({
           )}
         </div>
 
-        {/* Messages — combined thread for the originating quote AND this order. */}
+        {/* Messages — order thread (with reply box) + read-only view of originating quote thread. */}
         <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
           <div className="flex items-center gap-2 mb-3">
             <MessageSquare className="w-4 h-4 text-slate-500" />
@@ -1317,6 +1317,12 @@ export default function OrderDetailModal({
           <MessagesTab
             threadId={orderThreadId(order)}
             currentUserEmail={order.shop_owner}
+            replyContext={{
+              customerEmail: order.customer_email || "",
+              shopName,
+              refId: order.order_id,
+              defaultSubject: `Order ${order.order_id}`,
+            }}
           />
           {order.quote_id && (
             <div className="mt-4 pt-4 border-t border-slate-100">

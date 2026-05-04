@@ -20,6 +20,20 @@ function adminClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
+// 4-character shop code derived from the shop owner's email.
+// MUST match src/lib/messageThreads.js#shopCodeFor — same FNV-1a algorithm so
+// codes computed in the browser match codes computed here.
+function shopCodeFor(email: string): string {
+  if (!email) return "0000";
+  const lower = String(email).toLowerCase();
+  let h = 2166136261;
+  for (let i = 0; i < lower.length; i++) {
+    h ^= lower.charCodeAt(i);
+    h = (h * 16777619) >>> 0;
+  }
+  return h.toString(36).padStart(4, "0").slice(-4);
+}
+
 // Refresh Gmail token if expired
 async function refreshGmailToken(profile: any) {
   if (!profile.gmail_refresh_token) return null;
@@ -525,6 +539,151 @@ Deno.serve(async (req) => {
       });
 
       return json({ authUrl: `https://accounts.google.com/o/oauth2/v2/auth?${params}` });
+    }
+
+    // ── scanReplies ─────────────────────────────────────────────────
+    // Looks for Gmail messages whose subject contains a [Ref: <code>-<id>] tag
+    // we injected when sending the original quote/invoice/order email. The
+    // 4-char code namespaces the tag per shop so it's globally unique across
+    // every shop on the platform. Legacy tags without a code are also accepted
+    // for backwards compatibility — resolveRef still scopes to this shop.
+    //
+    // Each match is recorded as an inbound row in the `messages` table on the
+    // matching thread. Idempotent — embeds a [GmailID:...] marker in the
+    // stored body and skips messages we've already ingested.
+    if (action === "scanReplies") {
+      const gmailToken = await refreshGmailToken(profile);
+      if (!gmailToken) return json({ error: "Gmail not connected or token expired" });
+
+      const daysBack = Number(body.daysBack) || 14;
+      const afterEpoch = Math.floor((Date.now() - daysBack * 86400000) / 1000);
+
+      // Look for any inbox message whose subject contains the literal "[Ref:".
+      // We scope to in:inbox so already-archived threads aren't re-pulled.
+      const myEmail = profile.email || "";
+      const searchQuery = encodeURIComponent(
+        `in:inbox after:${afterEpoch} subject:"[Ref:" -from:${myEmail}`
+      );
+      const listRes = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${searchQuery}&maxResults=50`,
+        { headers: { Authorization: `Bearer ${gmailToken}` } }
+      );
+      if (!listRes.ok) {
+        console.error("[scanReplies] Gmail list failed:", listRes.status, await listRes.text());
+        return json({ error: "Failed to fetch emails" });
+      }
+      const listData = await listRes.json();
+      const messages = listData.messages || [];
+
+      let repliesAdded = 0;
+      const skipped: any[] = [];
+      const added: any[] = [];
+
+      // Helper: find the inktracker entity referenced by a [Ref: ID] tag.
+      // Returns { type, refId, threadId } if it belongs to this shop_owner.
+      async function resolveRef(refId: string) {
+        const owner = profile.email;
+        const candidates = [
+          { col: "quote_id",   table: "quotes",   type: "quote" },
+          { col: "order_id",   table: "orders",   type: "order" },
+          { col: "invoice_id", table: "invoices", type: "invoice" },
+        ];
+        for (const c of candidates) {
+          const { data } = await adminClient()
+            .from(c.table)
+            .select("id")
+            .eq(c.col, refId)
+            .eq("shop_owner", owner)
+            .maybeSingle();
+          if (data) return { type: c.type, refId, threadId: `${c.type}:${refId}` };
+        }
+        return null;
+      }
+
+      for (const msg of messages) {
+        const msgRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
+          { headers: { Authorization: `Bearer ${gmailToken}` } }
+        );
+        if (!msgRes.ok) continue;
+        const msgData = await msgRes.json();
+
+        const headers = msgData.payload?.headers || [];
+        const fromHeader = headers.find((h: any) => h.name === "From")?.value || "";
+        const subject = headers.find((h: any) => h.name === "Subject")?.value || "";
+        const messageId = headers.find((h: any) => h.name === "Message-ID")?.value || msg.id;
+
+        // Match either [Ref: <4-char-code>-<refId>] (current) or [Ref: <refId>] (legacy).
+        const refMatch = /\[Ref:\s*(?:([a-z0-9]{4})-)?([A-Z0-9][A-Z0-9-]*)\]/i.exec(subject);
+        if (!refMatch) { skipped.push({ subject, reason: "no ref tag" }); continue; }
+        const tagShopCode = refMatch[1] || null;
+        const refId = refMatch[2];
+
+        // If the tag includes a shop code, verify it matches THIS shop.
+        // Mismatches mean the reply is meant for a different shop and would
+        // never have been delivered to this Gmail anyway, but we belt-and-suspenders it.
+        if (tagShopCode && tagShopCode.toLowerCase() !== shopCodeFor(profile.email)) {
+          skipped.push({ subject, reason: `ref tag belongs to a different shop (${tagShopCode})` });
+          continue;
+        }
+
+        const resolved = await resolveRef(refId);
+        if (!resolved) { skipped.push({ subject, reason: `ref ${refId} not found for this shop` }); continue; }
+
+        // Dedup: have we already ingested this Gmail message?
+        const gmailIdMarker = `[GmailID:${messageId}]`;
+        const { data: existing } = await adminClient()
+          .from("messages")
+          .select("id")
+          .eq("thread_id", resolved.threadId)
+          .like("body", `%${gmailIdMarker}%`)
+          .maybeSingle();
+        if (existing) { skipped.push({ subject, reason: "already ingested" }); continue; }
+
+        // Extract the body text (text/plain preferred).
+        let bodyText = "";
+        function extractText(part: any) {
+          if (part.mimeType === "text/plain" && part.body?.data) {
+            bodyText += atob(part.body.data.replace(/-/g, "+").replace(/_/g, "/"));
+          }
+          if (part.parts) part.parts.forEach(extractText);
+        }
+        extractText(msgData.payload);
+        if (!bodyText && msgData.snippet) bodyText = msgData.snippet;
+
+        // Strip quoted reply chains so we only store the latest.
+        const cleanedBody = latestMessageOnly(bodyText).trim();
+
+        // Parse "Name <email>" from the From header.
+        const senderEmail = (fromHeader.match(/<([^>]+)>/)?.[1] || fromHeader).trim().toLowerCase();
+        const senderName = (fromHeader.replace(/<[^>]+>/, "").replace(/"/g, "").trim()) || senderEmail;
+
+        // Compose the stored body: Subject prefix (matches our outbound format)
+        // + the actual reply + the dedup marker as a hidden trailer.
+        const storedBody = `Subject: ${subject}\n\n${cleanedBody}\n\n${gmailIdMarker}`;
+
+        const { error: insertErr } = await adminClient().from("messages").insert({
+          thread_id: resolved.threadId,
+          from_email: senderEmail,
+          from_name: senderName,
+          to_email: profile.email,
+          body: storedBody,
+          read: false,
+        });
+        if (insertErr) {
+          console.error("[scanReplies] insert failed:", insertErr.message);
+          skipped.push({ subject, reason: `insert error: ${insertErr.message}` });
+          continue;
+        }
+        repliesAdded++;
+        added.push({ refId, type: resolved.type, from: senderEmail, subject });
+      }
+
+      await adminClient().from("profiles").update({
+        gmail_last_scan: new Date().toISOString(),
+      }).eq("id", profile.id);
+
+      return json({ scanned: messages.length, repliesAdded, added, skipped });
     }
 
     // ── scanEmails ──────────────────────────────────────────────────

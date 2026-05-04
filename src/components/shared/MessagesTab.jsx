@@ -161,7 +161,7 @@ function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
     }
     setSending(true);
 
-    const subject = addRefTag(`Re: ${defaultSubject || refId || "Update"}`, refId);
+    const subject = addRefTag(`Re: ${defaultSubject || refId || "Update"}`, refId, currentUserEmail);
 
     try {
       // INTERNAL NOTES: skip email, just log a Message row tagged INTERNAL.

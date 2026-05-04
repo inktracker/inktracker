@@ -3,6 +3,7 @@ import BrokerDashboard from './pages/BrokerDashboard';
 import Customers from './pages/Customers';
 import Dashboard from './pages/Dashboard';
 import Embed from './pages/Embed';
+import Inbox from './pages/Inbox';
 import Inventory from './pages/Inventory';
 import Invoices from './pages/Invoices';
 import Orders from './pages/Orders';
@@ -30,6 +31,7 @@ export const PAGES = {
     "Customers": Customers,
     "Dashboard": Dashboard,
     "Embed": Embed,
+    "Inbox": Inbox,
     "Inventory": Inventory,
     "Invoices": Invoices,
     "Orders": Orders,

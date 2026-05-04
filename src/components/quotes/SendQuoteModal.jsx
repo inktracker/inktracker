@@ -158,11 +158,13 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         console.warn("[SendQuoteModal] PDF generation failed:", pdfErr);
       }
 
-      // Inject [Ref: <quoteId>] into the subject so customer replies can be
-      // routed back to this thread by emailScanner (PR2).
+      // Inject [Ref: <shopCode>-<quoteId>] into the subject so customer replies
+      // can be routed back to this thread by emailScanner. The shop code makes
+      // the tag globally unique across all shops on the platform.
       const taggedSubject = addRefTag(
         subject || `Your Quote from ${shopName || "Your Shop"} - Quote #${quote.quote_id}`,
-        quote.quote_id
+        quote.quote_id,
+        quote.shop_owner
       );
 
       const { data: res, error: invokeErr } = await supabase.functions.invoke("sendQuoteEmail", {

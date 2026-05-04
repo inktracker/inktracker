@@ -4,6 +4,8 @@ import {
   calcLinkedLinePrice,
   buildLinkedQtyMap,
   fmtMoney,
+  getMarkup,
+  BROKER_MARKUP,
 } from "../shared/pricing";
 
 export default function PricePanel({ li, rushRate, extras, allLineItems = [], markup, onChange }) {
@@ -57,10 +59,35 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
           </div>
         ))}
 
-        <div className="flex justify-between text-xs">
-          <span className="text-slate-400">Garments</span>
-          <span className="text-white font-semibold">{fmtMoney(r.gCost)}</span>
-        </div>
+        {/* Garments line: shows base cost, markup %, and marked-up per-piece cost
+            so the breakdown of the final garment line is transparent. */}
+        {(() => {
+          const baseCost = parseFloat(li?.garmentCost) || 0;
+          const isBroker = markup === BROKER_MARKUP;
+          const markupRatio = baseCost > 0 ? getMarkup(baseCost, isBroker) : 1;
+          const markedUpPerPc = baseCost * markupRatio;
+          const markupPct = Math.round((markupRatio - 1) * 100);
+          return (
+            <div className="flex justify-between text-xs border-b border-slate-800 pb-2">
+              <div>
+                <div className="text-slate-300 font-semibold">Garments</div>
+                {baseCost > 0 ? (
+                  <div className="text-slate-500">
+                    {fmtMoney(baseCost)} cost {markupPct > 0 ? `+ ${markupPct}% markup` : ""}
+                  </div>
+                ) : (
+                  <div className="text-slate-500">No garment cost set</div>
+                )}
+              </div>
+              <div className="text-right">
+                <div className="text-white font-semibold">{fmtMoney(r.gCost)}</div>
+                {baseCost > 0 && (
+                  <div className="text-slate-500">{fmtMoney(markedUpPerPc)}/pc</div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {r.extraCost > 0 && (
           <div className="flex justify-between text-xs">

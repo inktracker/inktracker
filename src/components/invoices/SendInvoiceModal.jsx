@@ -109,7 +109,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
         : body;
       setPaymentLink(qbPayLink);
 
-      const taggedSubject = addRefTag(subject, invoice.invoice_id);
+      const taggedSubject = addRefTag(subject, invoice.invoice_id, invoice.shop_owner);
 
       const { data: res, error: invokeErr } = await supabase.functions.invoke("sendQuoteEmail", {
         body: {

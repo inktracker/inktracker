@@ -742,13 +742,22 @@ export default function QuoteDetailModal({
             </div>
           )}
 
-          {/* Messages — outbound history, read-only in PR1. Reply UI ships in PR2. */}
+          {/* Messages — threaded conversation with reply box. */}
           <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
             <div className="flex items-center gap-2 mb-3">
               <MessageSquare className="w-4 h-4 text-slate-500" />
               <h3 className="text-sm font-semibold text-slate-700">Messages</h3>
             </div>
-            <MessagesTab threadId={quoteThreadId(quote)} currentUserEmail={quote.shop_owner} />
+            <MessagesTab
+              threadId={quoteThreadId(quote)}
+              currentUserEmail={quote.shop_owner}
+              replyContext={{
+                customerEmail: quote.customer_email || customer?.email || "",
+                shopName,
+                refId: quote.quote_id,
+                defaultSubject: `Quote ${quote.quote_id}`,
+              }}
+            />
           </div>
 
           <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">

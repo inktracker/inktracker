@@ -317,13 +317,22 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           </div>
         </div>
 
-        {/* Messages — outbound history, read-only in PR1. */}
+        {/* Messages — threaded conversation with reply box. */}
         <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
           <div className="flex items-center gap-2 mb-3">
             <MessageSquare className="w-4 h-4 text-slate-500" />
             <h3 className="text-sm font-semibold text-slate-700">Messages</h3>
           </div>
-          <MessagesTab threadId={invoiceThreadId(invoice)} currentUserEmail={invoice.shop_owner} />
+          <MessagesTab
+            threadId={invoiceThreadId(invoice)}
+            currentUserEmail={invoice.shop_owner}
+            replyContext={{
+              customerEmail: invoice.customer_email || customer?.email || "",
+              shopName,
+              refId: invoice.invoice_id,
+              defaultSubject: `Invoice ${invoice.invoice_id}`,
+            }}
+          />
         </div>
 
         {/* Footer */}
