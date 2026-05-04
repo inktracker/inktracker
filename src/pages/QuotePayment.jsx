@@ -182,6 +182,8 @@ export default function QuotePayment() {
 
   const params = new URLSearchParams(window.location.search);
   const quoteDbId = params.get("id");
+  // public_token gates anonymous access. Without it the edge function returns 404.
+  const publicToken = params.get("token");
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -197,12 +199,18 @@ export default function QuotePayment() {
       setLoading(false);
       return;
     }
+    if (!publicToken) {
+      setError("This quote link is missing a security token. Please use the link from your email.");
+      setLoading(false);
+      return;
+    }
 
     async function load() {
       try {
         const response = await base44.functions.invoke("createCheckoutSession", {
           action: "getQuote",
           quoteId: quoteDbId,
+          token: publicToken,
         });
 
         if (response?.data?.error) {
@@ -257,6 +265,7 @@ export default function QuotePayment() {
       const response = await base44.functions.invoke("createCheckoutSession", {
         action: "approveQuote",
         quoteId: quote.id,
+        token: publicToken,
       });
 
       if (response?.data?.error) {
@@ -329,6 +338,7 @@ export default function QuotePayment() {
       const response = await base44.functions.invoke("createCheckoutSession", {
         action: "getQuote",
         quoteId: quote.id,
+        token: publicToken,
       });
       if (response?.data?.quote?.qb_payment_link) {
         window.location.href = response.data.quote.qb_payment_link;
@@ -371,6 +381,7 @@ export default function QuotePayment() {
       const response = await base44.functions.invoke("createCheckoutSession", {
         action: "createSession",
         quoteId: quote.id,
+        token: publicToken,
         quoteTotal: effectiveTotal,
         amountPaid: chargeAmount,
         isDeposit,

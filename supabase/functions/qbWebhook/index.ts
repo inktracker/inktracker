@@ -23,7 +23,10 @@ const CORS = {
 // ── Signature verification ───────────────────────────────────────────────────
 
 async function verifySignature(rawBody: string, signature: string): Promise<boolean> {
-  if (!QB_VERIFIER_TOKEN || !signature) return !QB_VERIFIER_TOKEN; // skip if no token configured
+  // Fail closed — refuse events without verifier token configured or without a
+  // signature header. Previous behavior returned true when no token was set,
+  // which let unsigned events through.
+  if (!QB_VERIFIER_TOKEN || !signature) return false;
   try {
     const key = await crypto.subtle.importKey(
       "raw",

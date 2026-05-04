@@ -89,13 +89,16 @@ export default function ArtApproval() {
 
   const params = new URLSearchParams(window.location.search);
   const orderId = params.get("id");
+  const publicToken = params.get("token");
 
   useEffect(() => {
     if (!orderId) { setError("No order ID provided."); setLoading(false); return; }
+    if (!publicToken) { setError("This link is missing a security token. Please use the link from your email."); setLoading(false); return; }
 
     base44.functions.invoke("createCheckoutSession", {
       action: "getOrder",
       orderId,
+      token: publicToken,
     }).then((res) => {
       if (res?.data?.error) { setError(res.data.error); return; }
       if (!res?.data?.order) { setError("Order not found."); return; }
@@ -103,7 +106,7 @@ export default function ArtApproval() {
       setShop(res.data.shop || null);
     }).catch(() => setError("Failed to load order."))
       .finally(() => setLoading(false));
-  }, [orderId]);
+  }, [orderId, publicToken]);
 
   async function handleApprove() {
     if (!checkedAll) { setApproveError("Please confirm you have reviewed all artwork above."); return; }
@@ -114,6 +117,7 @@ export default function ArtApproval() {
       const res = await base44.functions.invoke("createCheckoutSession", {
         action: "approveArtwork",
         orderId: order.id,
+        token: publicToken,
         approvedBy: approverName.trim(),
       });
       if (res?.data?.error) { setApproveError(res.data.error); return; }

@@ -40,11 +40,23 @@ Deno.serve(async (req) => {
     const body = await req.text();
     const sig = req.headers.get("stripe-signature");
 
+    // Fail closed — never process an event without a verified Stripe signature.
+    // If STRIPE_WEBHOOK_SECRET isn't configured, that's an ops error, not an
+    // excuse to trust unsigned input.
+    if (!STRIPE_WEBHOOK_SECRET) {
+      console.error("[billingWebhook] STRIPE_WEBHOOK_SECRET not configured — refusing to process");
+      return new Response("Webhook misconfigured", { status: 500, headers: CORS });
+    }
+    if (!sig) {
+      return new Response("Missing stripe-signature header", { status: 401, headers: CORS });
+    }
+
     let event: Stripe.Event;
-    if (STRIPE_WEBHOOK_SECRET && sig) {
+    try {
       event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
-    } else {
-      event = JSON.parse(body) as Stripe.Event;
+    } catch (err: any) {
+      console.error("[billingWebhook] signature verification failed:", err?.message);
+      return new Response("Invalid signature", { status: 401, headers: CORS });
     }
 
     console.log(`[billingWebhook] ${event.type}`);

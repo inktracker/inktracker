@@ -24,9 +24,18 @@ function fmtMoney(n: number) {
   return `$${Number(n || 0).toFixed(2)}`;
 }
 
+// Constant-time string equality. Prevents timing-based token guessing.
+function safeEquals(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
 // ── getQuote ─────────────────────────────────────────────────────────────────
 
-async function handleGetQuote(quoteId: string) {
+async function handleGetQuote(quoteId: string, token?: string) {
   const supabase = serviceClient();
 
   const { data: quote, error } = await supabase
@@ -36,6 +45,13 @@ async function handleGetQuote(quoteId: string) {
     .single();
 
   if (error || !quote) return { error: "Quote not found." };
+
+  // Token gate — anonymous callers must present the public_token that was
+  // embedded in their email link. Without it, return the same 404 we'd give
+  // for a missing row so we don't leak existence.
+  if (!token || !quote.public_token || !safeEquals(token, quote.public_token)) {
+    return { error: "Quote not found." };
+  }
 
   const { data: shops } = await supabase
     .from("shops")
@@ -60,8 +76,20 @@ async function handleGetQuote(quoteId: string) {
 
 // ── approveQuote ─────────────────────────────────────────────────────────────
 
-async function handleApproveQuote(quoteId: string) {
+async function handleApproveQuote(quoteId: string, token?: string) {
   const supabase = serviceClient();
+
+  // Verify the token matches BEFORE updating — never write without proof
+  // the caller has the link we emailed.
+  const { data: existing } = await supabase
+    .from("quotes")
+    .select("public_token")
+    .eq("id", quoteId)
+    .single();
+
+  if (!existing?.public_token || !token || !safeEquals(token, existing.public_token)) {
+    return { error: "Quote not found." };
+  }
 
   const { data: quote, error } = await supabase
     .from("quotes")
@@ -95,7 +123,7 @@ async function handleApproveQuote(quoteId: string) {
 
 // ── getOrder ──────────────────────────────────────────────────────────────────
 
-async function handleGetOrder(orderId: string) {
+async function handleGetOrder(orderId: string, token?: string) {
   const supabase = serviceClient();
 
   // Try by DB uuid first, then by order_id string
@@ -114,6 +142,10 @@ async function handleGetOrder(orderId: string) {
 
   if (!order) return { error: "Order not found." };
 
+  if (!token || !order.public_token || !safeEquals(token, order.public_token)) {
+    return { error: "Order not found." };
+  }
+
   const { data: shops } = await supabase
     .from("shops")
     .select("shop_name,logo_url,phone,email")
@@ -126,8 +158,19 @@ async function handleGetOrder(orderId: string) {
 
 // ── approveArtwork ────────────────────────────────────────────────────────────
 
-async function handleApproveArtwork(orderId: string, approvedBy: string) {
+async function handleApproveArtwork(orderId: string, approvedBy: string, token?: string) {
   const supabase = serviceClient();
+
+  // Token gate before write.
+  const { data: existing } = await supabase
+    .from("orders")
+    .select("public_token")
+    .eq("id", orderId)
+    .single();
+
+  if (!existing?.public_token || !token || !safeEquals(token, existing.public_token)) {
+    return { error: "Order not found." };
+  }
 
   const { data: order, error } = await supabase
     .from("orders")
@@ -228,6 +271,17 @@ async function handleCreateSession(params: any) {
   const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
   const supabase = serviceClient();
 
+  // Verify token before generating a checkout URL. Otherwise anyone could
+  // create Stripe checkout sessions for any quote ID.
+  const { data: existing } = await supabase
+    .from("quotes")
+    .select("public_token")
+    .eq("id", params.quoteId)
+    .single();
+  if (!existing?.public_token || !params.token || !safeEquals(params.token, existing.public_token)) {
+    return { error: "Quote not found." };
+  }
+
   const origin = params.origin ?? "https://www.inktracker.app";
   const successUrl = `${origin}/quotepaymentSuccess?session_id={CHECKOUT_SESSION_ID}&quote_id=${params.quoteId}&is_deposit=${params.isDeposit ? "1" : "0"}&amount=${params.amountPaid || 0}&shop_owner=${encodeURIComponent(params.shopOwnerEmail || "")}`;
   const cancelUrl  = `${origin}/quotepaymentCancel`;
@@ -265,28 +319,31 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { action, quoteId, ...rest } = body;
+    const { action, quoteId, token, ...rest } = body;
 
     let result: any;
 
     switch (action) {
       case "getQuote":
-        result = await handleGetQuote(quoteId);
+        result = await handleGetQuote(quoteId, token);
         break;
       case "approveQuote":
-        result = await handleApproveQuote(quoteId);
+        result = await handleApproveQuote(quoteId, token);
         break;
       case "createSession":
-        result = await handleCreateSession({ quoteId, ...rest });
+        // createSession requires a verified token before generating a Stripe URL —
+        // otherwise an attacker could create checkout sessions for any quote.
+        result = await handleCreateSession({ quoteId, token, ...rest });
         break;
       case "notifyShopOwner":
+        // Internal-only, called by stripeWebhook. No token gate (trust webhook).
         result = await handleNotifyShopOwner({ quoteId, ...rest });
         break;
       case "getOrder":
-        result = await handleGetOrder(rest.orderId ?? quoteId);
+        result = await handleGetOrder(rest.orderId ?? quoteId, token);
         break;
       case "approveArtwork":
-        result = await handleApproveArtwork(rest.orderId, rest.approvedBy ?? "Customer");
+        result = await handleApproveArtwork(rest.orderId, rest.approvedBy ?? "Customer", token);
         break;
       default:
         return Response.json({ error: `Unknown action: ${action}` }, { status: 400, headers: CORS });

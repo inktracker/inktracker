@@ -329,9 +329,12 @@ export default function OrderDetailModal({
 
   function copyLink(type) {
     const base = window.location.origin;
+    // The token gates anonymous access. Customer must have this exact URL
+    // (which we email them) to view art / order status.
+    const tokenParam = order.public_token ? `&token=${encodeURIComponent(order.public_token)}` : "";
     const url = type === "art"
-      ? `${base}/ArtApproval?id=${order.id}`
-      : `${base}/OrderStatus?id=${order.id}`;
+      ? `${base}/ArtApproval?id=${order.id}${tokenParam}`
+      : `${base}/OrderStatus?id=${order.id}${tokenParam}`;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(type);
       setTimeout(() => setCopied(null), 2000);

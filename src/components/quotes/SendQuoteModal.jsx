@@ -97,8 +97,22 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // Always link customers through InkTracker's branded approve+pay page;
       // on that page the "Approve & Pay" button redirects to QB's hosted payment
       // link when available (QB invoice is source of truth), falling back to Stripe.
-      const paymentLink = `${window.location.origin}/quotepayment?id=${quote.id}`;
-      let quoteForPdf = quote;
+      // The public_token gates anonymous access — without it the quote is unreachable.
+      let publicToken = quote.public_token;
+      if (!publicToken) {
+        // Older quotes may not have a token yet (created before the security fix).
+        // Mint one now and persist it.
+        try {
+          const fresh = await base44.entities.Quote.update(quote.id, {
+            public_token: (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/-/g, ""),
+          });
+          publicToken = fresh?.public_token;
+        } catch (tokenErr) {
+          console.warn("[SendQuoteModal] could not mint public_token:", tokenErr);
+        }
+      }
+      const paymentLink = `${window.location.origin}/quotepayment?id=${quote.id}&token=${encodeURIComponent(publicToken || "")}`;
+      let quoteForPdf = { ...quote, public_token: publicToken };
 
       // Create the QB invoice now — its paymentLink will be used when the
       // customer clicks Approve & Pay on /quotepayment.
