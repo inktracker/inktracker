@@ -1,4 +1,7 @@
-import jsPDF from 'jspdf';
+// jspdf (~150 KB gzipped) is loaded on demand via dynamic import inside each
+// export function below. Keeps it out of the main bundle until a user actually
+// generates a PDF. The first PDF in a session triggers the chunk fetch; later
+// PDFs reuse the cached promise.
 import {
   getQty,
   BIG_SIZES,
@@ -10,6 +13,12 @@ import {
   BROKER_MARKUP,
   STANDARD_MARKUP
 } from './pricing';
+
+let _jsPdfPromise;
+function loadJsPDF() {
+  if (!_jsPdfPromise) _jsPdfPromise = import('jspdf').then((m) => m.default || m.jsPDF);
+  return _jsPdfPromise;
+}
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -588,6 +597,7 @@ export async function exportQuoteToPDF(
   // shop mode    = broker ↔ shop   (standard shop pricing, internal production doc)
   const isClientMode = mode === 'client';
 
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -765,6 +775,7 @@ export async function exportQuoteToPDF(
 }
 
 export async function exportOrderToPDF(order, shopName, logoUrl, output) {
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -901,6 +912,7 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output) {
 }
 
 export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl, output) {
+  const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();

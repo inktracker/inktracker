@@ -2,7 +2,7 @@ import React from "react";
 import { X, Download, Edit2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fmtMoney } from "@/components/shared/pricing";
-import jsPDF from "jspdf";
+// jspdf loaded on demand inside handleDownloadPDF below
 
 export default function ExpenseDetailModal({ expense, onClose, onEdit }) {
   const formatDate = (dateStr) => {
@@ -14,6 +14,7 @@ export default function ExpenseDetailModal({ expense, onClose, onEdit }) {
   const handleDownloadPDF = async () => {
     if (!expense) return;
 
+    const { default: jsPDF } = await import("jspdf");
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 15;

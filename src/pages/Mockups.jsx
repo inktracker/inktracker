@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { Search, Download, Upload, RotateCcw, Loader2, FileText } from "lucide-react";
 import MockupCanvas from "../components/mockups/MockupCanvas";
-import { jsPDF } from "jspdf";
+// jspdf loaded on demand inside generateProofPDF below
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -152,6 +152,7 @@ export default function Mockups() {
   async function generateProofPDF() {
     setGeneratingProof(true);
     try {
+      const { jsPDF } = await import("jspdf");
       const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "letter" });
       const pw = doc.internal.pageSize.getWidth();
       const ph = doc.internal.pageSize.getHeight();
