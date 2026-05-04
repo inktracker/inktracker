@@ -10,6 +10,7 @@
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { Mail, MailOpen, Loader2, ArrowUpRight, ArrowDownLeft } from "lucide-react";
+import { parseStoredBody } from "@/lib/messageThreads";
 
 export default function MessagesTab({ threadId, currentUserEmail }) {
   const [messages, setMessages] = useState([]);
@@ -63,6 +64,7 @@ export default function MessagesTab({ threadId, currentUserEmail }) {
     <div className="space-y-3">
       {messages.map((m) => {
         const outbound = isOutbound(m, currentUserEmail);
+        const { subject, body } = parseStoredBody(m.body);
         return (
           <article
             key={m.id}
@@ -83,13 +85,13 @@ export default function MessagesTab({ threadId, currentUserEmail }) {
               </div>
               <time className="text-xs text-slate-400 shrink-0">{formatStamp(m.created_date)}</time>
             </header>
-            {m.subject && (
+            {subject && (
               <div className="text-xs font-semibold text-slate-600 mb-1 truncate">
-                {m.subject}
+                {subject}
               </div>
             )}
             <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-              {m.body || <span className="text-slate-400 italic">No content recorded.</span>}
+              {body || <span className="text-slate-400 italic">No content recorded.</span>}
             </div>
             {m.to_email && outbound && (
               <div className="text-xs text-slate-400 mt-2 flex items-center gap-1">
