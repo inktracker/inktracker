@@ -135,18 +135,17 @@ export default function Inventory() {
   }
 
   useEffect(() => {
-    base44.entities.InventoryItem.list().then(i => {
-      setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
-      setLoading(false);
-    });
     base44.auth.me().then(async (u) => {
       setUser(u);
+      base44.entities.InventoryItem.filter({ shop_owner: u.email }).then(i => {
+        setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
+        setLoading(false);
+      });
       if (u?.shopify_access_token) {
         setShopifyConnected(true);
-        // Auto-fetch live Shopify data
         fetchShopifyLive();
       }
-    }).catch(() => {});
+    }).catch(() => setLoading(false));
     const params = new URLSearchParams(window.location.search);
     if (params.get("shopify_connected") === "1") {
       setShopifyConnected(true);

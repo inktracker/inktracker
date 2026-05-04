@@ -202,16 +202,18 @@ Deno.serve(async (req) => {
 
   const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
 
-  // Verify signature if secret is configured
+  // Fail closed — never process an event without a verified Stripe signature.
+  if (!STRIPE_WEBHOOK_SECRET) {
+    console.error("[stripeWebhook] STRIPE_WEBHOOK_SECRET not configured — refusing to process");
+    return Response.json({ error: "Webhook misconfigured" }, { status: 500, headers: CORS });
+  }
+  if (!signature) {
+    return Response.json({ error: "Missing stripe-signature header" }, { status: 401, headers: CORS });
+  }
+
   let event: Stripe.Event;
   try {
-    if (STRIPE_WEBHOOK_SECRET) {
-      event = await stripe.webhooks.constructEventAsync(rawBody, signature, STRIPE_WEBHOOK_SECRET);
-    } else {
-      // No secret set — parse without verification (dev only)
-      console.warn("[stripeWebhook] STRIPE_WEBHOOK_SECRET not set — skipping signature verification");
-      event = JSON.parse(rawBody) as Stripe.Event;
-    }
+    event = await stripe.webhooks.constructEventAsync(rawBody, signature, STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     console.error("[stripeWebhook] Signature verification failed:", err);
     return Response.json({ error: "Invalid signature" }, { status: 400, headers: CORS });

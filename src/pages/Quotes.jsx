@@ -63,14 +63,13 @@ export default function Quotes() {
         setUser(currentUser);
 
         const [allQuotes, c, allUsers] = await Promise.all([
-          base44.entities.Quote.list("-created_date", 500),
+          base44.entities.Quote.filter({ shop_owner: currentUser.email }, "-created_date", 500),
           base44.entities.Customer.filter({ shop_owner: currentUser.email }),
           base44.entities.User.list(),
         ]);
 
         // Exclude quotes already converted to orders — those live under Orders now.
         const q = allQuotes.filter((quote) =>
-          quote.shop_owner === currentUser.email &&
           quote.status !== "Converted to Order"
         );
         setQuotes(q);

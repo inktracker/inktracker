@@ -7,6 +7,7 @@ import {
   fmtMoney,
   BIG_SIZES,
   BROKER_MARKUP,
+  getOversizeUpcharge,
   sortSizeEntries,
 } from "@/components/shared/pricing";
 
@@ -132,7 +133,7 @@ export function generateQuotePDF({ quote, shopName, paymentLink, markup }) {
       (s, sz) => s + (parseInt((li.sizes || {})[sz], 10) || 0), 0
     );
     const pricing = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
-    const lineTotal = pricing ? pricing.sub + twoXL * 2 : 0;
+    const lineTotal = pricing ? pricing.sub + twoXL * getOversizeUpcharge() : 0;
     const perPiece = qty > 0 ? lineTotal / qty : 0;
 
     // Garment label

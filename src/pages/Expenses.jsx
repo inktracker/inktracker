@@ -28,7 +28,7 @@ export default function ExpensesPage() {
     async function loadData() {
       const currentUser = await base44.auth.me();
       setUser(currentUser);
-      const allOrders = await base44.entities.Order.list();
+      const allOrders = await base44.entities.Order.filter({ shop_owner: currentUser.email });
       setOrders(allOrders);
       // Background pull — import expenses created directly in QB
       try {

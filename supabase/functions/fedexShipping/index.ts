@@ -93,6 +93,12 @@ Deno.serve(async (req) => {
     // ── getRates ───────────────────────────────────────────────────
     if (action === "getRates") {
       const { shipTo, weight, length, width, height } = body;
+      if (!shipTo?.street || !shipTo?.city || !shipTo?.state || !shipTo?.zip) {
+        return json({ error: "Complete ship-to address required (street, city, state, zip)" }, 400);
+      }
+      if (!weight || parseFloat(weight) <= 0) {
+        return json({ error: "Package weight is required" }, 400);
+      }
 
       const requestBody = {
         accountNumber: { value: FEDEX_ACCOUNT_NUMBER },
@@ -140,6 +146,15 @@ Deno.serve(async (req) => {
     // ── createShipment ─────────────────────────────────────────────
     if (action === "createShipment") {
       const { shipTo, weight, length, width, height, serviceType, orderId, customerName } = body;
+      if (!shipTo?.street || !shipTo?.city || !shipTo?.state || !shipTo?.zip) {
+        return json({ error: "Complete ship-to address required (street, city, state, zip)" }, 400);
+      }
+      if (!weight || parseFloat(weight) <= 0) {
+        return json({ error: "Package weight is required" }, 400);
+      }
+      if (!serviceType) {
+        return json({ error: "Service type is required" }, 400);
+      }
 
       const requestBody = {
         accountNumber: { value: FEDEX_ACCOUNT_NUMBER },

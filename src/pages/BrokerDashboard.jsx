@@ -561,7 +561,7 @@ export default function BrokerDashboard() {
 
         const assignedShop = (u.assigned_shops || [])[0] || null;
         const [allQuotes, myClients, myOrders, shopResults] = await Promise.all([
-          base44.entities.Quote.list("-created_date", 200),
+          base44.entities.Quote.filter({ broker_id: u.email }, "-created_date", 200),
           base44.entities.Customer.filter({ shop_owner: `broker:${u.email}` }),
           base44.entities.Order.filter({ broker_id: u.email }, "-created_date", 100),
           assignedShop ? base44.entities.Shop.filter({ owner_email: assignedShop }) : Promise.resolve([]),

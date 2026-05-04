@@ -3,7 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { fmtDate, sortSizeEntries } from "../components/shared/pricing";
 import { Package, ChevronRight, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 
-const STEPS = ["Art Approval", "Order Goods", "Pre-Press", "Printing", "Finishing", "Quality Check", "Packing", "Completed"];
+const STEPS = ["Art Approval", "Order Goods", "Pre-Press", "Printing", "Finishing", "QC", "Ready for Pickup", "Completed"];
 
 const STEP_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
@@ -11,8 +11,8 @@ const STEP_TASKS = {
   "Pre-Press": ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
   "Printing": ["Mount screens on press", "Run test prints", "Get test approval", "Run full batch", "Spot check quality"],
   "Finishing": ["Flash/cure prints", "Quality inspect", "Fold & tag", "Count pieces"],
-  "Quality Check": ["Verify quantities", "Check print quality", "Match against order", "Flag any issues"],
-  "Packing": ["Sort by size", "Bag/box order", "Label packages", "Stage for pickup/shipping"],
+  "QC": ["Verify quantities", "Check print quality", "Match against order", "Flag any issues"],
+  "Ready for Pickup": ["Sort by size", "Bag/box order", "Label packages", "Stage for pickup/shipping"],
 };
 
 const STEP_COLORS = {
@@ -21,8 +21,8 @@ const STEP_COLORS = {
   "Pre-Press": { bg: "bg-blue-500", light: "bg-blue-50 text-blue-700 border-blue-200" },
   "Printing": { bg: "bg-indigo-500", light: "bg-indigo-50 text-indigo-700 border-indigo-200" },
   "Finishing": { bg: "bg-teal-500", light: "bg-teal-50 text-teal-700 border-teal-200" },
-  "Quality Check": { bg: "bg-orange-500", light: "bg-orange-50 text-orange-700 border-orange-200" },
-  "Packing": { bg: "bg-emerald-500", light: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  "QC": { bg: "bg-orange-500", light: "bg-orange-50 text-orange-700 border-orange-200" },
+  "Ready for Pickup": { bg: "bg-emerald-500", light: "bg-emerald-50 text-emerald-700 border-emerald-200" },
   "Completed": { bg: "bg-slate-400", light: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
@@ -137,7 +137,8 @@ export default function ShopFloor() {
         setCustomers(custMap);
       } catch {
         try {
-          const allOrders = await base44.entities.Order.list("-created_date", 200);
+          const shopEmail = me.shop_owner || me.email;
+          const allOrders = await base44.entities.Order.filter({ shop_owner: shopEmail }, "-created_date", 200);
           setOrders(allOrders);
         } catch { setOrders([]); }
       }
