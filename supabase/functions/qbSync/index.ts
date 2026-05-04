@@ -104,6 +104,19 @@ async function qbCreate(token: string, realmId: string, entity: string, body: ob
   return data;
 }
 
+// Pick the next free DocNumber for a quote. If `base` is unused, returns base.
+// Otherwise tries base-r2, base-r3, ... up to base-r99. Falls back to a
+// timestamp suffix if (somehow) all 99 revisions are taken.
+function nextAvailableDocNumber(base: string, takenList: string[]): string {
+  const taken = new Set(takenList.map((s) => String(s || "")));
+  if (!taken.has(base)) return base;
+  for (let n = 2; n <= 99; n++) {
+    const candidate = `${base}-r${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}-r${Date.now().toString(36).slice(-4)}`;
+}
+
 async function qbUpdate(token: string, realmId: string, entity: string, body: object) {
   const url = `${QB_BASE}/${realmId}/${entity}?minorversion=65`;
   const res = await fetch(url, { method: "POST", headers: qbHeaders(token), body: JSON.stringify(body) });
@@ -412,16 +425,41 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const billEmail = quote.customer_email || customer?.email;
   const billAddress = customer?.address;
 
+  // Find a unique DocNumber. We never overwrite an existing QB invoice — if
+  // one already exists with this quote_id (the customer was re-sent the quote,
+  // line items changed, etc.) we create a NEW invoice with a versioned
+  // DocNumber: Q-2026-115 → Q-2026-115-r2 → Q-2026-115-r3 …
+  // The original invoice in QB stays untouched. Accountant can see the history.
+  const baseDocNumber = String(quote.quote_id || "");
+  const escapedBase = baseDocNumber.replace(/'/g, "\\'");
+  let existingDocs: string[] = [];
+  try {
+    const existingResp = await qbQuery(
+      token,
+      realmId,
+      `SELECT DocNumber FROM Invoice WHERE DocNumber = '${escapedBase}' OR DocNumber LIKE '${escapedBase}-r%'`,
+    );
+    existingDocs = (existingResp?.QueryResponse?.Invoice || [])
+      .map((i: any) => String(i.DocNumber || ""))
+      .filter(Boolean);
+  } catch (e) {
+    console.error("[createInvoice] DocNumber lookup failed (will try base only):", e);
+  }
+  const docNumber = nextAvailableDocNumber(baseDocNumber, existingDocs);
+  const isRevision = docNumber !== baseDocNumber;
+
   const invoiceBody: any = {
     CustomerRef: { value: qbCustomerId },
-    DocNumber: quote.quote_id,
+    DocNumber: docNumber,
     TxnDate: quote.date,
     DueDate: quote.due_date || undefined,
     AllowOnlineCreditCardPayment: true,
     AllowOnlineACHPayment: true,
     Line: lines,
     CustomerMemo: { value: quote.notes || "" },
-    PrivateNote: `InkTracker Quote ${quote.quote_id}`,
+    PrivateNote: isRevision
+      ? `InkTracker Quote ${baseDocNumber} — revision (${docNumber})`
+      : `InkTracker Quote ${baseDocNumber}`,
   };
 
   if (billEmail) {
@@ -449,42 +487,43 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   let qbInvoiceId: string;
   let qbInvoiceFinal: any;
 
-  try {
-    created = await qbCreate(token, realmId, "invoice", invoiceBody);
-    qbInvoiceId = created?.Invoice?.Id;
-    if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
-    qbInvoiceFinal = created?.Invoice ?? created;
-  } catch (createErr: any) {
-    // Handle duplicate DocNumber — find and update the existing invoice
-    const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
-    if (!isDuplicate) throw createErr;
-
-    console.error(`[createInvoice] Duplicate DocNumber ${quote.quote_id} — updating existing invoice`);
-    const existing = await qbQuery(token, realmId,
-      `SELECT * FROM Invoice WHERE DocNumber = '${(quote.quote_id || "").replace(/'/g, "\\'")}'`
-    );
-    const found = existing?.QueryResponse?.Invoice?.[0];
-    if (!found) throw new Error(`Duplicate invoice exists but could not be found: ${quote.quote_id}`);
-
-    // Update the existing invoice with the new line items and amounts
+  // Create the invoice. If QB still complains the DocNumber is taken (race
+  // condition where another invoice was created between our lookup and now),
+  // bump the revision and retry up to 5 times. We NEVER fall back to updating
+  // an existing invoice — that would silently overwrite historical accounting
+  // data, which is the bug we're fixing.
+  let attempt = 0;
+  let activeBody = invoiceBody;
+  while (attempt < 5) {
     try {
-      const updateBody = {
-        ...invoiceBody,
-        Id: found.Id,
-        SyncToken: found.SyncToken,
-        sparse: true,
+      created = await qbCreate(token, realmId, "invoice", activeBody);
+      qbInvoiceId = created?.Invoice?.Id;
+      if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
+      qbInvoiceFinal = created?.Invoice ?? created;
+      break;
+    } catch (createErr: any) {
+      const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
+      if (!isDuplicate) throw createErr;
+
+      // Push the conflicting DocNumber into our seen-list and try the next revision.
+      existingDocs.push(activeBody.DocNumber);
+      const nextDoc = nextAvailableDocNumber(baseDocNumber, existingDocs);
+      console.error(
+        `[createInvoice] DocNumber ${activeBody.DocNumber} taken — retrying as ${nextDoc}`
+      );
+      activeBody = {
+        ...activeBody,
+        DocNumber: nextDoc,
+        PrivateNote: `InkTracker Quote ${baseDocNumber} — revision (${nextDoc})`,
       };
-      const updated = await qbUpdate(token, realmId, "invoice", updateBody);
-      qbInvoiceId = found.Id;
-      qbInvoiceFinal = updated?.Invoice ?? found;
-      created = updated;
-      console.error(`[createInvoice] Updated existing invoice ${found.Id} with new amounts`);
-    } catch (updateErr) {
-      console.error("[createInvoice] update failed, returning existing:", updateErr);
-      qbInvoiceId = found.Id;
-      qbInvoiceFinal = found;
-      created = { Invoice: found };
+      attempt++;
     }
+  }
+  if (!qbInvoiceId) {
+    throw new Error(
+      `Could not create QB invoice for ${baseDocNumber} after retries. ` +
+      `Existing revisions: ${existingDocs.join(", ")}`
+    );
   }
 
   // Re-read the invoice to ensure we have the final AST-computed tax/total
@@ -541,7 +580,21 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }).eq("id", quote.id);
   }
 
-  return { qbInvoiceId, paymentLink, qbSubtotal, qbTaxAmount, qbTotal, customerRef: qbCustomerId };
+  // The DocNumber that was actually written to QB. Differs from quote.quote_id
+  // when a previous invoice with the same base existed and we created a
+  // versioned revision (e.g. Q-2026-115-r2).
+  const qbDocNumber = String(qbInvoiceFinal?.DocNumber || activeBody?.DocNumber || baseDocNumber);
+
+  return {
+    qbInvoiceId,
+    qbDocNumber,
+    isRevision: qbDocNumber !== baseDocNumber,
+    paymentLink,
+    qbSubtotal,
+    qbTaxAmount,
+    qbTotal,
+    customerRef: qbCustomerId,
+  };
 }
 
 // ── Action: syncExpense ─────────────────────────────────────────────────────

@@ -4,6 +4,8 @@ import { fmtMoney } from "../components/shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
 import { TrendingUp, ShoppingBag, Users, DollarSign, TrendingDown, ChevronDown, ChevronUp, FileText, RefreshCw, ExternalLink } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import NativeStatsPanel from "@/components/shared/NativeStatsPanel";
+import { computeNativeStats } from "@/lib/nativeStats";
 
 function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
   const colors = {
@@ -39,6 +41,12 @@ export default function Performance() {
   }));
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [jobCostOrders, setJobCostOrders] = useState([]);
+
+  // Live entities for native (no-QB) stats.
+  const [allQuotes, setAllQuotes] = useState([]);
+  const [allOrders, setAllOrders] = useState([]);
+  const [allInvoices, setAllInvoices] = useState([]);
+  const [allCustomers, setAllCustomers] = useState([]);
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -143,9 +151,19 @@ export default function Performance() {
         setExpenses(expData);
       }
 
-      // Load orders with actual cost data for job costing
+      // Load full live entities for native stats. Done in parallel; failures
+      // for any one entity leave that array empty without breaking the others.
       try {
-        const orders = await base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200);
+        const [orders, quotes, invoices, customers] = await Promise.all([
+          base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
+          base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
+          base44.entities.Invoice.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
+          base44.entities.Customer.filter({ shop_owner: u.email }, "-created_date", 2000).catch(() => []),
+        ]);
+        setAllOrders(orders);
+        setAllQuotes(quotes);
+        setAllInvoices(invoices);
+        setAllCustomers(customers);
         setJobCostOrders(orders.filter(o => o.actual_cost > 0 || o.actual_labor_cost > 0));
       } catch {}
 
@@ -290,6 +308,22 @@ export default function Performance() {
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [filteredRecords]);
 
+  // ── Native shop stats (no QB required) ──
+  const nativeStats = useMemo(() => {
+    const dateFrom = filters.dateFrom || getDateRangeValues(filters.dateRange).dateFrom;
+    const dateTo = filters.dateTo || getDateRangeValues(filters.dateRange).dateTo;
+    return computeNativeStats({
+      quotes: allQuotes,
+      orders: allOrders,
+      invoices: allInvoices,
+      customers: allCustomers,
+      expenses,
+      archived: records,
+      dateFrom: filters.dateRange === "all" ? null : dateFrom,
+      dateTo: filters.dateRange === "all" ? null : dateTo,
+    });
+  }, [allQuotes, allOrders, allInvoices, allCustomers, expenses, records, filters.dateRange, filters.dateFrom, filters.dateTo]);
+
   // ── Expenses by category ──
   const expensesByCategory = useMemo(() => {
     const map = {};
@@ -417,14 +451,21 @@ export default function Performance() {
         )}
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <StatCard icon={ShoppingBag} label="Total Orders" value={totalOrders} color="indigo" />
-        <StatCard icon={DollarSign} label="Total Revenue" value={fmtMoney(totalRevenue)} color="emerald" />
-        <StatCard icon={TrendingDown} label="Total Expenses" value={fmtMoney(totalExpenses)} color="amber" />
-        <StatCard icon={TrendingUp} label="Profit/Loss" value={fmtMoney(profit)} color={profit >= 0 ? "emerald" : "rose"} sub={`${profitMargin}% margin`} />
-        <StatCard icon={Users} label="Total Clients" value={uniqueClients} color="amber" />
-      </div>
+      {/* Native shop stats — always shown, works without QuickBooks */}
+      <NativeStatsPanel stats={nativeStats} />
+
+      {/* QB-augmented KPI cards (only meaningful when QB is connected;
+          revenue/expenses/profit will fall back to the archived ShopPerformance
+          + Expense rows otherwise, which under-counts in-progress work). */}
+      {qbConnected && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <StatCard icon={ShoppingBag} label="Total Orders" value={totalOrders} color="indigo" />
+          <StatCard icon={DollarSign} label="Total Revenue (QB)" value={fmtMoney(totalRevenue)} color="emerald" />
+          <StatCard icon={TrendingDown} label="Total Expenses (QB)" value={fmtMoney(totalExpenses)} color="amber" />
+          <StatCard icon={TrendingUp} label="Profit/Loss (QB)" value={fmtMoney(profit)} color={profit >= 0 ? "emerald" : "rose"} sub={`${profitMargin}% margin`} />
+          <StatCard icon={Users} label="Total Clients (period)" value={uniqueClients} color="amber" />
+        </div>
+      )}
 
       {/* QuickBooks Reports */}
       {qbConnected && (

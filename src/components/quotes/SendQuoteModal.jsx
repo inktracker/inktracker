@@ -136,6 +136,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
               qb_tax_amount: qbData.qbTaxAmount,
               qb_subtotal:   qbData.qbSubtotal,
             };
+            // If QB created a revision (because an invoice with this DocNumber
+            // already existed), capture it so we can surface it to the user.
+            if (qbData.isRevision && qbData.qbDocNumber) {
+              quoteForPdf.qb_doc_number = qbData.qbDocNumber;
+            }
           }
         }
       } catch {
