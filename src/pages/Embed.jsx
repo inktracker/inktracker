@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
+import { CUSTOMER_PUBLIC_URL } from "@/lib/publicUrls";
 
-const APP_URL = window.location.origin;
+// Customers will paste the embed snippet on their website — always point at
+// the production domain so it doesn't break when shop owner is on a vercel preview.
+const APP_URL = CUSTOMER_PUBLIC_URL;
 
 export default function Embed() {
   const [copied, setCopied] = useState(null);

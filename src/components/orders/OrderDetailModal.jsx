@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import MessagesTab from "../shared/MessagesTab";
 import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
+import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import { MessageSquare } from "lucide-react";
 import {
   calcGroupPrice,
@@ -328,13 +329,12 @@ export default function OrderDetailModal({
   }
 
   function copyLink(type) {
-    const base = window.location.origin;
     // The token gates anonymous access. Customer must have this exact URL
-    // (which we email them) to view art / order status.
-    const tokenParam = order.public_token ? `&token=${encodeURIComponent(order.public_token)}` : "";
+    // (which we email them) to view art / order status. Always use the
+    // customer-facing production domain — see lib/publicUrls.js.
     const url = type === "art"
-      ? `${base}/ArtApproval?id=${order.id}${tokenParam}`
-      : `${base}/OrderStatus?id=${order.id}${tokenParam}`;
+      ? artApprovalUrl(order.id, order.public_token)
+      : orderStatusUrl(order.id, order.public_token);
     navigator.clipboard.writeText(url).then(() => {
       setCopied(type);
       setTimeout(() => setCopied(null), 2000);

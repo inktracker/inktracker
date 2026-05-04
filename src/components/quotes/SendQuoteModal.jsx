@@ -4,6 +4,7 @@ import { Mail, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { calcQuoteTotals, buildQBInvoicePayload, fmtMoney, BROKER_MARKUP } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
+import { quotePaymentUrl } from "@/lib/publicUrls";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -71,7 +72,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         .replace(/\{\{quote_id\}\}/g, quote.quote_id || "")
         .replace(/\{\{total\}\}/g, fmtMoney(totals.total))
         .replace(/\{\{shop_name\}\}/g, shop)
-        .replace(/\{\{payment_link\}\}/g, `${window.location.origin}/quotepayment?id=${quote.id}`);
+        .replace(/\{\{payment_link\}\}/g, quotePaymentUrl(quote.id, quote.public_token));
     }
 
     if (shopTemplate?.subject) {
@@ -111,7 +112,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           console.warn("[SendQuoteModal] could not mint public_token:", tokenErr);
         }
       }
-      const paymentLink = `${window.location.origin}/quotepayment?id=${quote.id}&token=${encodeURIComponent(publicToken || "")}`;
+      const paymentLink = quotePaymentUrl(quote.id, publicToken);
       let quoteForPdf = { ...quote, public_token: publicToken };
 
       // Create the QB invoice now — its paymentLink will be used when the
