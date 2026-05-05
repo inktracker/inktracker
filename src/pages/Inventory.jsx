@@ -828,7 +828,24 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
   const totalQty = cart.reduce((s, c) => s + c.qty, 0);
   const totalCost = cart.reduce((s, c) => s + c.qty * (c.price || 0), 0);
   function openOnSS(style) {
-    window.open(`https://www.ssactivewear.com/ps/product/${encodeURIComponent(style)}`, "_blank");
+    window.open(`https://www.ssactivewear.com/search?q=${encodeURIComponent(style)}`, "_blank");
+  }
+
+  function downloadCSV() {
+    // S&S bulk order CSV format: SKU, Qty
+    const rows = [["SKU", "Qty"]];
+    for (const item of cart) {
+      const sku = item.sku || `${item.style}${(item.color || "").replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 6)}-${item.size}`;
+      rows.push([sku, item.qty]);
+    }
+    const csv = rows.map(r => r.join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ss-order-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -878,7 +895,15 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
               <button onClick={onClear} className="text-sm text-red-400 hover:text-red-600">Clear All</button>
             )}
           </div>
-          <div className="text-sm font-semibold text-slate-700">{fmtMoney(totalCost)} est.</div>
+          <div className="flex items-center gap-3">
+            {cart.length > 0 && (
+              <button onClick={downloadCSV}
+                className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
+                Download CSV
+              </button>
+            )}
+            <div className="text-sm font-semibold text-slate-700">{fmtMoney(totalCost)} est.</div>
+          </div>
         </div>
       </div>
     </div>
