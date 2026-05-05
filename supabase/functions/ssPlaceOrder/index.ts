@@ -1,3 +1,6 @@
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+
 const SS_BASE = "https://api.ssactivewear.com/v2";
 const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
 const SS_KEY = Deno.env.get("SS_API_KEY")!;
@@ -16,6 +19,22 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
+    // Subscription check — placing orders costs real money
+    const authHeader = req.headers.get("authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const token = authHeader.replace("Bearer ", "");
+      const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (user) {
+        const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        const { data: profile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+        const blocked = requireActiveSubscription(profile);
+        if (blocked) return blocked;
+      }
+    }
+
     const { poNumber, shipTo, lines, shippingMethod = "Ground", testOrder = false } = await req.json();
 
     if (!poNumber) return Response.json({ error: "poNumber required" }, { status: 400, headers: CORS });

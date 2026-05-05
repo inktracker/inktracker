@@ -3,6 +3,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -1282,6 +1283,13 @@ Deno.serve(async (req) => {
     if (action === "checkConnection") {
       const result = await handleCheckConnection(supabase, user.id, user.email ?? null);
       return Response.json(result, { headers: CORS });
+    }
+
+    // Subscription check — QB write operations cost money
+    {
+      const { data: subProfile } = await supabase.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+      const blocked = requireActiveSubscription(subProfile);
+      if (blocked) return blocked;
     }
 
     // All other actions need valid QB tokens

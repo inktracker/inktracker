@@ -1,5 +1,6 @@
 // FedEx Shipping — getRates, createShipment, trackShipment, validateAddress
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import {
   CORS, FEDEX_BASE, FEDEX_ACCOUNT_NUMBER, SHIPPER_ADDRESS, SHIPPER_CONTACT,
   fedexFetch,
@@ -52,6 +53,14 @@ Deno.serve(async (req) => {
     });
     const { data: { user }, error: authErr } = await supaUser.auth.getUser(accessToken);
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
+
+    // Subscription check — FedEx labels cost money
+    {
+      const admin = adminClient();
+      const { data: subProfile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+      const blocked = requireActiveSubscription(subProfile);
+      if (blocked) return blocked;
+    }
 
     // ── validateAddress ────────────────────────────────────────────
     if (action === "validateAddress") {

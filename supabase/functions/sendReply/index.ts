@@ -10,6 +10,9 @@
 // Authenticated request — RLS on messages table is enforced separately when
 // the frontend logs the row.
 
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
 
@@ -43,6 +46,22 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
+    // Subscription check — replies cost money (Resend)
+    const authHeader = req.headers.get("authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const token = authHeader.replace("Bearer ", "");
+      const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
+      });
+      const { data: { user } } = await supabase.auth.getUser(token);
+      if (user) {
+        const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        const { data: profile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+        const blocked = requireActiveSubscription(profile);
+        if (blocked) return blocked;
+      }
+    }
+
     const {
       to,                  // string OR string[] — customer email(s)
       subject,             // already include any [Ref: ...] tag
