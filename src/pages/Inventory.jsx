@@ -818,6 +818,10 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
 }
 
 function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }) {
+  const [ordering, setOrdering] = useState(false);
+  const [orderResult, setOrderResult] = useState(null);
+  const [orderError, setOrderError] = useState("");
+
   const grouped = {};
   cart.forEach((item, idx) => {
     const key = `${item.product} — ${item.color}`;
@@ -827,6 +831,48 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
 
   const totalQty = cart.reduce((s, c) => s + c.qty, 0);
   const totalCost = cart.reduce((s, c) => s + c.qty * (c.price || 0), 0);
+
+  async function handlePlaceOrder() {
+    setOrdering(true);
+    setOrderError("");
+    try {
+      const lines = cart.map(item => ({
+        sku: item.sku || `${item.style}${(item.color || "").replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 6)}-${item.size}`,
+        qty: item.qty,
+      })).filter(l => l.sku && l.qty > 0);
+
+      const poNumber = `INKT-${Date.now().toString(36).toUpperCase()}`;
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${supabaseFuncUrl}/functions/v1/ssPlaceOrder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          poNumber,
+          shipTo: {
+            name: user?.shop_name || "My Shop",
+            address1: user?.address || "",
+            city: user?.city || "",
+            state: user?.state || "",
+            zip: user?.zip || "",
+          },
+          lines,
+          shippingMethod: "Ground",
+          testOrder: false,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `S&S returned ${res.status}`);
+      setOrderResult(data);
+      onClear();
+    } catch (err) {
+      setOrderError(err.message || "Failed to place order");
+    } finally {
+      setOrdering(false);
+    }
+  }
   function openOnSS(style) {
     window.open(`https://www.ssactivewear.com/search?q=${encodeURIComponent(style)}`, "_blank");
   }
@@ -883,26 +929,48 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
               </div>
             </div>
           ))}
-          {cart.length === 0 && (
+          {cart.length === 0 && !orderResult && (
             <div className="px-6 py-8 text-center text-sm text-slate-400">Cart is empty</div>
+          )}
+
+          {orderResult && (
+            <div className="px-6 py-8 text-center space-y-3">
+              <Check className="w-10 h-10 text-emerald-500 mx-auto" />
+              <div className="text-sm font-bold text-slate-800">Order placed with S&S</div>
+              {orderResult.order?.orderNumber && (
+                <div className="text-xs text-slate-500">S&S Order #: <span className="font-mono font-bold">{orderResult.order.orderNumber}</span></div>
+              )}
+            </div>
+          )}
+
+          {orderError && (
+            <div className="mx-6 mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{orderError}</div>
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Close</button>
-            {cart.length > 0 && (
-              <button onClick={onClear} className="text-sm text-red-400 hover:text-red-600">Clear All</button>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {cart.length > 0 && (
-              <button onClick={downloadCSV}
-                className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
-                Download CSV
-              </button>
-            )}
-            <div className="text-sm font-semibold text-slate-700">{fmtMoney(totalCost)} est.</div>
+        <div className="px-6 py-4 border-t border-slate-100 space-y-3">
+          {cart.length > 0 && !orderResult && (
+            <button onClick={handlePlaceOrder} disabled={ordering}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-sm font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-2">
+              {ordering ? <><Loader2 className="w-4 h-4 animate-spin" /> Placing Order...</> : <><ShoppingCart className="w-4 h-4" /> Place Order with S&S ({totalQty} items)</>}
+            </button>
+          )}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Close</button>
+              {cart.length > 0 && !orderResult && (
+                <button onClick={onClear} className="text-sm text-red-400 hover:text-red-600">Clear All</button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              {cart.length > 0 && !orderResult && (
+                <button onClick={downloadCSV}
+                  className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
+                  Download CSV
+                </button>
+              )}
+              {cart.length > 0 && <div className="text-sm font-semibold text-slate-700">{fmtMoney(totalCost)} est.</div>}
+            </div>
           </div>
         </div>
       </div>
