@@ -6,6 +6,8 @@
 // { eventNotifications: [{ realmId, dataChangeEvent: { entities: [{ name, id, operation, lastUpdated }] } }] }
 //
 // Deploy: npx supabase functions deploy qbWebhook --no-verify-jwt
+
+import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 // Set secret: npx supabase secrets set QB_WEBHOOK_VERIFIER_TOKEN=<from Intuit Developer Portal>
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -76,11 +78,11 @@ async function getAccessToken(supabase: any, profile: any): Promise<string> {
   if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
   const fresh = await res.json();
 
-  await supabase.from("profiles").update({
+  await updateProfileSecrets(supabase, profile.id, {
     qb_access_token:     fresh.access_token,
     qb_refresh_token:    fresh.refresh_token ?? profile.qb_refresh_token,
     qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
-  }).eq("id", profile.id);
+  });
 
   return fresh.access_token;
 }
@@ -168,12 +170,13 @@ async function processNotification(supabase: any, notification: any) {
   const { realmId, dataChangeEvent } = notification;
   if (!realmId || !dataChangeEvent?.entities) return;
 
-  // Look up the shop's QB tokens by realm ID
-  const { data: profile } = await supabase
+  // Look up the shop's QB tokens by realm ID — find profile first, then load secrets
+  const { data: profileRow } = await supabase
     .from("profiles")
-    .select("id, qb_access_token, qb_refresh_token, qb_token_expires_at")
+    .select("id")
     .eq("qb_realm_id", realmId)
     .maybeSingle();
+  const profile = profileRow ? await loadProfileWithSecrets(supabase, { id: profileRow.id }) : null;
 
   if (!profile?.qb_access_token) {
     console.error(`[qbWebhook] No profile found for realmId ${realmId}`);

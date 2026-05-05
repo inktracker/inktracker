@@ -18,6 +18,7 @@ import {
   resetAcCredentials,
 } from "../_shared/ascolour.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 
 async function resolveAcCredentials(accessToken?: string) {
   if (accessToken) {
@@ -28,7 +29,7 @@ async function resolveAcCredentials(accessToken?: string) {
       const { data: { user } } = await supabase.auth.getUser(accessToken);
       if (user) {
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const { data: profile } = await admin.from("profiles").select("ac_subscription_key, ac_email, ac_password").eq("auth_id", user.id).single();
+        const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
         if (profile?.ac_subscription_key) {
           setAcCredentials(profile.ac_subscription_key, profile.ac_email || "", profile.ac_password || "");
           return;

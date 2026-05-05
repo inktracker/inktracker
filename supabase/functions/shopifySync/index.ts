@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 
 const SHOPIFY_CLIENT_ID = Deno.env.get("SHOPIFY_CLIENT_ID")!;
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
@@ -30,12 +31,7 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await supabaseAdmin.auth.getUser(accessToken);
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("*")
-      .eq("auth_id", user.id)
-      .single();
-
+    const profile = await loadProfileWithSecrets(supabaseAdmin, { auth_id: user.id });
     if (!profile) return json({ error: "Profile not found" }, 404);
 
     // ── getAuthUrl ──────────────────────────────────────────────────────

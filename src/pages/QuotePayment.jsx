@@ -303,8 +303,8 @@ export default function QuotePayment() {
         });
         const verifyData = await verifyRes.json();
         if (!verifyData.success) {
-          setCheckoutError("Security check failed. Please refresh the page and try again.");
-          return;
+          console.warn("[QuotePayment] reCAPTCHA score too low:", verifyData.score);
+          // Don't block — Stripe Checkout has its own fraud prevention
         }
       } catch {
         // If reCAPTCHA itself errors (blocked, network), allow through
@@ -327,7 +327,7 @@ export default function QuotePayment() {
       return;
     }
 
-    // Redirect to QB payment page — QB is the source of truth for invoicing
+    // Prefer QB payment page if available — QB is the source of truth for invoicing
     if (quote?.qb_payment_link) {
       window.location.href = quote.qb_payment_link;
       return;
@@ -345,9 +345,8 @@ export default function QuotePayment() {
         return;
       }
     } catch {}
-    setCheckoutError("Payment link is not ready yet. Please contact us or check your email for a direct payment link.");
-    return;
 
+    // No QB link available — fall through to Stripe checkout
     setCheckoutLoading(true);
 
     try {

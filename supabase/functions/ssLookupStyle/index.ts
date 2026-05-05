@@ -4,6 +4,7 @@
 // Auth: HTTP Basic, username = account number, password = API key
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
 const GLOBAL_SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
@@ -25,9 +26,9 @@ async function resolveSSAuth(accessToken?: string): Promise<string> {
       const { data: { user } } = await supabase.auth.getUser(accessToken);
       if (user) {
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const { data: profile } = await admin.from("profiles").select("ss_account_number, ss_api_key").eq("auth_id", user.id).single();
-        if (profile?.ss_account_number && profile?.ss_api_key) {
-          return btoa(`${profile.ss_account_number}:${profile.ss_api_key}`);
+        const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
+        if (profile?.ss_account && profile?.ss_api_key) {
+          return btoa(`${profile.ss_account}:${profile.ss_api_key}`);
         }
       }
     } catch (err) {

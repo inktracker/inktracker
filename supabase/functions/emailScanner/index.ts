@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 
 const GMAIL_CLIENT_ID = Deno.env.get("GMAIL_CLIENT_ID")!;
 const GMAIL_CLIENT_SECRET = Deno.env.get("GMAIL_CLIENT_SECRET")!;
@@ -54,10 +55,10 @@ async function refreshGmailToken(profile: any) {
   if (!res.ok) return null;
   const tokens = await res.json();
 
-  await adminClient().from("profiles").update({
+  await updateProfileSecrets(adminClient(), profile.id, {
     gmail_access_token: tokens.access_token,
     gmail_token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
-  }).eq("id", profile.id);
+  });
 
   return tokens.access_token;
 }
@@ -516,11 +517,7 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await supaUser.auth.getUser(accessToken);
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
-    const { data: profile } = await adminClient()
-      .from("profiles")
-      .select("*")
-      .eq("auth_id", user.id)
-      .single();
+    const profile = await loadProfileWithSecrets(adminClient(), { auth_id: user.id });
     if (!profile) return json({ error: "Profile not found" });
 
     // ── getAuthUrl ──────────────────────────────────────────────────

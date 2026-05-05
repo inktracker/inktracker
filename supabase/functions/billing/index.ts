@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
+import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 
 const STRIPE_KEY = Deno.env.get("STRIPE_TEST_SECRET_KEY") || Deno.env.get("STRIPE_SECRET_KEY")!;
 const stripe = new Stripe(STRIPE_KEY, { apiVersion: "2023-10-16" });
@@ -29,12 +30,7 @@ function adminClient() {
 }
 
 async function getProfile(authId: string) {
-  const { data } = await adminClient()
-    .from("profiles")
-    .select("*")
-    .eq("auth_id", authId)
-    .single();
-  return data;
+  return loadProfileWithSecrets(adminClient(), { auth_id: authId });
 }
 
 Deno.serve(async (req) => {
@@ -110,10 +106,7 @@ Deno.serve(async (req) => {
           metadata: { profile_id: profile.id, auth_id: user.id },
         });
         customerId = customer.id;
-        await adminClient()
-          .from("profiles")
-          .update({ stripe_customer_id: customerId })
-          .eq("id", profile.id);
+        await updateProfileSecrets(adminClient(), profile.id, { stripe_customer_id: customerId });
       }
 
       const session = await stripe.checkout.sessions.create({

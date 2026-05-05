@@ -2,6 +2,7 @@
 // Actions: checkConnection | createInvoice | syncExpense | getCustomers
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -30,22 +31,13 @@ async function refreshToken(refreshTok: string) {
 }
 
 async function findUserProfile(supabase: any, authId: string, email: string | null) {
-  // Preferred: auth_id match (what supabaseClient.auth.me uses)
-  let { data: profile } = await supabase
-    .from("profiles")
-    .select("id, auth_id, email, qb_access_token, qb_refresh_token, qb_realm_id, qb_token_expires_at")
-    .eq("auth_id", authId)
-    .maybeSingle();
-
+  // Preferred: auth_id match — loads from profile_secrets (new) with profiles fallback
+  let profile = await loadProfileWithSecrets(supabase, { auth_id: authId });
   if (profile) return profile;
 
   // Fallback: match by email (profile may pre-date the auth user; auth_id still NULL)
   if (email) {
-    const { data: byEmail } = await supabase
-      .from("profiles")
-      .select("id, auth_id, email, qb_access_token, qb_refresh_token, qb_realm_id, qb_token_expires_at")
-      .eq("email", email)
-      .maybeSingle();
+    const byEmail = await loadProfileWithSecrets(supabase, { email });
     if (byEmail) {
       // Backfill auth_id so future lookups are fast
       if (!byEmail.auth_id) {
@@ -80,30 +72,12 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
     qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
   };
 
-  // PRIMARY write — the legacy profiles columns. We must persist the rotated
-  // refresh token here because QB invalidates the old one the moment it issues
-  // a new one. If this write fails, every future QB call is dead until the
-  // user reconnects, so it's the highest-priority operation.
-  const { error: profilesErr } = await supabase
-    .from("profiles")
-    .update(refreshedFields)
-    .eq("id", profile.id);
-  if (profilesErr) {
-    console.error("[qbSync] CRITICAL: failed to persist refreshed QB tokens to profiles:", profilesErr);
-    throw new Error(`Token persist failed: ${profilesErr.message}`);
-  }
-
-  // SECONDARY write — profile_secrets (the new home). Best-effort during the
-  // migration window. If this fails, the next call will simply read from the
-  // (still-correct) profiles columns. Don't let a secondary write failure
-  // invalidate a successfully-rotated token.
+  // Write rotated tokens to profile_secrets (primary) with dual-write to profiles
   try {
-    await supabase.from("profile_secrets").upsert(
-      { profile_id: profile.id, ...refreshedFields, updated_at: new Date().toISOString() },
-      { onConflict: "profile_id" },
-    );
-  } catch (secretsErr) {
-    console.warn("[qbSync] dual-write to profile_secrets failed (non-fatal):", secretsErr);
+    await updateProfileSecrets(supabase, profile.id, refreshedFields, { dualWrite: true });
+  } catch (err) {
+    console.error("[qbSync] CRITICAL: failed to persist refreshed QB tokens:", err);
+    throw new Error(`Token persist failed: ${(err as Error).message}`);
   }
 
   return { accessToken: fresh.access_token, realmId: profile.qb_realm_id };

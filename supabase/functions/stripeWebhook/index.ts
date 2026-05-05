@@ -10,6 +10,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
+import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 
 const STRIPE_SECRET_KEY      = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const STRIPE_WEBHOOK_SECRET  = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
@@ -53,12 +54,7 @@ async function refreshQbToken(refreshTok: string) {
 }
 
 async function getShopQbTokens(supabase: any, shopOwnerEmail: string) {
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, qb_access_token, qb_refresh_token, qb_realm_id, qb_token_expires_at")
-    .eq("email", shopOwnerEmail)
-    .maybeSingle();
-
+  const profile = await loadProfileWithSecrets(supabase, { email: shopOwnerEmail });
   if (!profile?.qb_access_token || !profile?.qb_realm_id) return null;
 
   const expiresAt = profile.qb_token_expires_at ? new Date(profile.qb_token_expires_at).getTime() : 0;
@@ -68,11 +64,11 @@ async function getShopQbTokens(supabase: any, shopOwnerEmail: string) {
   }
 
   const fresh = await refreshQbToken(profile.qb_refresh_token);
-  await supabase.from("profiles").update({
+  await updateProfileSecrets(supabase, profile.id, {
     qb_access_token:     fresh.access_token,
     qb_refresh_token:    fresh.refresh_token ?? profile.qb_refresh_token,
     qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
-  }).eq("id", profile.id);
+  });
 
   return { accessToken: fresh.access_token, realmId: profile.qb_realm_id };
 }

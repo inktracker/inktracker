@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { updateProfileSecrets } from "../_shared/profileSecrets.ts";
 
 const SHOPIFY_CLIENT_ID     = Deno.env.get("SHOPIFY_CLIENT_ID")!;
 const SHOPIFY_CLIENT_SECRET = Deno.env.get("SHOPIFY_CLIENT_SECRET")!;
@@ -56,16 +57,17 @@ Deno.serve(async (req) => {
       return Response.redirect(`${APP_URL}/Inventory?shopify_error=state_mismatch`);
     }
 
-    const { error: updateErr } = await supabaseAdmin
-      .from("profiles")
-      .update({
+    // Write token to profile_secrets (primary) with dual-write to profiles
+    try {
+      await updateProfileSecrets(supabaseAdmin, profile.id, {
         shopify_access_token: access_token,
+      });
+      // shopify_store and oauth_state are non-secret, keep on profiles
+      await supabaseAdmin.from("profiles").update({
         shopify_store: shop,
         shopify_oauth_state: null,
-      })
-      .eq("id", profile.id);
-
-    if (updateErr) {
+      }).eq("id", profile.id);
+    } catch (updateErr) {
       console.error("Failed to store Shopify token:", updateErr);
       return Response.redirect(`${APP_URL}/Inventory?shopify_error=storage_failed`);
     }
