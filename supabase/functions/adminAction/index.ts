@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://www.inktracker.app",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -60,25 +60,13 @@ serve(async (req) => {
 
     if (action === "listUsers") {
       const adminEmail = callerProfile?.email || user.email;
-      // Get ALL profiles, then filter in JS for this admin's shop
-      // (Supabase .or() with array containment is unreliable)
-      const { data: allProfiles, error } = await adminClient
+      // Query only profiles belonging to this admin's shop — scoped at DB level
+      const { data: profiles, error } = await adminClient
         .from("profiles")
         .select("id, auth_id, role, shop_name, logo_url, created_at, email, shop_owner, assigned_shops, full_name")
-        .order("created_at", { ascending: false });
-
-      // Only show: the admin's own profile, users whose shop_owner is this admin,
-      // and users who have this admin's email in their assigned_shops.
-      // Do NOT show unrelated users (other shop owners, users with shop_owner=NULL from other shops).
-      const profiles = (allProfiles || []).filter(p => {
-        // Always show own profile
-        if (p.auth_id === user.id) return true;
-        // Show users assigned to this admin's shop
-        if (p.shop_owner === adminEmail) return true;
-        // Show users who list this admin in assigned_shops (brokers/employees)
-        if (Array.isArray(p.assigned_shops) && p.assigned_shops.includes(adminEmail)) return true;
-        return false;
-      });
+        .or(`auth_id.eq.${user.id},shop_owner.eq.${adminEmail},assigned_shops.cs.["${adminEmail}"]`)
+        .order("created_at", { ascending: false })
+        .limit(200);
 
       if (error) throw error;
 

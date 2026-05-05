@@ -17,7 +17,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
 
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://www.inktracker.app",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
