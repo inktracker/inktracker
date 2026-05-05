@@ -98,7 +98,7 @@ function groupRowsByBrand(rows: any[]): any[] {
     const partNumber = String(firstRow._styleName ?? firstRow.styleName ?? firstRow.partNumber ?? "").toUpperCase();
     const styleDesc  = firstRow._styleTitle || "";
     const styleID    = String(firstRow.styleID ?? "");
-    const title      = [brandName, partNumber].filter(Boolean).join(" — ");
+    const title      = styleDesc || [brandName, partNumber].filter(Boolean).join(" — ");
     const styleCategory = firstRow._styleCategory || "";
 
     const colorMap: Record<string, {
@@ -159,7 +159,7 @@ function groupRowsByBrand(rows: any[]): any[] {
       resolvedStyleNumber: partNumber,
       productNumber:       styleID,
       brandName,
-      styleName:           partNumber,
+      styleName:           styleDesc || partNumber,
       resolvedTitle:       title,
       title,
       description:         styleDesc,

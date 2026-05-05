@@ -102,7 +102,10 @@ function getPreferredGarmentDescription(li) {
     if (normalized === "shirt") continue;
     if (normalized === "garment") continue;
 
-    return candidate;
+    // Strip trailing style number from descriptions like "Comfort Colors — 1717"
+    const stripped = candidate.replace(/\s*[—–-]\s*\d{3,5}[A-Z]?\s*$/i, "").trim();
+    if (stripped && stripped.toLowerCase() !== garmentNumber) return stripped;
+    if (stripped) return stripped;
   }
 
   if (cleanText(li?.brand)) return cleanText(li.brand);
