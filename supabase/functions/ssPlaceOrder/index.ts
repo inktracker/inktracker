@@ -7,7 +7,7 @@ const SS_KEY = Deno.env.get("SS_API_KEY")!;
 const AUTH = btoa(`${SS_ACCOUNT}:${SS_KEY}`);
 
 const CORS = {
-  "Access-Control-Allow-Origin": "https://www.inktracker.app",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
@@ -43,6 +43,89 @@ Deno.serve(async (req) => {
     }
     if (!lines?.length) return Response.json({ error: "At least one order line required" }, { status: 400, headers: CORS });
 
+    // Resolve real S&S SKUs — our cart stores style+color+size but S&S needs internal SKU IDs
+    const resolvedLines: { Identifier: string; Qty: number }[] = [];
+    const skuCache: Record<string, Record<string, string>> = {}; // style -> {colorSize -> sku}
+
+    for (const l of lines) {
+      // Try to extract style number from our guessed SKU (e.g. "3480PINK-S" -> style "3480")
+      const styleMatch = (l.sku || "").match(/^(\d{3,5})/);
+      const style = l.style || (styleMatch ? styleMatch[1] : "");
+      const size = l.size || (l.sku || "").split("-").pop() || "";
+      const color = l.color || "";
+
+      if (!style) {
+        resolvedLines.push({ Identifier: l.sku, Qty: l.qty });
+        continue;
+      }
+
+      // Fetch product data from S&S if we haven't already for this style
+      // Must resolve styleID from styles endpoint first, then fetch products by styleid
+      if (!skuCache[style]) {
+        try {
+          // Step 1: Get styleID from styles search
+          const stylesRes = await fetch(`${SS_BASE}/styles?search=${encodeURIComponent(style)}`, {
+            headers: ssHeaders(),
+            signal: AbortSignal.timeout(10000),
+          });
+          let styleID = "";
+          if (stylesRes.ok) {
+            const styles = await stylesRes.json();
+            if (Array.isArray(styles) && styles.length > 0) {
+              // Match by styleName (user-facing code like "3480") or partNumber
+              const match = styles.find((s: any) =>
+                String(s.styleName || "").toUpperCase() === style.toUpperCase() ||
+                String(s.partNumber || "").toUpperCase() === style.toUpperCase()
+              ) || styles[0];
+              styleID = String(match.styleID || "");
+            }
+          }
+
+          // Step 2: Fetch products by styleID
+          if (!styleID) {
+            skuCache[style] = {};
+            continue;
+          }
+          const productsRes = await fetch(`${SS_BASE}/products?styleid=${styleID}`, {
+            headers: ssHeaders(),
+            signal: AbortSignal.timeout(15000),
+          });
+          const productsText = await productsRes.text();
+          console.error(`[ssPlaceOrder] Products ${style} (styleID=${styleID}): status=${productsRes.status} len=${productsText.length}`);
+          if (productsRes.ok) {
+            let rows: any;
+            try { rows = JSON.parse(productsText); } catch { rows = []; }
+            const map: Record<string, string> = {};
+            console.error(`[ssPlaceOrder] Products for style ${style}: ${Array.isArray(rows) ? rows.length : typeof rows} rows`);
+            for (const row of (Array.isArray(rows) ? rows : [])) {
+              const cn = (row.colorName || "").toUpperCase();
+              const sn = (row.sizeName || "").toUpperCase();
+              const sku = row.sku || "";
+              if (cn && sn && sku) map[`${cn}-${sn}`] = sku;
+            }
+            console.error(`[ssPlaceOrder] SKU map keys: ${Object.keys(map).slice(0, 10).join(", ")}`);
+            skuCache[style] = map;
+          } else {
+            console.error(`[ssPlaceOrder] Products fetch failed: ${productsRes.status} ${productsText.slice(0, 200)}`);
+            skuCache[style] = {};
+          }
+        } catch {
+          skuCache[style] = {};
+        }
+      }
+
+      // Look up the real SKU
+      const key = `${color.toUpperCase()}-${size.toUpperCase()}`;
+      const realSku = skuCache[style]?.[key];
+      console.error(`[ssPlaceOrder] Lookup: style=${style} key=${key} → ${realSku || "MISS"}`);
+      if (realSku) {
+        resolvedLines.push({ Identifier: realSku, Qty: l.qty });
+      } else {
+        // Fall back to guessed SKU — S&S will reject if invalid
+        resolvedLines.push({ Identifier: l.sku || `${style}-${size}`, Qty: l.qty });
+      }
+    }
+
     // S&S API uses PascalCase field names
     const ssOrder = {
       TestOrder: testOrder,
@@ -59,7 +142,7 @@ Deno.serve(async (req) => {
         Phone: shipTo.phone ?? "",
         Email: shipTo.email ?? "",
       },
-      Lines: lines.map((l: any) => ({ Identifier: l.sku, Qty: l.qty })),
+      Lines: resolvedLines.map(l => ({ ...l, Warehouse: "DC" })),
     };
 
     console.log("S&S order payload:", JSON.stringify(ssOrder));

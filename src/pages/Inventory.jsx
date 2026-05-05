@@ -837,9 +837,12 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
     setOrderError("");
     try {
       const lines = cart.map(item => ({
-        sku: item.sku || `${item.style}${(item.color || "").replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 6)}-${item.size}`,
+        sku: item.sku || "",
+        style: item.style || "",
+        color: item.color || "",
+        size: item.size || "",
         qty: item.qty,
-      })).filter(l => l.sku && l.qty > 0);
+      })).filter(l => l.qty > 0);
 
       const poNumber = `INKT-${Date.now().toString(36).toUpperCase()}`;
       const { data, error: fnError } = await supabase.functions.invoke("ssPlaceOrder", {
