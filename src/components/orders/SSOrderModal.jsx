@@ -62,10 +62,16 @@ export default function SSOrderModal({ order, onClose, onOrderPlaced }) {
   })).filter((l) => l.sku && l.qty > 0);
 
   function handleAddToCart() {
-    const cartItems = finalLines.map(l => ({
-      sku: l.sku,
+    // Build cart items matching the shape Inventory's SsCartModal expects:
+    // { product, style, color, size, qty, price, sku }
+    const cartItems = rawLines.map(l => ({
+      product: l.li.styleName || l.li.resolvedTitle || l.li.brand || "",
+      style: l.li.supplierStyleNumber || l.li.resolvedStyleNumber || l.li.styleNumber || l.li.style || "",
+      color: l.li.garmentColor || "",
+      size: l.size,
       qty: l.qty,
-      orderId: order.order_id || order.id,
+      price: l.li.garmentCost || l.li.casePrice || 0,
+      sku: getSkuForLine(l, l.size),
     }));
 
     // Add to localStorage cart (shared with Inventory page)
