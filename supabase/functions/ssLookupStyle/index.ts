@@ -12,7 +12,7 @@ const GLOBAL_SS_KEY = Deno.env.get("SS_API_KEY")!;
 const FETCH_TIMEOUT_MS = 20_000;
 
 const CORS = {
-  "Access-Control-Allow-Origin": "https://www.inktracker.app",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 

@@ -11,7 +11,7 @@ const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bea
 const QB_BASE          = "https://quickbooks.api.intuit.com/v3/company";
 
 const CORS = {
-  "Access-Control-Allow-Origin": "https://www.inktracker.app",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 

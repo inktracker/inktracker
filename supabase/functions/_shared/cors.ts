@@ -3,7 +3,7 @@
 // that must be callable from external sites (embedded wizard, webhooks).
 
 export const CORS = {
-  "Access-Control-Allow-Origin": "https://www.inktracker.app",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 

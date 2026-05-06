@@ -8,7 +8,7 @@ const SCOPES            = "read_products,read_inventory";
 const API_VERSION       = "2024-01";
 
 const CORS = {
-  "Access-Control-Allow-Origin": "https://www.inktracker.app",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
