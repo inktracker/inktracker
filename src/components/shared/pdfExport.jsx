@@ -333,18 +333,14 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Compute line total from components — one formula used for header, per-piece, and totals
+    // Compute line total from components — rush shown separately at bottom
     const osUp = getOversizeUpcharge();
     const override = Number(li?.clientPpp);
     const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
-    // Base = print + garment + extras (before rush, before 2XL surcharge)
+    // Base = print + garment + extras + 2XL surcharge (NO rush — rush shown at bottom)
     const lineBase = r ? (r.printCost + r.gCost + (r.extraCost || 0)) * priceScale : 0;
-    const lineRush = r ? (r.rushFee || 0) * priceScale : 0;
     const lineOsUp = twoXL * osUp * priceScale;
-    // Full line with rush = base + rush + 2XL surcharge
-    const lineTotal = useLineOverride ? (override * qty + lineOsUp) : (lineBase + lineRush + lineOsUp);
-    // Per-piece price including rush (matches live pricing panel)
-    const linePpp = qty > 0 ? lineTotal / qty : 0;
+    const lineTotal = useLineOverride ? (override * qty + lineOsUp) : (lineBase + lineOsUp);
 
     if (r) {
       doc.setFontSize(9);
@@ -401,9 +397,8 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
-        // Per-piece: use linePpp (which already includes rush + averaged 2XL)
-        // For big sizes, add the per-piece surcharge on top
-        const basePppForSize = useLineOverride ? Number(li.clientPpp) : (qty > 0 ? (lineBase + lineRush) / qty : 0);
+        // Per-piece: base price without rush (rush shown separately at bottom)
+        const basePppForSize = useLineOverride ? Number(li.clientPpp) : (qty > 0 ? lineBase / qty : 0);
         activeSizes.forEach((sz) => {
           xPos += colW;
           const price = BIG_SIZES.includes(sz) ? basePppForSize + osUp : basePppForSize;
