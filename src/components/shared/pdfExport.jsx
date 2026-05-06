@@ -513,8 +513,8 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   const rr = parseFloat(rushRate) || 0;
   // Use the PDF's own line total sum so all numbers are internally consistent
   const subWithoutRush = pdfSubtotal ?? totals.subBeforeRush ?? totals.sub;
-  const rushAmount = totals.rushTotal ?? 0;
-  // Recompute discount, tax, and total from the PDF's own subtotal
+  // Recompute rush from the PDF's own subtotal so it matches
+  const rushAmount = rr > 0 ? Math.round(subWithoutRush * rr * 100) / 100 : 0;
   const pdfSub = subWithoutRush + rushAmount;
   const discVal = parseFloat(discount) || 0;
   const isFlatDisc = discountType === 'flat' || (discVal > 100 && discountType !== 'percent');
