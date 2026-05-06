@@ -323,6 +323,7 @@ function buildBrandOptions(matches, typedStyleNumber) {
       colors: match.colors || [],
       inventoryMap: match.inventoryMap || {},
       priceMap: match.priceMap || {},
+      sizePriceMap: match.sizePriceMap || {},
       piecePrice: match.piecePrice,
       casePrice: match.casePrice,
       raw: match.raw || match,
