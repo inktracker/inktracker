@@ -325,15 +325,13 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Line total = per-piece × qty, derived from the SAME rounded values displayed.
+    // Line total = sum of per-size (totalPpp × qty) from the pricing engine.
     // Rush shown separately at the bottom. What you see is what multiplies.
     const override = Number(li?.clientPpp);
     const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
-    const regPpp = useLineOverride ? override : (r ? r.regularPpp : 0);
-    const bigPpp = useLineOverride ? override + (r ? (r.oversizePpp - r.regularPpp) : 0) : (r ? r.oversizePpp : 0);
-    const bigQty = r ? r.twoXL : 0;
-    const regQty = qty - bigQty;
-    const lineTotal = regPpp * regQty + bigPpp * bigQty;
+    const lineTotal = useLineOverride
+      ? override * qty
+      : (r ? r.baseSubtotal : 0);
 
     if (r) {
       doc.setFontSize(9);
@@ -390,10 +388,11 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
-        // Per-piece: same values used to compute line total above
+        // Per-piece: actual per-size price from sizeBreakdown
+        const sb = r?.sizeBreakdown || {};
         activeSizes.forEach((sz) => {
           xPos += colW;
-          const price = BIG_SIZES.includes(sz) ? bigPpp : regPpp;
+          const price = useLineOverride ? override : (sb[sz]?.totalPpp || r?.ppp || 0);
           doc.text(fmtMoney(price), xPos, yPos, { align: 'center' });
         });
         yPos += 4;

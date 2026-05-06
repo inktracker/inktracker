@@ -317,8 +317,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
   });
 
   const isBroker = markup === BROKER_MARKUP;
-  const garmentMarkup = getMarkup(li.garmentCost, isBroker);
-  const gCost = Math.round((parseFloat(li.garmentCost) || 0) * garmentMarkup * qty * 100) / 100;
+  const roundedPrintCost = Math.round(printCost * 100) / 100;
 
   const er = isEmbroidery ? (_pc?.embroidery?.extras || {}) : (_pc?.extras || EXTRA_RATES);
   let extraPPP = 0;
@@ -327,16 +326,40 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
   });
   const extraCost = Math.round(extraPPP * qty * 100) / 100;
 
-  // Round each component to cents
-  const roundedPrintCost = Math.round(printCost * 100) / 100;
+  // Per-piece print + extras cost (same for all sizes)
+  const printExtraPpp = qty > 0 ? Math.round((roundedPrintCost + extraCost) / qty * 100) / 100 : 0;
 
-  // Oversize surcharge — computed here so callers never have to
+  // Garment cost per size — use actual per-size prices from API when available,
+  // fall back to flat garmentCost × markup for all sizes.
+  const sizePrices = li.sizePrices || {};
+  const hasSizePrices = Object.keys(sizePrices).length > 0;
+  const flatCost = parseFloat(li.garmentCost) || 0;
+  const flatMarkup = getMarkup(flatCost, isBroker);
+
+  // Build per-piece price for each size and compute garment cost total
+  const sizeBreakdown = {}; // { size: { qty, garmentPpp, totalPpp } }
+  let gCost = 0;
   const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
-  const osUp = getOversizeUpcharge();
-  const oversizeCost = Math.round(twoXL * osUp * 100) / 100;
 
-  // Base subtotal = everything before rush
-  const baseSubtotal = roundedPrintCost + gCost + extraCost + oversizeCost;
+  Object.entries(li.sizes || {}).forEach(([sz, count]) => {
+    const n = parseInt(count, 10) || 0;
+    if (n <= 0) return;
+    // Get the wholesale cost for this size
+    const wholesaleCost = hasSizePrices && sizePrices[sz] > 0
+      ? sizePrices[sz]
+      : flatCost;
+    const sizeMarkup = getMarkup(wholesaleCost, isBroker);
+    const garmentPpp = Math.round(wholesaleCost * sizeMarkup * 100) / 100;
+    const totalPpp = Math.round((printExtraPpp + garmentPpp) * 100) / 100;
+    sizeBreakdown[sz] = { qty: n, garmentPpp, totalPpp };
+    gCost += Math.round(garmentPpp * n * 100) / 100;
+  });
+
+  // Base subtotal = sum of (totalPpp × qty) for each size — everything before rush
+  let baseSubtotal = 0;
+  Object.values(sizeBreakdown).forEach(({ qty: n, totalPpp }) => {
+    baseSubtotal += Math.round(totalPpp * n * 100) / 100;
+  });
 
   // Rush = percentage of base, rounded to cents
   const rushFee = rushRate > 0 ? Math.round(baseSubtotal * rushRate * 100) / 100 : 0;
@@ -344,9 +367,19 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
   // Line total = what this line costs in full
   const lineTotal = baseSubtotal + rushFee;
 
-  // Per-piece prices for size grid display (no rush — rush shown separately)
-  const regularPpp = qty > 0 ? Math.round((roundedPrintCost + gCost + extraCost) / qty * 100) / 100 : 0;
-  const oversizePpp = Math.round((regularPpp + osUp) * 100) / 100;
+  // Per-piece prices for size grid display (actual per-size, no rush)
+  // regularPpp / oversizePpp are simplified averages for views that don't show per-size
+  const regularQty = qty - twoXL;
+  const regularPpp = regularQty > 0
+    ? Math.round(Object.entries(sizeBreakdown)
+        .filter(([sz]) => !BIG_SIZES.includes(sz))
+        .reduce((s, [, v]) => s + v.totalPpp * v.qty, 0) / regularQty * 100) / 100
+    : (qty > 0 ? Math.round(baseSubtotal / qty * 100) / 100 : 0);
+  const oversizePpp = twoXL > 0
+    ? Math.round(Object.entries(sizeBreakdown)
+        .filter(([sz]) => BIG_SIZES.includes(sz))
+        .reduce((s, [, v]) => s + v.totalPpp * v.qty, 0) / twoXL * 100) / 100
+    : regularPpp;
   const ppp = qty > 0 ? Math.round(baseSubtotal / qty * 100) / 100 : 0;
 
   return {
@@ -354,10 +387,10 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
     qty,
     twoXL,
     printCost: roundedPrintCost,
-    gCost,
+    gCost: Math.round(gCost * 100) / 100,
     extraCost,
-    oversizeCost,
-    baseSubtotal,
+    oversizeCost: 0, // no longer a separate surcharge — baked into per-size garment cost
+    baseSubtotal: Math.round(baseSubtotal * 100) / 100,
     rushFee,
     lineTotal,
     regularPpp,
@@ -365,7 +398,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
     ppp,
     firstPPP,
     printBreakdown,
-    // Deprecated alias — use lineTotal instead
+    sizeBreakdown, // { size: { qty, garmentPpp, totalPpp } } for detailed display
     sub: lineTotal,
   };
 }

@@ -491,6 +491,8 @@ function applySelectedMatch(li, selectedMatch) {
     ) || li.category || "",
     supplier: selectedMatch.brandName === "AS Colour" ? "AS Colour" : "S&S Activewear",
     supplierLastLookupAt: new Date().toISOString(),
+    // Per-size wholesale prices from the API (e.g. { S: 4.62, M: 4.62, "2XL": 5.62 })
+    sizePrices: (selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {},
   };
 }
 

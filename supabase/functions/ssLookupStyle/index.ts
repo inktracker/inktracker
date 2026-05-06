@@ -123,12 +123,15 @@ function groupRowsByBrand(rows: any[]): any[] {
           imageUrl: frontRaw ? (frontRaw.startsWith("http") ? frontRaw : `https://www.ssactivewear.com/${frontRaw}`) : "",
           backImageUrl: backRaw ? (backRaw.startsWith("http") ? backRaw : `https://www.ssactivewear.com/${backRaw}`) : "",
           sizeQuantities: {},
+          sizePrices: {} as Record<string, number>,
         };
       }
 
       const sizeName = row.sizeName ?? row.size ?? "";
       if (sizeName) {
         colorMap[colorName].sizeQuantities[sizeName] = Number(row.qty ?? 0);
+        const rowPrice = Number(row.piecePrice ?? row.piece_price ?? 0);
+        if (rowPrice > 0) colorMap[colorName].sizePrices[sizeName] = rowPrice;
       }
     }
 
@@ -136,9 +139,13 @@ function groupRowsByBrand(rows: any[]): any[] {
 
     const inventoryMap: Record<string, Record<string, number>> = {};
     const priceMap: Record<string, { piecePrice: number; casePrice: number }> = {};
+    const sizePriceMap: Record<string, Record<string, number>> = {};
     for (const c of colors) {
       inventoryMap[c.colorName] = c.sizeQuantities;
       priceMap[c.colorName]     = { piecePrice: c.piecePrice, casePrice: c.casePrice };
+      if (c.sizePrices && Object.keys(c.sizePrices).length > 0) {
+        sizePriceMap[c.colorName] = c.sizePrices;
+      }
     }
 
     const prices     = colors.map((c) => c.piecePrice).filter(Boolean);
@@ -170,6 +177,7 @@ function groupRowsByBrand(rows: any[]): any[] {
       images,
       inventoryMap,
       priceMap,
+      sizePriceMap,
       piecePrice: prices.length     ? Math.min(...prices)     : 0,
       casePrice:  casePrices.length ? Math.min(...casePrices) : 0,
     });
