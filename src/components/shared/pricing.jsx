@@ -356,7 +356,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
       const table = index === 0 ? fp : ap;
       rate = table[colors]?.[tier] ?? table[Math.min(colors, 8)]?.[tier] ?? 0;
     }
-    const lineCost = rate * qty;
+    const lineCost = Math.round(rate * qty * 100) / 100;
 
     if (index === 0) {
       firstPPP = rate;
@@ -381,22 +381,24 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
 
   const isBroker = markup === BROKER_MARKUP;
   const garmentMarkup = getMarkup(li.garmentCost, isBroker);
-  const gCost = (parseFloat(li.garmentCost) || 0) * garmentMarkup * qty;
+  const gCost = Math.round((parseFloat(li.garmentCost) || 0) * garmentMarkup * qty * 100) / 100;
 
   const er = isEmbroidery ? (_pc?.embroidery?.extras || {}) : (_pc?.extras || EXTRA_RATES);
   let extraPPP = 0;
   Object.entries(extras || {}).forEach(([k, on]) => {
     if (on) extraPPP += typeof on === "number" ? on : (er[k] || EXTRA_RATES[k] || 0);
   });
-  const extraCost = extraPPP * qty;
+  const extraCost = Math.round(extraPPP * qty * 100) / 100;
 
-  let sub = printCost + gCost + extraCost;
-  const rushFee = rushRate > 0 ? sub * rushRate : 0;
-  sub += rushFee;
+  // Round each component to cents before computing rush so displayed values add up
+  const roundedPrintCost = Math.round(printCost * 100) / 100;
+  const baseBeforeRush = roundedPrintCost + gCost + extraCost;
+  const rushFee = rushRate > 0 ? Math.round(baseBeforeRush * rushRate * 100) / 100 : 0;
+  const sub = baseBeforeRush + rushFee;
 
   return {
     tier: displayTier,
-    printCost,
+    printCost: roundedPrintCost,
     gCost,
     extraCost,
     rushFee,
