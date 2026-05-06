@@ -333,14 +333,20 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Compute line total from components — rush shown separately at bottom
+    // Compute line total from rounded per-piece prices so the math is visually consistent.
+    // Rush is shown separately at the bottom — not included in per-piece or line total.
     const osUp = getOversizeUpcharge();
     const override = Number(li?.clientPpp);
     const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
-    // Base = print + garment + extras + 2XL surcharge (NO rush — rush shown at bottom)
     const lineBase = r ? (r.printCost + r.gCost + (r.extraCost || 0)) * priceScale : 0;
-    const lineOsUp = twoXL * osUp * priceScale;
-    const lineTotal = useLineOverride ? (override * qty + lineOsUp) : (lineBase + lineOsUp);
+    // Round per-piece to cents, then multiply back to get line total
+    const rawPpp = useLineOverride ? Number(override) : (qty > 0 ? lineBase / qty : 0);
+    const roundedPpp = Math.round(rawPpp * 100) / 100;
+    const roundedBigPpp = Math.round((rawPpp + osUp) * 100) / 100;
+    const regularQty = qty - twoXL;
+    const lineTotal = useLineOverride
+      ? (override * qty + twoXL * osUp)
+      : (roundedPpp * regularQty + roundedBigPpp * twoXL);
 
     if (r) {
       doc.setFontSize(9);
@@ -397,11 +403,10 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
-        // Per-piece: base price without rush (rush shown separately at bottom)
-        const basePppForSize = useLineOverride ? Number(li.clientPpp) : (qty > 0 ? lineBase / qty : 0);
+        // Per-piece: same rounded values used to compute the line total
         activeSizes.forEach((sz) => {
           xPos += colW;
-          const price = BIG_SIZES.includes(sz) ? basePppForSize + osUp : basePppForSize;
+          const price = BIG_SIZES.includes(sz) ? roundedBigPpp : roundedPpp;
           doc.text(fmtMoney(price), xPos, yPos, { align: 'center' });
         });
         yPos += 4;
