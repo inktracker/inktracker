@@ -24,13 +24,24 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
   }
 
   const osUp = getOversizeUpcharge();
-  const suggestedPpp = r.ppp + (qty > 0 ? (twoXL * osUp) / qty : 0);
-  const suggestedTotal = r.sub + twoXL * osUp;
+
+  // Base = print + garment + extras (NO rush). Rush shown as separate line.
+  const baseSubtotal = r.printCost + r.gCost + (r.extraCost || 0);
+  const osTotal = twoXL * osUp;
+  const rushFee = r.rushFee || 0;
+  const lineSubtotal = baseSubtotal + osTotal;
+  const lineTotal = lineSubtotal + rushFee;
+
+  // Per-piece based on base (no rush, no 2XL averaged in)
+  const basePpp = qty > 0 ? baseSubtotal / qty : 0;
 
   const pppOverride = Number(li?.clientPpp);
   const hasOverride = Number.isFinite(pppOverride) && pppOverride > 0;
+
+  // Suggested = base per piece (customer sees this, rush is separate)
+  const suggestedPpp = basePpp + (qty > 0 ? osTotal / qty : 0);
   const avgPpp = hasOverride ? pppOverride : suggestedPpp;
-  const total = hasOverride ? pppOverride * qty : suggestedTotal;
+  const displayTotal = hasOverride ? (pppOverride * qty + rushFee) : lineTotal;
 
   return (
     <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
@@ -61,8 +72,6 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
           </div>
         ))}
 
-        {/* Garments line: shows base cost, markup %, and marked-up per-piece cost
-            so the breakdown of the final garment line is transparent. */}
         {(() => {
           const baseCost = parseFloat(li?.garmentCost) || 0;
           const isBroker = markup === BROKER_MARKUP;
@@ -101,14 +110,14 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
         {twoXL > 0 && (
           <div className="flex justify-between text-xs">
             <span className="text-amber-400">2XL+ Surcharge</span>
-            <span className="text-amber-400 font-semibold">{fmtMoney(twoXL * osUp)}</span>
+            <span className="text-amber-400 font-semibold">{fmtMoney(osTotal)}</span>
           </div>
         )}
 
-        {r.rushFee > 0 && (
-          <div className="flex justify-between text-xs">
-            <span className="text-orange-400">Rush Fee</span>
-            <span className="text-orange-400 font-semibold">{fmtMoney(r.rushFee)}</span>
+        {rushFee > 0 && (
+          <div className="flex justify-between text-xs border-t border-slate-800 pt-2">
+            <span className="text-orange-400">Rush Fee ({Math.round((parseFloat(rushRate) || 0) * 100)}%)</span>
+            <span className="text-orange-400 font-semibold">{fmtMoney(rushFee)}</span>
           </div>
         )}
       </div>
@@ -139,7 +148,7 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
                 const v = e.target.value;
                 onChange({ ...li, clientPpp: v === "" ? null : parseFloat(v) });
               }}
-              placeholder={suggestedPpp.toFixed(2)}
+              placeholder={(qty > 0 ? basePpp : 0).toFixed(2)}
               className="w-24 text-xs bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
             />
             <span className="text-xs text-slate-400">/pc</span>
@@ -153,11 +162,11 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
       <div className="bg-indigo-600 px-4 py-4 flex justify-between items-center">
         <div>
           <div className="text-xs font-bold text-indigo-100 uppercase tracking-widest mb-0.5">
-            Price Per Piece
+            Line Total
           </div>
           <div className="text-indigo-100 text-xs">{fmtMoney(avgPpp)}/pc avg</div>
         </div>
-        <div className="text-2xl font-bold text-white">{fmtMoney(total)}</div>
+        <div className="text-2xl font-bold text-white">{fmtMoney(displayTotal)}</div>
       </div>
     </div>
   );
