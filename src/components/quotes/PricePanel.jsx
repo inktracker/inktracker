@@ -5,6 +5,7 @@ import {
   buildLinkedQtyMap,
   fmtMoney,
   getMarkup,
+  getOversizeUpcharge,
   BROKER_MARKUP,
 } from "../shared/pricing";
 
@@ -22,8 +23,9 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
     );
   }
 
-  const suggestedPpp = r.ppp + (qty > 0 ? (twoXL * 2) / qty : 0);
-  const suggestedTotal = r.sub + twoXL * 2;
+  const osUp = getOversizeUpcharge();
+  const suggestedPpp = r.ppp + (qty > 0 ? (twoXL * osUp) / qty : 0);
+  const suggestedTotal = r.sub + twoXL * osUp;
 
   const pppOverride = Number(li?.clientPpp);
   const hasOverride = Number.isFinite(pppOverride) && pppOverride > 0;
@@ -99,7 +101,7 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
         {twoXL > 0 && (
           <div className="flex justify-between text-xs">
             <span className="text-amber-400">2XL+ Surcharge</span>
-            <span className="text-amber-400 font-semibold">{fmtMoney(twoXL * 2)}</span>
+            <span className="text-amber-400 font-semibold">{fmtMoney(twoXL * osUp)}</span>
           </div>
         )}
 

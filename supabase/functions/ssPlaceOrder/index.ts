@@ -35,7 +35,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { poNumber, shipTo, lines, shippingMethod = "Ground", testOrder = false } = await req.json();
+    const { poNumber, shipTo, lines, shippingMethod = "Ground", testOrder = false, warehouse = "" } = await req.json();
 
     if (!poNumber) return Response.json({ error: "poNumber required" }, { status: 400, headers: CORS });
     if (!shipTo?.address1 || !shipTo?.city || !shipTo?.state || !shipTo?.zip) {
@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
         Phone: shipTo.phone ?? "",
         Email: shipTo.email ?? "",
       },
-      Lines: resolvedLines.map(l => ({ ...l, Warehouse: "DC" })),
+      Lines: resolvedLines.map(l => warehouse ? { ...l, Warehouse: warehouse } : l),
     };
 
     console.log("S&S order payload:", JSON.stringify(ssOrder));

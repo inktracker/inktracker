@@ -410,6 +410,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
 export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
   const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
   let sub = 0;
+  let rushTotal = 0;
 
   // Honor the broker's per-line client-price override on client-facing totals
   // (markup === STANDARD_MARKUP). Broker-side internal totals (BROKER_MARKUP)
@@ -426,9 +427,13 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
       return;
     }
     const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, markup, linkedQtyMap);
-    if (r) sub += r.sub + twoXL * osUp;
+    if (r) {
+      sub += r.sub + twoXL * osUp;
+      rushTotal += r.rushFee || 0;
+    }
   });
 
+  const subBeforeRush = sub - rushTotal;
   const discVal = parseFloat(q.discount) || 0;
   const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
   const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
@@ -436,6 +441,8 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
 
   return {
     sub,
+    subBeforeRush,
+    rushTotal,
     afterDisc,
     tax,
     total: afterDisc + tax,

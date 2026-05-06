@@ -10,6 +10,7 @@ import {
   calcQuoteTotals,
   fmtMoney,
   getDisplayName,
+  getOversizeUpcharge,
   BROKER_MARKUP,
   STANDARD_MARKUP
 } from './pricing';
@@ -340,8 +341,8 @@ function renderLineItems(
       const override = Number(li?.clientPpp);
       const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
       const rrH = parseFloat(rushRate) || 0;
-      const fullLineWithRush = (r.sub + twoXL * 2) * priceScale;
-      const lineAmount = useLineOverride ? override * qty + twoXL * 2 : (rrH > 0 ? fullLineWithRush / (1 + rrH) : fullLineWithRush);
+      const fullLineWithRush = (r.sub + twoXL * getOversizeUpcharge()) * priceScale;
+      const lineAmount = useLineOverride ? override * qty + twoXL * getOversizeUpcharge() : (rrH > 0 ? fullLineWithRush / (1 + rrH) : fullLineWithRush);
       doc.text(fmtMoney(lineAmount), pageWidth - margin - 2, yPos, {
         align: 'right'
       });
@@ -404,7 +405,7 @@ function renderLineItems(
           : pppWithoutRush;
         activeSizes.forEach((sz) => {
           xPos += colW;
-          const price = BIG_SIZES.includes(sz) ? basePpp + 2 : basePpp;
+          const price = BIG_SIZES.includes(sz) ? basePpp + getOversizeUpcharge() : basePpp;
           doc.text(fmtMoney(price), xPos, yPos, { align: 'center' });
         });
         yPos += 4;
@@ -507,8 +508,8 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   yPos += 6;
 
   const rr = parseFloat(rushRate) || 0;
-  const subWithoutRush = rr > 0 ? totals.sub / (1 + rr) : totals.sub;
-  const rushAmount = totals.sub - subWithoutRush;
+  const subWithoutRush = totals.subBeforeRush ?? totals.sub;
+  const rushAmount = totals.rushTotal ?? 0;
 
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
