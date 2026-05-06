@@ -511,6 +511,7 @@ export default function LineItemEditor({
   const [ssColors, setSsColors] = useState([]);
   const [ssInventory, setSsInventory] = useState({});
   const [ssPriceMap, setSsPriceMap] = useState({});
+  const [ssSizePriceMap, setSsSizePriceMap] = useState({});
   const [ssLoading, setSsLoading] = useState(false);
   const [ssError, setSsError] = useState(null);
   const [brandOptions, setBrandOptions] = useState([]);
@@ -567,19 +568,20 @@ export default function LineItemEditor({
         setSsColors(selected.colors || []);
         setSsInventory(selected.inventoryMap || {});
         setSsPriceMap(selected.priceMap || {});
+        setSsSizePriceMap(selected.sizePriceMap || {});
         onChange(applySelectedMatch(li, selected));
       } else {
-        // Multiple options, no brand match — show first option's colors as preview
-        // but don't apply until user selects
         setSsColors(options[0].colors || []);
         setSsInventory(options[0].inventoryMap || {});
         setSsPriceMap(options[0].priceMap || {});
+        setSsSizePriceMap(options[0].sizePriceMap || {});
       }
     } catch (e) {
       setBrandOptions([]);
       setSsColors([]);
       setSsInventory({});
       setSsPriceMap({});
+      setSsSizePriceMap({});
       setSsError("Style not found");
     } finally {
       setSsLoading(false);
@@ -593,6 +595,7 @@ export default function LineItemEditor({
     setSsColors(selected.colors || []);
     setSsInventory(selected.inventoryMap || {});
     setSsPriceMap(selected.priceMap || {});
+    setSsSizePriceMap(selected.sizePriceMap || {});
     onChange(applySelectedMatch(li, selected));
   }
 
@@ -609,6 +612,7 @@ export default function LineItemEditor({
         selectedPrice.casePrice != null
           ? Number(selectedPrice.casePrice)
           : li.casePrice,
+      sizePrices: ssSizePriceMap[colorName] || li.sizePrices || {},
     });
   }
 

@@ -1,4 +1,4 @@
-// AS Colour single-style lookup — Supabase Edge Function
+// AS Colour single-style lookup — Supabase Edge Function (v15)
 //
 // Body: { styleCode: string, includeInventory?: boolean, debug?: boolean }
 // Returns a single normalised product with variants, images, and (optionally)

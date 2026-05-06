@@ -1,4 +1,4 @@
-// S&S Activewear style lookup — Supabase Edge Function
+// S&S Activewear style lookup — Supabase Edge Function (v54)
 // Docs: https://api.ssactivewear.com/V2/Products.aspx
 //       https://api.ssactivewear.com/V2/Styles.aspx
 // Auth: HTTP Basic, username = account number, password = API key
