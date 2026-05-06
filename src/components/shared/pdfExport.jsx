@@ -511,9 +511,16 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   yPos += 6;
 
   const rr = parseFloat(rushRate) || 0;
-  // Use the PDF's own line total sum so subtotal matches the line items shown
+  // Use the PDF's own line total sum so all numbers are internally consistent
   const subWithoutRush = pdfSubtotal ?? totals.subBeforeRush ?? totals.sub;
   const rushAmount = totals.rushTotal ?? 0;
+  // Recompute discount, tax, and total from the PDF's own subtotal
+  const pdfSub = subWithoutRush + rushAmount;
+  const discVal = parseFloat(discount) || 0;
+  const isFlatDisc = discountType === 'flat' || (discVal > 100 && discountType !== 'percent');
+  const pdfAfterDisc = isFlatDisc ? Math.max(0, pdfSub - discVal) : pdfSub * (1 - discVal / 100);
+  const pdfTax = pdfAfterDisc * ((parseFloat(taxRate) || 0) / 100);
+  const pdfTotal = pdfAfterDisc + pdfTax;
 
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
@@ -533,15 +540,13 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
     yPos += 5;
   }
 
-  if (parseFloat(discount) > 0) {
-    const discountAmount = totals.sub - totals.afterDisc;
-    const discNum = parseFloat(discount);
-    const isFlatDisc = discountType === 'flat' || (discNum > 100 && discountType !== 'percent');
+  if (discVal > 0) {
+    const discountAmount = pdfSub - pdfAfterDisc;
 
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(16, 160, 100);
-    doc.text(isFlatDisc ? `Discount (${moneyNoWeirdMinus(discNum)}):` : `Discount (${discount}%):`, margin, yPos);
+    doc.text(isFlatDisc ? `Discount (${moneyNoWeirdMinus(discVal)}):` : `Discount (${discount}%):`, margin, yPos);
 
     doc.setFont(undefined, 'bold');
     doc.text(moneyNoWeirdMinus(-discountAmount), pageWidth - margin - 2, yPos, {
@@ -555,7 +560,7 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   doc.setTextColor(100, 100, 120);
   doc.text(`Tax (${taxRate}%):`, margin, yPos);
   doc.setTextColor(30, 30, 40);
-  doc.text(fmtMoney(totals.tax), pageWidth - margin - 2, yPos, { align: 'right' });
+  doc.text(fmtMoney(pdfTax), pageWidth - margin - 2, yPos, { align: 'right' });
   yPos += 6;
 
   doc.setDrawColor(180, 180, 200);
@@ -569,7 +574,7 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
 
   doc.setFontSize(18);
   doc.setTextColor(67, 56, 202);
-  doc.text(fmtMoney(totals.total), pageWidth - margin - 2, yPos, { align: 'right' });
+  doc.text(fmtMoney(pdfTotal), pageWidth - margin - 2, yPos, { align: 'right' });
   yPos += 8;
 
   return yPos;
