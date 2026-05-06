@@ -6,7 +6,8 @@ import {
   getQty,
   BIG_SIZES,
   SIZES,
-  calcGroupPrice,
+  calcLinkedLinePrice,
+  buildLinkedQtyMap,
   calcQuoteTotals,
   fmtMoney,
   getDisplayName,
@@ -29,15 +30,10 @@ function getQuoteTotalsForPdf(q) {
   return calcQuoteTotals(q || {}, isBrokerQuote(q) ? BROKER_MARKUP : undefined);
 }
 
-function getGroupPriceForPdf(li, rushRate, extras, isBroker) {
-  return calcGroupPrice(
-    li.garmentCost,
-    getQty(li),
-    li.imprints,
-    rushRate,
-    extras,
-    isBroker ? BROKER_MARKUP : undefined
-  );
+function getGroupPriceForPdf(li, rushRate, extras, isBroker, allLineItems) {
+  const markup = isBroker ? BROKER_MARKUP : STANDARD_MARKUP;
+  const linkedQtyMap = buildLinkedQtyMap(allLineItems || []);
+  return calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap);
 }
 
 function getEffectiveTaxRate(record) {
@@ -317,7 +313,7 @@ function renderLineItems(
       (s, sz) => s + (parseInt((li.sizes || {})[sz]) || 0),
       0
     );
-    const r = getGroupPriceForPdf(li, rushRate, extras, isBroker);
+    const r = getGroupPriceForPdf(li, rushRate, extras, isBroker, lineItems);
     const activeSizes = SIZES.filter(
       (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
     );
