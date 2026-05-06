@@ -304,6 +304,7 @@ function renderLineItems(
   discountType = 'percent'
 ) {
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pdfLineTotals = [];
 
   lineItems.forEach((li) => {
     if (yPos > pageHeight - 60) {
@@ -496,20 +497,22 @@ function renderLineItems(
     }
 
 
+    pdfLineTotals.push(lineTotal);
     yPos += 8;
   });
 
-  return yPos;
+  return { yPos, pdfLineTotals };
 }
 
-function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0) {
+function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null) {
   doc.setDrawColor(180, 180, 200);
   doc.setLineWidth(0.4);
   doc.line(margin, yPos, pageWidth - margin, yPos);
   yPos += 6;
 
   const rr = parseFloat(rushRate) || 0;
-  const subWithoutRush = totals.subBeforeRush ?? totals.sub;
+  // Use the PDF's own line total sum so subtotal matches the line items shown
+  const subWithoutRush = pdfSubtotal ?? totals.subBeforeRush ?? totals.sub;
   const rushAmount = totals.rushTotal ?? 0;
 
   doc.setFont(undefined, 'normal');
@@ -663,8 +666,9 @@ export async function exportQuoteToPDF(
   );
 
   const quoteDiscType = quote.discount_type || 'percent';
+  let quotePdfLineTotals = [];
   if (quote.line_items && quote.line_items.length > 0) {
-    yPos = renderLineItems(
+    const liResult = renderLineItems(
       doc,
       quote.line_items,
       quote.rush_rate,
@@ -674,11 +678,13 @@ export async function exportQuoteToPDF(
       pageHeight,
       margin,
       yPos,
-      hasBroker && !isClientMode, // broker shop form → BROKER_MARKUP; all others → STANDARD_MARKUP
+      hasBroker && !isClientMode,
       isClientMode,
-      scale, // scale per-line totals when broker has set a client_total_override
+      scale,
       quoteDiscType
     );
+    yPos = liResult.yPos;
+    quotePdfLineTotals = liResult.pdfLineTotals;
   }
 
   // Notes: only show in shop mode
@@ -759,7 +765,8 @@ export async function exportQuoteToPDF(
     yPos,
     isClientMode,
     quoteDiscType,
-    parseFloat(quote.rush_rate) || 0
+    parseFloat(quote.rush_rate) || 0,
+    quotePdfLineTotals.length > 0 ? quotePdfLineTotals.reduce((s, v) => s + v, 0) : null
   );
 
   const fileId = quote.quote_id || 'quote';
@@ -834,8 +841,9 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output) {
     ""
   );
 
+  let orderPdfLineTotals = [];
   if (order.line_items && order.line_items.length > 0) {
-    yPos = renderLineItems(
+    const liResult = renderLineItems(
       doc,
       order.line_items,
       order.rush_rate,
@@ -850,6 +858,8 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output) {
       1,
       orderDiscType
     );
+    yPos = liResult.yPos;
+    orderPdfLineTotals = liResult.pdfLineTotals;
   }
 
   if (order.notes) {
@@ -890,7 +900,8 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output) {
       yPos,
       false,
       orderDiscType,
-      parseFloat(order.rush_rate) || 0
+      parseFloat(order.rush_rate) || 0,
+      orderPdfLineTotals.length > 0 ? orderPdfLineTotals.reduce((s, v) => s + v, 0) : null
     );
 
     yPos += 2;
@@ -944,8 +955,9 @@ export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl, o
     logoUrl
   );
 
+  let invPdfLineTotals = [];
   if (invoice.line_items && invoice.line_items.length > 0) {
-    yPos = renderLineItems(
+    const liResult = renderLineItems(
       doc,
       invoice.line_items,
       invoice.rush_rate || 0,
@@ -960,6 +972,8 @@ export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl, o
       1,
       invDiscType
     );
+    yPos = liResult.yPos;
+    invPdfLineTotals = liResult.pdfLineTotals;
   }
 
   if (invoice.notes) {
@@ -999,7 +1013,8 @@ export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl, o
     yPos,
     false,
     invDiscType,
-    parseFloat(invoice.rush_rate) || 0
+    parseFloat(invoice.rush_rate) || 0,
+    invPdfLineTotals.length > 0 ? invPdfLineTotals.reduce((s, v) => s + v, 0) : null
   );
 
   if (customer) {
