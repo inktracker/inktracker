@@ -396,13 +396,12 @@ function renderLineItems(
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
         const hasOverride = Number.isFinite(Number(li?.clientPpp)) && Number(li.clientPpp) > 0;
-        const rrP = parseFloat(rushRate) || 0;
-        // r.ppp includes rush + 2XL averaged in. Strip rush, strip 2XL, show base only.
-        const fullPpp = r.ppp * priceScale;
-        const pppWithoutRush = rrP > 0 ? fullPpp / (1 + rrP) : fullPpp;
+        // Per-piece price including rush (matches live pricing panel)
+        const osUp = getOversizeUpcharge();
+        const fullLineSub = (r.sub + twoXL * osUp) * priceScale;
         const basePpp = hasOverride
           ? Number(li.clientPpp)
-          : pppWithoutRush;
+          : (qty > 0 ? fullLineSub / qty : 0);
         activeSizes.forEach((sz) => {
           xPos += colW;
           const price = BIG_SIZES.includes(sz) ? basePpp + getOversizeUpcharge() : basePpp;
