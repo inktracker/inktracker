@@ -58,33 +58,19 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
           </div>
         ))}
 
-        {(() => {
-          const baseCost = parseFloat(li?.garmentCost) || 0;
-          const isBroker = markup === BROKER_MARKUP;
-          const markupRatio = baseCost > 0 ? getMarkup(baseCost, isBroker) : 1;
-          const markedUpPerPc = baseCost * markupRatio;
-          const markupPct = Math.round((markupRatio - 1) * 100);
-          return (
-            <div className="flex justify-between text-xs border-b border-slate-800 pb-2">
-              <div>
-                <div className="text-slate-300 font-semibold">Garments</div>
-                {baseCost > 0 ? (
-                  <div className="text-slate-500">
-                    {fmtMoney(baseCost)} cost {markupPct > 0 ? `+ ${markupPct}% markup` : ""}
-                  </div>
-                ) : (
-                  <div className="text-slate-500">No garment cost set</div>
-                )}
-              </div>
-              <div className="text-right">
-                <div className="text-white font-semibold">{fmtMoney(r.gCost)}</div>
-                {baseCost > 0 && (
-                  <div className="text-slate-500">{fmtMoney(markedUpPerPc)}/pc</div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+        <div className="flex justify-between text-xs border-b border-slate-800 pb-2">
+          <div>
+            <div className="text-slate-300 font-semibold">Garments</div>
+            {r.gCost > 0 ? (
+              <div className="text-slate-500">{fmtMoney(r.gCost / r.qty)}/pc avg</div>
+            ) : (
+              <div className="text-slate-500">No garment cost set</div>
+            )}
+          </div>
+          <div className="text-right">
+            <div className="text-white font-semibold">{fmtMoney(r.gCost)}</div>
+          </div>
+        </div>
 
         {r.extraCost > 0 && (
           <div className="flex justify-between text-xs">

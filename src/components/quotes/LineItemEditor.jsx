@@ -323,7 +323,7 @@ function buildBrandOptions(matches, typedStyleNumber) {
       colors: match.colors || [],
       inventoryMap: match.inventoryMap || {},
       priceMap: match.priceMap || {},
-      sizePriceMap: match.sizePriceMap || {},
+      sizePriceMap: JSON.parse(JSON.stringify(match.sizePriceMap || {})),
       piecePrice: match.piecePrice,
       casePrice: match.casePrice,
       raw: match.raw || match,
@@ -493,7 +493,7 @@ function applySelectedMatch(li, selectedMatch) {
     supplier: selectedMatch.brandName === "AS Colour" ? "AS Colour" : "S&S Activewear",
     supplierLastLookupAt: new Date().toISOString(),
     // Per-size wholesale prices from the API (e.g. { S: 4.62, M: 4.62, "2XL": 5.62 })
-    sizePrices: (selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {},
+    sizePrices: JSON.parse(JSON.stringify((selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {})),
   };
 }
 
