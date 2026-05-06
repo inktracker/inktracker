@@ -525,18 +525,16 @@ export default function LineItemEditor({
 
   // Auto-lookup on mount when a line item arrived with a style # but no
   // resolved brand options yet — for example, after the "Paste Order" parser
-  // dropped raw style numbers into a fresh quote. This mirrors the tab-out
-  // flow so the brand dropdown shows up populated with every matching brand
-  // for the user to pick from.
+  // Auto-lookup on mount for line items that already have a style number
+  // (e.g. duplicated lines or wizard-created quotes). Only fires once per line.
   useEffect(() => {
     const styleNumber = normalizeTypedStyleNumber(li.style);
     if (!styleNumber) return;
-    if (brandOptions.length > 0) return; // already looked up
+    if (brandOptions.length > 0) return;
     if (autoLookedUpRef.current.has(li.id)) return;
     autoLookedUpRef.current.add(li.id);
     handleStyleBlur();
-     
-  }, [li.id, li.style]);
+  }, [li.id]); // Only on mount (li.id), NOT on li.style change
 
   async function handleStyleBlur() {
     const typedStyleNumber = normalizeTypedStyleNumber(li.style);
