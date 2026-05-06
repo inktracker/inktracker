@@ -14,6 +14,7 @@ import {
   getTier,
   BROKER_MARKUP,
   STANDARD_MARKUP,
+  getOversizeUpcharge,
 } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import Badge from "../shared/Badge";
@@ -644,7 +645,7 @@ export default function QuoteDetailModal({
                                   <div className="flex justify-between text-xs text-slate-600">
                                     <span>2XL+ Upcharge</span>
                                     <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                      {fmtMoney(twoXL * 2)}
+                                      {fmtMoney(twoXL * getOversizeUpcharge())}
                                     </span>
                                   </div>
                                 )}
@@ -652,7 +653,7 @@ export default function QuoteDetailModal({
                                 <div className="flex justify-between text-xs text-slate-600 border-t border-indigo-200 pt-1">
                                   <span>Line Subtotal</span>
                                   <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                    {fmtMoney(pricing.sub + twoXL * 2)}
+                                    {fmtMoney((pricing.printCost + pricing.gCost + (pricing.extraCost || 0)) + twoXL * getOversizeUpcharge())}
                                   </span>
                                 </div>
 
@@ -668,8 +669,15 @@ export default function QuoteDetailModal({
                 <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
                   <div className="flex justify-between text-sm text-slate-500">
                     <span>Subtotal</span>
-                    <span>{fmtMoney(totals.sub)}</span>
+                    <span>{fmtMoney(totals.subBeforeRush ?? totals.sub)}</span>
                   </div>
+
+                  {(totals.rushTotal || 0) > 0 && (
+                    <div className="flex justify-between text-sm text-orange-600">
+                      <span>Rush Fee ({Math.round((parseFloat(quote.rush_rate) || 0) * 100)}%)</span>
+                      <span>{fmtMoney(totals.rushTotal)}</span>
+                    </div>
+                  )}
 
                   {parseFloat(quote.discount) > 0 && (() => {
                     const dv = parseFloat(quote.discount);
