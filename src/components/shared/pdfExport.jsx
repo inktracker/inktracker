@@ -334,20 +334,19 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Compute line total from rounded per-piece prices so the math is visually consistent.
-    // Rush is shown separately at the bottom — not included in per-piece or line total.
+    // Line total from calcGroupPrice — matches calcQuoteTotals exactly.
+    // Rush is included in r.sub but we show it separately at the bottom.
+    // Per-piece prices are display-only (rounded for readability).
     const osUp = getOversizeUpcharge();
     const override = Number(li?.clientPpp);
     const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
     const lineBase = r ? (r.printCost + r.gCost + (r.extraCost || 0)) * priceScale : 0;
-    // Round per-piece to cents, then multiply back to get line total
-    const rawPpp = useLineOverride ? Number(override) : (qty > 0 ? lineBase / qty : 0);
-    const roundedPpp = Math.round(rawPpp * 100) / 100;
-    const roundedBigPpp = Math.round((rawPpp + osUp) * 100) / 100;
-    const regularQty = qty - twoXL;
-    const lineTotal = useLineOverride
-      ? (override * qty + twoXL * osUp)
-      : (roundedPpp * regularQty + roundedBigPpp * twoXL);
+    const lineRush = r ? (r.rushFee || 0) * priceScale : 0;
+    const lineOsUp = twoXL * osUp * priceScale;
+    // Line total WITHOUT rush (rush shown at bottom) — used for display and subtotal sum
+    const lineTotal = useLineOverride ? (override * qty + lineOsUp) : (lineBase + lineOsUp);
+    // Per-piece for display only (not used to compute line total)
+    const displayPpp = useLineOverride ? Number(override) : (qty > 0 ? lineBase / qty : 0);
 
     if (r) {
       doc.setFontSize(9);
@@ -404,10 +403,10 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
-        // Per-piece: same rounded values used to compute the line total
+        // Per-piece: display only (rounded for readability, not used to compute totals)
         activeSizes.forEach((sz) => {
           xPos += colW;
-          const price = BIG_SIZES.includes(sz) ? roundedBigPpp : roundedPpp;
+          const price = BIG_SIZES.includes(sz) ? displayPpp + osUp : displayPpp;
           doc.text(fmtMoney(price), xPos, yPos, { align: 'center' });
         });
         yPos += 4;
@@ -511,16 +510,11 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   yPos += 6;
 
   const rr = parseFloat(rushRate) || 0;
-  // Use the PDF's own line total sum so all numbers are internally consistent
-  const subWithoutRush = pdfSubtotal ?? totals.subBeforeRush ?? totals.sub;
-  // Recompute rush from the PDF's own subtotal so it matches
-  const rushAmount = rr > 0 ? Math.round(subWithoutRush * rr * 100) / 100 : 0;
-  const pdfSub = subWithoutRush + rushAmount;
-  const discVal = parseFloat(discount) || 0;
-  const isFlatDisc = discountType === 'flat' || (discVal > 100 && discountType !== 'percent');
-  const pdfAfterDisc = isFlatDisc ? Math.max(0, pdfSub - discVal) : pdfSub * (1 - discVal / 100);
-  const pdfTax = pdfAfterDisc * ((parseFloat(taxRate) || 0) / 100);
-  const pdfTotal = pdfAfterDisc + pdfTax;
+  // All values from calcQuoteTotals — the single source of truth.
+  // subBeforeRush is displayed as "Subtotal", rushTotal as "Rush Fee",
+  // and total includes everything. These match the quote detail view exactly.
+  const subWithoutRush = totals.subBeforeRush ?? totals.sub;
+  const rushAmount = totals.rushTotal ?? 0;
 
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
@@ -540,8 +534,10 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
     yPos += 5;
   }
 
+  const discVal = parseFloat(discount) || 0;
+  const isFlatDisc = discountType === 'flat' || (discVal > 100 && discountType !== 'percent');
   if (discVal > 0) {
-    const discountAmount = pdfSub - pdfAfterDisc;
+    const discountAmount = totals.sub - totals.afterDisc;
 
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
@@ -560,7 +556,7 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   doc.setTextColor(100, 100, 120);
   doc.text(`Tax (${taxRate}%):`, margin, yPos);
   doc.setTextColor(30, 30, 40);
-  doc.text(fmtMoney(pdfTax), pageWidth - margin - 2, yPos, { align: 'right' });
+  doc.text(fmtMoney(totals.tax), pageWidth - margin - 2, yPos, { align: 'right' });
   yPos += 6;
 
   doc.setDrawColor(180, 180, 200);
@@ -574,7 +570,7 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
 
   doc.setFontSize(18);
   doc.setTextColor(67, 56, 202);
-  doc.text(fmtMoney(pdfTotal), pageWidth - margin - 2, yPos, { align: 'right' });
+  doc.text(fmtMoney(totals.total), pageWidth - margin - 2, yPos, { align: 'right' });
   yPos += 8;
 
   return yPos;
