@@ -222,70 +222,7 @@ function getEmbroideryPPP(stitchIdx, qty) {
   return tierPricing[tier] ?? tierPricing[String(tier)] ?? 0;
 }
 
-export function calcGroupPrice(garmentCost, qty, imprints, rushRate, extras, markup = STANDARD_MARKUP) {
-  if (!qty || qty < 1 || !imprints || imprints.length === 0) return null;
-
-  const active = imprints.filter((i) => (i.colors || 0) > 0);
-  if (active.length === 0) return null;
-
-  // Check if this is an embroidery job (first imprint technique)
-  const technique = active[0]?.technique || "Screen Print";
-  const isEmbroidery = technique === "Embroidery";
-
-  const sorted = [...active].sort((a, b) => a.colors - b.colors);
-  const fp = _pc?.firstPrint || FIRST_PRINT;
-  const ap = _pc?.addlPrint || ADDL_PRINT;
-  const maxColors = _pc?.maxColors || 8;
-  const firstColors = Math.min(maxColors, Math.max(1, sorted[0].colors || 1));
-  let printPPP = 0;
-  let tier;
-
-  if (isEmbroidery) {
-    for (let i = 0; i < sorted.length; i++) {
-      const stitchIdx = Math.max(0, (sorted[i].colors || 1) - 1);
-      const rate = getEmbroideryPPP(stitchIdx, qty);
-      printPPP += i === 0 ? rate : rate * 0.7;
-    }
-    const embTiers = _pc?.embroidery?.qtyTiers || [12, 24, 48, 72, 144];
-    const stiers = [...embTiers].sort((a, b) => b - a);
-    tier = stiers[stiers.length - 1];
-    for (const t of stiers) { if (qty >= t) { tier = t; break; } }
-  } else {
-    tier = getTier(qty);
-    printPPP = fp[firstColors]?.[tier] ?? fp[Math.min(firstColors, 8)]?.[tier] ?? 0;
-    for (let i = 1; i < sorted.length; i += 1) {
-      const c = Math.min(maxColors, Math.max(1, sorted[i].colors || 1));
-      printPPP += ap[c]?.[tier] ?? ap[Math.min(c, 8)]?.[tier] ?? 0;
-    }
-  }
-
-  const er = isEmbroidery ? (_pc?.embroidery?.extras || {}) : (_pc?.extras || EXTRA_RATES);
-  const printCost = printPPP * qty;
-  const isBroker = markup === BROKER_MARKUP;
-  const garmentMarkup = getMarkup(garmentCost, isBroker);
-  const gCost = (parseFloat(garmentCost) || 0) * garmentMarkup * qty;
-
-  let extraPPP = 0;
-  Object.entries(extras || {}).forEach(([k, on]) => {
-    if (on) extraPPP += typeof on === "number" ? on : (er[k] || EXTRA_RATES[k] || 0);
-  });
-  const extraCost = extraPPP * qty;
-
-  let sub = printCost + gCost + extraCost;
-  const rushFee = rushRate > 0 ? sub * rushRate : 0;
-  sub += rushFee;
-
-  return {
-    tier,
-    printCost,
-    gCost,
-    extraCost,
-    rushFee,
-    sub,
-    ppp: qty > 0 ? sub / qty : 0,
-    firstPPP: fp[firstColors]?.[tier] ?? 0,
-  };
-}
+// calcGroupPrice has been deleted — use calcLinkedLinePrice for all pricing.
 
 export function getPrintKey(imp) {
   return `${imp?.technique || "Screen Print"}|${imp?.title || ""}|${imp?.width || ""}|${imp?.height || ""}`;
@@ -390,61 +327,82 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
   });
   const extraCost = Math.round(extraPPP * qty * 100) / 100;
 
-  // Round each component to cents before computing rush so displayed values add up
+  // Round each component to cents
   const roundedPrintCost = Math.round(printCost * 100) / 100;
-  const baseBeforeRush = roundedPrintCost + gCost + extraCost;
-  const rushFee = rushRate > 0 ? Math.round(baseBeforeRush * rushRate * 100) / 100 : 0;
-  const sub = baseBeforeRush + rushFee;
+
+  // Oversize surcharge — computed here so callers never have to
+  const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
+  const osUp = getOversizeUpcharge();
+  const oversizeCost = Math.round(twoXL * osUp * 100) / 100;
+
+  // Base subtotal = everything before rush
+  const baseSubtotal = roundedPrintCost + gCost + extraCost + oversizeCost;
+
+  // Rush = percentage of base, rounded to cents
+  const rushFee = rushRate > 0 ? Math.round(baseSubtotal * rushRate * 100) / 100 : 0;
+
+  // Line total = what this line costs in full
+  const lineTotal = baseSubtotal + rushFee;
+
+  // Per-piece prices for size grid display (no rush — rush shown separately)
+  const regularPpp = qty > 0 ? Math.round((roundedPrintCost + gCost + extraCost) / qty * 100) / 100 : 0;
+  const oversizePpp = Math.round((regularPpp + osUp) * 100) / 100;
+  const ppp = qty > 0 ? Math.round(baseSubtotal / qty * 100) / 100 : 0;
 
   return {
     tier: displayTier,
+    qty,
+    twoXL,
     printCost: roundedPrintCost,
     gCost,
     extraCost,
+    oversizeCost,
+    baseSubtotal,
     rushFee,
-    sub,
-    ppp: qty > 0 ? sub / qty : 0,
+    lineTotal,
+    regularPpp,
+    oversizePpp,
+    ppp,
     firstPPP,
     printBreakdown,
+    // Deprecated alias — use lineTotal instead
+    sub: lineTotal,
   };
 }
 
 export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
   const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
-  let sub = 0;
-  let rushTotal = 0;
+  let subtotal = 0;   // sum of baseSubtotals (before rush)
+  let rushTotal = 0;   // sum of rushFees
 
-  // Honor the broker's per-line client-price override on client-facing totals
-  // (markup === STANDARD_MARKUP). Broker-side internal totals (BROKER_MARKUP)
-  // ignore overrides so they always reflect the broker's real cost.
   const respectOverride = markup === STANDARD_MARKUP;
 
   (q.line_items || []).forEach((li) => {
     const qty = getQty(li);
-    const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
     const override = Number(li?.clientPpp);
-    const osUp = getOversizeUpcharge();
     if (respectOverride && Number.isFinite(override) && override > 0 && qty > 0) {
-      sub += override * qty + twoXL * osUp;
+      const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
+      subtotal += override * qty + twoXL * getOversizeUpcharge();
       return;
     }
     const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, markup, linkedQtyMap);
     if (r) {
-      sub += r.sub + twoXL * osUp;
-      rushTotal += r.rushFee || 0;
+      subtotal += r.baseSubtotal;
+      rushTotal += r.rushFee;
     }
   });
 
-  const subBeforeRush = sub - rushTotal;
+  const sub = subtotal + rushTotal;
   const discVal = parseFloat(q.discount) || 0;
   const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
   const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
   const tax = afterDisc * ((parseFloat(q.tax_rate) || 0) / 100);
 
   return {
-    sub,
-    subBeforeRush,
+    subtotal,
     rushTotal,
+    sub,
+    subBeforeRush: subtotal, // deprecated alias
     afterDisc,
     tax,
     total: afterDisc + tax,

@@ -11,7 +11,6 @@ import {
   calcQuoteTotals,
   fmtMoney,
   getDisplayName,
-  getOversizeUpcharge,
   BROKER_MARKUP,
   STANDARD_MARKUP
 } from './pricing';
@@ -309,10 +308,6 @@ function renderLineItems(
     }
 
     const qty = getQty(li);
-    const twoXL = BIG_SIZES.reduce(
-      (s, sz) => s + (parseInt((li.sizes || {})[sz]) || 0),
-      0
-    );
     const r = getGroupPriceForPdf(li, rushRate, extras, isBroker, lineItems);
     const activeSizes = SIZES.filter(
       (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
@@ -330,19 +325,13 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Per-piece price rounded to cents, then line total = rounded ppp × qty.
-    // Rush shown separately at the bottom. What you see is what multiplies.
-    const osUp = getOversizeUpcharge();
+    // Per-piece price and line total come from calcLinkedLinePrice.
+    // Rush shown separately at the bottom via baseSubtotal (excludes rush).
     const override = Number(li?.clientPpp);
     const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
-    const lineBase = r ? (r.printCost + r.gCost + (r.extraCost || 0)) * priceScale : 0;
-    const rawPpp = useLineOverride ? Number(override) : (qty > 0 ? lineBase / qty : 0);
-    const roundedPpp = Math.round(rawPpp * 100) / 100;
-    const roundedBigPpp = Math.round((rawPpp + osUp) * 100) / 100;
-    const regularQty = qty - twoXL;
     const lineTotal = useLineOverride
-      ? (override * qty + twoXL * osUp)
-      : (roundedPpp * regularQty + roundedBigPpp * twoXL);
+      ? (override * qty + (r ? r.oversizeCost : 0))
+      : (r ? r.baseSubtotal : 0);
 
     if (r) {
       doc.setFontSize(9);
@@ -399,10 +388,12 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
-        // Per-piece: same rounded values that compute the line total
+        // Per-piece: use regularPpp / oversizePpp from calcLinkedLinePrice
+        const displayRegPpp = useLineOverride ? override : (r ? r.regularPpp : 0);
+        const displayBigPpp = useLineOverride ? override : (r ? r.oversizePpp : 0);
         activeSizes.forEach((sz) => {
           xPos += colW;
-          const price = BIG_SIZES.includes(sz) ? roundedBigPpp : roundedPpp;
+          const price = BIG_SIZES.includes(sz) ? displayBigPpp : displayRegPpp;
           doc.text(fmtMoney(price), xPos, yPos, { align: 'center' });
         });
         yPos += 4;
@@ -508,7 +499,7 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   const rr = parseFloat(rushRate) || 0;
   // Use the PDF's own line total sum as subtotal, then compute rush and total from it.
   // This ensures per-piece × qty = line total = subtotal, and rush = subtotal × rate.
-  const subWithoutRush = pdfSubtotal ?? totals.subBeforeRush ?? totals.sub;
+  const subWithoutRush = pdfSubtotal ?? totals.subtotal ?? totals.sub;
   const rushAmount = rr > 0 ? Math.round(subWithoutRush * rr * 100) / 100 : 0;
 
   doc.setFont(undefined, 'normal');

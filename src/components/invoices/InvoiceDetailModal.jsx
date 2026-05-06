@@ -202,10 +202,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             const linkedQtyMap = buildLinkedQtyMap(invoice.line_items || []);
             return (invoice.line_items || []).map(li => {
             const qty = getQty(li);
-            const twoXL = BIG_SIZES.reduce((s, sz) => s + (parseInt((li.sizes||{})[sz]) || 0), 0);
             const override = Number(li?.clientPpp);
             const hasOverride = Number.isFinite(override) && override > 0 && qty > 0;
-            const r = hasOverride ? { sub: override * qty, ppp: override, gCost: 0, printCost: 0, rushFee: 0 } : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
+            const r = hasOverride ? { sub: override * qty, ppp: override, gCost: 0, printCost: 0, rushFee: 0, lineTotal: override * qty, oversizeCost: 0, twoXL: 0 } : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
             const activeSizes = SIZES.filter(sz => (parseInt((li.sizes||{})[sz]) || 0) > 0);
             return (
               <div key={li.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -215,7 +214,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                     {li.garmentColor && <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>}
                     <span className="ml-2 text-xs text-slate-400">Wholesale: {fmtMoney(li.garmentCost)}</span>
                   </div>
-                  {r && <span className="font-bold text-slate-700 text-sm">{fmtMoney(r.sub + twoXL*2)}</span>}
+                  {r && <span className="font-bold text-slate-700 text-sm">{fmtMoney(r.lineTotal)}</span>}
                 </div>
 
                 {activeSizes.length > 0 && (
@@ -241,7 +240,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                                 {BIG_SIZES.includes(sz) && <span className="text-amber-500 ml-0.5">*</span>}
                               </td>
                             ))}
-                            <td className="px-4 py-2 text-center text-xs font-bold text-slate-700">{fmtMoney(r.sub + twoXL*2)}</td>
+                            <td className="px-4 py-2 text-center text-xs font-bold text-slate-700">{fmtMoney(r.lineTotal)}</td>
                           </tr>
                         )}
                       </tbody>

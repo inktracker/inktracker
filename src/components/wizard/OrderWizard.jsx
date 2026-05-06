@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { calcGroupPrice, calcQuoteTotalsWithLinking, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques } from "../shared/pricing";
+import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques } from "../shared/pricing";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
@@ -509,9 +509,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
 
   const effectiveCost = style ? getEffectiveCost(g) : 0;
   const qty = Object.values(sizes).reduce((s,v)=>s+(parseInt(v)||0),0);
-  const twoXL = BIG_SIZES.reduce((s,sz)=>s+(parseInt(sizes[sz])||0),0);
-  const price = style ? calcGroupPrice(effectiveCost, qty, imprints.length ? imprints : [{colors:1}], rush?0.20:0, {}) : null;
-  const total = price ? price.sub + twoXL*2 : 0;
+  const price = style ? calcLinkedLinePrice(
+    { garmentCost: effectiveCost, sizes, imprints: imprints.length ? imprints : [{colors:1}] },
+    rush ? 0.20 : 0, {}, undefined, {}
+  ) : null;
+  const total = price ? price.lineTotal : 0;
   const ppp = qty > 0 ? total / qty : 0;
 
   // Live pricing — all garments
@@ -1304,9 +1306,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                       <span className="text-slate-400">{gg.style.name} · {gg.color} ({gQty} pcs)</span>
                       <span className="text-white font-semibold">
                         {(() => {
-                          const gPrice = calcGroupPrice(gg.style.garmentCost, gQty, gg.imprints.length ? gg.imprints : [{colors:1}], rush ? 0.20 : 0, {});
-                          const gBig = BIG_SIZES.reduce((s,sz) => s + (parseInt(gg.sizes[sz]) || 0), 0);
-                          return gPrice ? fmtMoney(gPrice.sub + gBig * 2) : "—";
+                          const gPrice = calcLinkedLinePrice(
+                            { garmentCost: gg.style.garmentCost, sizes: gg.sizes, imprints: gg.imprints.length ? gg.imprints : [{colors:1}] },
+                            rush ? 0.20 : 0, {}, undefined, {}
+                          );
+                          return gPrice ? fmtMoney(gPrice.lineTotal) : "—";
                         })()}
                       </span>
                     </div>

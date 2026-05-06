@@ -8,13 +8,11 @@ import {
   fmtDate,
   fmtMoney,
   getQty,
-  BIG_SIZES,
   SIZES,
   getDisplayName,
   getTier,
   BROKER_MARKUP,
   STANDARD_MARKUP,
-  getOversizeUpcharge,
 } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import Badge from "../shared/Badge";
@@ -37,7 +35,6 @@ function getLinePrice(li, quote) {
   const markup = isBrokerQuote(quote) ? BROKER_MARKUP : STANDARD_MARKUP;
   const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
   const qty = getQty(li);
-  const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
 
   // Respect clientPpp override
   const override = Number(li?.clientPpp);
@@ -468,11 +465,8 @@ export default function QuoteDetailModal({
               <>
                 {lineItems.map((li) => {
                   const qty = getQty(li);
-                  const twoXL = BIG_SIZES.reduce(
-                    (s, sz) => s + (parseInt((li.sizes || {})[sz], 10) || 0),
-                    0
-                  );
                   const pricing = getLinePrice(li, quote);
+                  const twoXL = pricing?.twoXL || 0;
                   const activeSizes = SIZES.filter(
                     (sz) => (parseInt((li.sizes || {})[sz], 10) || 0) > 0
                   );
@@ -645,7 +639,7 @@ export default function QuoteDetailModal({
                                   <div className="flex justify-between text-xs text-slate-600">
                                     <span>2XL+ Upcharge</span>
                                     <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                      {fmtMoney(twoXL * getOversizeUpcharge())}
+                                      {fmtMoney(pricing.oversizeCost)}
                                     </span>
                                   </div>
                                 )}
@@ -653,7 +647,7 @@ export default function QuoteDetailModal({
                                 <div className="flex justify-between text-xs text-slate-600 border-t border-indigo-200 pt-1">
                                   <span>Line Subtotal</span>
                                   <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                    {fmtMoney((pricing.printCost + pricing.gCost + (pricing.extraCost || 0)) + twoXL * getOversizeUpcharge())}
+                                    {fmtMoney(pricing.baseSubtotal)}
                                   </span>
                                 </div>
 
@@ -669,7 +663,7 @@ export default function QuoteDetailModal({
                 <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
                   <div className="flex justify-between text-sm text-slate-500">
                     <span>Subtotal</span>
-                    <span>{fmtMoney(totals.subBeforeRush ?? totals.sub)}</span>
+                    <span>{fmtMoney(totals.subtotal)}</span>
                   </div>
 
                   {(totals.rushTotal || 0) > 0 && (

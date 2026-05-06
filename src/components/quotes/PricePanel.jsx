@@ -1,17 +1,14 @@
 import {
   getQty,
-  BIG_SIZES,
   calcLinkedLinePrice,
   buildLinkedQtyMap,
   fmtMoney,
   getMarkup,
-  getOversizeUpcharge,
   BROKER_MARKUP,
 } from "../shared/pricing";
 
 export default function PricePanel({ li, rushRate, extras, allLineItems = [], markup, onChange }) {
   const qty = getQty(li);
-  const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
   const linkedQtyMap = buildLinkedQtyMap(allLineItems);
   const r = calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap);
 
@@ -23,25 +20,14 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
     );
   }
 
-  const osUp = getOversizeUpcharge();
-
-  // Base = print + garment + extras (NO rush). Rush shown as separate line.
-  const baseSubtotal = r.printCost + r.gCost + (r.extraCost || 0);
-  const osTotal = twoXL * osUp;
   const rushFee = r.rushFee || 0;
-  const lineSubtotal = baseSubtotal + osTotal;
-  const lineTotal = lineSubtotal + rushFee;
-
-  // Per-piece based on base (no rush, no 2XL averaged in)
-  const basePpp = qty > 0 ? baseSubtotal / qty : 0;
 
   const pppOverride = Number(li?.clientPpp);
   const hasOverride = Number.isFinite(pppOverride) && pppOverride > 0;
 
-  // Suggested = base per piece (customer sees this, rush is separate)
-  const suggestedPpp = basePpp + (qty > 0 ? osTotal / qty : 0);
+  const suggestedPpp = r.ppp;
   const avgPpp = hasOverride ? pppOverride : suggestedPpp;
-  const displayTotal = hasOverride ? (pppOverride * qty + rushFee) : lineTotal;
+  const displayTotal = hasOverride ? (pppOverride * qty + r.oversizeCost + rushFee) : r.lineTotal;
 
   return (
     <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
@@ -107,10 +93,10 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
           </div>
         )}
 
-        {twoXL > 0 && (
+        {r.oversizeCost > 0 && (
           <div className="flex justify-between text-xs">
             <span className="text-amber-400">2XL+ Surcharge</span>
-            <span className="text-amber-400 font-semibold">{fmtMoney(osTotal)}</span>
+            <span className="text-amber-400 font-semibold">{fmtMoney(r.oversizeCost)}</span>
           </div>
         )}
 
@@ -148,7 +134,7 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
                 const v = e.target.value;
                 onChange({ ...li, clientPpp: v === "" ? null : parseFloat(v) });
               }}
-              placeholder={(qty > 0 ? basePpp : 0).toFixed(2)}
+              placeholder={(qty > 0 ? suggestedPpp : 0).toFixed(2)}
               className="w-24 text-xs bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
             />
             <span className="text-xs text-slate-400">/pc</span>

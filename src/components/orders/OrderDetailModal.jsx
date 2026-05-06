@@ -5,7 +5,8 @@ import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import { MessageSquare } from "lucide-react";
 import {
-  calcGroupPrice,
+  calcLinkedLinePrice,
+  buildLinkedQtyMap,
   fmtDate,
   fmtMoney,
   getQty,
@@ -629,23 +630,13 @@ export default function OrderDetailModal({
             <>
               {(order.line_items || []).map((li) => {
                 const qty = getQty(li);
-                const twoXL = BIG_SIZES.reduce(
-                  (s, sz) => s + (parseInt((li.sizes || {})[sz]) || 0),
-                  0
-                );
                 const markup = isBrokerOrder ? BROKER_MARKUP : undefined;
+                const linkedQtyMap = buildLinkedQtyMap(order.line_items || []);
                 const clientPppOverride = Number(li?.clientPpp);
                 const useClientPpp = markup === undefined && Number.isFinite(clientPppOverride) && clientPppOverride > 0 && qty > 0;
                 const r = useClientPpp
-                  ? { sub: clientPppOverride * qty, ppp: clientPppOverride, overridden: true }
-                  : calcGroupPrice(
-                      li.garmentCost,
-                      qty,
-                      li.imprints,
-                      order.rush_rate,
-                      order.extras,
-                      markup
-                    );
+                  ? { lineTotal: clientPppOverride * qty, regularPpp: clientPppOverride, oversizePpp: clientPppOverride, overridden: true }
+                  : calcLinkedLinePrice(li, order.rush_rate, order.extras, markup, linkedQtyMap);
                 const activeSizes = SIZES.filter(
                   (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
                 );
@@ -665,7 +656,7 @@ export default function OrderDetailModal({
                       </div>
                       {r && (
                         <span className="font-bold text-slate-700 text-sm">
-                          {fmtMoney(r.sub + twoXL * 2)}
+                          {fmtMoney(r.lineTotal)}
                         </span>
                       )}
                     </div>
@@ -714,14 +705,14 @@ export default function OrderDetailModal({
                                     key={sz}
                                     className="px-3 py-2 text-center text-xs text-slate-500"
                                   >
-                                    {fmtMoney(r.ppp + (BIG_SIZES.includes(sz) ? 2 : 0))}
+                                    {fmtMoney(BIG_SIZES.includes(sz) ? r.oversizePpp : r.regularPpp)}
                                     {BIG_SIZES.includes(sz) && (
                                       <span className="text-amber-500 ml-0.5">*</span>
                                     )}
                                   </td>
                                 ))}
                                 <td className="px-4 py-2 text-center text-xs font-bold text-slate-700">
-                                  {fmtMoney(r.sub + twoXL * 2)}
+                                  {fmtMoney(r.lineTotal)}
                                 </td>
                               </tr>
                             )}
@@ -800,11 +791,11 @@ export default function OrderDetailModal({
                           <div className="flex justify-between text-xs text-slate-600">
                             <span>Line Subtotal</span>
                             <span className="font-semibold text-slate-800 dark:text-slate-200">
-                              {fmtMoney(r.sub + twoXL * 2)}
+                              {fmtMoney(r.lineTotal)}
                             </span>
                           </div>
                           {parseFloat(order.discount) > 0 && (() => {
-                            const lineSub = r.sub + twoXL * 2;
+                            const lineSub = r.lineTotal;
                             const lineAfterDisc = isFlat ? Math.max(0, lineSub - discVal) : lineSub * (1 - discVal / 100);
                             return (
                               <div className="flex justify-between text-xs text-emerald-600">
@@ -819,7 +810,7 @@ export default function OrderDetailModal({
                             <span>Final Cost (incl. tax)</span>
                             <span className="font-bold text-indigo-700">
                               {fmtMoney(
-                                (isFlat ? Math.max(0, (r.sub + twoXL * 2) - discVal) : (r.sub + twoXL * 2) * (1 - discVal / 100)) *
+                                (isFlat ? Math.max(0, r.lineTotal - discVal) : r.lineTotal * (1 - discVal / 100)) *
                                   (1 + parseFloat(order.tax_rate) / 100)
                               )}
                             </span>

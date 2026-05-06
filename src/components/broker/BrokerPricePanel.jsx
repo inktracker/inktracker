@@ -1,6 +1,5 @@
 import {
   getQty,
-  BIG_SIZES,
   calcLinkedLinePrice,
   buildLinkedQtyMap,
   fmtMoney,
@@ -125,10 +124,6 @@ export default function BrokerPricePanel({
   onChange,
 }) {
   const qty = getQty(li);
-  const twoXL = BIG_SIZES.reduce(
-    (sum, sz) => sum + (parseInt((li?.sizes || {})[sz], 10) || 0),
-    0
-  );
 
   const linkedQtyMap = buildLinkedQtyMap(allLineItems || []);
 
@@ -156,13 +151,13 @@ export default function BrokerPricePanel({
     );
   }
 
-  const twoXLCharge = twoXL * 2;
+  const twoXLCharge = brokerRate.oversizeCost;
 
-  const brokerAvgPpp = brokerRate.ppp + (qty > 0 ? twoXLCharge / qty : 0);
-  const brokerTotal = brokerRate.sub + twoXLCharge;
+  const brokerAvgPpp = qty > 0 ? brokerRate.lineTotal / qty : 0;
+  const brokerTotal = brokerRate.lineTotal;
 
-  const suggestedShopAvgPpp = shopRate.ppp + (qty > 0 ? twoXLCharge / qty : 0);
-  const suggestedShopTotal = shopRate.sub + twoXLCharge;
+  const suggestedShopAvgPpp = qty > 0 ? shopRate.lineTotal / qty : 0;
+  const suggestedShopTotal = shopRate.lineTotal;
 
   // Broker's per-piece client price override. Falls back to the suggested rate.
   const pppOverride = Number(li?.clientPpp);

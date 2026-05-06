@@ -1,5 +1,5 @@
 import { X, Download } from "lucide-react";
-import { fmtDate, fmtMoney, getQty, BIG_SIZES, SIZES, calcGroupPrice, BROKER_MARKUP } from "../shared/pricing";
+import { fmtDate, fmtMoney, getQty, BIG_SIZES, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP } from "../shared/pricing";
 import { exportOrderToPDF } from "../shared/pdfExport";
 
 export default function BrokerOrderPDFModal({ order, onClose }) {
@@ -16,6 +16,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
   };
 
   const isBrokerOrder = Boolean(order?.broker_id || order?.broker_email || order?.brokerId);
+  const linkedQtyMap = buildLinkedQtyMap(order.line_items || []);
   const displayClient = isBrokerOrder
     ? (order?.broker_name || order?.broker_company || order?.customer_name || "—")
     : (order?.customer_name || "—");
@@ -55,14 +56,12 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
           {/* Line items */}
           {(order.line_items || []).map((li, i) => {
             const qty = getQty(li);
-            const twoXL = BIG_SIZES.reduce((s, sz) => s + (parseInt((li.sizes || {})[sz]) || 0), 0);
-            const r = calcGroupPrice(
-              li.garmentCost,
-              qty,
-              li.imprints,
+            const r = calcLinkedLinePrice(
+              li,
               order.rush_rate,
               order.extras,
-              isBrokerOrder ? BROKER_MARKUP : undefined
+              isBrokerOrder ? BROKER_MARKUP : undefined,
+              linkedQtyMap
             );
             const activeSizes = SIZES.filter(sz => (parseInt((li.sizes || {})[sz]) || 0) > 0);
 
@@ -73,7 +72,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
                     <span className="font-bold text-slate-800 text-sm">{li.style || "Garment"}</span>
                     {li.garmentColor && <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>}
                   </div>
-                  {r && <span className="font-bold text-indigo-700 text-sm">{fmtMoney(r.sub + twoXL * 2)}</span>}
+                  {r && <span className="font-bold text-indigo-700 text-sm">{fmtMoney(r.lineTotal)}</span>}
                 </div>
 
                 {activeSizes.length > 0 && (

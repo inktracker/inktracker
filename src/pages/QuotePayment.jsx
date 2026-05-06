@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import {
   calcQuoteTotals,
-  calcGroupPrice,
+  calcLinkedLinePrice,
+  buildLinkedQtyMap,
   fmtMoney,
   fmtDate,
   getQty,
@@ -124,32 +125,20 @@ function getLineItemPricing(li, quote) {
   if (!qty) {
     return {
       qty: 0,
-      twoXL: 0,
       pricing: null,
       lineTotal: 0,
       perPiece: 0,
     };
   }
 
-  const twoXL = BIG_SIZES.reduce(
-    (s, sz) => s + (parseInt((li.sizes || {})[sz], 10) || 0),
-    0
-  );
+  const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
+  const pricing = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, undefined, linkedQtyMap);
 
-  const pricing = calcGroupPrice(
-    li.garmentCost,
-    qty,
-    li.imprints,
-    quote.rush_rate,
-    quote.extras
-  );
-
-  const lineTotal = pricing ? pricing.sub + twoXL * 2 : 0;
+  const lineTotal = pricing ? pricing.lineTotal : 0;
   const perPiece = qty > 0 ? lineTotal / qty : 0;
 
   return {
     qty,
-    twoXL,
     pricing,
     lineTotal,
     perPiece,
@@ -600,7 +589,7 @@ export default function QuotePayment() {
                                     key={sz}
                                     className="text-center text-slate-500 px-3 py-1"
                                   >
-                                    {fmtMoney(perPiece + (isBig ? 2 : 0))}
+                                    {fmtMoney(pricing ? (isBig ? pricing.oversizePpp : pricing.regularPpp) : perPiece)}
                                   </td>
                                 );
                               })}
