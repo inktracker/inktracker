@@ -508,18 +508,17 @@ export default function LineItemEditor({
   onDuplicate,
   canRemove,
 }) {
-  // sizePrices is stored in component state so it survives React re-renders
-  // that overwrite li via onChange({ ...li, someField }) without sizePrices.
-  const [localSizePrices, setLocalSizePrices] = useState(li.sizePrices || null);
+  // sizePrices stored in a ref (synchronous) so it survives every onChange call.
+  // React state updates are async and can be overwritten by rapid onChange calls.
+  const sizePricesRef = useRef(li.sizePrices || null);
   const onChange = (updated) => {
-    // If this update includes sizePrices, capture it in local state
+    // Capture sizePrices when it arrives
     if (updated.sizePrices && Object.keys(updated.sizePrices).length > 0) {
-      setLocalSizePrices(updated.sizePrices);
+      sizePricesRef.current = updated.sizePrices;
     }
-    // Always attach sizePrices from local state
-    const sp = updated.sizePrices || localSizePrices;
-    if (sp && Object.keys(sp).length > 0) {
-      updated = { ...updated, sizePrices: sp };
+    // Always attach from ref
+    if (sizePricesRef.current) {
+      updated = { ...updated, sizePrices: sizePricesRef.current };
     }
     _rawOnChange(updated);
   };
@@ -585,9 +584,7 @@ export default function LineItemEditor({
         setSsInventory(selected.inventoryMap || {});
         setSsPriceMap(selected.priceMap || {});
         setSsSizePriceMap(selected.sizePriceMap || {});
-        const applied = applySelectedMatch(li, selected);
-        console.log("[handleStyleBlur] applied.sizePrices:", JSON.stringify(Object.keys(applied.sizePrices || {})).slice(0, 80));
-        onChange(applied);
+        onChange(applySelectedMatch(li, selected));
       } else {
         setSsColors(options[0].colors || []);
         setSsInventory(options[0].inventoryMap || {});
