@@ -432,6 +432,13 @@ export default function BrokerQuoteEditor({
                   ))}
                 </div>
 
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={nc.tax_exempt || false}
+                    onChange={e => setNc({ ...nc, tax_exempt: e.target.checked })}
+                    className="w-4 h-4 rounded border-slate-300 accent-indigo-600" />
+                  <span className="text-sm text-slate-600">Tax Exempt</span>
+                </label>
+
                 <button
                   onClick={handleAddClient}
                   disabled={isAddingClient}
