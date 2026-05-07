@@ -226,7 +226,8 @@ function getCanonicalStyleNumber(typedStyleNumber, selectedMatch) {
   ]
     .map(extractTrailingCode)
     .filter(Boolean)
-    .filter((value) => !isWarehouseSku(value));
+    .filter((value) => !isWarehouseSku(value))
+    .filter((value) => looksLikeCode(value));
 
   if (titleCandidates.length > 0) {
     const exactTyped = titleCandidates.find((value) => value === typed);
