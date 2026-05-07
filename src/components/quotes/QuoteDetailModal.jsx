@@ -630,14 +630,6 @@ export default function QuoteDetailModal({
                                   </span>
                                 </div>
 
-                                {twoXL > 0 && (
-                                  <div className="flex justify-between text-xs text-slate-600">
-                                    <span>2XL+ Upcharge</span>
-                                    <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                      {fmtMoney(pricing.oversizeCost)}
-                                    </span>
-                                  </div>
-                                )}
 
                                 <div className="flex justify-between text-xs text-slate-600 border-t border-indigo-200 pt-1">
                                   <span>Line Subtotal</span>
