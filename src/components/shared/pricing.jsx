@@ -420,7 +420,8 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
     }
     const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, markup, linkedQtyMap);
     if (r) {
-      subtotal += r.baseSubtotal;
+      // Use ppp × qty so totals match the displayed average per-piece price
+      subtotal += r.ppp * r.qty;
       rushTotal += r.rushFee;
     }
   });
