@@ -528,7 +528,10 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
 export default function BrokerDashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("quotes");
+  const [tab, setTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("tab") || "quotes";
+  });
   const [quotes, setQuotes] = useState([]);
   const [clients, setClients] = useState([]);
   const [orders, setOrders] = useState([]);

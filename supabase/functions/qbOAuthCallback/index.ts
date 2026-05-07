@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
 
     const { data: profile, error: findErr } = await supabaseAdmin
       .from("profiles")
-      .select("id")
+      .select("id, role")
       .eq("qb_oauth_state", state)
       .single();
 
@@ -111,7 +111,8 @@ Deno.serve(async (req) => {
     }
 
     console.error("QB OAuth success for profile:", profile.id, "realmId:", realmId);
-    return Response.redirect(`${appBaseUrl}/Account?qb_connected=1`);
+    const redirectPage = profile.role === "broker" ? "/BrokerDashboard?tab=profile&qb_connected=1" : "/Account?qb_connected=1";
+    return Response.redirect(`${appBaseUrl}${redirectPage}`);
   } catch (err) {
     console.error("qbOAuthCallback exception:", err);
     return Response.redirect(`${appBaseUrl}/Account?qb_error=server_error`);
