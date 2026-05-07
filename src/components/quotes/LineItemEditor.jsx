@@ -1173,7 +1173,12 @@ export default function LineItemEditor({
               allLineItems={previewLineItems}
               markup={STANDARD_MARKUP}
               onChange={onChange}
-              sizePrices={ssSizePriceMap[li.garmentColor] || sizePricesRef.current || undefined}
+              sizePrices={
+                ssSizePriceMap[li.garmentColor]
+                || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices
+                || sizePricesRef.current
+                || undefined
+              }
             />
           </div>
         </div>
