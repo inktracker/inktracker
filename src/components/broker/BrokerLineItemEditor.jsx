@@ -691,7 +691,7 @@ export default function BrokerLineItemEditor({
 
               {BIG_SIZES.reduce((s, sz) => s + (parseInt(li.sizes?.[sz], 10) || 0), 0) > 0 && (
                 <div className="mt-2 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-1.5 border border-amber-100">
-                  2XL+ sizes highlighted — +$2.00/pc surcharge applies.
+                  2XL+ sizes highlighted — pricing based on actual wholesale cost per size.
                 </div>
               )}
             </div>

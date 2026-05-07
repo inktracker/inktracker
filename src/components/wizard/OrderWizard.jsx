@@ -1093,7 +1093,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                   </div>
                   <div className="flex justify-between items-center border-t border-slate-100 pt-3">
                     <div className="text-sm text-slate-500">Total: <span className="font-bold text-slate-900">{qty} pcs</span>
-                      {twoXL > 0 && <span className="ml-3 text-amber-600 text-xs font-semibold">+$2/pc on {twoXL} oversized</span>}</div>
+                      {twoXL > 0 && <span className="ml-3 text-amber-600 text-xs font-semibold">{twoXL} oversized pcs</span>}</div>
                     {qty > 0 && qty < 25 && <span className="text-xs font-semibold text-red-500 bg-red-50 px-3 py-1 rounded-full border border-red-100">Min 25 pcs</span>}
                   </div>
                 </>);

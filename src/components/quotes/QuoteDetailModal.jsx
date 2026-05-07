@@ -498,9 +498,9 @@ export default function QuoteDetailModal({
                               <div className="text-base font-bold text-indigo-600">
                                 {fmtMoney(pricing.ppp)}<span className="text-xs font-medium text-indigo-400">/pc</span>
                               </div>
-                              {twoXL > 0 && (
+                              {twoXL > 0 && pricing.oversizePpp !== pricing.regularPpp && (
                                 <div className="text-xs font-semibold text-amber-600">
-                                  {fmtMoney(pricing.ppp + 2)}<span className="text-[10px] font-medium text-amber-400">/pc 2XL+</span>
+                                  {fmtMoney(pricing.oversizePpp)}<span className="text-[10px] font-medium text-amber-400">/pc 2XL+</span>
                                 </div>
                               )}
                             </div>
