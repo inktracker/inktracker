@@ -388,11 +388,11 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
-        // Per-piece: actual per-size price from sizeBreakdown
-        const sb = r?.sizeBreakdown || {};
+        // Per-piece: show average price across all sizes
+        const avgPpp = useLineOverride ? override : (r?.ppp || 0);
         activeSizes.forEach((sz) => {
           xPos += colW;
-          const price = useLineOverride ? override : (sb[sz]?.totalPpp || r?.ppp || 0);
+          const price = avgPpp;
           doc.text(fmtMoney(price), xPos, yPos, { align: 'center' });
         });
         yPos += 4;
