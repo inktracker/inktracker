@@ -552,6 +552,22 @@ export default function LineItemEditor({
     handleStyleBlur();
   }, [li.id]); // Only on mount (li.id), NOT on li.style change
 
+  // Ensure sizePrices is persisted on the line item whenever we have per-size data.
+  // This runs after React state settles, so it won't get overwritten.
+  useEffect(() => {
+    const colorPrices = ssSizePriceMap[li.garmentColor]
+      || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices;
+    if (colorPrices && Object.keys(colorPrices).length > 0) {
+      sizePricesRef.current = colorPrices;
+      // Only call onChange if li doesn't already have the right sizePrices
+      const current = li.sizePrices || {};
+      if (JSON.stringify(current) !== JSON.stringify(colorPrices)) {
+        _rawOnChange({ ...li, sizePrices: colorPrices });
+      }
+    }
+  }, [ssSizePriceMap, ssColors, li.garmentColor]);
+
+
   async function handleStyleBlur() {
     const typedStyleNumber = normalizeTypedStyleNumber(li.style);
     if (!typedStyleNumber) return;
@@ -584,7 +600,6 @@ export default function LineItemEditor({
         setSsInventory(selected.inventoryMap || {});
         setSsPriceMap(selected.priceMap || {});
         setSsSizePriceMap(selected.sizePriceMap || {});
-        // Set the ref BEFORE onChange so PricePanel sees it immediately
         const colors = selected.colors || [];
         const firstColor = colors.find((c) => c.colorName === li.garmentColor)?.colorName || colors[0]?.colorName || li.garmentColor;
         const sp = (selected.sizePriceMap && selected.sizePriceMap[firstColor]) || {};
