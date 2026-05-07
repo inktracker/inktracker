@@ -255,7 +255,7 @@ export function buildLinkedQtyMap(lineItems) {
   return qtyMap;
 }
 
-export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) {
+export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, sizePricesOverride) {
   const qty = getQty(li);
   if (!qty || qty < 1 || !li.imprints || li.imprints.length === 0) return null;
 
@@ -331,7 +331,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap) 
 
   // Garment cost per size — use actual per-size prices from API when available,
   // fall back to flat garmentCost × markup for all sizes.
-  const sizePrices = li.sizePrices || {};
+  const sizePrices = sizePricesOverride || li.sizePrices || {};
   const hasSizePrices = Object.keys(sizePrices).length > 0;
   const flatCost = parseFloat(li.garmentCost) || 0;
   const flatMarkup = getMarkup(flatCost, isBroker);

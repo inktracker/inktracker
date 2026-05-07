@@ -7,10 +7,10 @@ import {
   BROKER_MARKUP,
 } from "../shared/pricing";
 
-export default function PricePanel({ li, rushRate, extras, allLineItems = [], markup, onChange }) {
+export default function PricePanel({ li, rushRate, extras, allLineItems = [], markup, onChange, sizePrices }) {
   const qty = getQty(li);
   const linkedQtyMap = buildLinkedQtyMap(allLineItems);
-  const r = calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap);
+  const r = calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, sizePrices);
 
   if (!r) {
     return (

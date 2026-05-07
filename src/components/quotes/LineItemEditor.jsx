@@ -1167,12 +1167,13 @@ export default function LineItemEditor({
 
           <div className="p-5 bg-slate-50">
             <PricePanel
-              li={sizePricesRef.current ? { ...li, sizePrices: sizePricesRef.current } : li}
+              li={li}
               rushRate={rushRate}
               extras={extras}
               allLineItems={previewLineItems}
               markup={STANDARD_MARKUP}
               onChange={onChange}
+              sizePrices={ssSizePriceMap[li.garmentColor] || sizePricesRef.current || undefined}
             />
           </div>
         </div>
