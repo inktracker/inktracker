@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   SIZES,
   BIG_SIZES,
@@ -273,6 +273,7 @@ function buildBrandOptions(matches, typedStyleNumber) {
       colors: match.colors || [],
       inventoryMap: match.inventoryMap || {},
       priceMap: match.priceMap || {},
+      sizePriceMap: JSON.parse(JSON.stringify(match.sizePriceMap || {})),
       piecePrice: match.piecePrice,
       casePrice: match.casePrice,
       raw: match.raw || match,
@@ -333,6 +334,7 @@ function applySelectedMatch(li, selectedMatch) {
     ) || li.category || "",
     supplier: "S&S Activewear",
     supplierLastLookupAt: new Date().toISOString(),
+    sizePrices: (selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {},
   };
 }
 
@@ -356,6 +358,17 @@ export default function BrokerLineItemEditor({
   const [brandOptions, setBrandOptions] = useState([]);
 
   const qty = getQty(li);
+
+  // Persist sizePrices on the line item when color data is available
+  useEffect(() => {
+    const colorPrices = (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices;
+    if (colorPrices && Object.keys(colorPrices).length > 0) {
+      const current = li.sizePrices || {};
+      if (JSON.stringify(current) !== JSON.stringify(colorPrices)) {
+        onChange({ ...li, sizePrices: colorPrices });
+      }
+    }
+  }, [ssColors, li.garmentColor]);
 
   const previewLineItems = useMemo(
     () => (allLineItems || []).map((item) => (item.id === li.id ? li : item)),
@@ -413,6 +426,7 @@ export default function BrokerLineItemEditor({
 
   function handleColorChange(colorName) {
     const selectedPrice = ssPriceMap[colorName] || {};
+    const colorSizePrices = (ssColors.find(c => c.colorName === colorName) || {}).sizePrices || {};
     onChange({
       ...li,
       garmentColor: colorName,
@@ -420,6 +434,7 @@ export default function BrokerLineItemEditor({
         selectedPrice.piecePrice != null ? Number(selectedPrice.piecePrice) : li.garmentCost,
       casePrice:
         selectedPrice.casePrice != null ? Number(selectedPrice.casePrice) : li.casePrice,
+      sizePrices: colorSizePrices,
     });
   }
 
