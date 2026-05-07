@@ -884,6 +884,7 @@ export default function BrokerLineItemEditor({
                 extras={extras}
                 allLineItems={previewLineItems}
                 onChange={onChange}
+                sizePrices={(ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices || undefined}
               />
             </div>
           </div>

@@ -122,6 +122,7 @@ export default function BrokerPricePanel({
   extras,
   allLineItems = [],
   onChange,
+  sizePrices,
 }) {
   const qty = getQty(li);
 
@@ -132,7 +133,8 @@ export default function BrokerPricePanel({
     rushRate,
     extras,
     BROKER_MARKUP,
-    linkedQtyMap
+    linkedQtyMap,
+    sizePrices
   );
 
   const shopRate = calcLinkedLinePrice(
@@ -140,7 +142,8 @@ export default function BrokerPricePanel({
     rushRate,
     extras,
     STANDARD_MARKUP,
-    linkedQtyMap
+    linkedQtyMap,
+    sizePrices
   );
 
   if (!brokerRate || !shopRate) {
@@ -217,34 +220,19 @@ export default function BrokerPricePanel({
           </div>
         ))}
 
-        {/* Garments line: shows base cost + broker markup % so the breakdown
-            is transparent (broker markup is a partial share of the admin markup). */}
-        {(() => {
-          const baseCost = parseFloat(li?.garmentCost) || 0;
-          const markupRatio = baseCost > 0 ? getMarkup(baseCost, true) : 1;
-          const markedUpPerPc = baseCost * markupRatio;
-          const markupPct = Math.round((markupRatio - 1) * 100);
-          return (
-            <div className="flex justify-between text-xs border-b border-slate-800 pb-2">
-              <div>
-                <div className="text-slate-300 font-semibold">Garments</div>
-                {baseCost > 0 ? (
-                  <div className="text-slate-500">
-                    {fmtMoney(baseCost)} cost {markupPct > 0 ? `+ ${markupPct}% markup` : ""}
-                  </div>
-                ) : (
-                  <div className="text-slate-500">No garment cost set</div>
-                )}
-              </div>
-              <div className="text-right">
-                <div className="text-white font-semibold">{fmtMoney(brokerRate.gCost)}</div>
-                {baseCost > 0 && (
-                  <div className="text-slate-500">{fmtMoney(markedUpPerPc)}/pc</div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+        <div className="flex justify-between text-xs border-b border-slate-800 pb-2">
+          <div>
+            <div className="text-slate-300 font-semibold">Garments</div>
+            {brokerRate.gCost > 0 ? (
+              <div className="text-slate-500">{fmtMoney(brokerRate.gCost / qty)}/pc avg</div>
+            ) : (
+              <div className="text-slate-500">No garment cost set</div>
+            )}
+          </div>
+          <div className="text-right">
+            <div className="text-white font-semibold">{fmtMoney(brokerRate.gCost)}</div>
+          </div>
+        </div>
 
         {brokerRate.extraCost > 0 && (
           <div className="flex justify-between text-xs">
