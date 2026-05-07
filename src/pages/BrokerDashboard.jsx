@@ -43,6 +43,7 @@ import BrokerProfile from "../components/broker/BrokerProfile";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerDocuments from "../components/broker/BrokerDocuments";
 import BrokerPerformanceSelf from "../components/broker/BrokerPerformanceSelf";
+import BrokerLayout from "../components/broker/BrokerLayout";
 import BrokerFilesTab from "../components/broker/BrokerFilesTab";
 import BrokerInvoicesTab from "../components/broker/BrokerInvoicesTab";
 import { exportQuoteToPDF } from "../components/shared/pdfExport";
@@ -791,93 +792,8 @@ export default function BrokerDashboard() {
   const actionableQuotes = quotes.filter((q) => ACTION_STATUSES.includes(normalizeStatus(q.status)));
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
-        <div className="max-w-5xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <img
-              src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png"
-              alt="InkTracker"
-              className="w-8 h-8 object-contain"
-            />
-            <div>
-              <div className="text-base font-bold text-slate-900">Broker Portal</div>
-              <div className="text-xs text-slate-400">
-                {user.display_name || user.full_name}
-                {user.company_name ? ` · ${user.company_name}` : ""}
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => base44.auth.logout("/")}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-red-500 font-semibold transition px-3 py-2 rounded-lg hover:bg-red-50"
-          >
-            <LogOut className="w-4 h-4" /> Sign Out
-          </button>
-        </div>
-
-        <div className="max-w-5xl mx-auto border-t border-slate-100">
-          <div
-            className="flex overflow-x-auto md:hidden"
-            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-          >
-            {[
-              { id: "quotes", label: "Overview", icon: BarChart2 },
-              { id: "clients", label: "Clients", icon: Users },
-              { id: "orders", label: "Orders", icon: Package },
-              { id: "performance", label: "Performance", icon: TrendingUp },
-              { id: "messages", label: "Messages", icon: MessageSquare },
-              { id: "documents", label: "Documents", icon: Paperclip },
-              { id: "jobfiles", label: "Files", icon: FolderOpen },
-              { id: "invoices", label: "Invoices", icon: FileText },
-              { id: "profile", label: "Profile", icon: UserCircle },
-            ].map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setTab(id)}
-                className={`flex items-center gap-1.5 px-4 py-3 text-sm font-semibold border-b-2 -mb-px transition whitespace-nowrap shrink-0 ${
-                  tab === id
-                    ? "border-indigo-600 text-indigo-700"
-                    : "border-transparent text-slate-500"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <div className="hidden md:flex px-8">
-            {[
-              { id: "quotes", label: "Overview", icon: BarChart2 },
-              { id: "clients", label: "Clients", icon: Users },
-              { id: "orders", label: "Orders", icon: Package },
-              { id: "performance", label: "Performance", icon: TrendingUp },
-              { id: "messages", label: "Messages", icon: MessageSquare },
-              { id: "documents", label: "Documents", icon: Paperclip },
-              { id: "jobfiles", label: "Files", icon: FolderOpen },
-              { id: "invoices", label: "Invoices", icon: FileText },
-              { id: "profile", label: "Profile", icon: UserCircle },
-            ].map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                onClick={() => setTab(id)}
-                className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition ${
-                  tab === id
-                    ? "border-indigo-600 text-indigo-700"
-                    : "border-transparent text-slate-500 hover:text-slate-800"
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </header>
-
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 md:px-8 py-8">
+    <BrokerLayout user={user} tab={tab} setTab={setTab}>
+      <div>
         {tab === "quotes" && (
           <div className="space-y-6">
             <div className="flex items-start justify-between gap-4">
@@ -1221,8 +1137,6 @@ export default function BrokerDashboard() {
             onUpdate={(updated) => setUser((u) => ({ ...u, ...updated }))}
           />
         )}
-      </main>
-
       {showEditor && (
         <BrokerQuoteEditor
           quote={editorQuote}
@@ -1259,6 +1173,7 @@ export default function BrokerDashboard() {
         />
       )}
     </div>
+    </BrokerLayout>
   );
 }
 
