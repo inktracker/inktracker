@@ -325,13 +325,11 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Line total = sum of per-size (totalPpp × qty) from the pricing engine.
-    // Rush shown separately at the bottom. What you see is what multiplies.
+    // Line total = displayed average ppp × qty so the math checks out visually.
     const override = Number(li?.clientPpp);
     const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
-    const lineTotal = useLineOverride
-      ? override * qty
-      : (r ? r.baseSubtotal : 0);
+    const avgPpp = useLineOverride ? override : (r ? r.ppp : 0);
+    const lineTotal = avgPpp * qty;
 
     if (r) {
       doc.setFontSize(9);
