@@ -1393,6 +1393,22 @@ function PricingConfigSection({ user }) {
         </div>
       </div>
 
+      {/* Broker Commission */}
+      <div>
+        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Broker Commission</h4>
+        <p className="text-[10px] text-slate-400 mb-2">Percentage of your garment markup that brokers keep as their commission. Higher = more profit for brokers.</p>
+        <div className="flex items-center gap-3">
+          <div className="relative w-28">
+            <input type="number" step="1" min="0" max="100"
+              value={Math.round((config.brokerMarkupShare ?? 0.2) * 100)}
+              onChange={e => setConfig(prev => ({ ...prev, brokerMarkupShare: (parseFloat(e.target.value) || 0) / 100 }))}
+              className={inputCls} />
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
+          </div>
+          <span className="text-xs text-slate-400">of garment markup goes to broker</span>
+        </div>
+      </div>
+
       {/* Decoration type tabs */}
       <div className="flex gap-1 border-b border-slate-200 pb-0">
         <button onClick={() => setPricingTab("screen_print")}

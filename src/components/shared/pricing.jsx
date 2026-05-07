@@ -101,9 +101,14 @@ export function getAdminMarkup(garmentCost) {
   return 1.4;
 }
 
-export function getBrokerMarkup(garmentCost, share = BROKER_MARKUP_SHARE) {
+export function getBrokerMarkupShare() {
+  return _pc?.brokerMarkupShare ?? BROKER_MARKUP_SHARE;
+}
+
+export function getBrokerMarkup(garmentCost, share) {
+  const s = share ?? getBrokerMarkupShare();
   const adminMarkup = getAdminMarkup(garmentCost);
-  return 1 + ((adminMarkup - 1) * share);
+  return 1 + ((adminMarkup - 1) * s);
 }
 
 export function getMarkup(garmentCost, isBroker = false) {
