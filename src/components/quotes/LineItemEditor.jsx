@@ -503,11 +503,26 @@ export default function LineItemEditor({
   extras,
   allLineItems = [],
   savedImprints = [],
-  onChange,
+  onChange: _rawOnChange,
   onRemove,
   onDuplicate,
   canRemove,
 }) {
+  // sizePrices is stored in component state so it survives React re-renders
+  // that overwrite li via onChange({ ...li, someField }) without sizePrices.
+  const [localSizePrices, setLocalSizePrices] = useState(li.sizePrices || null);
+  const onChange = (updated) => {
+    // If this update includes sizePrices, capture it in local state
+    if (updated.sizePrices && Object.keys(updated.sizePrices).length > 0) {
+      setLocalSizePrices(updated.sizePrices);
+    }
+    // Always attach sizePrices from local state
+    const sp = updated.sizePrices || localSizePrices;
+    if (sp && Object.keys(sp).length > 0) {
+      updated = { ...updated, sizePrices: sp };
+    }
+    _rawOnChange(updated);
+  };
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [ssColors, setSsColors] = useState([]);
   const [ssInventory, setSsInventory] = useState({});
@@ -570,7 +585,9 @@ export default function LineItemEditor({
         setSsInventory(selected.inventoryMap || {});
         setSsPriceMap(selected.priceMap || {});
         setSsSizePriceMap(selected.sizePriceMap || {});
-        onChange(applySelectedMatch(li, selected));
+        const applied = applySelectedMatch(li, selected);
+        console.log("[handleStyleBlur] applied.sizePrices:", JSON.stringify(Object.keys(applied.sizePrices || {})).slice(0, 80));
+        onChange(applied);
       } else {
         setSsColors(options[0].colors || []);
         setSsInventory(options[0].inventoryMap || {});
