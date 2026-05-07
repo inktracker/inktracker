@@ -584,6 +584,11 @@ export default function LineItemEditor({
         setSsInventory(selected.inventoryMap || {});
         setSsPriceMap(selected.priceMap || {});
         setSsSizePriceMap(selected.sizePriceMap || {});
+        // Set the ref BEFORE onChange so PricePanel sees it immediately
+        const colors = selected.colors || [];
+        const firstColor = colors.find((c) => c.colorName === li.garmentColor)?.colorName || colors[0]?.colorName || li.garmentColor;
+        const sp = (selected.sizePriceMap && selected.sizePriceMap[firstColor]) || {};
+        if (Object.keys(sp).length > 0) sizePricesRef.current = sp;
         onChange(applySelectedMatch(li, selected));
       } else {
         setSsColors(options[0].colors || []);
@@ -611,11 +616,18 @@ export default function LineItemEditor({
     setSsInventory(selected.inventoryMap || {});
     setSsPriceMap(selected.priceMap || {});
     setSsSizePriceMap(selected.sizePriceMap || {});
+    // Set ref before onChange
+    const colors = selected.colors || [];
+    const fc = colors.find((c) => c.colorName === li.garmentColor)?.colorName || colors[0]?.colorName || li.garmentColor;
+    const sp = (selected.sizePriceMap && selected.sizePriceMap[fc]) || {};
+    if (Object.keys(sp).length > 0) sizePricesRef.current = sp;
     onChange(applySelectedMatch(li, selected));
   }
 
   function handleColorChange(colorName) {
     const selectedPrice = ssPriceMap[colorName] || {};
+    const colorSizePrices = ssSizePriceMap[colorName] || {};
+    if (Object.keys(colorSizePrices).length > 0) sizePricesRef.current = colorSizePrices;
     onChange({
       ...li,
       garmentColor: colorName,
@@ -627,7 +639,7 @@ export default function LineItemEditor({
         selectedPrice.casePrice != null
           ? Number(selectedPrice.casePrice)
           : li.casePrice,
-      sizePrices: ssSizePriceMap[colorName] || li.sizePrices || {},
+      sizePrices: colorSizePrices,
     });
   }
 
