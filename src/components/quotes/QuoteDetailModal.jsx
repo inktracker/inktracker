@@ -615,29 +615,13 @@ export default function QuoteDetailModal({
 
                           <div className="space-y-3">
                             {pricing && (
-                              <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 space-y-1">
+                              <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
                                 <div className="flex justify-between text-xs text-slate-600">
-                                  <span>Garment Cost</span>
-                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                    {fmtMoney(pricing.garment)}
-                                  </span>
-                                </div>
-
-                                <div className="flex justify-between text-xs text-slate-600">
-                                  <span>Imprint Cost</span>
-                                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                                    {fmtMoney(pricing.imprint)}
-                                  </span>
-                                </div>
-
-
-                                <div className="flex justify-between text-xs text-slate-600 border-t border-indigo-200 pt-1">
                                   <span>Line Subtotal</span>
                                   <span className="font-semibold text-slate-800 dark:text-slate-200">
                                     {fmtMoney(pricing.ppp * qty)}
                                   </span>
                                 </div>
-
                               </div>
                             )}
                           </div>
