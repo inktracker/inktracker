@@ -1155,7 +1155,7 @@ export default function LineItemEditor({
 
           <div className="p-5 bg-slate-50">
             <PricePanel
-              li={li}
+              li={sizePricesRef.current ? { ...li, sizePrices: sizePricesRef.current } : li}
               rushRate={rushRate}
               extras={extras}
               allLineItems={previewLineItems}
