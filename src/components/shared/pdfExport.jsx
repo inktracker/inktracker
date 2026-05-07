@@ -111,10 +111,10 @@ function isLikelySku(value) {
 
 function getGarmentNumber(li) {
   const titleTail = extractTrailingGarmentNumber(li?.productTitle);
-  if (titleTail && !isLikelySku(titleTail)) return titleTail;
+  if (titleTail && !isLikelySku(titleTail) && looksLikeCode(titleTail)) return titleTail;
 
   const resolvedTitleTail = extractTrailingGarmentNumber(li?.resolvedTitle);
-  if (resolvedTitleTail && !isLikelySku(resolvedTitleTail)) return resolvedTitleTail;
+  if (resolvedTitleTail && !isLikelySku(resolvedTitleTail) && looksLikeCode(resolvedTitleTail)) return resolvedTitleTail;
 
   const candidates = [
     li?.resolvedStyleNumber,

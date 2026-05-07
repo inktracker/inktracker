@@ -779,7 +779,7 @@ export default function BrokerQuoteEditor({
           </button>
 
           <button
-            onClick={() => exportQuoteToPDF(q, {
+            onClick={() => exportQuoteToPDF({ ...q, broker_id: broker?.email || "broker" }, {
               mode: "shop",
               shopName: shop?.shop_name || "",
               logoUrl: shop?.logo_url || "",
