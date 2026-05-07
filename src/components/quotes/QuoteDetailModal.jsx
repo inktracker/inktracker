@@ -734,12 +734,14 @@ export default function QuoteDetailModal({
           </div>
 
           <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
-            <button
-              onClick={onEdit}
-              className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
-            >
-              Edit Quote
-            </button>
+            {!quote?.broker_id && (
+              <button
+                onClick={onEdit}
+                className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
+              >
+                Edit Quote
+              </button>
+            )}
 
             <button
               onClick={() => setShowSendModal(true)}
