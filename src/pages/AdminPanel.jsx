@@ -272,7 +272,7 @@ export default function AdminPanel() {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-slate-800 text-sm truncate">
-                    {u.shop_name || <span className="text-slate-400 italic">No shop name</span>}
+                    {u.full_name || u.shop_name || <span className="text-slate-400 italic">No name</span>}
                   </div>
                   <div className="text-xs text-slate-400 truncate">{u.email || u.auth_id}</div>
                   <div className="text-xs text-slate-300 mt-0.5">
