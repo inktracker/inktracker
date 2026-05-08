@@ -419,8 +419,7 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
     const qty = getQty(li);
     const override = Number(li?.clientPpp);
     if (respectOverride && Number.isFinite(override) && override > 0 && qty > 0) {
-      const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
-      subtotal += override * qty + twoXL * getOversizeUpcharge();
+      subtotal += override * qty;
       return;
     }
     const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, markup, linkedQtyMap);
