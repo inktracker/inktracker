@@ -744,7 +744,22 @@ export default function LineItemEditor({
             </label>
             <input
               value={li.style}
-              onChange={(e) => onChange({ ...li, style: e.target.value })}
+              onChange={(e) => {
+                setBrandOptions([]);
+                setSsColors([]);
+                setSsInventory({});
+                setSsPriceMap({});
+                onChange({
+                  ...li,
+                  style: e.target.value,
+                  productName: "", styleName: "", garmentNumber: "", resolvedTitle: "",
+                  resolvedDescription: "", productDescription: "", description: "",
+                  garmentName: "", productTitle: "", brand: "", garmentColor: "",
+                  garmentCost: "", casePrice: "", resolvedStyleNumber: "",
+                  supplierStyleNumber: "", styleNumber: "", productNumber: "",
+                  sizePrices: {},
+                });
+              }}
               onBlur={handleStyleBlur}
               onKeyDown={(e) => e.key === "Enter" && handleStyleBlur()}
               placeholder="e.g. 1717 or G500"
