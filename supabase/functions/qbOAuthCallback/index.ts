@@ -7,8 +7,9 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
 const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
-const APP_URL          = Deno.env.get("APP_URL") ?? "https://skmltfbibaqcjddmeqvi.supabase.co";
-const REDIRECT_URI     = `${APP_URL}/functions/v1/qbOAuthCallback`;
+const APP_URL          = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
+const SUPABASE_URL     = Deno.env.get("SUPABASE_URL") || "https://skmltfbibaqcjddmeqvi.supabase.co";
+const REDIRECT_URI     = `${SUPABASE_URL}/functions/v1/qbOAuthCallback`;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,8 +25,7 @@ Deno.serve(async (req) => {
   const realmId = url.searchParams.get("realmId");
   const error  = url.searchParams.get("error");
 
-  // Determine where to send the user back to
-  const appBaseUrl = Deno.env.get("VITE_APP_URL") ?? "http://localhost:5173";
+  const appBaseUrl = APP_URL;
 
   if (error) {
     console.error("QB OAuth error:", error, url.searchParams.get("error_description"));

@@ -153,11 +153,11 @@ export default function Account() {
     } else if (params.get("qb_error")) {
       const errCode = params.get("qb_error");
       const msgs = {
-        state_mismatch:      "Connection failed: security state mismatch. Please try again.",
-        token_exchange_failed: "Connection failed: could not exchange authorization code.",
-        storage_failed:      "Connection failed: could not save tokens.",
-        missing_params:      "Connection failed: missing parameters from QuickBooks.",
-        server_error:        "Connection failed: server error.",
+        state_mismatch:      "Connection failed. Please try again.",
+        token_exchange_failed: "Could not connect to QuickBooks. Please try again — if the issue persists, contact support.",
+        storage_failed:      "Connected to QuickBooks but could not save. Please try again.",
+        missing_params:      "QuickBooks did not return the expected data. Please try again.",
+        server_error:        "Something went wrong. Please try again.",
       };
       setQbMessage({ type: "error", text: msgs[errCode] || `Connection failed: ${errCode}` });
       window.history.replaceState({}, "", window.location.pathname);
