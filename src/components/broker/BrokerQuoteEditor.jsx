@@ -250,7 +250,12 @@ export default function BrokerQuoteEditor({
         const qty = getQty(li);
         const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, STANDARD_MARKUP, linkedQtyMap);
         if (!r || !qty) return li;
-        return { ...li, _ppp: r.ppp, _lineTotal: r.ppp * qty, _rushFee: r.rushFee };
+        const override = Number(li?.clientPpp);
+        const hasOverride = Number.isFinite(override) && override > 0;
+        const ppp = hasOverride ? override : r.ppp;
+        const lineTotal = ppp * qty;
+        const rushFee = hasOverride ? 0 : r.rushFee;
+        return { ...li, _ppp: ppp, _lineTotal: lineTotal, _rushFee: rushFee };
       });
       // Compute totals from stamped line items — one source of truth
       const lineSubtotal = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);
