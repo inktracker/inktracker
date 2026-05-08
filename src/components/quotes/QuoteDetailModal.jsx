@@ -33,10 +33,16 @@ function getQuoteTotalsForDisplay(q) {
 
 function getLinePrice(li, quote) {
   const markup = isBrokerQuote(quote) ? BROKER_MARKUP : STANDARD_MARKUP;
-  const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
   const qty = getQty(li);
 
-  // Respect clientPpp override
+  // Use saved pricing if available (stamped at save time)
+  if (li._ppp != null && li._lineTotal != null) {
+    return { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0, qty, baseSubtotal: li._lineTotal, garment: 0, imprint: 0, gCost: 0, printCost: 0, extraCost: 0, oversizeCost: 0, tier: getTier(qty) };
+  }
+
+  // Legacy fallback — recalculate for old quotes without stamped pricing
+  const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
+
   const override = Number(li?.clientPpp);
   if (markup === STANDARD_MARKUP && Number.isFinite(override) && override > 0 && qty > 0) {
     return { sub: override * qty, ppp: override, gCost: 0, printCost: 0, rushFee: 0, tier: getTier(qty), garment: 0, imprint: 0, overridden: true };
@@ -344,7 +350,20 @@ export default function QuoteDetailModal({
       .catch(() => {});
   }, []);
 
-  const totals = useMemo(() => getQuoteTotalsForDisplay(quote || {}), [quote]);
+  // Use saved totals when available; fall back to recalculation for legacy quotes
+  const totals = useMemo(() => {
+    if (quote?.total != null && quote?.subtotal != null) {
+      return {
+        sub: Number(quote.subtotal),
+        subtotal: Number(quote.subtotal) - (Number(quote.rushTotal) || 0),
+        rushTotal: Number(quote.rushTotal) || 0,
+        afterDisc: Number(quote.total) - Number(quote.tax || 0),
+        tax: Number(quote.tax || 0),
+        total: Number(quote.total),
+      };
+    }
+    return getQuoteTotalsForDisplay(quote || {});
+  }, [quote]);
 
   if (!quote) return null;
 

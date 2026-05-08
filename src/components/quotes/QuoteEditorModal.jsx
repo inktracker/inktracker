@@ -3,6 +3,9 @@ import { base44, supabase } from "@/api/supabaseClient";
 import {
   Q_STATUSES,
   calcQuoteTotals,
+  calcLinkedLinePrice,
+  buildLinkedQtyMap,
+  getQty,
   fmtMoney,
   tod,
   uid,
@@ -355,8 +358,17 @@ export default function QuoteEditorModal({
         }
       }
 
-      const t = calcQuoteTotals(q);
-      await onSave({ ...q, subtotal: t.sub, tax: t.tax, total: t.total });
+      // Stamp each line item with computed pricing so every view reads saved numbers
+      const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
+      const stampedItems = (q.line_items || []).map(li => {
+        const qty = getQty(li);
+        const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, undefined, linkedQtyMap);
+        if (!r || !qty) return li;
+        return { ...li, _ppp: r.ppp, _lineTotal: r.ppp * qty, _rushFee: r.rushFee };
+      });
+      const stampedQuote = { ...q, line_items: stampedItems };
+      const t = calcQuoteTotals(stampedQuote);
+      await onSave({ ...stampedQuote, subtotal: t.sub, tax: t.tax, total: t.total });
     } catch (err) {
       setSaveError(err.message || "Failed to save quote. Please try again.");
     } finally {

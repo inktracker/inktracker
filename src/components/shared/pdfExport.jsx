@@ -325,11 +325,11 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Line total = displayed average ppp × qty so the math checks out visually.
+    // Use saved per-line pricing when available; fall back to calc for legacy
     const override = Number(li?.clientPpp);
     const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
-    const avgPpp = useLineOverride ? override : (r ? r.ppp : 0);
-    const lineTotal = avgPpp * qty;
+    const avgPpp = useLineOverride ? override : (li._ppp != null ? li._ppp : (r ? r.ppp : 0));
+    const lineTotal = useLineOverride ? override * qty : (li._lineTotal != null ? li._lineTotal : avgPpp * qty);
 
     if (r) {
       doc.setFontSize(9);
@@ -386,8 +386,7 @@ function renderLineItems(
         doc.setTextColor(100, 100, 120);
         xPos = margin + 3;
         doc.text('Price/ea', xPos, yPos);
-        // Per-piece: show average price across all sizes
-        const avgPpp = useLineOverride ? override : (r?.ppp || 0);
+        // Per-piece: same avgPpp used for line total above
         activeSizes.forEach((sz) => {
           xPos += colW;
           const price = avgPpp;

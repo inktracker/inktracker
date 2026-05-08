@@ -127,9 +127,11 @@ export function generateQuotePDF({ quote, shopName, paymentLink, markup }) {
     const qty = getQty(li);
     if (!qty) continue;
 
-    const pricing = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
-    const lineTotal = pricing ? pricing.lineTotal : 0;
-    const perPiece = pricing ? pricing.ppp : 0;
+    // Use saved pricing when available; fall back to recalculation for legacy quotes
+    const hasSaved = li._ppp != null && li._lineTotal != null;
+    const pricing = hasSaved ? null : calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
+    const lineTotal = hasSaved ? li._lineTotal : (pricing ? pricing.lineTotal : 0);
+    const perPiece = hasSaved ? li._ppp : (pricing ? pricing.ppp : 0);
 
     // Garment label
     let label = li.productName || li.style || "Garment";

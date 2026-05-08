@@ -1,17 +1,21 @@
 **Good morning, Joe ☕**
 
-*Busy day yesterday — 9 commits, all security and polish work, everything still green.*
+*Busy night — Claude Code shipped 9 commits, mostly broker portal work. Build is green but the linter is grumbling.*
 
 **What happened yesterday**
-A run of security tightening: customer quote/order links are now token-gated, webhooks fail closed instead of open, CORS is locked to inktracker.app, and the admin panel queries are properly scoped to your shop. Stripe billing now enforces on the server side too. A new profile_secrets table moved sensitive supplier credentials out of the main profile, with a safe fallback if the write fails. Also a small fix so garments show the product name instead of "brand — style number," and customer-facing URLs are pinned to the production domain. 63 files touched.
+A lot of polish on the broker side of the app. The broker portal got its own sidebar layout, QuickBooks hookup, and a configurable commission percentage. Brokers can now mark new clients as tax-exempt and the line item editor saves size-level pricing the same way the shop editor does. A couple of small fixes too — the Edit Quote button is now hidden on quotes that brokers submitted, and the PDF export uses the saved quote totals instead of recalculating on the fly. 14 files touched.
 
 **Is it working?**
-🟢 Build — passing (3.5 MB total, ~500 KB gzipped main bundle)
-🟢 Lint — clean
-🟢 Migrations — new one yesterday for profile_secrets, looks tidy
+🟢 Build — passing (about 2.8 MB total, 760 KB compressed)
+🔴 Lint — 15 errors, all unused imports left behind from the broker work
+🟡 Database — there's a new migration sitting in the folder (`20260507_broker_customers_rls.sql`) that hasn't been pushed to Supabase yet. The commit message even flags it: "NEEDS MIGRATION."
+
+**Needs your eyes**
+- Run the broker customers migration in Supabase before brokers try to add clients, or they'll hit a permission wall.
+- Lint cleanup: `BrokerDashboard.jsx` has 9 unused imports, plus a handful in BrokerLayout, BrokerOrderPDFModal, BrokerPricePanel, PricePanel, and pdfExport. `npm run lint -- --fix` should clear them all in one shot.
 
 **Shop stats**
 Usage stats aren't connected yet — let me know when you want to hook them up.
 
 **Today's suggestion**
-The main JS bundle is creeping up (1.9 MB un-gzipped). Not urgent, but worth a code-split pass when you have a quiet afternoon — the build is hinting about it.
+The main JS bundle is about 1.9 MB now. Not urgent, but worth a look at code-splitting before it gets bigger — especially since broker stuff is only used by brokers.

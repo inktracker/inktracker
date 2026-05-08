@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import {
   calcQuoteTotals,
+  calcLinkedLinePrice,
+  buildLinkedQtyMap,
+  getQty,
   fmtMoney,
   tod,
   uid,
@@ -241,8 +244,17 @@ export default function BrokerQuoteEditor({
     }
     setSaving(true);
     try {
+      // Stamp each line item with computed pricing
+      const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
+      const stampedItems = (q.line_items || []).map(li => {
+        const qty = getQty(li);
+        const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, STANDARD_MARKUP, linkedQtyMap);
+        if (!r || !qty) return li;
+        return { ...li, _ppp: r.ppp, _lineTotal: r.ppp * qty, _rushFee: r.rushFee };
+      });
       await onSave({
         ...q,
+        line_items: stampedItems,
         status,
         tax_rate: 0,
         tax_exempt: isTaxExempt,

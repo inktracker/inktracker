@@ -123,26 +123,26 @@ function getLineItemPricing(li, quote) {
   const qty = getQty(li);
 
   if (!qty) {
+    return { qty: 0, pricing: null, lineTotal: 0, perPiece: 0 };
+  }
+
+  // Use saved pricing when available (stamped at save time)
+  if (li._ppp != null && li._lineTotal != null) {
     return {
-      qty: 0,
-      pricing: null,
-      lineTotal: 0,
-      perPiece: 0,
+      qty,
+      pricing: { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0 },
+      lineTotal: li._lineTotal,
+      perPiece: li._ppp,
     };
   }
 
+  // Legacy fallback
   const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
   const pricing = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, undefined, linkedQtyMap);
-
   const lineTotal = pricing ? pricing.lineTotal : 0;
   const perPiece = qty > 0 ? lineTotal / qty : 0;
 
-  return {
-    qty,
-    pricing,
-    lineTotal,
-    perPiece,
-  };
+  return { qty, pricing, lineTotal, perPiece };
 }
 
 function buildCheckoutLineItems(quote, amount, label) {
