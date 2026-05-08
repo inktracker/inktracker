@@ -49,7 +49,10 @@ async function refreshQbToken(refreshTok: string) {
     },
     body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshTok }),
   });
-  if (!res.ok) throw new Error(`[qb] token refresh failed: ${res.status}`);
+  if (!res.ok) {
+    console.error(`[stripeWebhook] QB token refresh failed: ${res.status}`);
+    throw new Error("QuickBooks connection expired. Please reconnect in Account settings.");
+  }
   return res.json();
 }
 

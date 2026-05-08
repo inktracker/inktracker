@@ -27,7 +27,14 @@ async function refreshToken(refreshTok: string) {
     },
     body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshTok }),
   });
-  if (!res.ok) throw new Error(`Token refresh failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    console.error(`[qbSync] Token refresh failed: ${res.status} ${body}`);
+    if (body.includes("invalid_grant")) {
+      throw new Error("Your QuickBooks connection has expired. Please go to Account → QuickBooks and reconnect.");
+    }
+    throw new Error("QuickBooks connection error. Please reconnect in Account settings.");
+  }
   return res.json();
 }
 

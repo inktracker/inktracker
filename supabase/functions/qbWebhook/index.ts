@@ -75,7 +75,10 @@ async function getAccessToken(supabase: any, profile: any): Promise<string> {
     },
     body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: profile.qb_refresh_token }),
   });
-  if (!res.ok) throw new Error(`Token refresh failed: ${res.status}`);
+  if (!res.ok) {
+    console.error(`[qbWebhook] Token refresh failed: ${res.status}`);
+    throw new Error("QuickBooks connection expired. Please reconnect in Account settings.");
+  }
   const fresh = await res.json();
 
   await updateProfileSecrets(supabase, profile.id, {
