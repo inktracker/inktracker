@@ -1021,7 +1021,7 @@ export default function QuoteDetailModal({
 
             {qbInvoiceId && (
               <button
-                onClick={() => { setShowQB(false); setShowSendModal(true); }}
+                onClick={() => { setShowQBPanel(false); setShowSendModal(true); }}
                 className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl text-sm transition"
               >
                 Send to Customer
