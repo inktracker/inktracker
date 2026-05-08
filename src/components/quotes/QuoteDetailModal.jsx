@@ -1009,6 +1009,14 @@ export default function QuoteDetailModal({
                   Open in QB →
                 </a>
               )}
+              {qbInvoiceId && (
+                <button
+                  onClick={() => { setShowQB(false); setShowSendModal(true); }}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition"
+                >
+                  Send to Customer
+                </button>
+              )}
               {!qbConnected && !qbCheckingConn && (
                 <a
                   href="/account"
