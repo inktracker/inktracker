@@ -589,7 +589,7 @@ export default function QuotePayment() {
                                     key={sz}
                                     className="text-center text-slate-500 px-3 py-1"
                                   >
-                                    {fmtMoney(pricing ? (isBig ? pricing.oversizePpp : pricing.regularPpp) : perPiece)}
+                                    {fmtMoney(perPiece)}
                                   </td>
                                 );
                               })}
