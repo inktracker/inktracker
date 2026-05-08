@@ -597,9 +597,16 @@ export async function exportQuoteToPDF(
   // Admin (non-broker) quote = always STANDARD_MARKUP
   const hasBroker = isBrokerQuote(quote);
   const pdfMarkup = hasBroker && !isClientMode ? BROKER_MARKUP : STANDARD_MARKUP;
-  // calcQuoteTotals honors per-line clientPpp overrides on client-mode totals,
-  // so baseTotals is already the right number — no quote-wide scaling needed.
   const totals = calcQuoteTotals(quote, pdfMarkup);
+  // If saved totals exist and we're using standard markup, prefer them
+  // so the PDF always matches the quote detail view exactly.
+  if (!hasBroker && quote.total != null) {
+    totals.sub = Number(quote.subtotal || totals.sub);
+    totals.subtotal = totals.sub - (totals.rushTotal || 0);
+    totals.tax = Number(quote.tax ?? totals.tax);
+    totals.total = Number(quote.total);
+    totals.afterDisc = totals.total - totals.tax;
+  }
   const scale = 1;
   const effectiveTaxRate = getEffectiveTaxRate(quote);
 
