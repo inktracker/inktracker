@@ -366,9 +366,18 @@ export default function QuoteEditorModal({
         if (!r || !qty) return li;
         return { ...li, _ppp: r.ppp, _lineTotal: r.ppp * qty, _rushFee: r.rushFee };
       });
+      // Compute totals from stamped line items — one source of truth
+      const lineSubtotal = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);
+      const rushTotal = stampedItems.reduce((s, li) => s + (li._rushFee || 0), 0);
+      const sub = Math.round((lineSubtotal + rushTotal) * 100) / 100;
+      const discVal = parseFloat(q.discount) || 0;
+      const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
+      const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
+      const tax = Math.round(afterDisc * ((parseFloat(q.tax_rate) || 0) / 100) * 100) / 100;
+      const total = Math.round((afterDisc + tax) * 100) / 100;
+
       const stampedQuote = { ...q, line_items: stampedItems };
-      const t = calcQuoteTotals(stampedQuote);
-      await onSave({ ...stampedQuote, subtotal: t.sub, tax: t.tax, total: t.total });
+      await onSave({ ...stampedQuote, subtotal: sub, tax, total });
     } catch (err) {
       setSaveError(err.message || "Failed to save quote. Please try again.");
     } finally {

@@ -252,15 +252,20 @@ export default function BrokerQuoteEditor({
         if (!r || !qty) return li;
         return { ...li, _ppp: r.ppp, _lineTotal: r.ppp * qty, _rushFee: r.rushFee };
       });
+      // Compute totals from stamped line items — one source of truth
+      const lineSubtotal = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);
+      const rushTotal = stampedItems.reduce((s, li) => s + (li._rushFee || 0), 0);
+      const sub = Math.round((lineSubtotal + rushTotal) * 100) / 100;
+
       await onSave({
         ...q,
         line_items: stampedItems,
         status,
         tax_rate: 0,
         tax_exempt: isTaxExempt,
-        subtotal: totals.sub,
+        subtotal: sub,
         tax: 0,
-        total: totals.total,
+        total: sub,
         selected_artwork: q.selected_artwork || [],
       });
     } catch (err) {
