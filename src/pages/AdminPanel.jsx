@@ -70,7 +70,7 @@ export default function AdminPanel() {
   }, []);
 
   useEffect(() => {
-    if (user?.role === "admin") loadUsers();
+    if (user?.role === "admin" || user?.role === "shop") loadUsers();
   }, [user, loadUsers]);
 
   async function setRole(profileId, authId, role) {
