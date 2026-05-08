@@ -417,7 +417,17 @@ export default function QuotePayment() {
     );
   }
 
-  const totals = calcQuoteTotals(quote);
+  // Use saved totals when available (calculate-once principle)
+  const totals = (quote.total != null && quote.subtotal != null)
+    ? {
+        sub: Number(quote.subtotal),
+        subtotal: Number(quote.subtotal),
+        rushTotal: 0,
+        afterDisc: Number(quote.total) - Number(quote.tax || 0),
+        tax: Number(quote.tax || 0),
+        total: Number(quote.total),
+      }
+    : calcQuoteTotals(quote);
 
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4">
