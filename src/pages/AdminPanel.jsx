@@ -42,7 +42,7 @@ export default function AdminPanel() {
 
   // Redirect non-admins immediately
   useEffect(() => {
-    if (user && user.role !== "admin") {
+    if (user && user.role !== "admin" && user.role !== "shop") {
       navigate(createPageUrl("Dashboard"), { replace: true });
     }
   }, [user, navigate]);

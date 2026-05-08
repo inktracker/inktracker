@@ -49,7 +49,7 @@ serve(async (req) => {
       .eq("auth_id", user.id)
       .maybeSingle();
 
-    if (callerProfile?.role !== "admin") {
+    if (callerProfile?.role !== "admin" && callerProfile?.role !== "shop") {
       return new Response(JSON.stringify({ error: "Forbidden: admin only", yourRole: callerProfile?.role ?? null }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
