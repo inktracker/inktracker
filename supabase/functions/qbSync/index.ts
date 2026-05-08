@@ -39,13 +39,14 @@ async function refreshToken(refreshTok: string) {
 }
 
 async function findUserProfile(supabase: any, authId: string, email: string | null) {
-  // Preferred: auth_id match — loads from profile_secrets (new) with profiles fallback
-  let profile = await loadProfileWithSecrets(supabase, { auth_id: authId });
+  // Use service role to read profile_secrets (RLS blocks user client)
+  const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+  let profile = await loadProfileWithSecrets(admin, { auth_id: authId });
   if (profile) return profile;
 
   // Fallback: match by email (profile may pre-date the auth user; auth_id still NULL)
   if (email) {
-    const byEmail = await loadProfileWithSecrets(supabase, { email });
+    const byEmail = await loadProfileWithSecrets(admin, { email });
     if (byEmail) {
       // Backfill auth_id so future lookups are fast
       if (!byEmail.auth_id) {
@@ -80,12 +81,13 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
     qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
   };
 
-  // Write rotated tokens to profile_secrets (primary) with dual-write to profiles
+  // Write rotated tokens — use service role client for profile_secrets (RLS blocks user client)
   try {
-    await updateProfileSecrets(supabase, profile.id, refreshedFields, { dualWrite: true });
+    const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    await updateProfileSecrets(adminClient, profile.id, refreshedFields, { dualWrite: true });
   } catch (err) {
     console.error("[qbSync] CRITICAL: failed to persist refreshed QB tokens:", err);
-    throw new Error(`Token persist failed: ${(err as Error).message}`);
+    throw new Error("Could not save refreshed QuickBooks tokens. Please try again.");
   }
 
   return { accessToken: fresh.access_token, realmId: profile.qb_realm_id };
