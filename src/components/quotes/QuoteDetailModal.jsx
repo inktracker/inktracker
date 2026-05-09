@@ -19,7 +19,14 @@ import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
 import MessagesTab from "../shared/MessagesTab";
 import { quoteThreadId } from "@/lib/messageThreads";
+import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare } from "lucide-react";
+
+// Feature flag: route the QB push through the new TaxProvider abstraction.
+// Falls back to the legacy direct-fetch path so we can ship the abstraction
+// dark, verify in prod, then flip and remove the legacy path.
+const ENABLE_TAX_PROVIDER =
+  import.meta.env.VITE_ENABLE_TAX_PROVIDER === "true";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
@@ -300,25 +307,41 @@ export default function QuoteDetailModal({
         phone: "",
         company: "",
       };
-
       const invoicePayload = buildQBInvoicePayload(
         quote,
         isBrokerQuote(quote) ? BROKER_MARKUP : undefined
       );
-      const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createInvoice",
-          accessToken: session.access_token,
-          quote,
+
+      let data;
+      if (ENABLE_TAX_PROVIDER) {
+        // QB-push call site, so tax_mode='quickbooks' by definition.
+        const provider = taxProviderFor(
+          { tax_mode: "quickbooks" },
+          {
+            qbSyncUrl: `${supabaseUrl}/functions/v1/qbSync`,
+            accessToken: session.access_token,
+          }
+        );
+        const result = await provider.pushInvoice(quote, {
           customer: customerPayload,
           invoicePayload,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "QB sync failed");
+        });
+        data = result.raw;
+      } else {
+        const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "createInvoice",
+            accessToken: session.access_token,
+            quote,
+            customer: customerPayload,
+            invoicePayload,
+          }),
+        });
+        data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || "QB sync failed");
+      }
 
       setQbPaymentLink(data.paymentLink);
       setQbInvoiceId(data.qbInvoiceId);
