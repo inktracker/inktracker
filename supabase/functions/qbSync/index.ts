@@ -4,6 +4,11 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import {
+  decideTokenRefresh,
+  buildRefreshedTokenFields,
+  extractConnectionStatus,
+} from "../_shared/connectionLogic.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -67,19 +72,13 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
     throw new Error("QuickBooks not connected. Please connect your account in Settings.");
   }
 
-  const expiresAt = new Date(profile.qb_token_expires_at).getTime();
-  const needsRefresh = Date.now() > expiresAt - 5 * 60 * 1000; // refresh 5 min early
-
-  if (!needsRefresh) {
+  // Pure refresh-decision lives in ../_shared/connectionLogic.js (tested).
+  if (!decideTokenRefresh(profile.qb_token_expires_at)) {
     return { accessToken: profile.qb_access_token, realmId: profile.qb_realm_id };
   }
 
   const fresh = await refreshToken(profile.qb_refresh_token);
-  const refreshedFields = {
-    qb_access_token:     fresh.access_token,
-    qb_refresh_token:    fresh.refresh_token ?? profile.qb_refresh_token,
-    qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
-  };
+  const refreshedFields = buildRefreshedTokenFields(fresh, profile.qb_refresh_token);
 
   // Write rotated tokens — use service role client for profile_secrets (RLS blocks user client)
   try {
@@ -1285,12 +1284,7 @@ async function handleGetReport(token: string, realmId: string, params: any) {
 
 async function handleCheckConnection(supabase: any, authId: string, email: string | null) {
   const profile = await findUserProfile(supabase, authId, email);
-
-  return {
-    connected: !!profile?.qb_access_token,
-    realmId: profile?.qb_realm_id ?? null,
-    expiresAt: profile?.qb_token_expires_at ?? null,
-  };
+  return extractConnectionStatus(profile);
 }
 
 // ── Main handler ────────────────────────────────────────────────────────────
