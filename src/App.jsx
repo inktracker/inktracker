@@ -89,7 +89,7 @@ function PublicLandingPage() {
         </nav>
 
         {/* Hero — animated demo banner */}
-        <section className="pt-20">
+        <section className="pt-[72px]">
           <Suspense fallback={
             <div className="w-full" style={{ aspectRatio: "16/9", background: "#0B0B0E" }} />
           }>
