@@ -38,17 +38,18 @@ async function resolveSSAuth(accessToken?: string): Promise<string> {
   return btoa(`${GLOBAL_SS_ACCOUNT}:${GLOBAL_SS_KEY}`);
 }
 
-let currentAuth = btoa(`${GLOBAL_SS_ACCOUNT}:${GLOBAL_SS_KEY}`);
+// Per-request auth — passed through to ssFetch instead of module-level mutable state
+const defaultAuth = btoa(`${GLOBAL_SS_ACCOUNT}:${GLOBAL_SS_KEY}`);
 
-function ssHeaders() {
-  return { Authorization: `Basic ${currentAuth}`, Accept: "application/json" };
+function ssHeaders(auth: string) {
+  return { Authorization: `Basic ${auth}`, Accept: "application/json" };
 }
 
-async function ssFetch(url: string): Promise<{ ok: boolean; status: number; data: any }> {
+async function ssFetch(url: string, auth: string = defaultAuth): Promise<{ ok: boolean; status: number; data: any }> {
   let status = 0;
   try {
     const res = await fetch(url, {
-      headers: ssHeaders(),
+      headers: ssHeaders(auth),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     status = res.status;
@@ -196,7 +197,7 @@ Deno.serve(async (req) => {
     // Resolve per-shop or global S&S credentials
     // accessToken can come from the body or from the Authorization header
     const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
-    currentAuth = await resolveSSAuth(accessToken || authHeader);
+    const requestAuth = await resolveSSAuth(accessToken || authHeader);
 
     // Raw SKU lookup: returns per-size SKUs for a style+color
     if (action === "rawSkus") {
@@ -204,7 +205,7 @@ Deno.serve(async (req) => {
       const q = String(styleNumber).trim();
       // Find the styleID first
       const stylesUrl = `${SS_BASE}/styles?search=${encodeURIComponent(q)}`;
-      const { ok: sOk, data: sData } = await ssFetch(stylesUrl);
+      const { ok: sOk, data: sData } = await ssFetch(stylesUrl, requestAuth);
       if (!sOk || !Array.isArray(sData) || !sData.length) {
         return Response.json({ error: "Style not found" }, { status: 404, headers: CORS });
       }
@@ -215,7 +216,7 @@ Deno.serve(async (req) => {
       ) || sData[0];
       // Fetch raw product rows
       const productsUrl = `${SS_BASE}/products?styleid=${style.styleID}`;
-      const { ok: pOk, data: pData } = await ssFetch(productsUrl);
+      const { ok: pOk, data: pData } = await ssFetch(productsUrl, requestAuth);
       if (!pOk || !Array.isArray(pData)) {
         return Response.json({ error: "Failed to fetch products" }, { status: 502, headers: CORS });
       }
@@ -253,7 +254,7 @@ Deno.serve(async (req) => {
     // Returns all SKUs whose manufacturer part number matches exactly.
     {
       const url = `${SS_BASE}/products?partnumber=${encodeURIComponent(query)}`;
-      const { ok, status, data } = await ssFetch(url);
+      const { ok, status, data } = await ssFetch(url, requestAuth);
       logs.push({ strategy: "partnumber", url, status });
       if (ok && Array.isArray(data) && data.length > 0) {
         mergeRows(data);
@@ -267,7 +268,7 @@ Deno.serve(async (req) => {
     // that uses this style number (e.g. both Bayside 5000 and Gildan 5000).
     {
       const stylesUrl = `${SS_BASE}/styles?search=${encodeURIComponent(query)}`;
-      const { ok, status, data } = await ssFetch(stylesUrl);
+      const { ok, status, data } = await ssFetch(stylesUrl, requestAuth);
       logs.push({ strategy: "styles-search", url: stylesUrl, status });
 
       if (ok && Array.isArray(data) && data.length > 0) {
@@ -289,7 +290,7 @@ Deno.serve(async (req) => {
           const styleID = style.styleID;
           if (!styleID) return;
           const productsUrl = `${SS_BASE}/products?styleid=${styleID}`;
-          const { ok: pOk, data: pData } = await ssFetch(productsUrl);
+          const { ok: pOk, data: pData } = await ssFetch(productsUrl, requestAuth);
           if (pOk && Array.isArray(pData) && pData.length > 0) {
             // Tag each row with the human-readable title from the styles endpoint
             // (products endpoint only has styleName = style code, not the real title)
@@ -311,7 +312,7 @@ Deno.serve(async (req) => {
     // ── Source 3: products?style= fallback ───────────────────────────────────
     if (rowsBySku.size === 0) {
       const url = `${SS_BASE}/products?style=${encodeURIComponent(query)}`;
-      const { ok, status, data } = await ssFetch(url);
+      const { ok, status, data } = await ssFetch(url, requestAuth);
       logs.push({ strategy: "style-param", url, status });
       if (ok && Array.isArray(data) && data.length > 0) {
         mergeRows(data);

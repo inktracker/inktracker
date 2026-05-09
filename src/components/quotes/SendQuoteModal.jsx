@@ -11,9 +11,14 @@ function isBrokerQuote(q) {
 }
 
 function getQuoteTotalsForSend(q) {
-  // For broker quotes sending to client, use STANDARD_MARKUP (client-facing price)
-  // For regular shop quotes, use default markup
-  return calcQuoteTotals(q || {}, undefined);
+  const live = calcQuoteTotals(q || {}, undefined);
+  // Prefer saved totals from "calculate once" when available
+  if (q && Number.isFinite(q.total) && q.total > 0) {
+    live.total = q.total;
+    if (Number.isFinite(q.subtotal)) live.sub = q.subtotal;
+    if (q.tax != null) live.tax = q.tax;
+  }
+  return live;
 }
 
 export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) {
@@ -43,7 +48,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
             body: shops[0].quote_email_body || "",
           });
         }
-      });
+      }).catch(() => {});
     }
 
     // If email not on quote, try to look it up from the Customer entity

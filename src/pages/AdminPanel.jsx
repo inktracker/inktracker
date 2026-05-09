@@ -161,7 +161,7 @@ export default function AdminPanel() {
     }
   }
 
-  if (!user || user.role !== "admin") return null;
+  if (!user || (user.role !== "admin" && user.role !== "shop")) return null;
 
   const pending = users.filter(u => u.role === "user");
   const approved = users.filter(u => u.role === "shop");

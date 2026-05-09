@@ -333,7 +333,7 @@ export default function QuoteDetailModal({
   }
 
   function copyQBLink() {
-    navigator.clipboard.writeText(qbPaymentLink);
+    navigator.clipboard.writeText(qbPaymentLink).catch(() => {});
     setQbCopied(true);
     setTimeout(() => setQbCopied(false), 2000);
   }

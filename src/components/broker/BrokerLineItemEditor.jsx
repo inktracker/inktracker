@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SIZES,
   BIG_SIZES,
@@ -344,11 +344,22 @@ export default function BrokerLineItemEditor({
   extras,
   allLineItems = [],
   savedImprints = [],
-  onChange,
+  onChange: _rawOnChange,
   onRemove,
   onDuplicate,
   canRemove,
 }) {
+  // sizePrices stored in a ref (synchronous) so it survives every onChange call.
+  const sizePricesRef = useRef(li.sizePrices || null);
+  const onChange = (updated) => {
+    if (updated.sizePrices && Object.keys(updated.sizePrices).length > 0) {
+      sizePricesRef.current = updated.sizePrices;
+    }
+    if (sizePricesRef.current) {
+      updated = { ...updated, sizePrices: sizePricesRef.current };
+    }
+    _rawOnChange(updated);
+  };
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [ssColors, setSsColors] = useState([]);
   const [ssInventory, setSsInventory] = useState({});
@@ -363,9 +374,10 @@ export default function BrokerLineItemEditor({
   useEffect(() => {
     const colorPrices = (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices;
     if (colorPrices && Object.keys(colorPrices).length > 0) {
+      sizePricesRef.current = colorPrices;
       const current = li.sizePrices || {};
       if (JSON.stringify(current) !== JSON.stringify(colorPrices)) {
-        onChange({ ...li, sizePrices: colorPrices });
+        _rawOnChange({ ...li, sizePrices: colorPrices });
       }
     }
   }, [ssColors, li.garmentColor]);

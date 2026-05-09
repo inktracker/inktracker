@@ -20,7 +20,9 @@ export default function BrokerDocuments({ brokerEmail, shopOwner, isAdmin = fals
       ? { broker_id: brokerEmail, shop_owner: shopOwner }
       : { broker_id: brokerEmail };
     base44.entities.BrokerDocument.filter(query, "-created_date", 100)
-      .then(d => { setDocs(d); setLoading(false); });
+      .then(d => { setDocs(d); })
+      .catch(err => console.error("BrokerDocuments load failed:", err))
+      .finally(() => setLoading(false));
   }, [brokerEmail, shopOwner, isAdmin]);
 
   async function handleUpload(e) {

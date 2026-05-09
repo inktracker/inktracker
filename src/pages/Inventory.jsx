@@ -69,6 +69,7 @@ export default function Inventory() {
     setShopifySyncing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in");
       const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/shopifySync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -161,6 +162,7 @@ export default function Inventory() {
   async function connectShopify() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in");
       const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/shopifySync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -357,10 +357,15 @@ export default function Quotes() {
   }
 
   async function handleQuoteSent() {
-    const updated = quotes.find((q) => q.id === viewing.id);
-    if (updated) {
-      setViewing(updated);
-      setQuotes((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+    try {
+      const fresh = await base44.entities.Quote.filter({ id: viewing.id });
+      const updated = fresh?.[0];
+      if (updated) {
+        setViewing(updated);
+        setQuotes((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+      }
+    } catch (err) {
+      console.error("Failed to refresh quote after send:", err);
     }
   }
 

@@ -25,7 +25,9 @@ export default function BrokerCommissions({ brokerEmail, shopOwner, isAdmin = fa
       ? { broker_id: brokerEmail, shop_owner: shopOwner }
       : { broker_id: brokerEmail };
     base44.entities.Commission.filter(query, "-created_date", 200)
-      .then(c => { setCommissions(c); setLoading(false); });
+      .then(c => { setCommissions(c); })
+      .catch(err => console.error("BrokerCommissions load failed:", err))
+      .finally(() => setLoading(false));
   }, [brokerEmail, shopOwner, isAdmin]);
 
   async function updateStatus(commission, status) {

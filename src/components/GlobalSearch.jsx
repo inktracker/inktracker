@@ -49,7 +49,7 @@ export default function GlobalSearch() {
             .sort((a, b) => ((a.company || a.name) || "").localeCompare((b.company || b.name) || "", undefined, { sensitivity: 'base' }))
             .slice(0, 5),
           orders: orders.filter(o => o.customer_name?.toLowerCase().includes(q) || o.order_id?.toLowerCase().includes(q)).slice(0, 5),
-          quotes: quotes.filter(q => q.customer_name?.toLowerCase().includes(q) || q.quote_id?.toLowerCase().includes(q)).slice(0, 5),
+          quotes: quotes.filter(qt => qt.customer_name?.toLowerCase().includes(q) || qt.quote_id?.toLowerCase().includes(q)).slice(0, 5),
           invoices: invoices.filter(i => i.customer_name?.toLowerCase().includes(q) || i.invoice_id?.toLowerCase().includes(q)).slice(0, 5),
           inventory: inventory
             .filter(i => i.item?.toLowerCase().includes(q) || i.sku?.toLowerCase().includes(q))

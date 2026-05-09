@@ -98,7 +98,11 @@ function QuoteStatusBadge({ status }) {
 
 function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdate, shop, user }) {
   const brokerTotals = calcQuoteTotals(quote, BROKER_MARKUP);
-  const clientTotals = calcQuoteTotals(quote, STANDARD_MARKUP);
+  // Prefer saved totals for client-facing price so broker sees same number as client
+  const liveClient = calcQuoteTotals(quote, STANDARD_MARKUP);
+  const clientTotals = (Number.isFinite(quote.total) && quote.total > 0)
+    ? { ...liveClient, sub: quote.subtotal || liveClient.sub, tax: quote.tax ?? liveClient.tax, total: quote.total }
+    : liveClient;
   const normalizedStatus = normalizeStatus(quote.status);
   const canSubmit = normalizedStatus === "Draft";
   const canDelete = normalizedStatus === "Draft";
@@ -1182,7 +1186,19 @@ export default function BrokerDashboard() {
 
 function getQuoteTotalSafe(quote) {
   try {
+    // Broker cost always needs live calc (broker markup isn't saved on the quote)
     const totals = calcQuoteTotals(quote || {}, BROKER_MARKUP);
+    return Number(totals?.total || 0);
+  } catch {
+    return 0;
+  }
+}
+
+function getClientTotalSafe(quote) {
+  // Prefer saved client-facing total
+  if (Number.isFinite(quote?.total) && quote.total > 0) return quote.total;
+  try {
+    const totals = calcQuoteTotals(quote || {}, STANDARD_MARKUP);
     return Number(totals?.total || 0);
   } catch {
     return 0;

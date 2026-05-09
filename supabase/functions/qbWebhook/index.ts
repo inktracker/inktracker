@@ -58,8 +58,8 @@ async function qbGet(accessToken: string, realmId: string, path: string) {
 
 // ── Token refresh ────────────────────────────────────────────────────────────
 
-const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")     ?? "ABJLeI2LHqN4eXU90P8rozRsksp5DqdjYvIrzZQ9P7jhIeN7Cf";
-const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET") ?? "RtjTp4lofvUVVGucf0qir6bSYhRZnycdVM0rWJdo";
+const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")     ?? "";
+const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET") ?? "";
 const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 
 async function getAccessToken(supabase: any, profile: any): Promise<string> {

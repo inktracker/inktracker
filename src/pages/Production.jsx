@@ -121,17 +121,22 @@ export default function Production() {
 
   useEffect(() => {
     async function load() {
-      const u = await base44.auth.me();
-      setUser(u);
-      const [o, c] = await Promise.all([
-        base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
-        base44.entities.Customer.filter({ shop_owner: u.email }),
-      ]);
-      setOrders(o || []);
-      const map = {};
-      (c || []).forEach((cust) => (map[cust.id] = cust));
-      setCustomers(map);
-      setLoading(false);
+      try {
+        const u = await base44.auth.me();
+        setUser(u);
+        const [o, c] = await Promise.all([
+          base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
+          base44.entities.Customer.filter({ shop_owner: u.email }),
+        ]);
+        setOrders(o || []);
+        const map = {};
+        (c || []).forEach((cust) => (map[cust.id] = cust));
+        setCustomers(map);
+      } catch (err) {
+        console.error("Production load failed:", err);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
 

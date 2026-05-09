@@ -136,7 +136,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
   // Apply one-color conversion
   useEffect(() => {
     if (!oneColor || !originalArtRef.current) { if (!oneColor) setProcessedArtwork(null); return; }
-    makeOneColor(originalArtRef.current, inkColor, inkThreshold).then(setProcessedArtwork);
+    makeOneColor(originalArtRef.current, inkColor, inkThreshold).then(setProcessedArtwork).catch(() => {});
   }, [oneColor, inkColor, inkThreshold]);
 
   // Wand click handler

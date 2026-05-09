@@ -198,7 +198,7 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
   if (customer.email) {
     try {
       const res = await qbQuery(token, realmId,
-        `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${customer.email.replace(/'/g, "\\'")}'`
+        `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${customer.email.replace(/'/g, "''")}'`
       );
       const rows = res?.QueryResponse?.Customer ?? [];
       if (rows.length > 0) qbCustomerId = rows[0].Id;
@@ -207,7 +207,7 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
 
   if (!qbCustomerId) {
     try {
-      const safeName = displayName.replace(/'/g, "\\'");
+      const safeName = displayName.replace(/'/g, "''");
       const res = await qbQuery(token, realmId,
         `SELECT Id FROM Customer WHERE DisplayName = '${safeName}'`
       );
@@ -267,7 +267,7 @@ async function findOrCreateServiceItem(
   itemName: string,
   incomeAccountId: string,
 ) {
-  const safe = itemName.replace(/'/g, "\\'");
+  const safe = itemName.replace(/'/g, "''");
   const res = await qbQuery(token, realmId,
     `SELECT Id, Name FROM Item WHERE Name = '${safe}'`
   );
@@ -435,53 +435,9 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const billEmail = quote.customer_email || customer?.email;
   const billAddress = customer?.address;
 
-  // Find a unique DocNumber. We never overwrite an existing QB invoice — if
-  // one already exists with this quote_id (the customer was re-sent the quote,
-  // line items changed, etc.) we create a NEW invoice with a versioned
-  // DocNumber: Q-2026-115 → Q-2026-115-r2 → Q-2026-115-r3 …
-  // The original invoice in QB stays untouched. Accountant can see the history.
   const baseDocNumber = String(quote.quote_id || "");
-  const escapedBase = baseDocNumber.replace(/'/g, "\\'");
-  let existingDocs: string[] = [];
-  try {
-    const existingResp = await qbQuery(
-      token,
-      realmId,
-      `SELECT DocNumber FROM Invoice WHERE DocNumber = '${escapedBase}' OR DocNumber LIKE '${escapedBase}-r%'`,
-    );
-    existingDocs = (existingResp?.QueryResponse?.Invoice || [])
-      .map((i: any) => String(i.DocNumber || ""))
-      .filter(Boolean);
-  } catch (e) {
-    console.error("[createInvoice] DocNumber lookup failed (will try base only):", e);
-  }
-  const docNumber = nextAvailableDocNumber(baseDocNumber, existingDocs);
-  const isRevision = docNumber !== baseDocNumber;
 
-  const invoiceBody: any = {
-    CustomerRef: { value: qbCustomerId },
-    DocNumber: docNumber,
-    TxnDate: quote.date,
-    DueDate: quote.due_date || undefined,
-    AllowOnlineCreditCardPayment: true,
-    AllowOnlineACHPayment: true,
-    Line: lines,
-    CustomerMemo: { value: quote.notes || "" },
-    PrivateNote: isRevision
-      ? `InkTracker Quote ${baseDocNumber} — revision (${docNumber})`
-      : `InkTracker Quote ${baseDocNumber}`,
-  };
-
-  if (billEmail) {
-    invoiceBody.BillEmail = { Address: billEmail };
-    invoiceBody.EmailStatus = "NeedToSend";
-  }
-  if (billAddress) {
-    invoiceBody.BillAddr = { Line1: billAddress };
-    invoiceBody.ShipAddr = { Line1: billAddress };
-  }
   // Tax handling: let QB auto-calculate tax using its own tax codes/rates.
-  // Just mark lines as TAX or NON and QB applies the customer's tax setting.
   const taxPercent = parseFloat(invoicePayload?.taxPercent) || 0;
   const taxCode = (isTaxExempt || taxPercent === 0) ? "NON" : "TAX";
 
@@ -494,46 +450,123 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   console.error(`[createInvoice] Tax: rate=${taxPercent}%, taxCode=${taxCode}, isTaxExempt=${isTaxExempt}`);
 
   let created: any;
-  let qbInvoiceId: string;
+  let qbInvoiceId: string = quote.qb_invoice_id || "";
   let qbInvoiceFinal: any;
 
-  // Create the invoice. If QB still complains the DocNumber is taken (race
-  // condition where another invoice was created between our lookup and now),
-  // bump the revision and retry up to 5 times. We NEVER fall back to updating
-  // an existing invoice — that would silently overwrite historical accounting
-  // data, which is the bug we're fixing.
-  let attempt = 0;
-  let activeBody = invoiceBody;
-  while (attempt < 5) {
+  // If the quote already has a QB invoice ID, UPDATE the existing invoice
+  // instead of creating a duplicate. This is the "resync" path.
+  if (qbInvoiceId) {
+    console.error(`[createInvoice] Updating existing QB invoice ${qbInvoiceId}`);
     try {
-      created = await qbCreate(token, realmId, "invoice", activeBody);
-      qbInvoiceId = created?.Invoice?.Id;
-      if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
-      qbInvoiceFinal = created?.Invoice ?? created;
-      break;
-    } catch (createErr: any) {
-      const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
-      if (!isDuplicate) throw createErr;
+      // Fetch existing invoice to get its SyncToken (required for QB updates)
+      const existing = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
+      const existingInv = existing?.QueryResponse?.Invoice?.[0];
+      if (!existingInv) throw new Error(`QB invoice ${qbInvoiceId} not found — will create new`);
 
-      // Push the conflicting DocNumber into our seen-list and try the next revision.
-      existingDocs.push(activeBody.DocNumber);
-      const nextDoc = nextAvailableDocNumber(baseDocNumber, existingDocs);
-      console.error(
-        `[createInvoice] DocNumber ${activeBody.DocNumber} taken — retrying as ${nextDoc}`
-      );
-      activeBody = {
-        ...activeBody,
-        DocNumber: nextDoc,
-        PrivateNote: `InkTracker Quote ${baseDocNumber} — revision (${nextDoc})`,
+      const updateBody: any = {
+        Id: qbInvoiceId,
+        SyncToken: existingInv.SyncToken,
+        sparse: true,
+        CustomerRef: { value: qbCustomerId },
+        AllowOnlineCreditCardPayment: true,
+        AllowOnlineACHPayment: true,
+        Line: lines,
+        CustomerMemo: { value: quote.notes || "" },
+        PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`,
       };
-      attempt++;
+      if (billEmail) {
+        updateBody.BillEmail = { Address: billEmail };
+      }
+      if (billAddress) {
+        updateBody.BillAddr = { Line1: billAddress };
+        updateBody.ShipAddr = { Line1: billAddress };
+      }
+
+      const updated = await qbUpdate(token, realmId, "invoice", updateBody);
+      created = updated;
+      qbInvoiceFinal = updated?.Invoice ?? updated;
+      qbInvoiceId = String(qbInvoiceFinal?.Id || qbInvoiceId);
+    } catch (updateErr: any) {
+      console.error(`[createInvoice] Update failed, creating new invoice:`, updateErr?.message);
+      // Fall through to create path below
+      qbInvoiceId = "";
     }
   }
+
+  // Create new invoice if we don't have one yet (first sync or update failed)
   if (!qbInvoiceId) {
-    throw new Error(
-      `Could not create QB invoice for ${baseDocNumber} after retries. ` +
-      `Existing revisions: ${existingDocs.join(", ")}`
-    );
+    const escapedBase = baseDocNumber.replace(/'/g, "''");
+    let existingDocs: string[] = [];
+    try {
+      const existingResp = await qbQuery(
+        token,
+        realmId,
+        `SELECT DocNumber FROM Invoice WHERE DocNumber = '${escapedBase}' OR DocNumber LIKE '${escapedBase}-r%'`,
+      );
+      existingDocs = (existingResp?.QueryResponse?.Invoice || [])
+        .map((i: any) => String(i.DocNumber || ""))
+        .filter(Boolean);
+    } catch (e) {
+      console.error("[createInvoice] DocNumber lookup failed (will try base only):", e);
+    }
+    const docNumber = nextAvailableDocNumber(baseDocNumber, existingDocs);
+    const isRevision = docNumber !== baseDocNumber;
+
+    const invoiceBody: any = {
+      CustomerRef: { value: qbCustomerId },
+      DocNumber: docNumber,
+      TxnDate: quote.date,
+      DueDate: quote.due_date || undefined,
+      AllowOnlineCreditCardPayment: true,
+      AllowOnlineACHPayment: true,
+      Line: lines,
+      CustomerMemo: { value: quote.notes || "" },
+      PrivateNote: isRevision
+        ? `InkTracker Quote ${baseDocNumber} — revision (${docNumber})`
+        : `InkTracker Quote ${baseDocNumber}`,
+    };
+
+    if (billEmail) {
+      invoiceBody.BillEmail = { Address: billEmail };
+      invoiceBody.EmailStatus = "NeedToSend";
+    }
+    if (billAddress) {
+      invoiceBody.BillAddr = { Line1: billAddress };
+      invoiceBody.ShipAddr = { Line1: billAddress };
+    }
+
+    let attempt = 0;
+    let activeBody = invoiceBody;
+    while (attempt < 5) {
+      try {
+        created = await qbCreate(token, realmId, "invoice", activeBody);
+        qbInvoiceId = created?.Invoice?.Id;
+        if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
+        qbInvoiceFinal = created?.Invoice ?? created;
+        break;
+      } catch (createErr: any) {
+        const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
+        if (!isDuplicate) throw createErr;
+
+        existingDocs.push(activeBody.DocNumber);
+        const nextDoc = nextAvailableDocNumber(baseDocNumber, existingDocs);
+        console.error(
+          `[createInvoice] DocNumber ${activeBody.DocNumber} taken — retrying as ${nextDoc}`
+        );
+        activeBody = {
+          ...activeBody,
+          DocNumber: nextDoc,
+          PrivateNote: `InkTracker Quote ${baseDocNumber} — revision (${nextDoc})`,
+        };
+        attempt++;
+      }
+    }
+    if (!qbInvoiceId) {
+      throw new Error(
+        `Could not create QB invoice for ${baseDocNumber} after retries. ` +
+        `Existing revisions: ${existingDocs.join(", ")}`
+      );
+    }
   }
 
   // Re-read the invoice to ensure we have the final AST-computed tax/total
@@ -549,7 +582,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const qbTaxAmount = Number(qbInvoiceFinal?.TxnTaxDetail?.TotalTax ?? 0);
   const qbSubtotal  = Number((qbTotal - qbTaxAmount).toFixed(2));
 
-  const paymentLink = extractPaymentLink(created, realmId);
+  const paymentLink = extractPaymentLink(qbInvoiceFinal || created, realmId);
 
   // 4b. If the quote's deposit was already paid, record the payment against this invoice
   const depositAmount = Number(invoicePayload?.depositAmount) || 0;
@@ -593,7 +626,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // The DocNumber that was actually written to QB. Differs from quote.quote_id
   // when a previous invoice with the same base existed and we created a
   // versioned revision (e.g. Q-2026-115-r2).
-  const qbDocNumber = String(qbInvoiceFinal?.DocNumber || activeBody?.DocNumber || baseDocNumber);
+  const qbDocNumber = String(qbInvoiceFinal?.DocNumber || baseDocNumber);
 
   return {
     qbInvoiceId,
@@ -612,7 +645,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 // ── QB lookup helpers for expenses ──────────────────────────────────────────
 
 async function findOrCreateVendor(token: string, realmId: string, name: string) {
-  const safe = name.replace(/'/g, "\\'");
+  const safe = name.replace(/'/g, "''");
   try {
     const res = await qbQuery(token, realmId,
       `SELECT Id FROM Vendor WHERE DisplayName = '${safe}'`
@@ -626,7 +659,7 @@ async function findOrCreateVendor(token: string, realmId: string, name: string) 
 }
 
 async function findOrCreateExpenseAccount(token: string, realmId: string, name: string) {
-  const safe = name.replace(/'/g, "\\'");
+  const safe = name.replace(/'/g, "''");
   try {
     const res = await qbQuery(token, realmId,
       `SELECT Id FROM Account WHERE Name = '${safe}' AND AccountType = 'Expense'`
@@ -1340,7 +1373,13 @@ Deno.serve(async (req) => {
         );
         if (!pdfRes.ok) throw new Error(`QB PDF fetch failed: ${pdfRes.status}`);
         const pdfBuffer = await pdfRes.arrayBuffer();
-        const base64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
+        // Chunked base64 conversion to avoid max argument overflow on large PDFs
+        const bytes = new Uint8Array(pdfBuffer);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i += 8192) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+        }
+        const base64 = btoa(binary);
         result = { pdf: base64, filename: `Invoice-${invId}.pdf` };
         break;
       }
