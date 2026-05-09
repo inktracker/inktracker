@@ -379,10 +379,14 @@ function buildInvoiceLinesFromPayload(
 
 // ── Extract payment link from QB invoice response ───────────────────────────
 
-function extractPaymentLink(invoiceData: any, realmId: string) {
+function extractPaymentLink(invoiceData: any, _realmId: string) {
   const inv = invoiceData?.Invoice ?? invoiceData;
 
-  // QB Payments populates a payment URI in several possible locations
+  // QB Payments populates a real customer-facing payment URI in one of these
+  // fields. We do NOT fall back to a constructed `connect.intuit.com/portal/asei/…`
+  // URL — that page requires the customer to log into their own Intuit account,
+  // which is useless for paying an invoice. When QB Payments isn't enabled,
+  // return null and let the frontend route to Stripe instead.
   const candidates = [
     inv?.payment?.paymentUri,
     inv?.InvoiceLink,
@@ -390,14 +394,7 @@ function extractPaymentLink(invoiceData: any, realmId: string) {
     inv?.Links?.find?.((l: any) => l.Rel === "payment")?.Href,
   ].filter(Boolean);
 
-  if (candidates.length > 0) return candidates[0];
-
-  // Fallback: construct the QB-hosted customer payment URL
-  const txnId = inv?.Id;
-  if (txnId && realmId) {
-    return `https://connect.intuit.com/portal/asei/CommerceNetwork/consumer/view-invoice?businessId=${realmId}&invoiceId=${txnId}`;
-  }
-  return null;
+  return candidates.length > 0 ? candidates[0] : null;
 }
 
 // ── Action: createInvoice ───────────────────────────────────────────────────
