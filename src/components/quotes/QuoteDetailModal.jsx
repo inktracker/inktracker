@@ -22,12 +22,6 @@ import { quoteThreadId } from "@/lib/messageThreads";
 import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare } from "lucide-react";
 
-// Feature flag: route the QB push through the new TaxProvider abstraction.
-// Falls back to the legacy direct-fetch path so we can ship the abstraction
-// dark, verify in prod, then flip and remove the legacy path.
-const ENABLE_TAX_PROVIDER =
-  import.meta.env.VITE_ENABLE_TAX_PROVIDER === "true";
-
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
 function isBrokerQuote(q) {
@@ -312,36 +306,20 @@ export default function QuoteDetailModal({
         isBrokerQuote(quote) ? BROKER_MARKUP : undefined
       );
 
-      let data;
-      if (ENABLE_TAX_PROVIDER) {
-        // QB-push call site, so tax_mode='quickbooks' by definition.
-        const provider = taxProviderFor(
-          { tax_mode: "quickbooks" },
-          {
-            qbSyncUrl: `${supabaseUrl}/functions/v1/qbSync`,
-            accessToken: session.access_token,
-          }
-        );
-        const result = await provider.pushInvoice(quote, {
-          customer: customerPayload,
-          invoicePayload,
-        });
-        data = result.raw;
-      } else {
-        const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "createInvoice",
-            accessToken: session.access_token,
-            quote,
-            customer: customerPayload,
-            invoicePayload,
-          }),
-        });
-        data = await res.json();
-        if (!res.ok || data.error) throw new Error(data.error || "QB sync failed");
-      }
+      // QB-push call site, so tax_mode='quickbooks' by definition. The factory
+      // exists so other call sites (UI tax display, internal-only shops) can
+      // pull the right provider from the loaded shop.
+      const provider = taxProviderFor(
+        { tax_mode: "quickbooks" },
+        {
+          qbSyncUrl: `${supabaseUrl}/functions/v1/qbSync`,
+          accessToken: session.access_token,
+        }
+      );
+      const { raw: data } = await provider.pushInvoice(quote, {
+        customer: customerPayload,
+        invoicePayload,
+      });
 
       setQbPaymentLink(data.paymentLink);
       setQbInvoiceId(data.qbInvoiceId);
