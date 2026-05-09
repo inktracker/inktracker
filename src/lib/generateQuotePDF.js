@@ -15,6 +15,14 @@ import {
 export function generateQuotePDF({ quote, shopName, paymentLink, markup }) {
   const doc = new jsPDF({ unit: "mm", format: "letter" });
   const totals = calcQuoteTotals(quote, markup);
+  // Prefer saved totals from "calculate once" when available
+  if (Number.isFinite(quote.subtotal) && quote.subtotal > 0) {
+    const discountAmt = totals.sub > 0 ? totals.sub - totals.afterDisc : 0;
+    totals.sub = quote.subtotal;
+    totals.afterDisc = quote.subtotal - discountAmt;
+    if (quote.tax != null) totals.tax = quote.tax;
+    if (quote.total != null) totals.total = quote.total;
+  }
   const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
 
   const W = doc.internal.pageSize.getWidth();

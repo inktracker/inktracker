@@ -331,7 +331,7 @@ function renderLineItems(
     const avgPpp = useLineOverride ? override : (li._ppp != null ? li._ppp : (r ? r.ppp : 0));
     const lineTotal = useLineOverride ? override * qty : (li._lineTotal != null ? li._lineTotal : avgPpp * qty);
 
-    if (r) {
+    if (r || lineTotal > 0) {
       doc.setFontSize(9);
       doc.setTextColor(67, 56, 202);
       doc.text(fmtMoney(lineTotal), pageWidth - margin - 2, yPos, {

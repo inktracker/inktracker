@@ -204,7 +204,13 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             const qty = getQty(li);
             const override = Number(li?.clientPpp);
             const hasOverride = Number.isFinite(override) && override > 0 && qty > 0;
-            const r = hasOverride ? { sub: override * qty, ppp: override, gCost: 0, printCost: 0, rushFee: 0, lineTotal: override * qty, oversizeCost: 0, twoXL: 0 } : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
+            // Use saved pricing from "calculate once"; fall back to live calc for legacy
+            const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
+            const r = hasSaved
+              ? { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0 }
+              : hasOverride
+                ? { ppp: override, lineTotal: override * qty, rushFee: 0 }
+                : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
             const activeSizes = SIZES.filter(sz => (parseInt((li.sizes||{})[sz]) || 0) > 0);
             return (
               <div key={li.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -236,8 +242,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                             <td className="px-4 py-2 text-xs text-slate-400">Price/ea</td>
                             {activeSizes.map(sz => (
                               <td key={sz} className="px-3 py-2 text-center text-xs text-slate-500">
-                                {fmtMoney(r.ppp + (BIG_SIZES.includes(sz) ? 2 : 0))}
-                                {BIG_SIZES.includes(sz) && <span className="text-amber-500 ml-0.5">*</span>}
+                                {fmtMoney(r.ppp)}
                               </td>
                             ))}
                             <td className="px-4 py-2 text-center text-xs font-bold text-slate-700">{fmtMoney(r.lineTotal)}</td>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, lazy, Suspense } from "react";
 import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/toaster";
@@ -53,6 +53,8 @@ const LayoutWrapper = ({ children, currentPageName }) =>
     <>{children}</>
   );
 
+const DemoBanner = lazy(() => import("./components/landing/DemoBanner"));
+
 function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
@@ -86,33 +88,13 @@ function PublicLandingPage() {
           </div>
         </nav>
 
-        {/* Hero */}
-        <section className="pt-32 pb-20 px-6">
-          <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
-            </div>
-            <h1 className="text-4xl md:text-6xl font-extrabold leading-tight tracking-tight">
-              Run your print shop<br />
-              <span className="bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent">without the chaos</span>
-            </h1>
-            <p className="text-lg text-slate-400 mt-6 max-w-xl mx-auto leading-relaxed">
-              Quotes, orders, production tracking, invoicing, and inventory — all in one place.
-              Built by screen printers, for screen printers.
-            </p>
-            <div className="flex items-center justify-center gap-3 mt-8">
-              <button onClick={openSignup}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50">
-                Start Free Trial
-              </button>
-              <a href="#features"
-                className="text-slate-300 font-semibold px-6 py-4 rounded-2xl hover:bg-white/5 transition text-base">
-                See Features
-              </a>
-            </div>
-            <p className="text-xs text-slate-500 mt-4">$99/mo after trial · Cancel anytime</p>
-          </div>
+        {/* Hero — animated demo banner */}
+        <section className="pt-20">
+          <Suspense fallback={
+            <div className="w-full" style={{ aspectRatio: "16/9", background: "#0B0B0E" }} />
+          }>
+            <DemoBanner onSignup={openSignup} />
+          </Suspense>
         </section>
 
         {/* Stats */}

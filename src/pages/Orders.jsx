@@ -47,28 +47,31 @@ export default function Orders() {
 
   useEffect(() => {
     async function loadData() {
-      const currentUser = await base44.auth.me();
-      setUser(currentUser);
-      await Promise.all([
-        base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 100),
-        base44.entities.Customer.filter({ shop_owner: currentUser.email }),
-      ]).then(([o, c]) => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+        const [o, c] = await Promise.all([
+          base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 100),
+          base44.entities.Customer.filter({ shop_owner: currentUser.email }),
+        ]);
         setOrders(o);
         const custMap = {};
         c.forEach((cust) => (custMap[cust.id] = cust));
         setCustomers(custMap);
-        setLoading(false);
         // Auto-open a specific order if ?id= was passed from the Dashboard
         if (initialOrderId) {
           const match = o.find((row) => row.id === initialOrderId || row.order_id === initialOrderId);
           if (match) setViewing(match);
-          // Clear the query params so reloads don't keep re-opening
           navigate("/Orders", { replace: true });
         }
-      });
+      } catch (err) {
+        console.error("Orders load failed:", err);
+      } finally {
+        setLoading(false);
+      }
     }
     loadData();
-     
+
   }, []);
 
   const handleAdvFilterChange = (key, value) => {

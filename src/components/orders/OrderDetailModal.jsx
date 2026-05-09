@@ -339,7 +339,7 @@ export default function OrderDetailModal({
     navigator.clipboard.writeText(url).then(() => {
       setCopied(type);
       setTimeout(() => setCopied(null), 2000);
-    });
+    }).catch(() => {});
   }
 
   async function handleReorder() {
@@ -632,11 +632,15 @@ export default function OrderDetailModal({
                 const qty = getQty(li);
                 const markup = isBrokerOrder ? BROKER_MARKUP : undefined;
                 const linkedQtyMap = buildLinkedQtyMap(order.line_items || []);
+                // Use saved pricing from "calculate once"; fall back to live calc for legacy
+                const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
                 const clientPppOverride = Number(li?.clientPpp);
-                const useClientPpp = markup === undefined && Number.isFinite(clientPppOverride) && clientPppOverride > 0 && qty > 0;
-                const r = useClientPpp
-                  ? { lineTotal: clientPppOverride * qty, regularPpp: clientPppOverride, oversizePpp: clientPppOverride, overridden: true }
-                  : calcLinkedLinePrice(li, order.rush_rate, order.extras, markup, linkedQtyMap);
+                const useClientPpp = !hasSaved && markup === undefined && Number.isFinite(clientPppOverride) && clientPppOverride > 0 && qty > 0;
+                const r = hasSaved
+                  ? { lineTotal: li._lineTotal, ppp: li._ppp, regularPpp: li._ppp, oversizePpp: li._ppp }
+                  : useClientPpp
+                    ? { lineTotal: clientPppOverride * qty, ppp: clientPppOverride, regularPpp: clientPppOverride, oversizePpp: clientPppOverride, overridden: true }
+                    : calcLinkedLinePrice(li, order.rush_rate, order.extras, markup, linkedQtyMap);
                 const activeSizes = SIZES.filter(
                   (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
                 );
@@ -705,10 +709,7 @@ export default function OrderDetailModal({
                                     key={sz}
                                     className="px-3 py-2 text-center text-xs text-slate-500"
                                   >
-                                    {fmtMoney(BIG_SIZES.includes(sz) ? r.oversizePpp : r.regularPpp)}
-                                    {BIG_SIZES.includes(sz) && (
-                                      <span className="text-amber-500 ml-0.5">*</span>
-                                    )}
+                                    {fmtMoney(r.ppp)}
                                   </td>
                                 ))}
                                 <td className="px-4 py-2 text-center text-xs font-bold text-slate-700">
@@ -1186,7 +1187,7 @@ export default function OrderDetailModal({
                                     <span className="font-semibold">{r.serviceName}</span>
                                     {r.transitDays && <span className="text-xs text-slate-400 ml-2">{r.transitDays}</span>}
                                   </div>
-                                  <span className="font-bold">${r.totalCharge.toFixed(2)}</span>
+                                  <span className="font-bold">${(Number(r.totalCharge) || 0).toFixed(2)}</span>
                                 </button>
                               ))}
                             </div>

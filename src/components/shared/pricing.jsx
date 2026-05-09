@@ -525,15 +525,11 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
   const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
   const lines = [];
 
-  const respectOverride = markup === STANDARD_MARKUP;
+  const isBroker = markup !== STANDARD_MARKUP;
 
   (quote.line_items || []).forEach((li) => {
     const qty = getQty(li);
     if (qty === 0) return;
-
-    const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
-    const override = Number(li?.clientPpp);
-    const useOverride = respectOverride && Number.isFinite(override) && override > 0;
 
     const styleLabel = [li.brand, li.style, li.garmentColor].filter(Boolean).join(" ") || "Garment";
     const sizeBreakdown = sortSizeEntries(Object.entries(li.sizes || {}))
@@ -548,43 +544,39 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
 
     const itemName = resolveLineCategory(li);
 
-    if (useOverride) {
-      const lineSub = override * qty;
+    // Use saved pricing from "calculate once" — fall back to live calc for legacy quotes or broker markup
+    const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
+    if (hasSaved && !isBroker) {
       lines.push({
         description,
         qty,
-        unitPrice: Number(override.toFixed(4)),
-        amount: Number(lineSub.toFixed(2)),
+        unitPrice: Number(li._ppp.toFixed(4)),
+        amount: Number(li._lineTotal.toFixed(2)),
         itemName,
       });
     } else {
+      // Broker quotes need live calc with broker markup; legacy quotes need fallback
       const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
       if (!r) return;
-      const unitPrice = qty > 0 ? r.sub / qty : 0;
+      const unitPrice = qty > 0 ? r.ppp : 0;
       lines.push({
         description,
         qty,
         unitPrice: Number(unitPrice.toFixed(4)),
-        amount: Number(r.sub.toFixed(2)),
-        itemName,
-      });
-    }
-
-    // 2XL+ upcharge — configurable per shop, always added on top
-    const osUp = getOversizeUpcharge();
-    if (twoXL > 0 && osUp > 0) {
-      lines.push({
-        description: `${styleLabel} — 2XL+ upcharge (${twoXL} @ $${osUp.toFixed(2)})`,
-        qty: twoXL,
-        unitPrice: osUp,
-        amount: Number((twoXL * osUp).toFixed(2)),
+        amount: Number((r.ppp * qty).toFixed(2)),
         itemName,
       });
     }
   });
 
-  const totals = calcQuoteTotalsWithLinking(quote, markup);
-  const depositAmount = quote.deposit_paid ? Number(totals.deposit.toFixed(2)) : 0;
+  // Use saved totals when available (calculate-once), fall back to live calc
+  const hasSavedTotal = Number.isFinite(quote.total) && quote.total > 0;
+  const totals = hasSavedTotal ? null : calcQuoteTotalsWithLinking(quote, markup);
+  const depositPct = parseFloat(quote.deposit_pct) || 0;
+  const totalForDeposit = hasSavedTotal ? quote.total : (totals.afterDisc + totals.tax);
+  const depositAmount = quote.deposit_paid && depositPct > 0
+    ? Number((totalForDeposit * depositPct / 100).toFixed(2))
+    : 0;
 
   const discVal = parseFloat(quote.discount) || 0;
   const isFlat = quote.discount_type === "flat" || (discVal > 100 && quote.discount_type !== "percent");

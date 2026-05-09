@@ -342,9 +342,11 @@ export default function QuotePayment() {
     setCheckoutLoading(true);
 
     try {
-      const totals = calcQuoteTotals(quote);
-      // Prefer QB-computed total (final tax from AST) over estimated total when synced
-      const effectiveTotal = quote.qb_total != null ? Number(quote.qb_total) : totals.total;
+      // Prefer QB total > saved total > live calc (in that order)
+      const liveTotals = calcQuoteTotals(quote);
+      const effectiveTotal = quote.qb_total != null ? Number(quote.qb_total)
+        : (Number.isFinite(quote.total) && quote.total > 0) ? quote.total
+        : liveTotals.total;
       // Customer's default payment terms override the quote's own deposit_pct —
       // lets the shop flip "pay in full" on a client without re-editing old quotes.
       const depositPct = customer?.default_deposit_pct != null

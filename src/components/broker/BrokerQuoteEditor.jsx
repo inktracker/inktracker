@@ -261,6 +261,11 @@ export default function BrokerQuoteEditor({
       const lineSubtotal = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);
       const rushTotal = stampedItems.reduce((s, li) => s + (li._rushFee || 0), 0);
       const sub = Math.round((lineSubtotal + rushTotal) * 100) / 100;
+      // Apply discount
+      const discVal = parseFloat(q.discount) || 0;
+      const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
+      const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
+      const total = Math.round(afterDisc * 100) / 100;
 
       await onSave({
         ...q,
@@ -270,7 +275,7 @@ export default function BrokerQuoteEditor({
         tax_exempt: isTaxExempt,
         subtotal: sub,
         tax: 0,
-        total: sub,
+        total,
         selected_artwork: q.selected_artwork || [],
       });
     } catch (err) {

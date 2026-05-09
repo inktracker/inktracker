@@ -38,7 +38,7 @@ export default function Embed() {
 </div>`;
 
   function copy(text, key) {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(text).catch(() => {});
     setCopied(key);
     setTimeout(() => setCopied(null), 2000);
   }

@@ -16,7 +16,9 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
   useEffect(() => {
     if (!threadId) return;
     base44.entities.Message.filter({ thread_id: threadId }, "created_date", 200)
-      .then(msgs => { setMessages(msgs); setLoading(false); });
+      .then(msgs => { setMessages(msgs); })
+      .catch(err => console.error("BrokerMessaging load failed:", err))
+      .finally(() => setLoading(false));
 
     const unsub = base44.entities.Message.subscribe(event => {
       if (event.data?.thread_id !== threadId) return;

@@ -34,7 +34,7 @@ export default function Inbox() {
 
   useEffect(() => {
     let alive = true;
-    base44.auth.me().then((u) => { if (alive) setMe(u); });
+    base44.auth.me().then((u) => { if (alive) setMe(u); }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
