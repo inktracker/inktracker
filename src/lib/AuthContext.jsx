@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
 import { supabase } from "@/api/supabaseClient";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
+import { userStateChanged } from "@/lib/auth/userStateChanged";
 
 const AuthContext = createContext();
 
@@ -54,23 +55,10 @@ export const AuthProvider = ({ children }) => {
       if (!fullUser) {
         setLoggedOut();
       } else {
-        setUser((prev) => {
-          // Skip the re-render only when nothing the app cares about has
-          // changed. We MUST include role here — the post-signup activate_trial
-          // RPC flips role 'user' → 'shop', and missing that update strands
-          // the user on the post-confirm spinner until they hit refresh.
-          if (
-            prev &&
-            prev.id === fullUser.id &&
-            prev.email === fullUser.email &&
-            prev.role === fullUser.role &&
-            prev.subscription_tier === fullUser.subscription_tier &&
-            prev.subscription_status === fullUser.subscription_status
-          ) {
-            return prev;
-          }
-          return fullUser;
-        });
+        // Pure decision + tests in src/lib/auth/userStateChanged.js — keeps
+        // role / subscription transitions from being eaten by an over-eager
+        // identity-only equality check.
+        setUser((prev) => (userStateChanged(prev, fullUser) ? fullUser : prev));
         setIsAuthenticated(true);
         setAuthError(null);
       }

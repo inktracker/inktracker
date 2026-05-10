@@ -161,6 +161,61 @@ describe("buildOnboardingProfile — full happy path", () => {
   });
 });
 
+describe("buildOnboardingProfile — robustness", () => {
+  it("treats whitespace-only shop_name the same as blank (falls back to email)", () => {
+    const p = buildOnboardingProfile(
+      { user: NEW_USER, shopName: "   \t\n   " },
+      { now: NOW },
+    );
+    expect(p.shop_name).toBe("owner@example.com");
+  });
+
+  it("preserves existing trial_ends_at even when it's in the past (don't reset paid users)", () => {
+    const existing = {
+      ...NEW_USER,
+      trial_ends_at: "2026-01-01T00:00:00.000Z", // already past
+    };
+    const p = buildOnboardingProfile({ user: existing }, { now: NOW });
+    expect(p.trial_ends_at).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("survives a user object with no email (shop_name becomes empty string)", () => {
+    const p = buildOnboardingProfile({ user: { id: "u-9" } }, { now: NOW });
+    expect(p.shop_name).toBe("");
+    expect(typeof p.shop_name).toBe("string");
+  });
+
+  it("survives a missing user (no crash, sane defaults)", () => {
+    const p = buildOnboardingProfile({}, { now: NOW });
+    expect(p.shop_name).toBe("");
+    expect(p.subscription_tier).toBe("trial");
+    expect(p.subscription_status).toBe("trialing");
+  });
+
+  it("survives a fully-undefined input (no crash)", () => {
+    const p = buildOnboardingProfile(undefined, { now: NOW });
+    expect(p.subscription_tier).toBe("trial");
+    expect(p.trial_ends_at).toBe(new Date(NOW + 14 * 86_400_000).toISOString());
+  });
+
+  it("does not strip leading 0s from a US zip code", () => {
+    const p = buildOnboardingProfile(
+      { user: NEW_USER, zip: "  02134  " },
+      { now: NOW },
+    );
+    expect(p.zip).toBe("02134");
+  });
+
+  it("does not auto-extract a 'name' from the user's email local-part", () => {
+    // We deliberately don't fake a personal greeting from the email, since the
+    // user hasn't told us their name yet. shop_name should be the full email
+    // (used as a placeholder for them to overwrite), never a synthetic name.
+    const p = buildOnboardingProfile({ user: NEW_USER }, { now: NOW });
+    expect(p.shop_name).toBe("owner@example.com");
+    expect(p.shop_name).not.toMatch(/^Owner$/);
+  });
+});
+
 describe("buildShopUpsertPayload", () => {
   it("uses shop_name when present", () => {
     expect(
