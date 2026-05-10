@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
 import { supabase } from "@/api/supabaseClient";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
+import { userStateChanged } from "@/lib/auth/userStateChanged";
 
 const AuthContext = createContext();
 
@@ -54,11 +55,10 @@ export const AuthProvider = ({ children }) => {
       if (!fullUser) {
         setLoggedOut();
       } else {
-        setUser((prev) => {
-          // Avoid triggering re-renders if nothing actually changed
-          if (prev && prev.id === fullUser.id && prev.email === fullUser.email) return prev;
-          return fullUser;
-        });
+        // Pure decision + tests in src/lib/auth/userStateChanged.js — keeps
+        // role / subscription transitions from being eaten by an over-eager
+        // identity-only equality check.
+        setUser((prev) => (userStateChanged(prev, fullUser) ? fullUser : prev));
         setIsAuthenticated(true);
         setAuthError(null);
       }

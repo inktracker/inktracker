@@ -10,6 +10,8 @@
 
 // deno-lint-ignore-file no-explicit-any
 
+import { mergeProfileSecrets, SECRET_KEYS as SHARED_SECRET_KEYS } from "./connectionLogic.js";
+
 export type ProfileWithSecrets = {
   // Mirrors profiles columns we commonly need.
   id: string;
@@ -38,16 +40,9 @@ export type ProfileWithSecrets = {
   [key: string]: any;
 };
 
-const SECRET_KEYS = [
-  "qb_access_token", "qb_refresh_token", "qb_token_expires_at", "qb_realm_id", "qb_oauth_state",
-  "gmail_access_token", "gmail_refresh_token", "gmail_token_expires_at", "gmail_oauth_state",
-  "ac_password", "ac_subscription_key",
-  "ss_account", "ss_api_key",
-  "shopify_access_token",
-  "stripe_customer_id", "stripe_subscription_id",
-] as const;
+const SECRET_KEYS = SHARED_SECRET_KEYS as readonly string[];
 
-type SecretKey = typeof SECRET_KEYS[number];
+type SecretKey = string;
 
 /**
  * Loads a profile and merges secrets from profile_secrets (preferred) or
@@ -76,12 +71,8 @@ export async function loadProfileWithSecrets(
     .maybeSingle();
 
   // Merge: secrets (new) wins; fall back to profiles columns (old).
-  const merged: ProfileWithSecrets = { ...profile };
-  for (const k of SECRET_KEYS) {
-    const fromNew = secrets?.[k];
-    if (fromNew !== undefined && fromNew !== null) merged[k] = fromNew;
-  }
-  return merged;
+  // Pure logic + tests: ../_shared/connectionLogic.js + __tests__.
+  return mergeProfileSecrets(profile, secrets, SECRET_KEYS) as ProfileWithSecrets;
 }
 
 /**
@@ -97,7 +88,7 @@ export async function updateProfileSecrets(
 ): Promise<void> {
   const filtered: Record<string, any> = {};
   for (const [k, v] of Object.entries(updates)) {
-    if (SECRET_KEYS.includes(k as SecretKey)) filtered[k] = v;
+    if ((SECRET_KEYS as readonly string[]).includes(k)) filtered[k] = v;
   }
   if (Object.keys(filtered).length === 0) return;
 

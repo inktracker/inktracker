@@ -452,7 +452,7 @@ const STATUS = {
 const INKTRACKER_LOGO_URL =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png";
 
-function FlameMark({ size = 32, animate = false, time = 0, ripple = false }) {
+function FlameMark({ size = 32, animate = false, time = 0, ripple = false, transparent = false }) {
   const bobY = animate ? Math.sin(time * 1.2) * 1.4 : 0;
   const breathe = animate ? 1 + Math.sin(time * 1.4) * 0.012 : 1;
 
@@ -482,6 +482,7 @@ function FlameMark({ size = 32, animate = false, time = 0, ripple = false }) {
       <img
         src={INKTRACKER_LOGO_URL}
         alt="InkTracker"
+        crossOrigin="anonymous"
         style={{
           width: '100%',
           height: '100%',
@@ -489,9 +490,32 @@ function FlameMark({ size = 32, animate = false, time = 0, ripple = false }) {
           transform: `translateY(${bobY}px) scale(${breathe})`,
           transformOrigin: 'center 60%',
           display: 'block',
+          filter: transparent ? 'url(#flame-key)' : undefined,
         }}
       />
     </div>
+  );
+}
+
+// ── Flame-key SVG filter ────────────────────────────────────────────────────
+// Mounted once at the Stage root. Lets a FlameMark with `transparent` drop
+// the dark-blue square baked into the logo PNG while keeping the orange and
+// green parts of the droplet. Formula: alpha = 1R + 3G - 2B.
+function FlameKeyDef() {
+  return (
+    <svg width="0" height="0" style={{ position: 'absolute' }} aria-hidden="true">
+      <defs>
+        <filter id="flame-key" colorInterpolationFilters="sRGB">
+          <feColorMatrix
+            type="matrix"
+            values="1 0 0 0 0
+                    0 1 0 0 0
+                    0 0 1 0 0
+                    1 3 -2 0 0"
+          />
+        </filter>
+      </defs>
+    </svg>
   );
 }
 
@@ -1760,7 +1784,7 @@ function SceneLockup() {
         marginBottom: 28,
         position: 'relative',
       }}>
-        <FlameMark size={88} animate time={localTime} ripple />
+        <FlameMark size={88} animate time={localTime} ripple transparent />
         <span style={{
           fontFamily: FONT, fontSize: 80, fontWeight: 700,
           color: C.darkText1, letterSpacing: '-0.04em',
@@ -1898,6 +1922,7 @@ export default function DemoBanner({ onSignup }) {
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
+      <FlameKeyDef />
       <Stage width={1920} height={1080} duration={25} background="#0B0B0E">
         {/* Pure-zoom Ken Burns — no translate so UI content never clips. */}
         <Sprite start={0} end={3.0}>

@@ -3,6 +3,10 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { seedDemoData } from "@/lib/demoSeed";
 import {
+  buildOnboardingProfile,
+  buildShopUpsertPayload,
+} from "@/lib/onboarding/buildOnboardingProfile";
+import {
   Store, Image, Mail, CheckCircle2, ChevronRight,
   Loader2, Upload, X, FileText, Package, Users, Settings
 } from "lucide-react";
@@ -103,29 +107,14 @@ export default function OnboardingWizard({ user, onComplete }) {
   async function saveAndFinish() {
     setSaving(true);
     try {
-      const profileData = {
-        shop_name: shopName.trim() || user.email,
-        logo_url: logoUrl,
-        phone: phone.trim(),
-        address: address.trim(),
-        city: city.trim(),
-        state: stateVal.trim().toUpperCase(),
-        zip: zip.trim(),
-        default_tax_rate: parseFloat(taxRate) || 0,
-        subscription_tier: user.subscription_tier || "trial",
-        subscription_status: user.subscription_status || "trialing",
-        trial_ends_at: user.trial_ends_at || new Date(Date.now() + 14 * 86400000).toISOString(),
-      };
+      const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, taxRate };
+      const profileData = buildOnboardingProfile(wizardInput);
       await base44.auth.updateMe(profileData);
 
       // Also upsert a Shop entity so quotes/orders can find it
       try {
         const shops = await base44.entities.Shop.filter({ owner_email: user.email });
-        const shopPayload = {
-          owner_email: user.email,
-          shop_name: profileData.shop_name,
-          logo_url: logoUrl,
-        };
+        const shopPayload = buildShopUpsertPayload(wizardInput);
         if (shops?.length) {
           await base44.entities.Shop.update(shops[0].id, shopPayload);
         } else {
@@ -213,7 +202,7 @@ export default function OnboardingWizard({ user, onComplete }) {
             {step === 0 && (
               <div className="flex-1 flex flex-col gap-5">
                 <p className="text-slate-600 leading-relaxed">
-                  Hi{user?.email ? ` ${user.email.split("@")[0].charAt(0).toUpperCase() + user.email.split("@")[0].slice(1)}` : ""}! InkTracker is your all-in-one platform for quotes, orders, and production tracking.
+                  InkTracker is your all-in-one platform for quotes, orders, and production tracking.
                 </p>
                 <p className="text-slate-600 leading-relaxed">
                   This quick setup takes about 2 minutes. You can change everything later in your Account settings.

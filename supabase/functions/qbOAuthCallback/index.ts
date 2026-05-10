@@ -3,6 +3,7 @@
 // Exchanges the code for tokens and stores them in the user's profile.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { buildOAuthTokenFields } from "../_shared/connectionLogic.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -78,13 +79,8 @@ Deno.serve(async (req) => {
       return Response.redirect(`${appBaseUrl}/Account?qb_error=state_mismatch`);
     }
 
-    const tokenFields = {
-      qb_access_token:     tokens.access_token,
-      qb_refresh_token:    tokens.refresh_token,
-      qb_realm_id:         realmId,
-      qb_token_expires_at: expiresAt,
-      qb_oauth_state:      null,  // clear the one-time state
-    };
+    // Pure builder + tests live in ../_shared/connectionLogic.js + __tests__.
+    const tokenFields = buildOAuthTokenFields(tokens, realmId, expiresAt);
 
     // PRIMARY write — profiles (the legacy path that all readers still use).
     // If this fails the connection is broken regardless of where else we write,
