@@ -58,6 +58,16 @@ const DemoBanner = lazy(() => import("./components/landing/DemoBanner"));
 function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
+  // Skip the heavy DemoBanner bundle on phone-sized viewports
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== "undefined" && window.innerWidth >= 768
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const onChange = (e) => setIsDesktop(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
 
   function openSignup() { setLoginMode("signup"); setShowLogin(true); }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
@@ -88,13 +98,46 @@ function PublicLandingPage() {
           </div>
         </nav>
 
-        {/* Hero — animated demo banner */}
-        <section className="pt-20">
-          <Suspense fallback={
-            <div className="w-full" style={{ aspectRatio: "16/9", background: "#0B0B0E" }} />
-          }>
-            <DemoBanner onSignup={openSignup} />
-          </Suspense>
+        {/* Hero — static on mobile, animated demo banner on md+ */}
+        {isDesktop && (
+          <section className="pt-[72px]">
+            <Suspense fallback={
+              <div className="w-full" style={{ aspectRatio: "16/9", background: "#0B0B0E" }} />
+            }>
+              <DemoBanner onSignup={openSignup} />
+            </Suspense>
+          </section>
+        )}
+
+        {/* Hero — mobile static */}
+        <section className="pt-32 pb-16 px-6 md:hidden">
+          <div className="max-w-md mx-auto text-center">
+            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-10">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
+            </div>
+            <div className="flex items-center justify-center gap-3 mb-8">
+              <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-14 h-14 rounded-xl" />
+              <span className="text-5xl font-extrabold tracking-tight">InkTracker</span>
+            </div>
+            <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-slate-300 mb-2">
+              Run your print shop
+            </h1>
+            <h1 className="text-3xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent mb-10">
+              without the chaos.
+            </h1>
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <button onClick={openSignup}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50">
+                Start Free Trial
+              </button>
+              <a href="#features"
+                className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
+                See Features →
+              </a>
+            </div>
+            <p className="text-xs text-slate-500">$99/mo after trial · Cancel anytime</p>
+          </div>
         </section>
 
         {/* Stats */}

@@ -106,6 +106,33 @@ function Sprite({ start = 0, end = Infinity, children, keepMounted = false }) {
   );
 }
 
+// ── KenBurns ────────────────────────────────────────────────────────────────
+// Cinematic slow zoom/pan over a scene's lifetime. Reads progress from the
+// nearest Sprite. `from`/`to` are interpolated linearly via `easing`.
+function KenBurns({
+  from = { scale: 1, x: 0, y: 0 },
+  to   = { scale: 1, x: 0, y: 0 },
+  origin = 'center center',
+  easing = Easing.easeInOutCubic,
+  children,
+}) {
+  const { progress } = useSprite();
+  const t = easing(clamp(progress, 0, 1));
+  const scale = from.scale + (to.scale - from.scale) * t;
+  const x = from.x + (to.x - from.x) * t;
+  const y = from.y + (to.y - from.y) * t;
+  return (
+    <div style={{
+      position: 'absolute', inset: 0,
+      transform: `scale(${scale}) translate(${x}px, ${y}px)`,
+      transformOrigin: origin,
+      willChange: 'transform',
+    }}>
+      {children}
+    </div>
+  );
+}
+
 // ── TextSprite ──────────────────────────────────────────────────────────────
 function TextSprite({
   text,
@@ -290,12 +317,14 @@ function Stage({
   const rafRef = useRef(null);
   const lastTsRef = useRef(null);
 
-  // Auto-scale to fit container width, capped to viewport height minus nav
+  // Auto-scale to fit container width, capped to viewport height minus nav + hero pad
   useEffect(() => {
     if (!containerRef.current) return;
     const el = containerRef.current;
     const measure = () => {
-      const maxH = window.innerHeight - 72; // subtract nav bar
+      // Reserve 88px for nav + a sliver of breathing room so the stage stays
+      // fully above the fold on standard desktop viewports.
+      const maxH = window.innerHeight - 88;
       const scaleByW = el.clientWidth / width;
       const scaleByH = maxH / height;
       setScale(Math.max(0.05, Math.min(scaleByW, scaleByH)));
@@ -420,6 +449,9 @@ const STATUS = {
 };
 
 // ── Brand mark ──────────────────────────────────────────────────────────────
+const INKTRACKER_LOGO_URL =
+  "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png";
+
 function FlameMark({ size = 32, animate = false, time = 0, ripple = false }) {
   const bobY = animate ? Math.sin(time * 1.2) * 1.4 : 0;
   const breathe = animate ? 1 + Math.sin(time * 1.4) * 0.012 : 1;
@@ -448,7 +480,7 @@ function FlameMark({ size = 32, animate = false, time = 0, ripple = false }) {
         }} />
       )}
       <img
-        src="/demo/assets/inktracker-logo.png"
+        src={INKTRACKER_LOGO_URL}
         alt="InkTracker"
         style={{
           width: '100%',
@@ -1867,11 +1899,37 @@ export default function DemoBanner({ onSignup }) {
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
       <Stage width={1920} height={1080} duration={25} background="#0B0B0E">
-        <Sprite start={0} end={3.0}>     <SceneHook /></Sprite>
-        <Sprite start={3.0} end={9.0}>   <SceneIntake /></Sprite>
-        <Sprite start={9.0} end={15.0}>  <SceneDashboard /></Sprite>
-        <Sprite start={15.0} end={21.0}> <SceneTicket /></Sprite>
-        <Sprite start={21.0} end={25.0}> <SceneLockup /></Sprite>
+        {/* Pure-zoom Ken Burns — no translate so UI content never clips. */}
+        <Sprite start={0} end={3.0}>
+          <KenBurns
+            from={{ scale: 1.00, x: 0, y: 0 }}
+            to={{   scale: 1.05, x: 0, y: 0 }}
+          ><SceneHook /></KenBurns>
+        </Sprite>
+        <Sprite start={3.0} end={9.0}>
+          <KenBurns
+            from={{ scale: 1.05, x: 0, y: 0 }}
+            to={{   scale: 1.00, x: 0, y: 0 }}
+          ><SceneIntake /></KenBurns>
+        </Sprite>
+        <Sprite start={9.0} end={15.0}>
+          <KenBurns
+            from={{ scale: 1.00, x: 0, y: 0 }}
+            to={{   scale: 1.05, x: 0, y: 0 }}
+          ><SceneDashboard /></KenBurns>
+        </Sprite>
+        <Sprite start={15.0} end={21.0}>
+          <KenBurns
+            from={{ scale: 1.05, x: 0, y: 0 }}
+            to={{   scale: 1.00, x: 0, y: 0 }}
+          ><SceneTicket /></KenBurns>
+        </Sprite>
+        <Sprite start={21.0} end={25.0}>
+          <KenBurns
+            from={{ scale: 1.04, x: 0, y: 0 }}
+            to={{   scale: 1.00, x: 0, y: 0 }}
+          ><SceneLockup /></KenBurns>
+        </Sprite>
         <SceneIndicator />
       </Stage>
     </DemoBannerContext.Provider>
