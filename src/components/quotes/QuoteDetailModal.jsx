@@ -19,6 +19,7 @@ import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
 import MessagesTab from "../shared/MessagesTab";
 import { quoteThreadId } from "@/lib/messageThreads";
+import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare } from "lucide-react";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
@@ -300,25 +301,25 @@ export default function QuoteDetailModal({
         phone: "",
         company: "",
       };
-
       const invoicePayload = buildQBInvoicePayload(
         quote,
         isBrokerQuote(quote) ? BROKER_MARKUP : undefined
       );
-      const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createInvoice",
-          accessToken: session.access_token,
-          quote,
-          customer: customerPayload,
-          invoicePayload,
-        }),
-      });
 
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "QB sync failed");
+      // QB-push call site, so tax_mode='quickbooks' by definition. The factory
+      // exists so other call sites (UI tax display, internal-only shops) can
+      // pull the right provider from the loaded shop.
+      const provider = taxProviderFor(
+        { tax_mode: "quickbooks" },
+        {
+          qbSyncUrl: `${supabaseUrl}/functions/v1/qbSync`,
+          accessToken: session.access_token,
+        }
+      );
+      const { raw: data } = await provider.pushInvoice(quote, {
+        customer: customerPayload,
+        invoicePayload,
+      });
 
       setQbPaymentLink(data.paymentLink);
       setQbInvoiceId(data.qbInvoiceId);
