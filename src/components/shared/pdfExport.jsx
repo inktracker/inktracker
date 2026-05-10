@@ -1062,14 +1062,44 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   const items = Array.isArray(invoice.line_items) ? invoice.line_items : [];
   let lineSubtotal = 0;
 
+  // Rate/amount precedence:
+  //   1. clientPpp override                     (per-line $/ea entered manually)
+  //   2. saved _ppp / _lineTotal                (stamped at quote-save time)
+  //   3. calcLinkedLinePrice fallback           (legacy invoices / rebuilds)
+  //   4. zero — and we then skip the row to keep "Rush Charge $0 / Discount $0"
+  //      placeholders out of the customer-facing PDF.
   items.forEach((li) => {
-    if (yPos > pageHeight - 60) { doc.addPage(); yPos = margin; }
-
     const qty = getQty(li) || Number(li?.qty) || 0;
     const override = Number(li?.clientPpp);
     const useOverride = Number.isFinite(override) && override > 0 && qty > 0;
-    const rate = useOverride ? override : (li._ppp != null ? li._ppp : 0);
-    const amount = useOverride ? override * qty : (li._lineTotal != null ? li._lineTotal : rate * qty);
+
+    let rate = 0;
+    let amount = 0;
+    if (useOverride) {
+      rate = override;
+      amount = override * qty;
+    } else if (Number.isFinite(li?._ppp) || Number.isFinite(li?._lineTotal)) {
+      rate = Number.isFinite(li._ppp) ? li._ppp : 0;
+      amount = Number.isFinite(li._lineTotal) ? li._lineTotal : rate * qty;
+    } else {
+      const r = getGroupPriceForPdf(
+        li,
+        invoice.rush_rate || 0,
+        invoice.extras || {},
+        false,
+        items,
+      );
+      if (r) {
+        rate = r.ppp || 0;
+        amount = (r.sub != null ? r.sub : rate * qty);
+      }
+    }
+
+    // Skip silently zero rows — these are usually empty "Rush Charge" /
+    // "Discount" placeholders that should not appear on a customer invoice.
+    if (!(amount > 0)) return;
+
+    if (yPos > pageHeight - 60) { doc.addPage(); yPos = margin; }
     lineSubtotal += amount;
 
     const headerLine = getItemHeaderLine(li);
