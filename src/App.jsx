@@ -440,6 +440,33 @@ function FullScreenSpinner() {
   );
 }
 
+// Spinner shown right after email confirmation while the activate_trial RPC
+// runs. If the role transition doesn't propagate (RPC failed / cache miss /
+// auth listener missed an event), surface a manual refresh after 4s and
+// auto-reload after 8s so the user is never stranded.
+function PostConfirmSpinner() {
+  const [showRefresh, setShowRefresh] = useState(false);
+  useEffect(() => {
+    const showT = setTimeout(() => setShowRefresh(true), 4000);
+    const reloadT = setTimeout(() => window.location.reload(), 8000);
+    return () => { clearTimeout(showT); clearTimeout(reloadT); };
+  }, []);
+  return (
+    <div className="fixed inset-0 flex flex-col items-center justify-center bg-white gap-4">
+      <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
+      <div className="text-sm text-slate-500">Setting up your account…</div>
+      {showRefresh && (
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-2 px-4 py-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+        >
+          Taking too long? Click to refresh
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AppRoutes() {
   return (
     <Routes>
@@ -517,7 +544,7 @@ const AuthenticatedApp = () => {
   }
 
   if (user?.role === "user") {
-    return <FullScreenSpinner />;
+    return <PostConfirmSpinner />;
   }
 
   if (!user?.role) {

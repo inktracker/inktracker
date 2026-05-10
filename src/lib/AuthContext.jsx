@@ -55,8 +55,20 @@ export const AuthProvider = ({ children }) => {
         setLoggedOut();
       } else {
         setUser((prev) => {
-          // Avoid triggering re-renders if nothing actually changed
-          if (prev && prev.id === fullUser.id && prev.email === fullUser.email) return prev;
+          // Skip the re-render only when nothing the app cares about has
+          // changed. We MUST include role here — the post-signup activate_trial
+          // RPC flips role 'user' → 'shop', and missing that update strands
+          // the user on the post-confirm spinner until they hit refresh.
+          if (
+            prev &&
+            prev.id === fullUser.id &&
+            prev.email === fullUser.email &&
+            prev.role === fullUser.role &&
+            prev.subscription_tier === fullUser.subscription_tier &&
+            prev.subscription_status === fullUser.subscription_status
+          ) {
+            return prev;
+          }
           return fullUser;
         });
         setIsAuthenticated(true);
