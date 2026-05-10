@@ -914,135 +914,276 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output) {
   doc.save(`Order-${order.order_id}.pdf`);
 }
 
-export async function exportInvoiceToPDF(invoice, customer, shopName, logoUrl, output) {
+// QB-style invoice layout — clean tabular DESCRIPTION/QTY/RATE/AMOUNT rows
+// instead of the colored-bar-per-size layout. Accepts an options object so
+// the caller can pass full shop profile info (address, phone, email, website).
+//
+//   exportInvoiceToPDF(invoice, customer, { shop, output })
+//
+// Backward-compat: if `shopOrOptions` is a string, treat it as legacy
+// `shopName` (callers haven't all been updated yet).
+export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoUrl, output) {
   const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 15;
+  const margin = 18;
 
-  const invDiscVal = parseFloat(invoice.discount || 0);
-  const invDiscType = invoice.discount_type || 'percent';
-  const invIsFlat = invDiscType === 'flat' || (invDiscVal > 100 && invDiscType !== 'percent');
-  const totals = {
-    sub: invoice.subtotal || 0,
-    afterDisc: invIsFlat
-      ? Math.max(0, (invoice.subtotal || 0) - invDiscVal)
-      : (invoice.subtotal || 0) * (1 - invDiscVal / 100),
-    tax: invoice.tax || 0,
-    total: invoice.total || 0,
-    deposit: null
-  };
-
-  let yPos = await addHeader(
-    doc,
-    'INVOICE',
-    `${invoice.invoice_id} · ${fmtDate(invoice.date)}`,
-    customer?.company || invoice.customer_name,
-    `Due: ${fmtDate(invoice.due)}`,
-    invoice.paid ? `Paid: ${fmtDate(invoice.paid_date)}` : 'Unpaid',
-    shopName,
-    logoUrl
-  );
-
-  let invPdfLineTotals = [];
-  if (invoice.line_items && invoice.line_items.length > 0) {
-    const liResult = renderLineItems(
-      doc,
-      invoice.line_items,
-      invoice.rush_rate || 0,
-      invoice.extras || {},
-      invoice.discount,
-      invoice.tax_rate,
-      pageHeight,
-      margin,
-      yPos,
-      false,
-      false,
-      1,
-      invDiscType
-    );
-    yPos = liResult.yPos;
-    invPdfLineTotals = liResult.pdfLineTotals;
+  // Normalize args: support both { shop, output } object and legacy positional.
+  let shop = {};
+  if (shopOrOptions && typeof shopOrOptions === 'object') {
+    shop   = shopOrOptions.shop   || {};
+    output = shopOrOptions.output || output;
+    logoUrl = shopOrOptions.logoUrl || logoUrl;
+  } else if (typeof shopOrOptions === 'string') {
+    shop = { shop_name: shopOrOptions };
   }
 
-  if (invoice.notes) {
-    if (yPos > pageHeight - 30) {
-      doc.addPage();
-      yPos = margin;
+  // ── Header: shop info top-left ────────────────────────────────────────────
+  let yPos = margin;
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(20, 20, 30);
+  doc.text(shop.shop_name || 'InkTracker', margin, yPos);
+  yPos += 5;
+
+  doc.setFont(undefined, 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(60, 60, 80);
+  const shopLines = [];
+  if (shop.address) shopLines.push(shop.address);
+  const cityLine = [shop.city, shop.state, shop.zip].filter(Boolean).join(shop.state ? ', ' : ' ').replace(', ', ', ');
+  const cityStateZip = [shop.city && `${shop.city},`, shop.state, shop.zip].filter(Boolean).join(' ');
+  if (cityStateZip) shopLines.push(cityStateZip);
+  if (shop.phone)   shopLines.push(shop.phone);
+  if (shop.email)   shopLines.push(shop.email);
+  if (shop.website) shopLines.push(shop.website);
+  shopLines.forEach((l) => { doc.text(l, margin, yPos); yPos += 4.5; });
+  // unused var for linter (cityLine kept above for explicitness)
+  void cityLine;
+
+  // ── "INVOICE" title ──────────────────────────────────────────────────────
+  yPos += 6;
+  doc.setFontSize(20);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(20, 20, 30);
+  doc.text('INVOICE', margin, yPos);
+  yPos += 8;
+
+  // ── Bill To (left) | Invoice meta (right) ────────────────────────────────
+  const metaX = pageWidth - margin - 60;
+  const labelColor = [110, 110, 130];
+  const valueColor = [30, 30, 40];
+
+  const billLabelY = yPos;
+  doc.setFontSize(8);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(...labelColor);
+  doc.text('BILL TO', margin, billLabelY);
+  doc.text('INVOICE #', metaX, billLabelY);
+  doc.setTextColor(...valueColor);
+  doc.setFontSize(9);
+  doc.text(String(invoice.invoice_id || ''), metaX + 25, billLabelY);
+
+  yPos += 5;
+  doc.setFontSize(9.5);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(...valueColor);
+  const billLines = [];
+  if (customer?.company) billLines.push(customer.company);
+  if (customer?.name && customer?.name !== customer?.company) billLines.push(customer.name);
+  if (customer?.address) billLines.push(customer.address);
+  const custCity = [customer?.city && `${customer.city},`, customer?.state, customer?.zip].filter(Boolean).join(' ');
+  if (custCity) billLines.push(custCity);
+  if (customer?.email) billLines.push(customer.email);
+  if (!billLines.length) billLines.push(invoice.customer_name || '—');
+
+  let billY = yPos;
+  billLines.forEach((l) => {
+    const wrapped = doc.splitTextToSize(l, 80);
+    wrapped.forEach((w) => { doc.text(w, margin, billY); billY += 4.5; });
+  });
+
+  // Right-side meta: DATE, TERMS, DUE
+  let mY = yPos;
+  doc.setFontSize(8);
+  doc.setTextColor(...labelColor);
+  doc.text('DATE', metaX, mY);
+  doc.setFontSize(9);
+  doc.setTextColor(...valueColor);
+  doc.text(fmtDate(invoice.date), metaX + 25, mY);
+  mY += 5;
+
+  if (invoice.due) {
+    doc.setFontSize(8);
+    doc.setTextColor(...labelColor);
+    doc.text('DUE', metaX, mY);
+    doc.setFontSize(9);
+    doc.setTextColor(...valueColor);
+    doc.text(fmtDate(invoice.due), metaX + 25, mY);
+    mY += 5;
+  }
+
+  doc.setFontSize(8);
+  doc.setTextColor(...labelColor);
+  doc.text('TERMS', metaX, mY);
+  doc.setFontSize(9);
+  doc.setTextColor(...valueColor);
+  doc.text(invoice.terms || 'Due on receipt', metaX + 25, mY);
+  mY += 5;
+
+  yPos = Math.max(billY, mY) + 4;
+
+  // Divider
+  doc.setDrawColor(180, 180, 200);
+  doc.setLineWidth(0.4);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 8;
+
+  // ── Line items table ─────────────────────────────────────────────────────
+  // Columns:  DESCRIPTION (flex)  QTY (right)  RATE (right)  AMOUNT (right)
+  const colQtyX    = pageWidth - margin - 80;
+  const colRateX   = pageWidth - margin - 45;
+  const colAmtX    = pageWidth - margin;
+
+  // Header row with subtle background
+  doc.setFillColor(238, 238, 244);
+  doc.rect(margin, yPos - 4, pageWidth - 2 * margin, 7, 'F');
+  doc.setFontSize(8);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(80, 80, 100);
+  doc.text('DESCRIPTION', margin + 2, yPos);
+  doc.text('QTY',  colQtyX,  yPos, { align: 'right' });
+  doc.text('RATE', colRateX, yPos, { align: 'right' });
+  doc.text('AMOUNT', colAmtX, yPos, { align: 'right' });
+  yPos += 7;
+
+  doc.setFont(undefined, 'normal');
+  const items = Array.isArray(invoice.line_items) ? invoice.line_items : [];
+  let lineSubtotal = 0;
+
+  items.forEach((li) => {
+    if (yPos > pageHeight - 60) { doc.addPage(); yPos = margin; }
+
+    const qty = getQty(li) || Number(li?.qty) || 0;
+    const override = Number(li?.clientPpp);
+    const useOverride = Number.isFinite(override) && override > 0 && qty > 0;
+    const rate = useOverride ? override : (li._ppp != null ? li._ppp : 0);
+    const amount = useOverride ? override * qty : (li._lineTotal != null ? li._lineTotal : rate * qty);
+    lineSubtotal += amount;
+
+    const headerLine = getItemHeaderLine(li);
+    const metaLine   = getItemMetaLine(li);
+
+    // Description: bold first line + (optional) muted second line, wrapped to col width
+    const descMaxWidth = colQtyX - margin - 6;
+    doc.setFont(undefined, 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(30, 30, 40);
+    const headerWrapped = doc.splitTextToSize(headerLine || 'Line item', descMaxWidth);
+    headerWrapped.forEach((w) => { doc.text(w, margin + 2, yPos); yPos += 4.5; });
+
+    if (metaLine) {
+      doc.setFont(undefined, 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(95, 95, 115);
+      const metaWrapped = doc.splitTextToSize(metaLine, descMaxWidth);
+      metaWrapped.forEach((w) => { doc.text(w, margin + 2, yPos); yPos += 4 });
     }
 
-    doc.setFillColor(255, 248, 220);
-    const noteLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin - 8);
-    const noteH = noteLines.length * 4.5 + 8;
+    // QTY / RATE / AMOUNT (top-aligned with description's first row)
+    const numbersY = yPos - (metaLine ? 4 + 4.5 * headerWrapped.length : 4.5 * headerWrapped.length) + 4.5;
+    doc.setFont(undefined, 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(30, 30, 40);
+    doc.text(qty ? String(qty) : '—', colQtyX, numbersY, { align: 'right' });
+    doc.text(qty ? fmtMoney(rate) : '—', colRateX, numbersY, { align: 'right' });
+    doc.text(fmtMoney(amount), colAmtX, numbersY, { align: 'right' });
 
-    doc.rect(margin, yPos - 2, pageWidth - 2 * margin, noteH, 'F');
+    yPos += 4; // breathing room between rows
+  });
+
+  // Bottom dotted line above totals
+  yPos += 2;
+  doc.setLineDashPattern([0.6, 0.6], 0);
+  doc.setDrawColor(180, 180, 200);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  doc.setLineDashPattern([], 0);
+  yPos += 6;
+
+  // ── Totals (right-aligned column) ────────────────────────────────────────
+  const taxRate = Number(invoice.tax_rate) || 0;
+  const subtotal = Number(invoice.subtotal) || lineSubtotal;
+  const tax = Number(invoice.tax) || 0;
+  const total = Number(invoice.total) || (subtotal + tax);
+  const balanceDue = invoice.paid ? 0 : total;
+
+  const tLabelX = pageWidth - margin - 50;
+  const tValueX = pageWidth - margin;
+
+  const totalsRow = (label, value, opts = {}) => {
+    if (yPos > pageHeight - 30) { doc.addPage(); yPos = margin; }
+    doc.setFontSize(opts.fontSize || 9);
+    doc.setFont(undefined, opts.bold ? 'bold' : 'normal');
+    doc.setTextColor(...(opts.color || valueColor));
+    doc.text(label, tLabelX, yPos, { align: 'right' });
+    doc.text(value, tValueX, yPos, { align: 'right' });
+    yPos += opts.gap || 5.5;
+  };
+
+  totalsRow('SUBTOTAL', fmtMoney(subtotal));
+  totalsRow(`TAX (${taxRate}%)`, fmtMoney(tax));
+  totalsRow('TOTAL', fmtMoney(total));
+
+  // Balance due — bigger, bold
+  yPos += 1;
+  doc.setFontSize(11);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(20, 20, 30);
+  doc.text('BALANCE DUE', tLabelX, yPos, { align: 'right' });
+  doc.text(fmtMoney(balanceDue), tValueX, yPos, { align: 'right' });
+  yPos += 8;
+
+  // ── Pay invoice button (left, if we have a payment link) ─────────────────
+  if (invoice.qb_payment_link || invoice.payment_link) {
+    const link = invoice.qb_payment_link || invoice.payment_link;
+    const btnY = yPos - 22;
+    const btnX = margin;
+    const btnW = 36;
+    const btnH = 9;
+    doc.setDrawColor(140, 140, 160);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(btnX, btnY, btnW, btnH, 1.5, 1.5);
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(40, 40, 60);
+    doc.textWithLink('Pay invoice', btnX + btnW / 2, btnY + 6, { align: 'center', url: link });
+  }
+
+  // ── Notes ────────────────────────────────────────────────────────────────
+  if (invoice.notes) {
+    yPos += 4;
+    if (yPos > pageHeight - 30) { doc.addPage(); yPos = margin; }
     doc.setFontSize(8);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(120, 80, 20);
-    doc.text('Notes:', margin + 3, yPos + 2);
-
-    doc.setFont(undefined, 'normal');
-    doc.text(noteLines, margin + 3, yPos + 7);
-    yPos += noteH + 4;
-  }
-
-  if (yPos > pageHeight - 50) {
-    doc.addPage();
-    yPos = margin;
-  }
-
-  yPos = renderTotals(
-    doc,
-    totals,
-    invoice.discount || 0,
-    invoice.tax_rate || 0,
-    null,
-    pageWidth,
-    margin,
-    yPos,
-    false,
-    invDiscType,
-    parseFloat(invoice.rush_rate) || 0,
-    invPdfLineTotals.length > 0 ? invPdfLineTotals.reduce((s, v) => s + v, 0) : null
-  );
-
-  if (customer) {
-    yPos += 6;
-    doc.setDrawColor(200, 200, 210);
-    doc.line(margin, yPos, pageWidth - margin, yPos);
-    yPos += 6;
-
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'bold');
-    doc.setTextColor(80, 80, 100);
-    doc.text('Bill To:', margin, yPos);
+    doc.text('Notes', margin, yPos);
     yPos += 4;
-
     doc.setFont(undefined, 'normal');
-    doc.setTextColor(30, 30, 40);
-
-    if (customer.company) {
-      doc.text(customer.company, margin, yPos);
-      yPos += 4;
-    }
-    if (customer.name) {
-      doc.text(customer.name, margin, yPos);
-      yPos += 4;
-    }
-    if (customer.email) {
-      doc.text(customer.email, margin, yPos);
-      yPos += 4;
-    }
-    if (customer.phone) {
-      doc.text(customer.phone, margin, yPos);
-      yPos += 4;
-    }
-    if (customer.address) {
-      doc.text(customer.address, margin, yPos);
-      yPos += 4;
-    }
+    doc.setTextColor(60, 60, 80);
+    const noteLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin);
+    noteLines.forEach((l) => { doc.text(l, margin, yPos); yPos += 4 });
   }
+
+  // ── Footer disclaimer ────────────────────────────────────────────────────
+  doc.setFontSize(8);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(120, 120, 140);
+  const disclaimer = 'Special printing aids are not being sold to the customer as part of the sale of the printed matter, and the selling price of the printed matter does not include the transfer of title to the special printing aids.';
+  const discWrapped = doc.splitTextToSize(disclaimer, pageWidth - 2 * margin);
+  let discY = pageHeight - margin - discWrapped.length * 3.5;
+  if (yPos > discY - 4) discY = yPos + 6;
+  discWrapped.forEach((l) => { doc.text(l, margin, discY); discY += 3.5 });
 
   if (output === 'base64') {
     const raw = doc.output('datauristring');

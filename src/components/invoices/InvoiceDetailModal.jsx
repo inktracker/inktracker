@@ -16,6 +16,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
 
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+  const [shopProfile, setShopProfile] = useState(null);
   const [showSendModal, setShowSendModal] = useState(false);
   const [qbCreating, setQbCreating] = useState(false);
   const [qbStatus, setQbStatus] = useState(null);
@@ -143,7 +144,11 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
     // Invoice now contains all order data directly
     setLoading(false);
     base44.auth.me().then(u => {
-      if (u) { setShopName(u.shop_name || ""); setLogoUrl(u.logo_url || ""); }
+      if (u) {
+        setShopName(u.shop_name || "");
+        setLogoUrl(u.logo_url || "");
+        setShopProfile(u);
+      }
     }).catch(() => {});
   }, [invoice]);
 
@@ -376,7 +381,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             {qbCreating ? "Creating…" : "Create in QB"}
           </button>
           <button onClick={async () => {
-            const url = await exportInvoiceToPDF(invoice, customer, shopName, logoUrl, "blob");
+            const url = await exportInvoiceToPDF(invoice, customer, { shop: shopProfile || { shop_name: shopName }, logoUrl, output: "blob" });
             if (url) window.open(url, "_blank");
           }}
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
@@ -407,7 +412,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                 }
               } catch {}
             }
-            exportInvoiceToPDF(invoice, customer, shopName, logoUrl);
+            exportInvoiceToPDF(invoice, customer, { shop: shopProfile || { shop_name: shopName }, logoUrl });
           }}
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
             Download PDF
