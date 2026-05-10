@@ -202,7 +202,7 @@ export default function OnboardingWizard({ user, onComplete }) {
             {step === 0 && (
               <div className="flex-1 flex flex-col gap-5">
                 <p className="text-slate-600 leading-relaxed">
-                  Hi{user?.email ? ` ${user.email.split("@")[0].charAt(0).toUpperCase() + user.email.split("@")[0].slice(1)}` : ""}! InkTracker is your all-in-one platform for quotes, orders, and production tracking.
+                  InkTracker is your all-in-one platform for quotes, orders, and production tracking.
                 </p>
                 <p className="text-slate-600 leading-relaxed">
                   This quick setup takes about 2 minutes. You can change everything later in your Account settings.
