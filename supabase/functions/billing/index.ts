@@ -9,9 +9,20 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_URL = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
 
-// Single plan — update this price ID once the $49/mo product is created in Stripe
+// Single plan today: founding-member rate ($99/mo).
+//
+// TODO (founding member program — separate PR): add a second price ID for
+// the $149/mo standard rate. The checkout action below should choose:
+//   - PRICES.founding when the founding count is < 100 AND the user has no
+//     prior founding cancellation on record (set is_founding_member=true).
+//   - PRICES.standard otherwise (founding cap reached, or user previously
+//     canceled their founding subscription — re-signups always pay
+//     standard).
+// See src/lib/billing.js for the full founding-member-enforcement plan.
 const PRICES: Record<string, string> = {
   shop: "price_1TR50AI4m9BGT2cwXUsKF6Ul",
+  // founding: "price_FOUNDING_99_TBD",
+  // standard: "price_STANDARD_149_TBD",
 };
 
 const CORS = {

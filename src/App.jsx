@@ -119,6 +119,11 @@ function PublicLandingPage() {
                 </a>
               </div>
 
+              {/* TODO (founding member program — separate PR): when the
+                  internal founding-member counter is wired up, render
+                  "Founding spots remaining: X of 100" here in muted text
+                  above the price line. Source the count from the public
+                  view / edge function described in src/lib/billing.js. */}
               <p className="text-xs text-slate-500 mb-3">
                 Founding member pricing — $99/mo after trial · Cancel anytime
               </p>
