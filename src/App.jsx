@@ -268,71 +268,45 @@ function PublicLandingPage() {
           </div>
         </nav>
 
-        {/* Hero — unified, responsive. Two-column on desktop (copy + product
-            screenshot), stacked on mobile. */}
+        {/* Hero — single centered column. No product visual for now; that
+            slot returns when we have a real screenshot worth showing. */}
         <section className="pt-32 md:pt-40 pb-16 md:pb-24 px-6">
-          <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-10 md:gap-12 items-center">
-            {/* Left column: copy + CTAs */}
-            <div className="text-center md:text-left max-w-xl mx-auto md:mx-0">
-              <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
-              </div>
+          <div className="max-w-3xl mx-auto text-center">
+            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
+            </div>
 
-              <h1 className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-white mb-3">
-                Stop losing orders in spreadsheets.
-              </h1>
-              <h1 className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent mb-6">
-                Run your shop on one platform.
-              </h1>
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-white mb-3">
+              Stop losing orders in spreadsheets.
+            </h1>
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent mb-6">
+              Run your shop on one platform.
+            </h1>
 
-              <p className="text-sm text-slate-400 mb-8 max-w-md mx-auto md:mx-0 leading-relaxed">
-                Built for screen print shops running 1–10 presses. Embroidery, DTG, and promo-product decorators welcome.
-              </p>
+            <p className="text-sm md:text-base text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
+              Built for screen print and embroidery shops running 1–10 presses.
+            </p>
 
-              <div className="flex flex-col sm:flex-row items-center md:justify-start justify-center gap-3 mb-5">
-                <button onClick={openSignup}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50 w-full sm:w-auto">
-                  Start Free Trial
-                </button>
-                <a href="#features"
-                  className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
-                  See Features →
-                </a>
-              </div>
-
-              {/* TODO (founding member program — separate PR): when the
-                  internal founding-member counter is wired up, render
-                  "Founding spots remaining: X of 100" here in muted text
-                  above the price line. Source the count from the public
-                  view / edge function described in src/lib/billing.js. */}
-              <p className="text-xs text-slate-500 mb-3">
-                Founding member pricing — $99/mo after trial · Cancel anytime
-              </p>
-
-              {/* TODO: Joe to supply the actual booking link. /book-call is a
-                  placeholder for now. */}
-              <a href="/book-call" className="text-xs text-slate-400 hover:text-slate-200 underline underline-offset-4 transition">
-                Talk to Joe — book a 15-min call
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-5">
+              <button onClick={openSignup}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50 w-full sm:w-auto">
+                Start Free Trial
+              </button>
+              <a href="#features"
+                className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
+                See Features →
               </a>
             </div>
 
-            {/* Right column: hero product visual slot.
-                TODO: Hero product screenshot. Recommend: production pipeline view OR
-                dashboard with real-looking data. Static screenshot is fine for v1;
-                animated loop (3–6 sec muted video) is a future upgrade. Image
-                dimensions: 16:9 or 4:3, exported at 2x resolution for retina.
-                Drop the image into /public/landing/hero.png and swap the
-                <div> placeholder for an <img> tag. */}
-            <div className="w-full">
-              <div
-                className="w-full bg-slate-800/60 border border-white/10 rounded-2xl shadow-2xl shadow-black/40 flex items-center justify-center text-slate-500 text-sm font-medium"
-                style={{ aspectRatio: "16 / 9" }}
-                aria-label="Product screenshot placeholder"
-              >
-                Product screenshot — to be supplied
-              </div>
-            </div>
+            {/* TODO (founding member program — separate PR): when the
+                internal founding-member counter is wired up, render
+                "Founding spots remaining: X of 100" here in muted text
+                above the price line. Source the count from the public
+                view / edge function described in src/lib/billing.js. */}
+            <p className="text-xs text-slate-500">
+              Founding member pricing — $99/mo after trial · Cancel anytime
+            </p>
           </div>
         </section>
 
@@ -581,8 +555,8 @@ function PublicLandingPage() {
                   a: "Yes. CSV import is supported for customers, quotes, and orders. If you're switching from another platform, contact support and we'll help map the data over.",
                 },
                 {
-                  q: "Does InkTracker work for embroidery, DTG, or promotional products, or only screen printing?",
-                  a: "It works for all of them. The quote-to-invoice workflow, customer management, production tracking, and QuickBooks integration are decoration-method-agnostic. Some features (live garment pricing from S&S and AS Colour, mockup designer) are most useful for apparel-based shops.",
+                  q: "Does InkTracker work for embroidery shops too, or only screen printing?",
+                  a: "Both. The quote-to-invoice workflow, customer management, production tracking, and QuickBooks integration work the same way for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap.",
                 },
                 {
                   q: "What happens to my data if I cancel?",
