@@ -2,10 +2,11 @@ import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../components/shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
-import { TrendingUp, ShoppingBag, Users, DollarSign, TrendingDown, ChevronDown, ChevronUp, FileText, RefreshCw, ExternalLink } from "lucide-react";
+import { TrendingUp, ShoppingBag, Users, DollarSign, TrendingDown, ChevronDown, ChevronUp, FileText, ExternalLink } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import NativeStatsPanel from "@/components/shared/NativeStatsPanel";
 import { computeNativeStats } from "@/lib/nativeStats";
+import { QB_REPORTS, qbReportUrl } from "@/lib/reports/qbReportLink";
 
 function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
   const colors = {
@@ -50,30 +51,10 @@ export default function Performance() {
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
-  // QB Reports state
-  const [qbReport, setQbReport] = useState(null);
-  const [qbReportLoading, setQbReportLoading] = useState(false);
-  const [qbReportError, setQbReportError] = useState(null);
-  const [selectedReport, setSelectedReport] = useState("ProfitAndLoss");
-  const [reportStartDate, setReportStartDate] = useState(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 11); d.setDate(1);
-    return d.toISOString().slice(0, 10);
-  });
-  const [reportEndDate, setReportEndDate] = useState(() => new Date().toISOString().slice(0, 10));
-
-  const QB_REPORTS = [
-    { id: "ProfitAndLoss",        label: "Profit & Loss" },
-    { id: "BalanceSheet",         label: "Balance Sheet" },
-    { id: "CashFlow",             label: "Cash Flow" },
-    { id: "CustomerSales",        label: "Customer Sales" },
-    { id: "VendorExpenses",       label: "Vendor Expenses" },
-    { id: "AgedReceivableDetail", label: "Aged Receivables" },
-    { id: "AgedPayableDetail",    label: "Aged Payables" },
-    { id: "GeneralLedger",        label: "General Ledger" },
-    { id: "TransactionList",      label: "Transaction List" },
-    { id: "TrialBalance",         label: "Trial Balance" },
-  ];
-
+  // Lightweight QB connection check (only used to decide whether to render
+  // the "View in QuickBooks" report links). No QB API data is fetched here
+  // anymore — we render P&L / Balance Sheet / Cash Flow / etc. by deep-link
+  // to QB itself instead of re-rendering them in-app.
   async function callQbSync(action, params = {}) {
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
@@ -84,82 +65,31 @@ export default function Performance() {
     return res.json();
   }
 
-  async function fetchQbReport(reportName, startDate, endDate) {
-    setQbReportLoading(true);
-    setQbReportError(null);
-    setQbReport(null);
-    try {
-      const data = await callQbSync("getReport", { reportName, startDate, endDate });
-      if (data?.error) throw new Error(data.error);
-      setQbReport(data);
-    } catch (err) {
-      setQbReportError(err.message);
-    } finally {
-      setQbReportLoading(false);
-    }
-  }
-
-  function parseReportRows(rows, depth = 0) {
-    const result = [];
-    for (const row of rows?.Row ?? []) {
-      if (row.type === "Data") {
-        const cols = row.ColData ?? [];
-        const label = cols[0]?.value ?? "";
-        if (!label) continue;
-        result.push({ label, cols: cols.slice(1), depth, type: "data" });
-      } else if (row.type === "Section") {
-        const header = row.Header?.ColData;
-        if (header?.[0]?.value) result.push({ label: header[0].value, cols: header.slice(1), depth, type: "header" });
-        result.push(...parseReportRows(row.Rows, depth + 1));
-        const summary = row.Summary?.ColData;
-        if (summary?.[0]?.value) result.push({ label: summary[0].value, cols: summary.slice(1), depth, type: "total" });
-      }
-    }
-    return result;
-  }
-
   useEffect(() => {
     async function load() {
       const u = await base44.auth.me();
       setUser(u);
 
-      // Check if QB is connected
-      const connCheck = await callQbSync("checkConnection");
-      const isConnected = connCheck?.connected ?? false;
-      setQbConnected(isConnected);
+      // QB connection check — drives the visibility of the QB Reports card,
+      // nothing else.
+      callQbSync("checkConnection")
+        .then((c) => setQbConnected(c?.connected ?? false))
+        .catch(() => setQbConnected(false));
 
-      if (isConnected) {
-        const { dateFrom, dateTo } = getDateRangeValues("thisMonth");
-        const [qbData, plData] = await Promise.all([
-          callQbSync("getPerformanceData", { dateFrom, dateTo }),
-          callQbSync("getReport", { reportName: "ProfitAndLoss", startDate: dateFrom, endDate: dateTo }),
-        ]);
-        if (qbData?.error) {
-          console.error("getPerformanceData error:", qbData.error);
-        }
-        setRecords(qbData?.revenue ?? []);
-        setExpenses(qbData?.expenses ?? []);
-        if (plData && !plData.error) {
-          setQbPLTotals(extractPLTotals(plData));
-        }
-      } else {
-        const [perfData, expData] = await Promise.all([
-          base44.entities.ShopPerformance.filter({ shop_owner: u.email }, "-date", 1000),
-          base44.entities.Expense.filter({ shop_owner: u.email }, "-payment_date", 1000),
-        ]);
-        setRecords(perfData);
-        setExpenses(expData);
-      }
-
-      // Load full live entities for native stats. Done in parallel; failures
-      // for any one entity leave that array empty without breaking the others.
+      // Operational data — always from local DB. Same source whether QB is
+      // connected or not. Failures on any one entity leave that list empty
+      // without breaking the others.
       try {
-        const [orders, quotes, invoices, customers] = await Promise.all([
+        const [perfData, expData, orders, quotes, invoices, customers] = await Promise.all([
+          base44.entities.ShopPerformance.filter({ shop_owner: u.email }, "-date", 1000).catch(() => []),
+          base44.entities.Expense.filter({ shop_owner: u.email }, "-payment_date", 1000).catch(() => []),
           base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
           base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
           base44.entities.Invoice.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
           base44.entities.Customer.filter({ shop_owner: u.email }, "-created_date", 2000).catch(() => []),
         ]);
+        setRecords(perfData);
+        setExpenses(expData);
         setAllOrders(orders);
         setAllQuotes(quotes);
         setAllInvoices(invoices);
@@ -171,50 +101,6 @@ export default function Performance() {
     }
     load();
   }, []);
-
-  // QB P&L totals for stat cards (single source of truth)
-  const [qbPLTotals, setQbPLTotals] = useState(null);
-
-  // Refetch QB data when date filters change
-  useEffect(() => {
-    if (!qbConnected) return;
-    const from = filters.dateFrom || getDateRangeValues(filters.dateRange).dateFrom;
-    const to = filters.dateTo || getDateRangeValues(filters.dateRange).dateTo;
-    if (!from || !to) return;
-    let cancelled = false;
-    (async () => {
-      const [qbData, plData] = await Promise.all([
-        callQbSync("getPerformanceData", { dateFrom: from, dateTo: to }),
-        callQbSync("getReport", { reportName: "ProfitAndLoss", startDate: from, endDate: to }),
-      ]);
-      if (cancelled) return;
-      if (!qbData?.error) {
-        setRecords(qbData?.revenue ?? []);
-        setExpenses(qbData?.expenses ?? []);
-      }
-      // Extract Total Income and Total Expenses from P&L report
-      if (plData && !plData.error) {
-        const totals = extractPLTotals(plData);
-        setQbPLTotals(totals);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [filters.dateRange, filters.dateFrom, filters.dateTo, qbConnected]);
-
-  function extractPLTotals(report) {
-    let totalIncome = 0, totalExpenses = 0, netIncome = 0;
-    const rows = report?.Rows?.Row ?? [];
-    for (const row of rows) {
-      const summary = row.Summary?.ColData;
-      const header = row.Header?.ColData;
-      const label = (summary?.[0]?.value || header?.[0]?.value || "").toLowerCase();
-      const value = Number(summary?.[1]?.value || 0);
-      if (label.includes("total income")) totalIncome = value;
-      else if (label.includes("total expenses")) totalExpenses = value;
-      else if (label.includes("net income") || label.includes("net operating income")) netIncome = value;
-    }
-    return { totalIncome, totalExpenses, netIncome };
-  }
 
   // ── Date filtering ──
   const filteredRecords = useMemo(() => {
@@ -245,11 +131,9 @@ export default function Performance() {
   }, [expenses, filters]);
 
   // ── KPIs ──
-  const localRevenue = useMemo(() => filteredRecords.reduce((s, r) => s + (r.total || 0), 0), [filteredRecords]);
-  const localExpenses = useMemo(() => filteredExpenses.reduce((s, e) => s + (e.total || 0), 0), [filteredExpenses]);
-  const totalRevenue = qbPLTotals ? qbPLTotals.totalIncome : localRevenue;
-  const totalExpenses = qbPLTotals ? qbPLTotals.totalExpenses : localExpenses;
-  const profit = qbPLTotals ? qbPLTotals.netIncome : (totalRevenue - totalExpenses);
+  const totalRevenue = useMemo(() => filteredRecords.reduce((s, r) => s + (r.total || 0), 0), [filteredRecords]);
+  const totalExpenses = useMemo(() => filteredExpenses.reduce((s, e) => s + (e.total || 0), 0), [filteredExpenses]);
+  const profit = totalRevenue - totalExpenses;
   const profitMargin = totalRevenue ? ((profit / totalRevenue) * 100).toFixed(1) : 0;
   
   const totalOrders = filteredRecords.length;
@@ -467,105 +351,32 @@ export default function Performance() {
         </div>
       )}
 
-      {/* QuickBooks Reports */}
+      {/* QuickBooks Reports — deep-link card. We don't re-render QB reports
+          in-app anymore; we link out so shop owners see the source of truth
+          (with their own date pickers, drill-downs, etc.). */}
       {qbConnected && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6 space-y-5">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6 space-y-4">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-indigo-600" />
             <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">QuickBooks Reports</h3>
           </div>
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="flex-1 min-w-48">
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Report</label>
-              <select
-                value={selectedReport}
-                onChange={(e) => setSelectedReport(e.target.value)}
-                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+          <p className="text-sm text-slate-500 -mt-2">
+            Open accounting reports in QuickBooks for full date controls and drill-down.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {QB_REPORTS.map((r) => (
+              <a
+                key={r.key}
+                href={qbReportUrl(r.key)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 hover:border-indigo-300 hover:bg-indigo-50 dark:hover:bg-slate-800 transition"
               >
-                {QB_REPORTS.map((r) => (
-                  <option key={r.id} value={r.id}>{r.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">From</label>
-              <input type="date" value={reportStartDate} onChange={(e) => setReportStartDate(e.target.value)}
-                className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">To</label>
-              <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)}
-                className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-            </div>
-            <button
-              onClick={() => fetchQbReport(selectedReport, reportStartDate, reportEndDate)}
-              disabled={qbReportLoading}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
-            >
-              <RefreshCw className={`w-4 h-4 ${qbReportLoading ? "animate-spin" : ""}`} />
-              {qbReportLoading ? "Loading…" : "Run Report"}
-            </button>
-          </div>
-
-          {qbReportError && (
-            <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-              Reports are not yet available — Intuit typically enables full API access within a few days of app approval.
-              <a href="https://app.qbo.intuit.com/app/reports" target="_blank" rel="noopener noreferrer"
-                className="ml-2 inline-flex items-center gap-1 font-semibold text-indigo-600 hover:underline">
-                Open reports in QuickBooks <ExternalLink className="w-3 h-3" />
+                <span className="truncate">{r.label}</span>
+                <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               </a>
-            </div>
-          )}
-
-          {qbReport && (() => {
-            const header = qbReport.Header ?? {};
-            const columns = qbReport.Columns?.Column ?? [];
-            const rows = parseReportRows(qbReport.Rows);
-            const summary = qbReport.Summary?.ColData ?? [];
-            return (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">{header.ReportName}</div>
-                    {header.StartPeriod && <div className="text-xs text-slate-400">{header.StartPeriod} — {header.EndPeriod}</div>}
-                  </div>
-                  <a href="https://app.qbo.intuit.com/app/reports" target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
-                    <ExternalLink className="w-3.5 h-3.5" /> Open in QuickBooks
-                  </a>
-                </div>
-                <div className="space-y-0.5 max-h-[500px] overflow-y-auto">
-                  {rows.map((row, i) => (
-                    <div key={i}
-                      className={`grid items-center py-1.5 text-sm rounded-lg px-2 ${
-                        row.type === "header" ? "font-bold text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 mt-2"
-                        : row.type === "total" ? "font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 mt-1"
-                        : "text-slate-600 hover:bg-slate-50 dark:bg-slate-800"}`}
-                      style={{ gridTemplateColumns: `1fr ${row.cols.map(() => "120px").join(" ")}`, paddingLeft: `${(row.depth * 16) + 8}px` }}
-                    >
-                      <span className="truncate">{row.label}</span>
-                      {row.cols.map((col, ci) => (
-                        <span key={ci} className="text-right font-mono tabular-nums">
-                          {col.value && !isNaN(parseFloat(col.value)) ? fmtMoney(parseFloat(col.value)) : col.value ?? ""}
-                        </span>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-                {summary.length > 0 && summary[0]?.value && (
-                  <div className="grid items-center py-2.5 px-3 bg-indigo-50 border border-indigo-100 rounded-xl font-bold text-indigo-900 text-sm"
-                    style={{ gridTemplateColumns: `1fr ${summary.slice(1).map(() => "120px").join(" ")}` }}>
-                    <span>{summary[0].value}</span>
-                    {summary.slice(1).map((col, ci) => (
-                      <span key={ci} className="text-right font-mono tabular-nums">
-                        {col.value && !isNaN(parseFloat(col.value)) ? fmtMoney(parseFloat(col.value)) : col.value ?? ""}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+            ))}
+          </div>
         </div>
       )}
 
