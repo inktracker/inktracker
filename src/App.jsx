@@ -343,6 +343,23 @@ function PublicLandingPage() {
               <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
             </div>
 
+            {/* Brand: logo + wordmark. The logo sits inside an expanding,
+                fading indigo ring (animate-ping) so the drop has a subtle
+                heartbeat — same effect the demo banner lockup used. */}
+            <div className="flex items-center justify-center gap-4 mb-10">
+              <span className="relative inline-flex w-14 h-14">
+                <span className="absolute inset-0 rounded-2xl bg-indigo-400/40 animate-ping" />
+                <img
+                  src={INKTRACKER_LOGO}
+                  alt="InkTracker"
+                  className="relative w-14 h-14 rounded-2xl"
+                />
+              </span>
+              <span className="text-4xl md:text-5xl font-extrabold tracking-tight">
+                InkTracker
+              </span>
+            </div>
+
             <TypewriterHeadline />
 
             <p className="text-sm md:text-base text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
