@@ -196,17 +196,54 @@ function PublicLandingPage() {
             </div>
             <div className="grid md:grid-cols-3 gap-5">
               {[
-                { title: "Quotes & Orders", desc: "Build quotes with live garment pricing from S&S and AS Colour. Convert to orders with one click.", color: "from-indigo-500/20 to-indigo-500/5" },
-                { title: "Production Tracking", desc: "Visual pipeline from art approval to shipping. Your team updates progress from any device.", color: "from-violet-500/20 to-violet-500/5" },
+                // Top 3 differentiated features get a screenshot slot above
+                // the heading. The other 6 stay text-only — text is the right
+                // call for table-stakes capabilities.
+                {
+                  title: "Quotes & Orders",
+                  desc: "Build quotes with live garment pricing from S&S and AS Colour. Convert to orders with one click.",
+                  color: "from-indigo-500/20 to-indigo-500/5",
+                  // TODO: Screenshot of a quote being built with live garment
+                  // pricing (S&S/AS Colour panel + size grid visible). 16:9,
+                  // 2x for retina. Drop into /public/landing/feature-quotes.png.
+                  screenshotSlot: true,
+                },
+                {
+                  title: "Production Tracking",
+                  desc: "Visual pipeline from art approval to shipping. Your team updates progress from any device.",
+                  color: "from-violet-500/20 to-violet-500/5",
+                  // TODO: Screenshot of the production pipeline view (kanban
+                  // or list with order cards in different statuses). 16:9, 2x.
+                  // Drop into /public/landing/feature-production.png.
+                  screenshotSlot: true,
+                },
                 { title: "Invoicing & Payments", desc: "Generate invoices, sync to QuickBooks, and send payment links directly to customers.", color: "from-emerald-500/20 to-emerald-500/5" },
                 { title: "Customer Management", desc: "Track customer history, artwork files, tax status, and payment terms. Auto-merge duplicates.", color: "from-blue-500/20 to-blue-500/5" },
                 { title: "Inventory & Restock", desc: "Shopify inventory sync. Order blanks from S&S Activewear and AS Colour with live pricing.", color: "from-amber-500/20 to-amber-500/5" },
                 { title: "Quote Wizard", desc: "Embed a quote request form on your website. Customers build orders 24/7 and you get notified.", color: "from-rose-500/20 to-rose-500/5" },
-                { title: "QuickBooks Sync", desc: "Two-way sync for invoices, expenses, and customers. Pull live P&L, balance sheet, and cash flow.", color: "from-teal-500/20 to-teal-500/5" },
+                {
+                  title: "QuickBooks Sync",
+                  desc: "Two-way sync for invoices, expenses, and customers. Pull live P&L, balance sheet, and cash flow.",
+                  color: "from-teal-500/20 to-teal-500/5",
+                  // TODO: Screenshot of the two-way sync UI (QB connection
+                  // status + recent sync activity, or an invoice with the
+                  // "Synced to QuickBooks" indicator). 16:9, 2x. Drop into
+                  // /public/landing/feature-qb-sync.png.
+                  screenshotSlot: true,
+                },
                 { title: "Shop Floor", desc: "Tablet-ready view for employees. Job tickets, checklists, and real-time production updates.", color: "from-orange-500/20 to-orange-500/5" },
                 { title: "Mockup Designer", desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.", color: "from-purple-500/20 to-purple-500/5" },
               ].map(f => (
                 <div key={f.title} className={`bg-gradient-to-b ${f.color} border border-white/10 rounded-2xl p-6 hover:border-white/20 transition`}>
+                  {f.screenshotSlot && (
+                    <div
+                      className="w-full bg-slate-800/60 border border-white/10 rounded-xl mb-4 flex items-center justify-center text-slate-500 text-xs font-medium"
+                      style={{ aspectRatio: "16 / 9" }}
+                      aria-label={`${f.title} screenshot placeholder`}
+                    >
+                      Screenshot — to be supplied
+                    </div>
+                  )}
                   <h3 className="text-base font-bold text-white mb-2">{f.title}</h3>
                   <p className="text-sm text-slate-400 leading-relaxed">{f.desc}</p>
                 </div>
