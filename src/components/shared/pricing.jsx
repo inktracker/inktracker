@@ -67,7 +67,6 @@ export function loadShopPricingConfig(config) {
 
 export function getShopPricingConfig() { return _pc; }
 
-export function getOversizeUpcharge() { return _pc?.oversizeUpcharge ?? 2; }
 
 export function getTier(qty) {
   const tiers = _pc?.tiers || [25, 50, 100, 200];
@@ -344,6 +343,10 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   // Build per-piece price for each size and compute garment cost total
   const sizeBreakdown = {}; // { size: { qty, garmentPpp, totalPpp } }
   let gCost = 0;
+  // Count of pieces in big sizes (2XL+) — used as a denominator for the
+  // size-averaged display prices below. NOT a surcharge anymore — the
+  // 2XL upcharge was removed; per-size cost comes straight from the
+  // supplier API.
   const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
 
   Object.entries(li.sizes || {}).forEach(([sz, count]) => {
@@ -394,7 +397,6 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     printCost: roundedPrintCost,
     gCost: Math.round(gCost * 100) / 100,
     extraCost,
-    oversizeCost: 0, // no longer a separate surcharge — baked into per-size garment cost
     baseSubtotal: Math.round(baseSubtotal * 100) / 100,
     rushFee,
     lineTotal,

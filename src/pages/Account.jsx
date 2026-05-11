@@ -1130,7 +1130,6 @@ function PricingConfigSection({ user }) {
       { above: 0, markup: 1.4 },
     ],
     extras: { colorMatch: 1.0, difficultPrint: 0.5, waterbased: 1.0, tags: 1.5 },
-    oversizeUpcharge: 2.0,
     rushRate: 0.20,
     // Embroidery pricing: stitch count tiers × quantity tiers
     embroidery: {
@@ -1479,15 +1478,6 @@ function PricingConfigSection({ user }) {
 
       {/* Other Rates */}
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="text-[10px] text-slate-400 block mb-1">2XL+ Upcharge (per piece)</label>
-          <div className="relative">
-            <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-            <input type="number" step="0.01" value={config.oversizeUpcharge}
-              onChange={e => setConfig(prev => ({ ...prev, oversizeUpcharge: parseFloat(e.target.value) || 0 }))}
-              className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
-          </div>
-        </div>
         <div>
           <label className="text-[10px] text-slate-400 block mb-1">Rush Fee (%)</label>
           <div className="relative">

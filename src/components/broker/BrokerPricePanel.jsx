@@ -154,7 +154,6 @@ export default function BrokerPricePanel({
     );
   }
 
-  const twoXLCharge = brokerRate.oversizeCost;
 
   const brokerAvgPpp = qty > 0 ? brokerRate.lineTotal / qty : 0;
   const brokerTotal = brokerRate.lineTotal;
@@ -238,13 +237,6 @@ export default function BrokerPricePanel({
           <div className="flex justify-between text-xs">
             <span className="text-slate-400">Add-ons</span>
             <span className="text-white font-semibold">{fmtMoney(brokerRate.extraCost)}</span>
-          </div>
-        )}
-
-        {twoXLCharge > 0 && (
-          <div className="flex justify-between text-xs">
-            <span className="text-amber-400">2XL+ Surcharge</span>
-            <span className="text-amber-400 font-semibold">{fmtMoney(twoXLCharge)}</span>
           </div>
         )}
 
