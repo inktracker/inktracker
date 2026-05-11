@@ -53,9 +53,173 @@ const LayoutWrapper = ({ children, currentPageName }) =>
     <>{children}</>
   );
 
+// Feature catalog with optional media for the preview modal.
+//
+// Each card opens a modal showing either a static screenshot (media.type
+// === "image") or a short looping demo video (media.type === "video").
+// When media is null the modal renders a placeholder — TODO comments below
+// note the recommended asset for each feature and the expected path under
+// /public/landing/. Either asset type is acceptable per card; videos should
+// be 6–10 second muted loops, MP4 + WebM, ~16:9, kept small (< 2 MB).
+const FEATURE_CARDS = [
+  {
+    title: "Quotes & Orders",
+    desc: "Build quotes with live garment pricing from S&S and AS Colour. Convert to orders with one click.",
+    color: "from-indigo-500/20 to-indigo-500/5",
+    // TODO: Quote builder with S&S/AS Colour pricing panel + size grid.
+    // Screenshot path: /public/landing/feature-quotes.png
+    // Demo path:       /public/landing/feature-quotes.mp4
+    media: null,
+  },
+  {
+    title: "Production Tracking",
+    desc: "Visual pipeline from art approval to shipping. Your team updates progress from any device.",
+    color: "from-violet-500/20 to-violet-500/5",
+    // TODO: Production kanban with order cards moving through statuses.
+    // Demo recommended (short drag-between-columns loop).
+    // Screenshot path: /public/landing/feature-production.png
+    // Demo path:       /public/landing/feature-production.mp4
+    media: null,
+  },
+  {
+    title: "Invoicing & Payments",
+    desc: "Generate invoices, sync to QuickBooks, and send payment links directly to customers.",
+    color: "from-emerald-500/20 to-emerald-500/5",
+    // TODO: Invoice detail view with "Send to Customer" + Stripe payment link.
+    // Screenshot path: /public/landing/feature-invoicing.png
+    media: null,
+  },
+  {
+    title: "Customer Management",
+    desc: "Track customer history, artwork files, tax status, and payment terms. Auto-merge duplicates.",
+    color: "from-blue-500/20 to-blue-500/5",
+    // TODO: Customer detail panel with order history + tax-exempt flag visible.
+    // Screenshot path: /public/landing/feature-customers.png
+    media: null,
+  },
+  {
+    title: "Inventory & Restock",
+    desc: "Shopify inventory sync. Order blanks from S&S Activewear and AS Colour with live pricing.",
+    color: "from-amber-500/20 to-amber-500/5",
+    // TODO: Inventory page with low-stock badges + restock CTA.
+    // Screenshot path: /public/landing/feature-inventory.png
+    media: null,
+  },
+  {
+    title: "Quote Wizard",
+    desc: "Embed a quote request form on your website. Customers build orders 24/7 and you get notified.",
+    color: "from-rose-500/20 to-rose-500/5",
+    // TODO: The customer-facing wizard mid-flow (color/qty/imprint selection).
+    // Demo recommended (short scroll-through loop).
+    // Screenshot path: /public/landing/feature-wizard.png
+    // Demo path:       /public/landing/feature-wizard.mp4
+    media: null,
+  },
+  {
+    title: "QuickBooks Sync",
+    desc: "Two-way sync for invoices, expenses, and customers. Pull live P&L, balance sheet, and cash flow.",
+    color: "from-teal-500/20 to-teal-500/5",
+    // TODO: Account page with QB connection panel + "Synced" indicator on an invoice.
+    // Screenshot path: /public/landing/feature-qb-sync.png
+    media: null,
+  },
+  {
+    title: "Shop Floor",
+    desc: "Tablet-ready view for employees. Job tickets, checklists, and real-time production updates.",
+    color: "from-orange-500/20 to-orange-500/5",
+    // TODO: Shop Floor view on a tablet (or 4:3 framing). Show job ticket + checklist.
+    // Screenshot path: /public/landing/feature-shopfloor.png
+    media: null,
+  },
+  {
+    title: "Mockup Designer",
+    desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.",
+    color: "from-purple-500/20 to-purple-500/5",
+    // TODO: Mockup canvas with artwork placed on a tee template.
+    // Screenshot path: /public/landing/feature-mockups.png
+    media: null,
+  },
+];
+
+// Modal for previewing a feature. Shows feature.media (image or video) or a
+// placeholder if media isn't supplied yet. Closes on backdrop click, X
+// button, or Escape. Locks body scroll while open.
+function FeaturePreviewModal({ feature, onClose }) {
+  useEffect(() => {
+    if (!feature) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [feature, onClose]);
+
+  if (!feature) return null;
+  const media = feature.media;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 animate-in fade-in"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${feature.title} preview`}
+    >
+      <div
+        className="bg-slate-900 border border-white/10 rounded-2xl max-w-5xl w-full overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+          <div>
+            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Preview</div>
+            <h3 className="text-lg font-bold text-white">{feature.title}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close preview"
+            className="text-slate-400 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 transition"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="bg-slate-800/60 flex items-center justify-center" style={{ aspectRatio: "16 / 9" }}>
+          {media?.type === "image" && (
+            <img src={media.src} alt={media.alt || `${feature.title} screenshot`} className="w-full h-full object-cover" />
+          )}
+          {media?.type === "video" && (
+            <video
+              src={media.src}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="w-full h-full object-cover"
+              aria-label={`${feature.title} demo`}
+            />
+          )}
+          {!media && (
+            <div className="text-slate-500 text-sm font-medium">
+              Preview — to be supplied
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-white/10">
+          <p className="text-sm text-slate-300 leading-relaxed">{feature.desc}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
+  const [previewFeature, setPreviewFeature] = useState(null);
 
   function openSignup() { setLoginMode("signup"); setShowLogin(true); }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
@@ -199,59 +363,22 @@ function PublicLandingPage() {
               <h2 className="text-3xl font-extrabold">Everything your shop needs</h2>
               <p className="text-slate-400 mt-3 max-w-lg mx-auto">No tiers, no feature locks. Every tool included from day one.</p>
             </div>
+            <p className="text-center text-xs text-slate-500 mb-8">Click any feature to preview it.</p>
             <div className="grid md:grid-cols-3 gap-5">
-              {[
-                // Top 3 differentiated features get a screenshot slot above
-                // the heading. The other 6 stay text-only — text is the right
-                // call for table-stakes capabilities.
-                {
-                  title: "Quotes & Orders",
-                  desc: "Build quotes with live garment pricing from S&S and AS Colour. Convert to orders with one click.",
-                  color: "from-indigo-500/20 to-indigo-500/5",
-                  // TODO: Screenshot of a quote being built with live garment
-                  // pricing (S&S/AS Colour panel + size grid visible). 16:9,
-                  // 2x for retina. Drop into /public/landing/feature-quotes.png.
-                  screenshotSlot: true,
-                },
-                {
-                  title: "Production Tracking",
-                  desc: "Visual pipeline from art approval to shipping. Your team updates progress from any device.",
-                  color: "from-violet-500/20 to-violet-500/5",
-                  // TODO: Screenshot of the production pipeline view (kanban
-                  // or list with order cards in different statuses). 16:9, 2x.
-                  // Drop into /public/landing/feature-production.png.
-                  screenshotSlot: true,
-                },
-                { title: "Invoicing & Payments", desc: "Generate invoices, sync to QuickBooks, and send payment links directly to customers.", color: "from-emerald-500/20 to-emerald-500/5" },
-                { title: "Customer Management", desc: "Track customer history, artwork files, tax status, and payment terms. Auto-merge duplicates.", color: "from-blue-500/20 to-blue-500/5" },
-                { title: "Inventory & Restock", desc: "Shopify inventory sync. Order blanks from S&S Activewear and AS Colour with live pricing.", color: "from-amber-500/20 to-amber-500/5" },
-                { title: "Quote Wizard", desc: "Embed a quote request form on your website. Customers build orders 24/7 and you get notified.", color: "from-rose-500/20 to-rose-500/5" },
-                {
-                  title: "QuickBooks Sync",
-                  desc: "Two-way sync for invoices, expenses, and customers. Pull live P&L, balance sheet, and cash flow.",
-                  color: "from-teal-500/20 to-teal-500/5",
-                  // TODO: Screenshot of the two-way sync UI (QB connection
-                  // status + recent sync activity, or an invoice with the
-                  // "Synced to QuickBooks" indicator). 16:9, 2x. Drop into
-                  // /public/landing/feature-qb-sync.png.
-                  screenshotSlot: true,
-                },
-                { title: "Shop Floor", desc: "Tablet-ready view for employees. Job tickets, checklists, and real-time production updates.", color: "from-orange-500/20 to-orange-500/5" },
-                { title: "Mockup Designer", desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.", color: "from-purple-500/20 to-purple-500/5" },
-              ].map(f => (
-                <div key={f.title} className={`bg-gradient-to-b ${f.color} border border-white/10 rounded-2xl p-6 hover:border-white/20 transition`}>
-                  {f.screenshotSlot && (
-                    <div
-                      className="w-full bg-slate-800/60 border border-white/10 rounded-xl mb-4 flex items-center justify-center text-slate-500 text-xs font-medium"
-                      style={{ aspectRatio: "16 / 9" }}
-                      aria-label={`${f.title} screenshot placeholder`}
-                    >
-                      Screenshot — to be supplied
-                    </div>
-                  )}
-                  <h3 className="text-base font-bold text-white mb-2">{f.title}</h3>
-                  <p className="text-sm text-slate-400 leading-relaxed">{f.desc}</p>
-                </div>
+              {FEATURE_CARDS.map(f => (
+                <button
+                  key={f.title}
+                  type="button"
+                  onClick={() => setPreviewFeature(f)}
+                  className={`group relative text-left bg-gradient-to-b ${f.color} border border-white/10 rounded-2xl p-6 hover:border-white/30 hover:-translate-y-0.5 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400`}
+                  aria-label={`Preview ${f.title}`}
+                >
+                  <h3 className="text-base font-bold text-white mb-2 pr-8">{f.title}</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed mb-3">{f.desc}</p>
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-300 group-hover:text-indigo-200 transition">
+                    Preview <span aria-hidden="true">→</span>
+                  </span>
+                </button>
               ))}
             </div>
           </div>
@@ -510,6 +637,7 @@ function PublicLandingPage() {
       </div>
 
       <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} defaultMode={loginMode} />
+      <FeaturePreviewModal feature={previewFeature} onClose={() => setPreviewFeature(null)} />
     </>
   );
 }
