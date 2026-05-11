@@ -320,13 +320,19 @@ function PublicLandingPage() {
             </div>
             <div className="bg-gradient-to-b from-indigo-600 to-indigo-700 border-2 border-indigo-400 rounded-2xl p-8 shadow-2xl shadow-indigo-900/40">
               <div className="text-center mb-6">
+                <p className="text-xs font-semibold text-emerald-300 uppercase tracking-widest mb-3">
+                  Founding member pricing — First 100 shops
+                </p>
                 <div className="mb-3">
                   <span className="text-5xl font-extrabold text-white">$99</span>
                   <span className="text-base text-indigo-200">/mo</span>
                 </div>
+                <p className="text-sm text-indigo-100/90 mb-3 max-w-md mx-auto leading-relaxed">
+                  Founding member rate locked for the life of your subscription. Available to the first 100 shops. Standard pricing of $149/month begins thereafter.
+                </p>
                 <p className="text-sm text-indigo-200">14-day free trial · No credit card required</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mb-8 px-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mb-6 px-2">
                 {[
                   "Quotes & orders",
                   "Production tracking",
@@ -346,12 +352,28 @@ function PublicLandingPage() {
                   </div>
                 ))}
               </div>
+              <p className="text-xs text-indigo-100/80 text-center mb-6 max-w-md mx-auto leading-relaxed">
+                Typical shops save 5–10 hours per week on order tracking, payment follow-up, and quote-to-production handoff. Pays for itself in the first week.
+              </p>
               <div className="text-center">
                 <button onClick={openSignup}
                   className="bg-white text-indigo-700 hover:bg-indigo-50 font-bold px-10 py-3.5 rounded-xl text-base transition shadow-lg">
                   Start 14-Day Free Trial
                 </button>
+                <p className="text-xs text-indigo-200 mt-3">
+                  Have a question?{" "}
+                  <a href="mailto:joe@biotamfg.co" className="underline underline-offset-4 hover:text-white transition">
+                    Email joe@biotamfg.co
+                  </a>
+                </p>
               </div>
+            </div>
+
+            {/* Conservation anchor — scrolls to the Conservation Mission section below. */}
+            <div className="text-center mt-6">
+              <a href="#conservation" className="text-sm font-semibold text-emerald-400 hover:text-emerald-300 transition">
+                10% of every subscription funds land conservation. →
+              </a>
             </div>
           </div>
         </section>
