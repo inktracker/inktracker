@@ -411,18 +411,14 @@ function PublicLandingPage() {
         <section className="py-24 px-6 border-t border-white/5">
           <div className="max-w-5xl mx-auto">
             <div className="grid md:grid-cols-2 gap-12 items-center">
-              {/* Photo slot.
-                  TODO: Photo of Joe in the Biota MFG shop. Square or 4:5
-                  aspect ratio. Drop into /public/landing/joe.jpg and swap
-                  the <div> placeholder for an <img> tag. */}
               <div className="order-2 md:order-1">
-                <div
-                  className="w-full max-w-md mx-auto bg-slate-800/60 border border-white/10 rounded-2xl shadow-2xl shadow-black/40 flex items-center justify-center text-slate-500 text-sm font-medium"
+                <img
+                  src="/landing/joe.jpg"
+                  alt="Joe Grennan, founder of InkTracker, at the Biota MFG screen print shop in Reno, Nevada."
+                  className="w-full max-w-md mx-auto rounded-2xl shadow-2xl shadow-black/40 object-cover"
                   style={{ aspectRatio: "4 / 5" }}
-                  aria-label="Founder photo placeholder"
-                >
-                  Photo — to be supplied
-                </div>
+                  loading="lazy"
+                />
               </div>
 
               <div className="order-1 md:order-2">
