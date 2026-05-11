@@ -169,7 +169,10 @@ function PublicLandingPage() {
         {/* Integrations */}
         <section className="py-12 px-6">
           <div className="max-w-3xl mx-auto text-center">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-6">Integrates with the tools you already use</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Integrates with the tools you already use</p>
+            <p className="text-sm text-slate-300 mb-6 leading-relaxed">
+              Live garment pricing from S&amp;S Activewear and AS Colour. Two-way QuickBooks sync. Stripe-powered payments. Shopify inventory in sync.
+            </p>
             <div className="flex items-center justify-center gap-8 flex-wrap">
               {[
                 { name: "QuickBooks", color: "#2CA01C" },
