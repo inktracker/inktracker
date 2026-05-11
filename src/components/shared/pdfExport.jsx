@@ -1060,44 +1060,37 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
 
   doc.setFont(undefined, 'normal');
   const items = Array.isArray(invoice.line_items) ? invoice.line_items : [];
-  let lineSubtotal = 0;
 
-  // Rate/amount precedence:
-  //   1. clientPpp override                     (per-line $/ea entered manually)
-  //   2. saved _ppp / _lineTotal                (stamped at quote-save time)
-  //   3. calcLinkedLinePrice fallback           (legacy invoices / rebuilds)
-  //   4. zero — and we then skip the row to keep "Rush Charge $0 / Discount $0"
-  //      placeholders out of the customer-facing PDF.
-  items.forEach((li) => {
+  // Rate/amount come straight from what was stamped at quote-save time.
+  // No new math here — if a line wasn't stamped, we render "—" rather than
+  // fabricate a number that won't match what the customer was quoted.
+  function lineRateAmount(li) {
     const qty = getQty(li) || Number(li?.qty) || 0;
     const override = Number(li?.clientPpp);
-    const useOverride = Number.isFinite(override) && override > 0 && qty > 0;
-
-    let rate = 0;
-    let amount = 0;
-    if (useOverride) {
-      rate = override;
-      amount = override * qty;
-    } else if (Number.isFinite(li?._ppp) || Number.isFinite(li?._lineTotal)) {
-      rate = Number.isFinite(li._ppp) ? li._ppp : 0;
-      amount = Number.isFinite(li._lineTotal) ? li._lineTotal : rate * qty;
-    } else {
-      const r = getGroupPriceForPdf(
-        li,
-        invoice.rush_rate || 0,
-        invoice.extras || {},
-        false,
-        items,
-      );
-      if (r) {
-        rate = r.ppp || 0;
-        amount = (r.sub != null ? r.sub : rate * qty);
-      }
+    if (Number.isFinite(override) && override > 0 && qty > 0) {
+      return { qty, rate: override, amount: override * qty, hasPrice: true };
     }
+    if (Number.isFinite(li?._lineTotal)) {
+      const rate = Number.isFinite(li._ppp)
+        ? li._ppp
+        : (qty > 0 ? li._lineTotal / qty : 0);
+      return { qty, rate, amount: li._lineTotal, hasPrice: true };
+    }
+    if (Number.isFinite(li?._ppp) && qty > 0) {
+      return { qty, rate: li._ppp, amount: li._ppp * qty, hasPrice: true };
+    }
+    return { qty, rate: 0, amount: 0, hasPrice: false };
+  }
 
-    // Skip silently zero rows — these are usually empty "Rush Charge" /
-    // "Discount" placeholders that should not appear on a customer invoice.
-    if (!(amount > 0)) return;
+  let lineSubtotal = 0;
+
+  items.forEach((li) => {
+    const { qty, rate, amount, hasPrice } = lineRateAmount(li);
+
+    // Skip obvious empty placeholder rows (legacy "Rush Charge" / "Discount"
+    // entries with no qty and no amount). Real product lines always render,
+    // even when the stamped price is missing — we just show "—".
+    if (qty === 0 && !hasPrice) return;
 
     if (yPos > pageHeight - 60) { doc.addPage(); yPos = margin; }
     lineSubtotal += amount;
@@ -1127,8 +1120,8 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     doc.setFontSize(9.5);
     doc.setTextColor(30, 30, 40);
     doc.text(qty ? String(qty) : '—', colQtyX, numbersY, { align: 'right' });
-    doc.text(qty ? fmtMoney(rate) : '—', colRateX, numbersY, { align: 'right' });
-    doc.text(fmtMoney(amount), colAmtX, numbersY, { align: 'right' });
+    doc.text(hasPrice ? fmtMoney(rate)   : '—', colRateX, numbersY, { align: 'right' });
+    doc.text(hasPrice ? fmtMoney(amount) : '—', colAmtX,  numbersY, { align: 'right' });
 
     yPos += 4; // breathing room between rows
   });
