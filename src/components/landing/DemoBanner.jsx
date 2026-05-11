@@ -1861,7 +1861,7 @@ function SceneLockup() {
         letterSpacing: '0.01em',
         whiteSpace: 'nowrap',
       }}>
-        $99/mo after trial {'\u00b7'} Cancel anytime
+        Founding member pricing {'\u2014'} $99/mo after trial {'\u00b7'} Cancel anytime
       </div>
     </div>
   );
