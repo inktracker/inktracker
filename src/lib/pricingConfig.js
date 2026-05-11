@@ -25,8 +25,6 @@ const DEFAULTS = {
   },
   // Rush fee percentage
   rushRate: 0.20,
-  // 2XL+ upcharge per piece
-  oversizeUpcharge: 2.0,
   // Broker markup share (portion of admin markup given to broker)
   brokerMarkupShare: 0.2,
 };
@@ -43,10 +41,6 @@ export function getShopPricingConfig() {
 
 export function getGarmentMarkupConfig() {
   return _shopConfig.garmentMarkup || DEFAULTS.garmentMarkup;
-}
-
-export function getOversizeUpcharge() {
-  return _shopConfig.oversizeUpcharge ?? DEFAULTS.oversizeUpcharge;
 }
 
 export function getRushRate() {

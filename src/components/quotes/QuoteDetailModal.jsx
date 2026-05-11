@@ -38,7 +38,7 @@ function getLinePrice(li, quote) {
 
   // Use saved pricing if available (stamped at save time)
   if (li._ppp != null && li._lineTotal != null) {
-    return { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0, qty, baseSubtotal: li._lineTotal, garment: 0, imprint: 0, gCost: 0, printCost: 0, extraCost: 0, oversizeCost: 0, tier: getTier(qty) };
+    return { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0, qty, baseSubtotal: li._lineTotal, garment: 0, imprint: 0, gCost: 0, printCost: 0, extraCost: 0, tier: getTier(qty) };
   }
 
   // Legacy fallback — recalculate for old quotes without stamped pricing

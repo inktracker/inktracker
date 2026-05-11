@@ -27,7 +27,7 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
 
   const suggestedPpp = r.ppp;
   const avgPpp = hasOverride ? pppOverride : suggestedPpp;
-  const displayTotal = hasOverride ? (pppOverride * qty + r.oversizeCost + rushFee) : r.lineTotal;
+  const displayTotal = hasOverride ? (pppOverride * qty + rushFee) : r.lineTotal;
 
   return (
     <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
@@ -76,13 +76,6 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
           <div className="flex justify-between text-xs">
             <span className="text-slate-400">Add-ons</span>
             <span className="text-white font-semibold">{fmtMoney(r.extraCost)}</span>
-          </div>
-        )}
-
-        {r.oversizeCost > 0 && (
-          <div className="flex justify-between text-xs">
-            <span className="text-amber-400">2XL+ Surcharge</span>
-            <span className="text-amber-400 font-semibold">{fmtMoney(r.oversizeCost)}</span>
           </div>
         )}
 
