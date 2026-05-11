@@ -70,7 +70,7 @@ const FEATURE_CARDS = [
     // customer select, garment style autofill, size breakdown, print
     // location, live pricing count-up, and save → new row in the list.
     // Built from the design handoff at public/landing/quote-demo/.
-    media: { type: "iframe", src: "/landing/quote-demo/" },
+    media: { type: "iframe", src: "/landing/quote-demo/index.html" },
   },
   {
     title: "Production Tracking",
