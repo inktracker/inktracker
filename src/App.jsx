@@ -118,7 +118,7 @@ const FEATURE_CARDS = [
   },
   {
     title: "Broker Integration",
-    desc: "Resellers and decorators bring you their clients' orders through their own portal. Broker pricing, per-broker assignments, and commission tracking are built in — they handle the customers, you handle production.",
+    desc: "Resellers submit their clients' orders through their own portal. Broker pricing and commissions tracked automatically.",
     color: "from-teal-500/20 to-teal-500/5",
     // TODO: Broker Dashboard view — assigned shops list, recent submitted
     // orders, commission summary at the top. Also worth: a side-by-side
