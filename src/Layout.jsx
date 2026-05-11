@@ -2,7 +2,7 @@ import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
-import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, CreditCard, ShieldCheck, Menu, X, Palette, Lock, Inbox as InboxIcon } from "lucide-react";
+import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Inbox as InboxIcon } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import { canAccess } from "@/lib/billing";
 
@@ -15,7 +15,6 @@ const ICON_MAP = {
   Customers: Users,
   Inventory: Archive,
   Invoices: Receipt,
-  Expenses: CreditCard,
   Performance: BarChart2,
   Wizard: Wand2,
   Embed: Code2,
@@ -32,7 +31,6 @@ const NAV = [
   { label: "Customers", page: "Customers" },
   { label: "Inventory", page: "Inventory" },
   { label: "Invoices", page: "Invoices" },
-  { label: "Expenses", page: "Expenses" },
   { label: "Performance", page: "Performance", feature: "reports" },
   { label: "Mockups", page: "Mockups", feature: "mockups" },
   { label: "Wizard", page: "Wizard", feature: "wizard" },

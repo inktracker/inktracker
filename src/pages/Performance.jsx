@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../components/shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
-import { TrendingUp, ShoppingBag, Users, DollarSign, TrendingDown, ChevronDown, ChevronUp, FileText, ExternalLink } from "lucide-react";
+import { TrendingUp, ShoppingBag, Users, DollarSign, ChevronDown, ChevronUp, FileText, ExternalLink } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import NativeStatsPanel from "@/components/shared/NativeStatsPanel";
 import { computeNativeStats } from "@/lib/nativeStats";
@@ -31,14 +31,12 @@ function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
 
 export default function Performance() {
   const [records, setRecords] = useState([]);
-  const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [qbConnected, setQbConnected] = useState(false);
   const [user, setUser] = useState(null);
   const [filters, setFilters] = useState(() => ({
     dateRange: "thisMonth",
     ...getDateRangeValues("thisMonth"),
-    categoryFilter: "all",
   }));
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [jobCostOrders, setJobCostOrders] = useState([]);
@@ -80,16 +78,14 @@ export default function Performance() {
       // connected or not. Failures on any one entity leave that list empty
       // without breaking the others.
       try {
-        const [perfData, expData, orders, quotes, invoices, customers] = await Promise.all([
+        const [perfData, orders, quotes, invoices, customers] = await Promise.all([
           base44.entities.ShopPerformance.filter({ shop_owner: u.email }, "-date", 1000).catch(() => []),
-          base44.entities.Expense.filter({ shop_owner: u.email }, "-payment_date", 1000).catch(() => []),
           base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
           base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
           base44.entities.Invoice.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
           base44.entities.Customer.filter({ shop_owner: u.email }, "-created_date", 2000).catch(() => []),
         ]);
         setRecords(perfData);
-        setExpenses(expData);
         setAllOrders(orders);
         setAllQuotes(quotes);
         setAllInvoices(invoices);
@@ -115,45 +111,14 @@ export default function Performance() {
     return filtered;
   }, [records, filters]);
 
-  const filteredExpenses = useMemo(() => {
-    let filtered = expenses;
-    if (filters.dateRange !== "all" || filters.dateFrom || filters.dateTo) {
-      const from = filters.dateFrom || getDateRangeValues(filters.dateRange).dateFrom;
-      const to = filters.dateTo || getDateRangeValues(filters.dateRange).dateTo;
-      if (from && to) {
-        filtered = filtered.filter(e => e.payment_date && e.payment_date >= from && e.payment_date <= to);
-      }
-    }
-    if (filters.categoryFilter !== "all") {
-      filtered = filtered.filter(e => e.line_items?.some(li => li.category_name === filters.categoryFilter));
-    }
-    return filtered;
-  }, [expenses, filters]);
-
   // ── KPIs ──
   const totalRevenue = useMemo(() => filteredRecords.reduce((s, r) => s + (r.total || 0), 0), [filteredRecords]);
-  const totalExpenses = useMemo(() => filteredExpenses.reduce((s, e) => s + (e.total || 0), 0), [filteredExpenses]);
-  const profit = totalRevenue - totalExpenses;
-  const profitMargin = totalRevenue ? ((profit / totalRevenue) * 100).toFixed(1) : 0;
-  
   const totalOrders = filteredRecords.length;
-  const avgOrderValue = totalOrders ? totalRevenue / totalOrders : 0;
 
   const uniqueClients = useMemo(() => {
     const names = new Set(filteredRecords.map(r => r.customer_name).filter(Boolean));
     return names.size;
   }, [filteredRecords]);
-
-  // Get unique expense categories
-  const expenseCategories = useMemo(() => {
-    const cats = new Set();
-    expenses.forEach(e => {
-      e.line_items?.forEach(li => {
-        if (li.category_name) cats.add(li.category_name);
-      });
-    });
-    return Array.from(cats).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [expenses]);
 
   // ── Orders by status ──
   const byStatus = useMemo(() => {
@@ -201,26 +166,11 @@ export default function Performance() {
       orders: allOrders,
       invoices: allInvoices,
       customers: allCustomers,
-      expenses,
       archived: records,
       dateFrom: filters.dateRange === "all" ? null : dateFrom,
       dateTo: filters.dateRange === "all" ? null : dateTo,
     });
-  }, [allQuotes, allOrders, allInvoices, allCustomers, expenses, records, filters.dateRange, filters.dateFrom, filters.dateTo]);
-
-  // ── Expenses by category ──
-  const expensesByCategory = useMemo(() => {
-    const map = {};
-    filteredExpenses.forEach(e => {
-      e.line_items?.forEach(li => {
-        const cat = li.category_name || "Other";
-        map[cat] = (map[cat] || 0) + (li.amount || 0);
-      });
-    });
-    return Object.entries(map)
-      .map(([name, amount]) => ({ name, amount }))
-      .sort((a, b) => b.amount - a.amount);
-  }, [filteredExpenses]);
+  }, [allQuotes, allOrders, allInvoices, allCustomers, records, filters.dateRange, filters.dateFrom, filters.dateTo]);
 
   if (loading) {
     return (
@@ -235,7 +185,7 @@ export default function Performance() {
       <div className="flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Shop Performance</h2>
-          <p className="text-sm text-slate-500 mt-0.5">Revenue, expenses, and profit analysis with filtering.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Operational stats and trends — revenue, conversion, top customers.</p>
         </div>
         <div className={`text-xs font-semibold px-3 py-1.5 rounded-full border ${
           qbConnected
@@ -289,21 +239,6 @@ export default function Performance() {
                 </Select>
               </div>
 
-              <div>
-                <label className="text-xs font-semibold text-slate-600 uppercase tracking-widest mb-1.5 block">Expense Category</label>
-                <Select value={filters.categoryFilter} onValueChange={(val) => setFilters({ ...filters, categoryFilter: val })}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Categories</SelectItem>
-                    {expenseCategories.map(cat => (
-                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="md:col-span-1">
                 <label className="text-xs font-semibold text-slate-600 uppercase tracking-widest mb-1.5 block">Custom Date Range</label>
                 <div className="flex gap-2 text-xs">
@@ -323,9 +258,9 @@ export default function Performance() {
               </div>
             </div>
 
-            {(filters.dateRange !== "all" || filters.categoryFilter !== "all" || filters.dateFrom || filters.dateTo) && (
+            {(filters.dateRange !== "all" || filters.dateFrom || filters.dateTo) && (
               <button
-                onClick={() => setFilters({ dateRange: "all", dateFrom: "", dateTo: "", categoryFilter: "all" })}
+                onClick={() => setFilters({ dateRange: "all", dateFrom: "", dateTo: "" })}
                 className="mt-4 text-xs font-semibold text-indigo-600 hover:text-indigo-700"
               >
                 Clear all filters
@@ -338,18 +273,13 @@ export default function Performance() {
       {/* Native shop stats — always shown, works without QuickBooks */}
       <NativeStatsPanel stats={nativeStats} />
 
-      {/* QB-augmented KPI cards (only meaningful when QB is connected;
-          revenue/expenses/profit will fall back to the archived ShopPerformance
-          + Expense rows otherwise, which under-counts in-progress work). */}
-      {qbConnected && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <StatCard icon={ShoppingBag} label="Total Orders" value={totalOrders} color="indigo" />
-          <StatCard icon={DollarSign} label="Total Revenue (QB)" value={fmtMoney(totalRevenue)} color="emerald" />
-          <StatCard icon={TrendingDown} label="Total Expenses (QB)" value={fmtMoney(totalExpenses)} color="amber" />
-          <StatCard icon={TrendingUp} label="Profit/Loss (QB)" value={fmtMoney(profit)} color={profit >= 0 ? "emerald" : "rose"} sub={`${profitMargin}% margin`} />
-          <StatCard icon={Users} label="Total Clients (period)" value={uniqueClients} color="amber" />
-        </div>
-      )}
+      {/* Operational KPIs from completed orders (ShopPerformance archive). */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard icon={ShoppingBag} label="Total Orders" value={totalOrders} color="indigo" />
+        <StatCard icon={DollarSign} label="Total Revenue" value={fmtMoney(totalRevenue)} color="emerald" />
+        <StatCard icon={Users} label="Total Clients (period)" value={uniqueClients} color="amber" />
+        <StatCard icon={TrendingUp} label="Avg. Order Value" value={fmtMoney(totalOrders ? totalRevenue / totalOrders : 0)} color="indigo" />
+      </div>
 
       {/* QuickBooks Reports — deep-link card. We don't re-render QB reports
           in-app anymore; we link out so shop owners see the source of truth
@@ -400,23 +330,6 @@ export default function Performance() {
                     </div>
                     <span className="text-sm font-bold text-slate-800 dark:text-slate-200 w-5 text-right">{count}</span>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Expenses by Category */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6">
-          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-4">Expenses by Category</h3>
-          {expensesByCategory.length === 0 ? (
-            <div className="text-slate-400 text-sm py-8 text-center">No expenses recorded yet.</div>
-          ) : (
-            <div className="space-y-3">
-              {expensesByCategory.map(({ name, amount }) => (
-                <div key={name} className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-slate-700">{name}</span>
-                  <span className="text-sm font-bold text-slate-800 dark:text-slate-200">{fmtMoney(amount)}</span>
                 </div>
               ))}
             </div>
