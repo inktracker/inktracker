@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef, lazy, Suspense } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/toaster";
@@ -53,21 +53,9 @@ const LayoutWrapper = ({ children, currentPageName }) =>
     <>{children}</>
   );
 
-const DemoBanner = lazy(() => import("./components/landing/DemoBanner"));
-
 function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
-  // Skip the heavy DemoBanner bundle on phone-sized viewports
-  const [isDesktop, setIsDesktop] = useState(
-    () => typeof window !== "undefined" && window.innerWidth >= 768
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const onChange = (e) => setIsDesktop(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
 
   function openSignup() { setLoginMode("signup"); setShowLogin(true); }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
@@ -98,45 +86,66 @@ function PublicLandingPage() {
           </div>
         </nav>
 
-        {/* Hero — static on mobile, animated demo banner on md+ */}
-        {isDesktop && (
-          <section className="pt-[72px]">
-            <Suspense fallback={
-              <div className="w-full" style={{ aspectRatio: "16/9", background: "#0B0B0E" }} />
-            }>
-              <DemoBanner onSignup={openSignup} />
-            </Suspense>
-          </section>
-        )}
+        {/* Hero — unified, responsive. Two-column on desktop (copy + product
+            screenshot), stacked on mobile. */}
+        <section className="pt-32 md:pt-40 pb-16 md:pb-24 px-6">
+          <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-10 md:gap-12 items-center">
+            {/* Left column: copy + CTAs */}
+            <div className="text-center md:text-left max-w-xl mx-auto md:mx-0">
+              <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
+              </div>
 
-        {/* Hero — mobile static */}
-        <section className="pt-32 pb-16 px-6 md:hidden">
-          <div className="max-w-md mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-10">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
-            </div>
-            <div className="flex items-center justify-center gap-3 mb-8">
-              <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-14 h-14 rounded-xl" />
-              <span className="text-5xl font-extrabold tracking-tight">InkTracker</span>
-            </div>
-            <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-slate-300 mb-2">
-              Run your print shop
-            </h1>
-            <h1 className="text-3xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent mb-10">
-              without the chaos.
-            </h1>
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <button onClick={openSignup}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50">
-                Start Free Trial
-              </button>
-              <a href="#features"
-                className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
-                See Features →
+              <h1 className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight text-white mb-3">
+                Stop losing orders in spreadsheets.
+              </h1>
+              <h1 className="text-4xl md:text-5xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent mb-6">
+                Run your shop on one platform.
+              </h1>
+
+              <p className="text-sm text-slate-400 mb-8 max-w-md mx-auto md:mx-0 leading-relaxed">
+                Built for screen print shops running 1–10 presses. Embroidery, DTG, and promo-product decorators welcome.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center md:justify-start justify-center gap-3 mb-5">
+                <button onClick={openSignup}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50 w-full sm:w-auto">
+                  Start Free Trial
+                </button>
+                <a href="#features"
+                  className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
+                  See Features →
+                </a>
+              </div>
+
+              <p className="text-xs text-slate-500 mb-3">
+                Founding member pricing — $99/mo after trial · Cancel anytime
+              </p>
+
+              {/* TODO: Joe to supply the actual booking link. /book-call is a
+                  placeholder for now. */}
+              <a href="/book-call" className="text-xs text-slate-400 hover:text-slate-200 underline underline-offset-4 transition">
+                Talk to Joe — book a 15-min call
               </a>
             </div>
-            <p className="text-xs text-slate-500">$99/mo after trial · Cancel anytime</p>
+
+            {/* Right column: hero product visual slot.
+                TODO: Hero product screenshot. Recommend: production pipeline view OR
+                dashboard with real-looking data. Static screenshot is fine for v1;
+                animated loop (3–6 sec muted video) is a future upgrade. Image
+                dimensions: 16:9 or 4:3, exported at 2x resolution for retina.
+                Drop the image into /public/landing/hero.png and swap the
+                <div> placeholder for an <img> tag. */}
+            <div className="w-full">
+              <div
+                className="w-full bg-slate-800/60 border border-white/10 rounded-2xl shadow-2xl shadow-black/40 flex items-center justify-center text-slate-500 text-sm font-medium"
+                style={{ aspectRatio: "16 / 9" }}
+                aria-label="Product screenshot placeholder"
+              >
+                Product screenshot — to be supplied
+              </div>
+            </div>
           </div>
         </section>
 
