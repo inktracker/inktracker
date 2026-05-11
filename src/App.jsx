@@ -118,11 +118,11 @@ const FEATURE_CARDS = [
   },
   {
     title: "Broker Integration",
-    desc: "Sales reps submit quotes and orders on your shop's behalf from their own portal. Commission tracking, per-broker assignments, and broker-specific pricing built in.",
+    desc: "Resellers and decorators bring you their clients' orders through their own portal. Broker pricing, per-broker assignments, and commission tracking are built in — they handle the customers, you handle production.",
     color: "from-teal-500/20 to-teal-500/5",
     // TODO: Broker Dashboard view — assigned shops list, recent submitted
     // orders, commission summary at the top. Also worth: a side-by-side
-    // showing the broker portal vs the shop's incoming-quote view so it's
+    // showing the broker's portal vs the shop's incoming-quote view so it's
     // clear how the two sides connect.
     // Screenshot path: /public/landing/feature-broker.png
     // Demo path:       /public/landing/feature-broker.mp4 (recommended —
