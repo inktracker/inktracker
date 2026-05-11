@@ -6,6 +6,7 @@ import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
 import MessagesTab from "../shared/MessagesTab";
 import { invoiceThreadId } from "@/lib/messageThreads";
+import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice }) {
@@ -151,6 +152,32 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       }
     }).catch(() => {});
   }, [invoice]);
+
+  // Fetch the QB-generated invoice PDF and return a blob URL the caller can
+  // open or download. Returns null on any failure so the caller can fall back.
+  async function fetchQBInvoicePdfBlob(qbInvoiceId) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "getInvoicePDF",
+          accessToken: session?.access_token,
+          qbInvoiceId,
+        }),
+      });
+      const data = await res.json();
+      if (!data?.pdf) return null;
+      const byteChars = atob(data.pdf);
+      const byteArray = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([byteArray], { type: "application/pdf" });
+      return URL.createObjectURL(blob);
+    } catch {
+      return null;
+    }
+  }
 
   // Calculate totals from invoice data
   const discVal = parseFloat(invoice?.discount) || 0;
@@ -381,6 +408,13 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             {qbCreating ? "Creating…" : "Create in QB"}
           </button>
           <button onClick={async () => {
+            // QB-synced invoices: show what QB actually generated, not our local copy.
+            const target = resolveInvoicePdfSource(invoice);
+            if (target.source === "qb") {
+              const blobUrl = await fetchQBInvoicePdfBlob(target.qbInvoiceId);
+              if (blobUrl) { window.open(blobUrl, "_blank"); return; }
+              // QB fetch failed — fall through to local PDF.
+            }
             const url = await exportInvoiceToPDF(invoice, customer, { shop: shopProfile || { shop_name: shopName }, logoUrl, output: "blob" });
             if (url) window.open(url, "_blank");
           }}
@@ -388,29 +422,18 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             Preview PDF
           </button>
           <button onClick={async () => {
-            if (invoice.qb_invoice_id) {
-              try {
-                const { data: { session } } = await supabase.auth.getSession();
-                const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "getInvoicePDF", accessToken: session.access_token, qbInvoiceId: invoice.qb_invoice_id }),
-                });
-                const data = await res.json();
-                if (data.pdf) {
-                  const byteChars = atob(data.pdf);
-                  const byteArray = new Uint8Array(byteChars.length);
-                  for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
-                  const blob = new Blob([byteArray], { type: "application/pdf" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `Invoice-${invoice.invoice_id || invoice.qb_invoice_id}.pdf`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                  return;
-                }
-              } catch {}
+            const target = resolveInvoicePdfSource(invoice);
+            if (target.source === "qb") {
+              const blobUrl = await fetchQBInvoicePdfBlob(target.qbInvoiceId);
+              if (blobUrl) {
+                const a = document.createElement("a");
+                a.href = blobUrl;
+                a.download = `Invoice-${invoice.invoice_id || target.qbInvoiceId}.pdf`;
+                a.click();
+                URL.revokeObjectURL(blobUrl);
+                return;
+              }
+              // QB fetch failed — fall through to local PDF.
             }
             exportInvoiceToPDF(invoice, customer, { shop: shopProfile || { shop_name: shopName }, logoUrl });
           }}
