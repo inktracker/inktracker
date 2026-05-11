@@ -66,10 +66,11 @@ const FEATURE_CARDS = [
     title: "Quotes & Orders",
     desc: "Build quotes with live garment pricing from S&S and AS Colour. Convert to orders with one click.",
     color: "from-indigo-500/20 to-indigo-500/5",
-    // TODO: Quote builder with S&S/AS Colour pricing panel + size grid.
-    // Screenshot path: /public/landing/feature-quotes.png
-    // Demo path:       /public/landing/feature-quotes.mp4
-    media: null,
+    // 23.5-second animated demo: a quote being built from scratch through
+    // customer select, garment style autofill, size breakdown, print
+    // location, live pricing count-up, and save → new row in the list.
+    // Built from the design handoff at public/landing/quote-demo/.
+    media: { type: "iframe", src: "/landing/quote-demo/" },
   },
   {
     title: "Production Tracking",
@@ -199,6 +200,18 @@ function FeaturePreviewModal({ feature, onClose }) {
               playsInline
               className="w-full h-full object-cover"
               aria-label={`${feature.title} demo`}
+            />
+          )}
+          {media?.type === "iframe" && (
+            <iframe
+              src={media.src}
+              title={`${feature.title} interactive demo`}
+              className="w-full h-full border-0"
+              loading="lazy"
+              // sandbox keeps the embedded React demo from accessing the
+              // parent page; allow-scripts + allow-same-origin are needed
+              // for the demo's localStorage playhead + Babel JSX compile.
+              sandbox="allow-scripts allow-same-origin"
             />
           )}
           {!media && (
