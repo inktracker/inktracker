@@ -275,6 +275,42 @@ function PublicLandingPage() {
           </div>
         </section>
 
+        {/* Founder / origin story */}
+        <section className="py-24 px-6 border-t border-white/5">
+          <div className="max-w-5xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-12 items-center">
+              {/* Photo slot.
+                  TODO: Photo of Joe in the Biota MFG shop. Square or 4:5
+                  aspect ratio. Drop into /public/landing/joe.jpg and swap
+                  the <div> placeholder for an <img> tag. */}
+              <div className="order-2 md:order-1">
+                <div
+                  className="w-full max-w-md mx-auto bg-slate-800/60 border border-white/10 rounded-2xl shadow-2xl shadow-black/40 flex items-center justify-center text-slate-500 text-sm font-medium"
+                  style={{ aspectRatio: "4 / 5" }}
+                  aria-label="Founder photo placeholder"
+                >
+                  Photo — to be supplied
+                </div>
+              </div>
+
+              <div className="order-1 md:order-2">
+                <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-3">
+                  Why InkTracker exists
+                </p>
+                <h2 className="text-3xl font-extrabold mb-5 leading-tight">
+                  Built by a screen printer,<br/>for screen printers.
+                </h2>
+                <p className="text-slate-300 leading-relaxed mb-5">
+                  I run Biota MFG, a screen print shop in Reno, Nevada. After 13 years on the press, I kept finding the same software gap — tools that either tried to do everything (and did most of it badly) or did one thing but missed the rest of the workflow. So I built the tool I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. Every InkTracker subscription also funds land conservation through Biota's five-year roadmap. — Joe
+                </p>
+                <p className="text-xs text-slate-500">
+                  Joe Grennan · Founder · joe@biotamfg.co
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Pricing */}
         <section id="pricing" className="py-24 px-6 border-t border-white/5">
           <div className="max-w-xl mx-auto">
