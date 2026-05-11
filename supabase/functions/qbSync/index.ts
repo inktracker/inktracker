@@ -9,6 +9,14 @@ import {
   buildRefreshedTokenFields,
   extractConnectionStatus,
 } from "../_shared/connectionLogic.js";
+import {
+  nextAvailableDocNumber as sharedNextAvailableDocNumber,
+  buildQBDisplayName,
+  buildQBCustomerBody as sharedBuildQBCustomerBody,
+  escapeQbStringLiteral,
+  buildInvoiceLinesFromPayload as sharedBuildInvoiceLinesFromPayload,
+  extractPaymentLink as sharedExtractPaymentLink,
+} from "../_shared/qbInvoice.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -116,15 +124,8 @@ async function qbCreate(token: string, realmId: string, entity: string, body: ob
 // Pick the next free DocNumber for a quote. If `base` is unused, returns base.
 // Otherwise tries base-r2, base-r3, ... up to base-r99. Falls back to a
 // timestamp suffix if (somehow) all 99 revisions are taken.
-function nextAvailableDocNumber(base: string, takenList: string[]): string {
-  const taken = new Set(takenList.map((s) => String(s || "")));
-  if (!taken.has(base)) return base;
-  for (let n = 2; n <= 99; n++) {
-    const candidate = `${base}-r${n}`;
-    if (!taken.has(candidate)) return candidate;
-  }
-  return `${base}-r${Date.now().toString(36).slice(-4)}`;
-}
+// Pure logic + tests live in ../_shared/qbInvoice.js + __tests__.
+const nextAvailableDocNumber = sharedNextAvailableDocNumber;
 
 async function qbUpdate(token: string, realmId: string, entity: string, body: object) {
   const url = `${QB_BASE}/${realmId}/${entity}?minorversion=65`;
@@ -136,30 +137,11 @@ async function qbUpdate(token: string, realmId: string, entity: string, body: ob
 
 // ── Find or create QB Customer ──────────────────────────────────────────────
 
-function buildQBCustomerBody(customer: any, displayName: string) {
-  // Only include fields that have real values — never send empty/null to QB
-  const body: any = {
-    DisplayName: displayName,
-    PrintOnCheckName: customer.company || customer.name || displayName,
-  };
-  if (customer.company) body.CompanyName = customer.company;
-  if (customer.name) body.GivenName = customer.name;
-  if (customer.notes) body.Notes = customer.notes;
-  if (customer.email) body.PrimaryEmailAddr = { Address: customer.email };
-  if (customer.phone) body.PrimaryPhone = { FreeFormNumber: customer.phone };
-  if (customer.address) body.BillAddr = { Line1: customer.address };
-  if (customer.tax_id) body.ResaleNum = customer.tax_id;
-  if (customer.tax_exempt) {
-    body.Taxable = false;
-    body.TaxExemptionReasonId = 16;
-  }
-  return body;
-}
+// Pure logic + tests live in ../_shared/qbInvoice.js + __tests__.
+const buildQBCustomerBody = sharedBuildQBCustomerBody;
 
 async function updateQBCustomer(token: string, realmId: string, qbId: string, customer: any) {
-  const displayName = customer.company
-    ? `${customer.company} (${customer.name})`
-    : customer.name;
+  const displayName = buildQBDisplayName(customer);
 
   // Fetch current SyncToken (required for QB updates)
   const existing = await qbQuery(token, realmId, `SELECT Id, SyncToken FROM Customer WHERE Id = '${qbId}'`);
@@ -187,9 +169,7 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
     return customer.qb_customer_id;
   }
 
-  const displayName = customer.company
-    ? `${customer.company} (${customer.name})`
-    : customer.name;
+  const displayName = buildQBDisplayName(customer);
 
   // Search QB for existing customer by email or name
   let qbCustomerId: string | null = null;
@@ -197,7 +177,7 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
   if (customer.email) {
     try {
       const res = await qbQuery(token, realmId,
-        `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${customer.email.replace(/'/g, "''")}'`
+        `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${escapeQbStringLiteral(customer.email)}'`
       );
       const rows = res?.QueryResponse?.Customer ?? [];
       if (rows.length > 0) qbCustomerId = rows[0].Id;
@@ -206,7 +186,7 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
 
   if (!qbCustomerId) {
     try {
-      const safeName = displayName.replace(/'/g, "''");
+      const safeName = escapeQbStringLiteral(displayName);
       const res = await qbQuery(token, realmId,
         `SELECT Id FROM Customer WHERE DisplayName = '${safeName}'`
       );
@@ -266,7 +246,7 @@ async function findOrCreateServiceItem(
   itemName: string,
   incomeAccountId: string,
 ) {
-  const safe = itemName.replace(/'/g, "''");
+  const safe = escapeQbStringLiteral(itemName);
   const res = await qbQuery(token, realmId,
     `SELECT Id, Name FROM Item WHERE Name = '${safe}'`
   );
@@ -311,90 +291,9 @@ async function resolveItemIdMap(
 // Each line may carry an `itemName` (e.g. "Embroidery", "Screen Printing") which
 // is resolved to the matching QB Item Id via itemIdMap. Lines with no mapping
 // fall back to the default item.
-function buildInvoiceLinesFromPayload(
-  payload: any,
-  itemIdMap: Map<string, string>,
-  defaultItemName: string,
-  taxExempt = false,
-) {
-  const lines: any[] = [];
-  const fallbackId = itemIdMap.get(defaultItemName);
-  const taxCode = taxExempt ? "NON" : "TAX";
-
-  for (const line of payload?.lines ?? []) {
-    const qty = Number(line.qty) || 0;
-    const unitPrice = Number(line.unitPrice) || 0;
-    const amount = Number(line.amount) || 0;
-    if (qty === 0 || amount === 0) continue;
-
-    const itemName = (line.itemName || defaultItemName).trim();
-    const itemId = itemIdMap.get(itemName) ?? fallbackId;
-    if (!itemId) continue;
-
-    lines.push({
-      DetailType: "SalesItemLineDetail",
-      Amount: Number(amount.toFixed(2)),
-      Description: line.description ?? "",
-      SalesItemLineDetail: {
-        ItemRef: { value: itemId },
-        UnitPrice: unitPrice,
-        Qty: qty,
-        TaxCodeRef: { value: taxCode },
-      },
-    });
-  }
-
-  // Apply discount directly to line amounts so QB taxes the discounted total
-  // (instead of a separate DiscountLineDetail which QB taxes before applying)
-  const discountPct = Number(payload?.discountPercent) || 0;
-  const discountFlat = Number(payload?.discountAmount) || 0;
-  const isFlat = payload?.discountType === "flat" || discountFlat > 0;
-
-  if ((isFlat && discountFlat > 0) || discountPct > 0) {
-    const subtotal = lines.reduce((s: number, l: any) => s + (l.DetailType === "SalesItemLineDetail" ? l.Amount : 0), 0);
-    const discountTotal = isFlat ? discountFlat : Number(((subtotal * discountPct) / 100).toFixed(2));
-    const discountLabel = isFlat ? ` (less $${discountFlat.toFixed(2)} discount)` : ` (less ${discountPct}% discount)`;
-
-    // Distribute discount proportionally across line items
-    if (subtotal > 0 && discountTotal > 0) {
-      let remaining = discountTotal;
-      const salesLines = lines.filter((l: any) => l.DetailType === "SalesItemLineDetail");
-      salesLines.forEach((line: any, i: number) => {
-        const share = i === salesLines.length - 1
-          ? remaining  // last line gets the remainder to avoid rounding issues
-          : Number(((line.Amount / subtotal) * discountTotal).toFixed(2));
-        line.Amount = Number((line.Amount - share).toFixed(2));
-        line.Description = (line.Description || "") + discountLabel;
-        if (line.SalesItemLineDetail) {
-          line.SalesItemLineDetail.UnitPrice = Number((line.Amount / (line.SalesItemLineDetail.Qty || 1)).toFixed(4));
-        }
-        remaining = Number((remaining - share).toFixed(2));
-      });
-    }
-  }
-
-  return lines;
-}
-
-// ── Extract payment link from QB invoice response ───────────────────────────
-
-function extractPaymentLink(invoiceData: any, _realmId: string) {
-  const inv = invoiceData?.Invoice ?? invoiceData;
-
-  // QB Payments populates a real customer-facing payment URI in one of these
-  // fields. We do NOT fall back to a constructed `connect.intuit.com/portal/asei/…`
-  // URL — that page requires the customer to log into their own Intuit account,
-  // which is useless for paying an invoice. When QB Payments isn't enabled,
-  // return null and let the frontend route to Stripe instead.
-  const candidates = [
-    inv?.payment?.paymentUri,
-    inv?.InvoiceLink,
-    inv?.paymentUri,
-    inv?.Links?.find?.((l: any) => l.Rel === "payment")?.Href,
-  ].filter(Boolean);
-
-  return candidates.length > 0 ? candidates[0] : null;
-}
+// Pure logic + tests live in ../_shared/qbInvoice.js + __tests__.
+const buildInvoiceLinesFromPayload = sharedBuildInvoiceLinesFromPayload;
+const extractPaymentLink = (invoiceData: any, _realmId?: string) => sharedExtractPaymentLink(invoiceData);
 
 // ── Action: createInvoice ───────────────────────────────────────────────────
 
@@ -491,7 +390,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 
   // Create new invoice if we don't have one yet (first sync or update failed)
   if (!qbInvoiceId) {
-    const escapedBase = baseDocNumber.replace(/'/g, "''");
+    const escapedBase = escapeQbStringLiteral(baseDocNumber);
     let existingDocs: string[] = [];
     try {
       const existingResp = await qbQuery(

@@ -8,6 +8,7 @@
 // Deploy: npx supabase functions deploy qbWebhook --no-verify-jwt
 
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import { makeOrderId } from "../_shared/qbInvoice.js";
 // Set secret: npx supabase secrets set QB_WEBHOOK_VERIFIER_TOKEN=<from Intuit Developer Portal>
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -92,9 +93,7 @@ async function getAccessToken(supabase: any, profile: any): Promise<string> {
 
 // ── Convert quote → order (mirrors Quotes.jsx handleConvert) ─────────────────
 
-function makeOrderId() {
-  return `ORD-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
-}
+// Pure logic + tests live in ../_shared/qbInvoice.js + __tests__.
 
 async function convertQuoteToOrder(supabase: any, quote: any) {
   const orderId = makeOrderId();
