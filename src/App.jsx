@@ -422,6 +422,57 @@ function PublicLandingPage() {
           </div>
         </section>
 
+        {/* FAQ */}
+        <section id="faq" className="py-24 px-6 border-t border-white/5">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-extrabold">Frequently asked questions</h2>
+            </div>
+            <div className="space-y-3">
+              {[
+                {
+                  q: "Can I import data from Printavo, Shopworks, or another shop management tool?",
+                  a: "Yes. CSV import is supported for customers, quotes, and orders. If you're switching from another platform, contact support and we'll help map the data over.",
+                },
+                {
+                  q: "Does InkTracker work for embroidery, DTG, or promotional products, or only screen printing?",
+                  a: "It works for all of them. The quote-to-invoice workflow, customer management, production tracking, and QuickBooks integration are decoration-method-agnostic. Some features (live garment pricing from S&S and AS Colour, mockup designer) are most useful for apparel-based shops.",
+                },
+                {
+                  q: "What happens to my data if I cancel?",
+                  a: "You can export all your data — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation. Your data is yours.",
+                },
+                {
+                  q: "Is there a long-term contract?",
+                  a: "No. InkTracker is month-to-month. Cancel anytime. Founding members who cancel will lose their $99/month rate; re-signups will pay the standard $149/month rate.",
+                },
+                {
+                  q: "How do I know InkTracker won't disappear in six months?",
+                  a: "InkTracker is built and maintained by Biota MFG, a 13-year-old screen print business based in Reno, Nevada. The shop dogfoods the software daily — if it stops being maintained, our own production stops. The financial structure also funds land conservation, which gives the project a long-horizon commitment the team takes seriously.",
+                },
+                {
+                  q: "Why is the price going up to $149/month?",
+                  a: "$99/month is our founding member rate, available to the first 100 shops. As we scale the product, support, and infrastructure, standard pricing reflects the actual cost to deliver and support InkTracker reliably. Founding members keep $99/month for as long as they remain subscribed.",
+                },
+                {
+                  q: "How does the conservation contribution actually work?",
+                  a: "A portion of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota MFG. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.co/pages/conservation.",
+                },
+              ].map((item) => (
+                <details key={item.q} className="group bg-white/[0.02] border border-white/10 rounded-2xl hover:border-white/20 transition">
+                  <summary className="cursor-pointer list-none px-6 py-4 flex items-center justify-between gap-4">
+                    <span className="text-sm md:text-base font-semibold text-white text-left">{item.q}</span>
+                    <span className="text-slate-400 text-xl font-light shrink-0 transition-transform group-open:rotate-45">+</span>
+                  </summary>
+                  <div className="px-6 pb-5 -mt-1">
+                    <p className="text-sm text-slate-400 leading-relaxed">{item.a}</p>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* CTA */}
         <section className="py-24 px-6 border-t border-white/5">
           <div className="max-w-2xl mx-auto text-center">
