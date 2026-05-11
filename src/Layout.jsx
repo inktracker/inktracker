@@ -2,20 +2,18 @@ import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
-import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, CreditCard, ShieldCheck, Menu, X, Palette, Lock, Inbox as InboxIcon } from "lucide-react";
+import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import { canAccess } from "@/lib/billing";
 
 const ICON_MAP = {
   Dashboard: Home,
-  Inbox: InboxIcon,
   BrokerDashboard: FileText,
   Quotes: FileText,
   Production: Package,
   Customers: Users,
   Inventory: Archive,
   Invoices: Receipt,
-  Expenses: CreditCard,
   Performance: BarChart2,
   Wizard: Wand2,
   Embed: Code2,
@@ -26,13 +24,11 @@ const ICON_MAP = {
 
 const NAV = [
   { label: "Dashboard", page: "Dashboard" },
-  { label: "Inbox", page: "Inbox" },
   { label: "Quotes", page: "Quotes" },
   { label: "Production", page: "Production" },
   { label: "Customers", page: "Customers" },
   { label: "Inventory", page: "Inventory" },
   { label: "Invoices", page: "Invoices" },
-  { label: "Expenses", page: "Expenses" },
   { label: "Performance", page: "Performance", feature: "reports" },
   { label: "Mockups", page: "Mockups", feature: "mockups" },
   { label: "Wizard", page: "Wizard", feature: "wizard" },
@@ -56,7 +52,6 @@ export default function Layout({ children, currentPageName }) {
   const [user, setUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(null);
-  const [unreadCount, setUnreadCount] = useState(0);
   const tier = user?.subscription_tier || "trial";
   useEffect(() => {
     document.documentElement.classList.remove("dark");
@@ -98,37 +93,6 @@ export default function Layout({ children, currentPageName }) {
     }
     loadUser();
   }, [currentPageName]);
-
-  // Inbox unread badge — counts unread customer messages across all jobs.
-  // Excludes broker chat threads, internal notes, and the user's own outbound.
-  useEffect(() => {
-    if (!user?.email) return;
-    let alive = true;
-
-    async function refreshUnread() {
-      try {
-        const rows = await base44.entities.Message.filter({ read: false }, "-created_date", 500);
-        if (!alive) return;
-        const count = rows.filter((m) => {
-          const tid = m.thread_id || "";
-          if (!/^(quote|order|invoice):/i.test(tid)) return false;
-          if (typeof m.body === "string" && m.body.startsWith("[INTERNAL]")) return false;
-          if ((m.from_email || "").toLowerCase() === user.email.toLowerCase()) return false;
-          return true;
-        }).length;
-        setUnreadCount(count);
-      } catch { /* silent — badge just stays at last value */ }
-    }
-    refreshUnread();
-
-    // Live update if subscribe is wired up.
-    let unsub;
-    try {
-      unsub = base44.entities.Message.subscribe?.(() => refreshUnread());
-    } catch { /* ignore */ }
-
-    return () => { alive = false; try { unsub?.(); } catch {} };
-  }, [user?.email, currentPageName]);
 
   // Pages that render without sidebar
   if (PUBLIC_PAGES.includes(currentPageName) || currentPageName === "ShopFloor") {
@@ -174,11 +138,6 @@ export default function Layout({ children, currentPageName }) {
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"}`}>
                 <IconComponent className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
                 <span className="flex-1">{n.label}</span>
-                {n.page === "Inbox" && unreadCount > 0 && (
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${active ? "bg-white text-indigo-700" : "bg-indigo-600 text-white"}`}>
-                    {unreadCount > 99 ? "99+" : unreadCount}
-                  </span>
-                )}
               </Link>
             );
           })}
@@ -250,11 +209,6 @@ export default function Layout({ children, currentPageName }) {
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}>
                       <IconComponent className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
                       <span className="flex-1">{n.label}</span>
-                      {n.page === "Inbox" && unreadCount > 0 && (
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${active ? "bg-white text-indigo-700" : "bg-indigo-600 text-white"}`}>
-                          {unreadCount > 99 ? "99+" : unreadCount}
-                        </span>
-                      )}
                     </Link>
                   );
                 })}

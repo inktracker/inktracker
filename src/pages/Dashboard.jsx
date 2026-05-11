@@ -5,6 +5,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import { createPageUrl } from "@/utils";
 import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig } from "../components/shared/pricing";
+import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText } from "lucide-react";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerDocuments from "../components/broker/BrokerDocuments";
@@ -262,36 +263,20 @@ export default function Dashboard() {
         if (currentUser.role === "broker") { navigate(createPageUrl("BrokerDashboard")); return; }
         setUser(currentUser);
 
-        const [q, o, invItems, allUsers, custs] = await Promise.all([
+        const [q, o, invItems, allUsers, custs, localInvoices] = await Promise.all([
           base44.entities.Quote.filter({ shop_owner: currentUser.email }, "-created_date", 100),
           base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 50),
           base44.entities.InventoryItem.filter({ shop_owner: currentUser.email }),
           base44.entities.User.list(),
           base44.entities.Customer.filter({ shop_owner: currentUser.email }),
+          base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-created_date", 1000).catch(() => []),
         ]);
 
         setQuotes(q);
         setOrders(o);
         setInventory(invItems);
         setCustomerCount(custs.length);
-
-        // Fetch live invoice data from QB (non-blocking)
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.access_token) {
-            const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "getPerformanceData", accessToken: session.access_token, dateFrom: new Date(Date.now() - 30*86400000).toISOString().split("T")[0], dateTo: new Date().toISOString().split("T")[0] }),
-            });
-            if (res.ok) {
-              const data = await res.json();
-              setInvoices(data.revenue || []);
-            }
-          }
-        } catch (err) {
-          console.warn("[Dashboard] QB data failed:", err?.message);
-        }
+        setInvoices(localInvoices);
         setBrokers(allUsers.filter(u => u.role === "broker" && (u.assigned_shops || []).includes(currentUser.email)));
         setShopOwners(allUsers.filter(u => u.role !== "broker"));
         setLoading(false);
@@ -310,7 +295,7 @@ export default function Dashboard() {
   const activeOrders = orders.filter(o => !["Ready for Pickup", "Completed"].includes(o.status)).length;
   const openOrdersCount = orders.filter(o => o.status !== "Completed").length;
   const openOrdersValue = orders.filter(o => o.status !== "Completed").reduce((sum, o) => sum + (o.total || 0), 0);
-  const unpaidInvoices = invoices.reduce((sum, i) => sum + (i.balance || 0), 0);
+  const unpaidInvoices = computeOutstanding(invoices).total;
   const lowStockItems = inventory.filter(i => (i.qty || 0) <= (i.reorder || 0));
 
   return (

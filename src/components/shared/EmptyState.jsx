@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
-  FileText, Package, Users, Archive, Receipt, CreditCard,
+  FileText, Package, Users, Archive, Receipt,
   Plus, ArrowRight, Wand2
 } from "lucide-react";
 
@@ -42,13 +42,6 @@ const CONFIGS = {
     primaryAction: { label: "Connect QuickBooks", page: "Account" },
     secondaryAction: { label: "View Orders", page: "Production" },
     tip: "Once QuickBooks is connected, invoices sync both ways automatically.",
-  },
-  expenses: {
-    icon: CreditCard,
-    title: "No expenses yet",
-    description: "Track business expenses like ink, supplies, and equipment. Snap receipt photos and sync to QuickBooks.",
-    primaryAction: { label: "Add Expense", action: "new" },
-    tip: "You can also pull expenses from QuickBooks if they were entered there first.",
   },
 };
 

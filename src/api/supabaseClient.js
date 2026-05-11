@@ -12,7 +12,6 @@ const TABLE_MAP = {
   Customer: "customers",
   User: "profiles",
   Shop: "shops",
-  Expense: "expenses",
   Invoice: "invoices",
   InventoryItem: "inventory_items",
   Commission: "commissions",

@@ -3,7 +3,7 @@
 // (pipeline, outstanding) alongside in-period metrics (revenue, conversion).
 
 import {
-  TrendingUp, TrendingDown, DollarSign, FileText, Receipt, ShoppingBag,
+  TrendingUp, DollarSign, FileText, Receipt, ShoppingBag,
   Users, Repeat, Layers,
 } from "lucide-react";
 import { fmtMoney } from "@/components/shared/pricing";
@@ -47,8 +47,14 @@ export default function NativeStatsPanel({ stats }) {
     conversionRate, conversionSentCount, conversionConvertedCount,
     newCustomers, repeatRate, repeatCustomersCount, customersWithAnyOrder,
     topCustomers, activeStatusList,
-    expensesTotal, grossProfit, profitMargin,
   } = stats;
+  // Note: expensesTotal / grossProfit / profitMargin intentionally NOT
+  // surfaced here. They came from the local `expenses` table, which is
+  // populated by QB Purchase pulls — accurate accounting data, but
+  // pairing it with our local "Revenue (period)" (computed from completed
+  // orders only) produced misleading "gross profit" / "margin" numbers
+  // that don't match what QB shows. P&L belongs in QB; the deep-link
+  // card on the Performance page sends shop owners there.
 
   return (
     <section className="space-y-4">
@@ -81,24 +87,13 @@ export default function NativeStatsPanel({ stats }) {
         />
       </div>
 
-      {/* In-period metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* In-period metrics — operational only. P&L lives in QuickBooks. */}
+      <div className="grid grid-cols-2 md:grid-cols-2 gap-3">
         <StatTile
           icon={DollarSign} color="emerald"
           label="Revenue (period)"
           value={fmtMoney(revenue)}
           sub={`${completedCount} completed order${completedCount === 1 ? "" : "s"}`}
-        />
-        <StatTile
-          icon={TrendingDown} color="amber"
-          label="Expenses (period)"
-          value={fmtMoney(expensesTotal)}
-        />
-        <StatTile
-          icon={TrendingUp} color={grossProfit >= 0 ? "emerald" : "rose"}
-          label="Gross profit"
-          value={fmtMoney(grossProfit)}
-          sub={profitMargin != null ? `${pct(profitMargin, 1)} margin` : "—"}
         />
         <StatTile
           icon={Layers} color="slate"

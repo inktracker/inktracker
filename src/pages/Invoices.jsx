@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
+import { computeOutstanding } from "@/lib/reports/invoiceStats";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
@@ -59,23 +60,11 @@ export default function Invoices() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "pullInvoices", accessToken: session.access_token }),
           });
-          // Reload with fresh data
+          // Reload with fresh data + recompute outstanding from local rows.
           const freshInv = await base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-date", 1000);
           setInvoices(freshInv);
-
-          // Get live outstanding stats from QB
-          const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "getPerformanceData", accessToken: session.access_token, dateFrom: new Date(new Date().getFullYear(), 0, 1).toISOString().split("T")[0], dateTo: new Date().toISOString().split("T")[0] }),
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const qbInvoices = data.revenue || [];
-            const outstanding = qbInvoices.reduce((s, i) => s + (i.balance || 0), 0);
-            const unpaidCount = qbInvoices.filter(i => (i.balance || 0) > 0).length;
-            setQbOutstanding({ total: outstanding, count: unpaidCount });
-          }
+          const stats = computeOutstanding(freshInv);
+          setQbOutstanding({ total: stats.total, count: stats.count });
         }
       } catch {}
     }

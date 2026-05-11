@@ -1,5 +1,5 @@
 // Stats derived from Inktracker's own data — quotes, orders, invoices,
-// customers, expenses. Works for any shop without QuickBooks connected.
+// customers. Operational only — accounting (expenses, P&L) lives in QB.
 //
 // Inputs are arrays of raw entity rows. Returns a structured snapshot keyed
 // by stat. Date range applies to "in-period" metrics; current-state metrics
@@ -40,7 +40,6 @@ export function computeNativeStats({
   orders = [],
   invoices = [],
   customers = [],
-  expenses = [],
   archived = [],          // ShopPerformance rows — orders that have been completed-and-archived
   dateFrom = null,
   dateTo = null,
@@ -134,14 +133,6 @@ export function computeNativeStats({
     .map(([status, count]) => ({ status, count }))
     .sort((a, b) => b.count - a.count);
 
-  // ── Expenses (in period) and rough margin estimate ─────────────────────
-  const periodExpenses = expenses.filter((e) =>
-    inRange(e.payment_date || e.date, dateFrom, dateTo)
-  );
-  const expensesTotal = periodExpenses.reduce((s, e) => s + num(e.total), 0);
-  const grossProfit = revenue - expensesTotal;
-  const profitMargin = revenue ? grossProfit / revenue : null;
-
   return {
     period: { from: dateFrom, to: dateTo },
     revenue,
@@ -162,8 +153,5 @@ export function computeNativeStats({
     customersWithAnyOrder,
     topCustomers,
     activeStatusList,
-    expensesTotal,
-    grossProfit,
-    profitMargin,
   };
 }

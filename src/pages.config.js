@@ -3,7 +3,6 @@ import BrokerDashboard from './pages/BrokerDashboard';
 import Customers from './pages/Customers';
 import Dashboard from './pages/Dashboard';
 import Embed from './pages/Embed';
-import Inbox from './pages/Inbox';
 import Inventory from './pages/Inventory';
 import Invoices from './pages/Invoices';
 import Orders from './pages/Orders';
@@ -21,7 +20,6 @@ import OrderStatus from './pages/OrderStatus';
 import BrokerOnboarding from './pages/BrokerOnboarding';
 import Mockups from './pages/Mockups';
 import Production from './pages/Production';
-import Expenses from './pages/Expenses';
 import ShopFloor from './pages/ShopFloor';
 import __Layout from './Layout.jsx';
 
@@ -31,7 +29,6 @@ export const PAGES = {
     "Customers": Customers,
     "Dashboard": Dashboard,
     "Embed": Embed,
-    "Inbox": Inbox,
     "Inventory": Inventory,
     "Invoices": Invoices,
     "Orders": Orders,
@@ -49,7 +46,6 @@ export const PAGES = {
     "BrokerOnboarding": BrokerOnboarding,
     "Mockups": Mockups,
     "Production": Production,
-    "Expenses": Expenses,
     "ShopFloor": ShopFloor,
 }
 
