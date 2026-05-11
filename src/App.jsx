@@ -234,6 +234,72 @@ function FeaturePreviewModal({ feature, onClose }) {
   );
 }
 
+// Hero headline animated as a typewriter — line 1 in white, brief pause,
+// line 2 in indigo, then a slow blinking cursor parked at the end. Single
+// keystroke is ~55ms, line break is 350ms. After typing finishes, the
+// cursor keeps blinking so the hero never goes fully static.
+function TypewriterHeadline() {
+  const LINE1 = "Run your print shop";
+  const LINE2 = "without the chaos.";
+  const KEY_MS = 55;
+  const PAUSE_MS = 350;
+
+  const [shown1, setShown1] = useState("");
+  const [shown2, setShown2] = useState("");
+  const [phase, setPhase] = useState("line1"); // line1 → pause → line2 → done
+  const [blink, setBlink] = useState(true);
+
+  useEffect(() => {
+    if (phase === "line1") {
+      if (shown1.length < LINE1.length) {
+        const t = setTimeout(() => setShown1(LINE1.slice(0, shown1.length + 1)), KEY_MS);
+        return () => clearTimeout(t);
+      }
+      const t = setTimeout(() => setPhase("line2"), PAUSE_MS);
+      return () => clearTimeout(t);
+    }
+    if (phase === "line2") {
+      if (shown2.length < LINE2.length) {
+        const t = setTimeout(() => setShown2(LINE2.slice(0, shown2.length + 1)), KEY_MS);
+        return () => clearTimeout(t);
+      }
+      setPhase("done");
+    }
+  }, [phase, shown1, shown2]);
+
+  useEffect(() => {
+    const t = setInterval(() => setBlink((b) => !b), 520);
+    return () => clearInterval(t);
+  }, []);
+
+  const cursorOnLine2 = phase === "line2" || phase === "done";
+
+  // Reserve vertical space so the page doesn't reflow while typing.
+  // Two lines × responsive line-height roughly matches the headline height.
+  return (
+    <div className="mb-6" aria-label={`${LINE1} ${LINE2}`}>
+      <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-white min-h-[1.1em]">
+        {shown1}
+        {!cursorOnLine2 && (
+          <span
+            className={`inline-block w-[3px] md:w-[4px] h-[0.85em] align-[-0.1em] ml-1 bg-indigo-400 rounded-sm ${blink ? "opacity-100" : "opacity-0"}`}
+            aria-hidden="true"
+          />
+        )}
+      </h1>
+      <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent min-h-[1.1em]">
+        {shown2}
+        {cursorOnLine2 && (
+          <span
+            className={`inline-block w-[3px] md:w-[4px] h-[0.85em] align-[-0.1em] ml-1 bg-indigo-400 rounded-sm ${blink ? "opacity-100" : "opacity-0"}`}
+            aria-hidden="true"
+          />
+        )}
+      </h1>
+    </div>
+  );
+}
+
 function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
@@ -277,12 +343,7 @@ function PublicLandingPage() {
               <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
             </div>
 
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-white mb-3">
-              Stop losing orders in spreadsheets.
-            </h1>
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent mb-6">
-              Run your shop on one platform.
-            </h1>
+            <TypewriterHeadline />
 
             <p className="text-sm md:text-base text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
               Built for screen print and embroidery shops running 1–10 presses.
