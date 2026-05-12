@@ -33,7 +33,6 @@ export type ProfileWithSecrets = {
   ac_subscription_key?: string | null;
   ss_account?: string | null;
   ss_api_key?: string | null;
-  shopify_access_token?: string | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
   // Anything else returned by the profiles SELECT

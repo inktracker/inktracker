@@ -22,7 +22,6 @@ export const SECRET_KEYS = [
   "ac_subscription_key",
   "ss_account",
   "ss_api_key",
-  "shopify_access_token",
   "stripe_customer_id",
   "stripe_subscription_id",
 ];
