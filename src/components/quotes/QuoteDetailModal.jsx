@@ -18,6 +18,7 @@ import { exportQuoteToPDF } from "../shared/pdfExport";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
 import MessagesTab from "../shared/MessagesTab";
+import CollapsibleSection from "../shared/CollapsibleSection";
 import { quoteThreadId } from "@/lib/messageThreads";
 import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare } from "lucide-react";
@@ -735,12 +736,15 @@ export default function QuoteDetailModal({
             </div>
           )}
 
-          {/* Messages — threaded conversation with reply box. */}
-          <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
-            <div className="flex items-center gap-2 mb-3">
-              <MessageSquare className="w-4 h-4 text-slate-500" />
-              <h3 className="text-sm font-semibold text-slate-700">Messages</h3>
-            </div>
+          {/* Messages — threaded conversation with reply box. Collapsible;
+              persists per-user via shared localStorage key so it stays
+              hidden across reloads / across all three detail modals. */}
+          <CollapsibleSection
+            title="Messages"
+            icon={<MessageSquare className="w-4 h-4 text-slate-500" />}
+            storageKey="messages-window-collapsed"
+            className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700"
+          >
             <MessagesTab
               threadId={quoteThreadId(quote)}
               currentUserEmail={quote.shop_owner}
@@ -751,7 +755,7 @@ export default function QuoteDetailModal({
                 defaultSubject: `Quote ${quote.quote_id}`,
               }}
             />
-          </div>
+          </CollapsibleSection>
 
           <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
             {!quote?.broker_id && (
