@@ -540,7 +540,7 @@ function PublicLandingPage() {
                   Why InkTracker exists
                 </p>
                 <h2 className="text-3xl font-extrabold mb-5 leading-tight">
-                  Built by a screen printer,<br/>for screen printers.
+                  From one print maker<br/>to another.
                 </h2>
                 <p className="text-slate-300 leading-relaxed mb-5">
                   I run Biota MFG, a screen print shop in Reno, Nevada. After 13 years on the press, I kept finding the same software gap — tools that either tried to do everything (and did most of it badly) or did one thing but missed the rest of the workflow. So I built the tool I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. Every InkTracker subscription also funds land conservation through Biota's five-year roadmap. — Joe
