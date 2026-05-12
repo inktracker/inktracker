@@ -22,8 +22,31 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   const [showSendModal, setShowSendModal] = useState(false);
   const [qbCreating, setQbCreating] = useState(false);
   const [qbStatus, setQbStatus] = useState(null);
+  // Tri-state: null = haven't checked yet, true = order exists,
+  // false = orphan (order_id set on the invoice but no matching order
+  // row — e.g. order was deleted, or invoice came from a different
+  // source). The "View Order" button only renders when this is true.
+  const [orderExists, setOrderExists] = useState(null);
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
+
+  // One-time check on mount: does the referenced order still exist?
+  // Cheaper than discovering the orphan only when the user clicks
+  // View Order and getting an "Order not found" alert.
+  useEffect(() => {
+    if (!invoice?.order_id) { setOrderExists(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const matches = await base44.entities.Order.filter({ order_id: invoice.order_id });
+        if (cancelled) return;
+        setOrderExists(Array.isArray(matches) && matches.length > 0);
+      } catch (_) {
+        if (!cancelled) setOrderExists(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [invoice?.order_id]);
 
   async function handleCreateInQB() {
     // Ironclad no-duplicate guard: if this invoice already has a QB
@@ -431,13 +454,15 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               Send Invoice
             </button>
           )}
-          {invoice.order_id && (
+          {orderExists && (
             <button onClick={async () => {
               try {
                 const order = await base44.entities.Order.filter({ order_id: invoice.order_id });
                 if (order?.[0]) setViewingOrder(order[0]);
-                else alert("Order not found");
-              } catch { alert("Could not load order"); }
+                // No alert on the not-found path — orderExists already
+                // gated the render, so this only fires if the order was
+                // deleted between mount and click. Silent no-op is fine.
+              } catch (_) { /* swallow — same rationale as above */ }
             }}
               className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
               View Order
