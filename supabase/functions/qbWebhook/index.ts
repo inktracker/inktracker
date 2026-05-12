@@ -9,6 +9,14 @@
 
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { makeOrderId } from "../_shared/qbInvoice.js";
+import {
+  buildPaidInvoiceQuery,
+  decidePaidInvoiceAction,
+  buildOrderInsertFromQuote,
+  extractInvoiceIdsFromPayment,
+  isInvoiceFullyPaid,
+  PAID_INVOICE_ACTIONS,
+} from "../_shared/qbWebhookLogic.js";
 // Set secret: npx supabase secrets set QB_WEBHOOK_VERIFIER_TOKEN=<from Intuit Developer Portal>
 
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -97,68 +105,42 @@ async function getAccessToken(supabase: any, profile: any): Promise<string> {
 
 async function convertQuoteToOrder(supabase: any, quote: any) {
   const orderId = makeOrderId();
+  const orderRow = buildOrderInsertFromQuote(quote, orderId);
 
-  const isBroker = Boolean(quote.broker_id || quote.broker_email);
+  await supabase.from("orders").insert(orderRow);
 
-  // Use stored totals from the quote — never recalculate to avoid NaN/mismatch
-  const subtotal = parseFloat(quote.subtotal ?? 0);
-  const tax      = parseFloat(quote.tax ?? 0);
-  const total    = parseFloat(quote.total ?? 0) || (subtotal + tax);
-
-  await supabase.from("orders").insert({
-    order_id:           orderId,
-    shop_owner:         quote.shop_owner,
-    broker_id:          quote.broker_id || "",
-    broker_name:        quote.broker_name || "",
-    broker_company:     quote.broker_company || "",
-    customer_id:        quote.customer_id,
-    customer_name:      quote.customer_name,
-    broker_client_name: isBroker ? (quote.customer_name || "") : "",
-    job_title:          quote.job_title || "",
-    date:               quote.date,
-    due_date:           quote.due_date || null,
-    status:             "Art Approval",
-    line_items:         quote.line_items,
-    notes:              quote.notes,
-    rush_rate:          quote.rush_rate,
-    extras:             quote.extras,
-    discount:           quote.discount,
-    discount_type:      quote.discount_type || "percent",
-    tax_rate:           isBroker ? 0 : quote.tax_rate,
-    subtotal,
-    tax,
-    total,
-    paid:               false,
-    selected_artwork:   quote.selected_artwork || [],
-  });
-
-  // Mark quote as converted
+  // Mark quote as converted. Scope by both id AND shop_owner — same
+  // tenant-scoping rule we apply on the read side; the service-role
+  // client would otherwise update across tenants on a row-id collision
+  // (e.g. if a quote.id was ever changed manually).
   await supabase.from("quotes").update({
     status:             "Converted to Order",
     converted_order_id: orderId,
     converted_at:       new Date().toISOString(),
     deposit_paid:       true,
-  }).eq("id", quote.id);
+  }).eq("id", quote.id).eq("shop_owner", quote.shop_owner);
 
   console.error(`[qbWebhook] Quote ${quote.quote_id} → Order ${orderId}`);
 }
 
 // ── Core: find quote by QB invoice ID and mark paid ──────────────────────────
 
-async function handlePaidInvoice(supabase: any, qbInvoiceId: string) {
-  const { data: quote, error } = await supabase
-    .from("quotes")
-    .select("*")
-    .eq("qb_invoice_id", qbInvoiceId)
-    .maybeSingle();
+async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: string) {
+  // CRITICAL: scope the lookup by BOTH qb_invoice_id and shop_owner.
+  // QB invoice ids are realm-scoped (not globally unique), so without
+  // the shop_owner filter a webhook for Shop B's invoice 1042 could
+  // match — and convert — Shop A's quote 1042. See qbWebhookLogic.js
+  // for the full rationale.
+  const { data: quote, error } = await buildPaidInvoiceQuery(supabase, qbInvoiceId, shopOwner);
 
-  if (error || !quote) {
-    console.error(`[qbWebhook] No quote found for QB invoice ${qbInvoiceId}`);
+  if (error) {
+    console.error(`[qbWebhook] DB error looking up invoice ${qbInvoiceId} for ${shopOwner}: ${error.message}`);
     return;
   }
 
-  if (quote.status === "Converted to Order" || quote.converted_order_id) {
-    console.error(`[qbWebhook] Quote ${quote.quote_id} already converted — skipping`);
+  const decision = decidePaidInvoiceAction(quote);
+  if (decision.action !== PAID_INVOICE_ACTIONS.CONVERT) {
+    console.error(`[qbWebhook] invoice ${qbInvoiceId} for ${shopOwner}: ${decision.action} — ${decision.reason}`);
     return;
   }
 
@@ -175,13 +157,22 @@ async function processNotification(supabase: any, notification: any) {
   // Look up the shop's QB tokens by realm ID — find profile first, then load secrets
   const { data: profileRow } = await supabase
     .from("profiles")
-    .select("id")
+    .select("id, shop_owner")
     .eq("qb_realm_id", realmId)
     .maybeSingle();
   const profile = profileRow ? await loadProfileWithSecrets(supabase, { id: profileRow.id }) : null;
 
   if (!profile?.qb_access_token) {
     console.error(`[qbWebhook] No profile found for realmId ${realmId}`);
+    return;
+  }
+  // Defensive: a profile WITHOUT shop_owner should never exist (NOT
+  // NULL in the schema), but if one ever does we MUST refuse to
+  // process — otherwise handlePaidInvoice's tenant filter degenerates
+  // and the cross-tenant bug returns.
+  const shopOwner: string = profile.shop_owner;
+  if (!shopOwner) {
+    console.error(`[qbWebhook] Profile for realmId ${realmId} has no shop_owner — refusing to process`);
     return;
   }
 
@@ -192,26 +183,17 @@ async function processNotification(supabase: any, notification: any) {
       if (entity.name === "Payment" && entity.operation === "Create") {
         // Fetch the payment to find which invoices it paid
         const data = await qbGet(accessToken, realmId, `payment/${entity.id}`);
-        const payment = data?.Payment;
-
-        const invoiceIds: string[] = [];
-        for (const line of payment?.Line ?? []) {
-          for (const linked of line?.LinkedTxn ?? []) {
-            if (linked?.TxnType === "Invoice") invoiceIds.push(linked.TxnId);
-          }
-        }
-
+        const invoiceIds = extractInvoiceIdsFromPayment(data?.Payment);
         for (const invId of invoiceIds) {
-          await handlePaidInvoice(supabase, invId);
+          await handlePaidInvoice(supabase, invId, shopOwner);
         }
       }
 
       if (entity.name === "Invoice" && entity.operation === "Update") {
         // Fetch the invoice to check if Balance = 0 (fully paid)
         const data = await qbGet(accessToken, realmId, `invoice/${entity.id}`);
-        const balance = Number(data?.Invoice?.Balance ?? -1);
-        if (balance === 0) {
-          await handlePaidInvoice(supabase, entity.id);
+        if (isInvoiceFullyPaid(data?.Invoice)) {
+          await handlePaidInvoice(supabase, entity.id, shopOwner);
         }
       }
     } catch (err) {
