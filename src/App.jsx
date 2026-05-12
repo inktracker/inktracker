@@ -969,9 +969,12 @@ const AuthenticatedApp = () => {
     return <AppRoutes />;
   }
 
-  // Check trial expiry
+  // Check trial expiry. Admins (founder / staff) bypass billing
+  // gating entirely — their account has permanent access regardless
+  // of subscription_tier / trial_ends_at state.
+  const isAdminBypass = user?.role === "admin";
   const trialExpired = user?.subscription_tier === "trial" && user?.trial_ends_at && new Date(user.trial_ends_at) < new Date();
-  const isExpired = trialExpired || user?.subscription_tier === "expired" || user?.subscription_status === "canceled";
+  const isExpired = !isAdminBypass && (trialExpired || user?.subscription_tier === "expired" || user?.subscription_status === "canceled");
 
   // Show onboarding if the user hasn't set a shop name yet (owners only — managers/employees inherit)
   const needsOnboarding = !user?.shop_name && user?.role !== "manager" && user?.role !== "employee";
