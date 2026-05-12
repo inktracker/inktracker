@@ -9,38 +9,48 @@ import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List, Hammer, Send, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 
-const FLOOR_STEPS = ["Art Approval", "Order Goods", "Pre-Press", "Printing", "Finishing", "Quality Check", "Packing", "Completed"];
+// FLOOR_STEPS used to have its own slightly-different status list
+// (with "Quality Check" / "Packing" labels not present anywhere else
+// in the codebase). Consolidated to O_STATUSES on 2026-05-12 so the
+// production view, order detail modal, and broker analytics all
+// walk the same pipeline. See O_STATUSES doc for the rationale.
+const FLOOR_STEPS = O_STATUSES;
 
+// Per-stage default tasks for the shop-floor checklist. The old
+// Finishing / Quality Check / Packing entries collapsed into
+// Printing on 2026-05-12 — same simplification as O_STATUSES.
 const FLOOR_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
-  "Order Goods": ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
-  "Pre-Press": ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
-  "Printing": ["Mount screens on press", "Run test prints", "Get test approval", "Run full batch", "Spot check quality"],
-  "Finishing": ["Flash/cure prints", "Quality inspect", "Fold & tag", "Count pieces"],
-  "Quality Check": ["Verify quantities", "Check print quality", "Match against order", "Flag any issues"],
-  "Packing": ["Sort by size", "Bag/box order", "Label packages", "Stage for pickup/shipping"],
+  "Order Goods":  ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
+  "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
+  "Printing": [
+    "Mount screens on press",
+    "Run test prints",
+    "Get test approval",
+    "Run full batch",
+    "Flash/cure prints",
+    "Quality inspect",
+    "Fold & tag",
+    "Count pieces",
+    "Bag/box order",
+    "Stage for pickup/shipping",
+  ],
 };
 
 const FLOOR_COLORS = {
   "Art Approval": { bg: "bg-purple-500", light: "bg-purple-50 text-purple-700 border-purple-200" },
-  "Order Goods": { bg: "bg-amber-500", light: "bg-amber-50 text-amber-700 border-amber-200" },
-  "Pre-Press": { bg: "bg-blue-500", light: "bg-blue-50 text-blue-700 border-blue-200" },
-  "Printing": { bg: "bg-indigo-500", light: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-  "Finishing": { bg: "bg-teal-500", light: "bg-teal-50 text-teal-700 border-teal-200" },
-  "Quality Check": { bg: "bg-orange-500", light: "bg-orange-50 text-orange-700 border-orange-200" },
-  "Packing": { bg: "bg-emerald-500", light: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  "Completed": { bg: "bg-slate-400", light: "bg-slate-50 text-slate-600 border-slate-200" },
+  "Order Goods":  { bg: "bg-amber-500",  light: "bg-amber-50 text-amber-700 border-amber-200" },
+  "Pre-Press":    { bg: "bg-blue-500",   light: "bg-blue-50 text-blue-700 border-blue-200" },
+  "Printing":     { bg: "bg-indigo-500", light: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  "Completed":    { bg: "bg-slate-400",  light: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
 const STATUS_COLORS = {
-  "Art Approval":     "bg-slate-100 border-slate-300 text-slate-700",
-  "Order Goods":      "bg-amber-50 border-amber-300 text-amber-800",
-  "Pre-Press":        "bg-yellow-50 border-yellow-300 text-yellow-800",
-  "Printing":         "bg-blue-50 border-blue-300 text-blue-800",
-  "Finishing":        "bg-purple-50 border-purple-300 text-purple-800",
-  "QC":               "bg-orange-50 border-orange-300 text-orange-800",
-  "Ready for Pickup": "bg-emerald-50 border-emerald-300 text-emerald-800",
-  "Completed":        "bg-teal-50 border-teal-300 text-teal-700",
+  "Art Approval": "bg-slate-100 border-slate-300 text-slate-700",
+  "Order Goods":  "bg-amber-50 border-amber-300 text-amber-800",
+  "Pre-Press":    "bg-yellow-50 border-yellow-300 text-yellow-800",
+  "Printing":     "bg-blue-50 border-blue-300 text-blue-800",
+  "Completed":    "bg-teal-50 border-teal-300 text-teal-700",
 };
 
 function getOrderArtworkCount(order) {
@@ -549,7 +559,7 @@ export default function Production() {
                   )}
                   {filteredTable.map((o) => {
                     const isChecked = selectedIds.has(o.id);
-                    const isOverdue = o.due_date && o.due_date < today && !["Ready for Pickup", "Completed"].includes(o.status);
+                    const isOverdue = o.due_date && o.due_date < today && o.status !== "Completed";
                     return (
                       <tr
                         key={o.id}

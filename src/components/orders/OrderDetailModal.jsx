@@ -22,34 +22,39 @@ import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2 } from "lucide-react";
 
+// Per-stage default checklist. Folded the old "Finishing", "Quality
+// Check", and "Packing" checklists into Printing so those tasks
+// don't disappear from the UI when the pipeline slimmed from 8 → 5
+// stages on 2026-05-12 (see O_STATUSES doc).
 const STEP_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
-  "Order Goods": ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
-  "Pre-Press": ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
-  "Printing": ["Mount screens on press", "Run test prints", "Get test approval", "Run full batch", "Spot check quality"],
-  "Finishing": ["Flash/cure prints", "Quality inspect", "Fold & tag", "Count pieces"],
-  "Quality Check": ["Verify quantities", "Check print quality", "Match against order", "Flag any issues"],
-  "Packing": ["Sort by size", "Bag/box order", "Label packages", "Stage for pickup/shipping"],
+  "Order Goods":  ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
+  "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
+  "Printing":     [
+    "Mount screens on press",
+    "Run test prints",
+    "Get test approval",
+    "Run full batch",
+    "Flash/cure prints",
+    "Quality inspect",
+    "Fold & tag",
+    "Count pieces",
+    "Bag/box order",
+    "Stage for pickup/shipping",
+  ],
 };
 
-const STATUS_ORDER = [
-  "Art Approval",
-  "Pre-Press",
-  "Printing",
-  "Finishing",
-  "QC",
-  "Ready for Pickup",
-  "Completed",
-];
-
+// STATUS_ORDER previously had its own (different — missing "Order
+// Goods") list; replaced with the canonical O_STATUSES so the
+// "next status" arrow walks the same pipeline as everything else.
 function getNextStatus(currentStatus) {
-  const idx = STATUS_ORDER.indexOf(currentStatus);
-  return idx >= 0 && idx < STATUS_ORDER.length - 1 ? STATUS_ORDER[idx + 1] : null;
+  const idx = O_STATUSES.indexOf(currentStatus);
+  return idx >= 0 && idx < O_STATUSES.length - 1 ? O_STATUSES[idx + 1] : null;
 }
 
 function getPreviousStatus(currentStatus) {
-  const idx = STATUS_ORDER.indexOf(currentStatus);
-  return idx > 0 ? STATUS_ORDER[idx - 1] : null;
+  const idx = O_STATUSES.indexOf(currentStatus);
+  return idx > 0 ? O_STATUSES[idx - 1] : null;
 }
 
 function getImprintArtwork(imp) {

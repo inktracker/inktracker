@@ -1,29 +1,40 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { fmtDate, sortSizeEntries } from "../components/shared/pricing";
+import { fmtDate, sortSizeEntries, O_STATUSES } from "../components/shared/pricing";
 import { Package, ChevronRight, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 
-const STEPS = ["Art Approval", "Order Goods", "Pre-Press", "Printing", "Finishing", "QC", "Ready for Pickup", "Completed"];
+// ShopFloor STEPS used to be its own copy of the order pipeline.
+// Consolidated to O_STATUSES on 2026-05-12 so all status lists in
+// the app come from a single source of truth.
+const STEPS = O_STATUSES;
 
+// Per-stage checklist for the shop-floor view. Old Finishing / QC /
+// Ready-for-Pickup tasks rolled into Printing — same simplification
+// as OrderDetailModal.
 const STEP_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
-  "Order Goods": ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
-  "Pre-Press": ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
-  "Printing": ["Mount screens on press", "Run test prints", "Get test approval", "Run full batch", "Spot check quality"],
-  "Finishing": ["Flash/cure prints", "Quality inspect", "Fold & tag", "Count pieces"],
-  "QC": ["Verify quantities", "Check print quality", "Match against order", "Flag any issues"],
-  "Ready for Pickup": ["Sort by size", "Bag/box order", "Label packages", "Stage for pickup/shipping"],
+  "Order Goods":  ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
+  "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
+  "Printing": [
+    "Mount screens on press",
+    "Run test prints",
+    "Get test approval",
+    "Run full batch",
+    "Flash/cure prints",
+    "Quality inspect",
+    "Fold & tag",
+    "Count pieces",
+    "Bag/box order",
+    "Stage for pickup/shipping",
+  ],
 };
 
 const STEP_COLORS = {
   "Art Approval": { bg: "bg-purple-500", light: "bg-purple-50 text-purple-700 border-purple-200" },
-  "Order Goods": { bg: "bg-amber-500", light: "bg-amber-50 text-amber-700 border-amber-200" },
-  "Pre-Press": { bg: "bg-blue-500", light: "bg-blue-50 text-blue-700 border-blue-200" },
-  "Printing": { bg: "bg-indigo-500", light: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-  "Finishing": { bg: "bg-teal-500", light: "bg-teal-50 text-teal-700 border-teal-200" },
-  "QC": { bg: "bg-orange-500", light: "bg-orange-50 text-orange-700 border-orange-200" },
-  "Ready for Pickup": { bg: "bg-emerald-500", light: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  "Completed": { bg: "bg-slate-400", light: "bg-slate-50 text-slate-600 border-slate-200" },
+  "Order Goods":  { bg: "bg-amber-500",  light: "bg-amber-50 text-amber-700 border-amber-200" },
+  "Pre-Press":    { bg: "bg-blue-500",   light: "bg-blue-50 text-blue-700 border-blue-200" },
+  "Printing":     { bg: "bg-indigo-500", light: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  "Completed":    { bg: "bg-slate-400",  light: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
 function LoginScreen() {

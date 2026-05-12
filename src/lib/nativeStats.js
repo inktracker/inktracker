@@ -20,9 +20,17 @@ function num(v) {
 
 const COMPLETED_STATUSES = new Set(["Completed", "Shipped", "Delivered", "Picked Up"]);
 const CANCELLED_STATUSES = new Set(["Cancelled", "Canceled", "Voided"]);
+// Fuzzy-matched active order statuses — includes our canonical
+// O_STATUSES production stages plus aliases for orders imported
+// from external systems (Printavo, manual CSV, etc.) that use
+// different conventions. Quality Check / Packing were our own
+// legacy stages — dropped on 2026-05-12 when the pipeline slimmed
+// to 5 stages.
 const ACTIVE_ORDER_STATUSES = new Set([
-  "Art Approval", "Approved", "Pre-Production", "On Press",
-  "Drying", "Curing", "Quality Check", "Packing", "Ready", "In Production",
+  // Canonical InkTracker pipeline (O_STATUSES, minus terminal "Completed")
+  "Art Approval", "Order Goods", "Pre-Press", "Printing",
+  // External-system aliases tolerated by this classifier
+  "Approved", "Pre-Production", "On Press", "Drying", "Curing", "Ready", "In Production",
 ]);
 
 function isCompletedOrder(o) {

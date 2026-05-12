@@ -5,15 +5,13 @@ import OrderDetailModal from "../components/orders/OrderDetailModal";
 import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 
+// Calendar status colors. Mirrors O_STATUSES — 5 stages.
 const STATUS_COLORS = {
-  "Order Goods":      "bg-orange-50 border-orange-300 text-orange-800",
-  "Art Approval":     "bg-slate-100 border-slate-300 text-slate-700",
-  "Pre-Press":        "bg-yellow-50 border-yellow-300 text-yellow-800",
-  "Printing":         "bg-blue-50 border-blue-300 text-blue-800",
-  "Finishing":        "bg-indigo-50 border-indigo-300 text-indigo-800",
-  "QC":               "bg-purple-50 border-purple-300 text-purple-800",
-  "Ready for Pickup": "bg-emerald-50 border-emerald-300 text-emerald-800",
-  "Completed":        "bg-teal-50 border-teal-300 text-teal-700",
+  "Art Approval": "bg-slate-100 border-slate-300 text-slate-700",
+  "Order Goods":  "bg-orange-50 border-orange-300 text-orange-800",
+  "Pre-Press":    "bg-yellow-50 border-yellow-300 text-yellow-800",
+  "Printing":     "bg-blue-50 border-blue-300 text-blue-800",
+  "Completed":    "bg-teal-50 border-teal-300 text-teal-700",
 };
 
 function getDaysInMonth(year, month) {
