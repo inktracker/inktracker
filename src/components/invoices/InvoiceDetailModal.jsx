@@ -26,8 +26,16 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
   async function handleCreateInQB() {
-    if (invoice.qb_invoice_id || invoice.qb_payment_link) {
-      if (!window.confirm("This invoice was previously synced to QuickBooks. Create a new one anyway?")) return;
+    // Ironclad no-duplicate guard: if this invoice already has a QB
+    // record, refuse to create a second one. The footer renders the
+    // "View in QB" link in that case, but this internal check is the
+    // backstop — never trust the UI to be the only gate.
+    if (invoice.qb_invoice_id) {
+      setQbStatus({
+        type: "info",
+        message: `This invoice is already in QuickBooks (QB ID ${invoice.qb_invoice_id}). Use "View in QB" to open it.`,
+      });
+      return;
     }
     setQbCreating(true);
     setQbStatus(null);
@@ -435,10 +443,28 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               View Order
             </button>
           )}
-          <button onClick={handleCreateInQB} disabled={qbCreating}
-            className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50">
-            {qbCreating ? "Creating…" : "Create in QB"}
-          </button>
+          {/* QB button — "View in QB" when the invoice already exists
+              there, "Create in QB" when it doesn't. Two layers of
+              dup protection: the button itself never offers create
+              when qb_invoice_id is set, AND handleCreateInQB refuses
+              the call as a backstop. */}
+          {invoice.qb_invoice_id ? (
+            <a
+              href={`https://qbo.intuit.com/app/invoice?txnId=${encodeURIComponent(invoice.qb_invoice_id)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition"
+            >
+              View in QB
+            </a>
+          ) : (
+            <button onClick={handleCreateInQB} disabled={qbCreating}
+              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50">
+              {qbCreating ? "Creating…" : "Create in QB"}
+            </button>
+          )}
+          {/* Preview PDF — the preview window has its own download
+              button, so we don't render a separate "Download PDF" here. */}
           <button onClick={async () => {
             // QB-synced invoices: show what QB actually generated, not our local copy.
             const target = resolveInvoicePdfSource(invoice);
@@ -452,25 +478,6 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           }}
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
             Preview PDF
-          </button>
-          <button onClick={async () => {
-            const target = resolveInvoicePdfSource(invoice);
-            if (target.source === "qb") {
-              const blobUrl = await fetchQBInvoicePdfBlob(target.qbInvoiceId);
-              if (blobUrl) {
-                const a = document.createElement("a");
-                a.href = blobUrl;
-                a.download = `Invoice-${invoice.invoice_id || target.qbInvoiceId}.pdf`;
-                a.click();
-                URL.revokeObjectURL(blobUrl);
-                return;
-              }
-              // QB fetch failed — fall through to local PDF.
-            }
-            exportInvoiceToPDF(invoice, customer, { shop: shopProfile || { shop_name: shopName }, logoUrl });
-          }}
-            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
-            Download PDF
           </button>
           <button onClick={handleReorder} disabled={reordering}
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition disabled:opacity-50">
