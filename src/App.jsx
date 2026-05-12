@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef, lazy, Suspense } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { Toaster } from "@/components/ui/toaster";
@@ -14,6 +14,11 @@ import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import LoginModal from "@/components/LoginModal";
 import OnboardingWizard from "@/components/OnboardingWizard";
+import {
+  TYPEWRITER_LINES,
+  INITIAL_STATE as TYPEWRITER_INITIAL_STATE,
+  advanceTypewriter,
+} from "@/lib/landing/typewriter";
 
 const { Pages, Layout, mainPage } = pagesConfig;
 
@@ -53,24 +58,271 @@ const LayoutWrapper = ({ children, currentPageName }) =>
     <>{children}</>
   );
 
-const DemoBanner = lazy(() => import("./components/landing/DemoBanner"));
+// Feature catalog with optional media for the preview modal.
+//
+// Each card opens a modal showing either a static screenshot (media.type
+// === "image") or a short looping demo video (media.type === "video").
+// When media is null the modal renders a placeholder — TODO comments below
+// note the recommended asset for each feature and the expected path under
+// /public/landing/. Either asset type is acceptable per card; videos should
+// be 6–10 second muted loops, MP4 + WebM, ~16:9, kept small (< 2 MB).
+const FEATURE_CARDS = [
+  {
+    title: "Quotes & Orders",
+    desc: "Build quotes with live garment pricing from S&S and AS Colour. Convert to orders with one click.",
+    color: "from-indigo-500/20 to-indigo-500/5",
+    // 23.5-second animated demo: a quote being built from scratch through
+    // customer select, garment style autofill, size breakdown, print
+    // location, live pricing count-up, and save → new row in the list.
+    // Built from the design handoff at public/landing/quote-demo/.
+    media: { type: "iframe", src: "/landing/quote-demo/index.html" },
+  },
+  {
+    title: "Production Tracking",
+    desc: "Visual pipeline from art approval to shipping. Your team updates progress from any device.",
+    color: "from-violet-500/20 to-violet-500/5",
+    // 25-second animated demo of the production kanban — cards moving
+    // from art-approval through pre-press, printing, finishing, QC,
+    // ready-to-ship, and completed. Built from the design handoff at
+    // public/landing/production-demo/.
+    media: { type: "iframe", src: "/landing/production-demo/index.html" },
+  },
+  {
+    title: "Invoicing & Payments",
+    desc: "Generate invoices, sync to QuickBooks, and send payment links directly to customers.",
+    color: "from-emerald-500/20 to-emerald-500/5",
+    // TODO: Invoice detail view with "Send to Customer" + Stripe payment link.
+    // Screenshot path: /public/landing/feature-invoicing.png
+    media: null,
+  },
+  {
+    title: "Customer Management",
+    desc: "Track customer history, artwork files, tax status, and payment terms. Auto-merge duplicates.",
+    color: "from-blue-500/20 to-blue-500/5",
+    // TODO: Customer detail panel with order history + tax-exempt flag visible.
+    // Screenshot path: /public/landing/feature-customers.png
+    media: null,
+  },
+  {
+    title: "Inventory & Restock",
+    desc: "Shopify inventory sync. Order blanks from S&S Activewear and AS Colour with live pricing.",
+    color: "from-amber-500/20 to-amber-500/5",
+    // TODO: Inventory page with low-stock badges + restock CTA.
+    // Screenshot path: /public/landing/feature-inventory.png
+    media: null,
+  },
+  {
+    title: "Quote Wizard",
+    desc: "Embed a quote request form on your website. Customers build orders 24/7 and you get notified.",
+    color: "from-rose-500/20 to-rose-500/5",
+    // TODO: The customer-facing wizard mid-flow (color/qty/imprint selection).
+    // Demo recommended (short scroll-through loop).
+    // Screenshot path: /public/landing/feature-wizard.png
+    // Demo path:       /public/landing/feature-wizard.mp4
+    media: null,
+  },
+  {
+    title: "Broker Integration",
+    desc: "Resellers submit their clients' orders through their own portal. Broker pricing and commissions tracked automatically.",
+    color: "from-teal-500/20 to-teal-500/5",
+    // TODO: Broker Dashboard view — assigned shops list, recent submitted
+    // orders, commission summary at the top. Also worth: a side-by-side
+    // showing the broker's portal vs the shop's incoming-quote view so it's
+    // clear how the two sides connect.
+    // Screenshot path: /public/landing/feature-broker.png
+    // Demo path:       /public/landing/feature-broker.mp4 (recommended —
+    //                   short loop of a broker submitting → shop receiving)
+    media: null,
+  },
+  {
+    title: "Shop Floor",
+    desc: "Tablet-ready view for employees. Job tickets, checklists, and real-time production updates.",
+    color: "from-orange-500/20 to-orange-500/5",
+    // TODO: Shop Floor view on a tablet (or 4:3 framing). Show job ticket + checklist.
+    // Screenshot path: /public/landing/feature-shopfloor.png
+    media: null,
+  },
+  {
+    title: "Mockup Designer",
+    desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.",
+    color: "from-purple-500/20 to-purple-500/5",
+    // TODO: Mockup canvas with artwork placed on a tee template.
+    // Screenshot path: /public/landing/feature-mockups.png
+    media: null,
+  },
+];
+
+// Modal for previewing a feature. Shows feature.media (image or video) or a
+// placeholder if media isn't supplied yet. Closes on backdrop click, X
+// button, or Escape. Locks body scroll while open.
+function FeaturePreviewModal({ feature, onClose }) {
+  useEffect(() => {
+    if (!feature) return undefined;
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [feature, onClose]);
+
+  if (!feature) return null;
+  const media = feature.media;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 animate-in fade-in"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${feature.title} preview`}
+    >
+      <div
+        className="bg-slate-900 border border-white/10 rounded-2xl max-w-5xl w-full overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+          <div>
+            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Preview</div>
+            <h3 className="text-lg font-bold text-white">{feature.title}</h3>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close preview"
+            className="text-slate-400 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 transition"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="bg-slate-800/60 flex items-center justify-center" style={{ aspectRatio: "16 / 9" }}>
+          {media?.type === "image" && (
+            <img src={media.src} alt={media.alt || `${feature.title} screenshot`} className="w-full h-full object-cover" />
+          )}
+          {media?.type === "video" && (
+            <video
+              src={media.src}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="w-full h-full object-cover"
+              aria-label={`${feature.title} demo`}
+            />
+          )}
+          {media?.type === "iframe" && (
+            <iframe
+              src={media.src}
+              title={`${feature.title} interactive demo`}
+              className="w-full h-full border-0"
+              loading="lazy"
+              // sandbox keeps the embedded React demo from accessing the
+              // parent page; allow-scripts + allow-same-origin are needed
+              // for the demo's localStorage playhead + Babel JSX compile.
+              sandbox="allow-scripts allow-same-origin"
+            />
+          )}
+          {!media && (
+            <div className="text-slate-500 text-sm font-medium">
+              Preview — to be supplied
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-white/10">
+          <p className="text-sm text-slate-300 leading-relaxed">{feature.desc}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Hero headline animated as a typewriter — line 1 in white, brief pause,
+// line 2 in indigo, then a slow blinking cursor parked at the end. Single
+// keystroke is ~55ms, line break is 350ms. After typing finishes, the
+// cursor keeps blinking so the hero never goes fully static.
+const TYPEWRITER_TIMERS = { key: 55, pause: 350, hold: 1400, fade: 1500 };
+const [LINE1, LINE2] = TYPEWRITER_LINES;
+
+function TypewriterHeadline({ onRevealReady }) {
+  const [state, setState] = useState(TYPEWRITER_INITIAL_STATE);
+  const [blink, setBlink] = useState(true);
+  const revealedRef = useRef(false);
+
+  useEffect(() => {
+    const step = advanceTypewriter(state);
+    if (step.reveal && !revealedRef.current) {
+      revealedRef.current = true;
+      onRevealReady?.();
+    }
+    if (step.next === "none") {
+      // Terminal step (fading → gone). No further timer, but the
+      // phase still needs to commit so the component unmounts and its
+      // slot in the layout collapses — otherwise the typewriter
+      // remains in the DOM at opacity-0, leaving an empty void where
+      // it used to sit.
+      if (step.phase !== state.phase) setState(step);
+      return;
+    }
+    const t = setTimeout(() => setState(step), TYPEWRITER_TIMERS[step.next]);
+    return () => clearTimeout(t);
+  }, [state, onRevealReady]);
+
+  useEffect(() => {
+    const t = setInterval(() => setBlink((b) => !b), 520);
+    return () => clearInterval(t);
+  }, []);
+
+  if (state.phase === "gone") return null;
+
+  const cursorOnLine2 =
+    state.phase === "line2" || state.phase === "done" || state.phase === "fading";
+  const fading = state.phase === "fading";
+  const shown1 = LINE1.slice(0, state.line1);
+  const shown2 = LINE2.slice(0, state.line2);
+
+  return (
+    <div
+      className="mb-6 transition-opacity ease-out"
+      style={{ opacity: fading ? 0 : 1, transitionDuration: `${TYPEWRITER_TIMERS.fade}ms` }}
+      aria-label={`${LINE1} ${LINE2}`}
+    >
+      <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-white min-h-[1.1em]">
+        {shown1}
+        {!cursorOnLine2 && (
+          <span
+            className={`inline-block w-[3px] md:w-[4px] h-[0.85em] align-[-0.1em] ml-1 bg-indigo-400 rounded-sm ${blink ? "opacity-100" : "opacity-0"}`}
+            aria-hidden="true"
+          />
+        )}
+      </h1>
+      <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent min-h-[1.1em]">
+        {shown2}
+        {cursorOnLine2 && (
+          <span
+            className={`inline-block w-[3px] md:w-[4px] h-[0.85em] align-[-0.1em] ml-1 bg-indigo-400 rounded-sm ${blink ? "opacity-100" : "opacity-0"}`}
+            aria-hidden="true"
+          />
+        )}
+      </h1>
+    </div>
+  );
+}
 
 function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
-  // Skip the heavy DemoBanner bundle on phone-sized viewports
-  const [isDesktop, setIsDesktop] = useState(
-    () => typeof window !== "undefined" && window.innerWidth >= 768
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(min-width: 768px)");
-    const onChange = (e) => setIsDesktop(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
+  const [previewFeature, setPreviewFeature] = useState(null);
+  // false until the typewriter starts its fade-out — then the badge,
+  // brand lockup, subtext, and CTA buttons cross-fade in.
+  const [heroRevealed, setHeroRevealed] = useState(false);
 
   function openSignup() { setLoginMode("signup"); setShowLogin(true); }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
+
+  const revealCls = `transition-opacity duration-700 ${heroRevealed ? "opacity-100" : "opacity-0 pointer-events-none"}`;
 
   return (
     <>
@@ -98,45 +350,85 @@ function PublicLandingPage() {
           </div>
         </nav>
 
-        {/* Hero — static on mobile, animated demo banner on md+ */}
-        {isDesktop && (
-          <section className="pt-[72px]">
-            <Suspense fallback={
-              <div className="w-full" style={{ aspectRatio: "16/9", background: "#0B0B0E" }} />
-            }>
-              <DemoBanner onSignup={openSignup} />
-            </Suspense>
-          </section>
-        )}
+        {/* Hero — single centered column. No product visual for now; that
+            slot returns when we have a real screenshot worth showing. */}
+        <section className="pt-32 md:pt-40 pb-16 md:pb-24 px-6">
+          <div className="max-w-3xl mx-auto text-center">
+            {/* Top group fades in as the typewriter fades out. Wrapped
+                in a div so the hero's vertical layout stays stable while
+                the typewriter is the only visible element. */}
+            <div className={revealCls}>
+              <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
+              </div>
 
-        {/* Hero — mobile static */}
-        <section className="pt-32 pb-16 px-6 md:hidden">
-          <div className="max-w-md mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-10">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
+              {/* Brand lockup — same treatment the demo banner used.
+                  The `flame-key` color-matrix filter drops the navy
+                  square from the logo PNG (α = 1R + 3G − 2B keeps the
+                  orange flame and green base, zeros the dark backdrop).
+                  A thin circle outline ripples outward to give the drop
+                  a subtle heartbeat. */}
+              <svg width="0" height="0" aria-hidden="true" className="absolute">
+                <defs>
+                  <filter id="hero-flame-key" colorInterpolationFilters="sRGB">
+                    <feColorMatrix
+                      type="matrix"
+                      values="1 0 0 0 0
+                              0 1 0 0 0
+                              0 0 1 0 0
+                              1 3 -2 0 0"
+                    />
+                  </filter>
+                </defs>
+              </svg>
+              <div className="flex items-center justify-center gap-4 mb-8">
+                <span className="relative inline-flex w-16 h-16 items-center justify-center">
+                  <span
+                    className="absolute inset-0 rounded-full border border-indigo-400/60 hero-ring-ripple"
+                    aria-hidden="true"
+                  />
+                  <img
+                    src={INKTRACKER_LOGO}
+                    alt="InkTracker"
+                    crossOrigin="anonymous"
+                    className="relative w-14 h-14 object-contain"
+                    style={{ filter: 'url(#hero-flame-key)' }}
+                  />
+                </span>
+                <span className="text-4xl md:text-5xl font-extrabold tracking-tight">
+                  InkTracker
+                </span>
+              </div>
             </div>
-            <div className="flex items-center justify-center gap-3 mb-8">
-              <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-14 h-14 rounded-xl" />
-              <span className="text-5xl font-extrabold tracking-tight">InkTracker</span>
+
+            <TypewriterHeadline onRevealReady={() => setHeroRevealed(true)} />
+
+            <div className={revealCls}>
+              <p className="text-sm md:text-base text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
+                Created by screen printers. Built to protect the land.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-5">
+                <button onClick={openSignup}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50 w-full sm:w-auto">
+                  Start Free Trial
+                </button>
+                <a href="#features"
+                  className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
+                  See Features →
+                </a>
+              </div>
+
+              {/* TODO (founding member program — separate PR): when the
+                  internal founding-member counter is wired up, render
+                  "Founding spots remaining: X of 100" here in muted text
+                  above the price line. Source the count from the public
+                  view / edge function described in src/lib/billing.js. */}
+              <p className="text-xs text-slate-500">
+                Founding member pricing — $99/mo after trial · Cancel anytime
+              </p>
             </div>
-            <h1 className="text-3xl font-extrabold leading-tight tracking-tight text-slate-300 mb-2">
-              Run your print shop
-            </h1>
-            <h1 className="text-3xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent mb-10">
-              without the chaos.
-            </h1>
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <button onClick={openSignup}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50">
-                Start Free Trial
-              </button>
-              <a href="#features"
-                className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
-                See Features →
-              </a>
-            </div>
-            <p className="text-xs text-slate-500">$99/mo after trial · Cancel anytime</p>
           </div>
         </section>
 
@@ -160,7 +452,10 @@ function PublicLandingPage() {
         {/* Integrations */}
         <section className="py-12 px-6">
           <div className="max-w-3xl mx-auto text-center">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-6">Integrates with the tools you already use</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Integrates with the tools you already use</p>
+            <p className="text-sm text-slate-300 mb-6 leading-relaxed">
+              Live garment pricing from S&amp;S Activewear and AS Colour. Two-way QuickBooks sync. Stripe-powered payments. Shopify inventory in sync.
+            </p>
             <div className="flex items-center justify-center gap-8 flex-wrap">
               {[
                 { name: "QuickBooks", color: "#2CA01C" },
@@ -182,22 +477,22 @@ function PublicLandingPage() {
               <h2 className="text-3xl font-extrabold">Everything your shop needs</h2>
               <p className="text-slate-400 mt-3 max-w-lg mx-auto">No tiers, no feature locks. Every tool included from day one.</p>
             </div>
+            <p className="text-center text-xs text-slate-500 mb-8">Click any feature to preview it.</p>
             <div className="grid md:grid-cols-3 gap-5">
-              {[
-                { title: "Quotes & Orders", desc: "Build quotes with live garment pricing from S&S and AS Colour. Convert to orders with one click.", color: "from-indigo-500/20 to-indigo-500/5" },
-                { title: "Production Tracking", desc: "Visual pipeline from art approval to shipping. Your team updates progress from any device.", color: "from-violet-500/20 to-violet-500/5" },
-                { title: "Invoicing & Payments", desc: "Generate invoices, sync to QuickBooks, and send payment links directly to customers.", color: "from-emerald-500/20 to-emerald-500/5" },
-                { title: "Customer Management", desc: "Track customer history, artwork files, tax status, and payment terms. Auto-merge duplicates.", color: "from-blue-500/20 to-blue-500/5" },
-                { title: "Inventory & Restock", desc: "Shopify inventory sync. Order blanks from S&S Activewear and AS Colour with live pricing.", color: "from-amber-500/20 to-amber-500/5" },
-                { title: "Quote Wizard", desc: "Embed a quote request form on your website. Customers build orders 24/7 and you get notified.", color: "from-rose-500/20 to-rose-500/5" },
-                { title: "QuickBooks Sync", desc: "Two-way sync for invoices, expenses, and customers. Pull live P&L, balance sheet, and cash flow.", color: "from-teal-500/20 to-teal-500/5" },
-                { title: "Shop Floor", desc: "Tablet-ready view for employees. Job tickets, checklists, and real-time production updates.", color: "from-orange-500/20 to-orange-500/5" },
-                { title: "Mockup Designer", desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.", color: "from-purple-500/20 to-purple-500/5" },
-              ].map(f => (
-                <div key={f.title} className={`bg-gradient-to-b ${f.color} border border-white/10 rounded-2xl p-6 hover:border-white/20 transition`}>
-                  <h3 className="text-base font-bold text-white mb-2">{f.title}</h3>
-                  <p className="text-sm text-slate-400 leading-relaxed">{f.desc}</p>
-                </div>
+              {FEATURE_CARDS.map(f => (
+                <button
+                  key={f.title}
+                  type="button"
+                  onClick={() => setPreviewFeature(f)}
+                  className={`group relative text-left bg-gradient-to-b ${f.color} border border-white/10 rounded-2xl p-6 hover:border-white/30 hover:-translate-y-0.5 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400`}
+                  aria-label={`Preview ${f.title}`}
+                >
+                  <h3 className="text-base font-bold text-white mb-2 pr-8">{f.title}</h3>
+                  <p className="text-sm text-slate-400 leading-relaxed mb-3">{f.desc}</p>
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-300 group-hover:text-indigo-200 transition">
+                    Preview <span aria-hidden="true">→</span>
+                  </span>
+                </button>
               ))}
             </div>
           </div>
@@ -226,6 +521,38 @@ function PublicLandingPage() {
           </div>
         </section>
 
+        {/* Founder / origin story */}
+        <section className="py-24 px-6 border-t border-white/5">
+          <div className="max-w-5xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-12 items-center">
+              <div className="order-2 md:order-1">
+                <img
+                  src="/landing/joe.jpg"
+                  alt="Joe Grennan, founder of InkTracker, at the Biota MFG screen print shop in Reno, Nevada."
+                  className="w-full max-w-md mx-auto rounded-2xl shadow-2xl shadow-black/40 object-cover"
+                  style={{ aspectRatio: "4 / 5" }}
+                  loading="lazy"
+                />
+              </div>
+
+              <div className="order-1 md:order-2">
+                <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-3">
+                  Why InkTracker exists
+                </p>
+                <h2 className="text-3xl font-extrabold mb-5 leading-tight">
+                  Built by a screen printer,<br/>for screen printers.
+                </h2>
+                <p className="text-slate-300 leading-relaxed mb-5">
+                  I run Biota MFG, a screen print shop in Reno, Nevada. After 13 years on the press, I kept finding the same software gap — tools that either tried to do everything (and did most of it badly) or did one thing but missed the rest of the workflow. So I built the tool I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. Every InkTracker subscription also funds land conservation through Biota's five-year roadmap. — Joe
+                </p>
+                <p className="text-xs text-slate-500">
+                  Joe Grennan · Founder · joe@biotamfg.co
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* Pricing */}
         <section id="pricing" className="py-24 px-6 border-t border-white/5">
           <div className="max-w-xl mx-auto">
@@ -235,13 +562,19 @@ function PublicLandingPage() {
             </div>
             <div className="bg-gradient-to-b from-indigo-600 to-indigo-700 border-2 border-indigo-400 rounded-2xl p-8 shadow-2xl shadow-indigo-900/40">
               <div className="text-center mb-6">
+                <p className="text-xs font-semibold text-emerald-300 uppercase tracking-widest mb-3">
+                  Founding member pricing — First 100 shops
+                </p>
                 <div className="mb-3">
                   <span className="text-5xl font-extrabold text-white">$99</span>
                   <span className="text-base text-indigo-200">/mo</span>
                 </div>
+                <p className="text-sm text-indigo-100/90 mb-3 max-w-md mx-auto leading-relaxed">
+                  Founding member rate locked for the life of your subscription. Available to the first 100 shops. Standard pricing of $149/month begins thereafter.
+                </p>
                 <p className="text-sm text-indigo-200">14-day free trial · No credit card required</p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mb-8 px-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mb-6 px-2">
                 {[
                   "Quotes & orders",
                   "Production tracking",
@@ -261,12 +594,28 @@ function PublicLandingPage() {
                   </div>
                 ))}
               </div>
+              <p className="text-xs text-indigo-100/80 text-center mb-6 max-w-md mx-auto leading-relaxed">
+                Typical shops save 5–10 hours per week on order tracking, payment follow-up, and quote-to-production handoff. Pays for itself in the first week.
+              </p>
               <div className="text-center">
                 <button onClick={openSignup}
                   className="bg-white text-indigo-700 hover:bg-indigo-50 font-bold px-10 py-3.5 rounded-xl text-base transition shadow-lg">
                   Start 14-Day Free Trial
                 </button>
+                <p className="text-xs text-indigo-200 mt-3">
+                  Have a question?{" "}
+                  <a href="mailto:joe@biotamfg.co" className="underline underline-offset-4 hover:text-white transition">
+                    Email joe@biotamfg.co
+                  </a>
+                </p>
               </div>
+            </div>
+
+            {/* Conservation anchor — scrolls to the Conservation Mission section below. */}
+            <div className="text-center mt-6">
+              <a href="#conservation" className="text-sm font-semibold text-emerald-400 hover:text-emerald-300 transition">
+                10% of every subscription funds land conservation. →
+              </a>
             </div>
           </div>
         </section>
@@ -315,6 +664,57 @@ function PublicLandingPage() {
           </div>
         </section>
 
+        {/* FAQ */}
+        <section id="faq" className="py-24 px-6 border-t border-white/5">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl font-extrabold">Frequently asked questions</h2>
+            </div>
+            <div className="space-y-3">
+              {[
+                {
+                  q: "Can I import data from Printavo, Shopworks, or another shop management tool?",
+                  a: "Yes. CSV import is supported for customers, quotes, and orders. If you're switching from another platform, contact support and we'll help map the data over.",
+                },
+                {
+                  q: "Does InkTracker work for embroidery shops too, or only screen printing?",
+                  a: "Both. The quote-to-invoice workflow, customer management, production tracking, and QuickBooks integration work the same way for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap.",
+                },
+                {
+                  q: "What happens to my data if I cancel?",
+                  a: "You can export all your data — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation. Your data is yours.",
+                },
+                {
+                  q: "Is there a long-term contract?",
+                  a: "No. InkTracker is month-to-month. Cancel anytime. Founding members who cancel will lose their $99/month rate; re-signups will pay the standard $149/month rate.",
+                },
+                {
+                  q: "How do I know InkTracker won't disappear in six months?",
+                  a: "InkTracker is built and maintained by Biota MFG, a 13-year-old screen print business based in Reno, Nevada. The shop dogfoods the software daily — if it stops being maintained, our own production stops. The financial structure also funds land conservation, which gives the project a long-horizon commitment the team takes seriously.",
+                },
+                {
+                  q: "Why is the price going up to $149/month?",
+                  a: "$99/month is our founding member rate, available to the first 100 shops. As we scale the product, support, and infrastructure, standard pricing reflects the actual cost to deliver and support InkTracker reliably. Founding members keep $99/month for as long as they remain subscribed.",
+                },
+                {
+                  q: "How does the conservation contribution actually work?",
+                  a: "A portion of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota MFG. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.co/pages/conservation.",
+                },
+              ].map((item) => (
+                <details key={item.q} className="group bg-white/[0.02] border border-white/10 rounded-2xl hover:border-white/20 transition">
+                  <summary className="cursor-pointer list-none px-6 py-4 flex items-center justify-between gap-4">
+                    <span className="text-sm md:text-base font-semibold text-white text-left">{item.q}</span>
+                    <span className="text-slate-400 text-xl font-light shrink-0 transition-transform group-open:rotate-45">+</span>
+                  </summary>
+                  <div className="px-6 pb-5 -mt-1">
+                    <p className="text-sm text-slate-400 leading-relaxed">{item.a}</p>
+                  </div>
+                </details>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* CTA */}
         <section className="py-24 px-6 border-t border-white/5">
           <div className="max-w-2xl mx-auto text-center">
@@ -347,6 +747,7 @@ function PublicLandingPage() {
       </div>
 
       <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} defaultMode={loginMode} />
+      <FeaturePreviewModal feature={previewFeature} onClose={() => setPreviewFeature(null)} />
     </>
   );
 }
