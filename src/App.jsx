@@ -406,7 +406,7 @@ function PublicLandingPage() {
 
             <div className={revealCls}>
               <p className="text-sm md:text-base text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
-                Developed in a print shop. Built to protect the land.
+                Developed in a print shop. Built to protect land.
               </p>
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-5">
