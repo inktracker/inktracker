@@ -1,7 +1,6 @@
 {
   "rewrites": [
     {
-      "_comment": "SPA fallback only for routes without a file extension. Paths containing a dot (e.g. /landing/quote-demo/index.html, /icon-192.png) are served as static files instead of being rewritten to the React app.",
       "source": "/((?!.*\\..*).*)",
       "destination": "/index.html"
     }
