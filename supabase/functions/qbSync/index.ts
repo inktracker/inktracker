@@ -17,6 +17,10 @@ import {
   buildInvoiceLinesFromPayload as sharedBuildInvoiceLinesFromPayload,
   extractPaymentLink as sharedExtractPaymentLink,
 } from "../_shared/qbInvoice.js";
+import {
+  reconcileQbInvoice,
+  RECONCILE_SEVERITY,
+} from "../_shared/qbWriteContracts.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -476,6 +480,36 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const qbTotal     = Number(qbInvoiceFinal?.TotalAmt ?? 0);
   const qbTaxAmount = Number(qbInvoiceFinal?.TxnTaxDetail?.TotalTax ?? 0);
   const qbSubtotal  = Number((qbTotal - qbTaxAmount).toFixed(2));
+
+  // ── Numbers-match reconciliation guard ─────────────────────────────────────
+  // Compare what we sent vs what QB returned. Any line-amount drift
+  // beyond a 1-cent rounding tolerance is logged loudly so it shows up
+  // in the Supabase function logs. Tax drift alone is informational
+  // (QB's tax setup is authoritative). Pure helper + tests live in
+  // ../_shared/qbWriteContracts.js.
+  const sentSubtotalForReconcile = lines.reduce(
+    (s: number, l: any) => s + (Number(l?.Amount) || 0),
+    0,
+  );
+  const expectedTax = Number((sentSubtotalForReconcile * (taxPercent / 100)).toFixed(2));
+  const reconciliation = reconcileQbInvoice({
+    sentLines: lines,
+    sentTax: expectedTax,
+    qbResponse: qbInvoiceFinal,
+  });
+  if (reconciliation.severity !== RECONCILE_SEVERITY.OK) {
+    console.error(
+      `[createInvoice] QB write reconciliation: ${reconciliation.severity} ` +
+      `quote=${quote.quote_id} shop=${quote.shop_owner} qb_invoice=${qbInvoiceId}\n` +
+      `  Sent subtotal: $${reconciliation.sentSubtotal.toFixed(2)}, ` +
+      `QB subtotal: $${reconciliation.qbSubtotal.toFixed(2)}, ` +
+      `drift: $${reconciliation.subtotalDrift.toFixed(2)}\n` +
+      `  Sent total:    $${reconciliation.sentTotal.toFixed(2)}, ` +
+      `QB total:    $${reconciliation.qbTotal.toFixed(2)}, ` +
+      `drift: $${reconciliation.totalDrift.toFixed(2)}\n` +
+      `  Issues: ${reconciliation.issues.join(" | ")}`,
+    );
+  }
 
   const paymentLink = extractPaymentLink(qbInvoiceFinal || created, realmId);
 
