@@ -53,6 +53,47 @@ export function canAccess(tier, feature) {
   return features.includes(feature);
 }
 
+/**
+ * Resolve a user's *effective* billing tier — what canAccess()
+ * should actually be checked against. This consolidates three pieces
+ * of state that were previously checked ad-hoc in different places:
+ *
+ *   1. Admin bypass — admins (founder / staff) never lose access,
+ *      regardless of subscription_tier or trial_ends_at. Treated as
+ *      'shop' so they keep every feature.
+ *   2. Trial expiry — a tier of 'trial' with a past trial_ends_at
+ *      collapses to 'expired'. Without this step the literal tier
+ *      string stayed 'trial' indefinitely and canAccess returned
+ *      every feature (the bug Joe hit on 2026-05-12).
+ *   3. Canceled subscription — a subscription_status of 'canceled'
+ *      collapses to 'expired' even if subscription_tier is stale.
+ *
+ * @param {object|null|undefined} user  the user profile (must include
+ *                                      role, subscription_tier,
+ *                                      subscription_status, trial_ends_at)
+ * @param {Date|number} [nowOverride]   inject a fixed "now" for tests
+ * @returns {string}                    one of: 'shop' | 'trial' | 'expired'
+ */
+export function getEffectiveTier(user, nowOverride) {
+  if (!user) return "expired";
+  if (user.role === "admin") return "shop";
+
+  if (user.subscription_status === "canceled") return "expired";
+
+  const tier = user.subscription_tier;
+  if (tier === "expired") return "expired";
+
+  if (tier === "trial" && user.trial_ends_at) {
+    const now = nowOverride instanceof Date
+      ? nowOverride.getTime()
+      : (typeof nowOverride === "number" ? nowOverride : Date.now());
+    const endsAt = new Date(user.trial_ends_at).getTime();
+    if (Number.isFinite(endsAt) && endsAt < now) return "expired";
+  }
+
+  return tier || "trial";
+}
+
 export function getTierLabel(tier) {
   const labels = { trial: "Free Trial", shop: "Shop", expired: "Expired" };
   return labels[tier] || tier;

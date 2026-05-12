@@ -5,7 +5,7 @@ import { base44 } from "@/api/supabaseClient";
 import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
-import { canAccess } from "@/lib/billing";
+import { canAccess, getEffectiveTier } from "@/lib/billing";
 
 const ICON_MAP = {
   Dashboard: Home,
@@ -53,7 +53,11 @@ export default function Layout({ children, currentPageName }) {
   const [user, setUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(null);
-  const tier = user?.subscription_tier || "trial";
+  // Effective tier — resolves admin bypass + trial expiry + canceled
+  // subscription into a single string canAccess() can check. Without
+  // this, a trial with trial_ends_at in the past still passed canAccess
+  // (because the literal subscription_tier stayed 'trial').
+  const tier = getEffectiveTier(user);
   useEffect(() => {
     document.documentElement.classList.remove("dark");
     localStorage.removeItem("inktracker-dark");
