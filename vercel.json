@@ -1,9 +1,9 @@
 {
   "redirects": [
     {
-      "source": "/:path*",
-      "has": [{ "type": "host", "value": "(?<vercelHost>.*\\.vercel\\.app)" }],
-      "destination": "https://inktracker.app/:path*",
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": ".*\\.vercel\\.app" }],
+      "destination": "https://inktracker.app/$1",
       "permanent": true
     }
   ],
