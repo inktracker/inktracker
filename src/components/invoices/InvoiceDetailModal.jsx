@@ -5,6 +5,7 @@ import { exportInvoiceToPDF } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
 import MessagesTab from "../shared/MessagesTab";
+import CollapsibleSection from "../shared/CollapsibleSection";
 import { invoiceThreadId } from "@/lib/messageThreads";
 import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
@@ -353,12 +354,15 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           </div>
         </div>
 
-        {/* Messages — threaded conversation with reply box. */}
-        <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-2 mb-3">
-            <MessageSquare className="w-4 h-4 text-slate-500" />
-            <h3 className="text-sm font-semibold text-slate-700">Messages</h3>
-          </div>
+        {/* Messages — threaded conversation with reply box. Collapsible;
+            shares one localStorage key with the other detail modals so
+            the user's preference applies everywhere. */}
+        <CollapsibleSection
+          title="Messages"
+          icon={<MessageSquare className="w-4 h-4 text-slate-500" />}
+          storageKey="messages-window-collapsed"
+          className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700"
+        >
           <MessagesTab
             threadId={invoiceThreadId(invoice)}
             currentUserEmail={invoice.shop_owner}
@@ -369,7 +373,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               defaultSubject: `Invoice ${invoice.invoice_id}`,
             }}
           />
-        </div>
+        </CollapsibleSection>
 
         {/* Footer */}
         <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">

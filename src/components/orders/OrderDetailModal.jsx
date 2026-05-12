@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import MessagesTab from "../shared/MessagesTab";
+import CollapsibleSection from "../shared/CollapsibleSection";
 import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import { MessageSquare } from "lucide-react";
@@ -1303,12 +1304,16 @@ export default function OrderDetailModal({
           )}
         </div>
 
-        {/* Messages — order thread (with reply box) + read-only view of originating quote thread. */}
-        <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-2 mb-3">
-            <MessageSquare className="w-4 h-4 text-slate-500" />
-            <h3 className="text-sm font-semibold text-slate-700">Messages</h3>
-          </div>
+        {/* Messages — order thread (with reply box) + read-only view of
+            originating quote thread. Collapsible; shares one localStorage
+            key with the other detail modals so the user's preference
+            applies everywhere. */}
+        <CollapsibleSection
+          title="Messages"
+          icon={<MessageSquare className="w-4 h-4 text-slate-500" />}
+          storageKey="messages-window-collapsed"
+          className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700"
+        >
           <MessagesTab
             threadId={orderThreadId(order)}
             currentUserEmail={order.shop_owner}
@@ -1330,7 +1335,7 @@ export default function OrderDetailModal({
               />
             </div>
           )}
-        </div>
+        </CollapsibleSection>
 
         <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl space-y-2">
           {/* Row 1: workflow actions (status flow + payment) */}
