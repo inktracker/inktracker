@@ -1078,6 +1078,15 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                   else inv[k] = v;
                 }
                 const hasInv = Object.keys(inv).length > 0;
+                // Total count of oversized (2XL/3XL/...) pieces, used
+                // for the "N oversized pcs" badge. Mirrors the
+                // `twoXL` calc in shared/pricing.jsx — kept inline
+                // because the wizard doesn't otherwise call the
+                // pricing engine at this point in the flow.
+                const oversizeQty = BIG_SIZES.reduce(
+                  (sum, sz) => sum + (parseInt((sizes || {})[sz], 10) || 0),
+                  0
+                );
                 return (<>
                   <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3 mb-3">
                     {SIZES.map(sz => {
@@ -1093,7 +1102,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                   </div>
                   <div className="flex justify-between items-center border-t border-slate-100 pt-3">
                     <div className="text-sm text-slate-500">Total: <span className="font-bold text-slate-900">{qty} pcs</span>
-                      {twoXL > 0 && <span className="ml-3 text-amber-600 text-xs font-semibold">{twoXL} oversized pcs</span>}</div>
+                      {oversizeQty > 0 && <span className="ml-3 text-amber-600 text-xs font-semibold">{oversizeQty} oversized pcs</span>}</div>
                     {qty > 0 && qty < 25 && <span className="text-xs font-semibold text-red-500 bg-red-50 px-3 py-1 rounded-full border border-red-100">Min 25 pcs</span>}
                   </div>
                 </>);
