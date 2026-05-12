@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
+import NotificationBell from "./components/NotificationBell";
 import { canAccess } from "@/lib/billing";
 
 const ICON_MAP = {
@@ -150,8 +151,11 @@ export default function Layout({ children, currentPageName }) {
           )}
         </nav>
 
-        <div className="px-2 py-4 border-t border-slate-100 dark:border-slate-800">
-          <GlobalSearch />
+        <div className="px-2 py-4 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
+          <div className="flex-1 min-w-0">
+            <GlobalSearch />
+          </div>
+          <NotificationBell />
         </div>
         <div className="px-4 py-3 border-t border-slate-100">
           <div className="text-xs text-slate-300">v1.0</div>
@@ -168,6 +172,7 @@ export default function Layout({ children, currentPageName }) {
           <div className="flex-1 min-w-0">
             <div className="text-sm font-bold text-slate-900 truncate">{shopName}</div>
           </div>
+          <NotificationBell />
           <GlobalSearch />
         </div>
 
