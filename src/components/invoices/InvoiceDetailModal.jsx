@@ -230,30 +230,47 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         </div>
 
         <div className="p-4 sm:p-6 space-y-5">
-          {/* Line items */}
+          {/* Line items.
+              Handles two shapes:
+                - Native InkTracker line items: have _ppp/_lineTotal saved
+                  via "calculate once", plus sizes + imprints. Computed
+                  via calcLinkedLinePrice as a fallback for legacy rows.
+                - QB-pulled line items (from qbSync handlePullInvoices):
+                  have li.lineTotal + li.qty directly, no sizes/imprints,
+                  garmentCost: 0. Render as a simple row.
+              The garmentCost "Wholesale:" badge only shows when there
+              is a real cost — QB-pulled invoices set it to 0, which
+              was rendering as "Wholesale: $0.00" everywhere. */}
           {!loading && invoice.line_items && (() => {
             const linkedQtyMap = buildLinkedQtyMap(invoice.line_items || []);
             return (invoice.line_items || []).map(li => {
-            const qty = getQty(li);
+            const qty = getQty(li) || Number(li.qty) || 0;
             const override = Number(li?.clientPpp);
             const hasOverride = Number.isFinite(override) && override > 0 && qty > 0;
-            // Use saved pricing from "calculate once"; fall back to live calc for legacy
             const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
+            // Direct lineTotal from QB-pulled shape — last fallback so
+            // pulled invoices show their real amount instead of $0.
+            const directLineTotal = Number(li.lineTotal);
+            const hasDirectTotal = Number.isFinite(directLineTotal) && directLineTotal !== 0;
             const r = hasSaved
               ? { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0 }
               : hasOverride
                 ? { ppp: override, lineTotal: override * qty, rushFee: 0 }
-                : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
+                : hasDirectTotal
+                  ? { ppp: qty > 0 ? directLineTotal / qty : directLineTotal, lineTotal: directLineTotal, rushFee: 0 }
+                  : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
             const activeSizes = SIZES.filter(sz => (parseInt((li.sizes||{})[sz]) || 0) > 0);
+            const garmentCostNum = Number(li.garmentCost);
+            const hasGarmentCost = Number.isFinite(garmentCostNum) && garmentCostNum > 0;
             return (
               <div key={li.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                  <div>
-                    <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{li.style || "Garment"}</span>
+                <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{li.style || "Item"}</span>
                     {li.garmentColor && <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>}
-                    <span className="ml-2 text-xs text-slate-400">Wholesale: {fmtMoney(li.garmentCost)}</span>
+                    {hasGarmentCost && <span className="ml-2 text-xs text-slate-400">Wholesale: {fmtMoney(garmentCostNum)}</span>}
                   </div>
-                  {r && <span className="font-bold text-slate-700 text-sm">{fmtMoney(r.lineTotal)}</span>}
+                  {r && r.lineTotal !== 0 && <span className="font-bold text-slate-700 text-sm whitespace-nowrap">{fmtMoney(r.lineTotal)}</span>}
                 </div>
 
                 {activeSizes.length > 0 && (
@@ -286,26 +303,37 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                   </div>
                 )}
 
-                <div className="border-t border-slate-100 dark:border-slate-700 p-4 space-y-3">
-                   {(li.imprints || []).map(imp => (
-                           <div key={imp.id} className="space-y-1.5">
-                             {imp.title && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{imp.title}</div>}
-                             <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
-                               <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
-                               <span className="text-slate-500">{imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}</span>
-                               {imp.pantones && <span className="text-indigo-600 font-medium">{imp.pantones}</span>}
-                               {imp.details && <span className="text-slate-400 italic">{imp.details}</span>}
-                             </div>
-                             {(imp.width || imp.height) && (
-                               <div className="flex gap-2 text-xs text-slate-500">
-                                 {imp.width && <span>Width: {imp.width}</span>}
-                                 {imp.height && <span>Height: {imp.height}</span>}
-                               </div>
-                             )}
-                           </div>
-                         ))}
+                {/* No-sizes/no-imprints fallback (e.g. QB-pulled rows):
+                    show a single qty × price/ea row instead of an empty
+                    body so the line item card still conveys the numbers. */}
+                {activeSizes.length === 0 && (li.imprints || []).length === 0 && r && qty > 0 && (
+                  <div className="px-4 py-3 flex items-center justify-between text-xs text-slate-500">
+                    <span>{qty} × {fmtMoney(r.ppp)}</span>
+                    <span className="font-bold text-slate-700">{fmtMoney(r.lineTotal)}</span>
+                  </div>
+                )}
 
-                   </div>
+                {(li.imprints || []).length > 0 && (
+                  <div className="border-t border-slate-100 dark:border-slate-700 p-4 space-y-3">
+                    {(li.imprints || []).map(imp => (
+                      <div key={imp.id} className="space-y-1.5">
+                        {imp.title && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{imp.title}</div>}
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
+                          <span className="text-slate-500">{imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}</span>
+                          {imp.pantones && <span className="text-indigo-600 font-medium">{imp.pantones}</span>}
+                          {imp.details && <span className="text-slate-400 italic">{imp.details}</span>}
+                        </div>
+                        {(imp.width || imp.height) && (
+                          <div className="flex gap-2 text-xs text-slate-500">
+                            {imp.width && <span>Width: {imp.width}</span>}
+                            {imp.height && <span>Height: {imp.height}</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })})()}
