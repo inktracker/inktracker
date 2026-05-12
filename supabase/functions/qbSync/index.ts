@@ -21,6 +21,10 @@ import {
   reconcileQbInvoice,
   RECONCILE_SEVERITY,
 } from "../_shared/qbWriteContracts.js";
+import {
+  recordShopNotification,
+  buildQbDriftNotification,
+} from "../_shared/shopNotifications.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -509,6 +513,42 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       `drift: $${reconciliation.totalDrift.toFixed(2)}\n` +
       `  Issues: ${reconciliation.issues.join(" | ")}`,
     );
+
+    // Push an in-app notification to the shop. This should never fire
+    // on a clean integration — only if QB altered our data after we
+    // sent it. Notification insert is best-effort: a failure here
+    // must NOT cause the user-facing invoice send to error out.
+    //
+    // Uses a service-role client because the notifications table is
+    // service-role-only on INSERT (the authenticated user is allowed
+    // to read/update their own notifications, but not forge new ones).
+    try {
+      const notif = buildQbDriftNotification({
+        shopOwner: quote.shop_owner,
+        quoteId: quote.quote_id,
+        quoteRowId: String(quote.id),
+        qbInvoiceId,
+        reconciliation,
+      });
+      const adminClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      // recordShopNotification swallows its own errors, but we wrap
+      // anyway in case the build step throws.
+      await recordShopNotification(adminClient, {
+        shopOwner: notif.shop_owner,
+        eventType: notif.event_type,
+        severity:  notif.severity,
+        title:     notif.title,
+        body:      notif.body,
+        relatedEntity: notif.related_entity,
+        relatedId:     notif.related_id,
+        metadata:      notif.metadata,
+      });
+    } catch (err) {
+      console.error(`[createInvoice] failed to push reconciliation notification: ${err}`);
+    }
   }
 
   const paymentLink = extractPaymentLink(qbInvoiceFinal || created, realmId);
