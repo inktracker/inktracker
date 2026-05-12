@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle, sortSizeEntries } from "../components/shared/pricing";
+import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import SSOrderModal from "../components/orders/SSOrderModal";
@@ -341,32 +342,26 @@ export default function Production() {
   }
 
   async function handleComplete(order) {
+    // Completion = transition, never destruction. The old code
+    // called Order.delete() here, which orphaned every invoice's
+    // order_id reference. Now we transition the order to status
+    // 'Completed' and rely on the (active) filter in the kanban
+    // view to drop it off the board. The DB trigger
+    // refuse_completed_order_delete (20260516_preserve_completed_orders.sql)
+    // is the platform-level guarantee that completed orders can
+    // never be wiped.
     const td = new Date().toISOString().split("T")[0];
-    const inv_id = `INV-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
-    await base44.entities.Invoice.create({
-      invoice_id: inv_id, shop_owner: user.email,
-      order_id: order.order_id, customer_id: order.customer_id,
-      customer_name: order.customer_name, date: td,
-      due: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      subtotal: order.subtotal || 0, tax: order.tax || 0, total: order.total || 0,
-      paid: false, status: "Sent", line_items: order.line_items || [],
-      notes: order.notes || "", rush_rate: order.rush_rate || 0,
-      extras: order.extras || {}, discount: order.discount || 0, tax_rate: order.tax_rate || 0,
+    const plan = buildOrderCompletionPlan(order, {
+      today: td,
+      shopOwner: user.email,
     });
-    if (order.broker_id) {
-      await base44.entities.BrokerPerformance.create({
-        broker_id: order.broker_id, shop_owner: user.email,
-        order_id: order.order_id, customer_name: order.customer_name,
-        date: td, total: order.total || 0,
-      });
+    await base44.entities.Invoice.create(plan.invoiceCreate);
+    if (plan.brokerPerformanceCreate) {
+      await base44.entities.BrokerPerformance.create(plan.brokerPerformanceCreate);
     }
-    await base44.entities.ShopPerformance.create({
-      shop_owner: user.email, order_id: order.order_id,
-      customer_name: order.customer_name, customer_id: order.customer_id || "",
-      broker_id: order.broker_id || "", date: td, total: order.total || 0, status: "Completed",
-    });
-    await base44.entities.Order.delete(order.id);
-    setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    await base44.entities.ShopPerformance.create(plan.shopPerformanceCreate);
+    const updated = await base44.entities.Order.update(plan.orderUpdate.id, plan.orderUpdate.patch);
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(null);
   }
 
