@@ -30,6 +30,42 @@ const Q = {
 const F = '"Inter", system-ui, -apple-system, sans-serif';
 const M = '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace';
 
+// Hook scene constants
+const QDARK = '#0B0B0E';
+const QDARK1 = '#F4F4F5';
+const QDARK2 = 'rgba(244,244,245,0.62)';
+const QDARK3 = 'rgba(244,244,245,0.40)';
+
+function qclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function SceneHook() {
+  const { localTime } = useSprite();
+  const t = localTime;
+  const logoT = qclamp(t / 0.6, 0, 1);
+  const h1T = qclamp((t - 0.5) / 0.5, 0, 1);
+  const h2T = qclamp((t - 0.95) / 0.5, 0, 1);
+  const subT = qclamp((t - 1.6) / 0.5, 0, 1);
+  const trailT = qclamp((t - 2.1) / 0.6, 0, 1);
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: QDARK, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
+        <Logo size={40} />
+        <div style={{ fontFamily: F, fontSize: 22, fontWeight: 700, color: QDARK1, letterSpacing: '-0.015em' }}>InkTracker</div>
+      </div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: F, fontSize: 96, fontWeight: 800, color: QDARK1, letterSpacing: '-0.045em', lineHeight: 1, textAlign: 'center' }}>Quotes in minutes,</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: F, fontSize: 96, fontWeight: 800, color: '#A5B4FC', letterSpacing: '-0.045em', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>out the door.</div>
+      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: F, fontSize: 20, color: QDARK2, marginTop: 36, textAlign: 'center' }}>Build, price, and email a quote — without leaving the dashboard.</div>
+      <div style={{ opacity: trailT, marginTop: 56, display: 'flex', alignItems: 'center', gap: 18, fontFamily: F, fontSize: 13, fontWeight: 700, color: QDARK3, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+        <span>Build</span>
+        <span style={{ color: 'rgba(244,244,245,0.25)' }}>→</span>
+        <span>Price</span>
+        <span style={{ color: 'rgba(244,244,245,0.25)' }}>→</span>
+        <span>Send</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Logo ───────────────────────────────────────────────────────────────────
 function Logo({ size = 32 }) {
   return (
@@ -1480,10 +1516,11 @@ function Row({ label, value, bold }) {
 function QuoteDemo() {
   return (
     <>
-      <Sprite start={0}     end={3.0}>   <SceneList /></Sprite>
-      <Sprite start={3.0}   end={13.5}>  <SceneBuilder /></Sprite>
-      <Sprite start={13.5}  end={19.5}>  <SceneEmail /></Sprite>
-      <Sprite start={19.5}  end={23.5}>  <SceneOutro /></Sprite>
+      <Sprite start={0}     end={3.0}>   <SceneHook /></Sprite>
+      <Sprite start={3.0}   end={6.0}>   <SceneList /></Sprite>
+      <Sprite start={6.0}   end={16.5}>  <SceneBuilder /></Sprite>
+      <Sprite start={16.5}  end={22.5}>  <SceneEmail /></Sprite>
+      <Sprite start={22.5}  end={26.5}>  <SceneOutro /></Sprite>
     </>
   );
 }
