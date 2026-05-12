@@ -22,12 +22,43 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   const [showSendModal, setShowSendModal] = useState(false);
   const [qbCreating, setQbCreating] = useState(false);
   const [qbStatus, setQbStatus] = useState(null);
+  // Tri-state: null = haven't checked yet, true = order exists,
+  // false = orphan (order_id set on the invoice but no matching order
+  // row — e.g. order was deleted, or invoice came from a different
+  // source). The "View Order" button only renders when this is true.
+  const [orderExists, setOrderExists] = useState(null);
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
+  // One-time check on mount: does the referenced order still exist?
+  // Cheaper than discovering the orphan only when the user clicks
+  // View Order and getting an "Order not found" alert.
+  useEffect(() => {
+    if (!invoice?.order_id) { setOrderExists(false); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const matches = await base44.entities.Order.filter({ order_id: invoice.order_id });
+        if (cancelled) return;
+        setOrderExists(Array.isArray(matches) && matches.length > 0);
+      } catch (_) {
+        if (!cancelled) setOrderExists(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [invoice?.order_id]);
+
   async function handleCreateInQB() {
-    if (invoice.qb_invoice_id || invoice.qb_payment_link) {
-      if (!window.confirm("This invoice was previously synced to QuickBooks. Create a new one anyway?")) return;
+    // Ironclad no-duplicate guard: if this invoice already has a QB
+    // record, refuse to create a second one. The footer renders the
+    // "View in QB" link in that case, but this internal check is the
+    // backstop — never trust the UI to be the only gate.
+    if (invoice.qb_invoice_id) {
+      setQbStatus({
+        type: "info",
+        message: `This invoice is already in QuickBooks (QB ID ${invoice.qb_invoice_id}). Use "View in QB" to open it.`,
+      });
+      return;
     }
     setQbCreating(true);
     setQbStatus(null);
@@ -230,30 +261,47 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         </div>
 
         <div className="p-4 sm:p-6 space-y-5">
-          {/* Line items */}
+          {/* Line items.
+              Handles two shapes:
+                - Native InkTracker line items: have _ppp/_lineTotal saved
+                  via "calculate once", plus sizes + imprints. Computed
+                  via calcLinkedLinePrice as a fallback for legacy rows.
+                - QB-pulled line items (from qbSync handlePullInvoices):
+                  have li.lineTotal + li.qty directly, no sizes/imprints,
+                  garmentCost: 0. Render as a simple row.
+              The garmentCost "Wholesale:" badge only shows when there
+              is a real cost — QB-pulled invoices set it to 0, which
+              was rendering as "Wholesale: $0.00" everywhere. */}
           {!loading && invoice.line_items && (() => {
             const linkedQtyMap = buildLinkedQtyMap(invoice.line_items || []);
             return (invoice.line_items || []).map(li => {
-            const qty = getQty(li);
+            const qty = getQty(li) || Number(li.qty) || 0;
             const override = Number(li?.clientPpp);
             const hasOverride = Number.isFinite(override) && override > 0 && qty > 0;
-            // Use saved pricing from "calculate once"; fall back to live calc for legacy
             const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
+            // Direct lineTotal from QB-pulled shape — last fallback so
+            // pulled invoices show their real amount instead of $0.
+            const directLineTotal = Number(li.lineTotal);
+            const hasDirectTotal = Number.isFinite(directLineTotal) && directLineTotal !== 0;
             const r = hasSaved
               ? { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0 }
               : hasOverride
                 ? { ppp: override, lineTotal: override * qty, rushFee: 0 }
-                : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
+                : hasDirectTotal
+                  ? { ppp: qty > 0 ? directLineTotal / qty : directLineTotal, lineTotal: directLineTotal, rushFee: 0 }
+                  : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
             const activeSizes = SIZES.filter(sz => (parseInt((li.sizes||{})[sz]) || 0) > 0);
+            const garmentCostNum = Number(li.garmentCost);
+            const hasGarmentCost = Number.isFinite(garmentCostNum) && garmentCostNum > 0;
             return (
               <div key={li.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                  <div>
-                    <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{li.style || "Garment"}</span>
+                <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{li.style || "Item"}</span>
                     {li.garmentColor && <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>}
-                    <span className="ml-2 text-xs text-slate-400">Wholesale: {fmtMoney(li.garmentCost)}</span>
+                    {hasGarmentCost && <span className="ml-2 text-xs text-slate-400">Wholesale: {fmtMoney(garmentCostNum)}</span>}
                   </div>
-                  {r && <span className="font-bold text-slate-700 text-sm">{fmtMoney(r.lineTotal)}</span>}
+                  {r && r.lineTotal !== 0 && <span className="font-bold text-slate-700 text-sm whitespace-nowrap">{fmtMoney(r.lineTotal)}</span>}
                 </div>
 
                 {activeSizes.length > 0 && (
@@ -286,26 +334,37 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                   </div>
                 )}
 
-                <div className="border-t border-slate-100 dark:border-slate-700 p-4 space-y-3">
-                   {(li.imprints || []).map(imp => (
-                           <div key={imp.id} className="space-y-1.5">
-                             {imp.title && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{imp.title}</div>}
-                             <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
-                               <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
-                               <span className="text-slate-500">{imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}</span>
-                               {imp.pantones && <span className="text-indigo-600 font-medium">{imp.pantones}</span>}
-                               {imp.details && <span className="text-slate-400 italic">{imp.details}</span>}
-                             </div>
-                             {(imp.width || imp.height) && (
-                               <div className="flex gap-2 text-xs text-slate-500">
-                                 {imp.width && <span>Width: {imp.width}</span>}
-                                 {imp.height && <span>Height: {imp.height}</span>}
-                               </div>
-                             )}
-                           </div>
-                         ))}
+                {/* No-sizes/no-imprints fallback (e.g. QB-pulled rows):
+                    show a single qty × price/ea row instead of an empty
+                    body so the line item card still conveys the numbers. */}
+                {activeSizes.length === 0 && (li.imprints || []).length === 0 && r && qty > 0 && (
+                  <div className="px-4 py-3 flex items-center justify-between text-xs text-slate-500">
+                    <span>{qty} × {fmtMoney(r.ppp)}</span>
+                    <span className="font-bold text-slate-700">{fmtMoney(r.lineTotal)}</span>
+                  </div>
+                )}
 
-                   </div>
+                {(li.imprints || []).length > 0 && (
+                  <div className="border-t border-slate-100 dark:border-slate-700 p-4 space-y-3">
+                    {(li.imprints || []).map(imp => (
+                      <div key={imp.id} className="space-y-1.5">
+                        {imp.title && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{imp.title}</div>}
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
+                          <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
+                          <span className="text-slate-500">{imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}</span>
+                          {imp.pantones && <span className="text-indigo-600 font-medium">{imp.pantones}</span>}
+                          {imp.details && <span className="text-slate-400 italic">{imp.details}</span>}
+                        </div>
+                        {(imp.width || imp.height) && (
+                          <div className="flex gap-2 text-xs text-slate-500">
+                            {imp.width && <span>Width: {imp.width}</span>}
+                            {imp.height && <span>Height: {imp.height}</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })})()}
@@ -395,22 +454,42 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               Send Invoice
             </button>
           )}
-          {invoice.order_id && (
+          {orderExists && (
             <button onClick={async () => {
               try {
                 const order = await base44.entities.Order.filter({ order_id: invoice.order_id });
                 if (order?.[0]) setViewingOrder(order[0]);
-                else alert("Order not found");
-              } catch { alert("Could not load order"); }
+                // No alert on the not-found path — orderExists already
+                // gated the render, so this only fires if the order was
+                // deleted between mount and click. Silent no-op is fine.
+              } catch (_) { /* swallow — same rationale as above */ }
             }}
               className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
               View Order
             </button>
           )}
-          <button onClick={handleCreateInQB} disabled={qbCreating}
-            className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50">
-            {qbCreating ? "Creating…" : "Create in QB"}
-          </button>
+          {/* QB button — "View in QB" when the invoice already exists
+              there, "Create in QB" when it doesn't. Two layers of
+              dup protection: the button itself never offers create
+              when qb_invoice_id is set, AND handleCreateInQB refuses
+              the call as a backstop. */}
+          {invoice.qb_invoice_id ? (
+            <a
+              href={`https://qbo.intuit.com/app/invoice?txnId=${encodeURIComponent(invoice.qb_invoice_id)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition"
+            >
+              View in QB
+            </a>
+          ) : (
+            <button onClick={handleCreateInQB} disabled={qbCreating}
+              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50">
+              {qbCreating ? "Creating…" : "Create in QB"}
+            </button>
+          )}
+          {/* Preview PDF — the preview window has its own download
+              button, so we don't render a separate "Download PDF" here. */}
           <button onClick={async () => {
             // QB-synced invoices: show what QB actually generated, not our local copy.
             const target = resolveInvoicePdfSource(invoice);
@@ -424,25 +503,6 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           }}
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
             Preview PDF
-          </button>
-          <button onClick={async () => {
-            const target = resolveInvoicePdfSource(invoice);
-            if (target.source === "qb") {
-              const blobUrl = await fetchQBInvoicePdfBlob(target.qbInvoiceId);
-              if (blobUrl) {
-                const a = document.createElement("a");
-                a.href = blobUrl;
-                a.download = `Invoice-${invoice.invoice_id || target.qbInvoiceId}.pdf`;
-                a.click();
-                URL.revokeObjectURL(blobUrl);
-                return;
-              }
-              // QB fetch failed — fall through to local PDF.
-            }
-            exportInvoiceToPDF(invoice, customer, { shop: shopProfile || { shop_name: shopName }, logoUrl });
-          }}
-            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
-            Download PDF
           </button>
           <button onClick={handleReorder} disabled={reordering}
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition disabled:opacity-50">
