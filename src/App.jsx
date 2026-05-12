@@ -14,6 +14,11 @@ import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import LoginModal from "@/components/LoginModal";
 import OnboardingWizard from "@/components/OnboardingWizard";
+import {
+  TYPEWRITER_LINES,
+  INITIAL_STATE as TYPEWRITER_INITIAL_STATE,
+  advanceTypewriter,
+} from "@/lib/landing/typewriter";
 
 const { Pages, Layout, mainPage } = pagesConfig;
 
@@ -76,11 +81,11 @@ const FEATURE_CARDS = [
     title: "Production Tracking",
     desc: "Visual pipeline from art approval to shipping. Your team updates progress from any device.",
     color: "from-violet-500/20 to-violet-500/5",
-    // TODO: Production kanban with order cards moving through statuses.
-    // Demo recommended (short drag-between-columns loop).
-    // Screenshot path: /public/landing/feature-production.png
-    // Demo path:       /public/landing/feature-production.mp4
-    media: null,
+    // 25-second animated demo of the production kanban — cards moving
+    // from art-approval through pre-press, printing, finishing, QC,
+    // ready-to-ship, and completed. Built from the design handoff at
+    // public/landing/production-demo/.
+    media: { type: "iframe", src: "/landing/production-demo/index.html" },
   },
   {
     title: "Invoicing & Payments",
@@ -238,46 +243,52 @@ function FeaturePreviewModal({ feature, onClose }) {
 // line 2 in indigo, then a slow blinking cursor parked at the end. Single
 // keystroke is ~55ms, line break is 350ms. After typing finishes, the
 // cursor keeps blinking so the hero never goes fully static.
-function TypewriterHeadline() {
-  const LINE1 = "Run your print shop";
-  const LINE2 = "without the chaos.";
-  const KEY_MS = 55;
-  const PAUSE_MS = 350;
+const TYPEWRITER_TIMERS = { key: 55, pause: 350, hold: 1400, fade: 1500 };
+const [LINE1, LINE2] = TYPEWRITER_LINES;
 
-  const [shown1, setShown1] = useState("");
-  const [shown2, setShown2] = useState("");
-  const [phase, setPhase] = useState("line1"); // line1 → pause → line2 → done
+function TypewriterHeadline({ onRevealReady }) {
+  const [state, setState] = useState(TYPEWRITER_INITIAL_STATE);
   const [blink, setBlink] = useState(true);
+  const revealedRef = useRef(false);
 
   useEffect(() => {
-    if (phase === "line1") {
-      if (shown1.length < LINE1.length) {
-        const t = setTimeout(() => setShown1(LINE1.slice(0, shown1.length + 1)), KEY_MS);
-        return () => clearTimeout(t);
-      }
-      const t = setTimeout(() => setPhase("line2"), PAUSE_MS);
-      return () => clearTimeout(t);
+    const step = advanceTypewriter(state);
+    if (step.reveal && !revealedRef.current) {
+      revealedRef.current = true;
+      onRevealReady?.();
     }
-    if (phase === "line2") {
-      if (shown2.length < LINE2.length) {
-        const t = setTimeout(() => setShown2(LINE2.slice(0, shown2.length + 1)), KEY_MS);
-        return () => clearTimeout(t);
-      }
-      setPhase("done");
+    if (step.next === "none") {
+      // Terminal step (fading → gone). No further timer, but the
+      // phase still needs to commit so the component unmounts and its
+      // slot in the layout collapses — otherwise the typewriter
+      // remains in the DOM at opacity-0, leaving an empty void where
+      // it used to sit.
+      if (step.phase !== state.phase) setState(step);
+      return;
     }
-  }, [phase, shown1, shown2]);
+    const t = setTimeout(() => setState(step), TYPEWRITER_TIMERS[step.next]);
+    return () => clearTimeout(t);
+  }, [state, onRevealReady]);
 
   useEffect(() => {
     const t = setInterval(() => setBlink((b) => !b), 520);
     return () => clearInterval(t);
   }, []);
 
-  const cursorOnLine2 = phase === "line2" || phase === "done";
+  if (state.phase === "gone") return null;
 
-  // Reserve vertical space so the page doesn't reflow while typing.
-  // Two lines × responsive line-height roughly matches the headline height.
+  const cursorOnLine2 =
+    state.phase === "line2" || state.phase === "done" || state.phase === "fading";
+  const fading = state.phase === "fading";
+  const shown1 = LINE1.slice(0, state.line1);
+  const shown2 = LINE2.slice(0, state.line2);
+
   return (
-    <div className="mb-6" aria-label={`${LINE1} ${LINE2}`}>
+    <div
+      className="mb-6 transition-opacity ease-out"
+      style={{ opacity: fading ? 0 : 1, transitionDuration: `${TYPEWRITER_TIMERS.fade}ms` }}
+      aria-label={`${LINE1} ${LINE2}`}
+    >
       <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight text-white min-h-[1.1em]">
         {shown1}
         {!cursorOnLine2 && (
@@ -304,9 +315,14 @@ function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
   const [previewFeature, setPreviewFeature] = useState(null);
+  // false until the typewriter starts its fade-out — then the badge,
+  // brand lockup, subtext, and CTA buttons cross-fade in.
+  const [heroRevealed, setHeroRevealed] = useState(false);
 
   function openSignup() { setLoginMode("signup"); setShowLogin(true); }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
+
+  const revealCls = `transition-opacity duration-700 ${heroRevealed ? "opacity-100" : "opacity-0 pointer-events-none"}`;
 
   return (
     <>
@@ -338,53 +354,81 @@ function PublicLandingPage() {
             slot returns when we have a real screenshot worth showing. */}
         <section className="pt-32 md:pt-40 pb-16 md:pb-24 px-6">
           <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
+            {/* Top group fades in as the typewriter fades out. Wrapped
+                in a div so the hero's vertical layout stays stable while
+                the typewriter is the only visible element. */}
+            <div className={revealCls}>
+              <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
+              </div>
+
+              {/* Brand lockup — same treatment the demo banner used.
+                  The `flame-key` color-matrix filter drops the navy
+                  square from the logo PNG (α = 1R + 3G − 2B keeps the
+                  orange flame and green base, zeros the dark backdrop).
+                  A thin circle outline ripples outward to give the drop
+                  a subtle heartbeat. */}
+              <svg width="0" height="0" aria-hidden="true" className="absolute">
+                <defs>
+                  <filter id="hero-flame-key" colorInterpolationFilters="sRGB">
+                    <feColorMatrix
+                      type="matrix"
+                      values="1 0 0 0 0
+                              0 1 0 0 0
+                              0 0 1 0 0
+                              1 3 -2 0 0"
+                    />
+                  </filter>
+                </defs>
+              </svg>
+              <div className="flex items-center justify-center gap-4 mb-8">
+                <span className="relative inline-flex w-16 h-16 items-center justify-center">
+                  <span
+                    className="absolute inset-0 rounded-full border border-indigo-400/60 hero-ring-ripple"
+                    aria-hidden="true"
+                  />
+                  <img
+                    src={INKTRACKER_LOGO}
+                    alt="InkTracker"
+                    crossOrigin="anonymous"
+                    className="relative w-14 h-14 object-contain"
+                    style={{ filter: 'url(#hero-flame-key)' }}
+                  />
+                </span>
+                <span className="text-4xl md:text-5xl font-extrabold tracking-tight">
+                  InkTracker
+                </span>
+              </div>
             </div>
 
-            {/* Brand: logo + wordmark. The logo sits inside an expanding,
-                fading indigo ring (animate-ping) so the drop has a subtle
-                heartbeat — same effect the demo banner lockup used. */}
-            <div className="flex items-center justify-center gap-4 mb-10">
-              <span className="relative inline-flex w-14 h-14">
-                <span className="absolute inset-0 rounded-2xl bg-indigo-400/40 animate-ping" />
-                <img
-                  src={INKTRACKER_LOGO}
-                  alt="InkTracker"
-                  className="relative w-14 h-14 rounded-2xl"
-                />
-              </span>
-              <span className="text-4xl md:text-5xl font-extrabold tracking-tight">
-                InkTracker
-              </span>
+            <TypewriterHeadline onRevealReady={() => setHeroRevealed(true)} />
+
+            <div className={revealCls}>
+              <p className="text-sm md:text-base text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
+                Created by screen printers. Built to protect the land.
+              </p>
+
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-5">
+                <button onClick={openSignup}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50 w-full sm:w-auto">
+                  Start Free Trial
+                </button>
+                <a href="#features"
+                  className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
+                  See Features →
+                </a>
+              </div>
+
+              {/* TODO (founding member program — separate PR): when the
+                  internal founding-member counter is wired up, render
+                  "Founding spots remaining: X of 100" here in muted text
+                  above the price line. Source the count from the public
+                  view / edge function described in src/lib/billing.js. */}
+              <p className="text-xs text-slate-500">
+                Founding member pricing — $99/mo after trial · Cancel anytime
+              </p>
             </div>
-
-            <TypewriterHeadline />
-
-            <p className="text-sm md:text-base text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
-              Built for screen print and embroidery shops running 1–10 presses.
-            </p>
-
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-5">
-              <button onClick={openSignup}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50 w-full sm:w-auto">
-                Start Free Trial
-              </button>
-              <a href="#features"
-                className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
-                See Features →
-              </a>
-            </div>
-
-            {/* TODO (founding member program — separate PR): when the
-                internal founding-member counter is wired up, render
-                "Founding spots remaining: X of 100" here in muted text
-                above the price line. Source the count from the public
-                view / edge function described in src/lib/billing.js. */}
-            <p className="text-xs text-slate-500">
-              Founding member pricing — $99/mo after trial · Cancel anytime
-            </p>
           </div>
         </section>
 
