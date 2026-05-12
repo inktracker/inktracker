@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../components/shared/pricing";
-import { Loader2, RefreshCw, ShoppingBag, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Trash2, ShoppingCart } from "lucide-react";
+import { Loader2, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Trash2, ShoppingCart } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
+import ShoppingList from "../components/inventory/ShoppingList";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -13,7 +14,7 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ item:"", sku:"", category:"Blanks", qty:0, unit:"pcs", reorder:0, cost:0 });
+  const [form, setForm] = useState({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0 });
   const [editing, setEditing] = useState(null);
   const [categories, setCategories] = useState(() => {
     try {
@@ -25,9 +26,6 @@ export default function Inventory() {
   const [showCatEditor, setShowCatEditor] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedProducts, setExpandedProducts] = useState(new Set());
-  const [shopifyConnected, setShopifyConnected] = useState(false);
-  const [shopifySyncing, setShopifySyncing] = useState(false);
-  const [shopifyLiveQty, setShopifyLiveQty] = useState({});
   const [user, setUser] = useState(null);
   const [saveStatus, setSaveStatus] = useState(null);
   const [restockSetup, setRestockSetup] = useState(null);
@@ -65,76 +63,6 @@ export default function Inventory() {
     saveCategories(categories.filter(c => c !== cat));
   }
 
-  async function fetchShopifyLive() {
-    setShopifySyncing(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Not signed in");
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/shopifySync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "syncProducts", accessToken: session.access_token }),
-      });
-      const data = await res.json();
-      if (!data.error && data.products) {
-        const qtyMap = {};
-        for (const p of data.products) {
-          const key = (p.title || "").toLowerCase().trim();
-          const skuKey = (p.sku || "").toLowerCase().trim();
-          qtyMap[key] = p.inventory_quantity || 0;
-          if (skuKey) qtyMap[skuKey] = p.inventory_quantity || 0;
-        }
-        setShopifyLiveQty(qtyMap);
-
-        // Ensure all Shopify products exist in DB, then overlay live quantities
-        setItems(prev => {
-          const existingNames = new Set(prev.map(i => (i.item || "").toLowerCase().trim()));
-          const existingSkus = new Set(prev.map(i => (i.sku || "").toLowerCase().trim()));
-          const toCreate = [];
-          for (const p of data.products) {
-            const nameKey = (p.title || "").toLowerCase().trim();
-            const skuKey = (p.sku || "").toLowerCase().trim();
-            if (!existingNames.has(nameKey) && (!skuKey || !existingSkus.has(skuKey))) {
-              toCreate.push(p);
-            }
-          }
-          // Create missing items in background
-          if (toCreate.length > 0 && user?.email) {
-            (async () => {
-              for (const p of toCreate) {
-                try {
-                  const created = await base44.entities.InventoryItem.create({
-                    item: p.title,
-                    sku: p.sku || `SHOP-${p.shopify_variant_id}`,
-                    category: "Shopify",
-                    qty: p.inventory_quantity || 0,
-                    reorder: 2,
-                    cost: p.price || 0,
-                    unit: "pcs",
-                    shop_owner: user.email,
-                  });
-                  setItems(prev => [...prev, { ...created, _shopifyLive: true }].sort((a, b) =>
-                    (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
-                } catch {}
-              }
-            })();
-          }
-          // Overlay live quantities on existing items
-          return prev.map(item => {
-            const nameKey = (item.item || "").toLowerCase().trim();
-            const skuKey = (item.sku || "").toLowerCase().trim();
-            const liveQty = qtyMap[nameKey] ?? qtyMap[skuKey];
-            if (liveQty !== undefined) {
-              return { ...item, qty: liveQty, _shopifyLive: true };
-            }
-            return item;
-          });
-        });
-      }
-    } catch {}
-    setShopifySyncing(false);
-  }
-
   useEffect(() => {
     base44.auth.me().then(async (u) => {
       setUser(u);
@@ -142,39 +70,8 @@ export default function Inventory() {
         setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
         setLoading(false);
       });
-      if (u?.shopify_access_token) {
-        setShopifyConnected(true);
-        fetchShopifyLive();
-      }
     }).catch(() => setLoading(false));
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("shopify_connected") === "1") {
-      setShopifyConnected(true);
-      fetchShopifyLive();
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-    if (params.get("shopify_error")) {
-      alert("Shopify connection failed: " + params.get("shopify_error"));
-      window.history.replaceState({}, "", window.location.pathname);
-    }
   }, []);
-
-  async function connectShopify() {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) throw new Error("Not signed in");
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/shopifySync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "getAuthUrl", accessToken: session.access_token }),
-      });
-      const data = await res.json();
-      if (data.authUrl) window.location.href = data.authUrl;
-      else alert("Failed to get Shopify auth URL: " + (data.error || "unknown"));
-    } catch (err) {
-      alert("Error connecting to Shopify: " + err.message);
-    }
-  }
 
   async function updateQty(id, newQty) {
     const updated = await base44.entities.InventoryItem.update(id, { qty: parseInt(newQty) || 0 });
@@ -268,18 +165,6 @@ export default function Inventory() {
           <p className="text-sm text-slate-400 mt-0.5">{totalItems} items · {fmtMoney(totalValue)} total value</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {shopifyConnected ? (
-            <button onClick={fetchShopifyLive} disabled={shopifySyncing}
-              className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold px-3 py-2 rounded-xl transition hover:bg-emerald-100 disabled:opacity-60">
-              {shopifySyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              {shopifySyncing ? "Refreshing…" : "Refresh Shopify"}
-            </button>
-          ) : (
-            <button onClick={connectShopify}
-              className="flex items-center gap-2 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-3 py-2 rounded-xl transition hover:border-green-300">
-              <ShoppingBag className="w-4 h-4" /> Connect Shopify
-            </button>
-          )}
           <button onClick={() => setShowCatEditor(v=>!v)} className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-3 py-2 rounded-xl transition hover:border-indigo-300">
             {showCatEditor ? <X className="w-4 h-4" /> : "Categories"}
           </button>
@@ -315,6 +200,26 @@ export default function Inventory() {
         </div>
       </div>
 
+      {/* Supplier autocomplete options — sourced from existing items so
+          users get suggestions for suppliers they've already used. */}
+      <datalist id="inventory-supplier-suggestions">
+        {Array.from(new Set(items.map(i => i.supplier).filter(Boolean))).sort().map(s => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
+
+      {/* Shopping list — auto-populated from low-stock items, filterable
+          by supplier, with bulk "Mark as Ordered" + per-item Receive. */}
+      <ShoppingList
+        items={items}
+        onItemUpdated={(updated) => setItems(prev => prev.map(i => i.id === updated.id ? updated : i))}
+        onRefresh={() => {
+          if (!user?.email) return;
+          base44.entities.InventoryItem.filter({ shop_owner: user.email }).then(i => {
+            setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
+          });
+        }}
+      />
 
       {/* Category editor */}
       {showCatEditor && (
@@ -358,6 +263,12 @@ export default function Inventory() {
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
                 {categories.map(c => <option key={c}>{c}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Supplier</label>
+              <input value={form.supplier} onChange={e => setForm({...form,supplier:e.target.value})} placeholder="S&S Activewear"
+                list="inventory-supplier-suggestions"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
             </div>
             {[
               { key:"qty", label:"Qty", type:"number" },
@@ -574,6 +485,12 @@ export default function Inventory() {
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
                   {categories.map(c => <option key={c}>{c}</option>)}
                 </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Supplier</label>
+                <input value={editing.supplier || ""} onChange={e => setEditing({...editing,supplier:e.target.value})}
+                  list="inventory-supplier-suggestions" placeholder="S&S Activewear"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
               {[
                 { key:"qty", label:"Qty" },
