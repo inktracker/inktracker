@@ -115,11 +115,10 @@ const FEATURE_CARDS = [
     title: "Quote Wizard",
     desc: "Embed a quote request form on your website. Customers build orders 24/7 and you get notified.",
     color: "from-rose-500/20 to-rose-500/5",
-    // TODO: The customer-facing wizard mid-flow (color/qty/imprint selection).
-    // Demo recommended (short scroll-through loop).
-    // Screenshot path: /public/landing/feature-wizard.png
-    // Demo path:       /public/landing/feature-wizard.mp4
-    media: null,
+    // 25-second animated demo of the customer-facing wizard — color
+    // picker, qty/imprint selection, submitting the request. Built
+    // from the design handoff at public/landing/wizard-demo/.
+    media: { type: "iframe", src: "/landing/wizard-demo/index.html" },
   },
   {
     title: "Broker Integration",
