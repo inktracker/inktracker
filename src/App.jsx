@@ -99,9 +99,10 @@ const FEATURE_CARDS = [
     title: "Customer Management",
     desc: "Track customer history, artwork files, tax status, and payment terms. Auto-merge duplicates.",
     color: "from-blue-500/20 to-blue-500/5",
-    // TODO: Customer detail panel with order history + tax-exempt flag visible.
-    // Screenshot path: /public/landing/feature-customers.png
-    media: null,
+    // 22-second animated demo — customer list, detail panel with order
+    // history, tax-exempt flag. Built from the design handoff at
+    // public/landing/customer-demo/.
+    media: { type: "iframe", src: "/landing/customer-demo/index.html" },
   },
   {
     title: "Inventory & Restock",
