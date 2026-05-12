@@ -327,8 +327,8 @@ function PageHeader({ view = 'calendar' }) {
 
 function ScenePHook() {
   const { localTime } = useSprite();
-  const head1 = 'Every job. Every press.';
-  const head2 = 'In one view.';
+  const head1 = 'Every job.';
+  const head2 = 'Every stage.';
 
   const t1Start = 0.4, t1End = 1.5;
   const t2Start = 1.6, t2End = 2.4;
@@ -1182,22 +1182,10 @@ function ScenePLockup() {
       </div>
 
       {/* Tagline */}
-      <div style={{
-        opacity: tagT,
-        transform: `translateY(${(1 - tagT) * 8}px)`,
-        fontFamily: PFONT, fontSize: 36, fontWeight: 500,
-        letterSpacing: '-0.02em',
-        marginBottom: 44,
-        textAlign: 'center',
-        lineHeight: 1.2,
-      }}>
-        <div style={{ color: PC.darkText2, whiteSpace: 'nowrap' }}>Every job, every press.</div>
-        <div style={{ color: '#A5B4FC', whiteSpace: 'nowrap' }}>In one view.</div>
-      </div>
 
       <div style={{
         opacity: footT,
-        marginTop: 0,
+        marginTop: 48,
         fontFamily: PFONT, fontSize: 13,
         color: PC.darkText3,
         letterSpacing: '0.01em',
