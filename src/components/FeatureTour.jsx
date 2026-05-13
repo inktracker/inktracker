@@ -62,13 +62,15 @@ function getTooltipStyle(rect, position) {
     };
   }
 
-  // Gap between the spotlight ring and the popover body. The spotlight
-  // extends 6px past the target rect (see the spotlight div below), and
-  // the caret on the popover extends ~8.5px past its edge. A gap of 10
-  // puts the caret tip almost touching the cards and the popover body
-  // ~4px below the spotlight border — tight, but still a clean visual
-  // separation from the spotlight ring.
-  const gap = 10;
+  // Gap between the target rect and the popover body. The math the user
+  // sees is:
+  //   - Spotlight ring sits 6px outside the target rect
+  //   - 45°-rotated 12px caret extends ~8.5px past the popover edge
+  //   - Gap = 14 → caret tip lands exactly on the spotlight ring
+  //   - Popover body starts ~6px past the ring on the outside
+  // This is the position that visually "lines up" with the highlight:
+  // tip touching the ring, popover body just outside, no floating gap.
+  const gap = 14;
   // Larger padding for viewport-edge clamping so popovers don't kiss
   // the screen edge.
   const edgePad = 16;
