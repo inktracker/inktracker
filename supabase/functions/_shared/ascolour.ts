@@ -5,32 +5,41 @@
 // Auth tiers:
 //   - Most endpoints: Subscription-Key header only.
 //   - /catalog/pricelist: Subscription-Key + Bearer token from POST /api/authentication.
+//
+// SECURITY: This module used to hold credentials and a Bearer-token cache in
+// module-level mutable state (`let _acSubKey`, `let cachedToken`, plus
+// `setAcCredentials()` / `resetAcCredentials()`). That pattern is unsafe under
+// Deno Edge runtime isolate reuse — two concurrent invocations on the same
+// warm isolate could clobber each other's credentials mid-request, leading to
+// cross-shop credential cross-contamination (Shop A's request finishing its
+// fetch using Shop B's subscription key, or reusing a cached Bearer token
+// minted under different credentials).
+//
+// Refactored 2026-05-13 so every call takes credentials explicitly. Callers
+// build an `AcCreds` and pass it to `acFetch` / `getAcBearerToken`. The
+// Bearer-token cache is keyed by email so a token minted for shop A is never
+// returned to shop B.
 
 export const AC_BASE = "https://api.ascolour.com/v1";
 
-// Per-request overridable credentials (set via setAcCredentials before making requests)
-let _acSubKey = Deno.env.get("ASCOLOUR_SUBSCRIPTION_KEY") ?? "";
-let _acEmail = Deno.env.get("ASCOLOUR_EMAIL") ?? "";
-let _acPassword = Deno.env.get("ASCOLOUR_PASSWORD") ?? "";
-
-// Getters for backward compat
-export const AC_SUBSCRIPTION_KEY = _acSubKey;
-export const AC_EMAIL = _acEmail;
-export const AC_PASSWORD = _acPassword;
-
-export function setAcCredentials(subKey: string, email: string, password: string) {
-  _acSubKey = subKey;
-  _acEmail = email;
-  _acPassword = password;
-  // Reset cached bearer token when credentials change
-  cachedToken = null;
+export interface AcCreds {
+  subKey: string;
+  email: string;
+  password: string;
 }
 
-export function resetAcCredentials() {
-  _acSubKey = Deno.env.get("ASCOLOUR_SUBSCRIPTION_KEY") ?? "";
-  _acEmail = Deno.env.get("ASCOLOUR_EMAIL") ?? "";
-  _acPassword = Deno.env.get("ASCOLOUR_PASSWORD") ?? "";
-  cachedToken = null;
+/**
+ * Build credentials from a profile row, falling back to platform-level env
+ * defaults. Returns null if no usable credentials exist (caller should refuse
+ * the request rather than silently using env credentials in an authenticated
+ * context).
+ */
+export function credsFromProfile(profile: { ac_subscription_key?: string | null; ac_email?: string | null; ac_password?: string | null } | null | undefined): AcCreds | null {
+  const subKey   = profile?.ac_subscription_key || Deno.env.get("ASCOLOUR_SUBSCRIPTION_KEY") || "";
+  const email    = profile?.ac_email             || Deno.env.get("ASCOLOUR_EMAIL")             || "";
+  const password = profile?.ac_password          || Deno.env.get("ASCOLOUR_PASSWORD")          || "";
+  if (!subKey) return null;
+  return { subKey, email, password };
 }
 
 export const FETCH_TIMEOUT_MS = 20_000;
@@ -40,10 +49,10 @@ export const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-export function acHeaders(extra: Record<string, string> = {}) {
+export function acHeaders(creds: AcCreds, extra: Record<string, string> = {}) {
   return {
-    "Ocp-Apim-Subscription-Key": _acSubKey,
-    "Subscription-Key": _acSubKey,
+    "Ocp-Apim-Subscription-Key": creds.subKey,
+    "Subscription-Key": creds.subKey,
     Accept: "application/json",
     "Content-Type": "application/json",
     ...extra,
@@ -53,6 +62,7 @@ export function acHeaders(extra: Record<string, string> = {}) {
 export type AcFetchResult = { ok: boolean; status: number; data: any };
 
 export async function acFetch(
+  creds: AcCreds,
   url: string,
   init: RequestInit = {},
   ctx = "ascolour",
@@ -61,7 +71,7 @@ export async function acFetch(
   try {
     const res = await fetch(url, {
       ...init,
-      headers: { ...acHeaders(), ...(init.headers ?? {}) },
+      headers: { ...acHeaders(creds), ...(init.headers ?? {}) },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     status = res.status;
@@ -81,18 +91,30 @@ export async function acFetch(
 }
 
 // --- Auth (Bearer token cache for pricelist) ---------------------------------
+//
+// Cache is keyed by the caller's AS Colour email so concurrent invocations
+// from different shops never receive each other's tokens. Each entry holds
+// the token + an expiry timestamp (50min TTL — AS Colour tokens are 1h).
+//
+// One isolate-wide Map is fine: it's just a perf cache for legitimately-issued
+// tokens, scoped per credential set. A wrong key returns a cache miss and we
+// re-auth.
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
-const TOKEN_TTL_MS = 50 * 60 * 1000; // assume ~1h, refresh at 50m
+interface CachedToken { token: string; expiresAt: number }
+const tokenCache = new Map<string, CachedToken>();
+const TOKEN_TTL_MS = 50 * 60 * 1000;
 
-export async function getAcBearerToken(force = false): Promise<string | null> {
-  if (!_acEmail || !_acPassword) return null;
-  if (!force && cachedToken && cachedToken.expiresAt > Date.now()) {
-    return cachedToken.token;
+export async function getAcBearerToken(creds: AcCreds, force = false): Promise<string | null> {
+  if (!creds.email || !creds.password) return null;
+  const key = creds.email.toLowerCase();
+  if (!force) {
+    const hit = tokenCache.get(key);
+    if (hit && hit.expiresAt > Date.now()) return hit.token;
   }
   const { ok, data } = await acFetch(
+    creds,
     `${AC_BASE}/api/authentication`,
-    { method: "POST", body: JSON.stringify({ email: _acEmail, password: _acPassword }) },
+    { method: "POST", body: JSON.stringify({ email: creds.email, password: creds.password }) },
     "ascolour-auth",
   );
   if (!ok) return null;
@@ -105,8 +127,8 @@ export async function getAcBearerToken(force = false): Promise<string | null> {
     data?.authorization ||
     null;
   if (!token) return null;
-  cachedToken = { token: String(token), expiresAt: Date.now() + TOKEN_TTL_MS };
-  return cachedToken.token;
+  tokenCache.set(key, { token: String(token), expiresAt: Date.now() + TOKEN_TTL_MS });
+  return String(token);
 }
 
 function stripHtml(str: string): string {

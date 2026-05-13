@@ -12,16 +12,16 @@ import {
   AC_BASE,
   CORS,
   acFetch,
+  credsFromProfile,
   normalizeProduct,
-  setAcCredentials,
-  resetAcCredentials,
+  type AcCreds,
 } from "../_shared/ascolour.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 
 const PAGE_SIZE = 250;
 
-async function resolveAcCredentials(accessToken?: string) {
+async function resolveAcCredentials(accessToken?: string): Promise<AcCreds | null> {
   if (accessToken) {
     try {
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -31,14 +31,12 @@ async function resolveAcCredentials(accessToken?: string) {
       if (user) {
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
-        if (profile?.ac_subscription_key) {
-          setAcCredentials(profile.ac_subscription_key, profile.ac_email || "", profile.ac_password || "");
-          return;
-        }
+        const perShop = credsFromProfile(profile);
+        if (perShop) return perShop;
       }
     } catch {}
   }
-  resetAcCredentials();
+  return credsFromProfile(null);
 }
 
 Deno.serve(async (req) => {
@@ -49,13 +47,16 @@ Deno.serve(async (req) => {
     const { query = "", category = "", limit = 48, page = 1, accessToken } = body;
 
     const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
-    await resolveAcCredentials(accessToken || authHeader);
+    const creds = await resolveAcCredentials(accessToken || authHeader);
+    if (!creds) {
+      return Response.json({ error: "AS Colour credentials not configured" }, { status: 500, headers: CORS });
+    }
 
     // Fetch all catalog pages (typically 2 pages, ~450 products total).
     const all: any[] = [];
     for (let pg = 1; pg <= 5; pg++) {
       const url = `${AC_BASE}/catalog/products/?pageNumber=${pg}&pageSize=${PAGE_SIZE}`;
-      const { ok, status, data } = await acFetch(url, {}, `acSearchCatalog:p${pg}`);
+      const { ok, status, data } = await acFetch(creds, url, {}, `acSearchCatalog:p${pg}`);
       if (!ok) {
         if (pg === 1) {
           return Response.json(

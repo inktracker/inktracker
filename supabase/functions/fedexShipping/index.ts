@@ -243,19 +243,30 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Update order record with shipping info
+      // Update order record with shipping info — scoped to caller's shop.
+      //
+      // Without the shop_owner filter, any authenticated InkTracker user
+      // could pass an arbitrary orderId and overwrite the tracking number
+      // or label URL on another shop's order. The .eq("shop_owner", ...)
+      // makes the update a no-op outside the caller's own shop. Service
+      // role bypasses RLS so we have to enforce it ourselves here.
       if (orderId) {
         try {
           const admin = adminClient();
-          await admin.from("orders").update({
+          const { error: updErr } = await admin.from("orders").update({
             tracking_number: trackingNumber,
             shipping_label_url: labelUrl,
             shipping_service_type: serviceType,
             shipping_carrier: "FedEx",
             shipping_status: "Label Created",
-          }).eq("id", orderId);
+          })
+            .eq("id", orderId)
+            .eq("shop_owner", user.email);
+          if (updErr) {
+            console.error("[fedex-ship] order update failed:", updErr.message);
+          }
         } catch (err) {
-          console.error("[fedex-ship] order update failed:", (err as Error).message);
+          console.error("[fedex-ship] order update exception:", (err as Error).message);
         }
       }
 

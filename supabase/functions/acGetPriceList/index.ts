@@ -9,23 +9,47 @@
 //   - refreshAuth: bypass the in-memory token cache and re-login
 //
 // Returns: { prices: { sku, styleCode, colour, size, price }[], total }
+//
+// Auth required: anonymous access would expose AS Colour wholesale pricing
+// to anyone with the public URL. The frontend doesn't currently invoke this
+// endpoint, so locking it down has no breakage risk.
 
 import {
   AC_BASE,
   CORS,
-  acFetch,
   acHeaders,
+  credsFromProfile,
   getAcBearerToken,
 } from "../_shared/ascolour.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { styleCode, refreshAuth = false } = body;
+    const { styleCode, refreshAuth = false, accessToken } = body;
 
-    const token = await getAcBearerToken(refreshAuth);
+    const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || accessToken;
+    if (!authHeader) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+    }
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: `Bearer ${authHeader}` } },
+    });
+    const { data: { user } } = await supabase.auth.getUser(authHeader);
+    if (!user) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+    }
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
+    const creds = credsFromProfile(profile);
+    if (!creds) {
+      return Response.json({ error: "AS Colour credentials not configured" }, { status: 500, headers: CORS });
+    }
+
+    const token = await getAcBearerToken(creds, refreshAuth);
     if (!token) {
       return Response.json(
         {
@@ -39,7 +63,7 @@ Deno.serve(async (req) => {
     const url = `${AC_BASE}/catalog/pricelist`;
     const res = await fetch(url, {
       method: "GET",
-      headers: { ...acHeaders({ Authorization: `Bearer ${token}` }) },
+      headers: { ...acHeaders(creds, { Authorization: `Bearer ${token}` }) },
       signal: AbortSignal.timeout(30_000),
     });
     const text = await res.text();

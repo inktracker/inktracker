@@ -42,13 +42,25 @@ function sum(rows: any[], col: string): number {
   return rows.reduce((s, r) => s + Number(r?.[col] ?? 0), 0);
 }
 
+// Constant-time string compare for the shared-secret bearer token. Standard
+// practice for any verifier check where length-prefix short-circuit could
+// leak timing info — even though the entropy of BRIEFING_TOKEN makes
+// practical attacks impractical, the pattern is cheap to get right.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
 
   // ── Auth: shared-secret bearer token ──
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!BRIEFING_TOKEN || token !== BRIEFING_TOKEN) {
+  if (!BRIEFING_TOKEN || !timingSafeEqual(token, BRIEFING_TOKEN)) {
     return json({ error: "unauthorized" }, 401);
   }
 

@@ -33,6 +33,17 @@ const CORS = {
 
 // ── Signature verification ───────────────────────────────────────────────────
 
+// Constant-time string comparison. Standard practice for any verifier check
+// where a length-prefix short-circuit could leak timing info about which
+// position the comparison diverged at.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
+
 async function verifySignature(rawBody: string, signature: string): Promise<boolean> {
   // Fail closed — refuse events without verifier token configured or without a
   // signature header. Previous behavior returned true when no token was set,
@@ -48,7 +59,7 @@ async function verifySignature(rawBody: string, signature: string): Promise<bool
     );
     const computed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
     const expectedB64 = btoa(String.fromCharCode(...new Uint8Array(computed)));
-    return expectedB64 === signature;
+    return timingSafeEqual(expectedB64, signature);
   } catch {
     return false;
   }

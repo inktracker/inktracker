@@ -1,4 +1,4 @@
-// AS Colour single-style lookup — Supabase Edge Function (v15)
+// AS Colour single-style lookup — Supabase Edge Function
 //
 // Body: { styleCode: string, includeInventory?: boolean, debug?: boolean }
 // Returns a single normalised product with variants, images, and (optionally)
@@ -11,16 +11,19 @@ import {
   AC_BASE,
   CORS,
   acFetch,
-  acHeaders,
+  credsFromProfile,
   getAcBearerToken,
   normalizeProduct,
-  setAcCredentials,
-  resetAcCredentials,
+  type AcCreds,
 } from "../_shared/ascolour.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 
-async function resolveAcCredentials(accessToken?: string) {
+// Returns the AcCreds bundle to use for this request. Tries the authenticated
+// user's per-shop credentials first; falls back to platform env credentials
+// for anonymous callers (the public wizard at /quoterequest still has to be
+// able to look up garments).
+async function resolveAcCredentials(accessToken?: string): Promise<AcCreds | null> {
   if (accessToken) {
     try {
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -30,16 +33,14 @@ async function resolveAcCredentials(accessToken?: string) {
       if (user) {
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
-        if (profile?.ac_subscription_key) {
-          setAcCredentials(profile.ac_subscription_key, profile.ac_email || "", profile.ac_password || "");
-          return;
-        }
+        const perShop = credsFromProfile(profile);
+        if (perShop) return perShop;
       }
     } catch (err) {
-      console.error("[acLookupStyle] per-shop auth failed, using global:", err.message);
+      console.error("[acLookupStyle] per-shop auth failed, falling back to env:", (err as Error).message);
     }
   }
-  resetAcCredentials();
+  return credsFromProfile(null);
 }
 
 Deno.serve(async (req) => {
@@ -50,7 +51,10 @@ Deno.serve(async (req) => {
     const { styleCode, includeInventory = true, debug = false, accessToken } = body;
 
     const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
-    await resolveAcCredentials(accessToken || authHeader);
+    const creds = await resolveAcCredentials(accessToken || authHeader);
+    if (!creds) {
+      return Response.json({ error: "AS Colour credentials not configured" }, { status: 500, headers: CORS });
+    }
 
     if (!styleCode) {
       return Response.json(
@@ -64,8 +68,8 @@ Deno.serve(async (req) => {
 
     // Fetch product and images in parallel. Variants may need pagination.
     const [productRes, imagesRes] = await Promise.all([
-      acFetch(`${AC_BASE}/catalog/products/${encodeURIComponent(code)}`, {}, "acLookupStyle:product"),
-      acFetch(`${AC_BASE}/catalog/products/${encodeURIComponent(code)}/images`, {}, "acLookupStyle:images"),
+      acFetch(creds, `${AC_BASE}/catalog/products/${encodeURIComponent(code)}`, {}, "acLookupStyle:product"),
+      acFetch(creds, `${AC_BASE}/catalog/products/${encodeURIComponent(code)}/images`, {}, "acLookupStyle:images"),
     ]);
 
     logs.push(
@@ -89,6 +93,7 @@ Deno.serve(async (req) => {
     const variantsArr: any[] = [];
     for (let pg = 1; pg <= 5; pg++) {
       const vRes = await acFetch(
+        creds,
         `${AC_BASE}/catalog/products/${encodeURIComponent(code)}/variants?pageNumber=${pg}&pageSize=250`,
         {}, `acLookupStyle:variants:p${pg}`,
       );
@@ -112,11 +117,12 @@ Deno.serve(async (req) => {
     // Fetch live inventory (requires Bearer token, same as pricelist).
     let inventoryMap: Record<string, Record<string, number>> = {};
     try {
-      const bearerToken2 = await getAcBearerToken();
+      const bearerToken2 = await getAcBearerToken(creds);
       if (bearerToken2) {
         const allInv: any[] = [];
         for (let pg = 1; pg <= 5; pg++) {
           const invRes = await acFetch(
+            creds,
             `${AC_BASE}/inventory/items?skuFilter=${encodeURIComponent(code)}&pageNumber=${pg}&pageSize=250`,
             { headers: { Authorization: `Bearer ${bearerToken2}` } },
             `acLookupStyle:inv:p${pg}`,
@@ -145,11 +151,12 @@ Deno.serve(async (req) => {
     // Build a SKU → price map, then group by colour for the UI priceMap.
     const skuPriceMap: Record<string, number> = {};
     try {
-      const bearerToken = await getAcBearerToken();
+      const bearerToken = await getAcBearerToken(creds);
       if (bearerToken) {
         // Paginate pricelist filtered by styleCode
         for (let pg = 1; pg <= 5; pg++) {
           const priceRes = await acFetch(
+            creds,
             `${AC_BASE}/catalog/pricelist?skuFilter=${encodeURIComponent(code)}&pageNumber=${pg}&pageSize=250`,
             { headers: { Authorization: `Bearer ${bearerToken}` } },
             `acLookupStyle:prices:p${pg}`,

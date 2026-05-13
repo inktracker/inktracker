@@ -239,6 +239,30 @@ Deno.serve(async (req) => {
         return Response.json({ received: true }, { headers: CORS });
       }
 
+      // Defense-in-depth: verify the connected account that received the
+      // payment is actually the quote's shop. The webhook trusts
+      // session.metadata.quote_id, which is attacker-controllable on
+      // Connect since any shop can mint a checkout session with arbitrary
+      // metadata. Without this check, shop A could craft a session
+      // referencing shop B's quote_id and flip shop B's quote to
+      // "Approved and Paid" — Stripe Connect destinations would route the
+      // money to shop A, but the InkTracker quote on the OTHER shop's
+      // dashboard would silently get marked paid.
+      const stripeAccountId = (event as Stripe.Event & { account?: string }).account;
+      if (stripeAccountId && quote.shop_owner) {
+        const { data: shopRow } = await supabase
+          .from("shops")
+          .select("stripe_account_id")
+          .eq("owner_email", quote.shop_owner)
+          .maybeSingle();
+        if (!shopRow?.stripe_account_id || shopRow.stripe_account_id !== stripeAccountId) {
+          console.error(
+            `[stripeWebhook] REJECTED: session for quote ${quote.quote_id} came from account ${stripeAccountId} but the quote's shop ${quote.shop_owner} owns ${shopRow?.stripe_account_id ?? "<none>"}`,
+          );
+          return Response.json({ received: true, ignored: "account_mismatch" }, { headers: CORS });
+        }
+      }
+
       // Update quote status (authoritative server-side confirmation)
       // Don't overwrite if already converted to an order
       if (quote.status === "Converted to Order" || quote.converted_order_id) {
