@@ -535,6 +535,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         {viewingOrder && (
           <OrderDetailModal
             order={viewingOrder}
+            customer={customer}
             onClose={() => setViewingOrder(null)}
           />
         )}

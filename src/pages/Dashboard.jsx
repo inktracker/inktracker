@@ -4,7 +4,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import { createPageUrl } from "@/utils";
-import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig } from "../components/shared/pricing";
+import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig, getDisplayName, getOrderDisplayClient } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText } from "lucide-react";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
@@ -257,6 +257,12 @@ export default function Dashboard() {
   const [tab, setTab] = useState("overview");
   const [brokerUnreadCount, setBrokerUnreadCount] = useState(0);
   const [customerCount, setCustomerCount] = useState(0);
+  // id → customer entity. Used by getDisplayName / getOrderDisplayClient
+  // so the Order Pipeline + Recent Quotes cards show the company first,
+  // falling back to contact name. Without this lookup the dashboard had
+  // to use raw order.customer_name / quote.customer_name (contact only),
+  // which is why those cards drifted from the Orders/Quotes pages.
+  const [customers, setCustomers] = useState({});
 
   useEffect(() => {
     async function loadData() {
@@ -279,6 +285,9 @@ export default function Dashboard() {
         setOrders(o);
         setInventory(invItems);
         setCustomerCount(custs.length);
+        const custMap = {};
+        (custs || []).forEach((c) => { custMap[c.id] = c; });
+        setCustomers(custMap);
         setInvoices(localInvoices);
         setBrokers(allUsers.filter(u => u.role === "broker" && (u.assigned_shops || []).includes(currentUser.email)));
         setShopOwners(allUsers.filter(u => u.role !== "broker"));
@@ -292,13 +301,28 @@ export default function Dashboard() {
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading…</div>;
 
-  const pendingQuotes = quotes.filter(q => q.status === "Pending").length;
-  const approvedQuotes = quotes.filter(q => q.status === "Approved").length;
-  const brokerQuotes = quotes.filter(q => q.broker_id).length;
-  const activeOrders = orders.filter(o => o.status !== "Completed").length;
-  const openOrdersCount = orders.filter(o => o.status !== "Completed").length;
-  const openOrdersValue = orders.filter(o => o.status !== "Completed").reduce((sum, o) => sum + (o.total || 0), 0);
-  const unpaidInvoices = computeOutstanding(invoices).total;
+  const sumTotals = (items) => items.reduce((s, x) => s + (Number(x.total) || 0), 0);
+
+  const pendingQuotesList  = quotes.filter(q => q.status === "Pending");
+  const approvedQuotesList = quotes.filter(q => q.status === "Approved");
+  const pendingQuotes      = pendingQuotesList.length;
+  const approvedQuotes     = approvedQuotesList.length;
+  const pendingQuotesValue = sumTotals(pendingQuotesList);
+  const approvedQuotesValue = sumTotals(approvedQuotesList);
+
+  // Open orders that are NOT yet paid. Pre-paid orders (paid===true)
+  // contribute zero to the outstanding sum since the money's already
+  // in. Their count still shows in `activeOrders` for the pipeline UI;
+  // the metric card just doesn't add them to the dollar total.
+  const activeOrders = orders.filter(o => o.status !== "Completed");
+  const unpaidOpenOrders = activeOrders.filter(o => !o.paid);
+  const openOrdersCount = activeOrders.length;
+  const openOrdersValue = sumTotals(unpaidOpenOrders);
+
+  const outstanding = computeOutstanding(invoices);
+  const unpaidInvoicesCount = outstanding.count;
+  const unpaidInvoicesValue = outstanding.total;
+
   const lowStockItems = inventory.filter(i => (i.qty || 0) <= (i.reorder || 0));
 
   return (
@@ -338,12 +362,16 @@ export default function Dashboard() {
       {tab === "overview" && (
         <div className="space-y-6">
           {/* Metrics */}
-          <div data-tour="metrics" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            <MetricCard label="Pending Quotes" value={pendingQuotes} sub="Awaiting approval" color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
-            <MetricCard label="Approved" value={approvedQuotes} sub="Ready to convert" color="text-emerald-600" onClick={() => navigate(createPageUrl("Quotes"))} />
-            <MetricCard label="Broker Quotes" value={brokerQuotes} sub="Submitted by brokers" color="text-indigo-600" onClick={() => navigate(createPageUrl("Quotes"))} />
+          {/* 5 chips at the wide breakpoint (was 6, brokers removed).
+              Each chip shows the count up top with its dollar value
+              directly underneath — value-first reads consistent. The
+              Open Orders sum excludes pre-paid orders (their money is
+              already in). */}
+          <div data-tour="metrics" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <MetricCard label="Pending Quotes" value={pendingQuotes} sub={fmtMoney(pendingQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
+            <MetricCard label="Approved" value={approvedQuotes} sub={fmtMoney(approvedQuotesValue)} color="text-emerald-600" onClick={() => navigate(createPageUrl("Quotes"))} />
             <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
-            <MetricCard label="Unpaid Invoices" value={fmtMoney(unpaidInvoices)} sub="Outstanding" color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
+            <MetricCard label="Unpaid Invoices" value={unpaidInvoicesCount} sub={fmtMoney(unpaidInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
             <MetricCard label="Low Stock Items" value={lowStockItems.length} sub="Need reorder" color="text-red-600" onClick={() => navigate(createPageUrl("Inventory"))} />
           </div>
 
@@ -364,7 +392,10 @@ export default function Dashboard() {
               <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Order Pipeline</h3>
               <HintTip text="Orders move through these stages from left to right. Click a stage to see its orders, or click an individual order to view details." />
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+            {/* 5 columns at lg matches the metrics row above and uses
+                the full page width. Was lg:grid-cols-8 — left the chips
+                squeezed at the left third of the row. */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {O_STATUSES.map(status => {
                 const inStage = orders.filter((o) => o.status === status);
                 return (
@@ -383,7 +414,7 @@ export default function Dashboard() {
                           onClick={() => navigate(`/Orders?id=${o.id}`)}
                           className="w-full text-left text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700 hover:bg-indigo-50 hover:border-indigo-200 transition"
                         >
-                          <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{o.customer_name}</div>
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
                           <div className="text-slate-500">{o.order_id}</div>
                         </button>
                       ))}
@@ -421,7 +452,7 @@ export default function Dashboard() {
                       className="w-full text-left px-5 py-3 flex items-center justify-between hover:bg-slate-50 dark:bg-slate-800 transition"
                     >
                       <div>
-                        <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{q.customer_name || "—"}</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{getDisplayName(customers[q.customer_id] || q.customer_name) || "—"}</div>
                         <div className="text-xs text-slate-400 mt-0.5">
                           {q.quote_id}
                           {q.broker_id && <span className="ml-2 text-indigo-500 font-semibold">via broker</span>}
