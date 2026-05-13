@@ -1,44 +1,25 @@
-// Feature gating based on subscription tier.
-// Single tier: shop. Trial gets full access for 14 days.
+// Feature gating + founding-member pricing.
 //
-// TODO (founding member program — separate PR):
-// The landing page is live with "Founding member pricing — $99/mo,
-// first 100 shops" framing. Internal enforcement is NOT yet wired up.
-// What's needed:
+// Tiers and rates (enforced atomically by the
+// claim_founding_slot Postgres function — see
+// supabase/migrations/20260520_founding_member_program.sql):
 //
-//   1. Subscription model fields (Stripe metadata + profile_secrets):
-//      - is_founding_member: boolean       — set true at signup if the
-//        live founding count is < 100 at the moment the checkout session
-//        is created.
-//      - founding_rate_active: boolean     — true while the founding-rate
-//        subscription is continuous. Flipped to false (permanently) by
-//        the cancellation hook below.
+//   founding ($99/mo) — locked for the life of the subscription, for
+//     the first 50 shops to claim it at Stripe checkout. Cap is
+//     enforced server-side; no public counter is exposed (intentional).
+//   standard ($149/mo) — for signups after the 50 slots fill, AND
+//     for any prior founding member who canceled (the forfeit is
+//     permanent — re-signups always pay standard).
 //
-//   2. Founding count tracking:
-//      - A counter (e.g. shops.is_founding_member aggregate or a
-//        dedicated `founding_members` table) capped at 100.
-//      - Expose the current count via a public-readable view or a
-//        cheap edge function so the landing page can render
-//        "Founding spots remaining: X of 100" once we want that UI.
-//
-//   3. Checkout-time logic (supabase/functions/billing/index.ts):
-//      - If founding_count < 100 AND user has no prior
-//        founding_rate_active=false record, quote the $99 price ID and
-//        set is_founding_member=true + founding_rate_active=true on
-//        the subscription.
-//      - Otherwise (founding cap reached OR prior founding cancellation),
-//        quote the $149 standard price ID.
-//
-//   4. Cancellation hook (supabase/functions/billingWebhook/index.ts,
-//      customer.subscription.deleted):
-//      - If subscription was founding (is_founding_member=true), set
-//        founding_rate_active=false on the profile. This is permanent
-//        and prevents the user from re-acquiring the $99 rate on re-signup.
-//
-//   5. Re-signup logic:
-//      - If the user previously canceled and founding_rate_active is now
-//        false, the checkout flow MUST quote $149 — never $99 — even if
-//        spots are still available for new users.
+// Lifecycle:
+//   - Signup → 14-day trial (no payment)
+//   - At Stripe checkout, the billing edge function calls
+//     claim_founding_slot. Its jsonb status determines which price
+//     ID gets sent to Stripe. The client doesn't choose — single
+//     source of truth is the SQL function.
+//   - On customer.subscription.deleted webhook, billingWebhook sets
+//     founding_rate_forfeited=true if the canceled sub was on the
+//     founding rate. This is permanent.
 
 const ALL_FEATURES = ["quotes", "orders", "production", "invoices", "customers", "pdf", "qb_sync", "employees", "ss_restock", "wizard", "shopify", "mockups", "broker", "reports"];
 

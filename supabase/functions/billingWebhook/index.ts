@@ -101,17 +101,23 @@ Deno.serve(async (req) => {
         const sub = event.data.object as Stripe.Subscription;
         const customerId = sub.customer as string;
 
-        // TODO (founding member program — separate PR): when the deleted
-        // subscription was on the founding rate (is_founding_member=true),
-        // ALSO write founding_rate_active=false on the profile here. This
-        // is permanent — re-signups by the same user must pay the
-        // standard $149 rate, never the founding $99. See src/lib/billing.js
-        // for the full enforcement plan.
-        await updateProfileByCustomer(customerId, {
+        // Founding-member forfeit. When the canceled subscription was
+        // on the founding rate (metadata.is_founding=true OR profile
+        // currently flagged is_founding_member), set
+        // founding_rate_forfeited=true so claim_founding_slot refuses
+        // any re-signup. The forfeit is permanent — re-signups always
+        // pay the standard $149 rate.
+        const wasFounding = sub.metadata?.is_founding === "true";
+        const updates: Record<string, unknown> = {
           subscription_tier: "expired",
           subscription_status: "canceled",
           stripe_subscription_id: null,
-        });
+        };
+        if (wasFounding) {
+          updates.founding_rate_forfeited = true;
+          updates.is_founding_member = false;
+        }
+        await updateProfileByCustomer(customerId, updates);
         break;
       }
 
