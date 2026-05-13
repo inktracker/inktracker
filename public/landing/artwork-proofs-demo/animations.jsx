@@ -356,10 +356,11 @@ function Stage({
     if (!stageRef.current) return;
     const el = stageRef.current;
     const measure = () => {
-      const barH = 44; // playback bar height
+      // Embedded landing-modal preview: no playback bar, demo fills the
+      // entire iframe (was: const barH = 44 to reserve space for the bar).
       const s = Math.min(
         el.clientWidth / width,
-        (el.clientHeight - barH) / height
+        el.clientHeight / height
       );
       setScale(Math.max(0.05, s));
     };
@@ -464,17 +465,9 @@ function Stage({
         </div>
       </div>
 
-      {/* Playback bar — stacked below canvas, never overlapping */}
-      <PlaybackBar
-        time={displayTime}
-        actualTime={time}
-        duration={duration}
-        playing={playing}
-        onPlayPause={() => setPlaying(p => !p)}
-        onReset={() => { setTime(0); }}
-        onSeek={(t) => setTime(t)}
-        onHover={(t) => setHoverTime(t)}
-      />
+      {/* Playback bar removed for the embedded landing-modal preview.
+          The PlaybackBar component below is kept in the file in case
+          someone wants the design-tool version, but it's not rendered. */}
     </div>
   );
 }
