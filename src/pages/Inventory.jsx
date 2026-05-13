@@ -15,6 +15,7 @@ export default function Inventory() {
   const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0 });
+  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
   const [categories, setCategories] = useState(() => {
     try {
@@ -74,16 +75,34 @@ export default function Inventory() {
   }, []);
 
   async function updateQty(id, newQty) {
-    const updated = await base44.entities.InventoryItem.update(id, { qty: parseInt(newQty) || 0 });
-    setItems(prev => prev.map(i => i.id === id ? updated : i));
+    try {
+      const updated = await base44.entities.InventoryItem.update(id, { qty: parseInt(newQty) || 0 });
+      setItems(prev => prev.map(i => i.id === id ? updated : i));
+    } catch (err) {
+      console.error("Inventory updateQty failed:", err);
+      alert("Couldn't update quantity: " + (err?.message || "Unknown error"));
+    }
   }
 
   async function handleAdd() {
     if (!form.item.trim() || !form.sku.trim()) return;
-    const created = await base44.entities.InventoryItem.create({ ...form, shop_owner: user?.email });
+    // Double-click guard — without this, a slow network would let the
+    // user click twice and create two identical inventory rows.
+    if (adding) return;
+    setAdding(true);
+    let created;
+    try {
+      created = await base44.entities.InventoryItem.create({ ...form, shop_owner: user?.email });
+    } catch (err) {
+      console.error("Inventory add failed:", err);
+      alert("Couldn't add item: " + (err?.message || "Unknown error"));
+      setAdding(false);
+      return;
+    }
     setItems(prev => [...prev, created].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
     setForm({ item:"", sku:"", category:"Blanks", qty:0, unit:"pcs", reorder:0, cost:0 });
     setShowForm(false);
+    setAdding(false);
   }
 
   async function handleEdit() {
@@ -282,7 +301,13 @@ export default function Inventory() {
               </div>
             ))}
           </div>
-          <button onClick={handleAdd} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition">Add Item</button>
+          <button
+            onClick={handleAdd}
+            disabled={adding || !form.item.trim() || !form.sku.trim()}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+          >
+            {adding ? "Adding…" : "Add Item"}
+          </button>
         </div>
       )}
 
