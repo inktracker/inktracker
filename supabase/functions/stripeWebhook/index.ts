@@ -305,6 +305,35 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── Stripe Connect: account.updated ─────────────────────────────
+    // Fired when a connected account's verification state changes — e.g.
+    // shop finished onboarding (details_submitted=true, charges_enabled=true)
+    // or Stripe revoked their ability to accept payments. We mirror the
+    // coarse state to shops.stripe_account_status so the UI and the
+    // SendQuoteModal "Stripe radio" gating stay in sync without polling.
+    //
+    // The event.account field identifies the connected account; we look
+    // up the shop by stripe_account_id.
+    if (event.type === "account.updated") {
+      const account = event.data.object as Stripe.Account;
+      const status = account.charges_enabled
+        ? "active"
+        : account.details_submitted
+          ? "restricted"
+          : "pending";
+
+      const { error: updErr } = await supabase
+        .from("shops")
+        .update({ stripe_account_status: status })
+        .eq("stripe_account_id", account.id);
+
+      if (updErr) {
+        console.error("[stripeWebhook] account.updated mirror failed:", updErr.message);
+      } else {
+        console.log(`[stripeWebhook] Stripe Connect account ${account.id} → ${status}`);
+      }
+    }
+
     return Response.json({ received: true }, { headers: CORS });
   } catch (err) {
     console.error("[stripeWebhook] Error processing event:", err);

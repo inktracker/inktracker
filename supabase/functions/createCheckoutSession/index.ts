@@ -275,35 +275,67 @@ async function handleCreateSession(params: any) {
   // create Stripe checkout sessions for any quote ID.
   const { data: existing } = await supabase
     .from("quotes")
-    .select("public_token")
+    .select("public_token, shop_owner")
     .eq("id", params.quoteId)
     .single();
   if (!existing?.public_token || !params.token || !safeEquals(params.token, existing.public_token)) {
     return { error: "Quote not found." };
   }
 
-  const origin = params.origin ?? "https://www.inktracker.app";
-  const successUrl = `${origin}/quotepaymentSuccess?session_id={CHECKOUT_SESSION_ID}&quote_id=${params.quoteId}&is_deposit=${params.isDeposit ? "1" : "0"}&amount=${params.amountPaid || 0}&shop_owner=${encodeURIComponent(params.shopOwnerEmail || "")}`;
-  const cancelUrl  = `${origin}/quotepaymentCancel`;
+  // Look up the shop's Stripe Connect account. Direct Charges model — the
+  // shop is merchant of record, their name on the customer's CC statement,
+  // money goes straight to them, InkTracker doesn't take a cut.
+  const { data: shop } = await supabase
+    .from("shops")
+    .select("stripe_account_id, stripe_account_status")
+    .eq("owner_email", existing.shop_owner)
+    .maybeSingle();
+  if (!shop?.stripe_account_id || shop.stripe_account_status !== "active") {
+    return {
+      error: shop?.stripe_account_id
+        ? "This shop's Stripe account isn't ready to accept payments yet. Please contact them."
+        : "This shop hasn't connected Stripe yet. Please contact them to complete payment another way.",
+    };
+  }
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer_email: params.customerEmail || undefined,
-    line_items: (params.lineItems ?? []).map((li: any) => ({
-      price_data: {
-        currency: "usd",
-        unit_amount: li.unit_amount,
-        product_data: { name: li.name, description: li.description ?? undefined },
+  const origin = params.origin ?? "https://www.inktracker.app";
+  // Carry quote_id + token so the cancel page can offer "Return to Quote"
+  // (the /quotepayment route refuses without a token).
+  const successUrl = `${origin}/quotepaymentSuccess?session_id={CHECKOUT_SESSION_ID}&quote_id=${params.quoteId}&is_deposit=${params.isDeposit ? "1" : "0"}&amount=${params.amountPaid || 0}&shop_owner=${encodeURIComponent(params.shopOwnerEmail || "")}`;
+  const cancelUrl  = `${origin}/quotepaymentCancel?quote_id=${params.quoteId}&token=${encodeURIComponent(params.token)}`;
+
+  const session = await stripe.checkout.sessions.create(
+    {
+      mode: "payment",
+      customer_email: params.customerEmail || undefined,
+      line_items: (params.lineItems ?? []).map((li: any) => ({
+        price_data: {
+          currency: "usd",
+          unit_amount: li.unit_amount,
+          product_data: { name: li.name, description: li.description ?? undefined },
+        },
+        quantity: li.quantity ?? 1,
+      })),
+      success_url: successUrl,
+      cancel_url:  cancelUrl,
+      metadata: {
+        quote_id: params.quoteId,
+        is_deposit: params.isDeposit ? "1" : "0",
       },
-      quantity: li.quantity ?? 1,
-    })),
-    success_url: successUrl,
-    cancel_url:  cancelUrl,
-    metadata: {
-      quote_id: params.quoteId,
-      is_deposit: params.isDeposit ? "1" : "0",
+      // No application_fee_amount — InkTracker takes 0% of the customer
+      // payment. Revenue is the monthly subscription only.
     },
-  });
+    {
+      // ── Direct Charges ──────────────────────────────────────────
+      // Tells Stripe to create the session ON the connected account,
+      // not the platform. The shop is the merchant; the customer's
+      // statement shows the shop's name; funds go to the shop's
+      // Stripe balance with no InkTracker leg. The stripeWebhook
+      // must be configured to receive events from connected accounts
+      // for this checkout.session.completed event to reach us.
+      stripeAccount: shop.stripe_account_id,
+    },
+  );
 
   // Don't change status here — the stripeWebhook confirms payment and sets the
   // correct status after Stripe actually charges the customer. Marking it here
