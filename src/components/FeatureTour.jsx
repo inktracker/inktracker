@@ -45,6 +45,13 @@ function getElementRect(selector) {
   return el.getBoundingClientRect();
 }
 
+// Approximate tooltip footprint — used for viewport-collision math. The
+// actual rendered card varies slightly with description length, but 360x200
+// is a safe-ish upper bound and erring on the larger side just keeps the
+// tooltip away from edges.
+const TOOLTIP_W = 360;
+const TOOLTIP_H = 200;
+
 function getTooltipStyle(rect, position) {
   if (!rect || position === "center") {
     return {
@@ -56,23 +63,41 @@ function getTooltipStyle(rect, position) {
   }
 
   const padding = 16;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
   const style = { position: "fixed" };
 
-  if (position === "bottom") {
-    style.top = rect.bottom + padding;
-    style.left = Math.max(padding, rect.left + rect.width / 2 - 180);
-  } else if (position === "right") {
-    style.top = rect.top;
-    style.left = rect.right + padding;
-  } else if (position === "top") {
-    style.top = rect.top - padding;
-    style.left = Math.max(padding, rect.left + rect.width / 2 - 180);
-    style.transform = "translateY(-100%)";
-  }
+  // Horizontal placement clamped to the viewport for any anchor.
+  const clampX = (raw) => Math.max(padding, Math.min(vw - TOOLTIP_W - padding, raw));
+  const clampY = (raw) => Math.max(padding, Math.min(vh - TOOLTIP_H - padding, raw));
 
-  // Keep within viewport
-  if (style.left > window.innerWidth - 380) {
-    style.left = window.innerWidth - 380;
+  if (position === "bottom") {
+    // Try below the target. If that overflows, try above. If both would
+    // overflow (tall targets like the Getting Started checklist, which
+    // pushed the tooltip past the bottom of the viewport in the original
+    // implementation), anchor right under the visible top of the target.
+    const below = rect.bottom + padding;
+    const above = rect.top - padding - TOOLTIP_H;
+    if (below + TOOLTIP_H + padding < vh) {
+      style.top = below;
+    } else if (above > padding) {
+      style.top = above;
+    } else {
+      style.top = clampY(rect.top + padding);
+    }
+    style.left = clampX(rect.left + rect.width / 2 - TOOLTIP_W / 2);
+  } else if (position === "right") {
+    style.top = clampY(rect.top);
+    style.left = Math.min(vw - TOOLTIP_W - padding, rect.right + padding);
+  } else if (position === "top") {
+    const above = rect.top - padding - TOOLTIP_H;
+    if (above > padding) {
+      style.top = above;
+    } else {
+      // Flip to below if there's no room above.
+      style.top = clampY(rect.bottom + padding);
+    }
+    style.left = clampX(rect.left + rect.width / 2 - TOOLTIP_W / 2);
   }
 
   return style;
@@ -134,8 +159,11 @@ export default function FeatureTour() {
 
   return (
     <div className="fixed inset-0 z-[60]">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-[2px]" onClick={finish} />
+      {/* Backdrop — darken only, no blur. The earlier `backdrop-blur-[2px]`
+          made the dashboard content underneath look smudged, which read as
+          a rendering glitch rather than focus. The spotlight box-shadow
+          below already creates the focal contrast. */}
+      <div className="absolute inset-0 bg-slate-900/60" onClick={finish} />
 
       {/* Spotlight on target element */}
       {rect && (
