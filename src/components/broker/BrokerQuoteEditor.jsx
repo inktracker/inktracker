@@ -35,9 +35,11 @@ function addBusinessDays(date, days) {
 
 function blankQuote() {
   return {
-    quote_id: `Q-${new Date().getFullYear()}-${String(
-      Math.floor(Math.random() * 900) + 100
-    )}`,
+    // base36-of-timestamp matches the rest of the codebase's quote_id
+    // generators (~60M combinations/year). The previous random-3-digit
+    // scheme had only 900 IDs/year — would now throw a unique-index
+    // violation at the DB level (migration 20260523) on collision.
+    quote_id: `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`,
     customer_id: "",
     customer_name: "",
     date: tod(),
