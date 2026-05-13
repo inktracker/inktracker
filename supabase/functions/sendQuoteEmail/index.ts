@@ -17,8 +17,16 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    // Check subscription for authenticated callers (skip for anon/wizard notifications)
+    // Identify the caller. Authenticated callers (shop owners sending quotes
+    // from /Quotes) get the full body-control surface. Anonymous callers (the
+    // public wizard at /Wizard and /QuoteRequest) get a locked-down path:
+    // recipients must belong to the quote, no payment links / PDFs / broker
+    // fields, and shopName is forced to come from the DB. Without this,
+    // anyone who could insert a quote (anon insert is allowed for the wizard)
+    // could turn this endpoint into a phishing payload generator using the
+    // verified quotes@inktracker.app domain.
     const authHeader = req.headers.get("authorization") || "";
+    let isAuthed = false;
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "");
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -26,6 +34,7 @@ Deno.serve(async (req) => {
       });
       const { data: { user } } = await supabase.auth.getUser(token);
       if (user) {
+        isAuthed = true;
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         const { data: profile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
         const blocked = requireActiveSubscription(profile);
@@ -33,7 +42,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    const {
+    const payload = await req.json();
+    let {
       customerEmails,
       customerName,
       quoteId,
@@ -49,10 +59,60 @@ Deno.serve(async (req) => {
       pdfFilename,
       buttonLabel,
       shopOwnerEmail,
-    } = await req.json();
+    } = payload;
 
     if (!customerEmails?.length) {
       return Response.json({ error: "No recipient emails provided" }, { status: 400, headers: CORS });
+    }
+
+    // ── Anonymous-caller lockdown ─────────────────────────────────────
+    if (!isAuthed) {
+      if (!quoteId) {
+        return Response.json({ error: "quoteId required" }, { status: 400, headers: CORS });
+      }
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const { data: quote } = await admin
+        .from("quotes")
+        .select("shop_owner, customer_email, sent_to")
+        .eq("quote_id", quoteId)
+        .maybeSingle();
+      if (!quote) {
+        return Response.json({ error: "Quote not found" }, { status: 404, headers: CORS });
+      }
+      // Recipients must be one of: the shop owner, the quote's customer email,
+      // or sent_to (legacy field some quotes use for the customer address).
+      const allowed = new Set(
+        [quote.shop_owner, quote.customer_email, quote.sent_to]
+          .filter(Boolean)
+          .map((e: string) => e.toLowerCase()),
+      );
+      const requested = (Array.isArray(customerEmails) ? customerEmails : [])
+        .map((e: any) => String(e || "").toLowerCase())
+        .filter(Boolean);
+      if (requested.length === 0 || requested.some((e) => !allowed.has(e))) {
+        return Response.json(
+          { error: "Recipient not associated with this quote" },
+          { status: 403, headers: CORS },
+        );
+      }
+      // No payment links, PDFs, or broker fields on the anonymous path —
+      // the wizard never passes them; an attacker would use them to dress
+      // up a phishing email.
+      if (paymentLink || approveLink || pdfBase64 || brokerName || brokerEmail) {
+        return Response.json(
+          { error: "Anonymous callers may not include payment links, attachments, or broker fields" },
+          { status: 403, headers: CORS },
+        );
+      }
+      // Force shopName from the DB so one shop can't impersonate another.
+      const { data: shop } = await admin
+        .from("shops")
+        .select("shop_name")
+        .eq("owner_email", quote.shop_owner)
+        .maybeSingle();
+      shopName = shop?.shop_name || "InkTracker";
+      // Force Reply-To / Bcc target to the legitimate shop owner.
+      shopOwnerEmail = quote.shop_owner;
     }
 
     const emailSubject = subject || `Your Quote from ${shopName} - Quote #${quoteId}`;
