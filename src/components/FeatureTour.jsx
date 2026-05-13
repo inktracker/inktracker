@@ -62,40 +62,49 @@ function getTooltipStyle(rect, position) {
     };
   }
 
-  const padding = 16;
+  // Gap between the spotlight ring and the popover body. The spotlight
+  // extends 6px past the target rect (see the spotlight div below), and
+  // the caret on the popover extends ~8.5px past its edge. A gap of 10
+  // puts the caret tip almost touching the cards and the popover body
+  // ~4px below the spotlight border — tight, but still a clean visual
+  // separation from the spotlight ring.
+  const gap = 10;
+  // Larger padding for viewport-edge clamping so popovers don't kiss
+  // the screen edge.
+  const edgePad = 16;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const style = { position: "fixed" };
 
-  // Horizontal placement clamped to the viewport for any anchor.
-  const clampX = (raw) => Math.max(padding, Math.min(vw - TOOLTIP_W - padding, raw));
-  const clampY = (raw) => Math.max(padding, Math.min(vh - TOOLTIP_H - padding, raw));
+  // Horizontal/vertical placement clamped to the viewport for any anchor.
+  const clampX = (raw) => Math.max(edgePad, Math.min(vw - TOOLTIP_W - edgePad, raw));
+  const clampY = (raw) => Math.max(edgePad, Math.min(vh - TOOLTIP_H - edgePad, raw));
 
   if (position === "bottom") {
     // Try below the target. If that overflows, try above. If both would
     // overflow (tall targets like the Getting Started checklist, which
     // pushed the tooltip past the bottom of the viewport in the original
     // implementation), anchor right under the visible top of the target.
-    const below = rect.bottom + padding;
-    const above = rect.top - padding - TOOLTIP_H;
-    if (below + TOOLTIP_H + padding < vh) {
+    const below = rect.bottom + gap;
+    const above = rect.top - gap - TOOLTIP_H;
+    if (below + TOOLTIP_H + edgePad < vh) {
       style.top = below;
-    } else if (above > padding) {
+    } else if (above > edgePad) {
       style.top = above;
     } else {
-      style.top = clampY(rect.top + padding);
+      style.top = clampY(rect.top + gap);
     }
     style.left = clampX(rect.left + rect.width / 2 - TOOLTIP_W / 2);
   } else if (position === "right") {
     style.top = clampY(rect.top);
-    style.left = Math.min(vw - TOOLTIP_W - padding, rect.right + padding);
+    style.left = Math.min(vw - TOOLTIP_W - edgePad, rect.right + gap);
   } else if (position === "top") {
-    const above = rect.top - padding - TOOLTIP_H;
-    if (above > padding) {
+    const above = rect.top - gap - TOOLTIP_H;
+    if (above > edgePad) {
       style.top = above;
     } else {
       // Flip to below if there's no room above.
-      style.top = clampY(rect.bottom + padding);
+      style.top = clampY(rect.bottom + gap);
     }
     style.left = clampX(rect.left + rect.width / 2 - TOOLTIP_W / 2);
   }
