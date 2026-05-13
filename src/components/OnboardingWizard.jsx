@@ -38,7 +38,11 @@ export default function OnboardingWizard({ user, onComplete }) {
   const [saving, setSaving] = useState(false);
   const [qbChecking, setQbChecking] = useState(false);
   const [qbConnected, setQbConnected] = useState(false);
-  const [seedDemo, setSeedDemo] = useState(true);
+  // Default OFF — most new shops want a clean dashboard, not a
+  // mix of "Demo Acme Co." rows alongside real customers. Users
+  // who want to see the app populated can still opt in via the
+  // checkbox in the onboarding wizard.
+  const [seedDemo, setSeedDemo] = useState(false);
   const fileRef = useRef();
 
   const totalSteps = STEPS.length;
