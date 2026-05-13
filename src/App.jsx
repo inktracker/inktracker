@@ -97,9 +97,7 @@ const FEATURE_CARDS = [
     title: "Invoicing & Payments",
     desc: "Generate invoices, sync to QuickBooks, and send payment links directly to customers.",
     color: "from-emerald-500/20 to-emerald-500/5",
-    // TODO: Invoice detail view with "Send to Customer" + Stripe payment link.
-    // Screenshot path: /public/landing/feature-invoicing.png
-    media: null,
+    media: { type: "iframe", src: "/landing/invoicing-demo/index.html" },
   },
   {
     title: "Customer Management",
