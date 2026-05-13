@@ -247,6 +247,20 @@ export default function QuotePayment() {
     return new Date(quote.expires_date) < new Date();
   })();
 
+  // ── Payment-provider availability ──────────────────────────────────
+  // A shop must have at least one set up before we surface an "Approve
+  // & Pay" button. Otherwise the customer sees an Approve-only button
+  // and pays out-of-band.
+  //   QB available     — shop has a usable customer-facing payment link
+  //                       (the heuristic in resolveCheckoutTarget already
+  //                       rejects the legacy login-required Intuit URLs).
+  //   Stripe available — shop's stripe_account_status is "active"
+  //                       (Stripe Connect is set up + verified).
+  const stripeAvailable = shop?.stripe_account_status === "active";
+  const qbCheckoutTarget = resolveCheckoutTarget(quote);
+  const qbAvailable = qbCheckoutTarget.provider === "qb" && Boolean(qbCheckoutTarget.url);
+  const canCollectPayment = qbAvailable || stripeAvailable;
+
   async function handleApprove() {
     if (!quote?.id) return false;
 
@@ -761,6 +775,32 @@ export default function QuotePayment() {
               <CheckCircle2 className="w-5 h-5" />
               Paid — Thank You!
             </div>
+          ) : !canCollectPayment ? (
+            /* Shop has neither QB nor an active Stripe Connect account.
+               Show Approve-only — the customer signals consent here and
+               the shop handles payment out-of-band. */
+            <>
+              {approveError && (
+                <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                  <span className="text-sm text-red-700">{approveError}</span>
+                </div>
+              )}
+              <button
+                onClick={handleApprove}
+                disabled={approveLoading}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
+              >
+                {approveLoading ? (
+                  <><Loader2 className="w-5 h-5 animate-spin" /> Approving…</>
+                ) : (
+                  <><CheckCircle2 className="w-5 h-5" /> Approve Quote</>
+                )}
+              </button>
+              <p className="mt-3 text-center text-xs text-slate-400">
+                {shop?.shop_name || "The shop"} will be in touch about payment after you approve.
+              </p>
+            </>
           ) : (() => {
             const effectiveTotal = quote?.qb_total != null ? Number(quote.qb_total) : totals.total;
             const depositPct = customer?.default_deposit_pct != null
@@ -780,8 +820,7 @@ export default function QuotePayment() {
               subLabel = `Deposit of ${fmtMoney(depositAmount)} already paid`;
             }
 
-            const checkoutTarget = resolveCheckoutTarget(quote);
-            const securityLabel = checkoutTarget.provider === "qb"
+            const securityLabel = qbAvailable
               ? "Secure payment powered by QuickBooks"
               : "Secure payment powered by Stripe";
 
