@@ -20,6 +20,7 @@ import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { validateQuoteForSave } from "../lib/quotes/validation";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
+import { useBillingGate } from "../lib/billing-gate";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -43,6 +44,10 @@ export default function Quotes() {
   const [editing, setEditing] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [user, setUser] = useState(null);
+  // Trial-expired / canceled subs go read-only. The hook reads from
+  // AuthContext, but we pass the locally-loaded user too so the gate
+  // decides off the freshest copy.
+  const { gate: billingGate, isReadOnly: billingReadOnly } = useBillingGate(user);
   const [brokerMap, setBrokerMap] = useState({});
   const [converting, setConverting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
@@ -219,6 +224,7 @@ export default function Quotes() {
   ];
 
   async function saveQuote(q) {
+    if (billingGate("save quotes")) return;
     const validationErrors = validateQuoteForSave(q);
     if (validationErrors) {
       alert(validationErrors.join("\n"));
@@ -294,6 +300,7 @@ export default function Quotes() {
 
   async function handleDuplicate(q) {
     if (duplicating) return;
+    if (billingGate("duplicate quotes")) return;
     setDuplicating(true);
     try {
       const newId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
@@ -313,6 +320,7 @@ export default function Quotes() {
 
   async function handleConvert(q) {
     if (converting) return;
+    if (billingGate("convert quotes to orders")) return;
     if (q.converted_order_id) {
       alert("This quote has already been converted to an order.");
       return;
