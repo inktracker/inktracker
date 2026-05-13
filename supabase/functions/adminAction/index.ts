@@ -106,12 +106,52 @@ serve(async (req) => {
       const adminEmail = callerProfile?.email || user.email;
       let data, error;
       if (!profileId && authId) {
+        // Refuse if a profile already exists for this authId belonging to a
+        // different shop — without this, any admin could call setRole with
+        // another shop's authId and either duplicate or claim that profile.
+        const { data: existingForAuth } = await adminClient
+          .from("profiles")
+          .select("id, shop_owner, assigned_shops, email")
+          .eq("auth_id", authId)
+          .maybeSingle();
+        if (existingForAuth) {
+          const isOwnShop = existingForAuth.shop_owner === adminEmail ||
+            (Array.isArray(existingForAuth.assigned_shops) && existingForAuth.assigned_shops.includes(adminEmail)) ||
+            existingForAuth.email === adminEmail;
+          if (!isOwnShop) {
+            return new Response(JSON.stringify({ error: "Cannot set role on a user from another shop" }), {
+              status: 403,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
         ({ data, error } = await adminClient
           .from("profiles")
           .insert({ auth_id: authId, role, shop_name: callerProfile?.shop_name || "", shop_owner: adminEmail, created_at: new Date().toISOString() })
           .select()
           .single());
       } else if (profileId) {
+        // Verify the target profile belongs to this admin's shop before
+        // touching it. Without this check, any shop could change the role
+        // of (and steal — the update sets shop_owner: adminEmail) any
+        // profile in any other shop. Same shape as the deleteUser check
+        // below.
+        const { data: targetProfile } = await adminClient
+          .from("profiles")
+          .select("shop_owner, assigned_shops, email")
+          .eq("id", profileId)
+          .single();
+        if (targetProfile) {
+          const isOwnShop = targetProfile.shop_owner === adminEmail ||
+            (Array.isArray(targetProfile.assigned_shops) && targetProfile.assigned_shops.includes(adminEmail)) ||
+            targetProfile.email === adminEmail;
+          if (!isOwnShop) {
+            return new Response(JSON.stringify({ error: "Cannot change role on a user from another shop" }), {
+              status: 403,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
         ({ data, error } = await adminClient
           .from("profiles")
           .update({ role, shop_owner: adminEmail })
