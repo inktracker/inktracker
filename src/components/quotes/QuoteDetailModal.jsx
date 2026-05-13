@@ -389,7 +389,7 @@ export default function QuoteDetailModal({
                 {quote.quote_id}
               </div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
-                {getDisplayName(quote.customer_name)}
+                {getDisplayName(customer || quote.customer_name)}
               </h2>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 {quote.date && (
@@ -428,7 +428,7 @@ export default function QuoteDetailModal({
                   Customer
                 </div>
                 <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {getDisplayName(quote.customer_name) || "—"}
+                  {getDisplayName(customer || quote.customer_name) || "—"}
                 </div>
                 <div className="text-sm text-slate-500">
                   {quote.customer_email || "—"}

@@ -121,6 +121,11 @@ function getOrderArtwork(order) {
 
 export default function OrderDetailModal({
   order,
+  // The Customer entity for this order (parent looks it up via
+  // customers[order.customer_id]). Passed in so the header / client
+  // chip can show company first, falling back to contact name —
+  // matching how QuoteDetailModal and the list views render.
+  customer,
   onClose,
   onAdvance,
   onDelete,
@@ -454,7 +459,7 @@ export default function OrderDetailModal({
   const isBrokerOrder = Boolean(order?.broker_id || order?.broker_email || order?.brokerId);
   const displayClient = isBrokerOrder
     ? (order?.broker_name || order?.broker_company || order?.customer_name || "Unknown")
-    : getDisplayName(order.customer_name);
+    : getDisplayName(customer || order.customer_name);
   const displayJobTitle = isBrokerOrder
     ? (order?.job_title || order?.broker_client_name || "")
     : "";

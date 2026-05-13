@@ -478,6 +478,7 @@ export default function Calendar() {
       {viewing && (
         <OrderDetailModal
           order={orders.find((x) => x.id === viewing.id) || viewing}
+          customer={customers[viewing.customer_id]}
           onClose={() => setViewing(null)}
           onAdvance={handleAdvance}
           onRevert={handleRevert}
