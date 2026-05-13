@@ -888,13 +888,29 @@ function GmailScannerSection({ user }) {
     setResults(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
+      const post = (action) => fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "scanEmails", accessToken: session?.access_token }),
+        body: JSON.stringify({ action, accessToken: session?.access_token }),
+      }).then((r) => r.json()).catch((err) => ({ error: err?.message || "request failed" }));
+
+      // Two distinct passes:
+      //   scanEmails  → finds NEW inbound quote requests and creates draft quotes
+      //   scanReplies → threads replies (subject contains [Ref:]) into the
+      //                 matching quote/order/invoice's message thread
+      // Run in parallel — one failing shouldn't block the other.
+      const [emailsData, repliesData] = await Promise.all([
+        post("scanEmails"),
+        post("scanReplies"),
+      ]);
+
+      setResults({
+        scanned: (emailsData?.scanned || 0) + (repliesData?.scanned || 0),
+        quotesCreated: emailsData?.quotesCreated || 0,
+        repliesAdded: repliesData?.repliesAdded || 0,
+        results: emailsData?.results || [],
+        errors: [emailsData?.error, repliesData?.error].filter(Boolean),
       });
-      const data = await res.json();
-      setResults(data);
       setLastScan(new Date().toISOString());
     } catch (err) {
       alert("Scan failed: " + err.message);
@@ -922,14 +938,19 @@ function GmailScannerSection({ user }) {
           <button onClick={scanNow} disabled={scanning}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-50">
             {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-            {scanning ? "Scanning Inbox..." : "Scan for Quote Requests"}
+            {scanning ? "Scanning Inbox..." : "Scan Inbox (Quote Requests + Replies)"}
           </button>
 
           {results && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
               <div className="text-sm text-slate-700">
-                Scanned <strong>{results.scanned}</strong> emails · Created <strong>{results.quotesCreated}</strong> draft quotes
+                Scanned <strong>{results.scanned}</strong> emails · Created <strong>{results.quotesCreated}</strong> draft quotes · Threaded <strong>{results.repliesAdded}</strong> customer {results.repliesAdded === 1 ? "reply" : "replies"}
               </div>
+              {results.errors?.length > 0 && (
+                <div className="mt-2 text-xs text-red-600">
+                  {results.errors.map((e, i) => <div key={i}>{e}</div>)}
+                </div>
+              )}
               {results.results?.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {results.results.map((r, i) => (
