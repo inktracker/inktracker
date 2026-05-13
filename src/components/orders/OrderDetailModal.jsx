@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { Fragment, useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
@@ -537,57 +537,43 @@ export default function OrderDetailModal({
           </div>
         </div>
 
-        {/* Production Progress Pipeline */}
-        <div className="px-4 sm:px-6 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 overflow-x-auto">
-          <div className="flex items-center gap-0 min-w-max">
+        {/* Production Progress Pipeline.
+            Chips distributed evenly across the row — connectors use
+            flex-1 to absorb extra width. Per-step notes popover was
+            removed on 2026-05-12 (Joe's polish pass). stepNotes state
+            still persists via handleSaveJobCost so the order's
+            step_notes column isn't broken — just no inline editor
+            here. */}
+        <div className="px-4 sm:px-6 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+          <div className="flex items-center w-full">
             {O_STATUSES.map((s, i) => {
               const currentIdx = O_STATUSES.indexOf(order.status);
               const done = i < currentIdx;
               const active = i === currentIdx;
-              const future = i > currentIdx;
+              const isLast = i === O_STATUSES.length - 1;
               return (
-                <div key={s} className="flex items-center">
-                  <div className="relative group">
-                    <button
-                      onClick={() => {
-                        if (i === currentIdx) return;
-                        if (onAdvance && i === currentIdx + 1) onAdvance(order.id);
-                        else if (onRevert && i === currentIdx - 1) onRevert(order.id);
-                      }}
-                      disabled={Math.abs(i - currentIdx) > 1}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
-                        active ? "bg-indigo-600 text-white shadow-sm" :
-                        done ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer" :
-                        i === currentIdx + 1 ? "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 hover:text-indigo-600 cursor-pointer" :
-                        "bg-white dark:bg-slate-900 text-slate-300 border border-slate-100 dark:border-slate-700"
-                      }`}
-                    >
-                      {done && <span>✓</span>}
-                      {s}
-                      {stepNotes[s] && <span className="text-amber-500 ml-0.5">•</span>}
-                    </button>
-                    {(done || active) && (
-                      <div className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none group-hover:pointer-events-auto z-30">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">{s} Note</div>
-                        <input
-                          type="text"
-                          value={stepNotes[s] || ""}
-                          onClick={e => e.stopPropagation()}
-                          onChange={e => {
-                            const val = e.target.value;
-                            setStepNotes(prev => ({ ...prev, [s]: val }));
-                          }}
-                          onBlur={handleSaveJobCost}
-                          placeholder="Add note..."
-                          className="w-full text-xs border border-slate-200 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  {i < O_STATUSES.length - 1 && (
-                    <div className={`w-4 h-0.5 mx-0.5 ${done ? "bg-emerald-300" : "bg-slate-200"}`} />
+                <Fragment key={s}>
+                  <button
+                    onClick={() => {
+                      if (i === currentIdx) return;
+                      if (onAdvance && i === currentIdx + 1) onAdvance(order.id);
+                      else if (onRevert && i === currentIdx - 1) onRevert(order.id);
+                    }}
+                    disabled={Math.abs(i - currentIdx) > 1}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
+                      active ? "bg-indigo-600 text-white shadow-sm" :
+                      done ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer" :
+                      i === currentIdx + 1 ? "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 hover:text-indigo-600 cursor-pointer" :
+                      "bg-white dark:bg-slate-900 text-slate-300 border border-slate-100 dark:border-slate-700"
+                    }`}
+                  >
+                    {done && <span>✓</span>}
+                    {s}
+                  </button>
+                  {!isLast && (
+                    <div className={`flex-1 h-0.5 mx-2 ${done ? "bg-emerald-300" : "bg-slate-200"}`} />
                   )}
-                </div>
+                </Fragment>
               );
             })}
           </div>
