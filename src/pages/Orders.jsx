@@ -9,6 +9,7 @@ import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
+import { useBillingGate } from "@/lib/billing-gate";
 
 function getOrderArtworkCount(order) {
   const keys = new Set();
@@ -42,6 +43,7 @@ export default function Orders() {
   const [filter, setFilter] = useState(initialFilter);
   const [viewing, setViewing] = useState(null);
   const [user, setUser] = useState(null);
+  const { gate: billingGate } = useBillingGate(user);
   const [viewingInvoice, setViewingInvoice] = useState(null);
   const [advFilters, setAdvFilters] = useState(initialCustomer ? { customer: initialCustomer } : {});
   const [originFilter, setOriginFilter] = useState("All");
@@ -157,6 +159,7 @@ export default function Orders() {
   }
 
   async function handleComplete(order) {
+    if (billingGate("complete orders")) return;
     // Uses the same pure helper + pre-fetch pattern as Production.jsx
     // so completion is duplicate-proof. The BrokerFile branch
     // (PDF attachment for broker orders) isn't in the helper because

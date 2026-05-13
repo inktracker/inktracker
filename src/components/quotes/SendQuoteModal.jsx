@@ -6,6 +6,7 @@ import { exportQuoteToPDF } from "../shared/pdfExport";
 import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { quotePaymentUrl } from "@/lib/publicUrls";
 import { validateQuoteForSend } from "@/lib/quotes/validation";
+import { useBillingGate } from "@/lib/billing-gate";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -56,6 +57,12 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // Click "Send" → show "Send to {email}? Yes/No" → on Yes, actually fire.
   // Prevents an accidental click from immediately emailing a customer.
   const [confirming, setConfirming] = useState(false);
+
+  // Trial-expired / canceled subs are blocked from sending. Hook reads
+  // user from AuthContext (the quote.shop_owner is the shop's email
+  // but the user state in context is the currently-signed-in user, who
+  // for a sending operation IS the shop owner).
+  const { gate: billingGate, isReadOnly: billingReadOnly } = useBillingGate();
 
   useEffect(() => {
     let active = true;
@@ -516,7 +523,10 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                 Cancel
               </button>
               <button
-                onClick={() => setConfirming(true)}
+                onClick={() => {
+                  if (billingGate("send quotes to customers")) return;
+                  setConfirming(true);
+                }}
                 disabled={
                   sending ||
                   recipientEmails.length === 0 ||

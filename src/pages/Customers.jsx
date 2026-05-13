@@ -12,6 +12,7 @@ import {
   countCustomerDependents,
   formatDependentsMessage,
 } from "@/lib/customers/countCustomerDependents";
+import { useBillingGate } from "@/lib/billing-gate";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -52,6 +53,7 @@ export default function Customers() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyCustomerForm);
   const [addingCustomer, setAddingCustomer] = useState(false);
+  const { gate: billingGate } = useBillingGate();
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editSaved, setEditSaved] = useState(false);
@@ -175,6 +177,7 @@ export default function Customers() {
   async function handleAdd() {
     if (!form.name.trim() || !user?.email) return;
     if (addingCustomer) return; // re-entry guard: double-click would create dupes
+    if (billingGate("add new customers")) return;
     setAddingCustomer(true);
 
     let created;

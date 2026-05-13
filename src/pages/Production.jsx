@@ -11,6 +11,7 @@ import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List, Hammer, Send, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
+import { useBillingGate } from "@/lib/billing-gate";
 
 // FLOOR_STEPS used to have its own slightly-different status list
 // (with "Quality Check" / "Packing" labels not present anywhere else
@@ -142,6 +143,7 @@ export default function Production() {
   const [advFilters, setAdvFilters] = useState({});
   const [dragOverDate, setDragOverDate] = useState(null);
   const [user, setUser] = useState(null);
+  const { gate: billingGate } = useBillingGate(user);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
   // Floor view state
@@ -396,6 +398,7 @@ export default function Production() {
   }
 
   async function handleComplete(order) {
+    if (billingGate("complete orders")) return;
     // Completion = transition, never destruction. (20260516 trigger
     // refuses DELETE on Completed orders — that's the platform-level
     // backstop.)
