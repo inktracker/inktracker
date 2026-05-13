@@ -19,6 +19,12 @@ import {
   INITIAL_STATE as TYPEWRITER_INITIAL_STATE,
   advanceTypewriter,
 } from "@/lib/landing/typewriter";
+import {
+  interpretActivationResponse,
+  activationRetryDelayMs,
+  ACTIVATION_STATES,
+  MAX_ACTIVATION_ATTEMPTS,
+} from "@/lib/auth/trialActivation";
 
 const { Pages, Layout, mainPage } = pagesConfig;
 
@@ -845,21 +851,116 @@ function FullScreenSpinner() {
 // runs. If the role transition doesn't propagate (RPC failed / cache miss /
 // auth listener missed an event), surface a manual refresh after 4s and
 // auto-reload after 8s so the user is never stranded.
+// Activation backstop. After 20260517_harden_trial_activation.sql, new
+// self-signups land at role='shop' directly and this component should
+// almost never render. It only fires when a user's profile is somehow
+// stuck at role='user' — legacy data, partial trigger failure, manual
+// DB edit, etc.
+//
+// On mount: calls activate_trial RPC, interprets the response via the
+// pure helper in src/lib/auth/trialActivation.js, retries on transient
+// failures with bounded backoff, surfaces real errors to the user with
+// a retry button. NEVER fail silently; NEVER auto-reload the page (the
+// old behavior dumped users straight to PendingApprovalPage with no
+// signal of what went wrong).
 function PostConfirmSpinner() {
-  const [showRefresh, setShowRefresh] = useState(false);
+  const { checkAppState } = useAuth();
+  const [attempt, setAttempt]   = useState(0);  // increments to trigger retries
+  const [phase, setPhase]       = useState("activating"); // 'activating' | 'success' | 'error'
+  const [errorMessage, setErrorMessage] = useState("");
+  const [errorRetryable, setErrorRetryable] = useState(false);
+
   useEffect(() => {
-    const showT = setTimeout(() => setShowRefresh(true), 4000);
-    const reloadT = setTimeout(() => window.location.reload(), 8000);
-    return () => { clearTimeout(showT); clearTimeout(reloadT); };
-  }, []);
+    let cancelled = false;
+    (async () => {
+      // Walk the backoff schedule. Attempt 0 fires immediately; later
+      // attempts wait `activationRetryDelayMs(n)` between tries.
+      const delay = attempt === 0 ? 0 : activationRetryDelayMs(attempt);
+      if (delay === null) {
+        // Exhausted retries — show an error with manual retry.
+        if (!cancelled) {
+          setPhase("error");
+          setErrorMessage("Activation kept failing. Please try again or contact joe@biotamfg.co.");
+          setErrorRetryable(true);
+        }
+        return;
+      }
+      if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+      if (cancelled) return;
+
+      let rpcResult = null;
+      let rpcError = null;
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (!authUser) {
+          rpcError = { message: "No authenticated user found" };
+        } else {
+          const out = await supabase.rpc("activate_trial", { user_auth_id: authUser.id });
+          rpcResult = out.data;
+          rpcError = out.error;
+        }
+      } catch (err) {
+        rpcError = err;
+      }
+      if (cancelled) return;
+
+      const decision = interpretActivationResponse({ rpcResult, rpcError });
+      if (decision.state === ACTIVATION_STATES.SUCCESS) {
+        setPhase("success");
+        // Refetch profile so the parent unmounts this component.
+        checkAppState({ silent: false });
+        return;
+      }
+      if (decision.state === ACTIVATION_STATES.RETRYABLE && attempt < MAX_ACTIVATION_ATTEMPTS) {
+        setAttempt((a) => a + 1);
+        return;
+      }
+      // PERMANENT, or retry attempts exhausted.
+      setPhase("error");
+      setErrorMessage(decision.message);
+      setErrorRetryable(decision.retryable);
+    })();
+    return () => { cancelled = true; };
+  }, [attempt, checkAppState]);
+
+  if (phase === "error") {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-white gap-4 px-6">
+        <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center">
+          <span className="text-rose-600 font-bold text-xl">!</span>
+        </div>
+        <div className="text-base font-semibold text-slate-900">Couldn't finish setup</div>
+        <div className="text-sm text-slate-500 max-w-md text-center">{errorMessage}</div>
+        <div className="flex gap-3 mt-2">
+          {errorRetryable && (
+            <button
+              onClick={() => { setAttempt(0); setPhase("activating"); setErrorMessage(""); }}
+              className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
+            >
+              Try again
+            </button>
+          )}
+          <a
+            href="mailto:joe@biotamfg.co?subject=InkTracker activation issue"
+            className="px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg"
+          >
+            Email support
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 flex flex-col items-center justify-center bg-white gap-4">
       <div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin"></div>
-      <div className="text-sm text-slate-500">Setting up your account…</div>
-      {showRefresh && (
+      <div className="text-sm text-slate-500">
+        {attempt === 0 ? "Setting up your account…" : `Retrying… (${attempt}/${MAX_ACTIVATION_ATTEMPTS})`}
+      </div>
+      {attempt > 0 && (
         <button
-          onClick={() => window.location.reload()}
-          className="mt-2 px-4 py-2 text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+          onClick={() => { setPhase("error"); setErrorMessage("Cancelled the retry loop. Try again to resume."); setErrorRetryable(true); }}
+          className="mt-2 px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-700"
         >
           Taking too long? Click to refresh
         </button>
@@ -903,34 +1004,21 @@ function AppRoutes() {
 }
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isAuthenticated, user, checkAppState } = useAuth();
+  const { isLoadingAuth, isAuthenticated, user } = useAuth();
   const location = useLocation();
-  const trialActivatingRef = useRef(false);
 
   const isPublicRoute = useMemo(() => {
     const pathname = (location.pathname || "/").toLowerCase();
     return PUBLIC_PATHS.has(pathname);
   }, [location.pathname]);
 
-  // Auto-activate trial for new signups (must be before any early returns to satisfy hooks rules)
-  useEffect(() => {
-    if (!isAuthenticated || user?.role !== "user" || trialActivatingRef.current) return;
-    trialActivatingRef.current = true;
-    (async () => {
-      try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (authUser) {
-          const { error } = await supabase.rpc("activate_trial", { user_auth_id: authUser.id });
-          console.log("[Trial] RPC result:", error || "success");
-        }
-      } catch (err) {
-        console.error("[Trial] activation failed:", err);
-      }
-      await new Promise(r => setTimeout(r, 500));
-      trialActivatingRef.current = false;
-      checkAppState({ silent: false });
-    })();
-  }, [isAuthenticated, user?.role]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Trial activation is now handled by PostConfirmSpinner itself
+  // (which is rendered when user?.role === 'user') and primarily by
+  // the handle_new_user trigger which sets role='shop' directly for
+  // self-signups — see supabase/migrations/20260517_harden_trial_activation.sql.
+  // The previous fire-and-forget useEffect here logged failures to
+  // console and let the user get stranded on PostConfirmSpinner; the
+  // new spinner component retries + surfaces real errors.
 
   if (isPublicRoute) {
     return <AppRoutes />;
