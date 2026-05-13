@@ -15,7 +15,24 @@ async function fetchUserWithProfile() {
     .select("*")
     .eq("auth_id", user.id)
     .maybeSingle();
-  if (!profile) return null;
+
+  if (!profile) {
+    // Auth user exists, but no profile row yet. Two cases:
+    //   - Race with handle_new_user trigger (most common): the JWT got
+    //     to the browser before the profile insert finished. PostConfirmSpinner's
+    //     retry loop will resolve this within a second or two.
+    //   - Genuinely missing profile (partial signup): activate_trial
+    //     returns 'no_profile' and PostConfirmSpinner surfaces a clear
+    //     error pointing the user at support.
+    //
+    // Either way, we MUST NOT return null here. The previous behavior
+    // bounced the user to PublicLandingPage with no explanation; users
+    // had no idea that confirming their email had silently failed. By
+    // returning a stub with role='user', AuthProvider treats us as
+    // authenticated and AuthenticatedApp mounts PostConfirmSpinner,
+    // which is the component designed for exactly this state.
+    return { auth_id: user.id, email: user.email, role: "user" };
+  }
 
   // Load per-shop pricing config + timezone
   try {
