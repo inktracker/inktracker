@@ -152,6 +152,32 @@ export default function FeatureTour() {
   const isLast = step === TOUR_STEPS.length - 1;
   const tooltipStyle = getTooltipStyle(rect, current.position);
 
+  // Decide where to render the caret: on the side of the tooltip closest
+  // to the target. Returns null when there's no anchored target (center
+  // steps) or when the tooltip overlaps the target (no visual gap to
+  // bridge with a caret).
+  function getCaret() {
+    if (!rect || current.position === "center") return null;
+    const top = tooltipStyle.top;
+    const left = tooltipStyle.left;
+    if (typeof top !== "number" || typeof left !== "number") return null;
+    const targetCenterX = rect.left + rect.width / 2;
+    const targetCenterY = rect.top + rect.height / 2;
+    // Pad the caret away from the rounded corners.
+    const clamp = (v, hi) => Math.max(20, Math.min(hi - 28, v));
+    if (top >= rect.bottom) {
+      return { side: "top", offset: clamp(targetCenterX - left, TOOLTIP_W) };
+    }
+    if (top + TOOLTIP_H <= rect.top) {
+      return { side: "bottom", offset: clamp(targetCenterX - left, TOOLTIP_W) };
+    }
+    if (left >= rect.right) {
+      return { side: "left", offset: clamp(targetCenterY - top, TOOLTIP_H) };
+    }
+    return null;
+  }
+  const caret = getCaret();
+
   function next() {
     if (isLast) {
       finish();
@@ -169,13 +195,29 @@ export default function FeatureTour() {
     setActive(false);
   }
 
+  // Caret positioning helpers (used in the JSX below). The caret is a
+  // small white square rotated 45° so it reads as a triangle peeking out
+  // of the tooltip card, color-matched to the card body.
+  const caretStyles = {
+    top:    { top: -6, bottom: "auto", left: caret?.offset, right: "auto",
+              borderRight: "none", borderBottom: "none" },
+    bottom: { top: "auto", bottom: -6, left: caret?.offset, right: "auto",
+              borderLeft: "none", borderTop: "none" },
+    left:   { top: caret?.offset, bottom: "auto", left: -6, right: "auto",
+              borderRight: "none", borderTop: "none" },
+  };
+
   return (
     <div className="fixed inset-0 z-[60]">
-      {/* Backdrop — darken only, no blur. The earlier `backdrop-blur-[2px]`
-          made the dashboard content underneath look smudged, which read as
-          a rendering glitch rather than focus. The spotlight box-shadow
-          below already creates the focal contrast. */}
-      <div className="absolute inset-0 bg-slate-900/60" onClick={finish} />
+      {/* Click-to-dismiss layer. When a target is highlighted we leave this
+          transparent — the spotlight box-shadow does all the darkening, so
+          INSIDE the spotlight stays at full page brightness while OUTSIDE
+          is dimmed (0.7). For center-position steps (no target) we fall
+          back to a flat dim across the whole viewport. */}
+      <div
+        className={`absolute inset-0 ${rect ? "" : "bg-slate-900/60"}`}
+        onClick={finish}
+      />
 
       {/* Spotlight on target element */}
       {rect && (
@@ -186,7 +228,7 @@ export default function FeatureTour() {
             left: rect.left - 6,
             width: rect.width + 12,
             height: rect.height + 12,
-            boxShadow: "0 0 0 9999px rgba(15,23,42,0.55)",
+            boxShadow: "0 0 0 9999px rgba(15,23,42,0.7)",
             zIndex: 61,
           }}
         />
@@ -194,9 +236,18 @@ export default function FeatureTour() {
 
       {/* Tooltip card */}
       <div
-        className="w-[360px] max-w-[calc(100vw-32px)] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+        className="w-[360px] max-w-[calc(100vw-32px)] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-visible"
         style={{ ...tooltipStyle, zIndex: 62 }}
       >
+        {/* Caret pointing at the target. White square rotated 45°,
+            color-matched to the tooltip body, with only the outer two
+            borders showing so it tucks cleanly into the card edge. */}
+        {caret && (
+          <div
+            className="absolute w-3 h-3 bg-white border border-slate-200 rotate-45"
+            style={caretStyles[caret.side]}
+          />
+        )}
         <div className="px-5 pt-5 pb-4">
           <div className="flex items-start justify-between mb-2">
             <h3 className="text-base font-bold text-slate-800">{current.title}</h3>
