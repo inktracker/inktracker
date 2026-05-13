@@ -186,6 +186,120 @@ Deno.serve(async (req) => {
       return json({ url: session.url });
     }
 
+    // ── Stripe Connect (Express) actions ────────────────────────────
+    // These manage the shop's connected Stripe account used to receive
+    // customer payments via Direct Charges. The shop is merchant of
+    // record on those payments; InkTracker doesn't touch the funds and
+    // doesn't take a platform fee.
+
+    const shopOwner = profile.shop_owner || profile.email || user.email;
+
+    async function loadShopRow() {
+      const admin = adminClient();
+      const { data, error } = await admin
+        .from("shops")
+        .select("id, owner_email, shop_name, stripe_account_id, stripe_account_status")
+        .eq("owner_email", shopOwner)
+        .maybeSingle();
+      if (error) throw new Error(`shop lookup failed: ${error.message}`);
+      return { admin, shop: data };
+    }
+
+    // ── connectStripe ───────────────────────────────────────────────
+    // Idempotent: if the shop already has a stripe_account_id we reuse
+    // it (Stripe rejects creating a duplicate anyway). Returns an
+    // Account Link URL the user is redirected to for onboarding.
+    if (action === "connectStripe") {
+      const { admin, shop } = await loadShopRow();
+      if (!shop) return json({ error: "Set up your shop in onboarding first." });
+
+      let accountId = shop.stripe_account_id;
+      if (!accountId) {
+        const account = await stripe.accounts.create({
+          type: "express",
+          email: user.email || profile.email,
+          business_profile: {
+            name: shop.shop_name || profile.shop_name || "",
+            // Per InkTracker's product model, the shop is the merchant.
+            // No platform fee — shop receives 100% of the customer payment.
+          },
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          },
+          metadata: {
+            shop_id: shop.id,
+            shop_owner: shopOwner,
+          },
+        });
+        accountId = account.id;
+        const { error: updErr } = await admin
+          .from("shops")
+          .update({ stripe_account_id: accountId, stripe_account_status: "pending" })
+          .eq("id", shop.id);
+        if (updErr) console.error("[billing] saving stripe_account_id failed:", updErr.message);
+      }
+
+      const link = await stripe.accountLinks.create({
+        account: accountId,
+        refresh_url: `${APP_URL}/Account?stripe_connect=refresh`,
+        return_url:  `${APP_URL}/Account?stripe_connect=return`,
+        type: "account_onboarding",
+      });
+
+      return json({ accountId, url: link.url });
+    }
+
+    // ── getStripeAccountStatus ──────────────────────────────────────
+    // Returns the cached status plus a fresh fetch (so the UI can
+    // reflect what Stripe currently thinks, not just the last webhook).
+    if (action === "getStripeAccountStatus") {
+      const { shop } = await loadShopRow();
+      if (!shop) return json({ connected: false });
+
+      if (!shop.stripe_account_id) {
+        return json({ connected: false, status: null });
+      }
+
+      // Best-effort fresh lookup. If Stripe is down, fall back to cached.
+      try {
+        const account = await stripe.accounts.retrieve(shop.stripe_account_id);
+        const status = account.charges_enabled
+          ? "active"
+          : account.details_submitted
+            ? "restricted"
+            : "pending";
+        // Drift between cached (webhook may not have fired yet) and live
+        // is normal; the webhook will reconcile. For UI we return live.
+        return json({
+          connected: true,
+          accountId: shop.stripe_account_id,
+          status,
+          detailsSubmitted: !!account.details_submitted,
+          chargesEnabled: !!account.charges_enabled,
+          payoutsEnabled: !!account.payouts_enabled,
+        });
+      } catch (err) {
+        console.warn("[billing] live status fetch failed, using cached:", err);
+        return json({
+          connected: true,
+          accountId: shop.stripe_account_id,
+          status: shop.stripe_account_status || "pending",
+        });
+      }
+    }
+
+    // ── openStripeDashboard ─────────────────────────────────────────
+    // Generates a one-time LoginLink for the shop's Express dashboard.
+    // Only valid for ~5 minutes; the UI calls this on every click.
+    if (action === "openStripeDashboard") {
+      const { shop } = await loadShopRow();
+      if (!shop?.stripe_account_id) return json({ error: "Stripe not connected." });
+
+      const link = await stripe.accounts.createLoginLink(shop.stripe_account_id);
+      return json({ url: link.url });
+    }
+
     return json({ error: "Unknown action" });
   } catch (err) {
     console.error("billing error:", err);

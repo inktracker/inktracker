@@ -84,6 +84,13 @@ export default function Account() {
   const [qbMessage, setQbMessage] = useState(null); // { type: "success"|"error", text }
   const [qbDisconnecting, setQbDisconnecting] = useState(false);
 
+  // ── Stripe Connect (customer payments → shop's own Stripe account) ──
+  const [stripeAccountStatus, setStripeAccountStatus] = useState(null); // null | "pending" | "active" | "restricted" | "disabled"
+  const [stripeAccountId, setStripeAccountId] = useState(null);
+  const [stripeConnecting, setStripeConnecting] = useState(false);
+  const [stripeMessage, setStripeMessage] = useState(null);
+  const [openingStripeDashboard, setOpeningStripeDashboard] = useState(false);
+
 
   useEffect(() => {
     async function loadUser() {
@@ -147,6 +154,93 @@ export default function Account() {
 
     loadUser();
   }, [navigate]);
+
+  // ── Stripe Connect status load + post-onboarding return ───────────
+  // Fetches the current status (live + cached) so the UI can render
+  // the right state. Re-fetched whenever the user returns from Stripe's
+  // hosted onboarding (signaled by ?stripe_connect=return in the URL).
+  async function fetchStripeStatus() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "getStripeAccountStatus", accessToken: session.access_token }),
+      });
+      const data = await res.json();
+      if (data?.connected) {
+        setStripeAccountId(data.accountId || null);
+        setStripeAccountStatus(data.status || "pending");
+      } else {
+        setStripeAccountId(null);
+        setStripeAccountStatus(null);
+      }
+    } catch (err) {
+      console.warn("[Account] stripe status fetch failed:", err);
+    }
+  }
+
+  useEffect(() => { if (user) fetchStripeStatus(); }, [user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const flag = params.get("stripe_connect");
+    if (!flag) return;
+    if (flag === "return") {
+      setStripeMessage({ type: "success", text: "Stripe onboarding finished. Status will refresh once Stripe verifies your account." });
+    } else if (flag === "refresh") {
+      setStripeMessage({ type: "info", text: "Stripe asked you to retry the link. Click Continue Setup to resume." });
+    }
+    window.history.replaceState({}, "", window.location.pathname);
+    // Re-fetch after a Stripe redirect even if we already had a value.
+    fetchStripeStatus();
+  }, [location.search]);
+
+  async function handleConnectStripe() {
+    setStripeConnecting(true);
+    setStripeMessage(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "connectStripe", accessToken: session?.access_token }),
+      });
+      const data = await res.json();
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      throw new Error(data?.error || "Couldn't start Stripe onboarding.");
+    } catch (err) {
+      setStripeMessage({ type: "error", text: err.message });
+    } finally {
+      setStripeConnecting(false);
+    }
+  }
+
+  async function handleOpenStripeDashboard() {
+    setOpeningStripeDashboard(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "openStripeDashboard", accessToken: session?.access_token }),
+      });
+      const data = await res.json();
+      if (data?.url) {
+        window.open(data.url, "_blank");
+        return;
+      }
+      throw new Error(data?.error || "Couldn't open the Stripe dashboard.");
+    } catch (err) {
+      setStripeMessage({ type: "error", text: err.message });
+    } finally {
+      setOpeningStripeDashboard(false);
+    }
+  }
 
   // Handle OAuth redirect params
   useEffect(() => {
@@ -718,6 +812,99 @@ export default function Account() {
               </button>
               <p className="text-xs text-slate-400">
                 You'll be redirected to Intuit to authorize InkTracker. QuickBooks Payments account required for payment links.
+              </p>
+            </div>
+          )}
+        </Section>
+
+        <Section icon={CreditCard} title="Stripe Payments">
+          {stripeMessage && (
+            <div className={`flex items-center gap-2 text-sm font-semibold py-2.5 px-4 rounded-xl mb-4 ${
+              stripeMessage.type === "success"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                : stripeMessage.type === "info"
+                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                  : "bg-red-50 text-red-700 border border-red-200"
+            }`}>
+              {stripeMessage.type === "success"
+                ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span>{stripeMessage.text}</span>
+              <button onClick={() => setStripeMessage(null)} className="ml-auto text-current opacity-50 hover:opacity-100">✕</button>
+            </div>
+          )}
+
+          {stripeAccountStatus === "active" ? (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <span className="font-semibold text-emerald-800">Stripe Connected · accepting payments</span>
+              </div>
+              <p className="text-sm text-slate-600">
+                Customer payments via Stripe go directly to your Stripe account. Your shop name appears on the customer's statement. InkTracker doesn't take a cut.
+              </p>
+              {stripeAccountId && (
+                <div className="text-xs text-slate-500">
+                  Account: <span className="font-mono font-semibold">{stripeAccountId}</span>
+                </div>
+              )}
+              <button
+                onClick={handleOpenStripeDashboard}
+                disabled={openingStripeDashboard}
+                className="flex items-center gap-2 text-sm font-semibold text-emerald-700 border border-emerald-300 px-3 py-2 rounded-xl hover:bg-emerald-100 transition disabled:opacity-50"
+              >
+                {openingStripeDashboard ? "Opening…" : "Open Stripe Dashboard →"}
+              </button>
+            </div>
+          ) : stripeAccountStatus === "restricted" ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+                <span className="font-semibold text-amber-800">Action needed in Stripe</span>
+              </div>
+              <p className="text-sm text-slate-600">
+                Stripe needs more information before they'll let you accept payments. Open the dashboard to finish up — usually a tax ID, bank details, or an ID verification.
+              </p>
+              <button
+                onClick={handleOpenStripeDashboard}
+                disabled={openingStripeDashboard}
+                className="flex items-center gap-2 text-sm font-semibold text-amber-700 border border-amber-300 px-3 py-2 rounded-xl hover:bg-amber-100 transition disabled:opacity-50"
+              >
+                {openingStripeDashboard ? "Opening…" : "Finish Stripe Setup →"}
+              </button>
+            </div>
+          ) : stripeAccountStatus === "pending" ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                <span className="font-semibold text-blue-800">Stripe is verifying your account</span>
+              </div>
+              <p className="text-sm text-slate-600">
+                Usually takes a few minutes. You'll see "Stripe Connected" here once Stripe is done. If it takes longer, open the dashboard to check.
+              </p>
+              <button
+                onClick={handleConnectStripe}
+                disabled={stripeConnecting}
+                className="flex items-center gap-2 text-sm font-semibold text-blue-700 border border-blue-300 px-3 py-2 rounded-xl hover:bg-blue-100 transition disabled:opacity-50"
+              >
+                {stripeConnecting ? "Opening Stripe…" : "Continue Setup →"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-500">
+                Connect Stripe to accept customer payments on quotes. Funds go directly to your bank account — your shop's name appears on the customer's statement. InkTracker doesn't take a cut of customer payments.
+              </p>
+              <button
+                onClick={handleConnectStripe}
+                disabled={stripeConnecting}
+                className="inline-flex items-center gap-2 bg-[#635BFF] hover:bg-[#5851DB] disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl transition"
+              >
+                {stripeConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {stripeConnecting ? "Redirecting to Stripe…" : "Connect with Stripe"}
+              </button>
+              <p className="text-xs text-slate-400">
+                You'll be redirected to Stripe to set up your account. Stripe handles the verification and payouts.
               </p>
             </div>
           )}
