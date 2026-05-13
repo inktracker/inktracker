@@ -4,9 +4,11 @@ import { fmtMoney } from "../shared/pricing";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { TrendingUp, Package, DollarSign, ChevronDown, ChevronUp } from "lucide-react";
 
-const ORDER_STATUSES_PENDING = ["Art Approval", "Pre-Press"];
-const ORDER_STATUSES_PRODUCTION = ["Printing", "Finishing", "QC"];
-const ORDER_STATUSES_COMPLETE = ["Ready for Pickup", "Completed"];
+// Mirror of BrokerPerformanceSelf — buckets the slim 5-stage pipeline
+// into pending / production / completed for analytics rollup.
+const ORDER_STATUSES_PENDING    = ["Art Approval", "Order Goods", "Pre-Press"];
+const ORDER_STATUSES_PRODUCTION = ["Printing"];
+const ORDER_STATUSES_COMPLETE   = ["Completed"];
 
 function classifyStatus(status) {
   if (ORDER_STATUSES_PENDING.includes(status)) return "pending";

@@ -229,10 +229,13 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail }) {
   const [selectedJob, setSelectedJob] = useState(null);
   const [dateFilter, setDateFilter] = useState("all");
 
-  // Build completed jobs list from orders (Completed/Ready for Pickup) + converted quotes
+  // Build completed jobs list from orders + converted quotes.
+  // (The order pipeline was slimmed to 5 stages on 2026-05-12 —
+  // "Ready for Pickup" is gone; everything done is now just
+  // "Completed".)
   const completedJobs = useMemo(() => {
     const jobsFromOrders = (orders || [])
-      .filter((o) => o.status === "Completed" || o.status === "Ready for Pickup")
+      .filter((o) => o.status === "Completed")
       .map((o) => {
         let brokerTotal = o.total || 0;
         let clientTotal = o.total || 0;

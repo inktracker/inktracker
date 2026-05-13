@@ -47,18 +47,12 @@ import BrokerLayout from "../components/broker/BrokerLayout";
 import BrokerFilesTab from "../components/broker/BrokerFilesTab";
 import BrokerInvoicesTab from "../components/broker/BrokerInvoicesTab";
 import { exportQuoteToPDF } from "../components/shared/pdfExport";
-import { STANDARD_MARKUP } from "../components/shared/pricing";
+import { STANDARD_MARKUP, O_STATUSES } from "../components/shared/pricing";
 import SendQuoteModal from "../components/quotes/SendQuoteModal";
 
-const ORDER_STEPS = [
-  "Art Approval",
-  "Pre-Press",
-  "Printing",
-  "Finishing",
-  "QC",
-  "Ready for Pickup",
-  "Completed",
-];
+// Broker dashboard's per-order progress strip. Now uses the canonical
+// O_STATUSES (slim 5-stage pipeline) instead of its own copy.
+const ORDER_STEPS = O_STATUSES;
 
 const STATUS_CONFIG = {
   Draft: { label: "Draft", icon: PenLine, bg: "bg-slate-100", text: "text-slate-600", bar: "bg-slate-400" },

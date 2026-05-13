@@ -35,9 +35,12 @@ function MetricCard({ label, value, sub, color = "text-indigo-600", onClick }) {
   );
 }
 
-const ORDER_STATUSES_PENDING = ["Art Approval", "Order Goods", "Pre-Press"];
-const ORDER_STATUSES_PRODUCTION = ["Printing", "Finishing", "QC"];
-const ORDER_STATUSES_COMPLETE = ["Ready for Pickup", "Completed"];
+// Analytics buckets for the slim 5-stage pipeline (O_STATUSES).
+// Printing is the only production stage now — Finishing + QC were
+// collapsed into it on 2026-05-12. Completed is terminal.
+const ORDER_STATUSES_PENDING    = ["Art Approval", "Order Goods", "Pre-Press"];
+const ORDER_STATUSES_PRODUCTION = ["Printing"];
+const ORDER_STATUSES_COMPLETE   = ["Completed"];
 
 function classifyStatus(status) {
   if (ORDER_STATUSES_PENDING.includes(status)) return "pending";
@@ -292,7 +295,7 @@ export default function Dashboard() {
   const pendingQuotes = quotes.filter(q => q.status === "Pending").length;
   const approvedQuotes = quotes.filter(q => q.status === "Approved").length;
   const brokerQuotes = quotes.filter(q => q.broker_id).length;
-  const activeOrders = orders.filter(o => !["Ready for Pickup", "Completed"].includes(o.status)).length;
+  const activeOrders = orders.filter(o => o.status !== "Completed").length;
   const openOrdersCount = orders.filter(o => o.status !== "Completed").length;
   const openOrdersValue = orders.filter(o => o.status !== "Completed").reduce((sum, o) => sum + (o.total || 0), 0);
   const unpaidInvoices = computeOutstanding(invoices).total;

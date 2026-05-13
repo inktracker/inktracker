@@ -4,9 +4,14 @@ import { fmtMoney } from "../shared/pricing";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { Package, DollarSign, TrendingUp, CheckCircle2, Clock, Layers } from "lucide-react";
 
-const ORDER_STATUSES_PENDING = ["Art Approval", "Pre-Press"];
-const ORDER_STATUSES_PRODUCTION = ["Printing", "Finishing", "QC"];
-const ORDER_STATUSES_COMPLETE = ["Ready for Pickup", "Completed"];
+// Bucket the 5-stage O_STATUSES pipeline (Art Approval → Order Goods
+// → Pre-Press → Printing → Completed) into three analytics buckets.
+// Pre-Press lives in "pending" because that's still pre-production
+// planning; Printing is the only active production stage now that
+// Finishing and QC were collapsed into it.
+const ORDER_STATUSES_PENDING    = ["Art Approval", "Order Goods", "Pre-Press"];
+const ORDER_STATUSES_PRODUCTION = ["Printing"];
+const ORDER_STATUSES_COMPLETE   = ["Completed"];
 
 function classifyStatus(status) {
   if (ORDER_STATUSES_PENDING.includes(status)) return "pending";
@@ -111,7 +116,7 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
               <Package className="w-3 h-3 text-blue-500" />
               <span className="text-xs font-semibold text-blue-600">In Production</span>
             </div>
-            <div className="text-xs text-slate-400 mt-0.5">Printing / Finishing / QC</div>
+            <div className="text-xs text-slate-400 mt-0.5">Printing</div>
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-emerald-600">{completed}</div>

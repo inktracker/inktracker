@@ -51,7 +51,13 @@ export function getEnabledTechniques() {
 }
 export const TECHNIQUES = ALL_TECHNIQUES; // backward compat for code that imports it directly
 export const Q_STATUSES = ["Draft", "Sent", "Pending", "Approved", "Approved and Paid", "Declined"];
-export const O_STATUSES = ["Art Approval", "Order Goods", "Pre-Press", "Printing", "Finishing", "QC", "Ready for Pickup", "Completed"];
+// Canonical order pipeline. Single source of truth — OrderDetailModal,
+// Production, Calendar, broker analytics all import this constant.
+// Trimmed from 8 stages to 5 on 2026-05-12 (Joe's audit decision —
+// Finishing, QC, and Ready for Pickup are inline with Printing for
+// the single-press / garage-shop ICP). DB CHECK constraint mirrors
+// this list, enforced by 20260518_slim_order_pipeline.sql.
+export const O_STATUSES = ["Art Approval", "Order Goods", "Pre-Press", "Printing", "Completed"];
 
 export const STANDARD_MARKUP = 1.4;
 export const BROKER_MARKUP = 1.2;
