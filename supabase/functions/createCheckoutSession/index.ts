@@ -7,9 +7,6 @@ import Stripe from "npm:stripe@14";
 const STRIPE_SECRET_KEY    = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const RESEND_API_KEY       = Deno.env.get("RESEND_API_KEY") ?? "";
-const FROM_EMAIL           = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
-const FROM_NAME            = Deno.env.get("FROM_NAME")  ?? "InkTracker";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -18,10 +15,6 @@ const CORS = {
 
 function serviceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-}
-
-function fmtMoney(n: number) {
-  return `$${Number(n || 0).toFixed(2)}`;
 }
 
 // Constant-time string equality. Prevents timing-based token guessing.
@@ -187,82 +180,6 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
   return { order };
 }
 
-// ── notifyShopOwner ───────────────────────────────────────────────────────────
-
-async function handleNotifyShopOwner(params: any) {
-  if (!RESEND_API_KEY) {
-    console.log("[notifyShopOwner] No RESEND_API_KEY — skipping notification");
-    return { sent: false, reason: "no_api_key" };
-  }
-
-  const supabase = serviceClient();
-
-  // Load quote
-  const { data: quote } = await supabase
-    .from("quotes")
-    .select("*")
-    .eq("id", params.quoteId)
-    .single();
-
-  if (!quote) return { error: "Quote not found" };
-
-  // Find shop owner email from profiles
-  const ownerEmail = params.shopOwnerEmail || quote.shop_owner;
-  if (!ownerEmail) return { error: "No shop owner email" };
-
-  const amountPaid = fmtMoney(params.amountPaid || 0);
-  const paymentType = params.isDeposit ? "Deposit" : "Full Payment";
-  const subject = `Payment Received — Quote #${quote.quote_id}`;
-
-  const html = `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-      <h2 style="color:#1e293b">Payment Received!</h2>
-      <p style="color:#475569;line-height:1.6">
-        Good news — <strong>${quote.customer_name}</strong> has paid their quote.
-      </p>
-      <table style="width:100%;border-collapse:collapse;margin:20px 0">
-        <tr>
-          <td style="padding:8px 0;color:#94a3b8;font-size:14px">Quote #</td>
-          <td style="padding:8px 0;font-weight:600;color:#1e293b">${quote.quote_id}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#94a3b8;font-size:14px">Customer</td>
-          <td style="padding:8px 0;font-weight:600;color:#1e293b">${quote.customer_name}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#94a3b8;font-size:14px">Payment Type</td>
-          <td style="padding:8px 0;font-weight:600;color:#1e293b">${paymentType}</td>
-        </tr>
-        <tr>
-          <td style="padding:8px 0;color:#94a3b8;font-size:14px">Amount Paid</td>
-          <td style="padding:8px 0;font-weight:700;color:#4f46e5;font-size:18px">${amountPaid}</td>
-        </tr>
-        ${quote.due_date ? `<tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">In-Hands Date</td><td style="padding:8px 0;font-weight:600;color:#1e293b">${quote.due_date}</td></tr>` : ""}
-      </table>
-      ${params.isDeposit ? `<p style="color:#f59e0b;font-size:13px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px"><strong>Note:</strong> This was a deposit payment. The remaining balance is due upon completion.</p>` : ""}
-      <p style="color:#94a3b8;font-size:12px;margin-top:32px">Sent by InkTracker</p>
-    </div>
-  `;
-
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${RESEND_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: `${FROM_NAME} <${FROM_EMAIL}>`,
-      to: [ownerEmail],
-      subject,
-      html,
-    }),
-  });
-
-  const data = await res.json();
-  if (!res.ok) console.error("[notifyShopOwner] Resend error:", data);
-  return { sent: res.ok };
-}
-
 // ── createSession ─────────────────────────────────────────────────────────────
 
 async function handleCreateSession(params: any) {
@@ -367,10 +284,6 @@ Deno.serve(async (req) => {
         // createSession requires a verified token before generating a Stripe URL —
         // otherwise an attacker could create checkout sessions for any quote.
         result = await handleCreateSession({ quoteId, token, ...rest });
-        break;
-      case "notifyShopOwner":
-        // Internal-only, called by stripeWebhook. No token gate (trust webhook).
-        result = await handleNotifyShopOwner({ quoteId, ...rest });
         break;
       case "getOrder":
         result = await handleGetOrder(rest.orderId ?? quoteId, token);
