@@ -33,6 +33,7 @@ export default function OnboardingWizard({ user, onComplete }) {
   const [stateVal, setStateVal] = useState(user?.state || "");
   const [zip, setZip] = useState(user?.zip || "");
   const [taxRate, setTaxRate] = useState(user?.default_tax_rate || "");
+  const [offersEmbroidery, setOffersEmbroidery] = useState(false);
   const [logoUrl, setLogoUrl] = useState(user?.logo_url || "");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -111,7 +112,7 @@ export default function OnboardingWizard({ user, onComplete }) {
   async function saveAndFinish() {
     setSaving(true);
     try {
-      const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, taxRate };
+      const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, taxRate, offersEmbroidery };
       const profileData = buildOnboardingProfile(wizardInput);
       await base44.auth.updateMe(profileData);
 
@@ -276,6 +277,25 @@ export default function OnboardingWizard({ user, onComplete }) {
                     <input type="text" value={zip} onChange={e => setZip(e.target.value)} placeholder=""
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
                   </div>
+                </div>
+
+                <div className="pt-3 mt-1 border-t border-slate-100">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Services Offered</p>
+                  <label className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition">
+                    <input
+                      type="checkbox"
+                      checked={offersEmbroidery}
+                      onChange={(e) => setOffersEmbroidery(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-indigo-600 cursor-pointer"
+                    />
+                    <span className="text-sm text-slate-700">
+                      <span className="font-semibold">We also offer embroidery</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">
+                        Turns on embroidery pricing (stitch-count tiers + digitizing fee). You can fine-tune the rates later in Account → Pricing.
+                      </span>
+                    </span>
+                  </label>
+                  <p className="text-xs text-slate-400 mt-2">Screen printing is enabled by default.</p>
                 </div>
               </div>
             )}

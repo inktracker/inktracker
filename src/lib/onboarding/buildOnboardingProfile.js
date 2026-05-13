@@ -67,14 +67,23 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
  * Build the upsert payload for the `Shop` entity. Mirrors the wizard's
  * inline shape so tests catch shape regressions (extra/missing fields
  * would silently break per-shop pricing config / quote ownership lookups).
+ *
+ * If `offersEmbroidery` is true, seeds `pricing_config.embroidery.enabled`
+ * so the embroidery technique becomes selectable immediately. The rest of
+ * the embroidery config (tiers, pricing) is filled in by the pricing
+ * engine's defaults until the user customizes it in Account → Pricing.
  */
 export function buildShopUpsertPayload(input) {
-  const { user = {}, shopName = "", logoUrl = "" } = input || {};
-  return {
+  const { user = {}, shopName = "", logoUrl = "", offersEmbroidery = false } = input || {};
+  const base = {
     owner_email: user.email || "",
     shop_name:   trimStr(shopName) || user.email || "",
     logo_url:    logoUrl || "",
   };
+  if (offersEmbroidery) {
+    base.pricing_config = { embroidery: { enabled: true } };
+  }
+  return base;
 }
 
 // Exported for tests and for any future caller that needs to know the trial length.
