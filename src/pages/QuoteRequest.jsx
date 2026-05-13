@@ -1,183 +1,20 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import OrderWizard from "../components/wizard/OrderWizard";
-import { fmtMoney, calcQuoteTotals } from "../components/shared/pricing";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 
-// ─── Client Review Mode ──────────────────────────────────────────────────────
-// Shown when the URL has ?quoteId=...&clientReview=true
-// Lets the customer see the quote summary and approve it.
+// ─── Public New-Quote Wizard ─────────────────────────────────────────────────
+// Customer-facing quote-request form. Embedded on shop websites via Embed.jsx,
+// or linked as a standalone URL.
+//
+// NOTE: A `?clientReview=true&quoteId=X` flow used to live here that let
+// anyone with the URL approve a quote — no token gate. It was superseded by
+// the public_token-gated /quotepayment route, was never linked from anywhere
+// else in the codebase, and was removed on 2026-05-12 to close the
+// anon-update vector. If you need a customer review/approve page, use
+// /quotepayment which validates the token server-side.
 
-function ClientReviewPage({ quoteId }) {
-  const [quote, setQuote] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [approving, setApproving] = useState(false);
-  const [approved, setApproved] = useState(false);
-
-  useEffect(() => {
-    base44.entities.Quote.get(quoteId)
-      .then((q) => {
-        setQuote(q);
-        if (q?.status === "Approved" || q?.status === "Approved and Paid" || q?.status === "Client Approved") {
-          setApproved(true);
-        }
-      })
-      .catch(() => setError("Quote not found or has expired."))
-      .finally(() => setLoading(false));
-  }, [quoteId]);
-
-  async function handleApprove() {
-    setApproving(true);
-    try {
-      await base44.entities.Quote.update(quoteId, {
-        status: "Client Approved",
-        client_approved_at: new Date().toISOString(),
-      });
-      setApproved(true);
-    } catch {
-      setError("Something went wrong. Please try again or contact your shop.");
-    } finally {
-      setApproving(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-        <div className="bg-white rounded-2xl border border-red-200 p-8 max-w-md w-full text-center shadow-sm">
-          <XCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Quote Not Found</h2>
-          <p className="text-slate-500 text-sm">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (approved) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
-        <div className="bg-white rounded-2xl border border-emerald-200 p-8 max-w-md w-full text-center shadow-sm">
-          <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Quote Approved!</h2>
-          <p className="text-slate-500 text-sm">
-            Thank you, {quote?.customer_name}. Your approval has been recorded and the shop has been notified.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const totals = calcQuoteTotals(quote || {});
-  const lineItems = quote?.line_items || [];
-
-  return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10">
-      <div className="max-w-2xl mx-auto space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-slate-900">Review Your Quote</h1>
-          <p className="text-slate-500 mt-1 text-sm">
-            Quote #{quote?.quote_id} · {quote?.customer_name}
-          </p>
-        </div>
-
-        {/* Line items summary */}
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">Items</div>
-          </div>
-          {lineItems.length === 0 ? (
-            <div className="px-5 py-6 text-sm text-slate-400">No line items.</div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {lineItems.map((li, idx) => {
-                const qty = Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
-                return (
-                  <div key={idx} className="px-5 py-4 flex items-start justify-between gap-4">
-                    <div>
-                      <div className="font-semibold text-slate-800 text-sm">
-                        {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        Qty: {qty}
-                        {li.imprints?.length > 0 && (
-                          <span className="ml-2">
-                            · {li.imprints.map((imp) => `${imp.location} (${imp.colors}c ${imp.technique || "Screen Print"})`).join(", ")}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Totals */}
-        <div className="bg-white rounded-2xl border border-slate-200 px-5 py-4 space-y-2.5">
-          <div className="flex justify-between text-sm text-slate-600">
-            <span>Subtotal</span><span>{fmtMoney(totals.sub)}</span>
-          </div>
-          {parseFloat(quote?.discount) > 0 && (() => {
-            const dv = parseFloat(quote.discount);
-            const isFlat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
-            return (
-              <div className="flex justify-between text-sm text-emerald-600">
-                <span>Discount {isFlat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
-                <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
-              </div>
-            );
-          })()}
-          <div className="flex justify-between text-sm text-slate-600">
-            <span>Tax ({quote?.tax_rate || 0}%)</span><span>{fmtMoney(totals.tax)}</span>
-          </div>
-          <div className="flex justify-between font-bold text-slate-900 border-t border-slate-100 pt-2.5">
-            <span>Total</span><span className="text-xl text-indigo-700">{fmtMoney(totals.total)}</span>
-          </div>
-        </div>
-
-        {quote?.notes && (
-          <div className="bg-white rounded-2xl border border-slate-200 px-5 py-4">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1.5">Notes</div>
-            <p className="text-sm text-slate-700 leading-relaxed">{quote.notes}</p>
-          </div>
-        )}
-
-        {/* Approve button */}
-        <button
-          onClick={handleApprove}
-          disabled={approving}
-          className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 rounded-2xl text-base transition disabled:opacity-60"
-        >
-          {approving ? (
-            <><Loader2 className="w-5 h-5 animate-spin" /> Approving…</>
-          ) : (
-            <><CheckCircle2 className="w-5 h-5" /> Approve This Quote</>
-          )}
-        </button>
-
-        <p className="text-center text-xs text-slate-400">
-          By approving, you confirm the details above and authorize the shop to proceed with your order.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ─── Default: New Quote Request ──────────────────────────────────────────────
 export default function QuoteRequest() {
   const params = new URLSearchParams(window.location.search);
-  const quoteId = params.get("quoteId");
-  const clientReview = params.get("clientReview") === "true";
   const shopParam = params.get("shop") || "";
 
   const [shop, setShop] = useState(null);
@@ -207,10 +44,6 @@ export default function QuoteRequest() {
     }
     loadShop();
   }, [shopParam]);
-
-  if (clientReview && quoteId) {
-    return <ClientReviewPage quoteId={quoteId} />;
-  }
 
   async function handleSubmit(quote) {
     await base44.entities.Quote.create({ ...quote, shop_owner: shopOwner, source: "wizard" });
