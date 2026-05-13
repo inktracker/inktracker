@@ -37,14 +37,21 @@ describe("buildOrderCompletionPlan — invariant: NEVER deletes the order", () =
     }
   });
 
-  it("the returned plan only contains the four expected side effects", () => {
+  it("the returned plan only contains the five expected side-effect slots", () => {
     const plan = buildOrderCompletionPlan(baseOrder, { today: TODAY, shopOwner: SHOP });
     expect(Object.keys(plan).sort()).toEqual([
       "brokerPerformanceCreate",
       "invoiceCreate",
+      "invoiceLink",
       "orderUpdate",
       "shopPerformanceCreate",
     ]);
+  });
+
+  it("when no existing invoice: invoiceCreate is populated, invoiceLink is null", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, { today: TODAY, shopOwner: SHOP });
+    expect(plan.invoiceCreate).not.toBeNull();
+    expect(plan.invoiceLink).toBeNull();
   });
 
   it("orderUpdate is a PATCH not a deletion — sets status='Completed' and completed_date", () => {
@@ -54,6 +61,91 @@ describe("buildOrderCompletionPlan — invariant: NEVER deletes the order", () =
       status: "Completed",
       completed_date: TODAY,
     });
+  });
+});
+
+describe("buildOrderCompletionPlan — existing invoice: link instead of create", () => {
+  // Joe's 2026-05-12 dup bug: a quote was sent via QB (creating a
+  // QB invoice + InkTracker invoice row with invoice_id = quote_id,
+  // order_id = null) and then the order was completed, which
+  // created a SECOND invoice row. Now the caller pre-fetches the
+  // existing invoice and we link to it instead of duplicating.
+
+  const existingInvoice = {
+    id: "uuid-inv-from-qb",
+    invoice_id: "Q-2026-VBII",
+    shop_owner: SHOP,
+    order_id: null,
+    qb_invoice_id: "3616",
+    total: 345.92,
+  };
+
+  it("returns invoiceLink (not invoiceCreate) when existingInvoice is provided", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, {
+      today: TODAY,
+      shopOwner: SHOP,
+      existingInvoice,
+    });
+    expect(plan.invoiceCreate).toBeNull();
+    expect(plan.invoiceLink).toEqual({
+      id: "uuid-inv-from-qb",
+      patch: { order_id: baseOrder.order_id },
+    });
+  });
+
+  it("invoiceLink only sets order_id on the existing invoice (doesn't touch other fields)", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, {
+      today: TODAY,
+      shopOwner: SHOP,
+      existingInvoice,
+    });
+    // Existing invoice already has its own totals + customer + qb_invoice_id
+    // — we don't overwrite any of that. Just link to the order.
+    expect(Object.keys(plan.invoiceLink.patch)).toEqual(["order_id"]);
+  });
+
+  it("orderUpdate still fires when linking (the order still becomes Completed)", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, {
+      today: TODAY,
+      shopOwner: SHOP,
+      existingInvoice,
+    });
+    expect(plan.orderUpdate).toEqual({
+      id: baseOrder.id,
+      patch: { status: "Completed", completed_date: TODAY },
+    });
+  });
+
+  it("broker + shop performance rows still fire (analytics rollup is independent)", () => {
+    const plan = buildOrderCompletionPlan(
+      { ...baseOrder, broker_id: "broker-1" },
+      { today: TODAY, shopOwner: SHOP, existingInvoice },
+    );
+    expect(plan.brokerPerformanceCreate).not.toBeNull();
+    expect(plan.shopPerformanceCreate).not.toBeNull();
+    expect(plan.shopPerformanceCreate.status).toBe("Completed");
+  });
+
+  it("ignores existingInvoice without an id (defensive — treats as no existing invoice)", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, {
+      today: TODAY,
+      shopOwner: SHOP,
+      existingInvoice: { invoice_id: "Q-2026-VBII" /* no id */ },
+    });
+    expect(plan.invoiceCreate).not.toBeNull();
+    expect(plan.invoiceLink).toBeNull();
+  });
+
+  it("invariant: exactly one of invoiceCreate / invoiceLink is populated (never both, never neither)", () => {
+    // Without existing invoice
+    const planFresh = buildOrderCompletionPlan(baseOrder, { today: TODAY, shopOwner: SHOP });
+    expect(Boolean(planFresh.invoiceCreate) !== Boolean(planFresh.invoiceLink)).toBe(true);
+
+    // With existing invoice
+    const planLink = buildOrderCompletionPlan(baseOrder, {
+      today: TODAY, shopOwner: SHOP, existingInvoice,
+    });
+    expect(Boolean(planLink.invoiceCreate) !== Boolean(planLink.invoiceLink)).toBe(true);
   });
 });
 

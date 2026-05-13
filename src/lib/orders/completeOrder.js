@@ -35,7 +35,10 @@ const COMPLETED_STATUS = "Completed";
  *   shopPerformanceCreate: object,
  * }}
  */
-export function buildOrderCompletionPlan(order, { today, shopOwner, invoiceId } = {}) {
+export function buildOrderCompletionPlan(
+  order,
+  { today, shopOwner, invoiceId, existingInvoice } = {},
+) {
   if (!order || typeof order !== "object") {
     throw new Error("buildOrderCompletionPlan: order required");
   }
@@ -52,6 +55,56 @@ export function buildOrderCompletionPlan(order, { today, shopOwner, invoiceId } 
     throw new Error("buildOrderCompletionPlan: shopOwner required");
   }
 
+  // Broker performance + shop performance side effects fire either
+  // way — the analytics rollup needs to record the completion
+  // regardless of which invoice path we take.
+  const brokerPerformanceCreate = order.broker_id
+    ? {
+        broker_id: order.broker_id,
+        shop_owner: shopOwner,
+        order_id: order.order_id,
+        customer_name: order.customer_name,
+        date: today,
+        total: order.total || 0,
+      }
+    : null;
+
+  const shopPerformanceCreate = {
+    shop_owner: shopOwner,
+    order_id: order.order_id,
+    customer_name: order.customer_name,
+    customer_id: order.customer_id || "",
+    broker_id: order.broker_id || "",
+    date: today,
+    total: order.total || 0,
+    status: COMPLETED_STATUS,
+  };
+
+  const orderUpdate = {
+    id: order.id,
+    patch: { status: COMPLETED_STATUS, completed_date: today },
+  };
+
+  // If an invoice already exists for this order's quote (typical
+  // path: SendQuoteModal pushed it to QB and handlePullInvoices
+  // synced it back), DON'T create a duplicate. Link the existing
+  // invoice to this order instead — set order_id so the InvoiceDetailModal
+  // "View Order" path resolves. This is the bug Joe hit on
+  // 2026-05-12.
+  if (existingInvoice?.id) {
+    return {
+      orderUpdate,
+      invoiceCreate: null,
+      invoiceLink: {
+        id: existingInvoice.id,
+        patch: { order_id: order.order_id },
+      },
+      brokerPerformanceCreate,
+      shopPerformanceCreate,
+    };
+  }
+
+  // Fresh path — no existing invoice. Generate one.
   const inv_id =
     invoiceId ??
     `INV-${new Date(today).getUTCFullYear() || new Date().getFullYear()}-${Date.now()
@@ -86,34 +139,10 @@ export function buildOrderCompletionPlan(order, { today, shopOwner, invoiceId } 
     tax_rate: order.tax_rate || 0,
   };
 
-  const brokerPerformanceCreate = order.broker_id
-    ? {
-        broker_id: order.broker_id,
-        shop_owner: shopOwner,
-        order_id: order.order_id,
-        customer_name: order.customer_name,
-        date: today,
-        total: order.total || 0,
-      }
-    : null;
-
-  const shopPerformanceCreate = {
-    shop_owner: shopOwner,
-    order_id: order.order_id,
-    customer_name: order.customer_name,
-    customer_id: order.customer_id || "",
-    broker_id: order.broker_id || "",
-    date: today,
-    total: order.total || 0,
-    status: COMPLETED_STATUS,
-  };
-
   return {
-    orderUpdate: {
-      id: order.id,
-      patch: { status: COMPLETED_STATUS, completed_date: today },
-    },
+    orderUpdate,
     invoiceCreate,
+    invoiceLink: null,
     brokerPerformanceCreate,
     shopPerformanceCreate,
     // No `orderDelete`, no `delete` of any kind. The contract is:
