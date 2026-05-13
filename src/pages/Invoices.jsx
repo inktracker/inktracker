@@ -213,7 +213,7 @@ export default function Invoices() {
           ].map(p => (
             <button key={p.label} onClick={p.fn}
               className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${
-                (p.label === "This Month" && dateFrom === thisMonth.from && dateTo === thisMonth.to) ||
+                (p.label === "This Month" && (() => { const m = getThisMonth(); return dateFrom === m.from && dateTo === m.to; })()) ||
                 (p.label === "All Time" && !dateFrom && !dateTo)
                   ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
               }`}>{p.label}</button>

@@ -4,6 +4,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2 } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
+import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 
 function Section({ icon: IconComp, title, defaultOpen = false, children }) {
@@ -56,6 +57,9 @@ export default function Account() {
   const [stateVal, setStateVal] = useState("");
   const [zip, setZip] = useState("");
   const [taxRate, setTaxRate] = useState("");
+  // Empty string = "use browser default" (the first picker option). Stored
+  // on the shops table so it applies to every user in this shop.
+  const [timezone, setTimezone] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -80,6 +84,13 @@ export default function Account() {
   const [qbMessage, setQbMessage] = useState(null); // { type: "success"|"error", text }
   const [qbDisconnecting, setQbDisconnecting] = useState(false);
 
+  // ── Stripe Connect (customer payments → shop's own Stripe account) ──
+  const [stripeAccountStatus, setStripeAccountStatus] = useState(null); // null | "pending" | "active" | "restricted" | "disabled"
+  const [stripeAccountId, setStripeAccountId] = useState(null);
+  const [stripeConnecting, setStripeConnecting] = useState(false);
+  const [stripeMessage, setStripeMessage] = useState(null);
+  const [openingStripeDashboard, setOpeningStripeDashboard] = useState(false);
+
 
   useEffect(() => {
     async function loadUser() {
@@ -102,6 +113,7 @@ export default function Account() {
         try {
           const shops = await base44.entities.Shop.filter({ owner_email: currentUser.email });
           setShopRecord(shops?.[0] || null);
+          setTimezone(shops?.[0]?.timezone || "");
           if (shops?.[0]?.addons?.length) {
             setAddons(
               shops[0].addons
@@ -143,6 +155,93 @@ export default function Account() {
     loadUser();
   }, [navigate]);
 
+  // ── Stripe Connect status load + post-onboarding return ───────────
+  // Fetches the current status (live + cached) so the UI can render
+  // the right state. Re-fetched whenever the user returns from Stripe's
+  // hosted onboarding (signaled by ?stripe_connect=return in the URL).
+  async function fetchStripeStatus() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "getStripeAccountStatus", accessToken: session.access_token }),
+      });
+      const data = await res.json();
+      if (data?.connected) {
+        setStripeAccountId(data.accountId || null);
+        setStripeAccountStatus(data.status || "pending");
+      } else {
+        setStripeAccountId(null);
+        setStripeAccountStatus(null);
+      }
+    } catch (err) {
+      console.warn("[Account] stripe status fetch failed:", err);
+    }
+  }
+
+  useEffect(() => { if (user) fetchStripeStatus(); }, [user]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const flag = params.get("stripe_connect");
+    if (!flag) return;
+    if (flag === "return") {
+      setStripeMessage({ type: "success", text: "Stripe onboarding finished. Status will refresh once Stripe verifies your account." });
+    } else if (flag === "refresh") {
+      setStripeMessage({ type: "info", text: "Stripe asked you to retry the link. Click Continue Setup to resume." });
+    }
+    window.history.replaceState({}, "", window.location.pathname);
+    // Re-fetch after a Stripe redirect even if we already had a value.
+    fetchStripeStatus();
+  }, [location.search]);
+
+  async function handleConnectStripe() {
+    setStripeConnecting(true);
+    setStripeMessage(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "connectStripe", accessToken: session?.access_token }),
+      });
+      const data = await res.json();
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      throw new Error(data?.error || "Couldn't start Stripe onboarding.");
+    } catch (err) {
+      setStripeMessage({ type: "error", text: err.message });
+    } finally {
+      setStripeConnecting(false);
+    }
+  }
+
+  async function handleOpenStripeDashboard() {
+    setOpeningStripeDashboard(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "openStripeDashboard", accessToken: session?.access_token }),
+      });
+      const data = await res.json();
+      if (data?.url) {
+        window.open(data.url, "_blank");
+        return;
+      }
+      throw new Error(data?.error || "Couldn't open the Stripe dashboard.");
+    } catch (err) {
+      setStripeMessage({ type: "error", text: err.message });
+    } finally {
+      setOpeningStripeDashboard(false);
+    }
+  }
+
   // Handle OAuth redirect params
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -177,6 +276,28 @@ export default function Account() {
         zip: zip.trim(),
         default_tax_rate: parseFloat(taxRate) || 0,
       });
+
+      // Timezone lives on the shops table (so it applies to every user in
+      // this shop, not just whoever saved last). Best-effort — failing this
+      // shouldn't undo the profile save above.
+      try {
+        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+        const payload = { timezone: timezone || null };
+        if (shops?.[0]) {
+          await base44.entities.Shop.update(shops[0].id, payload);
+        } else {
+          await base44.entities.Shop.create({
+            owner_email: user.email,
+            shop_name: shopName || user.email,
+            ...payload,
+          });
+        }
+        // Apply the new tz immediately to the running app so subsequent
+        // todayStr() / nowLocal() calls reflect the change without a reload.
+        loadShopTimezone(timezone || null);
+      } catch (tzErr) {
+        console.warn("Timezone save failed (non-blocking):", tzErr);
+      }
 
       setUser(updatedUser || user);
       setMessage("Saved successfully!");
@@ -416,6 +537,21 @@ export default function Account() {
                 <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)} placeholder="8.265"
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 <p className="text-xs text-slate-400 mt-1">Enter the percentage (8.265 means 8.265%), not a decimal.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Shop Timezone</label>
+                <select
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  {SHOP_TIMEZONE_OPTIONS.map((opt) => (
+                    <option key={opt.value || "__default__"} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-400 mt-1">Used by the calendar to know what "today" means for your shop. Lets employees logging in from another state still see the right "today."</p>
               </div>
             </div>
 
@@ -681,6 +817,99 @@ export default function Account() {
           )}
         </Section>
 
+        <Section icon={CreditCard} title="Stripe Payments">
+          {stripeMessage && (
+            <div className={`flex items-center gap-2 text-sm font-semibold py-2.5 px-4 rounded-xl mb-4 ${
+              stripeMessage.type === "success"
+                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                : stripeMessage.type === "info"
+                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                  : "bg-red-50 text-red-700 border border-red-200"
+            }`}>
+              {stripeMessage.type === "success"
+                ? <CheckCircle2 className="w-4 h-4 shrink-0" />
+                : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span>{stripeMessage.text}</span>
+              <button onClick={() => setStripeMessage(null)} className="ml-auto text-current opacity-50 hover:opacity-100">✕</button>
+            </div>
+          )}
+
+          {stripeAccountStatus === "active" ? (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <span className="font-semibold text-emerald-800">Stripe Connected · accepting payments</span>
+              </div>
+              <p className="text-sm text-slate-600">
+                Customer payments via Stripe go directly to your Stripe account. Your shop name appears on the customer's statement. InkTracker doesn't take a cut.
+              </p>
+              {stripeAccountId && (
+                <div className="text-xs text-slate-500">
+                  Account: <span className="font-mono font-semibold">{stripeAccountId}</span>
+                </div>
+              )}
+              <button
+                onClick={handleOpenStripeDashboard}
+                disabled={openingStripeDashboard}
+                className="flex items-center gap-2 text-sm font-semibold text-emerald-700 border border-emerald-300 px-3 py-2 rounded-xl hover:bg-emerald-100 transition disabled:opacity-50"
+              >
+                {openingStripeDashboard ? "Opening…" : "Open Stripe Dashboard →"}
+              </button>
+            </div>
+          ) : stripeAccountStatus === "restricted" ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-amber-600" />
+                <span className="font-semibold text-amber-800">Action needed in Stripe</span>
+              </div>
+              <p className="text-sm text-slate-600">
+                Stripe needs more information before they'll let you accept payments. Open the dashboard to finish up — usually a tax ID, bank details, or an ID verification.
+              </p>
+              <button
+                onClick={handleOpenStripeDashboard}
+                disabled={openingStripeDashboard}
+                className="flex items-center gap-2 text-sm font-semibold text-amber-700 border border-amber-300 px-3 py-2 rounded-xl hover:bg-amber-100 transition disabled:opacity-50"
+              >
+                {openingStripeDashboard ? "Opening…" : "Finish Stripe Setup →"}
+              </button>
+            </div>
+          ) : stripeAccountStatus === "pending" ? (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                <span className="font-semibold text-blue-800">Stripe is verifying your account</span>
+              </div>
+              <p className="text-sm text-slate-600">
+                Usually takes a few minutes. You'll see "Stripe Connected" here once Stripe is done. If it takes longer, open the dashboard to check.
+              </p>
+              <button
+                onClick={handleConnectStripe}
+                disabled={stripeConnecting}
+                className="flex items-center gap-2 text-sm font-semibold text-blue-700 border border-blue-300 px-3 py-2 rounded-xl hover:bg-blue-100 transition disabled:opacity-50"
+              >
+                {stripeConnecting ? "Opening Stripe…" : "Continue Setup →"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-slate-500">
+                Connect Stripe to accept customer payments on quotes. Funds go directly to your bank account — your shop's name appears on the customer's statement. InkTracker doesn't take a cut of customer payments.
+              </p>
+              <button
+                onClick={handleConnectStripe}
+                disabled={stripeConnecting}
+                className="inline-flex items-center gap-2 bg-[#635BFF] hover:bg-[#5851DB] disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl transition"
+              >
+                {stripeConnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                {stripeConnecting ? "Redirecting to Stripe…" : "Connect with Stripe"}
+              </button>
+              <p className="text-xs text-slate-400">
+                You'll be redirected to Stripe to set up your account. Stripe handles the verification and payouts.
+              </p>
+            </div>
+          )}
+        </Section>
+
         <Section icon={CreditCard} title="Pricing & Fees">
           <PricingConfigSection user={user} />
         </Section>
@@ -888,13 +1117,29 @@ function GmailScannerSection({ user }) {
     setResults(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
+      const post = (action) => fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "scanEmails", accessToken: session?.access_token }),
+        body: JSON.stringify({ action, accessToken: session?.access_token }),
+      }).then((r) => r.json()).catch((err) => ({ error: err?.message || "request failed" }));
+
+      // Two distinct passes:
+      //   scanEmails  → finds NEW inbound quote requests and creates draft quotes
+      //   scanReplies → threads replies (subject contains [Ref:]) into the
+      //                 matching quote/order/invoice's message thread
+      // Run in parallel — one failing shouldn't block the other.
+      const [emailsData, repliesData] = await Promise.all([
+        post("scanEmails"),
+        post("scanReplies"),
+      ]);
+
+      setResults({
+        scanned: (emailsData?.scanned || 0) + (repliesData?.scanned || 0),
+        quotesCreated: emailsData?.quotesCreated || 0,
+        repliesAdded: repliesData?.repliesAdded || 0,
+        results: emailsData?.results || [],
+        errors: [emailsData?.error, repliesData?.error].filter(Boolean),
       });
-      const data = await res.json();
-      setResults(data);
       setLastScan(new Date().toISOString());
     } catch (err) {
       alert("Scan failed: " + err.message);
@@ -922,14 +1167,19 @@ function GmailScannerSection({ user }) {
           <button onClick={scanNow} disabled={scanning}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-50">
             {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-            {scanning ? "Scanning Inbox..." : "Scan for Quote Requests"}
+            {scanning ? "Scanning Inbox..." : "Scan Inbox (Quote Requests + Replies)"}
           </button>
 
           {results && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
               <div className="text-sm text-slate-700">
-                Scanned <strong>{results.scanned}</strong> emails · Created <strong>{results.quotesCreated}</strong> draft quotes
+                Scanned <strong>{results.scanned}</strong> emails · Created <strong>{results.quotesCreated}</strong> draft quotes · Threaded <strong>{results.repliesAdded}</strong> customer {results.repliesAdded === 1 ? "reply" : "replies"}
               </div>
+              {results.errors?.length > 0 && (
+                <div className="mt-2 text-xs text-red-600">
+                  {results.errors.map((e, i) => <div key={i}>{e}</div>)}
+                </div>
+              )}
               {results.results?.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {results.results.map((r, i) => (

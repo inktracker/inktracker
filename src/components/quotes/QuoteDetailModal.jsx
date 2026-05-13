@@ -774,12 +774,19 @@ export default function QuoteDetailModal({
               Send Quote
             </button>
 
-            <button
-              onClick={openQBPanel}
-              className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] bg-white dark:bg-slate-900 rounded-xl hover:bg-green-50 transition"
-            >
-              {qbInvoiceId ? "QB Invoice Status" : "Send via QuickBooks"}
-            </button>
+            {/* Standalone "Send via QuickBooks" button removed on 2026-05-12 —
+                payment-provider selection (Stripe vs QB) is now picked inside
+                SendQuoteModal. The QB Status Panel remains reachable via the
+                existing "QB Invoice #… created" chip below once an invoice
+                exists (which opens the same openQBPanel flow). */}
+            {qbInvoiceId && (
+              <button
+                onClick={openQBPanel}
+                className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] bg-white dark:bg-slate-900 rounded-xl hover:bg-green-50 transition"
+              >
+                QB Invoice Status
+              </button>
+            )}
 
             <button
               onClick={async () => {
