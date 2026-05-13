@@ -51,6 +51,7 @@ export default function Customers() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyCustomerForm);
+  const [addingCustomer, setAddingCustomer] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editSaved, setEditSaved] = useState(false);
@@ -173,16 +174,27 @@ export default function Customers() {
 
   async function handleAdd() {
     if (!form.name.trim() || !user?.email) return;
+    if (addingCustomer) return; // re-entry guard: double-click would create dupes
+    setAddingCustomer(true);
 
-    const created = await base44.entities.Customer.create({
-      ...form,
-      shop_owner: user.email,
-      orders: 0,
-    });
+    let created;
+    try {
+      created = await base44.entities.Customer.create({
+        ...form,
+        shop_owner: user.email,
+        orders: 0,
+      });
+    } catch (err) {
+      console.error("[Customers] add failed:", err);
+      alert("Couldn't add this customer. Please try again.");
+      setAddingCustomer(false);
+      return;
+    }
 
     setCustomers((prev) => [...prev, created].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })));
     setForm(emptyCustomerForm);
     setShowForm(false);
+    setAddingCustomer(false);
 
     // Push to QB in the background — won't block the UI; logs if it fails.
     syncCustomerToQB(created).then((result) => {
@@ -398,9 +410,10 @@ export default function Customers() {
 
           <button
             onClick={handleAdd}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+            disabled={addingCustomer || !form.name.trim()}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
           >
-            Add Customer
+            {addingCustomer ? "Adding…" : "Add Customer"}
           </button>
         </div>
       )}
