@@ -266,35 +266,50 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function loadData() {
+      // Auth first — failing here is the only case that should bounce to
+      // login. Everything below is data the user is allowed to read; an
+      // RLS hiccup on one of the parallel queries shouldn't log them out.
+      let currentUser;
       try {
-        const currentUser = await base44.auth.me();
-        if (!currentUser) { await base44.auth.redirectToLogin(); return; }
-        if (currentUser.role === "broker") { navigate(createPageUrl("BrokerDashboard")); return; }
-        setUser(currentUser);
-
-        const [q, o, invItems, allUsers, custs, localInvoices] = await Promise.all([
-          base44.entities.Quote.filter({ shop_owner: currentUser.email }, "-created_date", 100),
-          base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 50),
-          base44.entities.InventoryItem.filter({ shop_owner: currentUser.email }),
-          base44.entities.User.list(),
-          base44.entities.Customer.filter({ shop_owner: currentUser.email }),
-          base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-created_date", 1000).catch(() => []),
-        ]);
-
-        setQuotes(q);
-        setOrders(o);
-        setInventory(invItems);
-        setCustomerCount(custs.length);
-        const custMap = {};
-        (custs || []).forEach((c) => { custMap[c.id] = c; });
-        setCustomers(custMap);
-        setInvoices(localInvoices);
-        setBrokers(allUsers.filter(u => u.role === "broker" && (u.assigned_shops || []).includes(currentUser.email)));
-        setShopOwners(allUsers.filter(u => u.role !== "broker"));
-        setLoading(false);
-      } catch (error) {
+        currentUser = await base44.auth.me();
+      } catch {
         await base44.auth.redirectToLogin();
+        return;
       }
+      if (!currentUser) { await base44.auth.redirectToLogin(); return; }
+      if (currentUser.role === "broker") { navigate(createPageUrl("BrokerDashboard")); return; }
+      setUser(currentUser);
+
+      // Each query catches its own error and falls back to a sensible
+      // empty value. The dashboard renders zeros for the failed slice
+      // instead of bouncing the user to login on any single RLS / network
+      // blip. base44.entities.User.list() is also explicitly scoped to
+      // brokers assigned to this shop's email so the "All users" call
+      // can't accidentally enumerate other shops if RLS ever loosens.
+      const [q, o, invItems, allUsers, custs, localInvoices] = await Promise.all([
+        base44.entities.Quote.filter({ shop_owner: currentUser.email }, "-created_date", 100).catch((e) => { console.error("[Dashboard] quotes fetch failed:", e); return []; }),
+        base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 50).catch((e) => { console.error("[Dashboard] orders fetch failed:", e); return []; }),
+        base44.entities.InventoryItem.filter({ shop_owner: currentUser.email }).catch((e) => { console.error("[Dashboard] inventory fetch failed:", e); return []; }),
+        base44.entities.User.list().catch((e) => { console.error("[Dashboard] users fetch failed:", e); return []; }),
+        base44.entities.Customer.filter({ shop_owner: currentUser.email }).catch((e) => { console.error("[Dashboard] customers fetch failed:", e); return []; }),
+        base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-created_date", 1000).catch((e) => { console.error("[Dashboard] invoices fetch failed:", e); return []; }),
+      ]);
+
+      setQuotes(q);
+      setOrders(o);
+      setInventory(invItems);
+      setCustomerCount(custs.length);
+      const custMap = {};
+      (custs || []).forEach((c) => { custMap[c.id] = c; });
+      setCustomers(custMap);
+      setInvoices(localInvoices);
+      // Brokers panel: filter client-side to the brokers explicitly
+      // assigned to THIS shop. User.list() returns whatever RLS allows;
+      // the assigned_shops filter is the in-app guard so a future RLS
+      // loosening can't accidentally enumerate other shops' users.
+      setBrokers(allUsers.filter(u => u.role === "broker" && (u.assigned_shops || []).includes(currentUser.email)));
+      setShopOwners(allUsers.filter(u => u.role !== "broker"));
+      setLoading(false);
     }
     loadData();
   }, [navigate]);

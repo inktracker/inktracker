@@ -85,7 +85,16 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     try {
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email: email.trim(),
-        options: { emailRedirectTo: `${window.location.origin}/` },
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+          // Magic-link is for sign-IN only. Without shouldCreateUser:false,
+          // Supabase silently creates a new auth row for any email that
+          // isn't already confirmed — including ones that were partially
+          // signed up via password but never confirmed. That duplicate row
+          // breaks the subsequent password-set / confirm flow because the
+          // original signup's confirm link points at a now-orphaned row.
+          shouldCreateUser: false,
+        },
       });
       if (otpErr) throw otpErr;
       setSuccess(`Check ${email.trim()} for a sign-in link. It works even if you haven't set a password.`);

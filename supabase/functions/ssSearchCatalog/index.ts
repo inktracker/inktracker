@@ -1,4 +1,12 @@
 // S&S Activewear catalog search — Supabase Edge Function
+//
+// Auth required: the function uses the platform's master S&S credentials,
+// and unauthenticated access was previously allowing anyone with the URL
+// to drain the shop's S&S API quota. Frontend callers (Catalog page) all
+// have an authenticated session via supabase.functions.invoke(), so the
+// auth gate doesn't break legitimate use.
+
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
 const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
@@ -67,7 +75,21 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const { query, category, brand, limit = 48, page = 1 } = await req.json();
+    const body = await req.json();
+    const { query, category, brand, limit = 48, page = 1, accessToken } = body;
+
+    // Auth required — see header comment.
+    const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || accessToken;
+    if (!authHeader) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+    }
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: `Bearer ${authHeader}` } },
+    });
+    const { data: { user } } = await supabase.auth.getUser(authHeader);
+    if (!user) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+    }
 
     const params = new URLSearchParams();
     if (query) params.set("terms", query);

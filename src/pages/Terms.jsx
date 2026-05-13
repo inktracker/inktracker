@@ -3,13 +3,14 @@ export default function Terms() {
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-6">
         <h1 className="text-3xl font-bold text-slate-900">Terms of Service</h1>
-        <p className="text-sm text-slate-500">Last updated: May 1, 2026</p>
+        <p className="text-sm text-slate-500">Last updated: May 13, 2026</p>
 
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">1. Acceptance of Terms</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
             By using InkTracker, you agree to these Terms of Service. If you do not agree, do not
-            use the application.
+            use the application. InkTracker is operated by Biota MFG, a business based in Reno,
+            Nevada, USA. These Terms are governed by the laws of the State of Nevada.
           </p>
         </section>
 
