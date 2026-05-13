@@ -2,8 +2,10 @@ import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
+import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
+import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
@@ -40,6 +42,7 @@ export default function Orders() {
   const [filter, setFilter] = useState(initialFilter);
   const [viewing, setViewing] = useState(null);
   const [user, setUser] = useState(null);
+  const [viewingInvoice, setViewingInvoice] = useState(null);
   const [advFilters, setAdvFilters] = useState(initialCustomer ? { customer: initialCustomer } : {});
   const [originFilter, setOriginFilter] = useState("All");
   const [sortKey, setSortKey] = useState("due_date");
@@ -154,42 +157,48 @@ export default function Orders() {
   }
 
   async function handleComplete(order) {
+    // Uses the same pure helper + pre-fetch pattern as Production.jsx
+    // so completion is duplicate-proof. The BrokerFile branch
+    // (PDF attachment for broker orders) isn't in the helper because
+    // it's optional and Orders-specific — kept inline below.
     const today = new Date().toISOString().split("T")[0];
-    const inv_id = `INV-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
-    await base44.entities.Invoice.create({
-      invoice_id: inv_id,
-      shop_owner: user.email,
-      order_id: order.order_id,
-      customer_id: order.customer_id,
-      customer_name: order.customer_name,
-      broker_id: order.broker_id || null,
-      broker_name: order.broker_name || null,
-      date: today,
-      due: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      subtotal: order.subtotal || 0,
-      tax: order.tax || 0,
-      total: order.total || 0,
-      paid: false,
-      status: "Sent",
-      line_items: order.line_items || [],
-      notes: order.notes || "",
-      rush_rate: order.rush_rate || 0,
-      extras: order.extras || {},
-      discount: order.discount || 0,
-      discount_type: order.discount_type || "percent",
-      tax_rate: order.tax_rate || 0,
-    });
 
-    if (order.broker_id) {
-      await base44.entities.BrokerPerformance.create({
-        broker_id: order.broker_id,
+    let existingInvoice = null;
+    try {
+      const byOrderId = await base44.entities.Invoice.filter({
         shop_owner: user.email,
         order_id: order.order_id,
-        customer_name: order.customer_name,
-        date: today,
-        total: order.total || 0,
       });
+      if (byOrderId.length > 0) {
+        existingInvoice = byOrderId[0];
+      } else if (order.quote_id) {
+        const byQuoteId = await base44.entities.Invoice.filter({
+          shop_owner: user.email,
+          invoice_id: order.quote_id,
+        });
+        if (byQuoteId.length > 0) existingInvoice = byQuoteId[0];
+      }
+    } catch (err) {
+      console.error("[handleComplete] failed to look up existing invoice:", err);
+    }
 
+    const plan = buildOrderCompletionPlan(order, {
+      today,
+      shopOwner: user.email,
+      existingInvoice,
+    });
+
+    if (plan.invoiceLink) {
+      await base44.entities.Invoice.update(plan.invoiceLink.id, plan.invoiceLink.patch);
+    } else if (plan.invoiceCreate) {
+      await base44.entities.Invoice.create(plan.invoiceCreate);
+    }
+
+    if (plan.brokerPerformanceCreate) {
+      await base44.entities.BrokerPerformance.create(plan.brokerPerformanceCreate);
+
+      // BrokerFile attachment — only fires when the order has a
+      // pdf_url already on it. Independent of the invoice path.
       if (order.pdf_url) {
         await base44.entities.BrokerFile.create({
           broker_id: order.broker_id,
@@ -201,22 +210,8 @@ export default function Orders() {
         });
       }
     }
-
-    await base44.entities.ShopPerformance.create({
-      shop_owner: user.email,
-      order_id: order.order_id,
-      customer_name: order.customer_name,
-      customer_id: order.customer_id || "",
-      broker_id: order.broker_id || "",
-      date: today,
-      total: order.total || 0,
-      status: "Completed",
-    });
-
-    const updated = await base44.entities.Order.update(order.id, {
-      status: "Completed",
-      completed_date: today,
-    });
+    await base44.entities.ShopPerformance.create(plan.shopPerformanceCreate);
+    const updated = await base44.entities.Order.update(plan.orderUpdate.id, plan.orderUpdate.patch);
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(null);
   }
@@ -398,6 +393,17 @@ export default function Orders() {
           onComplete={handleComplete}
           onDelete={handleDelete}
           onTogglePaid={handleTogglePaid}
+          onShowInvoice={(invoice) => setViewingInvoice(invoice)}
+        />
+      )}
+
+      {viewingInvoice && (
+        <InvoiceDetailModal
+          invoice={viewingInvoice}
+          customer={null}
+          onClose={() => setViewingInvoice(null)}
+          onMarkPaid={() => {}}
+          onDelete={() => {}}
         />
       )}
     </div>

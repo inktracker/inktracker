@@ -128,6 +128,11 @@ export default function OrderDetailModal({
   onRevert,
   onTogglePaid,
   onOrderFromSS,
+  // Called when the user clicks "Preview Invoice" for the already-
+  // invoiced order. Receives the invoice row. The parent (Production /
+  // Orders / Invoices / Calendar page) handles the modal display so we
+  // avoid a circular import with InvoiceDetailModal.
+  onShowInvoice,
 }) {
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -148,6 +153,10 @@ export default function OrderDetailModal({
   const [costSaved, setCostSaved] = useState(false);
   const [floorMode, setFloorMode] = useState(false);
   const [liveOrder, setLiveOrder] = useState(order);
+  // Existing invoice for this order/quote, if any. Drives whether the
+  // action bar shows "Create Invoice" vs "Preview Invoice" + the
+  // optional "View in QB" link. Fetched once on mount.
+  const [relatedInvoice, setRelatedInvoice] = useState(null);
 
   // Shipping
   const [showShipping, setShowShipping] = useState(false);
@@ -401,6 +410,46 @@ export default function OrderDetailModal({
       })
       .catch(() => {});
   }, []);
+
+  // Look up any existing invoice for this order (or its source
+  // quote) so the action bar can show "Preview Invoice" instead of
+  // "Create Invoice" when an invoice already exists. Two match
+  // paths:
+  //   1. order_id match — invoice was created via this order's
+  //      handleComplete on a prior visit
+  //   2. invoice_id = order.quote_id — invoice was created via
+  //      SendQuoteModal pushing the quote to QB (then synced back
+  //      via handlePullInvoices, which uses the QB DocNumber —
+  //      typically the quote_id — as the invoice_id)
+  useEffect(() => {
+    if (!order?.shop_owner) { setRelatedInvoice(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const byOrderId = await base44.entities.Invoice.filter({
+          shop_owner: order.shop_owner,
+          order_id: order.order_id,
+        });
+        if (cancelled) return;
+        if (byOrderId.length > 0) { setRelatedInvoice(byOrderId[0]); return; }
+        if (order.quote_id) {
+          const byQuoteId = await base44.entities.Invoice.filter({
+            shop_owner: order.shop_owner,
+            invoice_id: order.quote_id,
+          });
+          if (cancelled) return;
+          if (byQuoteId.length > 0) { setRelatedInvoice(byQuoteId[0]); return; }
+        }
+        setRelatedInvoice(null);
+      } catch (err) {
+        if (!cancelled) {
+          console.error("[OrderDetailModal] related-invoice lookup failed:", err);
+          setRelatedInvoice(null);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [order?.id, order?.order_id, order?.quote_id, order?.shop_owner]);
 
   const isBrokerOrder = Boolean(order?.broker_id || order?.broker_email || order?.brokerId);
   const displayClient = isBrokerOrder
@@ -1363,13 +1412,47 @@ export default function OrderDetailModal({
                 {saving ? "Saving…" : `${order.status} Complete →`}
               </button>
             )}
-            {order.status === "Completed" && onComplete && (
+            {/* Invoice action — three states:
+                  1. Order Completed + invoice exists → "Preview Invoice" (opens InvoiceDetailModal via parent)
+                  2. Order Completed + no invoice    → "Create Invoice" (calls onComplete)
+                  3. Order Completed + invoice has qb_invoice_id → also show "View in QB" link
+                The "Create" path was previously labeled "Convert to Invoice" and
+                ran on every click — Joe found that this duplicated invoices when
+                a quote had already been invoiced via the Send-Quote-via-QB flow.
+                The dedup guard is enforced at three layers now:
+                  - This UI gate (no Create button when invoice exists)
+                  - handleComplete's pre-fetch + buildOrderCompletionPlan
+                  - DB unique index on (shop_owner, order_id) in
+                    20260519_invoices_no_duplicates.sql */}
+            {order.status === "Completed" && relatedInvoice && (
+              <>
+                {onShowInvoice && (
+                  <button
+                    onClick={() => onShowInvoice(relatedInvoice)}
+                    className="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition"
+                  >
+                    Preview Invoice
+                  </button>
+                )}
+                {relatedInvoice.qb_invoice_id && (
+                  <a
+                    href={`https://qbo.intuit.com/app/invoice?txnId=${encodeURIComponent(relatedInvoice.qb_invoice_id)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] rounded-xl hover:bg-[#2CA01C]/5 transition"
+                  >
+                    View in QB
+                  </a>
+                )}
+              </>
+            )}
+            {order.status === "Completed" && !relatedInvoice && onComplete && (
               <button
                 onClick={() => callAction(onComplete, order).then(onClose)}
                 disabled={saving}
                 className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50"
               >
-                {saving ? "Saving…" : "Convert to Invoice"}
+                {saving ? "Saving…" : "Create Invoice"}
               </button>
             )}
             {onTogglePaid && (

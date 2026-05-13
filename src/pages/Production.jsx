@@ -4,6 +4,7 @@ import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJo
 import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
+import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import SSOrderModal from "../components/orders/SSOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
@@ -115,6 +116,9 @@ export default function Production() {
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState(null);
   const [ssOrderTarget, setSsOrderTarget] = useState(null);
+  // Nested invoice preview when the user clicks "Preview Invoice"
+  // on the OrderDetailModal for an already-invoiced order.
+  const [viewingInvoice, setViewingInvoice] = useState(null);
   const [viewMode, setViewMode] = useState("calendar");
   const [filter, setFilter] = useState("All");
   const [originFilter, setOriginFilter] = useState("All");
@@ -352,20 +356,57 @@ export default function Production() {
   }
 
   async function handleComplete(order) {
-    // Completion = transition, never destruction. The old code
-    // called Order.delete() here, which orphaned every invoice's
-    // order_id reference. Now we transition the order to status
-    // 'Completed' and rely on the (active) filter in the kanban
-    // view to drop it off the board. The DB trigger
-    // refuse_completed_order_delete (20260516_preserve_completed_orders.sql)
-    // is the platform-level guarantee that completed orders can
-    // never be wiped.
+    // Completion = transition, never destruction. (20260516 trigger
+    // refuses DELETE on Completed orders — that's the platform-level
+    // backstop.)
+    //
+    // Pre-fetch any existing invoice for this job to prevent the
+    // duplicate Joe hit on 2026-05-12: SendQuoteModal had already
+    // pushed the quote to QB and pulled an invoice row back
+    // (invoice_id = quote_id), and this handler was about to create
+    // a SECOND row. Now we link the existing invoice to the order
+    // instead of duplicating.
+    //
+    // Match by either invoice_id = order.quote_id (Send-Quote path)
+    // OR order_id = order.order_id (a previous in-flight completion
+    // that landed an INV-* row).
     const td = new Date().toISOString().split("T")[0];
+
+    let existingInvoice = null;
+    try {
+      const byOrderId = await base44.entities.Invoice.filter({
+        shop_owner: user.email,
+        order_id: order.order_id,
+      });
+      if (byOrderId.length > 0) {
+        existingInvoice = byOrderId[0];
+      } else if (order.quote_id) {
+        const byQuoteId = await base44.entities.Invoice.filter({
+          shop_owner: user.email,
+          invoice_id: order.quote_id,
+        });
+        if (byQuoteId.length > 0) existingInvoice = byQuoteId[0];
+      }
+    } catch (err) {
+      console.error("[handleComplete] failed to look up existing invoice:", err);
+      // Continue without — the DB unique index from
+      // 20260519_invoices_no_duplicates.sql is the last-line backstop
+      // and will refuse a duplicate insert.
+    }
+
     const plan = buildOrderCompletionPlan(order, {
       today: td,
       shopOwner: user.email,
+      existingInvoice,
     });
-    await base44.entities.Invoice.create(plan.invoiceCreate);
+
+    if (plan.invoiceLink) {
+      // Existing invoice — link to this order, don't create a new row.
+      await base44.entities.Invoice.update(plan.invoiceLink.id, plan.invoiceLink.patch);
+    } else if (plan.invoiceCreate) {
+      await base44.entities.Invoice.create(plan.invoiceCreate);
+    }
+
     if (plan.brokerPerformanceCreate) {
       await base44.entities.BrokerPerformance.create(plan.brokerPerformanceCreate);
     }
@@ -1035,6 +1076,17 @@ export default function Production() {
           onDelete={handleDelete}
           onTogglePaid={handleTogglePaid}
           onOrderFromSS={(order) => { setViewing(null); setSsOrderTarget(order); }}
+          onShowInvoice={(invoice) => setViewingInvoice(invoice)}
+        />
+      )}
+
+      {viewingInvoice && (
+        <InvoiceDetailModal
+          invoice={viewingInvoice}
+          customer={null}
+          onClose={() => setViewingInvoice(null)}
+          onMarkPaid={() => {}}
+          onDelete={() => {}}
         />
       )}
 

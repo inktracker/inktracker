@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { O_STATUSES } from "../components/shared/pricing";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
+import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 
@@ -52,6 +53,7 @@ export default function Calendar() {
   const [customers, setCustomers] = useState({});
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState(null);
+  const [viewingInvoice, setViewingInvoice] = useState(null);
   const [view, setView] = useState("month");
   const [dragOverDate, setDragOverDate] = useState(null);
   const [user, setUser] = useState(null);
@@ -403,6 +405,17 @@ export default function Calendar() {
           onComplete={handleComplete}
           onDelete={handleDelete}
           onTogglePaid={handleTogglePaid}
+          onShowInvoice={(invoice) => setViewingInvoice(invoice)}
+        />
+      )}
+
+      {viewingInvoice && (
+        <InvoiceDetailModal
+          invoice={viewingInvoice}
+          customer={null}
+          onClose={() => setViewingInvoice(null)}
+          onMarkPaid={() => {}}
+          onDelete={() => {}}
         />
       )}
     </div>
