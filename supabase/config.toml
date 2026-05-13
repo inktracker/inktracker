@@ -16,6 +16,18 @@ verify_jwt = false
 [functions.ssPlaceOrder]
 verify_jwt = false
 
+[functions.acLookupStyle]
+verify_jwt = false
+
+[functions.acSearchCatalog]
+verify_jwt = false
+
+[functions.acGetInventory]
+verify_jwt = false
+
+[functions.acGetPriceList]
+verify_jwt = false
+
 [functions.qbOAuthCallback]
 verify_jwt = false
 
