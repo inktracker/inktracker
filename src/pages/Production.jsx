@@ -387,6 +387,24 @@ export default function Production() {
         });
         if (byQuoteId.length > 0) existingInvoice = byQuoteId[0];
       }
+      // Third fallback: orders converted before PR#45 lack order.quote_id.
+      // Walk Quote.converted_order_id → quote_id to recover the link.
+      // Works for broker quotes (always preserved) and for any future
+      // quote conversion once PR#45 is in.
+      if (!existingInvoice) {
+        const originatingQuotes = await base44.entities.Quote.filter({
+          shop_owner: user.email,
+          converted_order_id: order.order_id,
+        });
+        const qId = originatingQuotes?.[0]?.quote_id;
+        if (qId) {
+          const byReversedQuoteId = await base44.entities.Invoice.filter({
+            shop_owner: user.email,
+            invoice_id: qId,
+          });
+          if (byReversedQuoteId.length > 0) existingInvoice = byReversedQuoteId[0];
+        }
+      }
     } catch (err) {
       console.error("[handleComplete] failed to look up existing invoice:", err);
       // Continue without — the DB unique index from
