@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
 import { O_STATUSES } from "../components/shared/pricing";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
@@ -7,13 +8,20 @@ import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import EmptyState from "../components/shared/EmptyState";
 
-// Calendar status colors. Mirrors O_STATUSES — 5 stages.
+// Calendar status colors. Mirrors O_STATUSES — 5 stages — plus the
+// pre-order quote lifecycle chips (Quote Sent, Quote Approved). Keep this
+// list in sync with the identical map in src/pages/Production.jsx (the
+// calendar view inside the Production page renders the same chips).
 const STATUS_COLORS = {
+  // Quote lifecycle (before the order exists)
+  "Quote Sent":     "bg-violet-50 border-violet-300 text-violet-700",
+  "Quote Approved": "bg-green-50 border-green-300 text-green-700",
+  // Production pipeline
   "Art Approval": "bg-slate-100 border-slate-300 text-slate-700",
   "Order Goods":  "bg-orange-50 border-orange-300 text-orange-800",
   "Pre-Press":    "bg-yellow-50 border-yellow-300 text-yellow-800",
   "Printing":     "bg-blue-50 border-blue-300 text-blue-800",
-  "Completed":    "bg-teal-50 border-teal-300 text-teal-700",
+  "Completed":    "bg-emerald-100 border-emerald-400 text-emerald-800 font-semibold",
 };
 
 function getDaysInMonth(year, month) {
@@ -47,6 +55,7 @@ function getCompanyName(order, customers) {
 }
 
 export default function Calendar() {
+  const navigate = useNavigate();
   const today = todayStr();
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth());
@@ -59,19 +68,26 @@ export default function Calendar() {
   const [dragOverDate, setDragOverDate] = useState(null);
   const [user, setUser] = useState(null);
   const [expandedDates, setExpandedDates] = useState({});
+  // All quotes for the shop. Drives Quote Sent / Quote Approved chips —
+  // independent of whether the quote has been converted to an order.
+  const [quotes, setQuotes] = useState([]);
 
   useEffect(() => {
     async function load() {
       const u = await base44.auth.me();
       setUser(u);
-      const [o, c] = await Promise.all([
+      const [o, c, q] = await Promise.all([
         base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
         base44.entities.Customer.filter({ shop_owner: u.email }),
+        // All quotes — surfaces "Quote Sent" / "Quote Approved" chips even
+        // before a quote is converted to an order.
+        base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 500).catch(() => []),
       ]);
       setOrders(o || []);
       const map = {};
       (c || []).forEach((cust) => (map[cust.id] = cust));
       setCustomers(map);
+      setQuotes(q || []);
       setLoading(false);
     }
     load();
@@ -94,13 +110,32 @@ export default function Calendar() {
         if (!map[o.date]) map[o.date] = [];
         map[o.date].push({ order: o, step: "Order Goods", isDue: false });
       }
-      if (o.due_date) {
+      // Completed orders don't get a red "Due" chip — the job is done, the
+      // due date is no longer a thing the shop owner needs flagged.
+      if (o.due_date && o.status !== "Completed") {
         if (!map[o.due_date]) map[o.due_date] = [];
         map[o.due_date].push({ order: o, step: "Due", isDue: true });
       }
+
     });
+
+    // Quote lifecycle chips — pushed directly from quote rows. A quote
+    // that's been sent but not yet converted to an order still shows up.
+    quotes.forEach((q) => {
+      if (q.sent_date) {
+        const d = String(q.sent_date).slice(0, 10);
+        if (!map[d]) map[d] = [];
+        map[d].push({ kind: "quote", quote: q, step: "Quote Sent", isDue: false });
+      }
+      if (q.client_approved_at) {
+        const d = String(q.client_approved_at).slice(0, 10);
+        if (!map[d]) map[d] = [];
+        map[d].push({ kind: "quote", quote: q, step: "Quote Approved", isDue: false });
+      }
+    });
+
     return map;
-  }, [orders]);
+  }, [orders, quotes]);
 
   // Printing events as point events (single date)
   const printingEvents = useMemo(() => {
@@ -288,6 +323,25 @@ export default function Calendar() {
         </div>
       )}
 
+      {/* Chip legend — quick visual key. Mirror of Production.jsx legend. */}
+      {!loading && view === "month" && (
+        <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[10px] font-semibold">
+          {[
+            { label: "Quote Sent",     cls: STATUS_COLORS["Quote Sent"] },
+            { label: "Quote Approved", cls: STATUS_COLORS["Quote Approved"] },
+            { label: "Order Goods",    cls: STATUS_COLORS["Order Goods"] },
+            { label: "Pre-Press",      cls: STATUS_COLORS["Pre-Press"] },
+            { label: "Printing",       cls: STATUS_COLORS["Printing"] },
+            { label: "Due",            cls: "bg-rose-50 border-rose-300 text-rose-700" },
+            { label: "Completed",      cls: STATUS_COLORS["Completed"] },
+          ].map((item) => (
+            <span key={item.label} className={`px-1.5 py-0.5 rounded border ${item.cls}`}>
+              {item.label}
+            </span>
+          ))}
+        </div>
+      )}
+
       {loading ? (
         <div className="py-20 text-center text-slate-300 text-sm">Loading…</div>
       ) : view === "month" ? (
@@ -326,23 +380,41 @@ export default function Calendar() {
                              {day}
                            </div>
                            <div className="flex flex-col gap-1 flex-1 overflow-y-auto">
-                             {allEvents.map((ev, idx) => (
-                               <div
-                                 key={`${ev.order.id}-${ev.step}-${idx}`}
-                                 draggable
-                                 onDragStart={(e) => handleDragStart(e, ev.order)}
-                                 onClick={() => setViewing(ev.order)}
-                                 className={`w-full text-[10px] font-semibold px-1.5 py-0.5 rounded border cursor-grab active:cursor-grabbing whitespace-nowrap overflow-hidden text-ellipsis ${
-                                   ev.isDue
-                                     ? "bg-rose-50 border-rose-300 text-rose-700"
-                                     : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 text-slate-600"
-                                 }`}
-                                 title={`${companyName(ev.order)} — ${ev.step}`}
-                               >
-                                 {companyName(ev.order)}
-                                 <span className="opacity-60 ml-1">· {ev.step}</span>
-                               </div>
-                             ))}
+                             {allEvents.map((ev, idx) => {
+                               // Quote-kind events click through to /Quotes
+                               // (a quote may not have an order yet). Order
+                               // events open the OrderDetailModal inline.
+                               // Order chips for a Completed order render
+                               // emerald (label preserved); quote chips
+                               // keep their own color.
+                               const isQuoteEvent = ev.kind === "quote";
+                               const subject = isQuoteEvent ? ev.quote : ev.order;
+                               const subjectName = isQuoteEvent
+                                 ? (ev.quote.customer_name || "—")
+                                 : companyName(ev.order);
+                               const isCompleted = !isQuoteEvent && ev.order?.status === "Completed";
+                               const chipClass = isCompleted
+                                 ? STATUS_COLORS["Completed"]
+                                 : ev.isDue
+                                   ? "bg-rose-50 border-rose-300 text-rose-700"
+                                   : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 text-slate-600";
+                               return (
+                                 <div
+                                   key={`${subject.id}-${ev.step}-${idx}`}
+                                   draggable={!isQuoteEvent}
+                                   onDragStart={isQuoteEvent ? undefined : (e) => handleDragStart(e, ev.order)}
+                                   onClick={() => {
+                                     if (isQuoteEvent) navigate(`/Quotes?id=${ev.quote.id}`);
+                                     else setViewing(ev.order);
+                                   }}
+                                   className={`w-full text-[10px] font-semibold px-1.5 py-0.5 rounded border ${isQuoteEvent ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} whitespace-nowrap overflow-hidden text-ellipsis ${chipClass}`}
+                                   title={`${subjectName} — ${ev.step}`}
+                                 >
+                                   {subjectName}
+                                   <span className="opacity-60 ml-1">· {ev.step}</span>
+                                 </div>
+                               );
+                             })}
                            </div>
                          </div>
                       );

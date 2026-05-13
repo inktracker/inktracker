@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle, sortSizeEntries } from "../components/shared/pricing";
 import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
@@ -47,11 +48,16 @@ const FLOOR_COLORS = {
 };
 
 const STATUS_COLORS = {
+  // Quote lifecycle (visually distinct from production steps — these come
+  // BEFORE the order exists, so a different color family for fast scanning).
+  "Quote Sent":     "bg-violet-50 border-violet-300 text-violet-700",
+  "Quote Approved": "bg-green-50 border-green-300 text-green-700",
+  // Production pipeline
   "Art Approval": "bg-slate-100 border-slate-300 text-slate-700",
   "Order Goods":  "bg-amber-50 border-amber-300 text-amber-800",
   "Pre-Press":    "bg-yellow-50 border-yellow-300 text-yellow-800",
   "Printing":     "bg-blue-50 border-blue-300 text-blue-800",
-  "Completed":    "bg-teal-50 border-teal-300 text-teal-700",
+  "Completed":    "bg-emerald-100 border-emerald-400 text-emerald-800 font-semibold",
 };
 
 function getOrderArtworkCount(order) {
@@ -108,11 +114,18 @@ function getCompanyName(order, customers) {
 }
 
 export default function Production() {
+  const navigate = useNavigate();
   const today = todayStr();
   const [year, setYear] = useState(() => nowLocal().year);
   const [month, setMonth] = useState(() => nowLocal().month);
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState({});
+  // All quotes for the shop (most recent 500). Used to build "Quote Sent"
+  // and "Quote Approved" chips on the calendar — these are independent of
+  // whether the quote has been converted to an order yet. A freshly-sent
+  // quote appears as a violet chip on its sent_date even before there's an
+  // order.
+  const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState(null);
   const [ssOrderTarget, setSsOrderTarget] = useState(null);
@@ -139,14 +152,18 @@ export default function Production() {
       try {
         const u = await base44.auth.me();
         setUser(u);
-        const [o, c] = await Promise.all([
+        const [o, c, q] = await Promise.all([
           base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
           base44.entities.Customer.filter({ shop_owner: u.email }),
+          // All quotes — independent of conversion status. Lets a sent or
+          // approved quote appear on the calendar before there's an order.
+          base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 500).catch(() => []),
         ]);
         setOrders(o || []);
         const map = {};
         (c || []).forEach((cust) => (map[cust.id] = cust));
         setCustomers(map);
+        setQuotes(q || []);
       } catch (err) {
         console.error("Production load failed:", err);
       } finally {
@@ -263,13 +280,32 @@ export default function Production() {
         if (!map[o.date]) map[o.date] = [];
         map[o.date].push({ order: o, step: "Order Goods", isDue: false });
       }
-      if (o.due_date) {
+      // Completed orders don't get a red "Due" chip — the job is done.
+      if (o.due_date && o.status !== "Completed") {
         if (!map[o.due_date]) map[o.due_date] = [];
         map[o.due_date].push({ order: o, step: "Due", isDue: true });
       }
+
     });
+
+    // Quote lifecycle chips — pushed directly from quote rows, not joined
+    // via order. A quote that's been sent but not converted still shows up.
+    // Date strings normalized to YYYY-MM-DD (client_approved_at is full ISO).
+    quotes.forEach((q) => {
+      if (q.sent_date) {
+        const d = String(q.sent_date).slice(0, 10);
+        if (!map[d]) map[d] = [];
+        map[d].push({ kind: "quote", quote: q, step: "Quote Sent", isDue: false });
+      }
+      if (q.client_approved_at) {
+        const d = String(q.client_approved_at).slice(0, 10);
+        if (!map[d]) map[d] = [];
+        map[d].push({ kind: "quote", quote: q, step: "Quote Approved", isDue: false });
+      }
+    });
+
     return map;
-  }, [orders]);
+  }, [orders, quotes]);
 
   const allActiveOrders = useMemo(() => {
     const active = orders.filter((o) => o.status !== "Completed");
@@ -698,6 +734,25 @@ export default function Production() {
             <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 ml-2">{MONTH_NAMES[month]} {year}</h3>
           </div>
 
+          {/* Chip legend — quick visual key so users can decode colors without
+              hovering for tooltips. Grouped: quote lifecycle first, then
+              production pipeline, then due/complete. */}
+          <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[10px] font-semibold">
+            {[
+              { label: "Quote Sent",     cls: STATUS_COLORS["Quote Sent"] },
+              { label: "Quote Approved", cls: STATUS_COLORS["Quote Approved"] },
+              { label: "Order Goods",    cls: STATUS_COLORS["Order Goods"] },
+              { label: "Pre-Press",      cls: STATUS_COLORS["Pre-Press"] },
+              { label: "Printing",       cls: STATUS_COLORS["Printing"] },
+              { label: "Due",            cls: "bg-rose-50 border-rose-300 text-rose-700" },
+              { label: "Completed",      cls: STATUS_COLORS["Completed"] },
+            ].map((item) => (
+              <span key={item.label} className={`px-1.5 py-0.5 rounded border ${item.cls}`}>
+                {item.label}
+              </span>
+            ))}
+          </div>
+
           {loading ? (
             <div className="py-20 text-center text-slate-300 text-sm">Loading…</div>
           ) : (
@@ -732,27 +787,55 @@ export default function Production() {
                                 {day}
                               </div>
                               <div className="space-y-0.5 flex-1 overflow-hidden">
-                                {events.slice(0, 4).map((ev, idx) => (
-                                  <div
-                                    key={`${ev.order.id}-${ev.step}-${idx}`}
-                                    draggable
-                                    onDragStart={(e) => {
-                                      e.dataTransfer.effectAllowed = "move";
-                                      e.dataTransfer.setData("orderId", ev.order.id);
-                                      e.dataTransfer.setData("step", ev.step);
-                                    }}
-                                    onClick={(e) => { e.stopPropagation(); setViewing(ev.order); }}
-                                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border cursor-grab truncate ${
-                                      ev.isDue
-                                        ? "bg-rose-50 border-rose-300 text-rose-700"
-                                        : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 dark:border-slate-700 text-slate-600"
-                                    }`}
-                                    title={`${companyName(ev.order)} — ${ev.step}`}
-                                  >
-                                    {companyName(ev.order)}
-                                    <span className="opacity-60 ml-1">· {ev.step}</span>
-                                  </div>
-                                ))}
+                                {events.slice(0, 4).map((ev, idx) => {
+                                  // Once an order is Completed, all of its chips
+                                  // render in emerald. Step label is preserved so
+                                  // the user still sees which step was plotted
+                                  // (e.g. "Pre-Press" in green = "this step was
+                                  // scheduled and the whole order is now done").
+                                  // Quote chips are exempt — they're not order
+                                  // pipeline steps, they're history, so they
+                                  // keep their violet/green hue regardless.
+                                  // Quote-kind events click through to /Quotes
+                                  // (no order exists yet, or the user wants to
+                                  // see the source quote). Order-kind events
+                                  // open the OrderDetailModal inline.
+                                  const isQuoteEvent = ev.kind === "quote";
+                                  const subject = isQuoteEvent ? ev.quote : ev.order;
+                                  const subjectName = isQuoteEvent
+                                    ? (ev.quote.customer_name || "—")
+                                    : companyName(ev.order);
+                                  const isCompleted = !isQuoteEvent && ev.order?.status === "Completed";
+                                  const chipClass = isCompleted
+                                    ? STATUS_COLORS["Completed"]
+                                    : ev.isDue
+                                      ? "bg-rose-50 border-rose-300 text-rose-700"
+                                      : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 dark:border-slate-700 text-slate-600";
+                                  return (
+                                    <div
+                                      key={`${subject.id}-${ev.step}-${idx}`}
+                                      draggable={!isQuoteEvent}
+                                      onDragStart={isQuoteEvent ? undefined : (e) => {
+                                        e.dataTransfer.effectAllowed = "move";
+                                        e.dataTransfer.setData("orderId", ev.order.id);
+                                        e.dataTransfer.setData("step", ev.step);
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isQuoteEvent) {
+                                          navigate(`/Quotes?id=${ev.quote.id}`);
+                                        } else {
+                                          setViewing(ev.order);
+                                        }
+                                      }}
+                                      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${isQuoteEvent ? "cursor-pointer" : "cursor-grab"} truncate ${chipClass}`}
+                                      title={`${subjectName} — ${ev.step}`}
+                                    >
+                                      {subjectName}
+                                      <span className="opacity-60 ml-1">· {ev.step}</span>
+                                    </div>
+                                  );
+                                })}
                                 {events.length > 4 && (
                                   <div className="text-[10px] text-slate-400 font-semibold px-1">+{events.length - 4} more</div>
                                 )}
