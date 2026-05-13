@@ -688,7 +688,12 @@ export default function Account() {
           </div>
         </Section>
 
-        <Section icon={Link2} title="QuickBooks Integration">
+        {/* QuickBooks + Stripe Connect are financial-wiring surfaces —
+            disconnecting QB or re-routing Stripe payouts would affect the
+            whole shop. Same admin/shop gate as Billing & Plan above so a
+            manager (who has full operational access but "no billing/admin"
+            per CLAUDE.md) can't accidentally or maliciously break either. */}
+        {(user?.role === "admin" || user?.role === "shop") && <Section icon={Link2} title="QuickBooks Integration">
 
           {qbMessage && (
             <div className={`flex items-center gap-2 text-sm font-semibold py-2.5 px-4 rounded-xl mb-4 ${
@@ -815,9 +820,9 @@ export default function Account() {
               </p>
             </div>
           )}
-        </Section>
+        </Section>}
 
-        <Section icon={CreditCard} title="Stripe Payments">
+        {(user?.role === "admin" || user?.role === "shop") && <Section icon={CreditCard} title="Stripe Payments">
           {stripeMessage && (
             <div className={`flex items-center gap-2 text-sm font-semibold py-2.5 px-4 rounded-xl mb-4 ${
               stripeMessage.type === "success"
@@ -908,7 +913,7 @@ export default function Account() {
               </p>
             </div>
           )}
-        </Section>
+        </Section>}
 
         <Section icon={CreditCard} title="Pricing & Fees">
           <PricingConfigSection user={user} />
