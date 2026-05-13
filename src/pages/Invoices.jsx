@@ -27,9 +27,12 @@ export default function Invoices() {
   const [filter, setFilter] = useState("All");
   const [selected, setSelected] = useState(null);
   const [user, setUser] = useState(null);
-  const thisMonth = getThisMonth();
-  const [dateFrom, setDateFrom] = useState(initialCustomer ? "" : thisMonth.from);
-  const [dateTo, setDateTo] = useState(initialCustomer ? "" : thisMonth.to);
+  // Default to "All time" so new users with their first invoice
+  // (created any time before this calendar month) still see it in
+  // the list. The "This Month" preset is still available via the
+  // date-shortcut buttons below if they want it.
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [advFilters, setAdvFilters] = useState(initialCustomer ? { customer: initialCustomer } : {});
   const [qbOutstanding, setQbOutstanding] = useState(null);
   const [sortKey, setSortKey] = useState("date");
