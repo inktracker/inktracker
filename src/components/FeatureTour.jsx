@@ -109,6 +109,18 @@ export default function FeatureTour() {
   const [rect, setRect] = useState(null);
 
   useEffect(() => {
+    // `?tour=replay` query param forces the tour to run again even after
+    // someone's already dismissed it. Strip the param from the URL after
+    // reading it so a reload doesn't re-trigger forever.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tour") === "replay") {
+      localStorage.removeItem("inktracker-tour-seen");
+      params.delete("tour");
+      const cleaned = params.toString();
+      const newUrl = window.location.pathname + (cleaned ? `?${cleaned}` : "") + window.location.hash;
+      window.history.replaceState(null, "", newUrl);
+    }
+
     const seen = localStorage.getItem("inktracker-tour-seen");
     if (!seen) {
       // Small delay to let the Dashboard render first
