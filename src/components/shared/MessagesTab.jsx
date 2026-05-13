@@ -34,7 +34,31 @@ export default function MessagesTab({ threadId, currentUserEmail, replyContext }
 
     base44.entities.Message
       .filter({ thread_id: threadId }, "created_date", 200)
-      .then((msgs) => { if (alive) { setMessages(msgs); setLoading(false); } })
+      .then((msgs) => {
+        if (!alive) return;
+        // Auto-mark inbound messages as read when the thread is viewed.
+        // emailScanner inserts customer replies with read=false (correct
+        // — they're unread until the shop owner sees them). Without this
+        // step the "New" badge would stay forever because nothing else
+        // marks them read.
+        let unread = [];
+        if (currentUserEmail) {
+          unread = msgs.filter((m) =>
+            !m.read &&
+            (m.from_email || "").toLowerCase() !== currentUserEmail.toLowerCase(),
+          );
+          // Fire-and-forget — failure here just keeps the badge until next
+          // open, doesn't break the thread view.
+          unread.forEach((m) => {
+            base44.entities.Message.update(m.id, { read: true }).catch(() => null);
+          });
+        }
+        const merged = unread.length > 0
+          ? msgs.map((m) => unread.some((u) => u.id === m.id) ? { ...m, read: true } : m)
+          : msgs;
+        setMessages(merged);
+        setLoading(false);
+      })
       .catch(() => { if (alive) setLoading(false); });
 
     let unsub;
@@ -51,7 +75,7 @@ export default function MessagesTab({ threadId, currentUserEmail, replyContext }
       alive = false;
       try { unsub?.(); } catch {}
     };
-  }, [threadId]);
+  }, [threadId, currentUserEmail]);
 
   function appendLocally(row) {
     setMessages((prev) => [...prev, row]);
