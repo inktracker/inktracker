@@ -132,7 +132,16 @@ export default function Customers() {
 
   const currentEditingArtwork = editing ? artworkByCustomer[editing.id] || [] : [];
 
+  function canDelete() {
+    // Customer deletion is a destructive accounting-adjacent action — it
+    // orphans quote/order/invoice history if the dependent-count guard
+    // below misses anything (id+name combos). Shop-owner only, matching
+    // the gate Production/Orders/Calendar use for completion + delete.
+    return user?.role === "admin" || user?.role === "shop";
+  }
+
   async function handleDelete(id) {
+    if (!canDelete()) return;
     const customer = customers.find((c) => c.id === id);
     if (!customer) return;
 
@@ -215,15 +224,21 @@ export default function Customers() {
     if (!editing?.name?.trim()) return;
     setEditSaving(true);
     try {
-      const updated = await base44.entities.Customer.update(editing.id, {
-        ...editing,
-      });
+      // Strip server-managed and tenancy fields from the patch. RLS would
+      // refuse a shop_owner rewrite anyway, but spreading the whole row
+      // sends a write attempt and risks moving a customer to another shop
+      // if the policy ever loosens. Send only the editable surface.
+      const { id, created_date, updated_date, shop_owner, ...patch } = editing;
+      const updated = await base44.entities.Customer.update(editing.id, patch);
       setCustomers((prev) => prev.map((c) => (c.id === editing.id ? updated : c)));
       setEditing(updated);
       setEditSaved(true);
       setTimeout(() => setEditSaved(false), 2500);
       // Push to QB — if no qb_customer_id yet, creates it; otherwise idempotent.
       syncCustomerToQB(updated);
+    } catch (err) {
+      console.error("[Customers] save edit failed:", err);
+      alert("Couldn't save changes. Please try again.");
     } finally {
       setEditSaving(false);
     }
@@ -911,6 +926,10 @@ export default function Customers() {
           customers={customers}
           user={user}
           onMerge={async (primary, duplicates) => {
+            // Merge reassigns quotes/orders/invoices then deletes the dup
+            // row — same shop-owner-only gate as handleDelete. RLS blocks
+            // cross-shop writes; this is the in-app guard.
+            if (!canDelete()) return;
             let totalMoved = 0;
             for (const dup of duplicates) {
               // Also match by customer_name since some records might not have customer_id

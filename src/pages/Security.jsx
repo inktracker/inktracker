@@ -56,9 +56,9 @@ export default function Security() {
 
         <Section title="Authentication">
           <p>
-            We use Supabase Auth for sign-in. Passwords are hashed with bcrypt; we never see your
-            password. Email-based magic-link login is supported. Two-factor authentication is on our
-            roadmap.
+            We use Supabase Auth for sign-in. Passwords are hashed with industry-standard
+            password-hashing (currently scrypt); we never see your password. Email-based magic-link
+            login is supported. Two-factor authentication is on our roadmap.
           </p>
         </Section>
 

@@ -156,9 +156,13 @@ export default function Performance() {
           sub={dateRange === "all" ? "All time" : "Completed in range"}
           color="indigo"
         />
+        {/* The underlying ShopPerformance.total field is the order's
+            grand total — tax + rush + extras included. "Gross Sales" in
+            accounting usually means revenue before tax, so the label
+            was misleading. Renamed to make the inclusion explicit. */}
         <StatCard
           icon={DollarSign}
-          label="Gross Sales (period)"
+          label="Total Sales (incl. tax)"
           value={fmtMoney(grossSales)}
           sub={`${totalOrders} completed`}
           color="emerald"

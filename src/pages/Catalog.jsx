@@ -311,7 +311,7 @@ export default function Catalog() {
         <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
           <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
           <div>
-            <div className="text-sm font-semibold text-red-800">Could not reach S&S catalog</div>
+            <div className="text-sm font-semibold text-red-800">Could not reach {supplier} catalog</div>
             <div className="text-xs text-red-600 mt-0.5">{error}</div>
           </div>
         </div>
@@ -358,9 +358,13 @@ export default function Catalog() {
       {!loading && !hasSearched && (
         <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-3xl">
           <Search className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <div className="text-slate-500 font-semibold">Search the S&S catalog</div>
+          <div className="text-slate-500 font-semibold">Search the {supplier} catalog</div>
           <div className="text-sm text-slate-400 mt-1">
-            Enter a style number (e.g. <span className="font-mono">5000</span>, <span className="font-mono">PC61</span>), brand, or pick a category above
+            {supplier === SUPPLIERS.AC ? (
+              <>Enter a style number (e.g. <span className="font-mono">5026</span>, <span className="font-mono">4101</span>), brand, or pick a category above</>
+            ) : (
+              <>Enter a style number (e.g. <span className="font-mono">5000</span>, <span className="font-mono">PC61</span>), brand, or pick a category above</>
+            )}
           </div>
         </div>
       )}
