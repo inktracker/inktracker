@@ -35,6 +35,28 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
 
   const [shopTemplate, setShopTemplate] = useState(null);
 
+  // ── Payment provider selection ──────────────────────────────────────
+  // "stripe" (default) — customer pays via Stripe Checkout on /quotepayment.
+  // "qb"               — customer pays via the QB-issued payment link. The
+  //                      shop must explicitly click "Create QB Invoice"
+  //                      before Send becomes enabled.
+  // The choice is implicit at the data layer: resolveCheckoutTarget picks
+  // QB iff quote.qb_payment_link is set. So on Stripe we clear that field;
+  // on QB we populate it via the Create Invoice button below.
+  const [paymentProvider, setPaymentProvider] = useState(
+    quote.qb_payment_link && quote.qb_invoice_id ? "qb" : "stripe"
+  );
+  const [qbConnected, setQbConnected] = useState(false);
+  const [qbInvoiceId, setQbInvoiceId] = useState(quote.qb_invoice_id ?? null);
+  const [qbPaymentLink, setQbPaymentLink] = useState(quote.qb_payment_link ?? null);
+  const [creatingQbInvoice, setCreatingQbInvoice] = useState(false);
+  const [qbError, setQbError] = useState("");
+
+  // ── Confirmation gate ───────────────────────────────────────────────
+  // Click "Send" → show "Send to {email}? Yes/No" → on Yes, actually fire.
+  // Prevents an accidental click from immediately emailing a customer.
+  const [confirming, setConfirming] = useState(false);
+
   useEffect(() => {
     let active = true;
 
@@ -61,8 +83,69 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       }).catch(() => {});
     }
 
+    // Check QB connection so we know whether to even show the QB option.
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "checkConnection", accessToken: session.access_token }),
+        });
+        const data = await res.json();
+        if (active) setQbConnected(!!data.connected);
+      } catch {
+        if (active) setQbConnected(false);
+      }
+    })();
+
     return () => { active = false; };
   }, [quote.shop_owner, quote.customer_id]);
+
+  // Push the quote to QuickBooks now — gives us a real qbPaymentLink the
+  // customer can pay with. Only fires when the user picks "QB" as the
+  // payment provider and clicks the explicit "Create QB Invoice" button.
+  // Send remains disabled until this succeeds.
+  async function handleCreateQbInvoice() {
+    setCreatingQbInvoice(true);
+    setQbError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in.");
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const customerPayload = customer ?? {
+        name: quote.customer_name || "",
+        email: quote.customer_email || "",
+        phone: "",
+        company: "",
+      };
+      const invoicePayload = buildQBInvoicePayload(
+        quote,
+        isBrokerQuote(quote) ? BROKER_MARKUP : undefined,
+      );
+      const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "createInvoice",
+          accessToken: session.access_token,
+          quote,
+          customer: customerPayload,
+          invoicePayload,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "QuickBooks rejected the invoice.");
+      setQbInvoiceId(data.qbInvoiceId);
+      setQbPaymentLink(data.paymentLink || null);
+    } catch (err) {
+      setQbError(err.message || "Couldn't create the QB invoice. Try again.");
+    } finally {
+      setCreatingQbInvoice(false);
+    }
+  }
 
   const recipientEmails = emailsInput
     .split(',')
@@ -128,54 +211,22 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       }
 
       const paymentLink = quotePaymentUrl(quote.id, publicToken);
-      let quoteForPdf = { ...quote, public_token: publicToken };
-
-      // Create the QB invoice now — its paymentLink will be used when the
-      // customer clicks Approve & Pay on /quotepayment.
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-          const customerPayload = customer ?? {
-            name: quote.customer_name || "",
-            email: quote.customer_email || "",
-            phone: "",
-            company: "",
-          };
-          const invoicePayload = buildQBInvoicePayload(
-            quote,
-            isBrokerQuote(quote) ? BROKER_MARKUP : undefined
-          );
-          const qbRes = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "createInvoice",
-              accessToken: session.access_token,
-              quote,
-              customer: customerPayload,
-              invoicePayload,
-            }),
-          });
-          const qbData = await qbRes.json();
-          if (qbRes.ok && !qbData.error && qbData.qbTotal != null) {
-            // Merge QB-computed totals so the PDF/email reflect the final invoice
-            quoteForPdf = {
-              ...quote,
-              qb_total:      qbData.qbTotal,
-              qb_tax_amount: qbData.qbTaxAmount,
-              qb_subtotal:   qbData.qbSubtotal,
-            };
-            // If QB created a revision (because an invoice with this DocNumber
-            // already existed), capture it so we can surface it to the user.
-            if (qbData.isRevision && qbData.qbDocNumber) {
-              quoteForPdf.qb_doc_number = qbData.qbDocNumber;
-            }
-          }
+      // If the user picked Stripe, make sure no stale qb_payment_link
+      // routes the customer to QB on /quotepayment. Authoritative for
+      // re-sends after a prior QB push AND for the within-session case
+      // where they clicked Create QB Invoice then switched to Stripe.
+      if (paymentProvider === "stripe" && (quote.qb_payment_link || qbPaymentLink)) {
+        try {
+          await base44.entities.Quote.update(quote.id, { qb_payment_link: null });
+        } catch (clearErr) {
+          console.warn("[SendQuoteModal] could not clear stale qb_payment_link:", clearErr);
         }
-      } catch {
-        // QB failed — fall back to InkTracker link silently
       }
+      // QB invoice creation (when "QB" is picked) happens BEFORE Send via
+      // the explicit "Create QB Invoice" button — handleCreateQbInvoice
+      // above. handleSend just emails; the qb_payment_link is already on
+      // the quote row by this point.
+      const quoteForPdf = { ...quote, public_token: publicToken };
 
       // Generate PDF attachment — use the shared client-mode generator so it
       // matches the layout used everywhere else in the app.
@@ -381,6 +432,73 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                 </div>
               </div>
 
+              {/* ── Payment method picker ─────────────────────────────────── */}
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Payment method
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className={`flex items-start gap-2 p-3 border rounded-xl cursor-pointer transition ${paymentProvider === "stripe" ? "border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-200" : "border-slate-200 hover:border-slate-300"}`}>
+                    <input
+                      type="radio"
+                      checked={paymentProvider === "stripe"}
+                      onChange={() => setPaymentProvider("stripe")}
+                      disabled={sending}
+                      className="mt-0.5 accent-indigo-600"
+                    />
+                    <span className="text-sm">
+                      <span className="block font-semibold text-slate-800">Stripe</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">Customer pays through Stripe Checkout.</span>
+                    </span>
+                  </label>
+                  <label className={`flex items-start gap-2 p-3 border rounded-xl transition ${!qbConnected ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${paymentProvider === "qb" ? "border-[#2CA01C] bg-green-50/50 ring-1 ring-green-200" : "border-slate-200 hover:border-slate-300"}`}>
+                    <input
+                      type="radio"
+                      checked={paymentProvider === "qb"}
+                      onChange={() => setPaymentProvider("qb")}
+                      disabled={sending || !qbConnected}
+                      className="mt-0.5 accent-[#2CA01C]"
+                    />
+                    <span className="text-sm">
+                      <span className="block font-semibold text-slate-800">QuickBooks</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">
+                        {qbConnected ? "Customer pays via the QB invoice link." : "Connect QuickBooks in Account first."}
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                {/* Conditional Create-Invoice gate when QB picked */}
+                {paymentProvider === "qb" && (
+                  qbPaymentLink ? (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                      <span className="text-xs text-emerald-700 leading-relaxed">
+                        QB invoice {qbInvoiceId ? `#${qbInvoiceId}` : ""} ready. Customer's payment link is set.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={handleCreateQbInvoice}
+                        disabled={creatingQbInvoice || sending}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
+                      >
+                        {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        {creatingQbInvoice ? "Creating QB invoice…" : "Create QB Invoice"}
+                      </button>
+                      <p className="text-xs text-slate-500">Required before sending. The QB invoice's payment link is what the customer will use.</p>
+                      {qbError && (
+                        <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
+                          {qbError}
+                        </div>
+                      )}
+                    </div>
+                  )
+                )}
+              </div>
+
               {error && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -398,8 +516,14 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                 Cancel
               </button>
               <button
-                onClick={handleSend}
-                disabled={sending || recipientEmails.length === 0 || !subject.trim() || !body.trim()}
+                onClick={() => setConfirming(true)}
+                disabled={
+                  sending ||
+                  recipientEmails.length === 0 ||
+                  !subject.trim() ||
+                  !body.trim() ||
+                  (paymentProvider === "qb" && !qbPaymentLink)
+                }
                 className="flex-1 px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {sending ? (
@@ -416,6 +540,46 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           </>
         )}
       </div>
+
+      {/* Confirmation overlay — Send is a destructive-feeling action (it emails
+          the customer) so a one-step "are you sure?" prevents accidental sends. */}
+      {confirming && !sent && (
+        <div
+          className="absolute inset-0 bg-slate-900/40 flex items-center justify-center p-4"
+          onClick={(e) => { e.stopPropagation(); if (!sending) setConfirming(false); }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-bold text-slate-900 mb-2">Send this quote?</h3>
+            <p className="text-sm text-slate-600 leading-relaxed">
+              About to email <span className="font-semibold">{recipientEmails.join(", ")}</span> with the {paymentProvider === "qb" ? "QuickBooks" : "Stripe"} payment link.
+            </p>
+            <div className="mt-5 flex gap-2">
+              <button
+                onClick={() => setConfirming(false)}
+                disabled={sending}
+                className="flex-1 px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await handleSend();
+                  // handleSend sets `sent=true` on success; keep confirming up
+                  // until then so a failure surfaces the error inline.
+                  setConfirming(false);
+                }}
+                disabled={sending}
+                className="flex-1 px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {sending ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : "Yes, Send"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
