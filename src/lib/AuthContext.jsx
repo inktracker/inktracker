@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
 import { supabase } from "@/api/supabaseClient";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
+import { loadShopTimezone } from "@/lib/shopTimezone";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
 
 const AuthContext = createContext();
@@ -16,17 +17,19 @@ async function fetchUserWithProfile() {
     .maybeSingle();
   if (!profile) return null;
 
-  // Load per-shop pricing config
+  // Load per-shop pricing config + timezone
   try {
     const shopOwner = profile.shop_owner || profile.email || user.email;
     const { data: shop } = await supabase
       .from("shops")
-      .select("pricing_config")
+      .select("pricing_config, timezone")
       .eq("owner_email", shopOwner)
       .maybeSingle();
     loadShopPricingConfig(shop?.pricing_config || null);
+    loadShopTimezone(shop?.timezone || null);
   } catch {
     loadShopPricingConfig(null);
+    loadShopTimezone(null);
   }
 
   return { ...profile, email: user.email };

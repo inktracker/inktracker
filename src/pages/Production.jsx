@@ -9,6 +9,7 @@ import SSOrderModal from "../components/orders/SSOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List, Hammer, Send, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
+import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
 
 // FLOOR_STEPS used to have its own slightly-different status list
 // (with "Quality Check" / "Packing" labels not present anywhere else
@@ -81,16 +82,16 @@ function toDateStr(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
+// "Today" and "now" resolve against the shop's configured timezone (falls
+// back to the browser tz if no shop tz is set). The previous implementation
+// captured the browser tz at module load — broke for employees logging in
+// from a different state than the shop is in.
 function todayStr() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: LOCAL_TZ });
+  return todayInShopTz();
 }
 
 function nowLocal() {
-  const str = new Date().toLocaleDateString("en-CA", { timeZone: LOCAL_TZ });
-  const [y, m, d] = str.split("-").map(Number);
-  return { year: y, month: m - 1 };
+  return nowInShopTz();
 }
 
 const MONTH_NAMES = [
