@@ -9,20 +9,22 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_URL = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
 
-// Single plan today: founding-member rate ($99/mo).
+// Two-tier pricing. The founding rate is locked for the first 50
+// shops to claim it (enforced atomically by the claim_founding_slot
+// RPC in 20260520_founding_member_program.sql). Cap is hidden from
+// the public UI — there's no slot counter on the landing page.
 //
-// TODO (founding member program — separate PR): add a second price ID for
-// the $149/mo standard rate. The checkout action below should choose:
-//   - PRICES.founding when the founding count is < 100 AND the user has no
-//     prior founding cancellation on record (set is_founding_member=true).
-//   - PRICES.standard otherwise (founding cap reached, or user previously
-//     canceled their founding subscription — re-signups always pay
-//     standard).
-// See src/lib/billing.js for the full founding-member-enforcement plan.
+// STRIPE_PRICE_STANDARD is read from env so Joe can drop in the
+// real price ID without redeploying. If it's not set, we fall back
+// to the founding price — over-discount during the bootstrap window
+// is better than a broken checkout.
+const PRICE_FOUNDING = "price_1TR50AI4m9BGT2cwXUsKF6Ul"; // $99/mo, existing
+const PRICE_STANDARD = Deno.env.get("STRIPE_PRICE_STANDARD") || PRICE_FOUNDING;
+
 const PRICES: Record<string, string> = {
-  shop: "price_1TR50AI4m9BGT2cwXUsKF6Ul",
-  // founding: "price_FOUNDING_99_TBD",
-  // standard: "price_STANDARD_149_TBD",
+  shop:     PRICE_FOUNDING, // legacy callers that just say "shop" still work
+  founding: PRICE_FOUNDING,
+  standard: PRICE_STANDARD,
 };
 
 const CORS = {
@@ -104,9 +106,38 @@ Deno.serve(async (req) => {
 
     // ── createCheckoutSession ───────────────────────────────────────
     if (action === "checkout") {
-      const tier = body.tier;
-      const priceId = PRICES[tier];
-      if (!priceId) return json({ error: "Invalid tier" });
+      // Founding-member claim. Single source of truth — the price the
+      // customer pays is determined by the atomic SQL function, not
+      // by anything the client says. The `tier` param from the body
+      // is ignored except as analytics.
+      //
+      // claim_founding_slot returns one of:
+      //   claimed / already_member → use $99 founding price
+      //   cap_reached / forfeited  → use $149 standard price
+      //   no_profile / bad_input   → caller bug, fail loud
+      const claim = await adminClient().rpc("claim_founding_slot", {
+        p_profile_id: profile.id,
+      });
+      if (claim.error) {
+        console.error("[billing] claim_founding_slot RPC failed:", claim.error.message);
+        return json({ error: "Checkout temporarily unavailable. Try again." });
+      }
+      const claimStatus = claim.data?.status;
+
+      let priceTier: "founding" | "standard";
+      if (claimStatus === "claimed" || claimStatus === "already_member") {
+        priceTier = "founding";
+      } else if (claimStatus === "cap_reached" || claimStatus === "forfeited") {
+        priceTier = "standard";
+      } else {
+        console.error("[billing] unexpected claim status:", claimStatus);
+        return json({ error: "Checkout state invalid. Contact support." });
+      }
+      const priceId = PRICES[priceTier];
+      if (!priceId) {
+        console.error("[billing] no price ID for tier:", priceTier);
+        return json({ error: "Checkout configuration error. Contact support." });
+      }
 
       // Find or create Stripe customer
       let customerId = profile.stripe_customer_id;
@@ -124,11 +155,18 @@ Deno.serve(async (req) => {
         customer: customerId,
         mode: "subscription",
         line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${APP_URL}/Account?billing=success&tier=${tier}`,
+        success_url: `${APP_URL}/Account?billing=success&tier=${priceTier}`,
         cancel_url: `${APP_URL}/Account?billing=cancelled`,
         subscription_data: {
           trial_period_days: profile.subscription_tier === "trial" ? 14 : undefined,
-          metadata: { profile_id: profile.id, tier },
+          // is_founding flag travels with the Stripe subscription so the
+          // webhook (on cancel) can write founding_rate_forfeited back
+          // to the right profile.
+          metadata: {
+            profile_id: profile.id,
+            tier: priceTier,
+            is_founding: priceTier === "founding" ? "true" : "false",
+          },
         },
         allow_promotion_codes: true,
       });

@@ -432,7 +432,7 @@ function PublicLandingPage() {
                   above the price line. Source the count from the public
                   view / edge function described in src/lib/billing.js. */}
               <p className="text-xs text-slate-500">
-                $99/mo after trial · Cancel anytime
+                Founding member pricing — $99/mo after trial · Cancel anytime
               </p>
             </div>
           </div>
@@ -569,14 +569,14 @@ function PublicLandingPage() {
             <div className="bg-gradient-to-b from-indigo-600 to-indigo-700 border-2 border-indigo-400 rounded-2xl p-8 shadow-2xl shadow-indigo-900/40">
               <div className="text-center mb-6">
                 <p className="text-xs font-semibold text-emerald-300 uppercase tracking-widest mb-3">
-                  One plan, every feature
+                  Founding member pricing — First 50 shops
                 </p>
                 <div className="mb-3">
                   <span className="text-5xl font-extrabold text-white">$99</span>
                   <span className="text-base text-indigo-200">/mo</span>
                 </div>
                 <p className="text-sm text-indigo-100/90 mb-3 max-w-md mx-auto leading-relaxed">
-                  Everything below included. Cancel anytime — no contract.
+                  Founding rate locked for the life of your subscription. Available to the first 50 shops. Standard pricing of $149/month thereafter.
                 </p>
                 <p className="text-sm text-indigo-200">14-day free trial · No credit card required</p>
               </div>
@@ -692,11 +692,15 @@ function PublicLandingPage() {
                 },
                 {
                   q: "Is there a long-term contract?",
-                  a: "No. InkTracker is month-to-month. Cancel anytime, export all your data on the way out.",
+                  a: "No. InkTracker is month-to-month — cancel anytime, export all your data on the way out. Founding members who cancel will lose their $99/month rate; re-signups pay the $149/month standard rate.",
                 },
                 {
                   q: "How do I know InkTracker won't disappear in six months?",
                   a: "InkTracker is built and maintained by Biota MFG, a 13-year-old screen print business based in Reno, Nevada. The shop dogfoods the software daily — if it stops being maintained, our own production stops. The financial structure also funds land conservation, which gives the project a long-horizon commitment the team takes seriously.",
+                },
+                {
+                  q: "Why is the price going up to $149/month?",
+                  a: "$99/month is the founding-member rate for the first 50 shops. After those 50 fill, new signups pay $149/month — closer to what comparable shop-management tools charge today. Founding members keep $99/month for the life of their subscription.",
                 },
                 {
                   q: "How does the conservation contribution actually work?",
