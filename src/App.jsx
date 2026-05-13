@@ -152,9 +152,7 @@ const FEATURE_CARDS = [
     title: "Artwork Proofs",
     desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.",
     color: "from-purple-500/20 to-purple-500/5",
-    // TODO: Mockup canvas with artwork placed on a tee template.
-    // Screenshot path: /public/landing/feature-mockups.png
-    media: null,
+    media: { type: "iframe", src: "/landing/artwork-proofs-demo/index.html" },
   },
 ];
 
