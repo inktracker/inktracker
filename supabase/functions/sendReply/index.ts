@@ -46,21 +46,27 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    // Subscription check — replies cost money (Resend)
+    // Auth is REQUIRED. sendReply emits from quotes@inktracker.app (verified
+    // SPF/DKIM) with caller-controlled From display name, Reply-To, Bcc, and
+    // body — without auth, an attacker can use this endpoint to send pristine
+    // phishing payloads to arbitrary recipients. Every legitimate caller
+    // (MessagesTab) is authenticated, so refuse anonymous requests outright.
     const authHeader = req.headers.get("authorization") || "";
-    if (authHeader.startsWith("Bearer ")) {
-      const token = authHeader.replace("Bearer ", "");
-      const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-        global: { headers: { Authorization: `Bearer ${token}` } },
-      });
-      const { data: { user } } = await supabase.auth.getUser(token);
-      if (user) {
-        const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const { data: profile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
-        const blocked = requireActiveSubscription(profile);
-        if (blocked) return blocked;
-      }
+    if (!authHeader.startsWith("Bearer ")) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
     }
+    const token = authHeader.replace("Bearer ", "");
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+    }
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: profile } = await admin.from("profiles").select("email, shop_owner, assigned_shops, subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+    const blocked = requireActiveSubscription(profile);
+    if (blocked) return blocked;
 
     const {
       to,                  // string OR string[] — customer email(s)
@@ -69,6 +75,31 @@ Deno.serve(async (req) => {
       shopName,            // display name in From header
       shopOwnerEmail,      // becomes Reply-To
     } = await req.json();
+
+    // Validate that the requested Reply-To belongs to a shop the caller has
+    // access to. MessagesTab is reused by managers/brokers who reply *on
+    // behalf of* a shop — they pass the shop's owner email as shopOwnerEmail
+    // so customer responses still land in the shop's inbox. The legitimate
+    // set is: caller themselves, caller's shop_owner, or any of their
+    // assigned_shops (broker case).
+    const callerEmail = (profile?.email || user.email || "").toLowerCase();
+    const callerShopOwner = (profile?.shop_owner || "").toLowerCase();
+    const assignedShops: string[] = Array.isArray(profile?.assigned_shops)
+      ? profile!.assigned_shops.map((s: string) => String(s || "").toLowerCase())
+      : [];
+    const requestedReplyTo = (shopOwnerEmail || "").toLowerCase();
+    const allowedReplyTo =
+      !requestedReplyTo ||
+      requestedReplyTo === callerEmail ||
+      requestedReplyTo === callerShopOwner ||
+      assignedShops.includes(requestedReplyTo);
+    if (!allowedReplyTo) {
+      return Response.json(
+        { error: "shopOwnerEmail must belong to a shop the caller has access to" },
+        { status: 403, headers: CORS },
+      );
+    }
+    const safeReplyTo = requestedReplyTo || callerEmail;
 
     const toList = Array.isArray(to) ? to.filter(Boolean) : (to ? [to] : []);
     if (toList.length === 0) {
@@ -101,9 +132,9 @@ Deno.serve(async (req) => {
             to: [recipient],
             subject: subject || "(no subject)",
             html,
-            ...(shopOwnerEmail ? { reply_to: shopOwnerEmail } : {}),
+            ...(safeReplyTo ? { reply_to: safeReplyTo } : {}),
             // Bcc the shop owner so they have a copy in their inbox too.
-            ...(shopOwnerEmail ? { bcc: [shopOwnerEmail] } : {}),
+            ...(safeReplyTo ? { bcc: [safeReplyTo] } : {}),
           }),
         });
         const data = await res.json();
