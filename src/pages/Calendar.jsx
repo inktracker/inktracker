@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
 import { O_STATUSES } from "../components/shared/pricing";
+import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
@@ -187,13 +188,11 @@ export default function Calendar() {
     if (!newDate) delete stepDates[step];
     const updated = await base44.entities.Order.update(orderId, { step_dates: stepDates });
     setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
-    setEditingStep(null);
   }
 
   async function handleUpdateDueDate(orderId, newDate) {
     const updated = await base44.entities.Order.update(orderId, { due_date: newDate || null });
     setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
-    setEditingStep(null);
   }
 
   async function handleAdvance(id) {
@@ -216,7 +215,17 @@ export default function Calendar() {
     }
   }
 
+  function canEdit() {
+    // Destructive + completion actions require the shop owner. CLAUDE.md:
+    // managers have "full shop access, no billing/admin", and order
+    // deletion / completion mints invoice + performance rows that are
+    // part of the shop's accounting record. Keep them shop-owner-only,
+    // matching the gate Production.jsx + Orders.jsx use upstream.
+    return user?.role === "admin" || user?.role === "shop";
+  }
+
   async function handleDelete(id) {
+    if (!canEdit()) return;
     if (!window.confirm("Delete this order?")) return;
     await base44.entities.Order.delete(id);
     setOrders((prev) => prev.filter((o) => o.id !== id));
@@ -224,32 +233,70 @@ export default function Calendar() {
   }
 
   async function handleComplete(order) {
+    if (!canEdit()) return;
+    // Completion = transition, never destruction.
+    //
+    // Before this fix: handleComplete called Order.delete() AFTER creating
+    // the invoice + performance rows. That orphaned every invoice (the bug
+    // Joe hit on 2026-05-12) and bypassed the duplicate-invoice dedupe.
+    // Mirrors the Production.jsx pattern: pre-fetch an existing invoice
+    // for this job (matched by order_id OR by the original quote_id, with
+    // a fallback walk through Quote.converted_order_id) so SendQuoteModal
+    // → completion doesn't mint a second invoice row.
     const td = new Date().toISOString().split("T")[0];
-    const inv_id = `INV-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
-    await base44.entities.Invoice.create({
-      invoice_id: inv_id, shop_owner: user.email,
-      order_id: order.order_id, customer_id: order.customer_id,
-      customer_name: order.customer_name, date: td,
-      due: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      subtotal: order.subtotal || 0, tax: order.tax || 0, total: order.total || 0,
-      paid: false, status: "Sent", line_items: order.line_items || [],
-      notes: order.notes || "", rush_rate: order.rush_rate || 0,
-      extras: order.extras || {}, discount: order.discount || 0, tax_rate: order.tax_rate || 0,
-    });
-    if (order.broker_id) {
-      await base44.entities.BrokerPerformance.create({
-        broker_id: order.broker_id, shop_owner: user.email,
-        order_id: order.order_id, customer_name: order.customer_name,
-        date: td, total: order.total || 0,
+
+    let existingInvoice = null;
+    try {
+      const byOrderId = await base44.entities.Invoice.filter({
+        shop_owner: user.email,
+        order_id: order.order_id,
       });
+      if (byOrderId.length > 0) {
+        existingInvoice = byOrderId[0];
+      } else if (order.quote_id) {
+        const byQuoteId = await base44.entities.Invoice.filter({
+          shop_owner: user.email,
+          invoice_id: order.quote_id,
+        });
+        if (byQuoteId.length > 0) existingInvoice = byQuoteId[0];
+      }
+      if (!existingInvoice) {
+        const originatingQuotes = await base44.entities.Quote.filter({
+          shop_owner: user.email,
+          converted_order_id: order.order_id,
+        });
+        const qId = originatingQuotes?.[0]?.quote_id;
+        if (qId) {
+          const byReversedQuoteId = await base44.entities.Invoice.filter({
+            shop_owner: user.email,
+            invoice_id: qId,
+          });
+          if (byReversedQuoteId.length > 0) existingInvoice = byReversedQuoteId[0];
+        }
+      }
+    } catch (err) {
+      console.error("[Calendar.handleComplete] existing-invoice lookup failed:", err);
+      // Continue — the 20260519_invoices_no_duplicates.sql unique index
+      // is the last-line backstop against a duplicate insert.
     }
-    await base44.entities.ShopPerformance.create({
-      shop_owner: user.email, order_id: order.order_id,
-      customer_name: order.customer_name, customer_id: order.customer_id || "",
-      broker_id: order.broker_id || "", date: td, total: order.total || 0, status: "Completed",
+
+    const plan = buildOrderCompletionPlan(order, {
+      today: td,
+      shopOwner: user.email,
+      existingInvoice,
     });
-    await base44.entities.Order.delete(order.id);
-    setOrders((prev) => prev.filter((o) => o.id !== order.id));
+
+    if (plan.invoiceLink) {
+      await base44.entities.Invoice.update(plan.invoiceLink.id, plan.invoiceLink.patch);
+    } else if (plan.invoiceCreate) {
+      await base44.entities.Invoice.create(plan.invoiceCreate);
+    }
+    if (plan.brokerPerformanceCreate) {
+      await base44.entities.BrokerPerformance.create(plan.brokerPerformanceCreate);
+    }
+    await base44.entities.ShopPerformance.create(plan.shopPerformanceCreate);
+    const updated = await base44.entities.Order.update(plan.orderUpdate.id, plan.orderUpdate.patch);
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(null);
   }
 
