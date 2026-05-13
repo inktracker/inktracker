@@ -149,7 +149,7 @@ const FEATURE_CARDS = [
     media: null,
   },
   {
-    title: "Mockup Designer",
+    title: "Artwork Proofs",
     desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.",
     color: "from-purple-500/20 to-purple-500/5",
     // TODO: Mockup canvas with artwork placed on a tee template.
@@ -591,7 +591,7 @@ function PublicLandingPage() {
                   "S&S & AS Colour restock",
                   "Embeddable quote wizard",
                   "Shopify inventory sync",
-                  "Mockup designer",
+                  "Artwork proofs",
                   "Broker portal",
                   "Performance reports",
                 ].map(f => (
