@@ -314,7 +314,12 @@ export default function Dashboard() {
   // contribute zero to the outstanding sum since the money's already
   // in. Their count still shows in `activeOrders` for the pipeline UI;
   // the metric card just doesn't add them to the dollar total.
-  const activeOrders = orders.filter(o => o.status !== "Completed");
+  //
+  // Excludes Completed AND Cancelled/Voided — both are terminal states.
+  // Without the second filter, cancelled jobs inflated the open-orders
+  // count and dollar total even though they'll never be invoiced.
+  const TERMINAL_STATUSES = new Set(["Completed", "Cancelled", "Voided"]);
+  const activeOrders = orders.filter(o => !TERMINAL_STATUSES.has(o.status));
   const unpaidOpenOrders = activeOrders.filter(o => !o.paid);
   const openOrdersCount = activeOrders.length;
   const openOrdersValue = sumTotals(unpaidOpenOrders);
@@ -323,7 +328,11 @@ export default function Dashboard() {
   const unpaidInvoicesCount = outstanding.count;
   const unpaidInvoicesValue = outstanding.total;
 
-  const lowStockItems = inventory.filter(i => (i.qty || 0) <= (i.reorder || 0));
+  // Items where qty AND reorder are both 0 aren't really "low stock" —
+  // they're just uninitialized rows. Require a reorder threshold > 0
+  // before flagging, so the alert only fires once the shop has set a
+  // par level for the SKU.
+  const lowStockItems = inventory.filter(i => (i.reorder || 0) > 0 && (i.qty || 0) <= (i.reorder || 0));
 
   return (
     <div className="space-y-6">

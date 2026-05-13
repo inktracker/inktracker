@@ -85,9 +85,12 @@ export default function OnboardingWizard({ user, onComplete }) {
         body: JSON.stringify({ action: "checkConnection", accessToken: session?.access_token }),
       });
       const data = await res.json();
-      setQbConnected(!!data.connected);
+      const ok = !!data.connected;
+      setQbConnected(ok);
+      return ok;
     } catch {
       setQbConnected(false);
+      return false;
     } finally {
       setQbChecking(false);
     }
@@ -361,7 +364,16 @@ export default function OnboardingWizard({ user, onComplete }) {
                       <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-full">Connected</span>
                     ) : (
                       <button
-                        onClick={async () => { await checkQBConnection(); if (!qbConnected) connectQB(); }}
+                        onClick={async () => {
+                          // Use the resolved return value rather than the
+                          // React state — useState is async, so reading
+                          // qbConnected here gets the stale (pre-check)
+                          // value and the connectQB() branch was always
+                          // taken even when checkQBConnection just found
+                          // an active link.
+                          const ok = await checkQBConnection();
+                          if (!ok) connectQB();
+                        }}
                         disabled={qbChecking}
                         className="text-xs font-semibold text-[#2CA01C] border border-[#2CA01C] px-3 py-1.5 rounded-lg hover:bg-green-50 transition disabled:opacity-50 shrink-0"
                       >
@@ -377,9 +389,14 @@ export default function OnboardingWizard({ user, onComplete }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-slate-800">Stripe Payments</div>
-                      <div className="text-xs text-slate-500">Connect your bank account to receive customer payments</div>
+                      <div className="text-xs text-slate-500">Set up later from <strong>Account → Stripe Payments</strong></div>
                     </div>
-                    <span className="text-xs font-semibold text-slate-400 border border-slate-200 px-2 py-1 rounded-full shrink-0">Coming soon</span>
+                    {/* Stripe Connect onboarding is several screens of identity
+                        verification on Stripe's side — too much to interleave
+                        into the wizard. The Account page has the real flow
+                        (PR #69 / #73 gate it to admin/shop). Keep the wizard
+                        focused; just signal that the feature exists. */}
+                    <span className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full shrink-0">Available</span>
                   </div>
                 </div>
               </div>

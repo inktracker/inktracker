@@ -318,7 +318,12 @@ export default function AdminPanel() {
                       </button>
                     </>
                   )}
-                  {(u.role === "shop" || u.role === "broker" || u.role === "employee") && (
+                  {/* Revoke = demote to "user". Restricted to sub-accounts
+                      (broker/employee/manager) — revoking another `shop`
+                      role from the admin panel would lock out a shop owner
+                      and orphan their data. Use Delete for that, never
+                      Revoke. */}
+                  {(u.role === "broker" || u.role === "employee" || u.role === "manager") && (
                     <button
                       onClick={() => setRole(u.id, u.auth_id, "user")}
                       disabled={actionLoading[key]}
@@ -425,13 +430,17 @@ export default function AdminPanel() {
               <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Role</label>
                 <div className="flex gap-2">
+                  {/* Class names are baked in — Tailwind's JIT only emits
+                      classes it can statically find, so the older
+                      `bg-${r.color}-600` interpolation purged at build and
+                      rendered the selected role button unstyled. */}
                   {[
-                    { value: "manager", label: "Manager", color: "emerald" },
-                    { value: "employee", label: "Employee", color: "indigo" },
-                    { value: "broker", label: "Broker", color: "sky" },
+                    { value: "manager",  label: "Manager",  selected: "bg-emerald-600 text-white border-emerald-600" },
+                    { value: "employee", label: "Employee", selected: "bg-indigo-600 text-white border-indigo-600"   },
+                    { value: "broker",   label: "Broker",   selected: "bg-sky-600 text-white border-sky-600"         },
                   ].map(r => (
                     <button key={r.value} type="button" onClick={() => setInviteRole(r.value)}
-                      className={`flex-1 text-xs font-semibold py-2 rounded-lg border transition ${inviteRole === r.value ? `bg-${r.color}-600 text-white border-${r.color}-600` : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+                      className={`flex-1 text-xs font-semibold py-2 rounded-lg border transition ${inviteRole === r.value ? r.selected : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}>
                       {r.label}
                     </button>
                   ))}

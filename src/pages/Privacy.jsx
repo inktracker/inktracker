@@ -3,7 +3,7 @@ export default function Privacy() {
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-6">
         <h1 className="text-3xl font-bold text-slate-900">Privacy Policy</h1>
-        <p className="text-sm text-slate-500">Last updated: May 1, 2026</p>
+        <p className="text-sm text-slate-500">Last updated: May 13, 2026</p>
 
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">1. Who We Are</h2>
@@ -34,19 +34,26 @@ export default function Privacy() {
           <ul className="list-disc list-inside text-sm text-slate-600 space-y-1 pl-2">
             <li>Providing access to your quotes, orders, and business data</li>
             <li>Connecting to QuickBooks to sync invoices and payments on your behalf</li>
-            <li>Connecting to garment suppliers to look up products and pricing</li>
-            <li>Sending quote and invoice emails to your customers at your direction</li>
+            <li>Connecting to garment suppliers (S&amp;S Activewear, AS Colour) to look up products and pricing</li>
+            <li>Sending quote, invoice, and message emails to your customers at your direction via Resend, our email delivery provider</li>
             <li>Processing subscription payments via Stripe</li>
+            <li>Processing customer quote payments via Stripe Connect — your shop is the merchant of record; funds flow directly to your connected Stripe account</li>
           </ul>
         </section>
 
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">4. Third-Party Integrations</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
-            When you connect third-party accounts (QuickBooks, Shopify, etc.), we store OAuth tokens
-            necessary to access those services on your behalf. We use this access only as directed by
-            you. We do not share your third-party data with anyone. You may disconnect any integration
-            at any time from the Account settings page, which revokes our access.
+            When you connect third-party accounts (QuickBooks, Shopify, Stripe Connect, Gmail), we store
+            the OAuth tokens necessary to access those services on your behalf. We use this access only
+            as directed by you. We do not share your third-party data with anyone. You may disconnect
+            any integration at any time from the Account settings page, which revokes our access.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            Customer email addresses you enter into the platform are transmitted to Resend (our email
+            delivery provider) when you send a quote, invoice, or reply. Stripe receives customer email
+            and payment details when a customer pays a quote through your Stripe Connect account. We do
+            not retain any third-party access beyond what is necessary to provide these features.
           </p>
         </section>
 
@@ -62,8 +69,10 @@ export default function Privacy() {
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">6. Data Retention</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
-            We retain your data for as long as your account is active. You may request deletion of
-            your account and all associated data at any time by contacting{" "}
+            We retain your data for as long as your account is active. On cancellation, your data
+            remains available in a read-only state until the end of your billing period, after which
+            it is permanently deleted within 30 days unless you have requested an export. You may
+            request deletion of your account and all associated data at any time by contacting{" "}
             <a href="mailto:support@inktracker.app" className="text-indigo-600 underline">
               support@inktracker.app
             </a>.
@@ -89,6 +98,7 @@ export default function Privacy() {
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">9. Contact</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
+            InkTracker is operated by Biota MFG, a screen print business based in Reno, Nevada, USA.
             For any privacy-related questions or requests, contact us at{" "}
             <a href="mailto:support@inktracker.app" className="text-indigo-600 underline">
               support@inktracker.app
