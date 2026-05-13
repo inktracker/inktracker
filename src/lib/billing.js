@@ -109,7 +109,7 @@ export const PLANS = [
       "S&S & AS Colour restock",
       "Embeddable quote wizard",
       "Shopify inventory sync",
-      "Mockup designer",
+      "Artwork proofs",
       "Broker portal",
       "Full performance reports",
       "PDF export",
