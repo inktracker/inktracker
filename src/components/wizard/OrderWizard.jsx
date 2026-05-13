@@ -600,9 +600,24 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
 
   const [submittedGarments, setSubmittedGarments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
+  // Surfaced to the user when submit fails. Was previously swallowed
+  // by a console.error only — the customer had no idea the form didn't go.
+  const [submitError, setSubmitError] = useState("");
 
   async function handleSubmit() {
     if (submitting) return;
+    setSubmitError("");
+
+    // Customer-email format check — the wizard is anonymous and the only
+    // way the shop reaches the customer. A typo like "joe@biota" used to
+    // submit cleanly and the shop would have no way to follow up.
+    const emailTrim = (contact.email || "").trim();
+    const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim);
+    if (!emailLooksValid) {
+      setSubmitError("Please enter a valid email address so we can send your quote.");
+      return;
+    }
+
     setSubmitting(true);
     const validG = garments.filter(g => g.style && g.color);
     setSubmittedGarments(validG);
@@ -647,13 +662,18 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
       tax_exempt: contact.taxExempt,
       tax_id: contact.taxId,
       discount: 0, tax_rate: 0, deposit_pct: 0, deposit_paid: false,
-      quote_id: `Q-${new Date().getFullYear()}-${String(Math.floor(Math.random()*900)+100)}`,
+      // 5 chars of base36 from a millisecond timestamp ≈ 60M combinations
+      // per year, matching the rest of the codebase's quote_id generators.
+      // The previous random-3-digit-number scheme had only 900 combinations
+      // per year — collisions guaranteed at any volume.
+      quote_id: `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`,
     };
     try {
       await onSubmit(q);
       setSubmitted(true);
     } catch (err) {
       console.error("[Wizard] submit failed:", err);
+      setSubmitError(err?.message || "Couldn't submit your request. Please try again or contact the shop directly.");
     } finally {
       setSubmitting(false);
     }
@@ -1341,6 +1361,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                 <div className="text-4xl font-bold text-white">{fmtMoney(liveTotals?.total || total)}</div>
               </div>
               <div className="p-5">
+                {submitError && (
+                  <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                    {submitError}
+                  </div>
+                )}
                 <button onClick={handleSubmit}
                   disabled={submitting}
                   className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-xl transition text-sm disabled:opacity-50 disabled:cursor-not-allowed">
