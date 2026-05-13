@@ -19,21 +19,27 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    // Subscription check — placing orders costs real money
+    // Auth is REQUIRED. ssPlaceOrder posts to the real S&S Activewear API
+    // using the platform's master credentials (SS_ACCOUNT_NUMBER / SS_API_KEY
+    // from env). Every order placed costs real money against that account.
+    // Without auth, anonymous attackers could trigger arbitrary orders shipped
+    // to any address they chose.
     const authHeader = req.headers.get("authorization") || "";
-    if (authHeader.startsWith("Bearer ")) {
-      const token = authHeader.replace("Bearer ", "");
-      const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
-        global: { headers: { Authorization: `Bearer ${token}` } },
-      });
-      const { data: { user } } = await supabase.auth.getUser(token);
-      if (user) {
-        const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const { data: profile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
-        const blocked = requireActiveSubscription(profile);
-        if (blocked) return blocked;
-      }
+    if (!authHeader.startsWith("Bearer ")) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
     }
+    const token = authHeader.replace("Bearer ", "");
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: `Bearer ${token}` } },
+    });
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+    }
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: profile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+    const blocked = requireActiveSubscription(profile);
+    if (blocked) return blocked;
 
     const { poNumber, shipTo, lines, shippingMethod = "Ground", testOrder = false, warehouse = "" } = await req.json();
 
