@@ -4,6 +4,13 @@ import { XCircle } from "lucide-react";
 export default function QuotePaymentCancel() {
   const [searchParams] = useSearchParams();
   const quoteId = searchParams.get("quote_id");
+  // /quotepayment refuses to load without a valid public_token, so the
+  // "Return to Quote" link MUST carry it. createCheckoutSession includes
+  // both in the Stripe cancel_url.
+  const token = searchParams.get("token");
+  const returnHref = quoteId && token
+    ? `/quotepayment?id=${encodeURIComponent(quoteId)}&token=${encodeURIComponent(token)}`
+    : null;
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
@@ -13,9 +20,9 @@ export default function QuotePaymentCancel() {
         <p className="text-slate-500 text-sm mb-7">
           Your payment was not processed and no charges were made. You can go back and try again.
         </p>
-        {quoteId && (
+        {returnHref && (
           <a
-            href={`/quotepayment?id=${quoteId}`}
+            href={returnHref}
             className="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition text-sm mb-3"
           >
             Return to Quote

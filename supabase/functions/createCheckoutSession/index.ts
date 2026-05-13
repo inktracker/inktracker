@@ -284,7 +284,10 @@ async function handleCreateSession(params: any) {
 
   const origin = params.origin ?? "https://www.inktracker.app";
   const successUrl = `${origin}/quotepaymentSuccess?session_id={CHECKOUT_SESSION_ID}&quote_id=${params.quoteId}&is_deposit=${params.isDeposit ? "1" : "0"}&amount=${params.amountPaid || 0}&shop_owner=${encodeURIComponent(params.shopOwnerEmail || "")}`;
-  const cancelUrl  = `${origin}/quotepaymentCancel`;
+  // Carry quote_id + token so the cancel page can offer "Return to Quote".
+  // Without the token, /quotepayment refuses to load (security gate), so a
+  // customer who hits cancel would otherwise land on a dead end.
+  const cancelUrl  = `${origin}/quotepaymentCancel?quote_id=${params.quoteId}&token=${encodeURIComponent(params.token)}`;
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
