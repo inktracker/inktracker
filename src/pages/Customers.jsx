@@ -8,6 +8,10 @@ import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
 import { Loader2, GitMerge, Check } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
+import {
+  countCustomerDependents,
+  formatDependentsMessage,
+} from "@/lib/customers/countCustomerDependents";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -126,6 +130,41 @@ export default function Customers() {
   const currentEditingArtwork = editing ? artworkByCustomer[editing.id] || [] : [];
 
   async function handleDelete(id) {
+    const customer = customers.find((c) => c.id === id);
+    if (!customer) return;
+
+    // No FK constraints exist on customer_id (verified in supabase/migrations),
+    // so a raw delete here silently orphans every quote/order/invoice that
+    // references this customer. Check dependents first and block if any exist.
+    let counts = { quotes: 0, orders: 0, invoices: 0, total: 0 };
+    try {
+      const [qById, oById, iById, qByName, oByName, iByName] = await Promise.all([
+        base44.entities.Quote.filter({ customer_id: id }),
+        base44.entities.Order.filter({ customer_id: id }),
+        base44.entities.Invoice.filter({ customer_id: id }),
+        customer.name ? base44.entities.Quote.filter({ customer_name: customer.name }) : Promise.resolve([]),
+        customer.name ? base44.entities.Order.filter({ customer_name: customer.name }) : Promise.resolve([]),
+        customer.name ? base44.entities.Invoice.filter({ customer_name: customer.name }) : Promise.resolve([]),
+      ]);
+      // Dedupe id+name buckets (a row may appear in both).
+      const uniq = (arrs) => [...new Map(arrs.flat().map((r) => [r.id, r])).values()];
+      counts = countCustomerDependents(customer, {
+        quotes: uniq([qById, qByName]),
+        orders: uniq([oById, oByName]),
+        invoices: uniq([iById, iByName]),
+      });
+    } catch (err) {
+      console.error("[Customers] dependent count failed:", err);
+      alert("Couldn't verify this customer's history. Please try again.");
+      return;
+    }
+
+    const blockMessage = formatDependentsMessage(counts, customer.name || "this customer");
+    if (blockMessage) {
+      alert(blockMessage);
+      return;
+    }
+
     await base44.entities.Customer.delete(id);
     setCustomers((prev) => prev.filter((c) => c.id !== id));
     setConfirmDelete(false);
