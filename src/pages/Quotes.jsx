@@ -18,6 +18,7 @@ import Badge from "../components/shared/Badge";
 import QuoteEditorModal from "../components/quotes/QuoteEditorModal";
 import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
+import { validateQuoteForSave } from "../lib/quotes/validation";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -216,6 +217,12 @@ export default function Quotes() {
   ];
 
   async function saveQuote(q) {
+    const validationErrors = validateQuoteForSave(q);
+    if (validationErrors) {
+      alert(validationErrors.join("\n"));
+      return;
+    }
+
     const customerData = customerMap[q.customer_id];
     const customerEmail = q.customer_email || customerData?.email || "";
     // Sanitize date fields — empty strings break Postgres DATE columns
