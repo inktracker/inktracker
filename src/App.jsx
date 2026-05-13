@@ -112,9 +112,7 @@ const FEATURE_CARDS = [
     title: "Inventory & Restock",
     desc: "Shopify inventory sync. Order blanks from S&S Activewear and AS Colour with live pricing.",
     color: "from-amber-500/20 to-amber-500/5",
-    // TODO: Inventory page with low-stock badges + restock CTA.
-    // Screenshot path: /public/landing/feature-inventory.png
-    media: null,
+    media: { type: "iframe", src: "/landing/inventory-demo/index.html" },
   },
   {
     title: "Quote Wizard",
