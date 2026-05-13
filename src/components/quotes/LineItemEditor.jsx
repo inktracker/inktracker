@@ -20,6 +20,11 @@ import { supabase } from "@/api/supabaseClient";
 // way out, so the brandOptions dropdown ends up with one entry per (brand, style)
 // regardless of supplier. Either supplier failing/returning empty doesn't break
 // the lookup; we just use whatever came back.
+//
+// Returns { matches, reason } where reason distinguishes:
+//   undefined          — matches were found
+//   'no_results'       — both suppliers responded, neither had matches
+//   'suppliers_unreachable' — both suppliers errored / no API creds set
 async function lookupStyle(styleNumber) {
   const code = String(styleNumber || "").trim().toUpperCase();
   if (!code) return { matches: [] };
@@ -29,14 +34,27 @@ async function lookupStyle(styleNumber) {
     supabase.functions.invoke("acLookupStyle", { body: { styleCode: code } }),
   ]);
 
-  const grab = (r) => {
-    if (r.status !== "fulfilled") return [];
+  const wasReached = (r) => {
+    if (r.status !== "fulfilled") return false;
     const data = r.value?.data;
-    if (!data || data.error) return [];
+    if (!data) return false;
+    // data.error usually means missing API creds / supplier API failure.
+    // Treat as unreachable so the user sees the real problem.
+    return !data.error;
+  };
+
+  const grab = (r) => {
+    if (!wasReached(r)) return [];
+    const data = r.value.data;
     return data.matches || data.results || data.items || data.products || [];
   };
 
   const matches = [...grab(ssRes), ...grab(acRes)];
+
+  if (matches.length === 0) {
+    const eitherReached = wasReached(ssRes) || wasReached(acRes);
+    return { matches, reason: eitherReached ? "no_results" : "suppliers_unreachable" };
+  }
   return { matches };
 }
 
@@ -584,7 +602,12 @@ export default function LineItemEditor({
       setBrandOptions(options);
 
       if (options.length === 0) {
-        throw new Error("No results found");
+        if (result?.reason === "suppliers_unreachable") {
+          throw new Error(
+            "Couldn't reach S&S or AS Colour. Check your supplier API credentials in Account settings.",
+          );
+        }
+        throw new Error("Style not found");
       }
 
       // If the current brand matches one of the options, auto-select it.
@@ -618,7 +641,7 @@ export default function LineItemEditor({
       setSsInventory({});
       setSsPriceMap({});
       setSsSizePriceMap({});
-      setSsError("Style not found");
+      setSsError(e?.message || "Style not found");
     } finally {
       setSsLoading(false);
     }
