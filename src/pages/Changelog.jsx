@@ -3,6 +3,25 @@
 
 const ENTRIES = [
   {
+    date: "2026-05-13",
+    title: "Every feature has a live preview",
+    items: [
+      "Filled in the last four product demos on the landing page — Invoicing & Payments, Inventory & Restock, Broker Integration, and Shop Floor — so every chip is clickable.",
+      "Renamed 'Mockup Designer' to 'Artwork Proofs' across the pricing card and marketing copy.",
+      "Customer replies in the messaging tab now auto-mark as read when you open the thread.",
+    ],
+  },
+  {
+    date: "2026-05-12",
+    title: "Sharper role guardrails",
+    items: [
+      "QuickBooks Connect and Stripe payout settings on /Account are now admin-only. Managers keep full operational access; only the shop owner can disconnect financial wiring.",
+      "Inventory: errors during restock and double-clicks on Add no longer leave the cart in a weird state.",
+      "Broker quotes generate collision-proof IDs even on rapid-fire submissions.",
+      "Locked down a handful of internal admin endpoints — cross-shop actions are now refused at the function level.",
+    ],
+  },
+  {
     date: "2026-05-03",
     title: "Quality pass",
     items: [

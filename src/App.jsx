@@ -309,9 +309,12 @@ function PublicLandingPage() {
   // false until the typewriter starts its fade-out — then the badge,
   // brand lockup, subtext, and CTA buttons cross-fade in.
   const [heroRevealed, setHeroRevealed] = useState(false);
+  // Mobile section-anchor menu — closed by default, hamburger toggles it.
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   function openSignup() { setLoginMode("signup"); setShowLogin(true); }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
+  function jumpToAnchor(hash) { setMobileMenuOpen(false); window.location.hash = hash; }
 
   const revealCls = `transition-opacity duration-700 ${heroRevealed ? "opacity-100" : "opacity-0 pointer-events-none"}`;
 
@@ -330,15 +333,55 @@ function PublicLandingPage() {
               <a href="#pricing" className="text-sm text-slate-400 hover:text-white transition hidden md:block">Pricing</a>
               <a href="#conservation" className="text-sm text-slate-400 hover:text-white transition hidden md:block">Mission</a>
               <button onClick={openLogin}
-                className="text-sm font-semibold text-slate-300 hover:text-white transition">
+                className="text-sm font-semibold text-slate-300 hover:text-white transition hidden sm:block">
                 Log In
               </button>
               <button onClick={openSignup}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition">
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 sm:px-5 py-2.5 rounded-xl transition">
                 Start Free Trial
+              </button>
+              <button
+                onClick={() => setMobileMenuOpen((v) => !v)}
+                className="md:hidden p-2 -mr-2 text-slate-300 hover:text-white transition"
+                aria-label="Toggle navigation menu"
+                aria-expanded={mobileMenuOpen}
+              >
+                {mobileMenuOpen ? (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                ) : (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                )}
               </button>
             </div>
           </div>
+
+          {/* Mobile dropdown — section anchors + Log In, slides below the nav */}
+          {mobileMenuOpen && (
+            <div className="md:hidden border-t border-white/5 bg-slate-950/95 backdrop-blur-lg">
+              <div className="max-w-6xl mx-auto px-6 py-3 flex flex-col">
+                <button onClick={() => jumpToAnchor("#features")}
+                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 border-b border-white/5">
+                  Features
+                </button>
+                <button onClick={() => jumpToAnchor("#pricing")}
+                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 border-b border-white/5">
+                  Pricing
+                </button>
+                <button onClick={() => jumpToAnchor("#conservation")}
+                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 border-b border-white/5">
+                  Mission
+                </button>
+                <button onClick={() => jumpToAnchor("#faq")}
+                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 border-b border-white/5">
+                  FAQ
+                </button>
+                <button onClick={() => { setMobileMenuOpen(false); openLogin(); }}
+                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 sm:hidden">
+                  Log In
+                </button>
+              </div>
+            </div>
+          )}
         </nav>
 
         {/* Hero — single centered column. No product visual for now; that
@@ -534,7 +577,7 @@ function PublicLandingPage() {
                   From one print maker<br/>to another.
                 </h2>
                 <p className="text-slate-300 leading-relaxed mb-5">
-                  I run Biota MFG, a screen print shop in Reno, Nevada. After 13 years on the press, I kept finding the same software gap — tools that either tried to do everything (and did most of it badly) or did one thing but missed the rest of the workflow. So I built the tool I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. Every InkTracker subscription also funds land conservation through Biota's five-year roadmap. — Joe
+                  I run Biota MFG, a screen print shop in Reno, Nevada. After 13 years on the press, I kept finding the same software gap — tools that either tried to do everything (and did most of it badly) or did one thing but missed the rest of the workflow. So I built the tool I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. 10% of every InkTracker subscription is allocated to land conservation through Biota's five-year roadmap. — Joe
                 </p>
                 <p className="text-xs text-slate-500">
                   Joe Grennan · Founder · joe@biotamfg.co
@@ -689,7 +732,7 @@ function PublicLandingPage() {
                 },
                 {
                   q: "How does the conservation contribution actually work?",
-                  a: "A portion of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota MFG. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.co/pages/conservation.",
+                  a: "10% of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota MFG. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.co/pages/conservation.",
                 },
               ].map((item) => (
                 <details key={item.q} className="group bg-white/[0.02] border border-white/10 rounded-2xl hover:border-white/20 transition">
