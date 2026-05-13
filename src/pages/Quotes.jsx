@@ -19,6 +19,7 @@ import QuoteEditorModal from "../components/quotes/QuoteEditorModal";
 import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { validateQuoteForSave } from "../lib/quotes/validation";
+import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -298,57 +299,25 @@ export default function Quotes() {
     }
     setConverting(true);
     try {
-    const t = getQuoteTotalsForDisplay(q);
-    const orderId = `ORD-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
+      const orderPayload = buildOrderFromQuote(q, { userEmail: user.email });
+      await base44.entities.Order.create(orderPayload);
 
-    const brokerOrder = isBrokerQuote(q);
-    const brokerDisplayName = q.broker_name || q.broker_company || q.broker_id || q.customer_name;
-    const brokerClientName = q.customer_name || "";
+      // Commissions are created when the invoice is marked paid — not on quote
+      // conversion — so that broker commissions only reflect completed + paid work.
 
-    await base44.entities.Order.create({
-      order_id: orderId,
-      shop_owner: user.email,
-      broker_id: q.broker_id || "",
-      broker_name: q.broker_name || "",
-      broker_company: q.broker_company || "",
-      customer_id: q.customer_id,
-      customer_name: brokerOrder ? brokerDisplayName : q.customer_name,
-      broker_client_name: brokerOrder ? brokerClientName : "",
-      job_title: q.job_title || "",
-      date: q.date,
-      due_date: q.due_date || null,
-      status: "Art Approval",
-      line_items: q.line_items,
-      notes: q.notes,
-      rush_rate: q.rush_rate,
-      extras: q.extras,
-      discount: q.discount,
-      discount_type: q.discount_type || "percent",
-      tax_rate: brokerOrder ? 0 : q.tax_rate,
-      subtotal: t.sub,
-      tax: t.tax,
-      total: t.total,
-      paid: false,
-      selected_artwork: q.selected_artwork || [],
-    });
-
-    // Commissions are created when the invoice is marked paid — not on quote
-    // conversion — so that broker commissions only reflect completed + paid work.
-
-    // For broker "Client Approved" quotes, update status instead of deleting
-    // so the broker can still track it in their portal
-    if (q.status === "Client Approved") {
-      const updated = await base44.entities.Quote.update(q.id, {
-        status: "Converted to Order",
-        converted_order_id: orderId,
-        converted_at: new Date().toISOString(),
-      });
-      setQuotes((prev) => prev.map((x) => (x.id === q.id ? updated : x)));
-    } else {
-      await base44.entities.Quote.delete(q.id);
+      // Always preserve the originating quote (never delete) so:
+      //   - OrderDetailModal can resolve order.quote_id → originating quote
+      //     for invoice lookup, the message thread, and header display
+      //   - the audit trail survives ("what did we actually quote them?")
+      await base44.entities.Quote.update(
+        q.id,
+        buildQuoteConvertedPatch(orderPayload.order_id),
+      );
+      // Drop from this page's in-memory list — the load-time filter above
+      // (line ~74) excludes "Converted to Order" quotes, so the row would
+      // otherwise re-appear under the "All" filter until reload.
       setQuotes((prev) => prev.filter((x) => x.id !== q.id));
-    }
-    setViewing(null);
+      setViewing(null);
     } finally {
       setConverting(false);
     }
