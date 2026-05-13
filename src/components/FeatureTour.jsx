@@ -52,6 +52,12 @@ function getElementRect(selector) {
 const TOOLTIP_W = 360;
 const TOOLTIP_H = 200;
 
+// Pixels the spotlight ring extends past the target rect on every side.
+// Kept small so the ring hugs the actual highlighted element instead of
+// floating in space below/around it. Two referenced spots: the spotlight
+// div's geometry (top/left/width/height) and the caret-on-ring math.
+const SPOTLIGHT_INSET = 2;
+
 function getTooltipStyle(rect, position) {
   if (!rect || position === "center") {
     return {
@@ -62,15 +68,14 @@ function getTooltipStyle(rect, position) {
     };
   }
 
-  // Gap between the target rect and the popover body. The math the user
-  // sees is:
-  //   - Spotlight ring sits 6px outside the target rect
-  //   - 45°-rotated 12px caret extends ~8.5px past the popover edge
-  //   - Gap = 14 → caret tip lands exactly on the spotlight ring
-  //   - Popover body starts ~6px past the ring on the outside
-  // This is the position that visually "lines up" with the highlight:
-  // tip touching the ring, popover body just outside, no floating gap.
-  const gap = 14;
+  // Tight gap between the target rect and the popover body. The previous
+  // pass used 14 to land the caret tip on the (then 6px-inset) spotlight
+  // ring, but in practice the target rects sat noticeably below the
+  // visible card edges, so the popover ended up floating below the
+  // highlight. Pulling both inward: the spotlight inset is now 2px (see
+  // SPOTLIGHT_INSET below) and the gap is 4 — the popover effectively
+  // attaches to the spotlight ring with no visible vertical drift.
+  const gap = 4;
   // Larger padding for viewport-edge clamping so popovers don't kiss
   // the screen edge.
   const edgePad = 16;
@@ -235,10 +240,10 @@ export default function FeatureTour() {
         <div
           className="absolute border-2 border-indigo-400 rounded-xl pointer-events-none"
           style={{
-            top: rect.top - 6,
-            left: rect.left - 6,
-            width: rect.width + 12,
-            height: rect.height + 12,
+            top: rect.top - SPOTLIGHT_INSET,
+            left: rect.left - SPOTLIGHT_INSET,
+            width: rect.width + SPOTLIGHT_INSET * 2,
+            height: rect.height + SPOTLIGHT_INSET * 2,
             boxShadow: "0 0 0 9999px rgba(15,23,42,0.7)",
             zIndex: 61,
           }}
