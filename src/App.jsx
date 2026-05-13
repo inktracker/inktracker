@@ -133,9 +133,7 @@ const FEATURE_CARDS = [
     title: "Shop Floor",
     desc: "Tablet-ready view for employees. Job tickets, checklists, and real-time production updates.",
     color: "from-orange-500/20 to-orange-500/5",
-    // TODO: Shop Floor view on a tablet (or 4:3 framing). Show job ticket + checklist.
-    // Screenshot path: /public/landing/feature-shopfloor.png
-    media: null,
+    media: { type: "iframe", src: "/landing/shopfloor-demo/index.html" },
   },
   {
     title: "Artwork Proofs",
