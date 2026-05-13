@@ -415,6 +415,7 @@ export default function Account() {
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Default Tax Rate %</label>
                 <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)} placeholder="8.265"
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <p className="text-xs text-slate-400 mt-1">Enter the percentage (8.265 means 8.265%), not a decimal.</p>
               </div>
             </div>
 

@@ -249,8 +249,9 @@ export default function OnboardingWizard({ user, onComplete }) {
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Sales Tax %</label>
                     <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)}
-                      placeholder=""
+                      placeholder="e.g. 8.25"
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                    <p className="text-xs text-slate-400 mt-1">Enter the percentage (8.25 means 8.25%), not a decimal.</p>
                   </div>
                 </div>
                 <div>

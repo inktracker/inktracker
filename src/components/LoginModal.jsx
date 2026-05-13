@@ -15,6 +15,8 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   const [magicLoading, setMagicLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [resendLoading, setResendLoading] = useState(false);
+  const [pendingConfirmEmail, setPendingConfirmEmail] = useState("");
 
   if (!isOpen) return null;
 
@@ -22,6 +24,25 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     setMode(next);
     setError("");
     setSuccess("");
+    setPendingConfirmEmail("");
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!pendingConfirmEmail) return;
+    setError("");
+    setResendLoading(true);
+    try {
+      const { error: resendErr } = await supabase.auth.resend({
+        type: "signup",
+        email: pendingConfirmEmail,
+      });
+      if (resendErr) throw resendErr;
+      setSuccess(`Confirmation email resent to ${pendingConfirmEmail}. If it still doesn't arrive, use "Email me a sign-in link" on the sign-in screen — it works even before you confirm.`);
+    } catch (err) {
+      setError(err.message || "Couldn't resend the confirmation email.");
+    } finally {
+      setResendLoading(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -38,7 +59,8 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         if (data?.session) {
           onClose();
         } else {
-          setSuccess("Check your email to confirm your account, then sign in.");
+          setPendingConfirmEmail(email);
+          setSuccess(`Confirmation email sent to ${email}. Click the link in that email to activate your account.`);
         }
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
@@ -111,6 +133,25 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
           {success && (
             <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
               {success}
+            </div>
+          )}
+
+          {pendingConfirmEmail && mode === "signup" && (
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-sm text-slate-600 space-y-2">
+              <p className="leading-relaxed">
+                Didn&apos;t get the email? Check spam, or:
+              </p>
+              <button
+                type="button"
+                onClick={handleResendConfirmation}
+                disabled={resendLoading}
+                className="w-full inline-flex items-center justify-center gap-2 border border-slate-300 bg-white text-slate-700 font-semibold py-2 rounded-lg transition hover:bg-slate-50 disabled:opacity-60"
+              >
+                {resendLoading ? "Sending…" : "Resend confirmation email"}
+              </button>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Still no luck? Switch to sign-in and use &quot;Email me a sign-in link&quot; — it works before confirmation too.
+              </p>
             </div>
           )}
 
