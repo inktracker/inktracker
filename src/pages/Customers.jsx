@@ -931,33 +931,41 @@ export default function Customers() {
             // cross-shop writes; this is the in-app guard.
             if (!canDelete()) return;
             let totalMoved = 0;
+            const fullyMergedIds = [];
+            const partiallyFailed = [];
+
             for (const dup of duplicates) {
-              // Also match by customer_name since some records might not have customer_id
-              const [quotesById, ordersByName, invoicesById] = await Promise.all([
+              const [quotesById, ordersByName, invoicesById, quotesByName, invoicesByName] = await Promise.all([
                 base44.entities.Quote.filter({ customer_id: dup.id }),
                 base44.entities.Order.filter({ customer_name: dup.name }),
                 base44.entities.Invoice.filter({ customer_id: dup.id }),
-              ]);
-              // Also search quotes/invoices by name for records without customer_id
-              const [quotesByName, invoicesByName] = await Promise.all([
                 base44.entities.Quote.filter({ customer_name: dup.name }),
                 base44.entities.Invoice.filter({ customer_name: dup.name }),
               ]);
-              // Deduplicate by id
               const allQuotes = [...new Map([...quotesById, ...quotesByName].map(q => [q.id, q])).values()];
               const allInvoices = [...new Map([...invoicesById, ...invoicesByName].map(i => [i.id, i])).values()];
 
+              // Track reassign failures. If ANY child row fails to move,
+              // leave the duplicate customer in place so the user can
+              // retry manually — deleting it would orphan the remaining
+              // children (the bug Joe got bit by before this guard).
+              let dupReassignsOk = true;
               for (const q of allQuotes) {
-                try { await base44.entities.Quote.update(q.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; } catch (e) { console.error("Quote reassign failed:", e); }
+                try { await base44.entities.Quote.update(q.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
+                catch (e) { console.error("Quote reassign failed:", e); dupReassignsOk = false; }
               }
               for (const o of ordersByName) {
-                try { await base44.entities.Order.update(o.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; } catch (e) { console.error("Order reassign failed:", e); }
+                try { await base44.entities.Order.update(o.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
+                catch (e) { console.error("Order reassign failed:", e); dupReassignsOk = false; }
               }
               for (const inv of allInvoices) {
-                try { await base44.entities.Invoice.update(inv.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; } catch (e) { console.error("Invoice reassign failed:", e); }
+                try { await base44.entities.Invoice.update(inv.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
+                catch (e) { console.error("Invoice reassign failed:", e); dupReassignsOk = false; }
               }
 
-              // Merge any useful data from duplicate into primary
+              // Merge useful data from duplicate into primary (idempotent
+              // even if dup isn't deleted). Build a fresh object instead of
+              // mutating the prop.
               const mergeFields = {};
               if (!primary.email && dup.email) mergeFields.email = dup.email;
               if (!primary.phone && dup.phone) mergeFields.phone = dup.phone;
@@ -965,13 +973,36 @@ export default function Customers() {
               if (!primary.company && dup.company) mergeFields.company = dup.company;
               if (!primary.qb_customer_id && dup.qb_customer_id) mergeFields.qb_customer_id = dup.qb_customer_id;
               if (Object.keys(mergeFields).length) {
-                try { await base44.entities.Customer.update(primary.id, mergeFields); Object.assign(primary, mergeFields); } catch {}
+                try {
+                  const updated = await base44.entities.Customer.update(primary.id, mergeFields);
+                  primary = updated || { ...primary, ...mergeFields };
+                } catch {}
               }
 
-              await base44.entities.Customer.delete(dup.id);
+              if (dupReassignsOk) {
+                try {
+                  await base44.entities.Customer.delete(dup.id);
+                  fullyMergedIds.push(dup.id);
+                } catch (e) {
+                  console.error("Duplicate delete failed:", e);
+                  partiallyFailed.push(dup);
+                }
+              } else {
+                partiallyFailed.push(dup);
+              }
             }
-            alert(`Merged ${duplicates.length} duplicate(s) into ${primary.name}. ${totalMoved} records reassigned.`);
-            setCustomers(prev => prev.filter(c => !duplicates.some(d => d.id === c.id)));
+
+            const failedNames = partiallyFailed.map(d => d.name).join(", ");
+            if (partiallyFailed.length > 0) {
+              alert(
+                `Merged ${fullyMergedIds.length} of ${duplicates.length}. ` +
+                `Could not finish merging ${partiallyFailed.length} duplicate(s) (${failedNames}) — some child records didn't reassign and were left in place to avoid orphans. ` +
+                `${totalMoved} record(s) moved overall.`,
+              );
+            } else {
+              alert(`Merged ${duplicates.length} duplicate(s) into ${primary.name}. ${totalMoved} records reassigned.`);
+            }
+            setCustomers(prev => prev.filter(c => !fullyMergedIds.includes(c.id)));
           }}
           onClose={() => setShowMerge(false)}
           supabaseFuncUrl={SUPABASE_FUNC_URL}

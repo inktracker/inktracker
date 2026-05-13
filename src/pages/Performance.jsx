@@ -39,6 +39,7 @@ export default function Performance() {
   const [loading, setLoading] = useState(true);
   const [qbConnected, setQbConnected] = useState(false);
   const [dateRange, setDateRange] = useState("thisMonth");
+  const [loadError, setLoadError] = useState("");
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -62,16 +63,19 @@ export default function Performance() {
         }
       })();
 
-      try {
-        const [perfData, allOrders, allInvoices] = await Promise.all([
-          base44.entities.ShopPerformance.filter({ shop_owner: u.email }, "-date", 1000).catch(() => []),
-          base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
-          base44.entities.Invoice.filter({ shop_owner: u.email }, "-created_date", 1000).catch(() => []),
-        ]);
-        setRecords(perfData);
-        setOrders(allOrders);
-        setInvoices(allInvoices);
-      } catch {}
+      // Per-query .catch + a `loadError` flag so an RLS hiccup surfaces in
+      // the UI as a banner instead of silently rendering zeros. Each
+      // bucket falls back to [] so the math below stays safe.
+      let failures = 0;
+      const [perfData, allOrders, allInvoices] = await Promise.all([
+        base44.entities.ShopPerformance.filter({ shop_owner: u.email }, "-date", 1000).catch((e) => { console.error("[Performance] perf fetch failed:", e); failures++; return []; }),
+        base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 1000).catch((e) => { console.error("[Performance] orders fetch failed:", e); failures++; return []; }),
+        base44.entities.Invoice.filter({ shop_owner: u.email }, "-created_date", 1000).catch((e) => { console.error("[Performance] invoices fetch failed:", e); failures++; return []; }),
+      ]);
+      setRecords(perfData);
+      setOrders(allOrders);
+      setInvoices(allInvoices);
+      if (failures > 0) setLoadError(`Some performance data couldn't load (${failures} of 3 sources). Numbers below may be incomplete.`);
 
       setLoading(false);
     }
@@ -121,6 +125,11 @@ export default function Performance() {
 
   return (
     <div className="space-y-8">
+      {loadError && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+          {loadError}
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Performance</h2>
