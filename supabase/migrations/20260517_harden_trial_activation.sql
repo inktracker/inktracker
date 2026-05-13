@@ -68,7 +68,13 @@ $$;
 
 -- ── 2. activate_trial RPC: idempotent backstop with jsonb status ─
 
-CREATE OR REPLACE FUNCTION public.activate_trial(user_auth_id uuid)
+-- DROP first: the previous version of this function returned `void`,
+-- and Postgres refuses to change the return type via CREATE OR REPLACE
+-- (SQLSTATE 42P13). DROP IF EXISTS is also a no-op on a fresh DB so
+-- the migration stays idempotent across replay paths.
+DROP FUNCTION IF EXISTS public.activate_trial(uuid);
+
+CREATE FUNCTION public.activate_trial(user_auth_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
