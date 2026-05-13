@@ -242,4 +242,29 @@ describe("buildShopUpsertPayload", () => {
     expect(p.logo_url).toBe("");
     expect(typeof p.shop_name).toBe("string");
   });
+
+  it("omits pricing_config entirely when offersEmbroidery is false or missing", () => {
+    const a = buildShopUpsertPayload({ user: NEW_USER });
+    const b = buildShopUpsertPayload({ user: NEW_USER, offersEmbroidery: false });
+    expect(a).not.toHaveProperty("pricing_config");
+    expect(b).not.toHaveProperty("pricing_config");
+  });
+
+  it("seeds pricing_config.embroidery.enabled when offersEmbroidery is true", () => {
+    const p = buildShopUpsertPayload({
+      user: NEW_USER,
+      shopName: "Biota Mfg",
+      offersEmbroidery: true,
+    });
+    expect(p.pricing_config).toEqual({ embroidery: { enabled: true } });
+  });
+
+  it("does not overwrite other pricing_config keys — only sets embroidery.enabled (rest filled by defaults)", () => {
+    // Contract: the wizard never had user-edited print pricing yet, so writing
+    // just { embroidery: { enabled: true } } is correct. Account → Pricing will
+    // merge with DEFAULTS on first edit.
+    const p = buildShopUpsertPayload({ user: NEW_USER, offersEmbroidery: true });
+    expect(Object.keys(p.pricing_config)).toEqual(["embroidery"]);
+    expect(Object.keys(p.pricing_config.embroidery)).toEqual(["enabled"]);
+  });
 });
