@@ -88,11 +88,23 @@ export default function Mockups() {
           body: JSON.stringify({ styleCode: code }),
         }).then(r => r.json()),
       ]);
+      // Distinguish "neither supplier had this style" from "we couldn't
+      // reach either supplier" — they produce the same empty array but
+      // mean very different things to the user.
+      const ssReached = ssRes.status === "fulfilled" && !ssRes.value.error;
+      const acReached = acRes.status === "fulfilled" && !acRes.value.error;
       const allMatches = [
-        ...(ssRes.status === "fulfilled" && !ssRes.value.error ? ssRes.value.matches || [] : []),
-        ...(acRes.status === "fulfilled" && !acRes.value.error ? acRes.value.matches || [] : []),
+        ...(ssReached ? ssRes.value.matches || [] : []),
+        ...(acReached ? acRes.value.matches || [] : []),
       ];
-      if (!allMatches.length) { alert("Style not found"); return; }
+      if (!allMatches.length) {
+        if (!ssReached && !acReached) {
+          alert("Couldn't reach S&S or AS Colour. Check your supplier API credentials in Account settings.");
+        } else {
+          alert("Style not found");
+        }
+        return;
+      }
       if (allMatches.length === 1) {
         pickMatch(allMatches[0]);
       } else {
