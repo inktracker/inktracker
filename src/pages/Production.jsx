@@ -55,7 +55,10 @@ const STATUS_COLORS = {
   "Quote Approved": "bg-green-50 border-green-300 text-green-700",
   // Production pipeline
   "Art Approval": "bg-slate-100 border-slate-300 text-slate-700",
-  "Order Goods":  "bg-amber-50 border-amber-300 text-amber-800",
+  // Order Goods uses orange (not amber) so it's visually distinct from
+  // Pre-Press yellow — they used to be too similar to tell apart on the
+  // calendar at a glance. Matches src/pages/Calendar.jsx for consistency.
+  "Order Goods":  "bg-orange-50 border-orange-300 text-orange-800",
   "Pre-Press":    "bg-yellow-50 border-yellow-300 text-yellow-800",
   "Printing":     "bg-blue-50 border-blue-300 text-blue-800",
   "Completed":    "bg-emerald-100 border-emerald-400 text-emerald-800 font-semibold",
