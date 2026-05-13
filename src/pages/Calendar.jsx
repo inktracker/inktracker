@@ -5,6 +5,7 @@ import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
+import EmptyState from "../components/shared/EmptyState";
 
 // Calendar status colors. Mirrors O_STATUSES — 5 stages.
 const STATUS_COLORS = {
@@ -374,7 +375,9 @@ export default function Calendar() {
       ) : (
         <div className="space-y-4">
           {allActiveOrders.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-2xl py-20 text-center text-slate-300 text-sm">No orders yet.</div>
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm">
+              <EmptyState type="orders" />
+            </div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
