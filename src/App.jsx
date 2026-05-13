@@ -127,14 +127,7 @@ const FEATURE_CARDS = [
     title: "Broker Integration",
     desc: "Resellers submit their clients' orders through their own portal. Broker pricing and commissions tracked automatically.",
     color: "from-teal-500/20 to-teal-500/5",
-    // TODO: Broker Dashboard view — assigned shops list, recent submitted
-    // orders, commission summary at the top. Also worth: a side-by-side
-    // showing the broker's portal vs the shop's incoming-quote view so it's
-    // clear how the two sides connect.
-    // Screenshot path: /public/landing/feature-broker.png
-    // Demo path:       /public/landing/feature-broker.mp4 (recommended —
-    //                   short loop of a broker submitting → shop receiving)
-    media: null,
+    media: { type: "iframe", src: "/landing/broker-demo/index.html" },
   },
   {
     title: "Shop Floor",
