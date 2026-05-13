@@ -45,6 +45,7 @@ export default function Quotes() {
   const [user, setUser] = useState(null);
   const [brokerMap, setBrokerMap] = useState({});
   const [converting, setConverting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [advFilters, setAdvFilters] = useState({});
   const [brokerFilter, setBrokerFilter] = useState("All");
   const [page, setPage] = useState(1);
@@ -289,6 +290,25 @@ export default function Quotes() {
     await base44.entities.Quote.delete(id);
     setQuotes((prev) => prev.filter((q) => q.id !== id));
     setViewing(null);
+  }
+
+  async function handleDuplicate(q) {
+    if (duplicating) return;
+    setDuplicating(true);
+    try {
+      const newId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
+      const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, ...rest } = q;
+      const dup = { ...rest, quote_id: newId, status: "Draft", date: new Date().toISOString().split("T")[0] };
+      const created = await base44.entities.Quote.create(dup);
+      setQuotes((prev) => [created, ...prev]);
+      setViewing(null);
+      setEditing(created);
+    } catch (err) {
+      console.error("[Quotes] duplicate failed:", err);
+      alert("Couldn't duplicate this quote. Please try again.");
+    } finally {
+      setDuplicating(false);
+    }
   }
 
   async function handleConvert(q) {
@@ -651,15 +671,7 @@ export default function Quotes() {
           onDelete={handleDelete}
           onSend={handleQuoteSent}
           onTogglePaid={handleTogglePaid}
-          onDuplicate={async (q) => {
-            const newId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
-            const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, ...rest } = q;
-            const dup = { ...rest, quote_id: newId, status: "Draft", date: new Date().toISOString().split("T")[0] };
-            const created = await base44.entities.Quote.create(dup);
-            setQuotes(prev => [created, ...prev]);
-            setViewing(null);
-            setEditing(created);
-          }}
+          onDuplicate={handleDuplicate}
         />
       )}
 
