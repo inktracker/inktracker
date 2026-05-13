@@ -7,6 +7,7 @@ import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import EmptyState from "../components/shared/EmptyState";
+import { todayInShopTz } from "@/lib/shopTimezone";
 
 // Calendar status colors. Mirrors O_STATUSES — 5 stages — plus the
 // pre-order quote lifecycle chips (Quote Sent, Quote Approved). Keep this
@@ -36,8 +37,11 @@ function toDateStr(year, month, day) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+// Resolves against the shop's configured timezone (falls back to browser
+// tz when unset). The old toISOString() variant always returned UTC date,
+// which is wrong for any shop west of London past 5pm local.
 function todayStr() {
-  return new Date().toISOString().split("T")[0];
+  return todayInShopTz();
 }
 
 const MONTH_NAMES = [

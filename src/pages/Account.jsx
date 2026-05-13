@@ -4,6 +4,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2 } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
+import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 
 function Section({ icon: IconComp, title, defaultOpen = false, children }) {
@@ -56,6 +57,9 @@ export default function Account() {
   const [stateVal, setStateVal] = useState("");
   const [zip, setZip] = useState("");
   const [taxRate, setTaxRate] = useState("");
+  // Empty string = "use browser default" (the first picker option). Stored
+  // on the shops table so it applies to every user in this shop.
+  const [timezone, setTimezone] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -102,6 +106,7 @@ export default function Account() {
         try {
           const shops = await base44.entities.Shop.filter({ owner_email: currentUser.email });
           setShopRecord(shops?.[0] || null);
+          setTimezone(shops?.[0]?.timezone || "");
           if (shops?.[0]?.addons?.length) {
             setAddons(
               shops[0].addons
@@ -177,6 +182,28 @@ export default function Account() {
         zip: zip.trim(),
         default_tax_rate: parseFloat(taxRate) || 0,
       });
+
+      // Timezone lives on the shops table (so it applies to every user in
+      // this shop, not just whoever saved last). Best-effort — failing this
+      // shouldn't undo the profile save above.
+      try {
+        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+        const payload = { timezone: timezone || null };
+        if (shops?.[0]) {
+          await base44.entities.Shop.update(shops[0].id, payload);
+        } else {
+          await base44.entities.Shop.create({
+            owner_email: user.email,
+            shop_name: shopName || user.email,
+            ...payload,
+          });
+        }
+        // Apply the new tz immediately to the running app so subsequent
+        // todayStr() / nowLocal() calls reflect the change without a reload.
+        loadShopTimezone(timezone || null);
+      } catch (tzErr) {
+        console.warn("Timezone save failed (non-blocking):", tzErr);
+      }
 
       setUser(updatedUser || user);
       setMessage("Saved successfully!");
@@ -416,6 +443,21 @@ export default function Account() {
                 <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)} placeholder="8.265"
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 <p className="text-xs text-slate-400 mt-1">Enter the percentage (8.265 means 8.265%), not a decimal.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Shop Timezone</label>
+                <select
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  {SHOP_TIMEZONE_OPTIONS.map((opt) => (
+                    <option key={opt.value || "__default__"} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-400 mt-1">Used by the calendar to know what "today" means for your shop. Lets employees logging in from another state still see the right "today."</p>
               </div>
             </div>
 
