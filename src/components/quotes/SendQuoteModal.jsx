@@ -5,6 +5,7 @@ import { calcQuoteTotals, buildQBInvoicePayload, fmtMoney, BROKER_MARKUP } from 
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { quotePaymentUrl } from "@/lib/publicUrls";
+import { validateQuoteForSend } from "@/lib/quotes/validation";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -107,16 +108,25 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       let publicToken = quote.public_token;
       if (!publicToken) {
         // Older quotes may not have a token yet (created before the security fix).
-        // Mint one now and persist it.
-        try {
-          const fresh = await base44.entities.Quote.update(quote.id, {
-            public_token: (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/-/g, ""),
-          });
-          publicToken = fresh?.public_token;
-        } catch (tokenErr) {
-          console.warn("[SendQuoteModal] could not mint public_token:", tokenErr);
-        }
+        // Mint one now and persist it. If this fails we MUST abort — sending
+        // without a token produces a payment link the customer can't open.
+        const fresh = await base44.entities.Quote.update(quote.id, {
+          public_token: (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/-/g, ""),
+        });
+        publicToken = fresh?.public_token;
       }
+
+      // Validate everything before the QB invoice / PDF / email work runs.
+      // The send path used to fall through silently if the token mint failed,
+      // shipping a broken payment link. Hard-abort here instead.
+      const sendErrors = validateQuoteForSend(
+        { ...quote, customer_email: recipientEmails[0] || quote.customer_email },
+        publicToken,
+      );
+      if (sendErrors) {
+        throw new Error(sendErrors.join(" "));
+      }
+
       const paymentLink = quotePaymentUrl(quote.id, publicToken);
       let quoteForPdf = { ...quote, public_token: publicToken };
 
