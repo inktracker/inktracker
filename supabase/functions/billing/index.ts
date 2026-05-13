@@ -63,6 +63,22 @@ Deno.serve(async (req) => {
     const profile = await getProfile(user.id);
     if (!profile) return json({ error: "Profile not found" });
 
+    // Actions that touch the shop's billing/payouts wiring must be restricted
+    // to shop/admin only. CLAUDE.md: managers have "full shop access, no
+    // billing/admin". Without this gate a manager could call e.g.
+    // openStripeDashboard to get a login link for the shop owner's Stripe
+    // Express dashboard and redirect the payout bank account.
+    const BILLING_OWNER_ACTIONS = new Set([
+      "checkout",
+      "portal",
+      "connectStripe",
+      "getStripeAccountStatus",
+      "openStripeDashboard",
+    ]);
+    if (BILLING_OWNER_ACTIONS.has(action) && profile.role !== "admin" && profile.role !== "shop") {
+      return json({ error: "Forbidden: billing actions are shop-owner only" }, 403);
+    }
+
     // ── activateTrial ─────────────────────────────────────────────
     if (action === "activateTrial") {
       if (profile.role !== "user") return json({ already: true });
