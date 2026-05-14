@@ -113,11 +113,11 @@ export function validateOrderPayload(payload) {
  *
  * Assumes the payload has already passed validateOrderPayload.
  */
-// AS Colour requires a non-empty warehouse on each item. The US API
-// has two physical warehouses: "Carson, CA" (West Coast) and
-// "Charlotte, NC" (East Coast). Country codes ("USA") get rejected.
-// Default to Carson, CA when nothing else is set.
-const DEFAULT_WAREHOUSE = "Carson, CA";
+// AS Colour requires a non-empty warehouse on each item. Confirmed
+// via /v1/inventory/items probe: the US API uses state-code strings
+// "CA" (Carson) and "NC" (Charlotte). The longer names ("Carson, CA")
+// get rejected silently as "out of stock". Default to "CA".
+const DEFAULT_WAREHOUSE = "CA";
 
 export function buildOrderRequestBody(payload) {
   return {

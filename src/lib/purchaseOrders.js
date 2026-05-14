@@ -270,9 +270,10 @@ export function mergeableDestinations(po, allPOs) {
 // Build the payload shape acPlaceOrder expects (matches the AS Colour
 // /v1/orders contract via _shared/acOrderLogic.buildOrderRequestBody).
 //
-// Warehouse: PO-level po.warehouse drives every item. AS Colour US has
-// two named warehouses — "Carson, CA" and "Charlotte, NC". Default to
-// Carson, CA if nothing's set. Same default lives server-side.
+// Warehouse: PO-level po.warehouse drives every item. AS Colour US's
+// canonical strings (confirmed via /v1/inventory/items) are "CA" and
+// "NC" — state codes, NOT "Carson, CA" / "Charlotte, NC". Default to
+// "CA" if nothing's set. Same default lives server-side.
 export function buildSubmitPayload(po) {
   const poWarehouse = String(po.warehouse || "").trim();
   return {
@@ -283,7 +284,7 @@ export function buildSubmitPayload(po) {
     shippingAddress: po.ship_to,
     items: (po.items || []).map((it) => ({
       sku: String(it.sku),
-      warehouse: poWarehouse || String(it.warehouse || "Carson, CA"),
+      warehouse: poWarehouse || String(it.warehouse || "CA"),
       quantity: Number(it.quantity),
     })),
   };

@@ -1,32 +1,20 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
 import { fmtMoney } from "../shared/pricing";
 import { mergeItem } from "@/lib/purchaseOrders";
-import { SUPPLIERS } from "@/api/suppliers";
-import { X, Package, CheckCircle, Truck, Loader2, ExternalLink } from "lucide-react";
+import { SUPPLIERS, lookupStyle } from "@/api/suppliers";
+import { X, Package, CheckCircle, Truck, Loader2, ExternalLink, AlertCircle } from "lucide-react";
 
-const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
-
-// AS Colour SKU shape: STYLE-COLOR-FIT-SIZE (e.g. 5050-BLACK-J-XL).
-// We don't know the fit code from the line item, so default to no fit
-// segment and let the shop edit per-row before creating the PO.
-function defaultSku(li, size) {
-  const style = String(
-    li.supplierStyleNumber ||
-    li.resolvedStyleNumber ||
-    li.styleNumber ||
-    li.style ||
-    "",
-  ).toUpperCase();
-  const color = String(li.garmentColor || "")
-    .replace(/[^A-Z0-9]/gi, "")
-    .toUpperCase();
-  const sz = String(size || "").toUpperCase();
-  if (!style || !color || !sz) return "";
-  return `${style}-${color}-${sz}`;
-}
+// We DO NOT generate AS Colour SKUs anymore. Their format includes an
+// internal colour code (e.g. "WHI_M") and a per-size fit letter (F/G/H/...)
+// that can't be derived from quote data. Confirmed via /v1/inventory/items:
+//   "5102-WHITEHEATHER-M" (generated)  →  AS Colour says "out of stock"
+//   "5102-WHI_M-H-M"      (canonical)  →  accepted
+//
+// Instead we look up each style via acLookupStyle when the modal opens,
+// then match each line by (colour, size) to the canonical variant.sku.
 
 function buildAcLines(lineItems) {
   const lines = [];
@@ -50,7 +38,8 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
   const rawLines = useMemo(() => buildAcLines(acLineItems), [acLineItems]);
   const totalQty = rawLines.reduce((s, l) => s + l.qty, 0);
 
-  // Per-row SKU overrides keyed by line index + size
+  // Per-row SKU overrides keyed by line index + size. Empty until the
+  // resolver below fills it from AS Colour's canonical variant data.
   const [skuOverrides, setSkuOverrides] = useState({});
   // AS Colour caps reference at 20 chars, so "PO for ORD-2026-XXXXX"
   // (21+ chars) would always reject. Use the bare order_id, which fits
@@ -62,9 +51,65 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
   const [error, setError] = useState(null);
   const [createdPO, setCreatedPO] = useState(null);
 
+  // Canonical SKU map keyed by `${idx}-${size}`, filled by the
+  // resolver useEffect below. Loading flag drives a small status hint.
+  const [resolvedSkus, setResolvedSkus] = useState({});
+  const [resolveLoading, setResolveLoading] = useState(false);
+  const [unresolvedCount, setUnresolvedCount] = useState(0);
+
+  // On mount: for each unique style code in this order's AC items, hit
+  // acLookupStyle once. Build a (colour, size) → canonical SKU map and
+  // pre-fill the rows. The user can still override per-row.
+  useEffect(() => {
+    if (rawLines.length === 0) return;
+    const styleCodes = Array.from(new Set(
+      rawLines
+        .map((line) => String(
+          line.li.supplierStyleNumber || line.li.resolvedStyleNumber || line.li.styleNumber || line.li.style || "",
+        ).trim())
+        .filter(Boolean),
+    ));
+    if (styleCodes.length === 0) return;
+    let cancelled = false;
+    setResolveLoading(true);
+    Promise.all(styleCodes.map((code) =>
+      lookupStyle(SUPPLIERS.AC, { styleCode: code }).catch(() => null),
+    ))
+      .then((results) => {
+        if (cancelled) return;
+        const styleToVariants = {};
+        for (let i = 0; i < styleCodes.length; i++) {
+          const r = results[i];
+          const product = r?.product || (r?.matches || [])[0] || r;
+          styleToVariants[styleCodes[i]] = product?.variants || [];
+        }
+        const matched = {};
+        let unresolved = 0;
+        for (let idx = 0; idx < rawLines.length; idx++) {
+          const line = rawLines[idx];
+          const code = String(
+            line.li.supplierStyleNumber || line.li.resolvedStyleNumber || line.li.styleNumber || line.li.style || "",
+          ).trim();
+          const colour = String(line.li.garmentColor || "").trim();
+          const size = String(line.size || "").trim();
+          const variants = styleToVariants[code] || [];
+          const match = variants.find((v) =>
+            v.colour?.toUpperCase() === colour.toUpperCase() &&
+            v.size?.toUpperCase() === size.toUpperCase(),
+          );
+          if (match?.sku) matched[`${idx}-${size}`] = match.sku;
+          else unresolved++;
+        }
+        setResolvedSkus(matched);
+        setUnresolvedCount(unresolved);
+      })
+      .finally(() => { if (!cancelled) setResolveLoading(false); });
+    return () => { cancelled = true; };
+  }, [rawLines]);
+
   function getSku(line, idx) {
     const key = `${idx}-${line.size}`;
-    return skuOverrides[key] ?? defaultSku(line.li, line.size);
+    return skuOverrides[key] ?? resolvedSkus[key] ?? "";
   }
 
   function setSku(idx, size, sku) {
@@ -186,6 +231,21 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
                 {totalQty} garments across {acLineItems.length} line item{acLineItems.length !== 1 ? "s" : ""}
               </div>
 
+              {resolveLoading && (
+                <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Looking up canonical AS Colour SKUs…
+                </div>
+              )}
+              {!resolveLoading && unresolvedCount > 0 && (
+                <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+                  <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  <span>
+                    Couldn't match {unresolvedCount} item{unresolvedCount === 1 ? "" : "s"} to AS Colour's catalog — usually means the colour or size doesn't exist. Edit the SKU manually before creating the PO, or leave blank to skip.
+                  </span>
+                </div>
+              )}
+
               {rawLines.map((line, i) => {
                 const li = line.li;
                 const cost = Number(li.garmentCost || li.casePrice || 0);
@@ -202,12 +262,17 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
                       <div className="text-sm font-bold text-slate-700">{fmtMoney(lineTotal)}</div>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">SKU</label>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+                        SKU
+                        {resolvedSkus[`${i}-${line.size}`] && skuOverrides[`${i}-${line.size}`] === undefined && (
+                          <span className="ml-1.5 text-emerald-600 normal-case font-normal tracking-normal">✓ AS Colour canonical</span>
+                        )}
+                      </label>
                       <input
                         value={getSku(line, i)}
                         onChange={(e) => setSku(i, line.size, e.target.value)}
                         className="w-full font-mono text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                        placeholder="e.g. 5050-BLACK-XL"
+                        placeholder={resolveLoading ? "Resolving…" : "e.g. 5102-WHI_M-H-M"}
                       />
                     </div>
                   </div>
@@ -215,7 +280,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
               })}
 
               <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-                <strong>Verify SKUs:</strong> AS Colour SKUs follow STYLE-COLOR-(FIT)-SIZE (e.g. <span className="font-mono">5050-BLACK-XL</span>). Adjust as needed before creating the PO.
+                <strong>SKU format:</strong> AS Colour uses STYLE-COLOR_CODE-FIT-SIZE (e.g. <span className="font-mono">5102-WHI_M-H-M</span>). Auto-matched from AS Colour's catalog where possible — verify before creating the PO.
               </div>
 
               {error && (

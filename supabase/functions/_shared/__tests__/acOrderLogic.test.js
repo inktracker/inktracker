@@ -239,14 +239,14 @@ describe("validateOrderPayload", () => {
 // ── buildOrderRequestBody ───────────────────────────────────────────────────
 
 describe("buildOrderRequestBody", () => {
-  it("normalises types and defaults warehouse to 'Carson, CA' when missing", () => {
+  it("normalises types and defaults warehouse to 'CA' when missing", () => {
     const body = buildOrderRequestBody({
       reference: 12345, // numbers should coerce to strings
       shippingMethod: "Ground",
       shippingAddress: { address1: "100 Main", city: "Reno", zip: "89501", countryCode: "US" },
       items: [
-        { sku: "5050-BLACK-J-XL", warehouse: "Charlotte, NC", quantity: "12" },
-        { sku: "5050-BLACK-J-L", quantity: 24 }, // no warehouse → Carson, CA default
+        { sku: "5102-WHI_M-J-XL", warehouse: "NC", quantity: "12" },
+        { sku: "5102-WHI_M-I-L", quantity: 24 }, // no warehouse → CA default
       ],
     });
     expect(body).toEqual({
@@ -256,8 +256,8 @@ describe("buildOrderRequestBody", () => {
       courierInstructions: "",
       shippingAddress: { address1: "100 Main", city: "Reno", zip: "89501", countryCode: "US" },
       items: [
-        { sku: "5050-BLACK-J-XL", warehouse: "Charlotte, NC", quantity: 12 },
-        { sku: "5050-BLACK-J-L", warehouse: "Carson, CA", quantity: 24 },
+        { sku: "5102-WHI_M-J-XL", warehouse: "NC", quantity: 12 },
+        { sku: "5102-WHI_M-I-L", warehouse: "CA", quantity: 24 },
       ],
     });
   });
