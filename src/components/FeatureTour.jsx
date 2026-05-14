@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { X, ChevronRight, ChevronLeft } from "lucide-react";
 
 const TOUR_STEPS = [
@@ -150,41 +150,65 @@ export default function FeatureTour() {
     }
   }, []);
 
-  const updateRect = useCallback(() => {
+  // Single layout-effect handles rect computation, auto-skip, and the
+  // resize listener. The previous version split this across two effects
+  // and a useCallback, which created a race: when `step` changed, the
+  // auto-skip effect read a stale (null) `rect` from the previous step
+  // and skipped EVERY anchored step before the rect-update effect had a
+  // chance to run. Combining them ensures the skip decision is based on
+  // the rect we just synchronously computed for the CURRENT step.
+  //
+  // useLayoutEffect (not useEffect) so the rect is set before the next
+  // paint — eliminates the brief flash where the popover rendered at
+  // center while rect was still stale.
+  useLayoutEffect(() => {
+    if (!active) return;
     const current = TOUR_STEPS[step];
-    if (current?.selector) {
-      setRect(getElementRect(current.selector));
-    } else {
+
+    // Center steps don't need (or have) a target rect.
+    if (!current?.selector) {
       setRect(null);
+      return;
     }
-  }, [step]);
 
-  useEffect(() => {
-    if (!active) return;
-    updateRect();
-    window.addEventListener("resize", updateRect);
-    return () => window.removeEventListener("resize", updateRect);
-  }, [active, step, updateRect]);
-
-  // Auto-skip steps whose target isn't visible. Common case: the
-  // GettingStartedChecklist component returns null when the user has
-  // dismissed it via the X button, leaving `data-tour="checklist"` as
-  // an empty wrapper. The tour used to highlight nothing and the
-  // popover floated in empty space — now we just advance past the step.
-  useEffect(() => {
-    if (!active) return;
-    const current = TOUR_STEPS[step];
-    if (current?.selector && rect == null) {
-      const nextStep = step + 1;
-      // If we'd run off the end, finish the tour.
-      if (nextStep >= TOUR_STEPS.length) {
+    const finishOrSkip = () => {
+      if (step + 1 >= TOUR_STEPS.length) {
         localStorage.setItem("inktracker-tour-seen", "1");
         setActive(false);
       } else {
-        setStep(nextStep);
+        setStep(step + 1);
       }
+    };
+
+    // Try immediately; if the target isn't measurable yet (e.g. dashboard
+    // still loading), poll briefly before giving up. This avoids the
+    // false-positive skip where data-tour elements just hadn't rendered
+    // by the time the tour fired.
+    const r = getElementRect(current.selector);
+    if (r != null) {
+      setRect(r);
+      const onResize = () => setRect(getElementRect(current.selector));
+      window.addEventListener("resize", onResize);
+      return () => window.removeEventListener("resize", onResize);
     }
-  }, [active, step, rect]);
+
+    let attempts = 0;
+    const MAX_ATTEMPTS = 12; // ~1.2s of polling at 100ms
+    let intervalId;
+    intervalId = setInterval(() => {
+      attempts++;
+      const fresh = getElementRect(current.selector);
+      if (fresh != null) {
+        clearInterval(intervalId);
+        setRect(fresh);
+      } else if (attempts >= MAX_ATTEMPTS) {
+        clearInterval(intervalId);
+        // Genuinely missing (e.g. dismissed checklist). Skip the step.
+        finishOrSkip();
+      }
+    }, 100);
+    return () => clearInterval(intervalId);
+  }, [active, step]);
 
   if (!active) return null;
 
