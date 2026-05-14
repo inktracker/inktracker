@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import {
   Q_STATUSES,
@@ -391,7 +392,13 @@ export default function QuoteEditorModal({
     }
   }
 
-  return (
+  // Render via Portal at document.body so the backdrop's `fixed` is
+  // positioned relative to the true viewport — not any ancestor that
+  // might have transform/filter/contain CSS creating a containing
+  // block. Previously the backdrop appeared to start "slightly low"
+  // because the surrounding Layout/Routes hierarchy was producing
+  // exactly that effect.
+  return createPortal(
     <div
       className="fixed bg-slate-900/70 backdrop-blur-sm z-[60] flex items-start justify-center p-4 overflow-auto"
       style={{ top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
@@ -943,6 +950,7 @@ export default function QuoteEditorModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
