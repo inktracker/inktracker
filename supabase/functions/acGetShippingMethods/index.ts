@@ -39,17 +39,26 @@ async function resolveCreds(accessToken?: string): Promise<AcCreds | null> {
   return credsFromProfile(null);
 }
 
-// AS Colour's response shape varies a bit between regions; normalise to a
-// flat array of method-name strings the UI can drop into a <select>.
-function extractMethodNames(data: any): string[] {
+// AS Colour US returns {data: [{shippingMethod, description}, ...]}.
+// Older regions returned a flat string array or shippingMethods/methods
+// arrays — keep those code paths for safety. Normalise to a flat list
+// of {name, description} so the UI can show both the dropdown value and
+// a helpful explanation.
+function extractMethods(data: any): { name: string; description: string }[] {
   if (!data) return [];
   if (Array.isArray(data)) {
     return data
-      .map((m) => (typeof m === "string" ? m : m?.name || m?.method || m?.code || ""))
-      .filter(Boolean);
+      .map((m) => {
+        if (typeof m === "string") return { name: m, description: "" };
+        const name = m?.shippingMethod || m?.name || m?.method || m?.code || "";
+        const description = m?.description || "";
+        return name ? { name, description } : null;
+      })
+      .filter(Boolean) as { name: string; description: string }[];
   }
-  if (Array.isArray(data.shippingMethods)) return extractMethodNames(data.shippingMethods);
-  if (Array.isArray(data.methods)) return extractMethodNames(data.methods);
+  if (Array.isArray(data.data)) return extractMethods(data.data);
+  if (Array.isArray(data.shippingMethods)) return extractMethods(data.shippingMethods);
+  if (Array.isArray(data.methods)) return extractMethods(data.methods);
   return [];
 }
 
@@ -80,8 +89,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    const methods = extractMethodNames(res.data);
-    return Response.json({ methods, raw: res.data }, { headers: CORS });
+    const parsed = extractMethods(res.data);
+    // Keep `methods` as a string array (backwards compatible with the
+    // current getShippingMethods wrapper) AND add `methodDetails` with
+    // descriptions for richer UI rendering later.
+    const methods = parsed.map((m) => m.name);
+    return Response.json({ methods, methodDetails: parsed }, { headers: CORS });
   } catch (err) {
     console.error("acGetShippingMethods error:", err);
     return Response.json({ error: (err as Error).message }, { status: 500, headers: CORS });
