@@ -346,6 +346,15 @@ export default function Quotes() {
       // otherwise re-appear under the "All" filter until reload.
       setQuotes((prev) => prev.filter((x) => x.id !== q.id));
       setViewing(null);
+    } catch (err) {
+      // Don't let conversion errors die in the console. The button
+      // (in QuoteDetailModal) wraps this in callAction which swallows
+      // rejections; without surfacing here, the click looks dead.
+      console.error("Convert to Order failed:", err);
+      alert(
+        "Convert to Order failed: " + (err?.message || String(err)) +
+        "\n\nCheck the browser console for full stack trace.",
+      );
     } finally {
       setConverting(false);
     }
