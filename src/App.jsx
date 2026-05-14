@@ -708,7 +708,7 @@ function PublicLandingPage() {
               {[
                 {
                   q: "Can I import data from Printavo, Shopworks, or another shop management tool?",
-                  a: "Yes. CSV import is supported for customers, quotes, and orders. If you're switching from another platform, contact support and we'll help map the data over.",
+                  a: "Not via a self-serve CSV upload yet — but if you're switching from another platform, email support@inktracker.app with an export of your customers, quotes, or orders and we'll help port the data over manually. Self-serve import is on the roadmap.",
                 },
                 {
                   q: "Does InkTracker work for embroidery shops too, or only screen printing?",
