@@ -6,6 +6,7 @@ import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Setting
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
 import { canAccess, getEffectiveTier } from "@/lib/billing";
+import { resolveRoleRedirect } from "@/lib/broker/roleRedirect";
 
 const ICON_MAP = {
   Dashboard: Home,
@@ -185,18 +186,16 @@ export default function Layout({ children, currentPageName }) {
           await base44.auth.redirectToLogin();
           return;
         }
-        // Brokers are completely restricted to BrokerDashboard only
-        if (currentUser.role === "broker") {
-          if (currentPageName !== "BrokerDashboard") {
-            window.location.href = createPageUrl("BrokerDashboard");
-          }
+        // Role-based redirect (broker → BrokerDashboard, employee → ShopFloor).
+        // Logic lives in lib/broker/roleRedirect for unit tests.
+        const redirectTo = resolveRoleRedirect(currentUser, currentPageName);
+        if (redirectTo) {
+          window.location.href = createPageUrl(redirectTo);
           return;
         }
-        // Employees only see the shop floor
-        if (currentUser.role === "employee") {
-          if (currentPageName !== "ShopFloor") {
-            window.location.href = createPageUrl("ShopFloor");
-          }
+        if (currentUser.role === "broker" || currentUser.role === "employee") {
+          // On the correct page already — short-circuit without setting
+          // shop owner state (those roles don't render the shop layout).
           return;
         }
         setUser(currentUser);

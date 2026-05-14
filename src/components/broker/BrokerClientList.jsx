@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { uploadFile } from "@/lib/uploadFile";
+import { filterAndSortClients } from "@/lib/broker/clientFilter";
 import {
   Users,
   Search,
@@ -62,20 +63,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
   const [artNote, setArtNote] = useState("");
 
-  const filtered = clients
-    .filter((c) => {
-      const q = search.toLowerCase();
-      if (
-        q &&
-        !c.name?.toLowerCase().includes(q) &&
-        !c.company?.toLowerCase().includes(q) &&
-        !c.email?.toLowerCase().includes(q)
-      )
-        return false;
-      if (filters.taxExempt && !c.tax_exempt) return false;
-      return true;
-    })
-    .sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' }));
+  const filtered = filterAndSortClients(clients, { search, filters });
 
   function handleAdd() {
     if (!form.name.trim()) return;

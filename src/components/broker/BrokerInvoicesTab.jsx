@@ -33,32 +33,7 @@ import {
   CartesianGrid,
 } from "recharts";
 
-function getMonthKey(dateStr) {
-  if (!dateStr) return null;
-  const d = dateStr.split("T")[0];
-  return d.slice(0, 7);
-}
-
-function formatMonthLabel(key) {
-  const [y, m] = key.split("-");
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return `${months[parseInt(m) - 1]} '${y.slice(2)}`;
-}
-
-function buildMonthlyChart(jobs) {
-  const map = {};
-  jobs.forEach((j) => {
-    const key = getMonthKey(j.date || j.created_date);
-    if (!key) return;
-    if (!map[key]) map[key] = { month: key, revenue: 0, jobs: 0 };
-    map[key].revenue += j._brokerTotal || 0;
-    map[key].jobs += 1;
-  });
-  return Object.values(map)
-    .sort((a, b) => a.month.localeCompare(b.month))
-    .slice(-12)
-    .map((m) => ({ ...m, label: formatMonthLabel(m.month) }));
-}
+import { buildMonthlyChart } from "@/lib/broker/invoicesAggregation";
 
 function JobDetailDrawer({ job, onClose }) {
   const brokerTotals = job._brokerTotal || 0;

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { Bell, CheckCheck, FileText, UserPlus, MessageSquare, Paperclip, ChevronDown, ChevronUp, X, ThumbsUp, ThumbsDown } from "lucide-react";
+import { timeAgo, unreadCount, markRead, removeById } from "@/lib/broker/notifications";
 
 const ACTION_META = {
   submitted_quote: {
@@ -47,15 +48,6 @@ const ACTION_META = {
   },
 };
 
-function timeAgo(dateStr) {
-  if (!dateStr) return "";
-  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
 export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange }) {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -68,8 +60,7 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
       100
     );
     setNotifications(data);
-    const unread = data.filter(n => !n.read).length;
-    onUnreadCountChange?.(unread);
+    onUnreadCountChange?.(unreadCount(data));
     setLoading(false);
   }, [shopOwner]);
 
@@ -80,8 +71,8 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
   async function dismiss(id) {
     await base44.entities.BrokerNotification.update(id, { read: true });
     setNotifications(prev => {
-      const updated = prev.map(n => n.id === id ? { ...n, read: true } : n);
-      onUnreadCountChange?.(updated.filter(n => !n.read).length);
+      const updated = markRead(prev, id);
+      onUnreadCountChange?.(unreadCount(updated));
       return updated;
     });
   }
@@ -89,8 +80,8 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
   async function remove(id) {
     await base44.entities.BrokerNotification.delete(id);
     setNotifications(prev => {
-      const updated = prev.filter(n => n.id !== id);
-      onUnreadCountChange?.(updated.filter(n => !n.read).length);
+      const updated = removeById(prev, id);
+      onUnreadCountChange?.(unreadCount(updated));
       return updated;
     });
   }
