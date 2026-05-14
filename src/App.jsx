@@ -562,7 +562,7 @@ function PublicLandingPage() {
               <div className="order-2 md:order-1">
                 <img
                   src="/landing/joe.jpg"
-                  alt="Joe Grennan, founder of InkTracker, at the Biota MFG screen print shop in Reno, Nevada."
+                  alt="Joe Grennan, founder of InkTracker, at the Biota Mfg screen print shop in Reno, Nevada."
                   className="w-full max-w-md mx-auto rounded-2xl shadow-2xl shadow-black/40 object-cover"
                   style={{ aspectRatio: "4 / 5" }}
                   loading="lazy"
@@ -577,7 +577,7 @@ function PublicLandingPage() {
                   From one print maker<br/>to another.
                 </h2>
                 <p className="text-slate-300 leading-relaxed mb-5">
-                  I run Biota MFG, a screen print shop in Reno, Nevada. After 13 years on the press, I kept finding the same software gap — tools that either tried to do everything (and did most of it badly) or did one thing but missed the rest of the workflow. So I built the tool I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. 10% of every InkTracker subscription is allocated to land conservation through Biota's five-year roadmap. — Joe
+                  I run Biota Mfg, a screen print shop in Reno, Nevada. After 13 years on the press, I always found myself asking, "Has anyone who designed this even worked in a shop before?" Every tool either tried to do everything and missed the basics, or nailed one thing but missed the rest of the workflow. So I built the tool I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. 10% of every InkTracker subscription is allocated to land conservation through Biota's five-year roadmap. — Joe
                 </p>
                 <p className="text-xs text-slate-500">
                   Joe Grennan · Founder · joe@biotamfg.co
@@ -724,7 +724,7 @@ function PublicLandingPage() {
                 },
                 {
                   q: "How do I know InkTracker won't disappear in six months?",
-                  a: "InkTracker is built and maintained by Biota MFG, a 13-year-old screen print business based in Reno, Nevada. The shop dogfoods the software daily — if it stops being maintained, our own production stops. The financial structure also funds land conservation, which gives the project a long-horizon commitment the team takes seriously.",
+                  a: "InkTracker is built and maintained by Biota Mfg, a 13-year-old screen print business based in Reno, Nevada. The shop dogfoods the software daily — if it stops being maintained, our own production stops. The financial structure also funds land conservation, which gives the project a long-horizon commitment the team takes seriously.",
                 },
                 {
                   q: "Why is the price going up to $149/month?",
@@ -732,7 +732,7 @@ function PublicLandingPage() {
                 },
                 {
                   q: "How does the conservation contribution actually work?",
-                  a: "10% of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota MFG. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.co/pages/conservation.",
+                  a: "10% of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota Mfg. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.co/pages/conservation.",
                 },
               ].map((item) => (
                 <details key={item.q} className="group bg-white/[0.02] border border-white/10 rounded-2xl hover:border-white/20 transition">
