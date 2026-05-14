@@ -10,6 +10,7 @@ import {
   mergePOItems,
   mergeableDestinations,
   buildMergedPO,
+  combinedReference,
 } from "../purchaseOrders.js";
 
 describe("poSubtotal", () => {
@@ -301,13 +302,22 @@ describe("buildMergedPO", () => {
     ).toThrow(/draft/);
   });
 
-  it("joins source references with ', '", () => {
+  it("joins source references via combinedReference", () => {
     const out = buildMergedPO([
       make({ id: "1", reference: "PO-001" }),
       make({ id: "2", reference: "PO-002" }),
       make({ id: "3", reference: "PO-003" }),
     ]);
+    // No common prefix at a space boundary — plain comma join.
     expect(out.reference).toBe("PO-001, PO-002, PO-003");
+  });
+
+  it("dedupes the 'PO for ORD-...' prefix when merging order-derived POs", () => {
+    const out = buildMergedPO([
+      make({ id: "1", reference: "PO for ORD-2026-0WCV9" }),
+      make({ id: "2", reference: "PO for ORD-2026-0EVS3" }),
+    ]);
+    expect(out.reference).toBe("PO for ORD-2026-0WCV9, ORD-2026-0EVS3");
   });
 
   it("falls back to 'Untitled PO' for sources with no reference", () => {
@@ -343,6 +353,47 @@ describe("buildMergedPO", () => {
   it("starts the merged PO as a draft", () => {
     const out = buildMergedPO([make({ id: "1" }), make({ id: "2" })]);
     expect(out.status).toBe("draft");
+  });
+});
+
+describe("combinedReference", () => {
+  it("returns 'Untitled PO' on empty input", () => {
+    expect(combinedReference([])).toBe("Untitled PO");
+    expect(combinedReference(null)).toBe("Untitled PO");
+  });
+
+  it("returns the single ref unchanged", () => {
+    expect(combinedReference(["PO-001"])).toBe("PO-001");
+  });
+
+  it("strips a shared 'PO for ' prefix and prepends it once", () => {
+    expect(
+      combinedReference(["PO for ORD-2026-0WCV9", "PO for ORD-2026-0EVS3"]),
+    ).toBe("PO for ORD-2026-0WCV9, ORD-2026-0EVS3");
+  });
+
+  it("works with three or more sharing the same prefix", () => {
+    expect(
+      combinedReference([
+        "PO for ORD-A",
+        "PO for ORD-B",
+        "PO for ORD-C",
+      ]),
+    ).toBe("PO for ORD-A, ORD-B, ORD-C");
+  });
+
+  it("falls back to plain comma-join when refs don't share a word-boundary prefix", () => {
+    expect(combinedReference(["PO-001", "PO-002"])).toBe("PO-001, PO-002");
+    expect(combinedReference(["PO for ORD-A", "Custom name"])).toBe("PO for ORD-A, Custom name");
+  });
+
+  it("dedupes when the same ref appears twice", () => {
+    expect(combinedReference(["PO for X", "PO for X"])).toBe("PO for X");
+  });
+
+  it("handles empty or whitespace refs by inserting 'Untitled PO'", () => {
+    expect(combinedReference(["", "PO-002"])).toBe("Untitled PO, PO-002");
+    expect(combinedReference(["  ", "PO-002"])).toBe("Untitled PO, PO-002");
   });
 });
 

@@ -12,6 +12,7 @@ import {
   mergePOItems,
   mergeableDestinations,
   buildMergedPO,
+  combinedReference,
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check } from "lucide-react";
@@ -136,7 +137,7 @@ export default function PurchaseOrders() {
     const totalItems = sources.reduce((s, p) => s + (p.items?.length || 0), 0);
     if (!confirm(
       `Merge ${sources.length} drafts into one new PO?\n\n` +
-      `New reference: "${sources.map(s => s.reference || "Untitled PO").join(", ")}"\n` +
+      `New reference: "${combinedReference(sources.map(s => s.reference))}"\n` +
       `${totalItems} item rows combined (duplicate SKUs summed).\n\n` +
       `The original ${sources.length} drafts will be deleted.`,
     )) return;

@@ -147,6 +147,42 @@ export function mergePOItems(sourceItems, destItems) {
 }
 
 /**
+ * Combine source references into a single readable label.
+ *
+ * The naive `refs.join(", ")` produced things like
+ *   "PO for ORD-2026-0WCV9, PO for ORD-2026-0EVS3"
+ * which repeats "PO for " for every source. Strip the longest common
+ * prefix (ending at a space so we never split mid-word) and prepend it
+ * once:
+ *   "PO for ORD-2026-0WCV9, ORD-2026-0EVS3"
+ *
+ * Falls back to a plain comma-join when sources don't share a prefix.
+ */
+export function combinedReference(refs) {
+  const cleaned = (refs || []).map((r) => String(r ?? "").trim() || "Untitled PO");
+  if (cleaned.length === 0) return "Untitled PO";
+  if (cleaned.length === 1) return cleaned[0];
+  // Longest common prefix across all references.
+  let prefix = cleaned[0];
+  for (let i = 1; i < cleaned.length && prefix.length > 0; i++) {
+    while (prefix.length > 0 && !cleaned[i].startsWith(prefix)) {
+      prefix = prefix.slice(0, -1);
+    }
+  }
+  // Pull back to the last space so a prefix like "PO for ORD" doesn't
+  // chop "ORD" off the first reference. Without this, refs like
+  // ["PO for ORD-001", "PO for ORD-002"] could collapse to
+  // "PO for ORD, -001, -002" — readable but ugly.
+  const spaceIdx = prefix.lastIndexOf(" ");
+  if (spaceIdx <= 0) return cleaned.join(", ");
+  const cleanPrefix = prefix.slice(0, spaceIdx + 1); // keep trailing space
+  const remainders = cleaned.map((r) => r.slice(cleanPrefix.length));
+  // If sources are literally identical, just keep one copy.
+  const uniqRemainders = Array.from(new Set(remainders));
+  return cleanPrefix + uniqRemainders.join(", ");
+}
+
+/**
  * Combine multiple draft POs into one. Used by the multi-select merge
  * action on the Purchase Orders page.
  *
@@ -186,10 +222,7 @@ export function buildMergedPO(sources) {
   }
   let items = [];
   for (const s of sources) items = mergePOItems(s.items, items);
-  const reference = sources
-    .map((s) => (s.reference || "Untitled PO").trim())
-    .filter(Boolean)
-    .join(", ");
+  const reference = combinedReference(sources.map((s) => s.reference));
   const first = sources[0];
   return {
     shop_owner: shopOwner,
