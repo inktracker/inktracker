@@ -431,6 +431,11 @@ export default function PurchaseOrders() {
               onPatch={patchSelected}
               onItemRemove={(idx) => patchSelected({ items: removeItem(selected.items, idx) })}
               onItemQty={(idx, qty) => patchSelected({ items: updateItemQty(selected.items, idx, qty) })}
+              onItemSku={(idx, sku) => {
+                const next = [...selected.items];
+                next[idx] = { ...next[idx], sku };
+                patchSelected({ items: next });
+              }}
               onDelete={deleteSelected}
               onSubmit={submitSelected}
               onDismissError={() => setSubmitError(null)}
@@ -485,7 +490,7 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onDelete, onSubmit, onDismissError }) {
+function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onDismissError }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
@@ -593,7 +598,18 @@ function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shi
               <tbody className="divide-y divide-slate-100">
                 {po.items.map((it, i) => (
                   <tr key={`${it.sku}-${it.warehouse ?? ""}-${i}`}>
-                    <td className="px-3 py-2 font-mono text-xs text-slate-700">{it.sku}</td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {isLocked ? (
+                        <span className="text-slate-700">{it.sku}</span>
+                      ) : (
+                        <input
+                          value={it.sku || ""}
+                          onChange={(e) => onItemSku(i, e.target.value)}
+                          className="w-full font-mono text-xs text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                          placeholder="e.g. 5102-WHI_M-H-M"
+                        />
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-slate-600">{[it.color, it.size].filter(Boolean).join(" · ")}</td>
                     <td className="px-3 py-2 text-right">
                       {isLocked ? (
