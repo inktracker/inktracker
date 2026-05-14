@@ -16,28 +16,30 @@
 //
 //   inStockByWarehouse: { "CA": 198, "NC": 112 }  (qty per warehouse)
 //   defaultWarehouse:   shop's preferred warehouse (e.g. "CA")
-//   minQty:             how many units we're trying to ship (route to a
-//                       warehouse that can fulfil; fall back if neither
-//                       can but prefer the one with anything)
+//
+// Matches Joe's literal ask: "if a garment is out of stock there, route
+// to the other." "Out of stock" means zero. If the default has ANY stock
+// we ship from there — AS Colour handles partial-warehouse splits on
+// their side (their lifecycle includes a "Partially Shipped" status
+// exactly for this case). Otherwise route to the warehouse that has
+// stock. If both are at zero, stick with default + surface it as
+// "default-empty" so the UI can flag the row.
 //
 // Returns { warehouse, source } where source is:
-//   "default"       — picked the default, has stock
-//   "fallback"      — default was out, switched to the other warehouse
-//   "default-empty" — neither warehouse has stock; sticks with default
-//                     so user sees the issue rather than silent failure
-export function routeWarehouseForSku(inStockByWarehouse, defaultWarehouse, minQty = 1) {
+//   "default"       — default has stock (>0); use it
+//   "fallback"      — default at 0, switched to a warehouse with stock
+//   "default-empty" — both at 0 (or no stock data); keep default
+export function routeWarehouseForSku(inStockByWarehouse, defaultWarehouse, _hintQty) {
   const stock = inStockByWarehouse || {};
   const def = String(defaultWarehouse || "CA");
-  const inDefault = Number(stock[def]) || 0;
-  if (inDefault >= minQty) return { warehouse: def, source: "default" };
-  // Pick the warehouse with the most stock among non-default options.
+  if ((Number(stock[def]) || 0) > 0) return { warehouse: def, source: "default" };
+  // Default is out — pick the non-default warehouse with the most stock.
   const alt = Object.entries(stock)
     .filter(([w]) => w !== def)
     .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0))[0];
-  if (alt && Number(alt[1]) >= minQty) {
+  if (alt && Number(alt[1]) > 0) {
     return { warehouse: alt[0], source: "fallback" };
   }
-  // No warehouse has enough — surface this rather than guess.
   return { warehouse: def, source: "default-empty" };
 }
 

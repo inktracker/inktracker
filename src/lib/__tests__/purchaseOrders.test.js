@@ -15,30 +15,37 @@ import {
 } from "../purchaseOrders.js";
 
 describe("routeWarehouseForSku", () => {
-  it("returns default when default has enough stock", () => {
-    expect(routeWarehouseForSku({ CA: 100, NC: 50 }, "CA", 10))
+  it("returns default when default has any stock", () => {
+    expect(routeWarehouseForSku({ CA: 100, NC: 50 }, "CA"))
       .toEqual({ warehouse: "CA", source: "default" });
   });
 
-  it("falls back to the other warehouse when default is out", () => {
-    expect(routeWarehouseForSku({ CA: 0, NC: 50 }, "CA", 10))
+  it("falls back to the other warehouse when default is at zero", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 50 }, "CA"))
       .toEqual({ warehouse: "NC", source: "fallback" });
   });
 
-  it("falls back to the other warehouse when default has stock but not enough", () => {
+  it("KEEPS default when it has stock but less than the requested qty (AS Colour handles splits)", () => {
+    // CA has 5, you ordered 10. Default still wins — AS Colour will
+    // ship the 5 from CA and the rest from another warehouse server-side.
     expect(routeWarehouseForSku({ CA: 5, NC: 50 }, "CA", 10))
-      .toEqual({ warehouse: "NC", source: "fallback" });
+      .toEqual({ warehouse: "CA", source: "default" });
   });
 
-  it("sticks with default when neither warehouse has enough — caller decides", () => {
-    expect(routeWarehouseForSku({ CA: 0, NC: 0 }, "CA", 1))
+  it("KEEPS default when it has way less than requested but still > 0", () => {
+    expect(routeWarehouseForSku({ CA: 198, NC: 112 }, "CA", 500))
+      .toEqual({ warehouse: "CA", source: "default" });
+  });
+
+  it("sticks with default when both warehouses are at zero — flagged for UI", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 0 }, "CA"))
       .toEqual({ warehouse: "CA", source: "default-empty" });
   });
 
   it("respects a non-default warehouse choice (e.g. east coast shop)", () => {
-    expect(routeWarehouseForSku({ CA: 100, NC: 50 }, "NC", 10))
+    expect(routeWarehouseForSku({ CA: 100, NC: 50 }, "NC"))
       .toEqual({ warehouse: "NC", source: "default" });
-    expect(routeWarehouseForSku({ CA: 100, NC: 0 }, "NC", 10))
+    expect(routeWarehouseForSku({ CA: 100, NC: 0 }, "NC"))
       .toEqual({ warehouse: "CA", source: "fallback" });
   });
 
@@ -47,8 +54,8 @@ describe("routeWarehouseForSku", () => {
     expect(routeWarehouseForSku({}, "CA").source).toBe("default-empty");
   });
 
-  it("picks the warehouse with the most stock when multiple non-default options have it", () => {
-    expect(routeWarehouseForSku({ CA: 0, NC: 5, AUS: 50 }, "CA", 10).warehouse).toBe("AUS");
+  it("picks the warehouse with the most stock among non-default options when default is out", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 5, AUS: 50 }, "CA").warehouse).toBe("AUS");
   });
 });
 
