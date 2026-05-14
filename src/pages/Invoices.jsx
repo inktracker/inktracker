@@ -158,13 +158,14 @@ export default function Invoices() {
     setInvoices(prev => prev.filter(i => i.id !== id));
     setSelected(null);
 
-    // Cascade: drop any commission row created from this invoice's order
+    // Cascade: drop any broker-pricing row tied to this invoice's order
+    // (the row goes stale when its parent order is gone).
     if (invoice?.order_id) {
       try {
-        const commissions = await base44.entities.Commission.filter({ order_id: invoice.order_id });
-        await Promise.all((commissions || []).map((c) => base44.entities.Commission.delete(c.id)));
+        const rows = await base44.entities.BrokerPricing.filter({ order_id: invoice.order_id });
+        await Promise.all((rows || []).map((r) => base44.entities.BrokerPricing.delete(r.id)));
       } catch (err) {
-        console.warn("[Invoices] commission cleanup failed:", err);
+        console.warn("[Invoices] broker-pricing cleanup failed:", err);
       }
     }
   }

@@ -1755,10 +1755,10 @@ function PricingConfigSection({ user }) {
         </div>
       </div>
 
-      {/* Broker Commission */}
+      {/* Broker Markup Share */}
       <div>
-        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Broker Commission</h4>
-        <p className="text-[10px] text-slate-400 mb-2">Percentage of your garment markup that brokers keep as their commission. Higher = more profit for brokers.</p>
+        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Broker Markup Share</h4>
+        <p className="text-[10px] text-slate-400 mb-2">Discount off your garment markup that brokers receive on every quote. Higher = lower wholesale price for brokers (they earn margin by reselling above it).</p>
         <div className="flex items-center gap-3">
           <div className="relative w-28">
             <input type="number" step="1" min="0" max="100"
@@ -1767,7 +1767,7 @@ function PricingConfigSection({ user }) {
               className={inputCls} />
             <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
           </div>
-          <span className="text-xs text-slate-400">of garment markup goes to broker</span>
+          <span className="text-xs text-slate-400">off garment markup for brokers</span>
         </div>
       </div>
 

@@ -242,13 +242,14 @@ export default function Orders() {
     setOrders((prev) => prev.filter((o) => o.id !== id));
     setViewing(null);
 
-    // Cascade: remove any commission rows tied to this order
+    // Cascade: remove broker-pricing rows tied to this order (the
+    // reference is meaningless without its parent order).
     if (order?.order_id) {
       try {
-        const commissions = await base44.entities.Commission.filter({ order_id: order.order_id });
-        await Promise.all((commissions || []).map((c) => base44.entities.Commission.delete(c.id)));
+        const rows = await base44.entities.BrokerPricing.filter({ order_id: order.order_id });
+        await Promise.all((rows || []).map((r) => base44.entities.BrokerPricing.delete(r.id)));
       } catch (err) {
-        console.warn("[Orders] commission cleanup failed:", err);
+        console.warn("[Orders] broker-pricing cleanup failed:", err);
       }
     }
   }
