@@ -38,22 +38,26 @@ const TOUR_STEPS = [
   },
 ];
 
+// Returns the union bounding rect of the visible children of the target
+// element, or null if there's nothing visible. We compute children (rather
+// than wrapper) because data-tour wrappers like the Getting Started
+// Checklist can be empty divs when the inner component has been dismissed,
+// and CSS-grid wrappers like Metric Cards extend past the visible cards.
 function getElementRect(selector) {
   if (!selector) return null;
   const el = document.querySelector(selector);
   if (!el) return null;
-  // Walk the visible children and use the union of their bounding rects
-  // instead of the wrapper's own rect. The wrapper for data-tour="metrics"
-  // is a CSS grid container that can extend below the visible cards (e.g.
-  // implicit row sizing, trailing grid lines), and the audit screenshots
-  // showed the spotlight ring sitting ~30px under the cards as a result.
-  // Using the children's union keeps the spotlight (and the popover that
-  // anchors to it) tight to what the user actually sees.
   const children = Array.from(el.children).filter((c) => {
     const r = c.getBoundingClientRect();
     return r.width > 0 && r.height > 0;
   });
-  if (children.length === 0) return el.getBoundingClientRect();
+  if (children.length === 0) {
+    // No visible children — try the element itself; if that's also empty
+    // return null so the tour can auto-skip the step.
+    const own = el.getBoundingClientRect();
+    if (own.width <= 0 || own.height <= 0) return null;
+    return own;
+  }
   let top = Infinity, left = Infinity, right = -Infinity, bottom = -Infinity;
   for (const c of children) {
     const r = c.getBoundingClientRect();
@@ -65,18 +69,12 @@ function getElementRect(selector) {
   return { top, left, right, bottom, width: right - left, height: bottom - top };
 }
 
-// Approximate tooltip footprint — used for viewport-collision math. The
-// actual rendered card varies slightly with description length, but 360x200
-// is a safe-ish upper bound and erring on the larger side just keeps the
-// tooltip away from edges.
 const TOOLTIP_W = 360;
 const TOOLTIP_H = 200;
-
-// Pixels the spotlight ring extends past the target rect on every side.
-// Kept small so the ring hugs the actual highlighted element instead of
-// floating in space below/around it. Two referenced spots: the spotlight
-// div's geometry (top/left/width/height) and the caret-on-ring math.
 const SPOTLIGHT_INSET = 2;
+// Gap between the spotlight ring and the popover body. Small but non-zero
+// so the popover doesn't look glued on top of the ring border.
+const GAP = 6;
 
 function getTooltipStyle(rect, position) {
   if (!rect || position === "center") {
@@ -88,52 +86,41 @@ function getTooltipStyle(rect, position) {
     };
   }
 
-  // Tight gap between the target rect and the popover body. The previous
-  // pass used 14 to land the caret tip on the (then 6px-inset) spotlight
-  // ring, but in practice the target rects sat noticeably below the
-  // visible card edges, so the popover ended up floating below the
-  // highlight. Pulling both inward: the spotlight inset is now 2px (see
-  // SPOTLIGHT_INSET below) and the gap is 4 — the popover effectively
-  // attaches to the spotlight ring with no visible vertical drift.
-  const gap = 4;
-  // Larger padding for viewport-edge clamping so popovers don't kiss
-  // the screen edge.
   const edgePad = 16;
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const style = { position: "fixed" };
-
-  // Horizontal/vertical placement clamped to the viewport for any anchor.
   const clampX = (raw) => Math.max(edgePad, Math.min(vw - TOOLTIP_W - edgePad, raw));
   const clampY = (raw) => Math.max(edgePad, Math.min(vh - TOOLTIP_H - edgePad, raw));
 
   if (position === "bottom") {
-    // Try below the target. If that overflows, try above. If both would
-    // overflow (tall targets like the Getting Started checklist, which
-    // pushed the tooltip past the bottom of the viewport in the original
-    // implementation), anchor right under the visible top of the target.
-    const below = rect.bottom + gap;
-    const above = rect.top - gap - TOOLTIP_H;
+    const below = rect.bottom + GAP;
+    const above = rect.top - GAP - TOOLTIP_H;
     if (below + TOOLTIP_H + edgePad < vh) {
       style.top = below;
     } else if (above > edgePad) {
       style.top = above;
     } else {
-      style.top = clampY(rect.top + gap);
+      style.top = clampY(rect.top + GAP);
     }
-    style.left = clampX(rect.left + rect.width / 2 - TOOLTIP_W / 2);
+    // Anchor to the target's LEFT edge instead of centering. A wide target
+    // (full-width metric strip, pipeline strip) is highlighted from end to
+    // end, but a center-anchored popover left it floating in the middle of
+    // the strip with nothing visually tying it to either edge. Left-anchor
+    // is the simpler, more readable mental model: the popover hangs from
+    // the left corner of the highlight.
+    style.left = clampX(rect.left);
   } else if (position === "right") {
     style.top = clampY(rect.top);
-    style.left = Math.min(vw - TOOLTIP_W - edgePad, rect.right + gap);
+    style.left = Math.min(vw - TOOLTIP_W - edgePad, rect.right + GAP);
   } else if (position === "top") {
-    const above = rect.top - gap - TOOLTIP_H;
+    const above = rect.top - GAP - TOOLTIP_H;
     if (above > edgePad) {
       style.top = above;
     } else {
-      // Flip to below if there's no room above.
-      style.top = clampY(rect.bottom + gap);
+      style.top = clampY(rect.bottom + GAP);
     }
-    style.left = clampX(rect.left + rect.width / 2 - TOOLTIP_W / 2);
+    style.left = clampX(rect.left);
   }
 
   return style;
@@ -146,8 +133,7 @@ export default function FeatureTour() {
 
   useEffect(() => {
     // `?tour=replay` query param forces the tour to run again even after
-    // someone's already dismissed it. Strip the param from the URL after
-    // reading it so a reload doesn't re-trigger forever.
+    // someone's already dismissed it.
     const params = new URLSearchParams(window.location.search);
     if (params.get("tour") === "replay") {
       localStorage.removeItem("inktracker-tour-seen");
@@ -159,7 +145,6 @@ export default function FeatureTour() {
 
     const seen = localStorage.getItem("inktracker-tour-seen");
     if (!seen) {
-      // Small delay to let the Dashboard render first
       const timer = setTimeout(() => setActive(true), 1500);
       return () => clearTimeout(timer);
     }
@@ -181,6 +166,26 @@ export default function FeatureTour() {
     return () => window.removeEventListener("resize", updateRect);
   }, [active, step, updateRect]);
 
+  // Auto-skip steps whose target isn't visible. Common case: the
+  // GettingStartedChecklist component returns null when the user has
+  // dismissed it via the X button, leaving `data-tour="checklist"` as
+  // an empty wrapper. The tour used to highlight nothing and the
+  // popover floated in empty space — now we just advance past the step.
+  useEffect(() => {
+    if (!active) return;
+    const current = TOUR_STEPS[step];
+    if (current?.selector && rect == null) {
+      const nextStep = step + 1;
+      // If we'd run off the end, finish the tour.
+      if (nextStep >= TOUR_STEPS.length) {
+        localStorage.setItem("inktracker-tour-seen", "1");
+        setActive(false);
+      } else {
+        setStep(nextStep);
+      }
+    }
+  }, [active, step, rect]);
+
   if (!active) return null;
 
   const current = TOUR_STEPS[step];
@@ -188,38 +193,9 @@ export default function FeatureTour() {
   const isLast = step === TOUR_STEPS.length - 1;
   const tooltipStyle = getTooltipStyle(rect, current.position);
 
-  // Decide where to render the caret: on the side of the tooltip closest
-  // to the target. Returns null when there's no anchored target (center
-  // steps) or when the tooltip overlaps the target (no visual gap to
-  // bridge with a caret).
-  function getCaret() {
-    if (!rect || current.position === "center") return null;
-    const top = tooltipStyle.top;
-    const left = tooltipStyle.left;
-    if (typeof top !== "number" || typeof left !== "number") return null;
-    const targetCenterX = rect.left + rect.width / 2;
-    const targetCenterY = rect.top + rect.height / 2;
-    // Pad the caret away from the rounded corners.
-    const clamp = (v, hi) => Math.max(20, Math.min(hi - 28, v));
-    if (top >= rect.bottom) {
-      return { side: "top", offset: clamp(targetCenterX - left, TOOLTIP_W) };
-    }
-    if (top + TOOLTIP_H <= rect.top) {
-      return { side: "bottom", offset: clamp(targetCenterX - left, TOOLTIP_W) };
-    }
-    if (left >= rect.right) {
-      return { side: "left", offset: clamp(targetCenterY - top, TOOLTIP_H) };
-    }
-    return null;
-  }
-  const caret = getCaret();
-
   function next() {
-    if (isLast) {
-      finish();
-    } else {
-      setStep(s => s + 1);
-    }
+    if (isLast) finish();
+    else setStep(s => s + 1);
   }
 
   function prev() {
@@ -231,31 +207,18 @@ export default function FeatureTour() {
     setActive(false);
   }
 
-  // Caret positioning helpers (used in the JSX below). The caret is a
-  // small white square rotated 45° so it reads as a triangle peeking out
-  // of the tooltip card, color-matched to the card body.
-  const caretStyles = {
-    top:    { top: -6, bottom: "auto", left: caret?.offset, right: "auto",
-              borderRight: "none", borderBottom: "none" },
-    bottom: { top: "auto", bottom: -6, left: caret?.offset, right: "auto",
-              borderLeft: "none", borderTop: "none" },
-    left:   { top: caret?.offset, bottom: "auto", left: -6, right: "auto",
-              borderRight: "none", borderTop: "none" },
-  };
-
   return (
     <div className="fixed inset-0 z-[60]">
-      {/* Click-to-dismiss layer. When a target is highlighted we leave this
-          transparent — the spotlight box-shadow does all the darkening, so
-          INSIDE the spotlight stays at full page brightness while OUTSIDE
-          is dimmed (0.7). For center-position steps (no target) we fall
-          back to a flat dim across the whole viewport. */}
+      {/* Click-to-dismiss layer. Transparent when a target is spotlit
+          (the box-shadow on the spotlight div does the dimming). Flat
+          dim when there's no target (center-position steps). */}
       <div
         className={`absolute inset-0 ${rect ? "" : "bg-slate-900/60"}`}
         onClick={finish}
       />
 
-      {/* Spotlight on target element */}
+      {/* Spotlight ring on the target. The box-shadow darkens everything
+          OUTSIDE the rect; inside stays at full page brightness. */}
       {rect && (
         <div
           className="absolute border-2 border-indigo-400 rounded-xl pointer-events-none"
@@ -270,20 +233,13 @@ export default function FeatureTour() {
         />
       )}
 
-      {/* Tooltip card */}
+      {/* Tooltip card. No caret — the spotlight ring alone signals what
+          the popover refers to. Caret was adding visual noise that read
+          as floating/disconnected when the target was wide. */}
       <div
-        className="w-[360px] max-w-[calc(100vw-32px)] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-visible"
+        className="w-[360px] max-w-[calc(100vw-32px)] bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
         style={{ ...tooltipStyle, zIndex: 62 }}
       >
-        {/* Caret pointing at the target. White square rotated 45°,
-            color-matched to the tooltip body, with only the outer two
-            borders showing so it tucks cleanly into the card edge. */}
-        {caret && (
-          <div
-            className="absolute w-3 h-3 bg-white border border-slate-200 rotate-45"
-            style={caretStyles[caret.side]}
-          />
-        )}
         <div className="px-5 pt-5 pb-4">
           <div className="flex items-start justify-between mb-2">
             <h3 className="text-base font-bold text-slate-800">{current.title}</h3>
