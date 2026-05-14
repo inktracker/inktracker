@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { TrendingUp, FileText, CheckCircle2, DollarSign } from "lucide-react";
 import { calcQuoteTotals, BROKER_MARKUP, fmtMoney } from "../shared/pricing";
+import { filterByPeriod, pipelineCounts, performanceMetrics } from "@/lib/broker/analytics";
 
 const STATUS_COLORS = {
   Draft:    "#94a3b8",
@@ -20,39 +21,22 @@ const PERIODS = [
 export default function BrokerAnalytics({ quotes }) {
   const [period, setPeriod] = useState(90);
 
-  const filteredQuotes = useMemo(() => {
-    if (!period) return quotes;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - period);
-    return quotes.filter(q => {
-      const d = new Date(q.created_date || q.date);
-      return d >= cutoff;
-    });
-  }, [quotes, period]);
+  const filteredQuotes = useMemo(() => filterByPeriod(quotes, period), [quotes, period]);
 
-  // Pipeline bar chart data
-  const pipelineData = useMemo(() => {
-    return ["Draft", "Pending", "Approved", "Declined"].map(status => ({
-      status,
-      count: filteredQuotes.filter(q => q.status === status).length,
-      color: STATUS_COLORS[status],
-    }));
-  }, [filteredQuotes]);
+  // Pipeline bar chart data (colors are UI-only, added post-hoc).
+  const pipelineData = useMemo(
+    () => pipelineCounts(filteredQuotes).map((bucket) => ({
+      ...bucket,
+      color: STATUS_COLORS[bucket.status],
+    })),
+    [filteredQuotes],
+  );
 
-  // Performance metrics
-  const metrics = useMemo(() => {
-    const total = filteredQuotes.length;
-    const approved = filteredQuotes.filter(q => q.status === "Approved").length;
-    const conversionRate = total > 0 ? Math.round((approved / total) * 100) : 0;
-
-    const quotesWithValue = filteredQuotes.filter(q => (q.line_items || []).length > 0);
-    const totalValue = quotesWithValue.reduce((sum, q) => {
-      try { return sum + (calcQuoteTotals(q, BROKER_MARKUP).total || 0); } catch { return sum; }
-    }, 0);
-    const avgValue = quotesWithValue.length > 0 ? totalValue / quotesWithValue.length : 0;
-
-    return { total, approved, conversionRate, totalValue, avgValue };
-  }, [filteredQuotes]);
+  // Performance metrics — broker-priced totals via BROKER_MARKUP.
+  const metrics = useMemo(
+    () => performanceMetrics(filteredQuotes, (q) => calcQuoteTotals(q, BROKER_MARKUP)),
+    [filteredQuotes],
+  );
 
   return (
     <div className="space-y-4">
