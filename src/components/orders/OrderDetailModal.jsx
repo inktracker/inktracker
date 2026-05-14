@@ -1,4 +1,6 @@
 import { Fragment, useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
@@ -132,7 +134,12 @@ export default function OrderDetailModal({
   onComplete,
   onRevert,
   onTogglePaid,
-  onOrderFromSS,
+  onOrderFromAC,
+  // PO that was created from this order, if any. Drives the button's
+  // tri-state: no PO → "Order from AS Colour"; draft PO → "View Pending PO";
+  // submitted PO → "✓ Ordered". Parent fetches it (cheap lookup, scoped by
+  // shop_owner + source_order_id index added in 20260526).
+  sourcePO,
   // Called when the user clicks "Preview Invoice" for the already-
   // invoiced order. Receives the invoice row. The parent (Production /
   // Orders / Invoices / Calendar page) handles the modal display so we
@@ -1509,16 +1516,7 @@ export default function OrderDetailModal({
             >
               <Hammer className="w-3.5 h-3.5" /> {floorMode ? "Exit Floor Mode" : "Floor Mode"}
             </button>
-            {onOrderFromSS && (
-              <button
-                onClick={() => onOrderFromSS(order)}
-                disabled={saving}
-                title="Place this order with S&S Activewear"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition disabled:opacity-50"
-              >
-                <ShoppingCart className="w-3.5 h-3.5" /> Order from S&S
-              </button>
-            )}
+            {onOrderFromAC && <ACOrderButton order={order} sourcePO={sourcePO} onOrderFromAC={onOrderFromAC} disabled={saving} />}
             {onDelete && (
               <button
                 onClick={() => callAction(onDelete, order.id)}
@@ -1534,5 +1532,47 @@ export default function OrderDetailModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// Tri-state button beside Delete in the order header.
+//   no source PO       → "Order from AS Colour" (opens ACOrderModal)
+//   draft source PO    → "View Pending PO" (links to /PurchaseOrders)
+//   submitted PO       → "✓ Ordered" (links to /PurchaseOrders, read-only feel)
+//
+// The signal-it-was-ordered behaviour is what differentiates this from
+// the old SS button which always invited a re-order.
+function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled }) {
+  if (sourcePO?.status === "submitted") {
+    return (
+      <Link
+        to={createPageUrl("PurchaseOrders")}
+        title={`Already ordered from AS Colour${sourcePO.supplier_order_id ? ` · ${sourcePO.supplier_order_id}` : ""}`}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition"
+      >
+        <CheckCircle2 className="w-3.5 h-3.5" /> Ordered
+      </Link>
+    );
+  }
+  if (sourcePO?.status === "draft") {
+    return (
+      <Link
+        to={createPageUrl("PurchaseOrders")}
+        title="A draft PO exists for this order — open Purchase Orders to review and submit"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 border border-amber-200 bg-amber-50 rounded-lg hover:bg-amber-100 transition"
+      >
+        <Truck className="w-3.5 h-3.5" /> View Pending PO
+      </Link>
+    );
+  }
+  return (
+    <button
+      onClick={() => onOrderFromAC(order)}
+      disabled={disabled}
+      title="Create a draft AS Colour PO from this order's line items"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition disabled:opacity-50"
+    >
+      <Truck className="w-3.5 h-3.5" /> Order from AS Colour
+    </button>
   );
 }

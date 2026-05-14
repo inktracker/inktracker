@@ -1227,27 +1227,73 @@ function SupplierKeysSection({ user }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Free-freight thresholds — drives the progress bar on Purchase Orders.
+  // Per supplier so each can have its own minimum (AS Colour vs S&S vs others).
+  const initialThresholds = user?.free_freight_thresholds || {};
+  const [acThreshold, setAcThreshold] = useState(initialThresholds["AS Colour"] ?? "");
+  const [ssThreshold, setSsThreshold] = useState(initialThresholds["S&S Activewear"] ?? "");
+
   async function handleSave() {
     setSaving(true);
     setSaved(false);
     try {
       const updates = {};
-      // Only send fields that were actually edited (not masked placeholders)
+      // Only send fields that the user actually typed something into.
+      // An empty input in edit mode is not a "clear me" signal — that's
+      // a footgun (a shop walking away from the form without typing
+      // would otherwise null their saved keys). To explicitly disconnect
+      // a supplier, use the "Disconnect" button below the inputs.
       if (ssEditing) {
-        updates.ss_account_number = ssAccount.trim() || null;
-        updates.ss_api_key = ssKey.trim() || null;
+        if (ssAccount.trim()) updates.ss_account_number = ssAccount.trim();
+        if (ssKey.trim()) updates.ss_api_key = ssKey.trim();
       }
       if (acEditing) {
-        updates.ac_subscription_key = acSubKey.trim() || null;
-        updates.ac_email = acEmail.trim() || null;
-        updates.ac_password = acPassword.trim() || null;
+        if (acSubKey.trim()) updates.ac_subscription_key = acSubKey.trim();
+        if (acEmail.trim()) updates.ac_email = acEmail.trim();
+        if (acPassword.trim() && acPassword !== "********") {
+          updates.ac_password = acPassword.trim();
+        }
       }
+      // Always send thresholds — they're cheap and the user expects edits to stick.
+      const thresholds = { ...initialThresholds };
+      const acT = Number(acThreshold);
+      const ssT = Number(ssThreshold);
+      if (acThreshold === "" || acT === 0) delete thresholds["AS Colour"];
+      else if (acT > 0) thresholds["AS Colour"] = acT;
+      if (ssThreshold === "" || ssT === 0) delete thresholds["S&S Activewear"];
+      else if (ssT > 0) thresholds["S&S Activewear"] = ssT;
+      updates.free_freight_thresholds = thresholds;
       if (Object.keys(updates).length === 0) { setSaving(false); return; }
       await base44.auth.updateMe(updates);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       alert("Save failed: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Explicit disconnect — only way to actually null the credentials.
+  // Save never wipes; users have to opt in here.
+  async function handleDisconnect(supplier) {
+    const labels = {
+      ss: "S&S Activewear",
+      ac: "AS Colour",
+    };
+    if (!confirm(`Disconnect ${labels[supplier]}? Your saved API credentials will be removed. You can re-enter them later.`)) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const updates = supplier === "ac"
+        ? { ac_subscription_key: null, ac_email: null, ac_password: null }
+        : { ss_account_number: null, ss_api_key: null };
+      await base44.auth.updateMe(updates);
+      if (supplier === "ac") { setAcSubKey(""); setAcEmail(""); setAcPassword(""); setAcEditing(true); }
+      else { setSsAccount(""); setSsKey(""); setSsEditing(true); }
+    } catch (err) {
+      alert("Disconnect failed: " + err.message);
     } finally {
       setSaving(false);
     }
@@ -1269,8 +1315,12 @@ function SupplierKeysSection({ user }) {
             {ssHasKey && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Connected</span>}
           </div>
           {ssHasKey && !ssEditing && (
-            <button onClick={() => { setSsEditing(true); setSsAccount(""); setSsKey(""); }}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Edit</button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => { setSsEditing(true); setSsAccount(""); setSsKey(""); }}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Edit</button>
+              <button onClick={() => handleDisconnect("ss")}
+                className="text-xs font-semibold text-slate-400 hover:text-red-500">Disconnect</button>
+            </div>
           )}
         </div>
         {ssEditing ? (
@@ -1305,8 +1355,12 @@ function SupplierKeysSection({ user }) {
             {acHasKey && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Connected</span>}
           </div>
           {acHasKey && !acEditing && (
-            <button onClick={() => { setAcEditing(true); setAcSubKey(""); setAcEmail(""); setAcPassword(""); }}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Edit</button>
+            <div className="flex items-center gap-3">
+              <button onClick={() => { setAcEditing(true); setAcSubKey(""); setAcEmail(""); setAcPassword(""); }}
+                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Edit</button>
+              <button onClick={() => handleDisconnect("ac")}
+                className="text-xs font-semibold text-slate-400 hover:text-red-500">Disconnect</button>
+            </div>
           )}
         </div>
         {acEditing ? (
@@ -1335,6 +1389,33 @@ function SupplierKeysSection({ user }) {
         ) : (
           <p className="text-xs text-slate-400">No AS Colour credentials configured. Enter your account details to connect.</p>
         )}
+      </div>
+
+      {/* Free-freight thresholds */}
+      <div className="border border-slate-200 rounded-xl p-4 space-y-3">
+        <div>
+          <div className="text-sm font-bold text-slate-700">Free-freight thresholds</div>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Order subtotal at which each supplier ships free. Drives the progress bar
+            on Purchase Orders so you can pair jobs to hit it.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">AS Colour ($)</label>
+            <input type="number" min="0" step="1" value={acThreshold}
+              onChange={e => setAcThreshold(e.target.value)}
+              placeholder="e.g. 200"
+              className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">S&S Activewear ($)</label>
+            <input type="number" min="0" step="1" value={ssThreshold}
+              onChange={e => setSsThreshold(e.target.value)}
+              placeholder="e.g. 200"
+              className={inputCls} />
+          </div>
+        </div>
       </div>
 
       <button onClick={handleSave} disabled={saving}

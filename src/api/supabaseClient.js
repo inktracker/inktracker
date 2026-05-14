@@ -24,6 +24,7 @@ const TABLE_MAP = {
   Message: "messages",
   BrokerDocument: "broker_documents",
   BrokerFile: "broker_files",
+  PurchaseOrder: "purchase_orders",
 };
 
 // Base44 used "created_date" as the auto-timestamp column name; Supabase uses "created_at"

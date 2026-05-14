@@ -2,7 +2,7 @@ import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
-import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock } from "lucide-react";
+import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
 import { canAccess, getEffectiveTier } from "@/lib/billing";
@@ -14,6 +14,7 @@ const ICON_MAP = {
   Production: Package,
   Customers: Users,
   Inventory: Archive,
+  PurchaseOrders: Truck,
   Invoices: Receipt,
   Performance: BarChart2,
   Wizard: Wand2,
@@ -28,7 +29,13 @@ const NAV = [
   { label: "Quotes", page: "Quotes" },
   { label: "Production", page: "Production" },
   { label: "Customers", page: "Customers" },
-  { label: "Inventory", page: "Inventory" },
+  {
+    label: "Inventory",
+    page: "Inventory",
+    children: [
+      { label: "Purchase Orders", page: "PurchaseOrders" },
+    ],
+  },
   { label: "Invoices", page: "Invoices" },
   { label: "Performance", page: "Performance", feature: "reports" },
   { label: "Mockups", page: "Mockups", feature: "mockups" },
@@ -36,6 +43,15 @@ const NAV = [
   { label: "Embed", page: "Embed", feature: "wizard" },
   { label: "Account", page: "Account" },
 ];
+
+// Pages that should auto-expand a parent group when active.
+const PARENT_OF = (() => {
+  const m = {};
+  for (const n of NAV) {
+    if (n.children) for (const c of n.children) m[c.page] = n.page;
+  }
+  return m;
+})();
 
 // Map page names to required billing features
 const PAGE_FEATURES = {
@@ -53,6 +69,102 @@ export default function Layout({ children, currentPageName }) {
   const [user, setUser] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showUpgrade, setShowUpgrade] = useState(null);
+  // Collapsable nav groups. Persisted to localStorage so the user's
+  // preference sticks across reloads. Auto-expand whichever group
+  // contains the current page so deep links don't land in a collapsed
+  // group with the active link hidden.
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    let initial = {};
+    try {
+      const stored = JSON.parse(localStorage.getItem("inktracker-nav-expanded") || "{}");
+      if (stored && typeof stored === "object") initial = stored;
+    } catch {}
+    const activeParent = PARENT_OF[currentPageName] || (NAV.find(n => n.page === currentPageName && n.children)?.page);
+    if (activeParent) initial = { ...initial, [activeParent]: true };
+    return initial;
+  });
+  function toggleGroup(page) {
+    setExpandedGroups((prev) => {
+      const next = { ...prev, [page]: !prev[page] };
+      try { localStorage.setItem("inktracker-nav-expanded", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+
+  // Render a NAV item, including locked / parent-with-children / leaf
+  // shapes. `mobile` swaps in the mobile-flavoured hover classes and
+  // closes the slide-out menu on click. `child` styles a sub-item:
+  // smaller icon, indented, no chevron of its own.
+  function renderNavItem(n, { mobile = false, child = false } = {}) {
+    const active = currentPageName === n.page;
+    const IconComponent = ICON_MAP[n.page];
+    const locked = n.feature && !canAccess(tier, n.feature);
+    const hoverCls = mobile
+      ? "hover:bg-slate-50 hover:text-slate-800"
+      : "hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200";
+    const baseTextCls = mobile ? "text-slate-500" : "text-slate-500 dark:text-slate-400";
+    const onLinkClick = mobile ? () => setMobileMenuOpen(false) : undefined;
+
+    if (locked) {
+      return (
+        <button
+          key={n.page}
+          onClick={() => { if (mobile) setMobileMenuOpen(false); setShowUpgrade(n.feature); }}
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition w-full text-left ${mobile ? "text-slate-300" : "text-slate-300 dark:text-slate-600 hover:text-slate-400"}`}
+        >
+          <IconComponent className="w-5 h-5 text-slate-300" />
+          {n.label}
+          <Lock className="w-3.5 h-3.5 ml-auto text-slate-300" />
+        </button>
+      );
+    }
+
+    const indentCls = child ? "pl-8" : "px-3";
+    const iconSize = child ? "w-4 h-4" : "w-5 h-5";
+
+    if (n.children?.length) {
+      const expanded = !!expandedGroups[n.page];
+      const Chevron = expanded ? ChevronDown : ChevronRight;
+      return (
+        <div key={n.page}>
+          <div className={`flex items-stretch rounded-xl overflow-hidden ${active ? "bg-indigo-600" : ""}`}>
+            <Link
+              to={createPageUrl(n.page)}
+              onClick={onLinkClick}
+              className={`flex items-center gap-3 ${indentCls} py-2.5 text-sm font-semibold transition flex-1 min-w-0 ${active ? "text-white" : `${baseTextCls} ${hoverCls}`}`}
+            >
+              <IconComponent className={`${iconSize} ${active ? "" : "text-slate-400"}`} />
+              <span className="flex-1 truncate">{n.label}</span>
+            </Link>
+            <button
+              onClick={(e) => { e.preventDefault(); toggleGroup(n.page); }}
+              aria-label={expanded ? `Collapse ${n.label}` : `Expand ${n.label}`}
+              className={`px-2 transition ${active ? "text-white/80 hover:text-white" : "text-slate-400 hover:text-slate-600"}`}
+            >
+              <Chevron className="w-4 h-4" />
+            </button>
+          </div>
+          {expanded && (
+            <div className="mt-0.5 space-y-0.5">
+              {n.children.map((c) => renderNavItem(c, { mobile, child: true }))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <Link
+        key={n.page}
+        to={createPageUrl(n.page)}
+        onClick={onLinkClick}
+        className={`flex items-center gap-3 ${indentCls} pr-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : `${baseTextCls} ${hoverCls}`}`}
+      >
+        <IconComponent className={`${iconSize} ${active ? "" : "text-slate-400"}`} />
+        <span className="flex-1">{n.label}</span>
+      </Link>
+    );
+  }
   // Effective tier — resolves admin bypass + trial expiry + canceled
   // subscription into a single string canAccess() can check. Without
   // this, a trial with trial_ends_at in the past still passed canAccess
@@ -124,28 +236,7 @@ export default function Layout({ children, currentPageName }) {
           <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Shop Manager</div>
         </div>
         <nav className="flex-1 py-4 space-y-0.5 px-2">
-          {NAV.map(n => {
-            const active = currentPageName === n.page;
-            const IconComponent = ICON_MAP[n.page];
-            const locked = n.feature && !canAccess(tier, n.feature);
-            if (locked) {
-              return (
-                <button key={n.page} onClick={() => setShowUpgrade(n.feature)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition text-slate-300 dark:text-slate-600 hover:text-slate-400 w-full text-left">
-                  <IconComponent className="w-5 h-5 text-slate-300" />
-                  {n.label}
-                  <Lock className="w-3.5 h-3.5 ml-auto text-slate-300" />
-                </button>
-              );
-            }
-            return (
-              <Link key={n.page} to={createPageUrl(n.page)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"}`}>
-                <IconComponent className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
-                <span className="flex-1">{n.label}</span>
-              </Link>
-            );
-          })}
+          {NAV.map(n => renderNavItem(n))}
           {(user?.role === "admin" || user?.role === "shop") && (
             <Link to={createPageUrl("AdminPanel")}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-indigo-600 text-white" : "text-violet-600 hover:bg-violet-50"}`}>
@@ -199,28 +290,7 @@ export default function Layout({ children, currentPageName }) {
                 </button>
               </div>
               <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
-                {NAV.map(n => {
-                  const active = currentPageName === n.page;
-                  const IconComponent = ICON_MAP[n.page];
-                  const locked = n.feature && !canAccess(tier, n.feature);
-                  if (locked) {
-                    return (
-                      <button key={n.page} onClick={() => { setMobileMenuOpen(false); setShowUpgrade(n.feature); }}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold text-slate-300 w-full text-left">
-                        <IconComponent className="w-5 h-5 text-slate-300" />
-                        {n.label}
-                        <Lock className="w-3.5 h-3.5 ml-auto text-slate-300" />
-                      </button>
-                    );
-                  }
-                  return (
-                    <Link key={n.page} to={createPageUrl(n.page)} onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}>
-                      <IconComponent className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
-                      <span className="flex-1">{n.label}</span>
-                    </Link>
-                  );
-                })}
+                {NAV.map(n => renderNavItem(n, { mobile: true }))}
                 {(user?.role === "admin" || user?.role === "shop") && (
                   <Link to={createPageUrl("AdminPanel")} onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-indigo-600 text-white" : "text-violet-600 hover:bg-violet-50"}`}>

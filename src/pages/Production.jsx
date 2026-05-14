@@ -6,7 +6,7 @@ import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
-import SSOrderModal from "../components/orders/SSOrderModal";
+import ACOrderModal from "../components/orders/ACOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List, Hammer, Send, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
@@ -133,7 +133,10 @@ export default function Production() {
   const [quotes, setQuotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewing, setViewing] = useState(null);
-  const [ssOrderTarget, setSsOrderTarget] = useState(null);
+  const [acOrderTarget, setAcOrderTarget] = useState(null);
+  // Map of order.id → PO row (the PO created from that order, if any).
+  // Drives the OrderDetailModal's tri-state Order from AS Colour button.
+  const [poByOrderId, setPoByOrderId] = useState({});
   // Nested invoice preview when the user clicks "Preview Invoice"
   // on the OrderDetailModal for an already-invoiced order.
   const [viewingInvoice, setViewingInvoice] = useState(null);
@@ -158,18 +161,30 @@ export default function Production() {
       try {
         const u = await base44.auth.me();
         setUser(u);
-        const [o, c, q] = await Promise.all([
+        const [o, c, q, pos] = await Promise.all([
           base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
           base44.entities.Customer.filter({ shop_owner: u.email }),
           // All quotes — independent of conversion status. Lets a sent or
           // approved quote appear on the calendar before there's an order.
           base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 500).catch(() => []),
+          // POs that originated from one of this shop's orders. Drives
+          // OrderDetailModal's tri-state Order from AS Colour button.
+          // Soft-fails so a missing column / RLS issue doesn't break the page.
+          base44.entities.PurchaseOrder.filter({ shop_owner: u.email }).catch(() => []),
         ]);
         setOrders(o || []);
         const map = {};
         (c || []).forEach((cust) => (map[cust.id] = cust));
         setCustomers(map);
         setQuotes(q || []);
+        // Last-write-wins per source_order_id; if a shop genuinely has
+        // multiple POs for the same order, the latest one drives the
+        // button state (cleanest single-PO assumption for v1).
+        const poMap = {};
+        for (const po of pos || []) {
+          if (po.source_order_id) poMap[po.source_order_id] = po;
+        }
+        setPoByOrderId(poMap);
       } catch (err) {
         console.error("Production load failed:", err);
       } finally {
@@ -1184,7 +1199,8 @@ export default function Production() {
           onComplete={handleComplete}
           onDelete={handleDelete}
           onTogglePaid={handleTogglePaid}
-          onOrderFromSS={(order) => { setViewing(null); setSsOrderTarget(order); }}
+          onOrderFromAC={(order) => setAcOrderTarget(order)}
+          sourcePO={poByOrderId[viewing.id]}
           onShowInvoice={(invoice) => setViewingInvoice(invoice)}
         />
       )}
@@ -1199,11 +1215,14 @@ export default function Production() {
         />
       )}
 
-      {ssOrderTarget && (
-        <SSOrderModal
-          order={ssOrderTarget}
-          onClose={() => setSsOrderTarget(null)}
-          onOrderPlaced={() => setSsOrderTarget(null)}
+      {acOrderTarget && (
+        <ACOrderModal
+          order={acOrderTarget}
+          user={user}
+          onClose={() => setAcOrderTarget(null)}
+          onPOCreated={(po) => {
+            setPoByOrderId((prev) => ({ ...prev, [acOrderTarget.id]: po }));
+          }}
         />
       )}
     </div>
