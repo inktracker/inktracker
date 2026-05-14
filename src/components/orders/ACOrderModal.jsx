@@ -52,8 +52,11 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
 
   // Per-row SKU overrides keyed by line index + size
   const [skuOverrides, setSkuOverrides] = useState({});
+  // AS Colour caps reference at 20 chars, so "PO for ORD-2026-XXXXX"
+  // (21+ chars) would always reject. Use the bare order_id, which fits
+  // (e.g. "ORD-2026-0WCV9" = 14 chars). User can edit before submit.
   const [reference, setReference] = useState(
-    `PO for ${order.order_id || `Order ${order.id?.slice(0, 8)}`}`,
+    String(order.order_id || `Order ${order.id?.slice(0, 8)}` || "").slice(0, 20),
   );
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);

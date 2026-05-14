@@ -94,6 +94,11 @@ export function updateItemQty(items, index, quantity) {
   return next;
 }
 
+// Hard cap AS Colour enforces on the reference field. Mirrored from
+// supabase/functions/_shared/acOrderLogic.js so the UI can surface it
+// without a round-trip.
+export const AC_REFERENCE_MAX = 20;
+
 // Client-side mirror of supabase/functions/_shared/acOrderLogic.js
 // validateOrderPayload. Returns array of human-readable errors.
 // The server re-validates — this is for UX, not security.
@@ -101,7 +106,9 @@ export function validateForSubmit(po) {
   const errors = [];
   if (!po) return ["nothing to submit"];
   if (!po.reference || !String(po.reference).trim()) {
-    errors.push("PO reference (your internal name / PO number) is required");
+    errors.push("PO reference is required");
+  } else if (String(po.reference).trim().length > AC_REFERENCE_MAX) {
+    errors.push(`PO reference must be ${AC_REFERENCE_MAX} characters or fewer (AS Colour limit) — yours is ${String(po.reference).trim().length}`);
   }
   if (!po.shipping_method || !String(po.shipping_method).trim()) {
     errors.push("Shipping method is required");
@@ -110,6 +117,8 @@ export function validateForSubmit(po) {
   if (!sa || typeof sa !== "object") {
     errors.push("Shipping address is required");
   } else {
+    if (!sa.firstName) errors.push("Shipping address: first name is required");
+    if (!sa.lastName) errors.push("Shipping address: last name is required");
     if (!sa.address1) errors.push("Shipping address: street is required");
     if (!sa.city) errors.push("Shipping address: city is required");
     if (!sa.zip) errors.push("Shipping address: zip is required");
@@ -124,6 +133,9 @@ export function validateForSubmit(po) {
       const qty = Number(it?.quantity);
       if (!Number.isFinite(qty) || qty <= 0) {
         errors.push(`Item ${i + 1}: quantity must be positive`);
+      }
+      if (!it?.warehouse) {
+        errors.push(`Item ${i + 1}: warehouse is required (e.g. "USA")`);
       }
     }
   }
@@ -255,6 +267,10 @@ export function mergeableDestinations(po, allPOs) {
 
 // Build the payload shape acPlaceOrder expects (matches the AS Colour
 // /v1/orders contract via _shared/acOrderLogic.buildOrderRequestBody).
+//
+// Warehouse default = "USA" — AS Colour requires non-empty per item;
+// US accounts use USA, AUS/NZ accounts override. Same default lives
+// server-side in acOrderLogic.buildOrderRequestBody.
 export function buildSubmitPayload(po) {
   return {
     reference: String(po.reference),
@@ -264,7 +280,7 @@ export function buildSubmitPayload(po) {
     shippingAddress: po.ship_to,
     items: (po.items || []).map((it) => ({
       sku: String(it.sku),
-      warehouse: String(it.warehouse ?? ""),
+      warehouse: String(it.warehouse || "USA"),
       quantity: Number(it.quantity),
     })),
   };

@@ -13,6 +13,7 @@ import {
   mergeableDestinations,
   buildMergedPO,
   combinedReference,
+  AC_REFERENCE_MAX,
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check } from "lucide-react";
@@ -453,13 +454,27 @@ function PoDetail({ po, threshold, submitting, submitError, mergeTargets, mergeO
     <div className="bg-white border border-slate-100 rounded-xl p-5 space-y-5">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
-        <input
-          value={po.reference || ""}
-          onChange={(e) => onPatch({ reference: e.target.value })}
-          disabled={isLocked}
-          className="text-lg font-bold text-slate-800 bg-transparent border-b border-transparent hover:border-slate-200 focus:border-indigo-400 focus:outline-none flex-1 min-w-0 disabled:text-slate-500"
-          placeholder="PO reference"
-        />
+        <div className="flex-1 min-w-0">
+          <input
+            value={po.reference || ""}
+            onChange={(e) => onPatch({ reference: e.target.value })}
+            disabled={isLocked}
+            maxLength={!isLocked && po.supplier === "AS Colour" ? AC_REFERENCE_MAX : undefined}
+            className={`text-lg font-bold bg-transparent border-b border-transparent hover:border-slate-200 focus:border-indigo-400 focus:outline-none w-full disabled:text-slate-500 ${
+              (po.reference || "").length > AC_REFERENCE_MAX && po.supplier === "AS Colour" && !isLocked
+                ? "text-red-600"
+                : "text-slate-800"
+            }`}
+            placeholder="PO reference"
+          />
+          {!isLocked && po.supplier === "AS Colour" && (
+            <div className={`text-[10px] mt-0.5 ${
+              (po.reference || "").length > AC_REFERENCE_MAX ? "text-red-500" : "text-slate-400"
+            }`}>
+              {(po.reference || "").length}/{AC_REFERENCE_MAX} (AS Colour limit)
+            </div>
+          )}
+        </div>
         {!isLocked && (
           <div className="flex items-center gap-1 relative">
             {mergeTargets?.length > 0 && (
@@ -665,14 +680,17 @@ function PoDetail({ po, threshold, submitting, submitError, mergeTargets, mergeO
 }
 
 function ShipToEditor({ value, disabled, onChange }) {
-  function field(key, label, placeholder) {
+  function field(key, placeholder, { required } = {}) {
+    const isMissing = required && !value[key];
     return (
       <input
         value={value[key] || ""}
         onChange={(e) => onChange({ ...value, [key]: e.target.value })}
         disabled={disabled}
-        placeholder={placeholder || label}
-        className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5"
+        placeholder={required ? `${placeholder} *` : placeholder}
+        className={`w-full text-sm border rounded-lg px-2.5 py-1.5 ${
+          isMissing ? "border-red-300 bg-red-50/30" : "border-slate-200"
+        }`}
       />
     );
   }
@@ -680,20 +698,21 @@ function ShipToEditor({ value, disabled, onChange }) {
     <div className="space-y-2">
       {field("company", "Company")}
       <div className="grid grid-cols-2 gap-2">
-        {field("firstName", "First name")}
-        {field("lastName", "Last name")}
+        {field("firstName", "First name", { required: true })}
+        {field("lastName", "Last name", { required: true })}
       </div>
-      {field("address1", "Street address")}
+      {field("address1", "Street address", { required: true })}
       {field("address2", "Apt / suite (optional)")}
       <div className="grid grid-cols-3 gap-2">
-        {field("city", "City")}
+        {field("city", "City", { required: true })}
         {field("state", "State")}
-        {field("zip", "ZIP")}
+        {field("zip", "ZIP", { required: true })}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        {field("countryCode", "Country (e.g. US)")}
+        {field("countryCode", "Country (e.g. US)", { required: true })}
         {field("phone", "Phone")}
       </div>
+      <div className="text-[10px] text-slate-400">* required by AS Colour</div>
     </div>
   );
 }

@@ -58,12 +58,22 @@ export function credsForOrderPlacement(profile) {
  * shippingAddress with address1/city/zip/countryCode, and at least one
  * item with sku + quantity.
  */
+// AS Colour caps reference at 20 chars (validation error:
+// "The field reference must be a string or array type with a maximum
+// length of '20'."). Surface it client + server side so users don't
+// burn a network round-trip.
+export const AC_REFERENCE_MAX = 20;
+
 export function validateOrderPayload(payload) {
   const errors = [];
   if (!payload || typeof payload !== "object") {
     return ["payload must be an object"];
   }
-  if (!payload.reference) errors.push("reference (PO number) is required");
+  if (!payload.reference) {
+    errors.push("reference (PO number) is required");
+  } else if (String(payload.reference).length > AC_REFERENCE_MAX) {
+    errors.push(`reference must be ${AC_REFERENCE_MAX} characters or fewer`);
+  }
   if (!payload.shippingMethod) {
     errors.push("shippingMethod is required (call /orders/shippingmethods to list)");
   }
@@ -71,6 +81,8 @@ export function validateOrderPayload(payload) {
   if (!sa || typeof sa !== "object") {
     errors.push("shippingAddress is required");
   } else {
+    if (!sa.firstName) errors.push("shippingAddress.firstName is required");
+    if (!sa.lastName) errors.push("shippingAddress.lastName is required");
     if (!sa.address1) errors.push("shippingAddress.address1 is required");
     if (!sa.city) errors.push("shippingAddress.city is required");
     if (!sa.zip) errors.push("shippingAddress.zip is required");
@@ -86,6 +98,9 @@ export function validateOrderPayload(payload) {
       if (!Number.isFinite(qty) || qty <= 0) {
         errors.push(`items[${i}].quantity must be a positive number`);
       }
+      if (!it?.warehouse) {
+        errors.push(`items[${i}].warehouse is required (e.g. "USA")`);
+      }
     }
   }
   return errors;
@@ -98,6 +113,13 @@ export function validateOrderPayload(payload) {
  *
  * Assumes the payload has already passed validateOrderPayload.
  */
+// AS Colour requires a non-empty warehouse on each item. "USA" is the
+// right default for US accounts; AS Colour also has "AUS" and "NZ" for
+// other regions. When we eventually pull warehouses from /v1/locations
+// we can derive this per-shop; for now default and let the caller
+// override per-item.
+const DEFAULT_WAREHOUSE = "USA";
+
 export function buildOrderRequestBody(payload) {
   return {
     reference: String(payload.reference),
@@ -108,7 +130,7 @@ export function buildOrderRequestBody(payload) {
     shippingAddress: payload.shippingAddress,
     items: payload.items.map((it) => ({
       sku: String(it.sku),
-      warehouse: String(it.warehouse ?? ""),
+      warehouse: String(it.warehouse || DEFAULT_WAREHOUSE),
       quantity: Number(it.quantity),
     })),
   };
