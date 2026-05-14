@@ -42,7 +42,27 @@ function getElementRect(selector) {
   if (!selector) return null;
   const el = document.querySelector(selector);
   if (!el) return null;
-  return el.getBoundingClientRect();
+  // Walk the visible children and use the union of their bounding rects
+  // instead of the wrapper's own rect. The wrapper for data-tour="metrics"
+  // is a CSS grid container that can extend below the visible cards (e.g.
+  // implicit row sizing, trailing grid lines), and the audit screenshots
+  // showed the spotlight ring sitting ~30px under the cards as a result.
+  // Using the children's union keeps the spotlight (and the popover that
+  // anchors to it) tight to what the user actually sees.
+  const children = Array.from(el.children).filter((c) => {
+    const r = c.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  });
+  if (children.length === 0) return el.getBoundingClientRect();
+  let top = Infinity, left = Infinity, right = -Infinity, bottom = -Infinity;
+  for (const c of children) {
+    const r = c.getBoundingClientRect();
+    if (r.top    < top)    top    = r.top;
+    if (r.left   < left)   left   = r.left;
+    if (r.right  > right)  right  = r.right;
+    if (r.bottom > bottom) bottom = r.bottom;
+  }
+  return { top, left, right, bottom, width: right - left, height: bottom - top };
 }
 
 // Approximate tooltip footprint — used for viewport-collision math. The
