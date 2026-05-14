@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "@/components/shared/pricing";
 import { placeOrder, getShippingMethods, SUPPLIERS } from "@/api/suppliers";
 import {
@@ -728,12 +728,17 @@ function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shi
 
       {/* Submit / status */}
       {isLocked ? (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 flex items-start gap-2">
-          <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <div>
-            Submitted to {po.supplier}
-            {po.supplier_order_id && <> · supplier order ID <code className="font-mono">{po.supplier_order_id}</code></>}
-            {po.submitted_at && <> · {new Date(po.submitted_at).toLocaleString()}</>}
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800 space-y-2">
+          <div className="flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              Submitted to {po.supplier}
+              {po.supplier_order_id && <> · supplier order ID <code className="font-mono">{po.supplier_order_id}</code></>}
+              {po.submitted_at && <> · {new Date(po.submitted_at).toLocaleString()}</>}
+            </div>
+            {po.supplier_order_id && po.supplier === "AS Colour" && (
+              <VerifyOrderButton orderId={po.supplier_order_id} />
+            )}
           </div>
         </div>
       ) : (
@@ -795,6 +800,70 @@ function ShipToEditor({ value, disabled, onChange }) {
         {field("phone", "Phone")}
       </div>
       <div className="text-[10px] text-slate-400">* required by AS Colour</div>
+    </div>
+  );
+}
+
+// Click → GET /v1/orders/{id} against AS Colour, show whether the
+// order really lives there + which account email it's under. Critical
+// for "AS Colour says they don't see my order" debugging.
+function VerifyOrderButton({ orderId }) {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+
+  async function verify() {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const { data, error: invokeErr } = await supabase.functions.invoke("acGetOrder", {
+        body: { id: orderId },
+      });
+      if (invokeErr) {
+        // FunctionsHttpError — read the wrapped body so AS Colour's
+        // actual rejection surfaces (e.g. 404 if the order doesn't exist).
+        const ctxRes = (invokeErr.context && typeof invokeErr.context.text === "function")
+          ? invokeErr.context
+          : invokeErr.context?.response;
+        if (ctxRes?.text) {
+          const body = await ctxRes.text().catch(() => "");
+          let parsed = null;
+          try { parsed = JSON.parse(body); } catch {}
+          throw new Error(parsed?.error || body || invokeErr.message);
+        }
+        throw invokeErr;
+      }
+      setResult(data);
+    } catch (err) {
+      setError(err?.message || String(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        onClick={verify}
+        disabled={loading}
+        className="text-[11px] font-semibold px-2 py-1 rounded-md bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+      >
+        {loading ? "Checking…" : "Verify with AS Colour"}
+      </button>
+      {error && (
+        <div className="text-[10px] text-red-600 max-w-xs text-right whitespace-pre-wrap">
+          {error}
+        </div>
+      )}
+      {result && (
+        <div className="text-[10px] text-slate-700 bg-white border border-emerald-200 rounded p-2 max-w-md text-left whitespace-pre-wrap font-mono">
+          <div className="font-bold not-italic mb-1">
+            Account email: {result.accountEmail || "(not returned)"}
+          </div>
+          {JSON.stringify(result.order, null, 2)}
+        </div>
+      )}
     </div>
   );
 }
