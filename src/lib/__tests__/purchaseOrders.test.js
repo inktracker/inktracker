@@ -11,7 +11,53 @@ import {
   mergeableDestinations,
   buildMergedPO,
   combinedReference,
+  routeWarehouseForSku,
 } from "../purchaseOrders.js";
+
+describe("routeWarehouseForSku", () => {
+  it("returns default when default has any stock", () => {
+    expect(routeWarehouseForSku({ CA: 100, NC: 50 }, "CA"))
+      .toEqual({ warehouse: "CA", source: "default" });
+  });
+
+  it("falls back to the other warehouse when default is at zero", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 50 }, "CA"))
+      .toEqual({ warehouse: "NC", source: "fallback" });
+  });
+
+  it("KEEPS default when it has stock but less than the requested qty (AS Colour handles splits)", () => {
+    // CA has 5, you ordered 10. Default still wins — AS Colour will
+    // ship the 5 from CA and the rest from another warehouse server-side.
+    expect(routeWarehouseForSku({ CA: 5, NC: 50 }, "CA", 10))
+      .toEqual({ warehouse: "CA", source: "default" });
+  });
+
+  it("KEEPS default when it has way less than requested but still > 0", () => {
+    expect(routeWarehouseForSku({ CA: 198, NC: 112 }, "CA", 500))
+      .toEqual({ warehouse: "CA", source: "default" });
+  });
+
+  it("sticks with default when both warehouses are at zero — flagged for UI", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 0 }, "CA"))
+      .toEqual({ warehouse: "CA", source: "default-empty" });
+  });
+
+  it("respects a non-default warehouse choice (e.g. east coast shop)", () => {
+    expect(routeWarehouseForSku({ CA: 100, NC: 50 }, "NC"))
+      .toEqual({ warehouse: "NC", source: "default" });
+    expect(routeWarehouseForSku({ CA: 100, NC: 0 }, "NC"))
+      .toEqual({ warehouse: "CA", source: "fallback" });
+  });
+
+  it("handles missing stock map without crashing", () => {
+    expect(routeWarehouseForSku(null, "CA").warehouse).toBe("CA");
+    expect(routeWarehouseForSku({}, "CA").source).toBe("default-empty");
+  });
+
+  it("picks the warehouse with the most stock among non-default options when default is out", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 5, AUS: 50 }, "CA").warehouse).toBe("AUS");
+  });
+});
 
 describe("poSubtotal", () => {
   it("returns 0 for empty / non-array", () => {
@@ -428,17 +474,18 @@ describe("buildSubmitPayload", () => {
     });
   });
 
-  it("PO-level warehouse overrides every item at submit", () => {
+  it("per-item warehouse wins; po.warehouse is only the fallback for items with none", () => {
     const out = buildSubmitPayload({
       reference: "PO-1",
       shipping_method: "Ground",
       ship_to: { address1: "1", city: "x", zip: "y", countryCode: "US" },
-      warehouse: "NC",
+      warehouse: "NC", // fallback for items lacking their own
       items: [
-        { sku: "A", warehouse: "CA", quantity: 5 },
-        { sku: "B", quantity: 3 },
+        { sku: "A", warehouse: "CA", quantity: 5 }, // keeps CA (item-level)
+        { sku: "B", quantity: 3 },                  // inherits NC (fallback)
       ],
     });
-    expect(out.items.every((it) => it.warehouse === "NC")).toBe(true);
+    expect(out.items[0].warehouse).toBe("CA");
+    expect(out.items[1].warehouse).toBe("NC");
   });
 });

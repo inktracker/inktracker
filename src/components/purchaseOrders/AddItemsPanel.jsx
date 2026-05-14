@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { lookupStyle, SUPPLIERS } from "@/api/suppliers";
-import { mergeItem } from "@/lib/purchaseOrders";
+import { mergeItem, routeWarehouseForSku } from "@/lib/purchaseOrders";
 import { Search, Plus, Loader2, AlertCircle } from "lucide-react";
 import { fmtMoney } from "@/components/shared/pricing";
 
@@ -12,7 +12,7 @@ import { fmtMoney } from "@/components/shared/pricing";
 //
 // Scoped to one supplier per panel because the PO is supplier-scoped.
 
-export default function AddItemsPanel({ supplier, onAddItems }) {
+export default function AddItemsPanel({ supplier, defaultWarehouse = "CA", onAddItems }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -43,6 +43,11 @@ export default function AddItemsPanel({ supplier, onAddItems }) {
 
   function addVariant(variant, qty) {
     if (!variant || !qty || qty <= 0) return;
+    // Route warehouse: default first, fall back to the other if the
+    // default is out of stock. Uses stockBySkuWarehouse from the
+    // lookup response (live AS Colour inventory).
+    const stock = product?.stockBySkuWarehouse?.[variant.sku] || {};
+    const { warehouse } = routeWarehouseForSku(stock, defaultWarehouse, Number(qty));
     onAddItems((prev) =>
       mergeItem(prev, {
         sku: variant.sku,
@@ -51,7 +56,7 @@ export default function AddItemsPanel({ supplier, onAddItems }) {
         size: variant.size || "",
         quantity: Number(qty),
         unitPrice: Number(variant.price) || 0,
-        warehouse: "",
+        warehouse,
       }),
     );
   }

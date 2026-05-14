@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
 import { fmtMoney } from "../shared/pricing";
-import { mergeItem } from "@/lib/purchaseOrders";
+import { mergeItem, routeWarehouseForSku } from "@/lib/purchaseOrders";
 import { SUPPLIERS, lookupStyle } from "@/api/suppliers";
 import { X, Package, CheckCircle, Truck, Loader2, ExternalLink, AlertCircle } from "lucide-react";
 
@@ -56,6 +56,9 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
   const [resolvedSkus, setResolvedSkus] = useState({});
   const [resolveLoading, setResolveLoading] = useState(false);
   const [unresolvedCount, setUnresolvedCount] = useState(0);
+  // Stock-per-warehouse map keyed by SKU, also from the resolver.
+  // Drives auto-routing of warehouse per item at create time.
+  const [stockBySku, setStockBySku] = useState({});
 
   // On mount: for each unique style code in this order's AC items, hit
   // acLookupStyle once. Build a (colour, size) → canonical SKU map and
@@ -78,10 +81,13 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
       .then((results) => {
         if (cancelled) return;
         const styleToVariants = {};
+        const stockMerged = {};
         for (let i = 0; i < styleCodes.length; i++) {
           const r = results[i];
           const product = r?.product || (r?.matches || [])[0] || r;
           styleToVariants[styleCodes[i]] = product?.variants || [];
+          // Merge per-SKU stock from each style's lookup into one map
+          Object.assign(stockMerged, product?.stockBySkuWarehouse || {});
         }
         const matched = {};
         let unresolved = 0;
@@ -101,6 +107,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
           else unresolved++;
         }
         setResolvedSkus(matched);
+        setStockBySku(stockMerged);
         setUnresolvedCount(unresolved);
       })
       .finally(() => { if (!cancelled) setResolveLoading(false); });
@@ -123,11 +130,15 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
     try {
       // Build items via mergeItem so identical SKUs roll up to one
       // line with summed quantity (matches the PO page's contract).
+      const defaultWh = user?.default_ac_warehouse || "CA";
       let items = [];
       for (let i = 0; i < rawLines.length; i++) {
         const line = rawLines[i];
         const sku = getSku(line, i).trim();
         if (!sku) continue;
+        // Route warehouse for this specific SKU using live stock.
+        const stock = stockBySku[sku] || {};
+        const { warehouse } = routeWarehouseForSku(stock, defaultWh, line.qty);
         items = mergeItem(items, {
           sku,
           styleCode:
@@ -139,7 +150,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
           size: line.size,
           quantity: line.qty,
           unitPrice: Number(line.li.garmentCost || line.li.casePrice || 0),
-          warehouse: "",
+          warehouse,
         });
       }
       if (items.length === 0) {

@@ -12,6 +12,37 @@
 // supabase/functions/_shared/acOrderLogic.js. Client-side it surfaces
 // errors before the network hop; the server still has its own copy.
 
+// Decide which warehouse an item should ship from.
+//
+//   inStockByWarehouse: { "CA": 198, "NC": 112 }  (qty per warehouse)
+//   defaultWarehouse:   shop's preferred warehouse (e.g. "CA")
+//
+// Matches Joe's literal ask: "if a garment is out of stock there, route
+// to the other." "Out of stock" means zero. If the default has ANY stock
+// we ship from there — AS Colour handles partial-warehouse splits on
+// their side (their lifecycle includes a "Partially Shipped" status
+// exactly for this case). Otherwise route to the warehouse that has
+// stock. If both are at zero, stick with default + surface it as
+// "default-empty" so the UI can flag the row.
+//
+// Returns { warehouse, source } where source is:
+//   "default"       — default has stock (>0); use it
+//   "fallback"      — default at 0, switched to a warehouse with stock
+//   "default-empty" — both at 0 (or no stock data); keep default
+export function routeWarehouseForSku(inStockByWarehouse, defaultWarehouse, _hintQty) {
+  const stock = inStockByWarehouse || {};
+  const def = String(defaultWarehouse || "CA");
+  if ((Number(stock[def]) || 0) > 0) return { warehouse: def, source: "default" };
+  // Default is out — pick the non-default warehouse with the most stock.
+  const alt = Object.entries(stock)
+    .filter(([w]) => w !== def)
+    .sort((a, b) => (Number(b[1]) || 0) - (Number(a[1]) || 0))[0];
+  if (alt && Number(alt[1]) > 0) {
+    return { warehouse: alt[0], source: "fallback" };
+  }
+  return { warehouse: def, source: "default-empty" };
+}
+
 export function poSubtotal(items) {
   if (!Array.isArray(items)) return 0;
   return items.reduce((sum, it) => {
@@ -270,12 +301,12 @@ export function mergeableDestinations(po, allPOs) {
 // Build the payload shape acPlaceOrder expects (matches the AS Colour
 // /v1/orders contract via _shared/acOrderLogic.buildOrderRequestBody).
 //
-// Warehouse: PO-level po.warehouse drives every item. AS Colour US's
-// canonical strings (confirmed via /v1/inventory/items) are "CA" and
-// "NC" — state codes, NOT "Carson, CA" / "Charlotte, NC". Default to
-// "CA" if nothing's set. Same default lives server-side.
+// Warehouse: per-item now. Each item carries its own warehouse (set
+// via auto-routing on add). Falls back to po.warehouse for legacy
+// rows, then "CA" as a final default. AS Colour requires non-empty
+// per-item warehouse — values are state codes "CA" / "NC".
 export function buildSubmitPayload(po) {
-  const poWarehouse = String(po.warehouse || "").trim();
+  const fallback = String(po.warehouse || "CA").trim() || "CA";
   return {
     reference: String(po.reference),
     shippingMethod: String(po.shipping_method),
@@ -284,7 +315,7 @@ export function buildSubmitPayload(po) {
     shippingAddress: po.ship_to,
     items: (po.items || []).map((it) => ({
       sku: String(it.sku),
-      warehouse: poWarehouse || String(it.warehouse || "CA"),
+      warehouse: String(it.warehouse || fallback),
       quantity: Number(it.quantity),
     })),
   };

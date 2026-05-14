@@ -1232,6 +1232,10 @@ function SupplierKeysSection({ user }) {
   const initialThresholds = user?.free_freight_thresholds || {};
   const [acThreshold, setAcThreshold] = useState(initialThresholds["AS Colour"] ?? "");
   const [ssThreshold, setSsThreshold] = useState(initialThresholds["S&S Activewear"] ?? "");
+  // Default AS Colour warehouse for auto-routing on the PO page. When
+  // a SKU is in stock at this warehouse, items ship from here;
+  // otherwise they auto-route to the other US warehouse.
+  const [defaultAcWarehouse, setDefaultAcWarehouse] = useState(user?.default_ac_warehouse || "CA");
 
   async function handleSave() {
     setSaving(true);
@@ -1263,6 +1267,7 @@ function SupplierKeysSection({ user }) {
       if (ssThreshold === "" || ssT === 0) delete thresholds["S&S Activewear"];
       else if (ssT > 0) thresholds["S&S Activewear"] = ssT;
       updates.free_freight_thresholds = thresholds;
+      updates.default_ac_warehouse = defaultAcWarehouse || "CA";
       if (Object.keys(updates).length === 0) { setSaving(false); return; }
       await base44.auth.updateMe(updates);
       setSaved(true);
@@ -1415,6 +1420,27 @@ function SupplierKeysSection({ user }) {
               placeholder="e.g. 200"
               className={inputCls} />
           </div>
+        </div>
+      </div>
+
+      {/* Default AS Colour warehouse */}
+      <div className="border border-slate-200 rounded-xl p-4 space-y-3">
+        <div>
+          <div className="text-sm font-bold text-slate-700">Default AS Colour warehouse</div>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Items on a PO ship from here when in stock. If the SKU is out of stock at your default,
+            it auto-routes to the other US warehouse silently — no per-PO decision needed.
+          </p>
+        </div>
+        <div>
+          <select
+            value={defaultAcWarehouse}
+            onChange={e => setDefaultAcWarehouse(e.target.value)}
+            className={inputCls}
+          >
+            <option value="CA">CA — Carson (West Coast)</option>
+            <option value="NC">NC — Charlotte (East Coast)</option>
+          </select>
         </div>
       </div>
 

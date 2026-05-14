@@ -417,6 +417,7 @@ export default function PurchaseOrders() {
           ) : (
             <PoDetail
               po={selected}
+              defaultWarehouse={user?.default_ac_warehouse || "CA"}
               threshold={Number(thresholds[selected.supplier]) || 0}
               submitting={submitting}
               submitError={submitError}
@@ -490,7 +491,7 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onDismissError }) {
+function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onDismissError }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
@@ -571,6 +572,7 @@ function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shi
       {!isLocked && (
         <AddItemsPanel
           supplier={po.supplier}
+          defaultWarehouse={defaultWarehouse}
           onAddItems={(updater) => onPatch({ items: typeof updater === "function" ? updater(po.items || []) : updater })}
         />
       )}
@@ -589,6 +591,7 @@ function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shi
                 <tr>
                   <th className="text-left px-3 py-2">SKU</th>
                   <th className="text-left px-3 py-2">Color / Size</th>
+                  <th className="text-center px-2 py-2">WH</th>
                   <th className="text-right px-3 py-2">Qty</th>
                   <th className="text-right px-3 py-2">Unit</th>
                   <th className="text-right px-3 py-2">Line</th>
@@ -611,6 +614,33 @@ function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shi
                       )}
                     </td>
                     <td className="px-3 py-2 text-slate-600">{[it.color, it.size].filter(Boolean).join(" · ")}</td>
+                    <td className="px-2 py-2 text-center">
+                      {isLocked ? (
+                        <span className="text-[10px] font-bold text-slate-600">{it.warehouse || defaultWarehouse}</span>
+                      ) : (
+                        <select
+                          value={it.warehouse || defaultWarehouse}
+                          onChange={(e) => {
+                            const next = [...po.items];
+                            next[i] = { ...next[i], warehouse: e.target.value };
+                            onPatch({ items: next });
+                          }}
+                          className={`text-[10px] font-bold rounded px-1 py-0.5 border ${
+                            it.warehouse && it.warehouse !== defaultWarehouse
+                              ? "border-amber-300 bg-amber-50 text-amber-700"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                          title={
+                            it.warehouse && it.warehouse !== defaultWarehouse
+                              ? `Routed to ${it.warehouse} (default is ${defaultWarehouse})`
+                              : `Default warehouse ${defaultWarehouse}`
+                          }
+                        >
+                          <option value="CA">CA</option>
+                          <option value="NC">NC</option>
+                        </select>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-right">
                       {isLocked ? (
                         it.quantity
@@ -643,7 +673,7 @@ function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shi
               </tbody>
               <tfoot className="bg-slate-50 text-sm font-semibold">
                 <tr>
-                  <td colSpan={4} className="px-3 py-2 text-right text-slate-500">Subtotal</td>
+                  <td colSpan={5} className="px-3 py-2 text-right text-slate-500">Subtotal</td>
                   <td className="px-3 py-2 text-right text-slate-800">{fmtMoney(subtotal)}</td>
                   <td></td>
                 </tr>
@@ -688,21 +718,11 @@ function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shi
               <div className="text-[10px] text-red-500 mt-1">{shippingMethodsError}</div>
             )}
           </div>
-          <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Warehouse</label>
-            <select
-              value={po.warehouse || "CA"}
-              onChange={(e) => onPatch({ warehouse: e.target.value })}
-              disabled={isLocked}
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
-            >
-              <option value="CA">CA — Carson (West Coast)</option>
-              <option value="NC">NC — Charlotte (East Coast)</option>
-            </select>
-            <div className="text-[10px] text-slate-400 mt-1">
-              AS Colour US warehouse this order ships from. Applied to all items.
-            </div>
-          </div>
+          {/* Warehouse is now routed per-item based on stock availability
+              (see auto-routing in AddItemsPanel + ACOrderModal). The
+              shop's default warehouse comes from Account → Default AS
+              Colour warehouse. Items show their routed warehouse next
+              to the SKU. */}
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Order notes</label>
             <textarea

@@ -142,6 +142,21 @@ Deno.serve(async (req) => {
           if (!inventoryMap[colour]) inventoryMap[colour] = {};
           inventoryMap[colour][size] = (inventoryMap[colour][size] || 0) + (Number(row.quantity) || 0);
         }
+        // Per-SKU per-warehouse stock map drives auto-routing on the
+        // PO page (item ships from default warehouse if in stock there,
+        // otherwise falls back to the other). Keyed by exact AS Colour
+        // SKU so the frontend can look up "what's the right warehouse
+        // for sku X assuming default Y?" without re-running inventory.
+        const stockBySkuWarehouse: Record<string, Record<string, number>> = {};
+        for (const row of allInv) {
+          if (!row.sku) continue;
+          const wh = String(row.warehouse ?? row.location ?? "").trim();
+          if (!wh) continue;
+          if (!stockBySkuWarehouse[row.sku]) stockBySkuWarehouse[row.sku] = {};
+          stockBySkuWarehouse[row.sku][wh] =
+            (stockBySkuWarehouse[row.sku][wh] || 0) + (Number(row.quantity) || 0);
+        }
+        (product as any).stockBySkuWarehouse = stockBySkuWarehouse;
         // Surface unique warehouse strings AS Colour uses for this style —
         // these are the canonical values the /v1/orders endpoint expects
         // on items[].warehouse. Without this the UI ends up guessing
