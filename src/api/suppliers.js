@@ -23,9 +23,7 @@ const FN = {
     lookup: "acLookupStyle",
     inventory: "acGetInventory",
     pricelist: "acGetPriceList",
-    // AS Colour's public API has no order-placement endpoint as of this
-    // integration. `placeOrder` intentionally omitted — UI should hide the
-    // "Place order" CTA when supplier === AC.
+    placeOrder: "acPlaceOrder",
   },
 };
 

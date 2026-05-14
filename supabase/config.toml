@@ -28,6 +28,9 @@ verify_jwt = false
 [functions.acGetPriceList]
 verify_jwt = false
 
+[functions.acPlaceOrder]
+verify_jwt = false
+
 [functions.qbOAuthCallback]
 verify_jwt = false
 
