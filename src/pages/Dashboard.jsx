@@ -11,7 +11,6 @@ import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerDocuments from "../components/broker/BrokerDocuments";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
 import GettingStartedChecklist from "../components/GettingStartedChecklist";
-import FeatureTour from "../components/FeatureTour";
 import HintTip from "../components/shared/HintTip";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
@@ -593,7 +592,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      <FeatureTour />
     </div>
   );
 }
