@@ -48,9 +48,20 @@ async function invoke(fn, body) {
       if (body) {
         let parsed = null;
         try { parsed = JSON.parse(body); } catch { /* not JSON */ }
-        const msg = parsed?.error
-          || (parsed?.details ? `${parsed?.error || "request rejected"}: ${JSON.stringify(parsed.details)}` : null)
-          || body;
+        // Build the most useful message we can. Edge fn responses are
+        // {error, details}; show BOTH when present so a wrapper string
+        // like "AS Colour order failed (400)" doesn't hide the actual
+        // supplier rejection (e.g. AS Colour's
+        // {errors:[{field:"sku", message:"invalid"}]}).
+        let msg;
+        if (parsed?.error && parsed?.details !== undefined) {
+          const detailStr = typeof parsed.details === "string"
+            ? parsed.details
+            : JSON.stringify(parsed.details);
+          msg = `${parsed.error}\n${detailStr}`;
+        } else {
+          msg = parsed?.error || parsed?.message || body;
+        }
         const wrapped = new Error(msg);
         wrapped.status = ctxRes.status;
         throw wrapped;
