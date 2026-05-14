@@ -392,7 +392,10 @@ export default function QuoteEditorModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-auto">
+    <div
+      className="fixed bg-slate-900/70 backdrop-blur-sm z-[60] flex items-start justify-center p-4 overflow-auto"
+      style={{ top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
+    >
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl my-4">
         <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-t-2xl">
           <div>
