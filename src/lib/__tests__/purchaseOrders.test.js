@@ -11,7 +11,46 @@ import {
   mergeableDestinations,
   buildMergedPO,
   combinedReference,
+  routeWarehouseForSku,
 } from "../purchaseOrders.js";
+
+describe("routeWarehouseForSku", () => {
+  it("returns default when default has enough stock", () => {
+    expect(routeWarehouseForSku({ CA: 100, NC: 50 }, "CA", 10))
+      .toEqual({ warehouse: "CA", source: "default" });
+  });
+
+  it("falls back to the other warehouse when default is out", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 50 }, "CA", 10))
+      .toEqual({ warehouse: "NC", source: "fallback" });
+  });
+
+  it("falls back to the other warehouse when default has stock but not enough", () => {
+    expect(routeWarehouseForSku({ CA: 5, NC: 50 }, "CA", 10))
+      .toEqual({ warehouse: "NC", source: "fallback" });
+  });
+
+  it("sticks with default when neither warehouse has enough — caller decides", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 0 }, "CA", 1))
+      .toEqual({ warehouse: "CA", source: "default-empty" });
+  });
+
+  it("respects a non-default warehouse choice (e.g. east coast shop)", () => {
+    expect(routeWarehouseForSku({ CA: 100, NC: 50 }, "NC", 10))
+      .toEqual({ warehouse: "NC", source: "default" });
+    expect(routeWarehouseForSku({ CA: 100, NC: 0 }, "NC", 10))
+      .toEqual({ warehouse: "CA", source: "fallback" });
+  });
+
+  it("handles missing stock map without crashing", () => {
+    expect(routeWarehouseForSku(null, "CA").warehouse).toBe("CA");
+    expect(routeWarehouseForSku({}, "CA").source).toBe("default-empty");
+  });
+
+  it("picks the warehouse with the most stock when multiple non-default options have it", () => {
+    expect(routeWarehouseForSku({ CA: 0, NC: 5, AUS: 50 }, "CA", 10).warehouse).toBe("AUS");
+  });
+});
 
 describe("poSubtotal", () => {
   it("returns 0 for empty / non-array", () => {
@@ -428,17 +467,18 @@ describe("buildSubmitPayload", () => {
     });
   });
 
-  it("PO-level warehouse overrides every item at submit", () => {
+  it("per-item warehouse wins; po.warehouse is only the fallback for items with none", () => {
     const out = buildSubmitPayload({
       reference: "PO-1",
       shipping_method: "Ground",
       ship_to: { address1: "1", city: "x", zip: "y", countryCode: "US" },
-      warehouse: "NC",
+      warehouse: "NC", // fallback for items lacking their own
       items: [
-        { sku: "A", warehouse: "CA", quantity: 5 },
-        { sku: "B", quantity: 3 },
+        { sku: "A", warehouse: "CA", quantity: 5 }, // keeps CA (item-level)
+        { sku: "B", quantity: 3 },                  // inherits NC (fallback)
       ],
     });
-    expect(out.items.every((it) => it.warehouse === "NC")).toBe(true);
+    expect(out.items[0].warehouse).toBe("CA");
+    expect(out.items[1].warehouse).toBe("NC");
   });
 });
