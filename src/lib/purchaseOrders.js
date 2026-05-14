@@ -134,8 +134,10 @@ export function validateForSubmit(po) {
       if (!Number.isFinite(qty) || qty <= 0) {
         errors.push(`Item ${i + 1}: quantity must be positive`);
       }
-      if (!it?.warehouse) {
-        errors.push(`Item ${i + 1}: warehouse is required (e.g. "USA")`);
+      // Warehouse is set at the PO level via the dropdown; only flag
+      // if neither po.warehouse nor a per-item warehouse is present.
+      if (!po.warehouse && !it?.warehouse) {
+        errors.push(`Item ${i + 1}: warehouse is required (set it on the PO)`);
       }
     }
   }
@@ -268,10 +270,11 @@ export function mergeableDestinations(po, allPOs) {
 // Build the payload shape acPlaceOrder expects (matches the AS Colour
 // /v1/orders contract via _shared/acOrderLogic.buildOrderRequestBody).
 //
-// Warehouse default = "USA" — AS Colour requires non-empty per item;
-// US accounts use USA, AUS/NZ accounts override. Same default lives
-// server-side in acOrderLogic.buildOrderRequestBody.
+// Warehouse: prefer the PO-level po.warehouse (set via the dropdown on
+// the page) over a per-item value. Falls back to "USA" if nothing's
+// set. Same default lives server-side.
 export function buildSubmitPayload(po) {
+  const poWarehouse = String(po.warehouse || "").trim();
   return {
     reference: String(po.reference),
     shippingMethod: String(po.shipping_method),
@@ -280,7 +283,7 @@ export function buildSubmitPayload(po) {
     shippingAddress: po.ship_to,
     items: (po.items || []).map((it) => ({
       sku: String(it.sku),
-      warehouse: String(it.warehouse || "USA"),
+      warehouse: poWarehouse || String(it.warehouse || "USA"),
       quantity: Number(it.quantity),
     })),
   };

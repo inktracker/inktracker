@@ -31,6 +31,9 @@ verify_jwt = false
 [functions.acPlaceOrder]
 verify_jwt = false
 
+[functions.acGetShippingMethods]
+verify_jwt = false
+
 [functions.qbOAuthCallback]
 verify_jwt = false
 

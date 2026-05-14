@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { fmtMoney } from "@/components/shared/pricing";
-import { placeOrder, SUPPLIERS } from "@/api/suppliers";
+import { placeOrder, getShippingMethods, SUPPLIERS } from "@/api/suppliers";
 import {
   poSubtotal,
   freightProgress,
@@ -36,6 +36,13 @@ export default function PurchaseOrders() {
   const [mergeMode, setMergeMode] = useState(false);
   const [mergeSelection, setMergeSelection] = useState(() => new Set());
   const [merging, setMerging] = useState(false);
+
+  // Shipping methods cache keyed by supplier. Loaded once per supplier
+  // per session and shared across POs. Saves a round trip every time a
+  // user clicks a draft.
+  const [shippingMethodsBySupplier, setShippingMethodsBySupplier] = useState({});
+  const [shippingMethodsLoading, setShippingMethodsLoading] = useState(false);
+  const [shippingMethodsError, setShippingMethodsError] = useState(null);
 
   // Per-shop free-freight thresholds keyed by supplier name
   const thresholds = user?.free_freight_thresholds || {};
@@ -76,6 +83,36 @@ export default function PurchaseOrders() {
     }
     if (tab !== "drafts" && mergeMode) setMergeMode(false);
   }, [tab, supplierFilter]);
+
+  // When the selected PO is a draft, fetch the supplier's shipping
+  // methods if we haven't already. Skip on locked POs (their saved
+  // method is already a string, no need to populate the dropdown).
+  useEffect(() => {
+    if (!selectedId) return;
+    const sel = pos.find((p) => p.id === selectedId);
+    if (!sel || sel.status !== "draft") return;
+    if (shippingMethodsBySupplier[sel.supplier]) return;
+    let cancelled = false;
+    setShippingMethodsLoading(true);
+    setShippingMethodsError(null);
+    getShippingMethods(sel.supplier)
+      .then(({ methods }) => {
+        if (cancelled) return;
+        setShippingMethodsBySupplier((prev) => ({ ...prev, [sel.supplier]: methods }));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setShippingMethodsError(
+          err?.message?.includes("not configured")
+            ? "Configure your AS Colour API keys to load shipping methods."
+            : `Couldn't load shipping methods: ${err?.message || err}`,
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setShippingMethodsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedId, pos, shippingMethodsBySupplier]);
 
   function toggleSelectForMerge(id) {
     setMergeSelection((prev) => {
@@ -383,6 +420,9 @@ export default function PurchaseOrders() {
               threshold={Number(thresholds[selected.supplier]) || 0}
               submitting={submitting}
               submitError={submitError}
+              shippingMethods={shippingMethodsBySupplier[selected.supplier] || []}
+              shippingMethodsLoading={shippingMethodsLoading}
+              shippingMethodsError={shippingMethodsError}
               mergeTargets={mergeableDestinations(selected, pos)}
               mergeOpen={mergeOpen}
               onMergeOpen={() => setMergeOpen(true)}
@@ -445,7 +485,7 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, threshold, submitting, submitError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onDelete, onSubmit, onDismissError }) {
+function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onDelete, onSubmit, onDismissError }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
@@ -610,15 +650,42 @@ function PoDetail({ po, threshold, submitting, submitError, mergeTargets, mergeO
         <div className="space-y-3">
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Shipping method</label>
-            <input
+            <select
               value={po.shipping_method || ""}
               onChange={(e) => onPatch({ shipping_method: e.target.value })}
+              disabled={isLocked || shippingMethodsLoading}
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
+            >
+              <option value="">
+                {shippingMethodsLoading ? "Loading…" : "Select a method"}
+              </option>
+              {/* Keep the saved value selectable even if the API didn't
+                  return it (older PO, supplier changed offerings). */}
+              {po.shipping_method && !shippingMethods.includes(po.shipping_method) && (
+                <option value={po.shipping_method}>{po.shipping_method} (saved)</option>
+              )}
+              {shippingMethods.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+            {shippingMethodsError && (
+              <div className="text-[10px] text-red-500 mt-1">{shippingMethodsError}</div>
+            )}
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Warehouse</label>
+            <select
+              value={po.warehouse || "USA"}
+              onChange={(e) => onPatch({ warehouse: e.target.value })}
               disabled={isLocked}
-              placeholder="e.g. Ground"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
-            />
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
+            >
+              <option value="USA">USA</option>
+              <option value="AUS">AUS</option>
+              <option value="NZ">NZ</option>
+            </select>
             <div className="text-[10px] text-slate-400 mt-1">
-              Use a method name from the supplier's shipping list.
+              AS Colour region this order ships from. Applied to all items.
             </div>
           </div>
           <div>

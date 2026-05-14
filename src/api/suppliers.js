@@ -24,6 +24,7 @@ const FN = {
     inventory: "acGetInventory",
     pricelist: "acGetPriceList",
     placeOrder: "acPlaceOrder",
+    shippingMethods: "acGetShippingMethods",
   },
 };
 
@@ -103,6 +104,13 @@ export async function getPricelist(supplier, params = {}) {
   const fn = FN[supplier]?.pricelist;
   if (!fn) throw new Error(`No pricelist function for supplier ${supplier}`);
   return invoke(fn, params);
+}
+
+export async function getShippingMethods(supplier) {
+  const fn = FN[supplier]?.shippingMethods;
+  if (!fn) return { methods: [] };
+  const data = await invoke(fn, {});
+  return { methods: Array.isArray(data?.methods) ? data.methods : [] };
 }
 
 export async function placeOrder(supplier, payload) {
