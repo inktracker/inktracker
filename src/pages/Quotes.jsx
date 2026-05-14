@@ -330,8 +330,10 @@ export default function Quotes() {
       const orderPayload = buildOrderFromQuote(q, { userEmail: user.email });
       await base44.entities.Order.create(orderPayload);
 
-      // Commissions are created when the invoice is marked paid — not on quote
-      // conversion — so that broker commissions only reflect completed + paid work.
+      // Broker pricing reference rows (legacy "commissions" table) are
+      // created when the invoice is marked paid — not on quote conversion
+      // — so the reference reflects completed work the broker is actually
+      // pricing for their client.
 
       // Always preserve the originating quote (never delete) so:
       //   - OrderDetailModal can resolve order.quote_id → originating quote

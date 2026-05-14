@@ -14,7 +14,12 @@ const TABLE_MAP = {
   Shop: "shops",
   Invoice: "invoices",
   InventoryItem: "inventory_items",
+  // The "commissions" table is actually broker pricing reference, not
+  // a commission payout — preserved both names so legacy callers work
+  // while new code uses the clearer name. See memory:
+  // reference_broker_pricing.md.
   Commission: "commissions",
+  BrokerPricing: "commissions",
   BrokerNotification: "broker_notifications",
   BrokerPerformance: "broker_performance",
   ShopPerformance: "shop_performance",

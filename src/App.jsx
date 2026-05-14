@@ -125,7 +125,7 @@ const FEATURE_CARDS = [
   },
   {
     title: "Broker Integration",
-    desc: "Resellers submit their clients' orders through their own portal. Broker pricing and commissions tracked automatically.",
+    desc: "Resellers submit their clients' orders through their own portal — automatically priced with the markup share you set per broker.",
     color: "from-teal-500/20 to-teal-500/5",
     media: { type: "iframe", src: "/landing/broker-demo/index.html" },
   },
