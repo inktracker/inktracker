@@ -2,7 +2,7 @@ import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
-import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock } from "lucide-react";
+import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
 import { canAccess, getEffectiveTier } from "@/lib/billing";
@@ -14,6 +14,7 @@ const ICON_MAP = {
   Production: Package,
   Customers: Users,
   Inventory: Archive,
+  PurchaseOrders: Truck,
   Invoices: Receipt,
   Performance: BarChart2,
   Wizard: Wand2,
@@ -29,6 +30,7 @@ const NAV = [
   { label: "Production", page: "Production" },
   { label: "Customers", page: "Customers" },
   { label: "Inventory", page: "Inventory" },
+  { label: "Purchase Orders", page: "PurchaseOrders", indent: true },
   { label: "Invoices", page: "Invoices" },
   { label: "Performance", page: "Performance", feature: "reports" },
   { label: "Mockups", page: "Mockups", feature: "mockups" },
@@ -140,8 +142,8 @@ export default function Layout({ children, currentPageName }) {
             }
             return (
               <Link key={n.page} to={createPageUrl(n.page)}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"}`}>
-                <IconComponent className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
+                className={`flex items-center gap-3 ${n.indent ? "pl-8" : "px-3"} pr-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"}`}>
+                <IconComponent className={`${n.indent ? "w-4 h-4" : "w-5 h-5"} ${active ? "" : "text-slate-400"}`} />
                 <span className="flex-1">{n.label}</span>
               </Link>
             );
@@ -215,8 +217,8 @@ export default function Layout({ children, currentPageName }) {
                   }
                   return (
                     <Link key={n.page} to={createPageUrl(n.page)} onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}>
-                      <IconComponent className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
+                      className={`flex items-center gap-3 ${n.indent ? "pl-8" : "px-3"} pr-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}>
+                      <IconComponent className={`${n.indent ? "w-4 h-4" : "w-5 h-5"} ${active ? "" : "text-slate-400"}`} />
                       <span className="flex-1">{n.label}</span>
                     </Link>
                   );

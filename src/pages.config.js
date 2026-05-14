@@ -19,6 +19,7 @@ import OrderStatus from './pages/OrderStatus';
 import BrokerOnboarding from './pages/BrokerOnboarding';
 import Mockups from './pages/Mockups';
 import Production from './pages/Production';
+import PurchaseOrders from './pages/PurchaseOrders';
 import ShopFloor from './pages/ShopFloor';
 import __Layout from './Layout.jsx';
 
@@ -44,6 +45,7 @@ export const PAGES = {
     "BrokerOnboarding": BrokerOnboarding,
     "Mockups": Mockups,
     "Production": Production,
+    "PurchaseOrders": PurchaseOrders,
     "ShopFloor": ShopFloor,
 }
 

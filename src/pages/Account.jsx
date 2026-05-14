@@ -1227,6 +1227,12 @@ function SupplierKeysSection({ user }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Free-freight thresholds — drives the progress bar on Purchase Orders.
+  // Per supplier so each can have its own minimum (AS Colour vs S&S vs others).
+  const initialThresholds = user?.free_freight_thresholds || {};
+  const [acThreshold, setAcThreshold] = useState(initialThresholds["AS Colour"] ?? "");
+  const [ssThreshold, setSsThreshold] = useState(initialThresholds["S&S Activewear"] ?? "");
+
   async function handleSave() {
     setSaving(true);
     setSaved(false);
@@ -1242,6 +1248,15 @@ function SupplierKeysSection({ user }) {
         updates.ac_email = acEmail.trim() || null;
         updates.ac_password = acPassword.trim() || null;
       }
+      // Always send thresholds — they're cheap and the user expects edits to stick.
+      const thresholds = { ...initialThresholds };
+      const acT = Number(acThreshold);
+      const ssT = Number(ssThreshold);
+      if (acThreshold === "" || acT === 0) delete thresholds["AS Colour"];
+      else if (acT > 0) thresholds["AS Colour"] = acT;
+      if (ssThreshold === "" || ssT === 0) delete thresholds["S&S Activewear"];
+      else if (ssT > 0) thresholds["S&S Activewear"] = ssT;
+      updates.free_freight_thresholds = thresholds;
       if (Object.keys(updates).length === 0) { setSaving(false); return; }
       await base44.auth.updateMe(updates);
       setSaved(true);
@@ -1335,6 +1350,33 @@ function SupplierKeysSection({ user }) {
         ) : (
           <p className="text-xs text-slate-400">No AS Colour credentials configured. Enter your account details to connect.</p>
         )}
+      </div>
+
+      {/* Free-freight thresholds */}
+      <div className="border border-slate-200 rounded-xl p-4 space-y-3">
+        <div>
+          <div className="text-sm font-bold text-slate-700">Free-freight thresholds</div>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Order subtotal at which each supplier ships free. Drives the progress bar
+            on Purchase Orders so you can pair jobs to hit it.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">AS Colour ($)</label>
+            <input type="number" min="0" step="1" value={acThreshold}
+              onChange={e => setAcThreshold(e.target.value)}
+              placeholder="e.g. 200"
+              className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 mb-1">S&S Activewear ($)</label>
+            <input type="number" min="0" step="1" value={ssThreshold}
+              onChange={e => setSsThreshold(e.target.value)}
+              placeholder="e.g. 200"
+              className={inputCls} />
+          </div>
+        </div>
       </div>
 
       <button onClick={handleSave} disabled={saving}
