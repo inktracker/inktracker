@@ -34,6 +34,13 @@ import {
 } from "recharts";
 
 import { buildMonthlyChart } from "@/lib/broker/invoicesAggregation";
+import {
+  assembleCompletedJobs,
+  filterJobsByDate,
+  filterJobsBySearch,
+  sortJobs,
+  computeJobKpis,
+} from "@/lib/broker/brokerJobs";
 
 function JobDetailDrawer({ job, onClose }) {
   const brokerTotals = job._brokerTotal || 0;
@@ -208,104 +215,32 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail }) {
   // (The order pipeline was slimmed to 5 stages on 2026-05-12 —
   // "Ready for Pickup" is gone; everything done is now just
   // "Completed".)
-  const completedJobs = useMemo(() => {
-    const jobsFromOrders = (orders || [])
-      .filter((o) => o.status === "Completed")
-      .map((o) => {
-        let brokerTotal = o.total || 0;
-        let clientTotal = o.total || 0;
-        // Try to compute from line items if raw quote available
-        const matchingQuote = (quotes || []).find(
-          (q) => q.converted_order_id === o.order_id || q.converted_order_id === o.id
-        );
-        if (matchingQuote) {
-          try {
-            brokerTotal = calcQuoteTotals(matchingQuote, BROKER_MARKUP).total;
-            clientTotal = calcQuoteTotals(matchingQuote, STANDARD_MARKUP).total;
-          } catch {}
-        }
-        return {
-          ...o,
-          _type: "order",
-          _brokerTotal: brokerTotal,
-          _clientTotal: clientTotal,
-          _rawQuote: matchingQuote || null,
-        };
-      });
-
-    const orderIds = new Set(jobsFromOrders.map((j) => j.order_id).filter(Boolean));
-
-    // Also include "Converted to Order" quotes that don't already have an order entry
-    const jobsFromQuotes = (quotes || [])
-      .filter(
-        (q) =>
-          q.status === "Converted to Order" &&
-          q.converted_order_id &&
-          !orderIds.has(q.converted_order_id)
-      )
-      .map((q) => {
-        let brokerTotal = 0;
-        let clientTotal = 0;
-        try {
-          brokerTotal = calcQuoteTotals(q, BROKER_MARKUP).total;
-          clientTotal = calcQuoteTotals(q, STANDARD_MARKUP).total;
-        } catch {}
-        return {
-          ...q,
-          order_id: q.converted_order_id,
-          _type: "quote",
-          _brokerTotal: brokerTotal,
-          _clientTotal: clientTotal,
-          _rawQuote: q,
-        };
-      });
-
-    return [...jobsFromOrders, ...jobsFromQuotes];
-  }, [orders, quotes]);
+  const completedJobs = useMemo(
+    () => assembleCompletedJobs(orders, quotes, {
+      calcBroker: (q) => calcQuoteTotals(q, BROKER_MARKUP),
+      calcClient: (q) => calcQuoteTotals(q, STANDARD_MARKUP),
+    }),
+    [orders, quotes],
+  );
 
   // Stats
-  const totalRevenue = completedJobs.reduce((s, j) => s + j._brokerTotal, 0);
-  const totalClientRevenue = completedJobs.reduce((s, j) => s + j._clientTotal, 0);
-  const totalMargin = totalClientRevenue - totalRevenue;
-  const avgJobValue = completedJobs.length ? totalRevenue / completedJobs.length : 0;
+  const { totalRevenue, totalMargin, avgJobValue } = useMemo(
+    () => computeJobKpis(completedJobs),
+    [completedJobs],
+  );
   const monthlyData = useMemo(() => buildMonthlyChart(completedJobs), [completedJobs]);
 
   // Filter by date range
-  const dateFilteredJobs = useMemo(() => {
-    const now = new Date();
-    return completedJobs.filter((j) => {
-      if (dateFilter === "all") return true;
-      const d = new Date(j.date || j.created_date);
-      if (isNaN(d)) return true;
-      if (dateFilter === "30d") return (now - d) / 86400000 <= 30;
-      if (dateFilter === "90d") return (now - d) / 86400000 <= 90;
-      if (dateFilter === "year") return d.getFullYear() === now.getFullYear();
-      return true;
-    });
-  }, [completedJobs, dateFilter]);
+  const dateFilteredJobs = useMemo(
+    () => filterJobsByDate(completedJobs, dateFilter),
+    [completedJobs, dateFilter],
+  );
 
   // Search + sort
-  const displayJobs = useMemo(() => {
-    let list = dateFilteredJobs.filter((j) => {
-      const q = search.toLowerCase();
-      return (
-        !q ||
-        (j.customer_name || "").toLowerCase().includes(q) ||
-        (j.order_id || "").toLowerCase().includes(q) ||
-        (j.quote_id || "").toLowerCase().includes(q)
-      );
-    });
-
-    list = [...list].sort((a, b) => {
-      if (sortBy === "date_desc") return (b.date || b.created_date || "") > (a.date || a.created_date || "") ? 1 : -1;
-      if (sortBy === "date_asc") return (a.date || a.created_date || "") > (b.date || b.created_date || "") ? 1 : -1;
-      if (sortBy === "value_desc") return b._brokerTotal - a._brokerTotal;
-      if (sortBy === "value_asc") return a._brokerTotal - b._brokerTotal;
-      return 0;
-    });
-
-    return list;
-  }, [dateFilteredJobs, search, sortBy]);
+  const displayJobs = useMemo(
+    () => sortJobs(filterJobsBySearch(dateFilteredJobs, search), sortBy),
+    [dateFilteredJobs, search, sortBy],
+  );
 
   return (
     <div className="space-y-6">
