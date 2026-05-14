@@ -7,6 +7,8 @@ import {
   updateItemQty,
   validateForSubmit,
   buildSubmitPayload,
+  mergePOItems,
+  mergeableDestinations,
 } from "../purchaseOrders.js";
 
 describe("poSubtotal", () => {
@@ -188,6 +190,74 @@ describe("validateForSubmit", () => {
         "Item 1: quantity must be positive",
       ]),
     );
+  });
+});
+
+describe("mergePOItems", () => {
+  it("appends source items into an empty destination", () => {
+    const out = mergePOItems(
+      [{ sku: "A", warehouse: "", quantity: 5, unitPrice: 10 }],
+      [],
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ sku: "A", quantity: 5 });
+  });
+
+  it("dedupes overlapping SKUs by summing quantities", () => {
+    const out = mergePOItems(
+      [{ sku: "A", warehouse: "", quantity: 3 }],
+      [{ sku: "A", warehouse: "", quantity: 5, unitPrice: 10 }],
+    );
+    expect(out).toHaveLength(1);
+    expect(out[0].quantity).toBe(8);
+    expect(out[0].unitPrice).toBe(10);
+  });
+
+  it("keeps separate lines for different warehouses on the same SKU", () => {
+    const out = mergePOItems(
+      [{ sku: "A", warehouse: "AUS", quantity: 3 }],
+      [{ sku: "A", warehouse: "USA", quantity: 5 }],
+    );
+    expect(out).toHaveLength(2);
+  });
+
+  it("returns the destination unchanged when source is empty", () => {
+    const dest = [{ sku: "A", quantity: 5 }];
+    expect(mergePOItems([], dest)).toEqual(dest);
+    expect(mergePOItems(null, dest)).toEqual(dest);
+  });
+});
+
+describe("mergeableDestinations", () => {
+  const drafts = [
+    { id: "1", supplier: "AS Colour", status: "draft" },
+    { id: "2", supplier: "AS Colour", status: "draft" },
+    { id: "3", supplier: "AS Colour", status: "submitted" },
+    { id: "4", supplier: "S&S Activewear", status: "draft" },
+  ];
+
+  it("includes other drafts of the same supplier", () => {
+    const out = mergeableDestinations(drafts[0], drafts);
+    expect(out.map((x) => x.id)).toEqual(["2"]);
+  });
+
+  it("excludes the source PO itself", () => {
+    const out = mergeableDestinations(drafts[1], drafts);
+    expect(out.map((x) => x.id)).toEqual(["1"]);
+  });
+
+  it("excludes submitted POs", () => {
+    const onlySubmittedSibling = [drafts[0], drafts[2]];
+    expect(mergeableDestinations(drafts[0], onlySubmittedSibling)).toEqual([]);
+  });
+
+  it("excludes different-supplier drafts", () => {
+    const onlySS = [drafts[0], drafts[3]];
+    expect(mergeableDestinations(drafts[0], onlySS)).toEqual([]);
+  });
+
+  it("returns an empty array for null/undefined po", () => {
+    expect(mergeableDestinations(null, drafts)).toEqual([]);
   });
 });
 

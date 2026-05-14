@@ -130,6 +130,38 @@ export function validateForSubmit(po) {
   return errors;
 }
 
+/**
+ * Merge a source PO's items into the destination PO's items, deduping
+ * by SKU+warehouse via mergeItem. Returns the new items array.
+ *
+ * The destination's ship_to / reference / shipping method / notes are
+ * intentionally NOT touched — the caller decides what to do with them.
+ * Common case is "destination already has them set, keep as-is."
+ */
+export function mergePOItems(sourceItems, destItems) {
+  let next = Array.isArray(destItems) ? [...destItems] : [];
+  for (const it of sourceItems || []) {
+    next = mergeItem(next, it);
+  }
+  return next;
+}
+
+/**
+ * Decide which drafts a given PO can be merged into.
+ *   - same supplier (different suppliers need separate POSTs)
+ *   - status = "draft" (can't change a submitted PO)
+ *   - not the same row
+ */
+export function mergeableDestinations(po, allPOs) {
+  if (!po) return [];
+  return (allPOs || []).filter(
+    (other) =>
+      other.id !== po.id &&
+      other.status === "draft" &&
+      other.supplier === po.supplier,
+  );
+}
+
 // Build the payload shape acPlaceOrder expects (matches the AS Colour
 // /v1/orders contract via _shared/acOrderLogic.buildOrderRequestBody).
 export function buildSubmitPayload(po) {

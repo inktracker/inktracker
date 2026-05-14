@@ -9,9 +9,11 @@ import {
   updateItemQty,
   validateForSubmit,
   buildSubmitPayload,
+  mergePOItems,
+  mergeableDestinations,
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
-import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X } from "lucide-react";
+import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge } from "lucide-react";
 
 const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", cancelled: "Cancelled" };
 
@@ -24,6 +26,7 @@ export default function PurchaseOrders() {
   const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
 
   // Per-shop free-freight thresholds keyed by supplier name
   const thresholds = user?.free_freight_thresholds || {};
@@ -79,6 +82,28 @@ export default function PurchaseOrders() {
     await base44.entities.PurchaseOrder.delete(selected.id);
     setPos((prev) => prev.filter((p) => p.id !== selected.id));
     setSelectedId(null);
+  }
+
+  // Merge `selected` INTO targetPO: combine items (mergeItem dedupes
+  // SKUs, sums quantities), update target, delete source. Destination's
+  // ship_to / shipping_method / notes are kept as-is.
+  async function mergeSelectedInto(targetPO) {
+    if (!selected || !targetPO) return;
+    const sourceLabel = selected.reference || "this draft";
+    const destLabel = targetPO.reference || "the destination";
+    if (!confirm(
+      `Merge "${sourceLabel}" into "${destLabel}"?\n\n` +
+      `${selected.items?.length || 0} item(s) will move into "${destLabel}". ` +
+      `Duplicate SKUs are summed. "${sourceLabel}" will be deleted afterwards.`,
+    )) return;
+    setMergeOpen(false);
+    const mergedItems = mergePOItems(selected.items, targetPO.items);
+    const updated = await base44.entities.PurchaseOrder.update(targetPO.id, { items: mergedItems });
+    await base44.entities.PurchaseOrder.delete(selected.id);
+    setPos((prev) => prev
+      .filter((p) => p.id !== selected.id)
+      .map((p) => (p.id === updated.id ? updated : p)));
+    setSelectedId(updated.id);
   }
 
   async function submitSelected() {
@@ -220,6 +245,11 @@ export default function PurchaseOrders() {
               threshold={Number(thresholds[selected.supplier]) || 0}
               submitting={submitting}
               submitError={submitError}
+              mergeTargets={mergeableDestinations(selected, pos)}
+              mergeOpen={mergeOpen}
+              onMergeOpen={() => setMergeOpen(true)}
+              onMergeClose={() => setMergeOpen(false)}
+              onMergeInto={mergeSelectedInto}
               onPatch={patchSelected}
               onItemRemove={(idx) => patchSelected({ items: removeItem(selected.items, idx) })}
               onItemQty={(idx, qty) => patchSelected({ items: updateItemQty(selected.items, idx, qty) })}
@@ -250,7 +280,7 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, threshold, submitting, submitError, onPatch, onItemRemove, onItemQty, onDelete, onSubmit, onDismissError }) {
+function PoDetail({ po, threshold, submitting, submitError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onDelete, onSubmit, onDismissError }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
@@ -267,9 +297,29 @@ function PoDetail({ po, threshold, submitting, submitError, onPatch, onItemRemov
           placeholder="PO reference"
         />
         {!isLocked && (
-          <button onClick={onDelete} className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50">
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1 relative">
+            {mergeTargets?.length > 0 && (
+              <>
+                <button
+                  onClick={onMergeOpen}
+                  title="Combine this draft into another draft to hit free freight"
+                  className="text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-50"
+                >
+                  <GitMerge className="w-4 h-4" />
+                </button>
+                {mergeOpen && (
+                  <MergePicker
+                    targets={mergeTargets}
+                    onClose={onMergeClose}
+                    onPick={onMergeInto}
+                  />
+                )}
+              </>
+            )}
+            <button onClick={onDelete} className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50">
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -481,5 +531,40 @@ function ShipToEditor({ value, disabled, onChange }) {
         {field("phone", "Phone")}
       </div>
     </div>
+  );
+}
+
+// Small popover that lists other open drafts (same supplier) the
+// current PO can be merged into. Click one → onPick(target) which
+// the parent confirms + executes.
+function MergePicker({ targets, onClose, onPick }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-30" onClick={onClose} />
+      <div className="absolute right-0 top-9 z-40 w-72 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+        <div className="px-3 py-2 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wider">
+          Merge into…
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {targets.map((t) => {
+            const subtotal = poSubtotal(t.items);
+            return (
+              <button
+                key={t.id}
+                onClick={() => onPick(t)}
+                className="w-full text-left px-3 py-2 hover:bg-slate-50 transition border-b border-slate-100 last:border-b-0"
+              >
+                <div className="text-sm font-semibold text-slate-800 truncate">
+                  {t.reference || "Untitled PO"}
+                </div>
+                <div className="text-[11px] text-slate-400">
+                  {t.items?.length || 0} items · {fmtMoney(subtotal)}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </>
   );
 }
