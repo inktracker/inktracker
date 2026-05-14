@@ -577,7 +577,7 @@ function PublicLandingPage() {
                   From one print maker<br/>to another.
                 </h2>
                 <p className="text-slate-300 leading-relaxed mb-5">
-                  I run Biota Mfg, a screen print shop in Reno, Nevada. After 13 years on the press, I always found myself asking, "Has anyone who designed this even worked in a shop before?" Every tool either tried to do everything and missed the basics, or nailed one thing but missed the rest of the workflow. So I built the tool I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. 10% of every InkTracker subscription is allocated to land conservation through Biota's five-year roadmap. — Joe
+                  I run Biota Mfg, a screen print shop in Reno, Nevada. After 13 years on the press, every shop-management tool I tried left me asking, "Has anyone who designed this even worked in a shop before?" One would try to do everything and miss the basics; the next would nail one thing but miss the rest of the workflow. So I built the shop-management software I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. 10% of every InkTracker subscription is allocated to land conservation through Biota's five-year roadmap. — Joe
                 </p>
                 <p className="text-xs text-slate-500">
                   Joe Grennan · Founder · joe@biotamfg.co
