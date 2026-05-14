@@ -48,6 +48,11 @@ import BrokerFilesTab from "../components/broker/BrokerFilesTab";
 import BrokerInvoicesTab from "../components/broker/BrokerInvoicesTab";
 import { exportQuoteToPDF } from "../components/shared/pdfExport";
 import { STANDARD_MARKUP, O_STATUSES } from "../components/shared/pricing";
+import { normalizeQuoteStatus } from "@/lib/broker/quoteStatus";
+import {
+  getQuoteTotalSafe as getQuoteTotalSafeLib,
+  getClientTotalSafe as getClientTotalSafeLib,
+} from "@/lib/broker/quoteTotals";
 import SendQuoteModal from "../components/quotes/SendQuoteModal";
 
 // Broker dashboard's per-order progress strip. Now uses the canonical
@@ -68,15 +73,8 @@ const STATUS_CONFIG = {
   Declined: { label: "Declined", icon: XCircle, bg: "bg-red-100", text: "text-red-600", bar: "bg-red-400" },
 };
 
-function normalizeStatus(status) {
-  if (status === "Approved and Paid") return "Shop Approved";
-  if (status === "Approved") return "Shop Approved";
-  if (status === "Sent") return "Pending";
-  return status || "Draft";
-}
-
 function QuoteStatusBadge({ status }) {
-  const normalized = normalizeStatus(status);
+  const normalized = normalizeQuoteStatus(status);
   const cfg = STATUS_CONFIG[normalized] || STATUS_CONFIG.Draft;
   const Icon = cfg.icon;
 
@@ -1178,23 +1176,13 @@ export default function BrokerDashboard() {
   );
 }
 
+// Bound to BROKER/STANDARD markup so callers don't have to pass the
+// calc fn at every call site. Logic lives in lib/broker/quoteTotals
+// and is covered by unit tests there.
 function getQuoteTotalSafe(quote) {
-  try {
-    // Broker cost always needs live calc (broker markup isn't saved on the quote)
-    const totals = calcQuoteTotals(quote || {}, BROKER_MARKUP);
-    return Number(totals?.total || 0);
-  } catch {
-    return 0;
-  }
+  return getQuoteTotalSafeLib(quote, (q) => calcQuoteTotals(q, BROKER_MARKUP));
 }
 
 function getClientTotalSafe(quote) {
-  // Prefer saved client-facing total
-  if (Number.isFinite(quote?.total) && quote.total > 0) return quote.total;
-  try {
-    const totals = calcQuoteTotals(quote || {}, STANDARD_MARKUP);
-    return Number(totals?.total || 0);
-  } catch {
-    return 0;
-  }
+  return getClientTotalSafeLib(quote, (q) => calcQuoteTotals(q, STANDARD_MARKUP));
 }
