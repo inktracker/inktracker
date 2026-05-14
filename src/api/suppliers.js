@@ -30,25 +30,30 @@ const FN = {
 async function invoke(fn, body) {
   const { data, error } = await supabase.functions.invoke(fn, { body });
   if (error) {
-    // FunctionsHttpError on a non-2xx swallows the response body into
-    // error.context.response. Read it, surface what the edge function
-    // actually said. Without this, the UI shows the generic
-    // "Edge Function returned a non-2xx status code" string and the
-    // real reason (e.g. AS Colour's "missing field X") is invisible.
-    const ctxRes = error?.context?.response;
+    // FunctionsHttpError on a non-2xx puts the raw Response on
+    // error.context. Read its body, surface what the edge function
+    // actually returned. Without this the UI shows the wrapper's
+    // generic "Edge Function returned a non-2xx status code" and the
+    // real reason (auth gate, AS Colour rejection, validation error)
+    // stays invisible.
+    //
+    // Defensive shape check: depending on supabase-js version,
+    // error.context could be the Response itself or { response }.
+    const ctxRes = (error?.context && typeof error.context.text === "function")
+      ? error.context
+      : error?.context?.response;
     if (ctxRes && typeof ctxRes.text === "function") {
-      try {
-        const text = await ctxRes.text();
-        if (text) {
-          let parsed;
-          try { parsed = JSON.parse(text); } catch { parsed = null; }
-          const msg = parsed?.error
-            || (parsed?.details && JSON.stringify(parsed.details))
-            || text;
-          throw new Error(msg);
-        }
-      } catch (readErr) {
-        if (readErr.message !== error.message) throw readErr;
+      let body;
+      try { body = await ctxRes.text(); } catch { /* response already consumed */ }
+      if (body) {
+        let parsed = null;
+        try { parsed = JSON.parse(body); } catch { /* not JSON */ }
+        const msg = parsed?.error
+          || (parsed?.details ? `${parsed?.error || "request rejected"}: ${JSON.stringify(parsed.details)}` : null)
+          || body;
+        const wrapped = new Error(msg);
+        wrapped.status = ctxRes.status;
+        throw wrapped;
       }
     }
     throw error;
