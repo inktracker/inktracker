@@ -9,6 +9,7 @@ import {
   buildSubmitPayload,
   mergePOItems,
   mergeableDestinations,
+  buildMergedPO,
 } from "../purchaseOrders.js";
 
 describe("poSubtotal", () => {
@@ -258,6 +259,90 @@ describe("mergeableDestinations", () => {
 
   it("returns an empty array for null/undefined po", () => {
     expect(mergeableDestinations(null, drafts)).toEqual([]);
+  });
+});
+
+describe("buildMergedPO", () => {
+  const make = (overrides = {}) => ({
+    id: "1",
+    shop_owner: "shop@example.com",
+    supplier: "AS Colour",
+    status: "draft",
+    reference: "PO-001",
+    ship_to: { address1: "100 Main", city: "Reno", zip: "89501", countryCode: "US" },
+    shipping_method: "Ground",
+    notes: "rush",
+    courier_instructions: "side door",
+    items: [{ sku: "A", warehouse: "", quantity: 5, unitPrice: 10 }],
+    ...overrides,
+  });
+
+  it("throws when fewer than two sources", () => {
+    expect(() => buildMergedPO([])).toThrow();
+    expect(() => buildMergedPO([make()])).toThrow();
+    expect(() => buildMergedPO(null)).toThrow();
+  });
+
+  it("throws on mixed suppliers", () => {
+    expect(() =>
+      buildMergedPO([make({ id: "1" }), make({ id: "2", supplier: "S&S Activewear" })]),
+    ).toThrow(/different suppliers/);
+  });
+
+  it("throws on mixed shop_owners", () => {
+    expect(() =>
+      buildMergedPO([make({ id: "1" }), make({ id: "2", shop_owner: "other@example.com" })]),
+    ).toThrow(/different shops/);
+  });
+
+  it("throws when any source is not a draft", () => {
+    expect(() =>
+      buildMergedPO([make({ id: "1" }), make({ id: "2", status: "submitted" })]),
+    ).toThrow(/draft/);
+  });
+
+  it("joins source references with ', '", () => {
+    const out = buildMergedPO([
+      make({ id: "1", reference: "PO-001" }),
+      make({ id: "2", reference: "PO-002" }),
+      make({ id: "3", reference: "PO-003" }),
+    ]);
+    expect(out.reference).toBe("PO-001, PO-002, PO-003");
+  });
+
+  it("falls back to 'Untitled PO' for sources with no reference", () => {
+    const out = buildMergedPO([
+      make({ id: "1", reference: "" }),
+      make({ id: "2", reference: "PO-002" }),
+    ]);
+    expect(out.reference).toBe("Untitled PO, PO-002");
+  });
+
+  it("sums quantities for matching SKUs across sources", () => {
+    const out = buildMergedPO([
+      make({ id: "1", items: [{ sku: "A", warehouse: "", quantity: 5, unitPrice: 10 }] }),
+      make({ id: "2", items: [{ sku: "A", warehouse: "", quantity: 3 }, { sku: "B", warehouse: "", quantity: 7 }] }),
+    ]);
+    const a = out.items.find((it) => it.sku === "A");
+    const b = out.items.find((it) => it.sku === "B");
+    expect(a.quantity).toBe(8);
+    expect(b.quantity).toBe(7);
+  });
+
+  it("inherits ship_to / shipping_method / notes / courier_instructions from the first source", () => {
+    const out = buildMergedPO([
+      make({ id: "1", ship_to: { address1: "FIRST" }, shipping_method: "Ground", notes: "first notes", courier_instructions: "first courier" }),
+      make({ id: "2", ship_to: { address1: "SECOND" }, shipping_method: "Express", notes: "second notes", courier_instructions: "second courier" }),
+    ]);
+    expect(out.ship_to.address1).toBe("FIRST");
+    expect(out.shipping_method).toBe("Ground");
+    expect(out.notes).toBe("first notes");
+    expect(out.courier_instructions).toBe("first courier");
+  });
+
+  it("starts the merged PO as a draft", () => {
+    const out = buildMergedPO([make({ id: "1" }), make({ id: "2" })]);
+    expect(out.status).toBe("draft");
   });
 });
 

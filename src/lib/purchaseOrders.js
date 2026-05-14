@@ -147,6 +147,64 @@ export function mergePOItems(sourceItems, destItems) {
 }
 
 /**
+ * Combine multiple draft POs into one. Used by the multi-select merge
+ * action on the Purchase Orders page.
+ *
+ * Returns the patch to apply to a brand-new PO row. Caller is responsible
+ * for creating that row, then deleting the source rows in a second step.
+ *
+ * Decisions baked in:
+ *   - reference = source references joined by ", " (matches the
+ *     comma-separated convention shops asked for so the merged row
+ *     visibly inherits its provenance)
+ *   - supplier  = source supplier (validated to be uniform; throws
+ *     otherwise — different suppliers need separate POSTs)
+ *   - shop_owner = source shop_owner (likewise required to be uniform)
+ *   - ship_to / shipping_method / notes / courier_instructions =
+ *     pulled from the FIRST source (oldest first as ordered by caller)
+ *   - items = mergePOItems applied left-to-right so dupes sum cleanly
+ *
+ * Throws on invalid inputs so the caller surfaces a real error rather
+ * than silently producing a malformed PO.
+ */
+export function buildMergedPO(sources) {
+  if (!Array.isArray(sources) || sources.length < 2) {
+    throw new Error("Need at least two POs to merge");
+  }
+  const supplier = sources[0].supplier;
+  const shopOwner = sources[0].shop_owner;
+  for (const s of sources) {
+    if (s.supplier !== supplier) {
+      throw new Error("Cannot merge POs from different suppliers");
+    }
+    if (s.shop_owner !== shopOwner) {
+      throw new Error("Cannot merge POs from different shops");
+    }
+    if (s.status !== "draft") {
+      throw new Error("Only draft POs can be merged");
+    }
+  }
+  let items = [];
+  for (const s of sources) items = mergePOItems(s.items, items);
+  const reference = sources
+    .map((s) => (s.reference || "Untitled PO").trim())
+    .filter(Boolean)
+    .join(", ");
+  const first = sources[0];
+  return {
+    shop_owner: shopOwner,
+    supplier,
+    status: "draft",
+    reference,
+    ship_to: first.ship_to || null,
+    shipping_method: first.shipping_method || null,
+    notes: first.notes || null,
+    courier_instructions: first.courier_instructions || null,
+    items,
+  };
+}
+
+/**
  * Decide which drafts a given PO can be merged into.
  *   - same supplier (different suppliers need separate POSTs)
  *   - status = "draft" (can't change a submitted PO)

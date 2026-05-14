@@ -11,9 +11,10 @@ import {
   buildSubmitPayload,
   mergePOItems,
   mergeableDestinations,
+  buildMergedPO,
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
-import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge } from "lucide-react";
+import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check } from "lucide-react";
 
 const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", cancelled: "Cancelled" };
 
@@ -28,6 +29,12 @@ export default function PurchaseOrders() {
   const [submitError, setSubmitError] = useState(null);
   const [mergeOpen, setMergeOpen] = useState(false);
 
+  // Filter + multi-select merge mode (drafts tab only)
+  const [supplierFilter, setSupplierFilter] = useState("All");
+  const [mergeMode, setMergeMode] = useState(false);
+  const [mergeSelection, setMergeSelection] = useState(() => new Set());
+  const [merging, setMerging] = useState(false);
+
   // Per-shop free-freight thresholds keyed by supplier name
   const thresholds = user?.free_freight_thresholds || {};
 
@@ -40,10 +47,41 @@ export default function PurchaseOrders() {
     }).catch(() => setLoading(false));
   }, []);
 
+  // Suppliers actually present on this shop's POs — used to populate
+  // the filter pills. Sorted alphabetically so the order is stable as
+  // POs come and go.
+  const supplierOptions = useMemo(() => {
+    const set = new Set();
+    for (const p of pos) if (p.supplier) set.add(p.supplier);
+    return ["All", ...Array.from(set).sort()];
+  }, [pos]);
+
   const visible = useMemo(() => {
-    if (tab === "drafts") return pos.filter((p) => p.status === "draft");
-    return pos.filter((p) => p.status !== "draft");
-  }, [pos, tab]);
+    let list = tab === "drafts"
+      ? pos.filter((p) => p.status === "draft")
+      : pos.filter((p) => p.status !== "draft");
+    if (supplierFilter !== "All") {
+      list = list.filter((p) => p.supplier === supplierFilter);
+    }
+    return list;
+  }, [pos, tab, supplierFilter]);
+
+  // Reset merge mode when leaving drafts tab or changing filter — the
+  // selection set may otherwise contain rows that aren't visible.
+  useEffect(() => {
+    if (tab !== "drafts" || mergeMode) {
+      setMergeSelection(new Set());
+    }
+    if (tab !== "drafts" && mergeMode) setMergeMode(false);
+  }, [tab, supplierFilter]);
+
+  function toggleSelectForMerge(id) {
+    setMergeSelection((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
 
   const selected = useMemo(
     () => pos.find((p) => p.id === selectedId) || null,
@@ -82,6 +120,48 @@ export default function PurchaseOrders() {
     await base44.entities.PurchaseOrder.delete(selected.id);
     setPos((prev) => prev.filter((p) => p.id !== selected.id));
     setSelectedId(null);
+  }
+
+  // Multi-select merge: combine all selected drafts into one new PO.
+  // Reference becomes "ref1, ref2, ref3..."; ship_to/shipping/notes
+  // come from the first selected. All sources delete after the new
+  // row is in place.
+  async function mergeMultipleSelected() {
+    if (!user || mergeSelection.size < 2) return;
+    // Preserve the order users see in the list (visible's order) so
+    // the comma-separated reference and the ship_to inheritance are
+    // predictable rather than dependent on Set iteration order.
+    const sources = visible.filter((p) => mergeSelection.has(p.id));
+    if (sources.length < 2) return;
+    const totalItems = sources.reduce((s, p) => s + (p.items?.length || 0), 0);
+    if (!confirm(
+      `Merge ${sources.length} drafts into one new PO?\n\n` +
+      `New reference: "${sources.map(s => s.reference || "Untitled PO").join(", ")}"\n` +
+      `${totalItems} item rows combined (duplicate SKUs summed).\n\n` +
+      `The original ${sources.length} drafts will be deleted.`,
+    )) return;
+    setMerging(true);
+    try {
+      const payload = buildMergedPO(sources);
+      const created = await base44.entities.PurchaseOrder.create(payload);
+      // Delete sources in parallel; if one fails the rest still go.
+      await Promise.all(
+        sources.map((s) =>
+          base44.entities.PurchaseOrder.delete(s.id).catch((err) => {
+            console.error(`Failed to delete merged source ${s.id}:`, err);
+          }),
+        ),
+      );
+      const sourceIds = new Set(sources.map((s) => s.id));
+      setPos((prev) => [created, ...prev.filter((p) => !sourceIds.has(p.id))]);
+      setSelectedId(created.id);
+      setMergeMode(false);
+      setMergeSelection(new Set());
+    } catch (err) {
+      alert("Merge failed: " + (err?.message || String(err)));
+    } finally {
+      setMerging(false);
+    }
   }
 
   // Merge `selected` INTO targetPO: combine items (mergeItem dedupes
@@ -152,15 +232,52 @@ export default function PurchaseOrders() {
             Build supplier orders, pair jobs to hit free freight, submit when ready.
           </p>
         </div>
-        <button
-          onClick={createDraft}
-          disabled={creating}
-          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm disabled:opacity-60"
-        >
-          {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-          New PO
-        </button>
+        <div className="flex items-center gap-2">
+          {tab === "drafts" && (
+            <button
+              onClick={() => {
+                if (mergeMode) setMergeSelection(new Set());
+                setMergeMode((v) => !v);
+              }}
+              className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition border ${
+                mergeMode
+                  ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                  : "bg-white border-slate-200 text-slate-600 hover:border-indigo-300"
+              }`}
+            >
+              <GitMerge className="w-4 h-4" /> {mergeMode ? "Exit merge mode" : "Merge POs"}
+            </button>
+          )}
+          <button
+            onClick={createDraft}
+            disabled={creating}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm disabled:opacity-60"
+          >
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            New PO
+          </button>
+        </div>
       </div>
+
+      {/* Supplier filter pills — only show when shop has POs from
+          more than one supplier (otherwise "All / S&S" is just noise). */}
+      {supplierOptions.length > 2 && (
+        <div className="flex flex-wrap gap-1.5">
+          {supplierOptions.map((s) => (
+            <button
+              key={s}
+              onClick={() => setSupplierFilter(s)}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+                supplierFilter === s
+                  ? "bg-indigo-600 border-indigo-600 text-white"
+                  : "bg-white border-slate-200 text-slate-500 hover:border-slate-400"
+              }`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-2 border-b border-slate-200">
@@ -192,19 +309,38 @@ export default function PurchaseOrders() {
             const t = Number(thresholds[po.supplier]) || 0;
             const fp = freightProgress(po.items, t);
             const isSel = po.id === selectedId;
+            const isChecked = mergeSelection.has(po.id);
+            const handleClick = mergeMode
+              ? () => toggleSelectForMerge(po.id)
+              : () => setSelectedId(po.id);
             return (
               <button
                 key={po.id}
-                onClick={() => setSelectedId(po.id)}
+                onClick={handleClick}
                 className={`w-full text-left bg-white border rounded-xl p-3 transition ${
-                  isSel ? "border-indigo-400 ring-2 ring-indigo-100" : "border-slate-100 hover:border-slate-300"
+                  mergeMode && isChecked
+                    ? "border-indigo-500 ring-2 ring-indigo-200"
+                    : isSel
+                      ? "border-indigo-400 ring-2 ring-indigo-100"
+                      : "border-slate-100 hover:border-slate-300"
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="font-semibold text-sm text-slate-800 truncate">{po.reference || "Untitled PO"}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      {po.supplier} · {po.items?.length || 0} items · {fmtMoney(subtotal)}
+                  <div className="flex items-start gap-2 min-w-0 flex-1">
+                    {mergeMode && (
+                      <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                        isChecked
+                          ? "bg-indigo-600 border-indigo-600"
+                          : "border-slate-300 bg-white"
+                      }`}>
+                        {isChecked && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-sm text-slate-800 truncate">{po.reference || "Untitled PO"}</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {po.supplier} · {po.items?.length || 0} items · {fmtMoney(subtotal)}
+                      </div>
                     </div>
                   </div>
                   {po.status !== "draft" && (
@@ -260,6 +396,33 @@ export default function PurchaseOrders() {
           )}
         </div>
       </div>
+
+      {/* Floating action bar for multi-select merge. Sits at the bottom
+          of the viewport while merge mode is on. Disabled until ≥2
+          drafts are checked. */}
+      {mergeMode && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 bg-slate-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center gap-3">
+          <div className="text-sm font-semibold">
+            {mergeSelection.size === 0
+              ? "Select drafts to merge"
+              : `${mergeSelection.size} draft${mergeSelection.size === 1 ? "" : "s"} selected`}
+          </div>
+          <button
+            onClick={() => { setMergeMode(false); setMergeSelection(new Set()); }}
+            className="text-xs font-semibold text-slate-300 hover:text-white px-2 py-1.5"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={mergeMultipleSelected}
+            disabled={mergeSelection.size < 2 || merging}
+            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-700 disabled:text-slate-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+          >
+            {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
+            Merge {mergeSelection.size >= 2 ? mergeSelection.size : ""}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
