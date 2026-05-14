@@ -675,13 +675,13 @@ function PoDetail({ po, threshold, submitting, submitError, shippingMethods, shi
           <div>
             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Warehouse</label>
             <select
-              value={po.warehouse || "Carson, CA"}
+              value={po.warehouse || "CA"}
               onChange={(e) => onPatch({ warehouse: e.target.value })}
               disabled={isLocked}
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
             >
-              <option value="Carson, CA">Carson, CA (West Coast)</option>
-              <option value="Charlotte, NC">Charlotte, NC (East Coast)</option>
+              <option value="CA">CA — Carson (West Coast)</option>
+              <option value="NC">NC — Charlotte (East Coast)</option>
             </select>
             <div className="text-[10px] text-slate-400 mt-1">
               AS Colour US warehouse this order ships from. Applied to all items.

@@ -142,6 +142,17 @@ Deno.serve(async (req) => {
           if (!inventoryMap[colour]) inventoryMap[colour] = {};
           inventoryMap[colour][size] = (inventoryMap[colour][size] || 0) + (Number(row.quantity) || 0);
         }
+        // Surface unique warehouse strings AS Colour uses for this style —
+        // these are the canonical values the /v1/orders endpoint expects
+        // on items[].warehouse. Without this the UI ends up guessing
+        // (e.g. "Carson, CA" might or might not be the right format).
+        const whSet = new Set<string>();
+        for (const row of allInv) {
+          const w = row.warehouse ?? row.location ?? "";
+          if (w) whSet.add(String(w));
+        }
+        if (debug) logs.push({ call: "warehouses_unique", values: Array.from(whSet) });
+        (product as any).warehouses = Array.from(whSet);
       }
     } catch (invErr) {
       console.error("[acLookupStyle] inventory fetch failed:", invErr);
