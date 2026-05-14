@@ -26,9 +26,14 @@ import {
   AC_BASE,
   CORS,
   acHeaders,
-  credsFromProfile,
   getAcBearerToken,
 } from "../_shared/ascolour.ts";
+import {
+  canPlaceOrder,
+  credsForOrderPlacement,
+  validateOrderPayload,
+  buildOrderRequestBody,
+} from "../_shared/acOrderLogic.js";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
@@ -55,39 +60,42 @@ Deno.serve(async (req) => {
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
 
+    // Role gate — defense in depth on top of credsForOrderPlacement.
+    // Even if an employee/broker/user somehow has AC creds on their
+    // profile, ordering blanks isn't their job. Pinned by tests.
+    if (!canPlaceOrder(profile)) {
+      return Response.json(
+        { error: "Your account role can't place supplier orders. Ask your shop owner or manager." },
+        { status: 403, headers: CORS },
+      );
+    }
+
     // Subscription gate — order placement costs real money downstream.
     const blocked = requireActiveSubscription(profile);
     if (blocked) return blocked;
 
-    // Per-shop AS Colour credentials, with env fallback (matches the
-    // pattern used by acLookupStyle / acSearchCatalog). credsFromProfile
-    // returns null if neither per-shop nor env subscription key is set.
-    const creds = credsFromProfile(profile);
+    // STRICT per-shop credentials only — NO env fallback. The platform's
+    // env credentials are intentionally usable for catalog browsing
+    // (acLookupStyle / acSearchCatalog) so shops without their own keys
+    // can still let customers see garments. But order placement charges
+    // money to whatever AS Colour account is on the request, so allowing
+    // env fallback here would let any authenticated user trigger orders
+    // against the platform's account. Pinned by acOrderLogic.test.js.
+    const creds = credsForOrderPlacement(profile);
     if (!creds) {
       return Response.json(
-        { error: "AS Colour credentials not configured for this shop. Add the subscription key in Account → Supplier API Keys." },
-        { status: 500, headers: CORS },
+        { error: "AS Colour ordering requires your own AS Colour account credentials (subscription key + email + password). Configure them in Account → Supplier API Keys before placing orders." },
+        { status: 400, headers: CORS },
       );
     }
 
     // ── Validate the order payload ──────────────────────────────────
-    const { reference, shippingMethod, orderNotes, courierInstructions, shippingAddress, items } = body;
-    if (!reference) {
-      return Response.json({ error: "reference (PO number) required" }, { status: 400, headers: CORS });
-    }
-    if (!shippingMethod) {
-      return Response.json({ error: "shippingMethod required (call /orders/shippingmethods to list)" }, { status: 400, headers: CORS });
-    }
-    if (!shippingAddress?.address1 || !shippingAddress?.city || !shippingAddress?.zip || !shippingAddress?.countryCode) {
-      return Response.json({ error: "shippingAddress is missing required fields (address1, city, zip, countryCode)" }, { status: 400, headers: CORS });
-    }
-    if (!Array.isArray(items) || items.length === 0) {
-      return Response.json({ error: "At least one order item required" }, { status: 400, headers: CORS });
-    }
-    for (const it of items) {
-      if (!it.sku || !it.quantity) {
-        return Response.json({ error: "Every item needs a sku and quantity" }, { status: 400, headers: CORS });
-      }
+    const validationErrors = validateOrderPayload(body);
+    if (validationErrors.length > 0) {
+      return Response.json(
+        { error: "Invalid order payload", details: validationErrors },
+        { status: 400, headers: CORS },
+      );
     }
 
     // ── Mint a Bearer token (cached per-creds) ──────────────────────
@@ -100,19 +108,7 @@ Deno.serve(async (req) => {
     }
 
     // ── POST the order ──────────────────────────────────────────────
-    const orderPayload = {
-      reference,
-      shippingMethod,
-      orderNotes: orderNotes ?? "",
-      courierInstructions: courierInstructions ?? "",
-      shippingAddress,
-      items: items.map((it: any) => ({
-        sku: String(it.sku),
-        warehouse: String(it.warehouse ?? ""),
-        quantity: Number(it.quantity),
-      })),
-    };
-
+    const orderPayload = buildOrderRequestBody(body);
     console.error("[acPlaceOrder] POST /v1/orders payload:", JSON.stringify(orderPayload));
 
     const res = await fetch(`${AC_BASE}/orders`, {
