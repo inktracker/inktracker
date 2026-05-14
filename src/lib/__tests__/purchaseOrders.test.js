@@ -403,7 +403,7 @@ describe("combinedReference", () => {
 });
 
 describe("buildSubmitPayload", () => {
-  it("produces the AS Colour /v1/orders shape with USA warehouse default", () => {
+  it("produces the AS Colour /v1/orders shape with Carson, CA warehouse default", () => {
     const out = buildSubmitPayload({
       reference: "PO-1",
       shipping_method: "Ground",
@@ -411,8 +411,8 @@ describe("buildSubmitPayload", () => {
       courier_instructions: "side door",
       ship_to: { address1: "100 Main", city: "Reno", zip: "89501", countryCode: "US" },
       items: [
-        { sku: "A", warehouse: "AUS", quantity: 5 },
-        { sku: "B", quantity: 3 }, // no warehouse → defaults to USA
+        { sku: "A", warehouse: "Charlotte, NC", quantity: 5 },
+        { sku: "B", quantity: 3 }, // no per-item warehouse, no po.warehouse → default Carson, CA
       ],
     });
     expect(out).toEqual({
@@ -422,9 +422,23 @@ describe("buildSubmitPayload", () => {
       courierInstructions: "side door",
       shippingAddress: { address1: "100 Main", city: "Reno", zip: "89501", countryCode: "US" },
       items: [
-        { sku: "A", warehouse: "AUS", quantity: 5 },
-        { sku: "B", warehouse: "USA", quantity: 3 },
+        { sku: "A", warehouse: "Charlotte, NC", quantity: 5 },
+        { sku: "B", warehouse: "Carson, CA", quantity: 3 },
       ],
     });
+  });
+
+  it("PO-level warehouse overrides every item at submit", () => {
+    const out = buildSubmitPayload({
+      reference: "PO-1",
+      shipping_method: "Ground",
+      ship_to: { address1: "1", city: "x", zip: "y", countryCode: "US" },
+      warehouse: "Charlotte, NC",
+      items: [
+        { sku: "A", warehouse: "Carson, CA", quantity: 5 },
+        { sku: "B", quantity: 3 },
+      ],
+    });
+    expect(out.items.every((it) => it.warehouse === "Charlotte, NC")).toBe(true);
   });
 });

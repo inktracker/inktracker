@@ -113,12 +113,11 @@ export function validateOrderPayload(payload) {
  *
  * Assumes the payload has already passed validateOrderPayload.
  */
-// AS Colour requires a non-empty warehouse on each item. "USA" is the
-// right default for US accounts; AS Colour also has "AUS" and "NZ" for
-// other regions. When we eventually pull warehouses from /v1/locations
-// we can derive this per-shop; for now default and let the caller
-// override per-item.
-const DEFAULT_WAREHOUSE = "USA";
+// AS Colour requires a non-empty warehouse on each item. The US API
+// has two physical warehouses: "Carson, CA" (West Coast) and
+// "Charlotte, NC" (East Coast). Country codes ("USA") get rejected.
+// Default to Carson, CA when nothing else is set.
+const DEFAULT_WAREHOUSE = "Carson, CA";
 
 export function buildOrderRequestBody(payload) {
   return {
