@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import OrderWizard from "../components/wizard/OrderWizard";
+import EmbedSnippets from "../components/wizard/EmbedSnippets";
+import { ChevronDown, ChevronRight, Code2 } from "lucide-react";
 
 export default function Wizard() {
   const [styles, setStyles] = useState(null);
@@ -8,6 +10,7 @@ export default function Wizard() {
 
   const [shopOwner, setShopOwner] = useState("");
   const [shopName, setShopName] = useState("");
+  const [embedOpen, setEmbedOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -72,6 +75,35 @@ export default function Wizard() {
         <p className="text-slate-400 text-sm mt-1">Step-by-step quote builder for walk-in or phone customers</p>
       </div>
       <OrderWizard onSubmit={handleSubmit} styles={styles} setups={setups} shopOwner={shopOwner} />
+
+      {/* Embed snippets — collapsable, closed by default. The wizard
+          is the primary thing on this page; embedding is a secondary
+          "put it on my site" workflow that doesn't deserve its own
+          nav entry but should be one click away. */}
+      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => setEmbedOpen((v) => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 transition"
+        >
+          <div className="flex items-center gap-3">
+            <Code2 className="w-5 h-5 text-slate-400" />
+            <div>
+              <div className="font-bold text-slate-800">Embed on your website</div>
+              <div className="text-xs text-slate-400 mt-0.5">
+                Paste a snippet on Shopify, Wix, Squarespace, or anywhere — customers submit quote requests directly to your Quotes page.
+              </div>
+            </div>
+          </div>
+          {embedOpen ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
+        </button>
+        {embedOpen && (
+          <div className="px-5 pb-5 border-t border-slate-100">
+            <div className="pt-5">
+              <EmbedSnippets />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

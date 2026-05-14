@@ -40,7 +40,6 @@ const NAV = [
   { label: "Performance", page: "Performance", feature: "reports" },
   { label: "Mockups", page: "Mockups", feature: "mockups" },
   { label: "Wizard", page: "Wizard", feature: "wizard" },
-  { label: "Embed", page: "Embed", feature: "wizard" },
   { label: "Account", page: "Account" },
 ];
 
@@ -58,10 +57,9 @@ const PAGE_FEATURES = {
   Performance: "reports",
   Mockups: "mockups",
   Wizard: "wizard",
-  Embed: "wizard",
 };
 
-const MOBILE_NAV = NAV.filter(n => !["Wizard", "Embed"].includes(n.page));
+const MOBILE_NAV = NAV.filter(n => !["Wizard"].includes(n.page));
 
 export default function Layout({ children, currentPageName }) {
   const [shopName, setShopName] = useState("Loading...");
