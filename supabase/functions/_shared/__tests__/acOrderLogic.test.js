@@ -151,12 +151,14 @@ describe("validateOrderPayload", () => {
     reference: "PO-123",
     shippingMethod: "Ground",
     shippingAddress: {
+      firstName: "Joe",
+      lastName: "Doe",
       address1: "100 Main St",
       city: "Reno",
       zip: "89501",
       countryCode: "US",
     },
-    items: [{ sku: "5050-BLACK-J-XL", quantity: 12 }],
+    items: [{ sku: "5050-BLACK-J-XL", quantity: 12, warehouse: "USA" }],
   };
 
   it("accepts a valid payload (no errors)", () => {
@@ -237,14 +239,14 @@ describe("validateOrderPayload", () => {
 // ── buildOrderRequestBody ───────────────────────────────────────────────────
 
 describe("buildOrderRequestBody", () => {
-  it("normalises types and applies defaults", () => {
+  it("normalises types and defaults warehouse to USA when missing", () => {
     const body = buildOrderRequestBody({
       reference: 12345, // numbers should coerce to strings
       shippingMethod: "Ground",
       shippingAddress: { address1: "100 Main", city: "Reno", zip: "89501", countryCode: "US" },
       items: [
-        { sku: "5050-BLACK-J-XL", warehouse: "USA", quantity: "12" },
-        { sku: "5050-BLACK-J-L", quantity: 24 }, // no warehouse → ""
+        { sku: "5050-BLACK-J-XL", warehouse: "AUS", quantity: "12" },
+        { sku: "5050-BLACK-J-L", quantity: 24 }, // no warehouse → USA default
       ],
     });
     expect(body).toEqual({
@@ -254,8 +256,8 @@ describe("buildOrderRequestBody", () => {
       courierInstructions: "",
       shippingAddress: { address1: "100 Main", city: "Reno", zip: "89501", countryCode: "US" },
       items: [
-        { sku: "5050-BLACK-J-XL", warehouse: "USA", quantity: 12 },
-        { sku: "5050-BLACK-J-L", warehouse: "", quantity: 24 },
+        { sku: "5050-BLACK-J-XL", warehouse: "AUS", quantity: 12 },
+        { sku: "5050-BLACK-J-L", warehouse: "USA", quantity: 24 },
       ],
     });
   });
