@@ -46,7 +46,13 @@ export default function QuoteRequest() {
   }, [shopParam]);
 
   async function handleSubmit(quote) {
-    await base44.entities.Quote.create({ ...quote, shop_owner: shopOwner, source: "wizard" });
+    // Public wizard submission goes through a SECURITY DEFINER RPC,
+    // NOT a direct table INSERT. See src/lib/wizardSubmit.js +
+    // migration 20260531_quotes_anon_lockdown.sql for the rationale —
+    // the RLS policies on quotes are locked down so anon clients
+    // can't read or write the table directly.
+    const { submitWizardQuote } = await import("@/lib/wizardSubmit");
+    await submitWizardQuote(supabase, quote, shopOwner);
 
     // Send notification emails — failures don't block the submission
     try {
