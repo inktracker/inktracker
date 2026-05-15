@@ -4,6 +4,7 @@ import { Mail, Loader2, CheckCircle2, X } from "lucide-react";
 import { fmtMoney, buildQBInvoicePayload } from "../shared/pricing";
 import { exportInvoiceToPDF } from "../shared/pdfExport";
 import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
+import ModalBackdrop from "../shared/ModalBackdrop";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -163,11 +164,8 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
   }
 
   return (
-    <div
-      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onMouseDown={e => e.stopPropagation()}>
+    <ModalBackdrop onClose={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-200">
           <Mail className="w-5 h-5 text-indigo-600" />
           <h2 className="text-base font-semibold text-slate-900">Send Invoice</h2>
@@ -262,6 +260,6 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
           </>
         )}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

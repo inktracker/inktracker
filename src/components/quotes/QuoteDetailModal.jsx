@@ -17,6 +17,7 @@ import {
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
+import ModalBackdrop from "../shared/ModalBackdrop";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { quoteThreadId } from "@/lib/messageThreads";
@@ -375,10 +376,7 @@ export default function QuoteDetailModal({
 
   return (
     <>
-      <div
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-auto"
-        onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      >
+      <ModalBackdrop onClose={onClose} z="z-50">
         <div
           className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl my-4"
           onMouseDown={(e) => e.stopPropagation()}
@@ -887,7 +885,7 @@ export default function QuoteDetailModal({
             </button>
           </div>
         </div>
-      </div>
+      </ModalBackdrop>
 
       {showSendModal && (
         <SendQuoteModal
@@ -903,12 +901,8 @@ export default function QuoteDetailModal({
 
       {/* ── QuickBooks Status Panel ─────────────────────────────────────── */}
       {showQBPanel && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div
-            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-            onMouseDown={(e) => { if (e.target === e.currentTarget) setShowQBPanel(false); }}
-          />
-          <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+        <ModalBackdrop onClose={() => setShowQBPanel(false)} z="z-[60]">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
             {/* Header */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1040,7 +1034,7 @@ export default function QuoteDetailModal({
               </button>
             )}
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </>
   );

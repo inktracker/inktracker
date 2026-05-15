@@ -6,6 +6,7 @@ import { fmtMoney } from "../shared/pricing";
 import { mergeItem, routeWarehouseForSku } from "@/lib/purchaseOrders";
 import { SUPPLIERS, lookupStyle } from "@/api/suppliers";
 import { X, Package, CheckCircle, Truck, Loader2, ExternalLink, AlertCircle } from "lucide-react";
+import ModalBackdrop from "../shared/ModalBackdrop";
 
 // We DO NOT generate AS Colour SKUs anymore. Their format includes an
 // internal colour code (e.g. "WHI_M") and a per-size fit letter (F/G/H/...)
@@ -180,7 +181,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
 
   if (createdPO) {
     return (
-      <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <ModalBackdrop onClose={onClose} z="z-50">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center">
           <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-emerald-600" />
@@ -201,12 +202,12 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
             Close
           </button>
         </div>
-      </div>
+      </ModalBackdrop>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <ModalBackdrop onClose={onClose} z="z-50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-2xl flex-shrink-0">
           <div>
@@ -315,7 +316,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 
