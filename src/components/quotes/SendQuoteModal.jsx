@@ -6,6 +6,7 @@ import { exportQuoteToPDF } from "../shared/pdfExport";
 import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { quotePaymentUrl } from "@/lib/publicUrls";
 import { validateQuoteForSend } from "@/lib/quotes/validation";
+import { deriveQbSendState } from "@/lib/quotes/qbSendState";
 import { useBillingGate } from "@/lib/billing-gate";
 
 function isBrokerQuote(q) {
@@ -52,6 +53,33 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const [qbPaymentLink, setQbPaymentLink] = useState(quote.qb_payment_link ?? null);
   const [creatingQbInvoice, setCreatingQbInvoice] = useState(false);
   const [qbError, setQbError] = useState("");
+
+  // Re-fetch the quote from DB on mount to pick up qb_invoice_id /
+  // qb_payment_link that the qbSync edge function wrote on a previous
+  // Create. The parent (Quotes page → QuoteDetailModal) caches quotes
+  // on first load and doesn't auto-refresh, so a stale prop here used
+  // to make the Create button reappear after a successful create —
+  // a literal duplicate-invoice trap on the highest-stakes surface.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const fresh = await base44.entities.Quote.get(quote.id);
+        if (!active || !fresh) return;
+        if (fresh.qb_invoice_id   != null) setQbInvoiceId(fresh.qb_invoice_id);
+        if (fresh.qb_payment_link != null) setQbPaymentLink(fresh.qb_payment_link);
+      } catch (err) {
+        // Non-fatal — modal will operate on the parent prop's snapshot.
+        console.warn("[SendQuoteModal] quote refresh failed:", err?.message);
+      }
+    })();
+    return () => { active = false; };
+  }, [quote.id]);
+
+  // Pure state derivation — tells us whether to show Create, the
+  // success bar, or the warning bar, and whether QB state currently
+  // blocks Send.
+  const qbState = deriveQbSendState({ qbInvoiceId, qbPaymentLink });
 
   // ── Confirmation gate ───────────────────────────────────────────────
   // Click "Send" → show "Send to {email}? Yes/No" → on Yes, actually fire.
@@ -475,34 +503,48 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   </label>
                 </div>
 
-                {/* Conditional Create-Invoice gate when QB picked */}
-                {paymentProvider === "qb" && (
-                  qbPaymentLink ? (
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-                      <span className="text-xs text-emerald-700 leading-relaxed">
-                        QB invoice {qbInvoiceId ? `#${qbInvoiceId}` : ""} ready. Customer's payment link is set.
-                      </span>
+                {/* QB Create / status gate. Branches on qbInvoiceId (NOT
+                    qbPaymentLink): once an invoice exists in QB, the
+                    Create button must NEVER reappear — re-clicking
+                    Create cuts a duplicate QB invoice. Logic + tests
+                    live in src/lib/quotes/qbSendState.js. */}
+                {paymentProvider === "qb" && qbState.status === "ready" && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                    <span className="text-xs text-emerald-700 leading-relaxed">
+                      QB invoice #{qbInvoiceId} ready. Customer's payment link is set.
+                    </span>
+                  </div>
+                )}
+
+                {paymentProvider === "qb" && qbState.status === "created_no_link" && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-800 leading-relaxed">
+                      <div className="font-semibold mb-0.5">QB invoice #{qbInvoiceId} created.</div>
+                      {qbState.warning}
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        onClick={handleCreateQbInvoice}
-                        disabled={creatingQbInvoice || sending}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
-                      >
-                        {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                        {creatingQbInvoice ? "Creating QB invoice…" : "Create QB Invoice"}
-                      </button>
-                      <p className="text-xs text-slate-500">Required before sending. The QB invoice's payment link is what the customer will use.</p>
-                      {qbError && (
-                        <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
-                          {qbError}
-                        </div>
-                      )}
-                    </div>
-                  )
+                  </div>
+                )}
+
+                {paymentProvider === "qb" && qbState.status === "needs_create" && (
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      onClick={handleCreateQbInvoice}
+                      disabled={creatingQbInvoice || sending}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
+                    >
+                      {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {creatingQbInvoice ? "Creating QB invoice…" : "Create QB Invoice"}
+                    </button>
+                    <p className="text-xs text-slate-500">Required before sending. The QB invoice's payment link is what the customer will use.</p>
+                    {qbError && (
+                      <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
+                        {qbError}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -532,7 +574,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   recipientEmails.length === 0 ||
                   !subject.trim() ||
                   !body.trim() ||
-                  (paymentProvider === "qb" && !qbPaymentLink)
+                  (paymentProvider === "qb" && qbState.sendDisabledByQb)
                 }
                 className="flex-1 px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
