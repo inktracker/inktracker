@@ -9,22 +9,33 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_URL = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
 
-// Two-tier pricing. The founding rate is locked for the first 50
-// shops to claim it (enforced atomically by the claim_founding_slot
-// RPC in 20260520_founding_member_program.sql). Cap is hidden from
-// the public UI — there's no slot counter on the landing page.
+// Three monthly tiers + one annual.
 //
-// STRIPE_PRICE_STANDARD is read from env so Joe can drop in the
-// real price ID without redeploying. If it's not set, we fall back
-// to the founding price — over-discount during the bootstrap window
-// is better than a broken checkout.
-const PRICE_FOUNDING = "price_1TR50AI4m9BGT2cwXUsKF6Ul"; // $99/mo, existing
-const PRICE_STANDARD = Deno.env.get("STRIPE_PRICE_STANDARD") || PRICE_FOUNDING;
+// Founding ($50/mo) is locked for the first 50 shops to claim it
+// (enforced atomically by the claim_founding_slot RPC in
+// 20260520_founding_member_program.sql). Cap is hidden from the
+// public UI — there's no slot counter on the landing page.
+// Standard ($99/mo) kicks in after the cap fills OR for any prior
+// founding member who canceled (the forfeit is permanent).
+// Annual ($999/yr) is a flat option — does NOT consume a founding
+// slot and the founding rate doesn't apply to annual. Annual was
+// designed as a parallel SKU, not a discounted variant of either
+// monthly tier. Beta promo code (3 free months + $40/mo forever) is
+// a Stripe Promotion Code on the standard $99 price; checkout has
+// allow_promotion_codes: true so the user enters it at the Stripe
+// checkout page.
+//
+// All three prices can be overridden via env vars — useful in test
+// environments where the price IDs differ from production.
+const PRICE_FOUNDING = Deno.env.get("STRIPE_PRICE_FOUNDING") || "price_1TXDSLI4m9BGT2cwgC82UIu3"; // $50/mo
+const PRICE_STANDARD = Deno.env.get("STRIPE_PRICE_STANDARD") || "price_1TXDFwI4m9BGT2cwXHD6gVXZ"; // $99/mo
+const PRICE_ANNUAL   = Deno.env.get("STRIPE_PRICE_ANNUAL")   || "price_1TXDIZI4m9BGT2cwL3Xp2Vo9"; // $999/yr
 
 const PRICES: Record<string, string> = {
   shop:     PRICE_FOUNDING, // legacy callers that just say "shop" still work
   founding: PRICE_FOUNDING,
   standard: PRICE_STANDARD,
+  annual:   PRICE_ANNUAL,
 };
 
 const CORS = {
@@ -122,32 +133,37 @@ Deno.serve(async (req) => {
 
     // ── createCheckoutSession ───────────────────────────────────────
     if (action === "checkout") {
-      // Founding-member claim. Single source of truth — the price the
-      // customer pays is determined by the atomic SQL function, not
-      // by anything the client says. The `tier` param from the body
-      // is ignored except as analytics.
+      // Two checkout paths depending on body.billing:
+      //   billing === "annual"  → flat $999/yr, founding doesn't apply
+      //   billing === "monthly" (default) → claim_founding_slot decides
+      //                                     between $50 founding and $99 standard
       //
       // claim_founding_slot returns one of:
-      //   claimed / already_member → use $99 founding price
-      //   cap_reached / forfeited  → use $149 standard price
+      //   claimed / already_member → use $50 founding price
+      //   cap_reached / forfeited  → use $99 standard price
       //   no_profile / bad_input   → caller bug, fail loud
-      const claim = await adminClient().rpc("claim_founding_slot", {
-        p_profile_id: profile.id,
-      });
-      if (claim.error) {
-        console.error("[billing] claim_founding_slot RPC failed:", claim.error.message);
-        return json({ error: "Checkout temporarily unavailable. Try again." });
-      }
-      const claimStatus = claim.data?.status;
+      const billingChoice = body.billing === "annual" ? "annual" : "monthly";
 
-      let priceTier: "founding" | "standard";
-      if (claimStatus === "claimed" || claimStatus === "already_member") {
-        priceTier = "founding";
-      } else if (claimStatus === "cap_reached" || claimStatus === "forfeited") {
-        priceTier = "standard";
+      let priceTier: "founding" | "standard" | "annual";
+      if (billingChoice === "annual") {
+        priceTier = "annual";
       } else {
-        console.error("[billing] unexpected claim status:", claimStatus);
-        return json({ error: "Checkout state invalid. Contact support." });
+        const claim = await adminClient().rpc("claim_founding_slot", {
+          p_profile_id: profile.id,
+        });
+        if (claim.error) {
+          console.error("[billing] claim_founding_slot RPC failed:", claim.error.message);
+          return json({ error: "Checkout temporarily unavailable. Try again." });
+        }
+        const claimStatus = claim.data?.status;
+        if (claimStatus === "claimed" || claimStatus === "already_member") {
+          priceTier = "founding";
+        } else if (claimStatus === "cap_reached" || claimStatus === "forfeited") {
+          priceTier = "standard";
+        } else {
+          console.error("[billing] unexpected claim status:", claimStatus);
+          return json({ error: "Checkout state invalid. Contact support." });
+        }
       }
       const priceId = PRICES[priceTier];
       if (!priceId) {
@@ -181,6 +197,7 @@ Deno.serve(async (req) => {
           metadata: {
             profile_id: profile.id,
             tier: priceTier,
+            billing: billingChoice,
             is_founding: priceTier === "founding" ? "true" : "false",
           },
         },

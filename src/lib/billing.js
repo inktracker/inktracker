@@ -4,12 +4,16 @@
 // claim_founding_slot Postgres function — see
 // supabase/migrations/20260520_founding_member_program.sql):
 //
-//   founding ($99/mo) — locked for the life of the subscription, for
+//   founding ($50/mo) — locked for the life of the subscription, for
 //     the first 50 shops to claim it at Stripe checkout. Cap is
 //     enforced server-side; no public counter is exposed (intentional).
-//   standard ($149/mo) — for signups after the 50 slots fill, AND
+//   standard ($99/mo) — for signups after the 50 slots fill, AND
 //     for any prior founding member who canceled (the forfeit is
 //     permanent — re-signups always pay standard).
+//   annual ($999/yr) — flat parallel SKU. Doesn't consume a founding
+//     slot; founding rate doesn't apply. Beta promo code can layer on
+//     top of standard via Stripe Promotion Codes (3 months free +
+//     $40/mo forever after that).
 //
 // Lifecycle:
 //   - Signup → 14-day trial (no payment)
@@ -95,25 +99,45 @@ export function isReadOnly(tier, status) {
   return false;
 }
 
+// PLANS now represent BILLING CADENCE (monthly vs annual), not feature
+// tiers — every cadence gets every feature. The displayed price on the
+// monthly plan is the standard $99; the founding $50 rate is auto-
+// applied at checkout for the first 50 shops via claim_founding_slot.
+// Annual is a flat $999/yr — no founding discount, no slot consumed.
+//
+// `billing` is the param the checkout endpoint expects. The tier the
+// user actually ends up with (founding/standard) is decided server-side.
+const SHARED_FEATURES = [
+  "Quotes & orders",
+  "Production tracking",
+  "Invoices & customers",
+  "QuickBooks sync",
+  "Unlimited employees",
+  "S&S & AS Colour restock",
+  "Embeddable quote wizard",
+  "Shopify inventory sync",
+  "Artwork proofs",
+  "Broker portal",
+  "Full performance reports",
+  "PDF export",
+];
+
 export const PLANS = [
   {
-    tier: "shop",
-    name: "InkTracker",
+    billing: "monthly",
+    name: "Monthly",
     price: 99,
-    features: [
-      "Quotes & orders",
-      "Production tracking",
-      "Invoices & customers",
-      "QuickBooks sync",
-      "Unlimited employees",
-      "S&S & AS Colour restock",
-      "Embeddable quote wizard",
-      "Shopify inventory sync",
-      "Artwork proofs",
-      "Broker portal",
-      "Full performance reports",
-      "PDF export",
-    ],
-    notIncluded: [],
+    period: "/mo",
+    foundingPrice: 50,
+    foundingNote: "$50/mo locked for life — first 50 shops",
+    features: SHARED_FEATURES,
+  },
+  {
+    billing: "annual",
+    name: "Annual",
+    price: 999,
+    period: "/yr",
+    savingsNote: "Save $189 vs monthly",
+    features: SHARED_FEATURES,
   },
 ];

@@ -30,14 +30,14 @@ describe("decidePriceTier — founding path", () => {
 });
 
 describe("decidePriceTier — standard path", () => {
-  it("maps status='cap_reached' to STANDARD — slot 50+1 pays $149", () => {
+  it("maps status='cap_reached' to STANDARD — slot 50+1 pays $99", () => {
     const r = decidePriceTier({ status: "cap_reached", cap: 50 });
     expect(r.tier).toBe(PRICE_TIER.STANDARD);
     expect(r.reason).toBe("cap_reached");
     expect(r.isError).toBe(false);
   });
 
-  it("maps status='forfeited' to STANDARD — prior canceler pays $149 forever", () => {
+  it("maps status='forfeited' to STANDARD — prior canceler pays $99 forever", () => {
     const r = decidePriceTier({ status: "forfeited", cap: 50 });
     expect(r.tier).toBe(PRICE_TIER.STANDARD);
     expect(r.reason).toBe("forfeited");
