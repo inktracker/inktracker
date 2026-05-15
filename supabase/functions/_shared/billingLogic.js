@@ -153,6 +153,44 @@ export function stripeCustomerCreationFields(user, profile) {
   };
 }
 
+// ── Cached Stripe customer staleness checks ─────────────────────────
+//
+// profile.stripe_customer_id can go stale in two ways:
+//   1. Stripe key flipped between TEST and LIVE mode after the customer
+//      was created (the cus_ ID only exists in one mode)
+//   2. Someone manually deleted the customer in Stripe Dashboard
+//
+// Either way, blindly handing the stale ID to stripe.checkout.sessions
+// .create breaks the entire checkout flow for the user. The durable
+// fix is to verify the customer exists before reusing it, and if not,
+// fall through to creating a new one.
+//
+// These two predicates capture the "should I treat this as stale?"
+// decision so the edge function's API-calling code stays straight-
+// forward and the logic stays unit-testable.
+
+export function isCustomerStaleError(err) {
+  if (!err) return false;
+  // Stripe v14 errors have err.code === "resource_missing" for
+  // not-found objects, with err.type === "StripeInvalidRequestError".
+  if (err.code === "resource_missing") return true;
+  // String-match fallback in case the SDK version doesn't populate
+  // .code consistently. The error message always contains either
+  // "No such customer" or "a similar object exists in live mode".
+  const msg = String(err.message || "");
+  if (/No such customer/i.test(msg)) return true;
+  if (/test mode key was used/i.test(msg)) return true;
+  if (/similar object exists in (live|test) mode/i.test(msg)) return true;
+  return false;
+}
+
+export function isCustomerDeleted(customer) {
+  // Stripe returns deleted customers with a `deleted: true` flag
+  // rather than throwing. Without this check we'd happily try to use
+  // a tombstoned customer ID and fail downstream.
+  return Boolean(customer?.deleted);
+}
+
 // Resolve the shop_owner key the Connect actions filter `shops` by.
 // Falls through profile.shop_owner → profile.email → user.email so a
 // freshly-created profile (where shop_owner hasn't been set yet on the

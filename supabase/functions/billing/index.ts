@@ -13,6 +13,8 @@ import {
   shouldCreateStripeCustomer,
   stripeCustomerCreationFields,
   resolveShopOwnerKey,
+  isCustomerStaleError,
+  isCustomerDeleted,
 } from "../_shared/billingLogic.js";
 
 // Prefer the prod key when both are configured. The previous order
@@ -168,9 +170,30 @@ Deno.serve(async (req) => {
         return json({ error: "Checkout configuration error. Contact support." }, 500);
       }
 
-      // Find or create Stripe customer
+      // Find or create Stripe customer. Verify the cached ID still
+      // exists in the current Stripe mode before reusing it — a stale
+      // cached cus_ (left over from a test/live key flip OR a manual
+      // delete in Stripe Dashboard) would otherwise break checkout
+      // for the user with "No such customer". Predicates in
+      // _shared/billingLogic.js are unit-tested.
       let customerId = profile.stripe_customer_id;
-      if (shouldCreateStripeCustomer(profile)) {
+      if (customerId) {
+        try {
+          const existing = await stripe.customers.retrieve(customerId);
+          if (isCustomerDeleted(existing)) {
+            console.warn("[billing] cached stripe_customer_id is tombstoned, recreating:", customerId);
+            customerId = null;
+          }
+        } catch (err) {
+          if (isCustomerStaleError(err)) {
+            console.warn("[billing] cached stripe_customer_id not found in current mode, recreating:", customerId);
+            customerId = null;
+          } else {
+            throw err;
+          }
+        }
+      }
+      if (!customerId || shouldCreateStripeCustomer({ stripe_customer_id: customerId })) {
         const customer = await stripe.customers.create(
           stripeCustomerCreationFields(user, profile),
         );
