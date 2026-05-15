@@ -298,6 +298,60 @@ export function mergeableDestinations(po, allPOs) {
   );
 }
 
+// ── Auto-mark "ordered" on the source order's goods checklist ───────
+//
+// When a PO submits successfully, we want every size in that PO to
+// flash amber ("ordered") on the source order's Floor Mode panel —
+// without the shop owner manually clicking each size button. This is
+// the bridge between the supplier-side API order and the per-size
+// Order Goods tracker.
+//
+// Matching rule:
+//   PO item → order line_item by (style code, color) — case-insensitive.
+//   Style code comes from li.supplierStyleNumber / .resolvedStyleNumber
+//   / .styleNumber / .style (in that priority — matches how ACOrderModal
+//   builds the PO item in the first place).
+//   Then we set goods_progress[`${liIdx}-${size}`] = "ordered".
+//
+// Never overwrites "received" — physically the goods can't un-arrive,
+// and the operator's manual click takes precedence over the API
+// signal.
+//
+// Returns a NEW checklist object (caller writes it to the order row).
+// Pure — no side effects.
+export function applyPOItemsToGoodsProgress(order, poItems, supplierOrderId, nowIso = new Date().toISOString()) {
+  const goodsProgress = { ...(order?.checklist?.goods_progress || {}) };
+  const lineItems = order?.line_items || [];
+  const styleOf = (li) =>
+    li?.supplierStyleNumber || li?.resolvedStyleNumber || li?.styleNumber || li?.style || "";
+
+  for (const item of poItems || []) {
+    const poStyle = String(item?.styleCode || "").trim().toUpperCase();
+    const poColor = String(item?.color || "").trim().toUpperCase();
+    const poSize  = String(item?.size  || "").trim();
+    if (!poStyle || !poSize) continue;
+
+    const liIdx = lineItems.findIndex((li) =>
+      String(styleOf(li)).trim().toUpperCase() === poStyle &&
+      String(li?.garmentColor || "").trim().toUpperCase() === poColor &&
+      Object.keys(li?.sizes || {}).some((s) => s === poSize)
+    );
+    if (liIdx < 0) continue;
+
+    const key = `${liIdx}-${poSize}`;
+    if (goodsProgress[key]?.status === "received") continue; // never overwrite received
+
+    goodsProgress[key] = {
+      status: "ordered",
+      by: "API",
+      at: nowIso,
+      ...(supplierOrderId ? { supplier_order_id: String(supplierOrderId) } : {}),
+    };
+  }
+
+  return { ...(order?.checklist || {}), goods_progress: goodsProgress };
+}
+
 // Build the payload shape acPlaceOrder expects (matches the AS Colour
 // /v1/orders contract via _shared/acOrderLogic.buildOrderRequestBody).
 //

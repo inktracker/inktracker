@@ -12,6 +12,7 @@ import {
   buildMergedPO,
   combinedReference,
   routeWarehouseForSku,
+  applyPOItemsToGoodsProgress,
 } from "../purchaseOrders.js";
 
 describe("routeWarehouseForSku", () => {
@@ -487,5 +488,145 @@ describe("buildSubmitPayload", () => {
     });
     expect(out.items[0].warehouse).toBe("CA");
     expect(out.items[1].warehouse).toBe("NC");
+  });
+});
+
+describe("applyPOItemsToGoodsProgress", () => {
+  const NOW = "2026-05-15T00:00:00.000Z";
+  const baseOrder = {
+    checklist: {},
+    line_items: [
+      { style: "5026", garmentColor: "Black", sizes: { S: 5, M: 5, L: 5, XL: 3 } },
+      { style: "5026", garmentColor: "Athletic Heather", sizes: { S: 5, M: 5, L: 5 } },
+      { style: "5050", garmentColor: "White", sizes: { S: 10, M: 10 } },
+    ],
+  };
+
+  it("marks matching sizes as ordered, keyed by liIdx-size", () => {
+    const result = applyPOItemsToGoodsProgress(baseOrder, [
+      { styleCode: "5026", color: "Black", size: "M", quantity: 5 },
+      { styleCode: "5026", color: "Black", size: "L", quantity: 5 },
+    ], "8533", NOW);
+    expect(result.goods_progress["0-M"]).toEqual({
+      status: "ordered", by: "API", at: NOW, supplier_order_id: "8533",
+    });
+    expect(result.goods_progress["0-L"]).toEqual({
+      status: "ordered", by: "API", at: NOW, supplier_order_id: "8533",
+    });
+    expect(result.goods_progress["0-S"]).toBeUndefined();
+  });
+
+  it("matches color case-insensitively (BLACK vs Black)", () => {
+    const result = applyPOItemsToGoodsProgress(baseOrder, [
+      { styleCode: "5026", color: "BLACK", size: "S" },
+    ], null, NOW);
+    expect(result.goods_progress["0-S"]?.status).toBe("ordered");
+  });
+
+  it("disambiguates by color when same style has two color variants", () => {
+    // 5026 Black is liIdx 0, 5026 Athletic Heather is liIdx 1.
+    const result = applyPOItemsToGoodsProgress(baseOrder, [
+      { styleCode: "5026", color: "Athletic Heather", size: "M" },
+    ], null, NOW);
+    expect(result.goods_progress["1-M"]?.status).toBe("ordered");
+    expect(result.goods_progress["0-M"]).toBeUndefined();
+  });
+
+  it("never overwrites a 'received' status (operator's manual click wins)", () => {
+    const order = {
+      ...baseOrder,
+      checklist: {
+        goods_progress: {
+          "0-M": { status: "received", by: "Joe", at: "2026-05-14T00:00:00Z" },
+        },
+      },
+    };
+    const result = applyPOItemsToGoodsProgress(order, [
+      { styleCode: "5026", color: "Black", size: "M" },
+    ], "8533", NOW);
+    expect(result.goods_progress["0-M"].status).toBe("received");
+    expect(result.goods_progress["0-M"].by).toBe("Joe");
+  });
+
+  it("overwrites a stale 'ordered' status with a fresh API mark (re-submit case)", () => {
+    const order = {
+      ...baseOrder,
+      checklist: {
+        goods_progress: {
+          "0-M": { status: "ordered", by: "Joe", at: "2026-05-14T00:00:00Z" },
+        },
+      },
+    };
+    const result = applyPOItemsToGoodsProgress(order, [
+      { styleCode: "5026", color: "Black", size: "M" },
+    ], "8533", NOW);
+    expect(result.goods_progress["0-M"].by).toBe("API");
+    expect(result.goods_progress["0-M"].supplier_order_id).toBe("8533");
+  });
+
+  it("skips PO items with no matching line item (defensive — typos, deleted lines)", () => {
+    const result = applyPOItemsToGoodsProgress(baseOrder, [
+      { styleCode: "9999", color: "Black", size: "M" },
+    ], null, NOW);
+    expect(result.goods_progress).toEqual({});
+  });
+
+  it("skips sizes that don't exist on the matched line item", () => {
+    // 5050 White only has S and M, so XL should skip.
+    const result = applyPOItemsToGoodsProgress(baseOrder, [
+      { styleCode: "5050", color: "White", size: "XL" },
+    ], null, NOW);
+    expect(result.goods_progress).toEqual({});
+  });
+
+  it("falls back to li.supplierStyleNumber / resolvedStyleNumber when li.style is the display label", () => {
+    const order = {
+      checklist: {},
+      line_items: [
+        { style: "Premium Tee", supplierStyleNumber: "5026", garmentColor: "Black", sizes: { M: 5 } },
+        { style: "Heavy Tee",   resolvedStyleNumber: "5050", garmentColor: "White", sizes: { S: 5 } },
+        { style: "Lightweight", styleNumber: "5080",         garmentColor: "Navy",  sizes: { L: 5 } },
+      ],
+    };
+    const result = applyPOItemsToGoodsProgress(order, [
+      { styleCode: "5026", color: "Black", size: "M" },
+      { styleCode: "5050", color: "White", size: "S" },
+      { styleCode: "5080", color: "Navy",  size: "L" },
+    ], null, NOW);
+    expect(result.goods_progress["0-M"]?.status).toBe("ordered");
+    expect(result.goods_progress["1-S"]?.status).toBe("ordered");
+    expect(result.goods_progress["2-L"]?.status).toBe("ordered");
+  });
+
+  it("omits supplier_order_id when null is passed (e.g. supplier returned no id)", () => {
+    const result = applyPOItemsToGoodsProgress(baseOrder, [
+      { styleCode: "5026", color: "Black", size: "M" },
+    ], null, NOW);
+    expect(result.goods_progress["0-M"].supplier_order_id).toBeUndefined();
+  });
+
+  it("preserves unrelated checklist keys (step task checks, print_progress)", () => {
+    const order = {
+      ...baseOrder,
+      checklist: {
+        "Order Goods": { "Check inventory": { by: "Joe", at: NOW } },
+        print_progress: { "0-M-0": { by: "Joe", at: NOW } },
+      },
+    };
+    const result = applyPOItemsToGoodsProgress(order, [
+      { styleCode: "5026", color: "Black", size: "M" },
+    ], "8533", NOW);
+    expect(result["Order Goods"]).toEqual({ "Check inventory": { by: "Joe", at: NOW } });
+    expect(result.print_progress).toEqual({ "0-M-0": { by: "Joe", at: NOW } });
+    expect(result.goods_progress["0-M"]?.status).toBe("ordered");
+  });
+
+  it("handles null/missing inputs without throwing", () => {
+    expect(applyPOItemsToGoodsProgress(null, null, null, NOW))
+      .toEqual({ goods_progress: {} });
+    expect(applyPOItemsToGoodsProgress({}, [], null, NOW))
+      .toEqual({ goods_progress: {} });
+    expect(applyPOItemsToGoodsProgress(baseOrder, [{}], null, NOW))
+      .toEqual({ goods_progress: {} });
   });
 });

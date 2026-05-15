@@ -14,6 +14,7 @@ import {
   buildMergedPO,
   combinedReference,
   AC_REFERENCE_MAX,
+  applyPOItemsToGoodsProgress,
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check } from "lucide-react";
@@ -240,12 +241,31 @@ export default function PurchaseOrders() {
     try {
       const payload = buildSubmitPayload(selected);
       const result = await placeOrder(selected.supplier, payload);
+      const supplierOrderId = result?.order?.id ? String(result.order.id) : null;
       await patchSelected({
         status: "submitted",
-        supplier_order_id: result?.order?.id ? String(result.order.id) : null,
+        supplier_order_id: supplierOrderId,
         submit_response: result ?? null,
         submitted_at: new Date().toISOString(),
       });
+      // Auto-mark matching sizes as "ordered" on the source order's
+      // Floor Mode panel. Non-fatal — if the lookup or patch fails the
+      // operator can still toggle manually, so we just warn.
+      if (selected.source_order_id) {
+        try {
+          const sourceOrder = await base44.entities.Order.get(selected.source_order_id);
+          if (sourceOrder) {
+            const newChecklist = applyPOItemsToGoodsProgress(
+              sourceOrder,
+              selected.items,
+              supplierOrderId,
+            );
+            await base44.entities.Order.update(selected.source_order_id, { checklist: newChecklist });
+          }
+        } catch (autoMarkErr) {
+          console.warn("[PO submit] goods auto-mark failed:", autoMarkErr);
+        }
+      }
     } catch (err) {
       setSubmitError(err?.message || "Order submission failed");
     } finally {

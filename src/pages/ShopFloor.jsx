@@ -1,6 +1,12 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtDate, sortSizeEntries, O_STATUSES } from "../components/shared/pricing";
+import {
+  countGoodsProgress,
+  autoCheckOrderGoodsTask,
+  nextGoodsStatusOnTap,
+  unreceivedCount,
+} from "@/lib/orderGoodsProgress";
 import { Package, ChevronRight, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 
 // ShopFloor STEPS used to be its own copy of the order pipeline.
@@ -13,7 +19,12 @@ const STEPS = O_STATUSES;
 // as OrderDetailModal.
 const STEP_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
-  "Order Goods":  ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
+  // "Place blank order" + "Receive goods" auto-derive from the per-size
+  // goods_progress (every size at-least-ordered → blank order done;
+  // every size received → receive goods done). "Confirm delivery date"
+  // was dropped — the supplier returns it on the order and operators
+  // don't need to track it as a separate gate.
+  "Order Goods":  ["Check inventory", "Place blank order", "Receive goods"],
   "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
   "Printing": [
     "Mount screens on press",
@@ -232,6 +243,45 @@ export default function ShopFloor() {
     }
   }
 
+  // Per-size goods tap. Decision lives in lib/orderGoodsProgress; this
+  // shell just wires the DB write. Manual flow only — ordered → received.
+  async function toggleGoods(order, liIdx, size) {
+    try {
+      const checklist = { ...(order.checklist || {}) };
+      const goodsProgress = { ...(checklist.goods_progress || {}) };
+      const key = `${liIdx}-${size}`;
+      const next = nextGoodsStatusOnTap(goodsProgress[key]?.status);
+      if (!next) return;
+      goodsProgress[key] = {
+        status: next,
+        by: user?.full_name || user?.email || "Employee",
+        at: new Date().toISOString(),
+      };
+      checklist.goods_progress = goodsProgress;
+      const updated = await base44.entities.Order.update(order.id, { checklist });
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
+      setSelected(updated);
+    } catch (err) {
+      alert("Failed: " + err.message);
+    }
+  }
+
+  // Soft-warn version of updateStatus for the "Move to Pre-Press"
+  // button. Override is allowed for partial-ship scenarios.
+  async function moveToNextStepWithGuard(order, nextStatus) {
+    if (order.status === "Order Goods" && nextStatus === "Pre-Press") {
+      const missing = unreceivedCount(order);
+      const total = countGoodsProgress(order).total;
+      if (missing > 0) {
+        const ok = window.confirm(
+          `${missing} of ${total} sizes haven't been marked received.\n\nMove to Pre-Press anyway?`
+        );
+        if (!ok) return;
+      }
+    }
+    return updateStatus(order, nextStatus);
+  }
+
   async function sendNote(order) {
     if (!note.trim()) return;
     setSending(true);
@@ -434,7 +484,7 @@ export default function ShopFloor() {
                       </button>
                     )}
                     {nextStep && (
-                      <button onClick={() => updateStatus(selected, nextStep)} disabled={updating}
+                      <button onClick={() => moveToNextStepWithGuard(selected, nextStep)} disabled={updating}
                         className="flex items-center gap-1 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition disabled:opacity-50">
                         {updating ? "..." : <>Move to {nextStep} <ChevronRight className="w-4 h-4" /></>}
                       </button>
@@ -455,7 +505,17 @@ export default function ShopFloor() {
                 if (tasks.length === 0) return null;
                 const checklist = selected.checklist || {};
                 const stepChecks = checklist[step] || {};
-                const doneCount = tasks.filter(t => !!stepChecks[t]).length;
+
+                // Order Goods auto-derives Place blank order + Receive
+                // goods from the per-size counts (pure logic in lib).
+                const counts = countGoodsProgress(selected);
+                const autoDone = (task) => autoCheckOrderGoodsTask(step, task, counts);
+                const isDone = (task) => {
+                  const a = autoDone(task);
+                  return a === null ? !!stepChecks[task] : a;
+                };
+                const doneCount = tasks.filter(isDone).length;
+
                 return (
                   <div className="bg-white rounded-2xl border border-slate-200 p-5">
                     <div className="flex items-center justify-between mb-3">
@@ -469,18 +529,25 @@ export default function ShopFloor() {
                     </div>
                     <div className="space-y-1">
                       {tasks.map(task => {
-                        const done = !!stepChecks[task];
+                        const auto = autoDone(task);
+                        const done = isDone(task);
                         const info = stepChecks[task];
                         return (
-                          <button key={task} onClick={() => toggleTask(selected, task)}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
+                          <button key={task}
+                            onClick={() => { if (auto === null) toggleTask(selected, task); }}
+                            disabled={auto !== null}
+                            title={auto !== null ? "Auto-tracked from per-size status below" : undefined}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"} ${auto !== null ? "cursor-default" : ""}`}>
                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                               {done && <CheckCircle2 className="w-4 h-4 text-white" />}
                             </div>
                             <div className="flex-1 min-w-0">
                               <span className={`text-sm font-medium ${done ? "text-emerald-700 line-through" : "text-slate-700"}`}>{task}</span>
-                              {done && info?.by && (
+                              {done && auto === null && info?.by && (
                                 <p className="text-[10px] text-emerald-500 mt-0.5">{info.by} · {info.at ? new Date(info.at).toLocaleTimeString() : ""}</p>
+                              )}
+                              {auto !== null && (
+                                <p className="text-[10px] text-slate-400 mt-0.5">Auto · from sizes below</p>
                               )}
                             </div>
                           </button>
@@ -491,85 +558,148 @@ export default function ShopFloor() {
                 );
               })()}
 
-              {/* Job ticket */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Job Ticket</h3>
-                <div className="space-y-3">
-                  {(selected.line_items || []).map((li, idx) => {
-                    const qty = Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
-                    const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
-                    const printProgress = selected.checklist?.print_progress || {};
+              {/* Job ticket — stage-aware per-size tracking.
+                  Order Goods: ordered/received cycle (goods_progress).
+                  Printing:    per-imprint print tracking (print_progress).
+                  Other stages: read-only quantity. */}
+              {(() => {
+                const stage = selected.status || "Pre-Press";
+                const goodsProgress = selected.checklist?.goods_progress || {};
+                const printProgress = selected.checklist?.print_progress || {};
 
-                    return (
-                      <div key={idx} className="bg-slate-50 rounded-xl p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="font-bold text-slate-800">
-                            {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
-                          </div>
-                          <span className="text-lg font-bold text-indigo-600">{qty}</span>
-                        </div>
+                const { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived } = countGoodsProgress(selected);
 
-                        {/* Imprint locations */}
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          {imprints.map((imp, ii) => (
-                            <span key={ii} className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-lg px-2 py-1">
-                              {imp.location} · {imp.colors}c · {imp.technique || "Screen Print"}
-                            </span>
-                          ))}
-                        </div>
+                return (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Job Ticket</h3>
+                      {stage === "Order Goods" && goodsTotal > 0 && (
+                        <span className="text-xs font-bold text-slate-500">
+                          <span className="text-emerald-600">{goodsReceived}</span>
+                          <span className="text-slate-400"> received</span>
+                          {goodsOrdered > 0 && <>
+                            <span className="text-slate-300 mx-1.5">·</span>
+                            <span className="text-amber-600">{goodsOrdered}</span>
+                            <span className="text-slate-400"> ordered</span>
+                          </>}
+                          <span className="text-slate-300 mx-1.5">·</span>
+                          <span className="text-slate-500">{goodsTotal} total</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-3">
+                      {(selected.line_items || []).map((li, idx) => {
+                        const qty = Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
+                        const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
 
-                        {/* Sizes with print tracking */}
-                        <div className="flex flex-wrap gap-2">
-                          {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
-                            const totalPrints = imprints.length;
-                            const donePrints = imprints.filter((_, ii) => !!printProgress[`${idx}-${size}-${ii}`]).length;
-                            const allDone = totalPrints > 0 && donePrints === totalPrints;
-                            const partial = donePrints > 0 && !allDone;
-
-                            return (
-                              <div key={size} className="flex flex-col items-center">
-                                <button
-                                  onClick={() => {
-                                    // Toggle the next unfinished print, or untoggle all if all done
-                                    if (allDone) {
-                                      imprints.forEach((_, ii) => togglePrint(selected, idx, size, ii));
-                                    } else {
-                                      const nextIdx = imprints.findIndex((_, ii) => !printProgress[`${idx}-${size}-${ii}`]);
-                                      if (nextIdx !== -1) togglePrint(selected, idx, size, nextIdx);
-                                    }
-                                  }}
-                                  className={`text-sm rounded-xl px-4 py-2.5 font-bold border-2 transition ${
-                                    allDone
-                                      ? "bg-emerald-100 border-emerald-400 text-emerald-700"
-                                      : partial
-                                        ? "bg-amber-50 border-amber-300 text-amber-700"
-                                        : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300"
-                                  }`}>
-                                  {size}: {count}
-                                  {allDone && <span className="ml-1">✓</span>}
-                                </button>
-                                {totalPrints > 1 && (
-                                  <div className="flex gap-0.5 mt-1">
-                                    {imprints.map((imp, ii) => (
-                                      <button key={ii} onClick={() => togglePrint(selected, idx, size, ii)}
-                                        title={`${imp.location}: ${printProgress[`${idx}-${size}-${ii}`] ? "Done" : "Not done"}`}
-                                        className={`w-3 h-3 rounded-full transition ${
-                                          printProgress[`${idx}-${size}-${ii}`]
-                                            ? "bg-emerald-400"
-                                            : "bg-slate-300 hover:bg-slate-400"
-                                        }`} />
-                                    ))}
-                                  </div>
-                                )}
+                        return (
+                          <div key={idx} className="bg-slate-50 rounded-xl p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="font-bold text-slate-800">
+                                {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                              <span className="text-lg font-bold text-indigo-600">{qty}</span>
+                            </div>
+
+                            {/* Imprint locations */}
+                            <div className="flex flex-wrap gap-2 mb-3">
+                              {imprints.map((imp, ii) => (
+                                <span key={ii} className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-lg px-2 py-1">
+                                  {imp.location} · {imp.colors}c · {imp.technique || "Screen Print"}
+                                </span>
+                              ))}
+                            </div>
+
+                            {/* Sizes — interaction depends on stage */}
+                            <div className="flex flex-wrap gap-2">
+                              {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
+                                // ── Order Goods: ordered (API) → received (manual) ──
+                                if (stage === "Order Goods") {
+                                  const status = goodsProgress[`${idx}-${size}`]?.status;
+                                  const actionable = status === "ordered";
+                                  return (
+                                    <button key={size}
+                                      onClick={() => toggleGoods(selected, idx, size)}
+                                      disabled={!actionable}
+                                      title={
+                                        status === "received" ? "Received"
+                                        : status === "ordered" ? "Tap to mark received"
+                                        : "Place a supplier PO to mark this size as ordered"
+                                      }
+                                      className={`text-sm rounded-xl px-4 py-2.5 font-bold border-2 transition ${
+                                        status === "received"
+                                          ? "bg-emerald-100 border-emerald-400 text-emerald-700 cursor-default"
+                                          : status === "ordered"
+                                            ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+                                            : "bg-slate-50 border-slate-200 text-slate-400 cursor-default"
+                                      }`}>
+                                      {size}: {count}
+                                      {status === "received" && <span className="ml-1">✓</span>}
+                                      {status === "ordered" && <span className="ml-1">·</span>}
+                                    </button>
+                                  );
+                                }
+
+                                // ── Printing: per-imprint progress ──
+                                if (stage === "Printing") {
+                                  const totalPrints = imprints.length;
+                                  const donePrints = imprints.filter((_, ii) => !!printProgress[`${idx}-${size}-${ii}`]).length;
+                                  const allDone = totalPrints > 0 && donePrints === totalPrints;
+                                  const partial = donePrints > 0 && !allDone;
+                                  return (
+                                    <div key={size} className="flex flex-col items-center">
+                                      <button
+                                        onClick={() => {
+                                          if (allDone) {
+                                            imprints.forEach((_, ii) => togglePrint(selected, idx, size, ii));
+                                          } else {
+                                            const nextIdx = imprints.findIndex((_, ii) => !printProgress[`${idx}-${size}-${ii}`]);
+                                            if (nextIdx !== -1) togglePrint(selected, idx, size, nextIdx);
+                                          }
+                                        }}
+                                        className={`text-sm rounded-xl px-4 py-2.5 font-bold border-2 transition ${
+                                          allDone
+                                            ? "bg-emerald-100 border-emerald-400 text-emerald-700"
+                                            : partial
+                                              ? "bg-amber-50 border-amber-300 text-amber-700"
+                                              : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300"
+                                        }`}>
+                                        {size}: {count}
+                                        {allDone && <span className="ml-1">✓</span>}
+                                      </button>
+                                      {totalPrints > 1 && (
+                                        <div className="flex gap-0.5 mt-1">
+                                          {imprints.map((imp, ii) => (
+                                            <button key={ii} onClick={() => togglePrint(selected, idx, size, ii)}
+                                              title={`${imp.location}: ${printProgress[`${idx}-${size}-${ii}`] ? "Done" : "Not done"}`}
+                                              className={`w-3 h-3 rounded-full transition ${
+                                                printProgress[`${idx}-${size}-${ii}`]
+                                                  ? "bg-emerald-400"
+                                                  : "bg-slate-300 hover:bg-slate-400"
+                                              }`} />
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                // ── Other stages: read-only quantity ──
+                                return (
+                                  <span key={size}
+                                    className="text-sm rounded-xl px-4 py-2.5 font-bold border-2 bg-white border-slate-200 text-slate-700">
+                                    {size}: {count}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Notes */}
               {selected.notes && (
