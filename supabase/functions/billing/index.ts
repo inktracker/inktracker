@@ -1,8 +1,25 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import {
+  isBillingOwnerAction,
+  isBillingOwner,
+  resolveBillingChoice,
+  priceTierForMonthlyClaim,
+  computeTrialMeta,
+  trialPeriodDaysForCheckout,
+  buildSubscriptionMetadata,
+  deriveStripeAccountStatus,
+  shouldCreateStripeCustomer,
+  stripeCustomerCreationFields,
+  resolveShopOwnerKey,
+} from "../_shared/billingLogic.js";
 
-const STRIPE_KEY = Deno.env.get("STRIPE_TEST_SECRET_KEY") || Deno.env.get("STRIPE_SECRET_KEY")!;
+// Prefer the prod key when both are configured. The previous order
+// (TEST first) was a real footgun — it would silently route real
+// money through Stripe test mode if both env vars were ever set in
+// production. Test mode only applies when prod key is missing.
+const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") || Deno.env.get("STRIPE_TEST_SECRET_KEY")!;
 const stripe = new Stripe(STRIPE_KEY, { apiVersion: "2023-10-16" });
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -72,21 +89,16 @@ Deno.serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const profile = await getProfile(user.id);
-    if (!profile) return json({ error: "Profile not found" });
+    if (!profile) return json({ error: "Profile not found" }, 404);
 
     // Actions that touch the shop's billing/payouts wiring must be restricted
     // to shop/admin only. CLAUDE.md: managers have "full shop access, no
     // billing/admin". Without this gate a manager could call e.g.
     // openStripeDashboard to get a login link for the shop owner's Stripe
     // Express dashboard and redirect the payout bank account.
-    const BILLING_OWNER_ACTIONS = new Set([
-      "checkout",
-      "portal",
-      "connectStripe",
-      "getStripeAccountStatus",
-      "openStripeDashboard",
-    ]);
-    if (BILLING_OWNER_ACTIONS.has(action) && profile.role !== "admin" && profile.role !== "shop") {
+    //
+    // Allow-list lives in _shared/billingLogic.js + is unit-tested.
+    if (isBillingOwnerAction(action) && !isBillingOwner(profile)) {
       return json({ error: "Forbidden: billing actions are shop-owner only" }, 403);
     }
 
@@ -106,29 +118,17 @@ Deno.serve(async (req) => {
         .eq("auth_id", user.id)
         .select("id, role, subscription_tier")
         .single();
-      console.error("[billing] activateTrial:", { updateErr, updated, authId: user.id, profileId: profile.id });
       if (updateErr) {
+        console.error("[billing] activateTrial failed:", { error: updateErr.message, authId: user.id, profileId: profile.id });
         return json({ error: updateErr.message }, 500);
       }
+      console.log("[billing] activateTrial:", { authId: user.id, profileId: profile.id, role: updated?.role });
       return json({ activated: true, trial_ends_at: trialEnd, role: updated?.role });
     }
 
     // ── getSubscription ─────────────────────────────────────────────
     if (action === "getSubscription") {
-      const now = new Date();
-      const trialEnd = profile.trial_ends_at ? new Date(profile.trial_ends_at) : null;
-      const trialDaysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - now.getTime()) / 86400000)) : 0;
-      const trialExpired = trialEnd ? now > trialEnd : false;
-
-      return json({
-        tier: profile.subscription_tier || "trial",
-        status: profile.subscription_status || "trialing",
-        trialEndsAt: profile.trial_ends_at,
-        trialDaysLeft,
-        trialExpired,
-        stripeCustomerId: profile.stripe_customer_id,
-        stripeSubscriptionId: profile.stripe_subscription_id,
-      });
+      return json(computeTrialMeta(profile));
     }
 
     // ── createCheckoutSession ───────────────────────────────────────
@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
       //   claimed / already_member → use $50 founding price
       //   cap_reached / forfeited  → use $99 standard price
       //   no_profile / bad_input   → caller bug, fail loud
-      const billingChoice = body.billing === "annual" ? "annual" : "monthly";
+      const billingChoice = resolveBillingChoice(body);
 
       let priceTier: "founding" | "standard" | "annual";
       if (billingChoice === "annual") {
@@ -153,32 +153,27 @@ Deno.serve(async (req) => {
         });
         if (claim.error) {
           console.error("[billing] claim_founding_slot RPC failed:", claim.error.message);
-          return json({ error: "Checkout temporarily unavailable. Try again." });
+          return json({ error: "Checkout temporarily unavailable. Try again." }, 503);
         }
-        const claimStatus = claim.data?.status;
-        if (claimStatus === "claimed" || claimStatus === "already_member") {
-          priceTier = "founding";
-        } else if (claimStatus === "cap_reached" || claimStatus === "forfeited") {
-          priceTier = "standard";
-        } else {
-          console.error("[billing] unexpected claim status:", claimStatus);
-          return json({ error: "Checkout state invalid. Contact support." });
+        const decision = priceTierForMonthlyClaim(claim.data?.status);
+        if (decision.isError) {
+          console.error("[billing] unexpected claim status:", decision.reason);
+          return json({ error: "Checkout state invalid. Contact support." }, 500);
         }
+        priceTier = decision.tier as "founding" | "standard";
       }
       const priceId = PRICES[priceTier];
       if (!priceId) {
         console.error("[billing] no price ID for tier:", priceTier);
-        return json({ error: "Checkout configuration error. Contact support." });
+        return json({ error: "Checkout configuration error. Contact support." }, 500);
       }
 
       // Find or create Stripe customer
       let customerId = profile.stripe_customer_id;
-      if (!customerId) {
-        const customer = await stripe.customers.create({
-          email: user.email || profile.email,
-          name: profile.shop_name || profile.full_name || "",
-          metadata: { profile_id: profile.id, auth_id: user.id },
-        });
+      if (shouldCreateStripeCustomer(profile)) {
+        const customer = await stripe.customers.create(
+          stripeCustomerCreationFields(user, profile),
+        );
         customerId = customer.id;
         await updateProfileSecrets(adminClient(), profile.id, { stripe_customer_id: customerId });
       }
@@ -190,16 +185,11 @@ Deno.serve(async (req) => {
         success_url: `${APP_URL}/Account?billing=success&tier=${priceTier}`,
         cancel_url: `${APP_URL}/Account?billing=cancelled`,
         subscription_data: {
-          trial_period_days: profile.subscription_tier === "trial" ? 14 : undefined,
+          trial_period_days: trialPeriodDaysForCheckout(profile),
           // is_founding flag travels with the Stripe subscription so the
           // webhook (on cancel) can write founding_rate_forfeited back
           // to the right profile.
-          metadata: {
-            profile_id: profile.id,
-            tier: priceTier,
-            billing: billingChoice,
-            is_founding: priceTier === "founding" ? "true" : "false",
-          },
+          metadata: buildSubscriptionMetadata({ profile, priceTier, billingChoice }),
         },
         allow_promotion_codes: true,
       });
@@ -209,7 +199,7 @@ Deno.serve(async (req) => {
 
     // ── createPortalSession ─────────────────────────────────────────
     if (action === "portal") {
-      if (!profile.stripe_customer_id) return json({ error: "No billing account" });
+      if (!profile.stripe_customer_id) return json({ error: "No billing account" }, 400);
 
       const session = await stripe.billingPortal.sessions.create({
         customer: profile.stripe_customer_id,
@@ -225,7 +215,7 @@ Deno.serve(async (req) => {
     // record on those payments; InkTracker doesn't touch the funds and
     // doesn't take a platform fee.
 
-    const shopOwner = profile.shop_owner || profile.email || user.email;
+    const shopOwner = resolveShopOwnerKey(profile, user);
 
     async function loadShopRow() {
       const admin = adminClient();
@@ -244,7 +234,7 @@ Deno.serve(async (req) => {
     // Account Link URL the user is redirected to for onboarding.
     if (action === "connectStripe") {
       const { admin, shop } = await loadShopRow();
-      if (!shop) return json({ error: "Set up your shop in onboarding first." });
+      if (!shop) return json({ error: "Set up your shop in onboarding first." }, 400);
 
       let accountId = shop.stripe_account_id;
       if (!accountId) {
@@ -297,17 +287,12 @@ Deno.serve(async (req) => {
       // Best-effort fresh lookup. If Stripe is down, fall back to cached.
       try {
         const account = await stripe.accounts.retrieve(shop.stripe_account_id);
-        const status = account.charges_enabled
-          ? "active"
-          : account.details_submitted
-            ? "restricted"
-            : "pending";
         // Drift between cached (webhook may not have fired yet) and live
         // is normal; the webhook will reconcile. For UI we return live.
         return json({
           connected: true,
           accountId: shop.stripe_account_id,
-          status,
+          status: deriveStripeAccountStatus(account),
           detailsSubmitted: !!account.details_submitted,
           chargesEnabled: !!account.charges_enabled,
           payoutsEnabled: !!account.payouts_enabled,
@@ -327,13 +312,13 @@ Deno.serve(async (req) => {
     // Only valid for ~5 minutes; the UI calls this on every click.
     if (action === "openStripeDashboard") {
       const { shop } = await loadShopRow();
-      if (!shop?.stripe_account_id) return json({ error: "Stripe not connected." });
+      if (!shop?.stripe_account_id) return json({ error: "Stripe not connected." }, 400);
 
       const link = await stripe.accounts.createLoginLink(shop.stripe_account_id);
       return json({ url: link.url });
     }
 
-    return json({ error: "Unknown action" });
+    return json({ error: "Unknown action" }, 400);
   } catch (err) {
     console.error("billing error:", err);
     return json({ error: err.message }, 500);
