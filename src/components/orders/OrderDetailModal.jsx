@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
@@ -488,9 +489,14 @@ export default function OrderDetailModal({
     [order, localArtwork]
   );
 
-  return (
+  // Render via Portal at document.body so the backdrop's `fixed`
+  // positions against the true viewport, not whatever ancestor with
+  // transform/filter the modal happens to live under. Same fix
+  // pattern as QuoteEditorModal (PR #120).
+  return createPortal(
     <div
-      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-auto"
+      className="fixed bg-slate-900/60 backdrop-blur-sm z-[60] flex items-start justify-center p-4 overflow-auto"
+      style={{ top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
@@ -1531,7 +1537,8 @@ export default function OrderDetailModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
