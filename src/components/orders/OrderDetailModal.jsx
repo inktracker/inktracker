@@ -7,6 +7,12 @@ import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
+import {
+  countGoodsProgress,
+  autoCheckOrderGoodsTask,
+  nextGoodsStatusOnTap,
+  unreceivedCount,
+} from "@/lib/orderGoodsProgress";
 import { MessageSquare } from "lucide-react";
 import {
   calcLinkedLinePrice,
@@ -31,7 +37,12 @@ import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck
 // stages on 2026-05-12 (see O_STATUSES doc).
 const STEP_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
-  "Order Goods":  ["Check inventory", "Place blank order", "Confirm delivery date", "Receive goods"],
+  // "Place blank order" + "Receive goods" auto-derive from goods_progress
+  // (every size at-least-ordered → blank order done; every size received
+  // → receive goods done). "Confirm delivery date" was dropped — the
+  // supplier returns it on the order and operators don't need a separate
+  // gate for it.
+  "Order Goods":  ["Check inventory", "Place blank order", "Receive goods"],
   "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
   "Printing":     [
     "Mount screens on press",
@@ -210,6 +221,35 @@ export default function OrderDetailModal({
     checklist.print_progress = pp;
     const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
     setLiveOrder(prev => ({ ...prev, ...updated }));
+  }
+
+  // Per-size goods tap — decision in lib/orderGoodsProgress.
+  async function floorToggleGoods(liIdx, size) {
+    const checklist = { ...(liveOrder.checklist || {}) };
+    const gp = { ...(checklist.goods_progress || {}) };
+    const key = `${liIdx}-${size}`;
+    const next = nextGoodsStatusOnTap(gp[key]?.status);
+    if (!next) return;
+    gp[key] = { status: next, by: shopName || "Admin", at: new Date().toISOString() };
+    checklist.goods_progress = gp;
+    const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
+    setLiveOrder(prev => ({ ...prev, ...updated }));
+  }
+
+  // Soft-warn version of onAdvance. Override allowed for partial-ship.
+  function advanceWithGoodsGuard() {
+    if (!onAdvance) return;
+    if (liveOrder.status === "Order Goods") {
+      const missing = unreceivedCount(liveOrder);
+      const total = countGoodsProgress(liveOrder).total;
+      if (missing > 0) {
+        const ok = window.confirm(
+          `${missing} of ${total} sizes haven't been marked received.\n\nMove to Pre-Press anyway?`
+        );
+        if (!ok) return;
+      }
+    }
+    return callAction(onAdvance, order.id).then(onClose);
   }
 
   async function handleSaveJobCost() {
@@ -1026,49 +1066,86 @@ export default function OrderDetailModal({
                 );
               })()}
 
-              {/* Floor Mode Panel */}
+              {/* Floor Mode Panel — stage-aware per-size tracking.
+                  Order Goods: ordered/received cycle (goods_progress).
+                  Printing:    per-imprint print tracking (print_progress).
+                  Other stages: read-only quantity (no leaked dots). */}
               {floorMode && (() => {
                 const step = liveOrder.status || "Pre-Press";
                 const tasks = STEP_TASKS[step] || [];
                 const checklist = liveOrder.checklist || {};
                 const stepChecks = checklist[step] || {};
                 const printProgress = checklist.print_progress || {};
+                const goodsProgress = checklist.goods_progress || {};
+
+                const { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived } = countGoodsProgress(liveOrder);
 
                 return (
                   <div className="border-2 border-indigo-400 rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 bg-indigo-600 text-white flex items-center gap-2">
-                      <Hammer className="w-4 h-4" />
-                      <span className="text-sm font-bold">Floor Mode — {step}</span>
+                    <div className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Hammer className="w-4 h-4" />
+                        <span className="text-sm font-bold">Floor Mode — {step}</span>
+                      </div>
+                      {step === "Order Goods" && goodsTotal > 0 && (
+                        <span className="text-xs font-semibold text-indigo-100">
+                          <span className="text-white">{goodsReceived}</span> received
+                          {goodsOrdered > 0 && <> · <span className="text-white">{goodsOrdered}</span> ordered</>}
+                          {" · "}{goodsTotal} total
+                        </span>
+                      )}
                     </div>
                     <div className="p-4 space-y-4">
-                      {/* Checklist */}
-                      {tasks.length > 0 && (
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Checklist</span>
-                            <span className="text-xs font-bold text-indigo-600">{tasks.filter(t => !!stepChecks[t]).length}/{tasks.length}</span>
+                      {/* Checklist — Order Goods has two auto-derived
+                          tasks (Place blank order / Receive goods) so
+                          operators don't double-confirm what the
+                          per-size buttons already capture. */}
+                      {tasks.length > 0 && (() => {
+                        const counts = { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived, marked: goodsOrdered + goodsReceived };
+                        const autoDone = (task) => autoCheckOrderGoodsTask(step, task, counts);
+                        const isDone = (task) => {
+                          const a = autoDone(task);
+                          return a === null ? !!stepChecks[task] : a;
+                        };
+                        const doneCount = tasks.filter(isDone).length;
+                        return (
+                          <div>
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Checklist</span>
+                              <span className="text-xs font-bold text-indigo-600">{doneCount}/{tasks.length}</span>
+                            </div>
+                            <div className="space-y-1">
+                              {tasks.map(task => {
+                                const auto = autoDone(task);
+                                const done = isDone(task);
+                                return (
+                                  <button key={task}
+                                    onClick={() => { if (auto === null) floorToggleTask(task); }}
+                                    disabled={auto !== null}
+                                    title={auto !== null ? "Auto-tracked from per-size status below" : undefined}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"} ${auto !== null ? "cursor-default" : ""}`}>
+                                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
+                                      {done && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                                    </div>
+                                    <span className={`text-sm ${done ? "text-emerald-700 line-through" : "text-slate-700"}`}>{task}</span>
+                                    {auto !== null && (
+                                      <span className="ml-auto text-[10px] uppercase tracking-widest text-slate-400">Auto</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
-                          <div className="space-y-1">
-                            {tasks.map(task => {
-                              const done = !!stepChecks[task];
-                              return (
-                                <button key={task} onClick={() => floorToggleTask(task)}
-                                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
-                                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
-                                    {done && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                                  </div>
-                                  <span className={`text-sm ${done ? "text-emerald-700 line-through" : "text-slate-700"}`}>{task}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
-                      {/* Print tracking */}
+                      {/* Per-line-item per-size tracking */}
                       {(liveOrder.line_items || []).map((li, liIdx) => {
                         const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
-                        if (imprints.length === 0) return null;
+                        // For non-Printing stages we still show the line item
+                        // (so Order Goods sees the garment list); only Printing
+                        // requires imprints to render.
+                        if (step === "Printing" && imprints.length === 0) return null;
                         return (
                           <div key={liIdx}>
                             <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
@@ -1076,32 +1153,70 @@ export default function OrderDetailModal({
                             </div>
                             <div className="flex flex-wrap gap-2">
                               {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
-                                const donePrints = imprints.filter((_, ii) => !!printProgress[`${liIdx}-${size}-${ii}`]).length;
-                                const allDone = imprints.length > 0 && donePrints === imprints.length;
-                                const partial = donePrints > 0 && !allDone;
-                                return (
-                                  <div key={size} className="flex flex-col items-center">
-                                    <button onClick={() => {
-                                      if (allDone) {
-                                        imprints.forEach((_, ii) => floorTogglePrint(liIdx, size, ii));
-                                      } else {
-                                        const next = imprints.findIndex((_, ii) => !printProgress[`${liIdx}-${size}-${ii}`]);
-                                        if (next !== -1) floorTogglePrint(liIdx, size, next);
+                                // ── Order Goods: ordered (API) → received (manual) ──
+                                if (step === "Order Goods") {
+                                  const status = goodsProgress[`${liIdx}-${size}`]?.status;
+                                  const actionable = status === "ordered";
+                                  return (
+                                    <button key={size}
+                                      onClick={() => floorToggleGoods(liIdx, size)}
+                                      disabled={!actionable}
+                                      title={
+                                        status === "received" ? "Received"
+                                        : status === "ordered" ? "Tap to mark received"
+                                        : "Place a supplier PO to mark this size as ordered"
                                       }
-                                    }}
-                                      className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300"}`}>
-                                      {size}: {count}{allDone && " ✓"}
+                                      className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition ${
+                                        status === "received"
+                                          ? "bg-emerald-100 border-emerald-400 text-emerald-700 cursor-default"
+                                          : status === "ordered"
+                                            ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
+                                            : "bg-slate-50 border-slate-200 text-slate-400 cursor-default"
+                                      }`}>
+                                      {size}: {count}
+                                      {status === "received" && <span className="ml-1">✓</span>}
+                                      {status === "ordered" && <span className="ml-1">·</span>}
                                     </button>
-                                    {imprints.length > 1 && (
-                                      <div className="flex gap-0.5 mt-1">
-                                        {imprints.map((imp, ii) => (
-                                          <button key={ii} onClick={() => floorTogglePrint(liIdx, size, ii)}
-                                            title={imp.location}
-                                            className={`w-2.5 h-2.5 rounded-full transition ${printProgress[`${liIdx}-${size}-${ii}`] ? "bg-emerald-400" : "bg-slate-300 hover:bg-slate-400"}`} />
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
+                                  );
+                                }
+
+                                // ── Printing: per-imprint progress ──
+                                if (step === "Printing") {
+                                  const donePrints = imprints.filter((_, ii) => !!printProgress[`${liIdx}-${size}-${ii}`]).length;
+                                  const allDone = imprints.length > 0 && donePrints === imprints.length;
+                                  const partial = donePrints > 0 && !allDone;
+                                  return (
+                                    <div key={size} className="flex flex-col items-center">
+                                      <button onClick={() => {
+                                        if (allDone) {
+                                          imprints.forEach((_, ii) => floorTogglePrint(liIdx, size, ii));
+                                        } else {
+                                          const next = imprints.findIndex((_, ii) => !printProgress[`${liIdx}-${size}-${ii}`]);
+                                          if (next !== -1) floorTogglePrint(liIdx, size, next);
+                                        }
+                                      }}
+                                        className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300"}`}>
+                                        {size}: {count}{allDone && " ✓"}
+                                      </button>
+                                      {imprints.length > 1 && (
+                                        <div className="flex gap-0.5 mt-1">
+                                          {imprints.map((imp, ii) => (
+                                            <button key={ii} onClick={() => floorTogglePrint(liIdx, size, ii)}
+                                              title={imp.location}
+                                              className={`w-2.5 h-2.5 rounded-full transition ${printProgress[`${liIdx}-${size}-${ii}`] ? "bg-emerald-400" : "bg-slate-300 hover:bg-slate-400"}`} />
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                // ── Other stages: read-only quantity ──
+                                return (
+                                  <span key={size}
+                                    className="text-sm rounded-xl px-3 py-2 font-bold border-2 bg-white border-slate-200 text-slate-700">
+                                    {size}: {count}
+                                  </span>
                                 );
                               })}
                             </div>
@@ -1409,7 +1524,7 @@ export default function OrderDetailModal({
             )}
             {onAdvance && nextStatus && (
               <button
-                onClick={() => callAction(onAdvance, order.id).then(onClose)}
+                onClick={advanceWithGoodsGuard}
                 disabled={saving}
                 className="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-50"
               >
