@@ -69,3 +69,15 @@ entrypoint = "./functions/hello-world/index.ts"
 
 [functions.dailyStats]
 verify_jwt = false
+
+[functions.billing]
+verify_jwt = false
+
+[functions.billingWebhook]
+verify_jwt = false
+
+[functions.gmailOAuthCallback]
+verify_jwt = false
+
+[functions.emailScanner]
+verify_jwt = false
