@@ -210,16 +210,74 @@ describe("computeTrialMeta", () => {
 // ── trialPeriodDaysForCheckout ───────────────────────────────────────
 
 describe("trialPeriodDaysForCheckout", () => {
-  it("returns 14 when profile is on the trial tier", () => {
-    expect(trialPeriodDaysForCheckout({ subscription_tier: "trial" })).toBe(14);
+  const NOW = new Date("2026-05-14T00:00:00Z").getTime();
+  const daysFromNow = (n) => new Date(NOW + n * 86400000).toISOString();
+
+  it("returns full 14 when trial_ends_at is exactly 14 days from now", () => {
+    expect(trialPeriodDaysForCheckout(
+      { subscription_tier: "trial", trial_ends_at: daysFromNow(14) },
+      NOW,
+    )).toBe(14);
+  });
+
+  it("returns REMAINING days when partway through the in-app trial (no doubling)", () => {
+    // The fix for the doubling bug: 4 days left in-app should produce
+    // 4 days in Stripe, not 14. Otherwise users get ~24 free days
+    // instead of the 14 we promised on the landing page.
+    expect(trialPeriodDaysForCheckout(
+      { subscription_tier: "trial", trial_ends_at: daysFromNow(4) },
+      NOW,
+    )).toBe(4);
+  });
+
+  it("returns 1 (minimum Stripe accepts) when only a few hours remain", () => {
+    expect(trialPeriodDaysForCheckout(
+      { subscription_tier: "trial", trial_ends_at: new Date(NOW + 3 * 3600 * 1000).toISOString() },
+      NOW,
+    )).toBe(1);
+  });
+
+  it("caps at 14 days even if trial_ends_at is weirdly far in the future", () => {
+    expect(trialPeriodDaysForCheckout(
+      { subscription_tier: "trial", trial_ends_at: daysFromNow(60) },
+      NOW,
+    )).toBe(14);
+  });
+
+  it("returns undefined when the trial has already expired (charge today)", () => {
+    expect(trialPeriodDaysForCheckout(
+      { subscription_tier: "trial", trial_ends_at: daysFromNow(-2) },
+      NOW,
+    )).toBe(undefined);
+  });
+
+  it("returns undefined at the exact moment of expiry", () => {
+    expect(trialPeriodDaysForCheckout(
+      { subscription_tier: "trial", trial_ends_at: new Date(NOW).toISOString() },
+      NOW,
+    )).toBe(undefined);
+  });
+
+  it("falls back to 14 when trial_ends_at is missing (existing trial users)", () => {
+    expect(trialPeriodDaysForCheckout(
+      { subscription_tier: "trial" },
+      NOW,
+    )).toBe(14);
+  });
+
+  it("falls back to 14 when trial_ends_at is malformed", () => {
+    expect(trialPeriodDaysForCheckout(
+      { subscription_tier: "trial", trial_ends_at: "not a date" },
+      NOW,
+    )).toBe(14);
   });
 
   it("returns undefined for active shop tier (no trial extension on resub)", () => {
-    expect(trialPeriodDaysForCheckout({ subscription_tier: "shop" })).toBe(undefined);
+    expect(trialPeriodDaysForCheckout({ subscription_tier: "shop" }, NOW)).toBe(undefined);
   });
 
   it("returns undefined for null profile (no trial offered if we don't know who they are)", () => {
-    expect(trialPeriodDaysForCheckout(null)).toBe(undefined);
+    expect(trialPeriodDaysForCheckout(null, NOW)).toBe(undefined);
   });
 });
 

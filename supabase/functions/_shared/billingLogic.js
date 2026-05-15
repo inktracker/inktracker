@@ -96,12 +96,31 @@ export function computeTrialMeta(profile, now = Date.now()) {
 
 // ── Stripe checkout payload builders ────────────────────────────────
 
-// trial_period_days field on subscription_data. Only attached when the
-// caller's profile is currently in trial state — otherwise undefined,
-// which Stripe interprets as "no Stripe-side trial extension."
-export function trialPeriodDaysForCheckout(profile) {
-  if (profile?.subscription_tier === "trial") return 14;
-  return undefined;
+// trial_period_days field on subscription_data. Returns the number of
+// in-app trial days remaining, capped at 14, so Stripe's first charge
+// lands exactly when the in-app trial would have ended — no fresh
+// 14-day window on top of the app's 14-day window.
+//
+// Returns undefined if:
+//   - profile isn't on the trial tier (paid resubs go to immediate charge)
+//   - the trial has already expired (charge today)
+//   - profile is null (defensive — no trial offered if we don't know who they are)
+//
+// Returns 14 if profile is on trial but missing trial_ends_at (defensive
+// fallback that matches the old behavior so existing trial users don't
+// get worse treatment if the column ever becomes null somehow).
+//
+// Stripe rejects trial_period_days < 1, so we Math.max it before
+// returning. The smallest meaningful trial is 1 day.
+export function trialPeriodDaysForCheckout(profile, now = Date.now()) {
+  if (profile?.subscription_tier !== "trial") return undefined;
+  if (!profile?.trial_ends_at) return 14;
+  const endsAt = new Date(profile.trial_ends_at).getTime();
+  if (!Number.isFinite(endsAt)) return 14; // malformed timestamp, fall back
+  const remainingMs = endsAt - now;
+  if (remainingMs <= 0) return undefined; // trial expired, charge today
+  const days = Math.ceil(remainingMs / 86400000);
+  return Math.max(1, Math.min(days, 14));
 }
 
 // Subscription metadata we attach to every Stripe checkout. The
