@@ -13,6 +13,8 @@ import {
   shouldCreateStripeCustomer,
   stripeCustomerCreationFields,
   resolveShopOwnerKey,
+  isCustomerStaleError,
+  isCustomerDeleted,
 } from "../billingLogic.js";
 
 // ── Role gate ─────────────────────────────────────────────────────────
@@ -346,6 +348,58 @@ describe("stripeCustomerCreationFields", () => {
 });
 
 // ── resolveShopOwnerKey ──────────────────────────────────────────────
+
+describe("isCustomerStaleError", () => {
+  it("recognises Stripe's resource_missing code", () => {
+    expect(isCustomerStaleError({ code: "resource_missing" })).toBe(true);
+  });
+
+  it("recognises the 'No such customer' message", () => {
+    expect(isCustomerStaleError({ message: "No such customer: 'cus_X'" })).toBe(true);
+  });
+
+  it("recognises the live/test-mode flip message we hit on launch day", () => {
+    // This is the actual error string Joe saw after the STRIPE_KEY
+    // ordering fix when his cached customer was test-mode but the
+    // function had flipped to live mode.
+    expect(isCustomerStaleError({
+      message: "No such customer: 'cus_X'; a similar object exists in live mode, but a test mode key was used to make this request.",
+    })).toBe(true);
+  });
+
+  it("recognises the reverse direction (similar object exists in test mode)", () => {
+    expect(isCustomerStaleError({
+      message: "a similar object exists in test mode, but a live mode key was used",
+    })).toBe(true);
+  });
+
+  it("does NOT match generic Stripe errors — only stale-customer ones", () => {
+    expect(isCustomerStaleError({ code: "card_declined" })).toBe(false);
+    expect(isCustomerStaleError({ message: "Your card was declined." })).toBe(false);
+    expect(isCustomerStaleError({ message: "Insufficient funds" })).toBe(false);
+  });
+
+  it("returns false on null/undefined", () => {
+    expect(isCustomerStaleError(null)).toBe(false);
+    expect(isCustomerStaleError(undefined)).toBe(false);
+  });
+});
+
+describe("isCustomerDeleted", () => {
+  it("true when deleted flag is set", () => {
+    expect(isCustomerDeleted({ deleted: true, id: "cus_X" })).toBe(true);
+  });
+
+  it("false when customer is active (no deleted flag)", () => {
+    expect(isCustomerDeleted({ id: "cus_X" })).toBe(false);
+    expect(isCustomerDeleted({ deleted: false, id: "cus_X" })).toBe(false);
+  });
+
+  it("false on null/undefined (defensive — caller decides)", () => {
+    expect(isCustomerDeleted(null)).toBe(false);
+    expect(isCustomerDeleted(undefined)).toBe(false);
+  });
+});
 
 describe("resolveShopOwnerKey", () => {
   it("prefers profile.shop_owner (the broker case — broker's profile points at the shop they work for)", () => {
