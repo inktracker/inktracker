@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { Search, X } from "lucide-react";
 import { createPageUrl } from "@/utils";
+import ModalBackdrop from "./shared/ModalBackdrop";
 
 export default function GlobalSearch() {
   const [open, setOpen] = useState(false);
@@ -78,11 +79,8 @@ export default function GlobalSearch() {
       </button>
 
       {open && (
-        <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4"
-          onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
-        >
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mt-4" onMouseDown={e => e.stopPropagation()}>
+        <ModalBackdrop onClose={() => setOpen(false)} z="z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mt-4 max-h-[90vh] overflow-y-auto">
             {/* Search Input */}
             <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
               <Search className="w-5 h-5 text-slate-400" />
@@ -169,7 +167,7 @@ export default function GlobalSearch() {
               )}
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </>
   );

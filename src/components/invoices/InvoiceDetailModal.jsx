@@ -4,6 +4,7 @@ import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getQty, BIG_
 import { exportInvoiceToPDF } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
+import ModalBackdrop from "../shared/ModalBackdrop";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { invoiceThreadId } from "@/lib/messageThreads";
@@ -219,11 +220,8 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   const totals = invoice ? { sub, afterDisc, tax: invoice.tax, total: invoice.total } : null;
 
   return (
-    <div
-      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-auto"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl my-4" onMouseDown={e => e.stopPropagation()}>
+    <ModalBackdrop onClose={onClose} z="z-50">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
 
         {/* Header */}
         <div className="px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-start">
@@ -540,6 +538,6 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           />
         )}
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
