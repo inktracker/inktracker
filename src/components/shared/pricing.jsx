@@ -552,26 +552,39 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
 
     const itemName = resolveLineCategory(li);
 
-    // Use saved pricing from "calculate once" — fall back to live calc for legacy quotes or broker markup
+    // Use saved pricing from "calculate once" — fall back to live
+    // calc for legacy quotes or broker markup.
+    //
+    // CRITICAL — rush surcharge must surface in `amount`. The QB
+    // invariant is sum(line.amount) === customer-facing subtotal.
+    // The saved `_lineTotal` was historically `ppp × qty` (no rush);
+    // the live-calc path was using `r.ppp × qty` (also no rush).
+    // Both silently dropped the rush charge from QB invoices,
+    // so customers paid one price (per the email/PDF) while QB
+    // recorded a lower number. Pinned by numbersMatch.test.js N3.
     const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
     if (hasSaved && !isBroker) {
+      const lineTotalWithRush = li._lineTotal + (Number.isFinite(li._rushFee) ? li._rushFee : 0);
+      const unitPriceWithRush = qty > 0 ? lineTotalWithRush / qty : 0;
       lines.push({
         description,
         qty,
-        unitPrice: Number(li._ppp.toFixed(4)),
-        amount: Number(li._lineTotal.toFixed(2)),
+        unitPrice: Number(unitPriceWithRush.toFixed(4)),
+        amount: Number(lineTotalWithRush.toFixed(2)),
         itemName,
       });
     } else {
-      // Broker quotes need live calc with broker markup; legacy quotes need fallback
+      // Broker quotes need live calc with broker markup; legacy
+      // quotes also fall through here. r.lineTotal already includes
+      // rushFee (see calcLinkedLinePrice line 382).
       const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
       if (!r) return;
-      const unitPrice = qty > 0 ? r.ppp : 0;
+      const unitPriceWithRush = qty > 0 ? r.lineTotal / qty : 0;
       lines.push({
         description,
         qty,
-        unitPrice: Number(unitPrice.toFixed(4)),
-        amount: Number((r.ppp * qty).toFixed(2)),
+        unitPrice: Number(unitPriceWithRush.toFixed(4)),
+        amount: Number(r.lineTotal.toFixed(2)),
         itemName,
       });
     }
