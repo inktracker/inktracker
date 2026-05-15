@@ -318,15 +318,16 @@ export default function Dashboard() {
 
   const sumTotals = (items) => items.reduce((s, x) => s + (Number(x.total) || 0), 0);
 
-  // "Pending" here means "out with the customer" — covers both Sent
-  // (emailed, awaiting reply) and Pending (manually marked). "Approved"
-  // includes both Approved and Approved and Paid. Bucketing logic
-  // lives in lib/broker/quoteStatus.js + unit tests so the shop and
-  // broker views can't drift.
-  const { pending: pendingQuotesList, approved: approvedQuotesList } = bucketQuotes(quotes);
-  const pendingQuotes      = pendingQuotesList.length;
+  // "Open" = total pipeline that hasn't been won/lost yet — Draft +
+  // Sent + Pending all rolled together. The Approved bucket includes
+  // both Approved and Approved and Paid. Bucketing lives in
+  // lib/broker/quoteStatus.js + unit tests so the shop and broker
+  // views can't drift.
+  const { pending, approved: approvedQuotesList, draft } = bucketQuotes(quotes);
+  const openQuotesList     = [...draft, ...pending];
+  const openQuotes         = openQuotesList.length;
   const approvedQuotes     = approvedQuotesList.length;
-  const pendingQuotesValue = sumTotals(pendingQuotesList);
+  const openQuotesValue    = sumTotals(openQuotesList);
   const approvedQuotesValue = sumTotals(approvedQuotesList);
 
   // Open orders that are NOT yet paid. Pre-paid orders (paid===true)
@@ -396,7 +397,7 @@ export default function Dashboard() {
               Open Orders sum excludes pre-paid orders (their money is
               already in). */}
           <div data-tour="metrics" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <MetricCard label="Pending Quotes" value={pendingQuotes} sub={fmtMoney(pendingQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
+            <MetricCard label="Open Quotes" value={openQuotes} sub={fmtMoney(openQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
             <MetricCard label="Approved" value={approvedQuotes} sub={fmtMoney(approvedQuotesValue)} color="text-emerald-600" onClick={() => navigate(createPageUrl("Quotes"))} />
             <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
             <MetricCard label="Unpaid Invoices" value={unpaidInvoicesCount} sub={fmtMoney(unpaidInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
