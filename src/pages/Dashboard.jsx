@@ -6,6 +6,7 @@ const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import { createPageUrl } from "@/utils";
 import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig, getDisplayName, getOrderDisplayClient } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
+import { bucketQuotes } from "@/lib/broker/quoteStatus";
 import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText } from "lucide-react";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerDocuments from "../components/broker/BrokerDocuments";
@@ -317,8 +318,12 @@ export default function Dashboard() {
 
   const sumTotals = (items) => items.reduce((s, x) => s + (Number(x.total) || 0), 0);
 
-  const pendingQuotesList  = quotes.filter(q => q.status === "Pending");
-  const approvedQuotesList = quotes.filter(q => q.status === "Approved");
+  // "Pending" here means "out with the customer" — covers both Sent
+  // (emailed, awaiting reply) and Pending (manually marked). "Approved"
+  // includes both Approved and Approved and Paid. Bucketing logic
+  // lives in lib/broker/quoteStatus.js + unit tests so the shop and
+  // broker views can't drift.
+  const { pending: pendingQuotesList, approved: approvedQuotesList } = bucketQuotes(quotes);
   const pendingQuotes      = pendingQuotesList.length;
   const approvedQuotes     = approvedQuotesList.length;
   const pendingQuotesValue = sumTotals(pendingQuotesList);
