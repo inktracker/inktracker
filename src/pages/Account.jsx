@@ -962,14 +962,18 @@ function BillingSection({ user }) {
     load();
   }, []);
 
-  async function handleCheckout(tier) {
-    setCheckoutLoading(tier);
+  async function handleCheckout(billing) {
+    // billing: "monthly" | "annual"
+    // For monthly the server picks $50 founding or $99 standard based on
+    // the founding-slot claim. For annual it's flat $999/yr — no founding
+    // discount applies.
+    setCheckoutLoading(billing);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "checkout", accessToken: session?.access_token, tier }),
+        body: JSON.stringify({ action: "checkout", accessToken: session?.access_token, billing }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -1028,41 +1032,43 @@ function BillingSection({ user }) {
         )}
       </div>
 
-      <div className="max-w-md">
-        {PLANS.map(plan => {
-          const isCurrent = tier === plan.tier;
-          return (
-            <div key={plan.tier} className={`rounded-xl border-2 p-5 ${isCurrent ? "border-indigo-400 bg-indigo-50" : "border-slate-200"}`}>
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <div className="text-sm font-bold text-slate-800">{plan.name}</div>
-                  <div className="text-xs text-slate-400">Everything included</div>
-                </div>
-                <div className="text-right">
-                  <span className="text-2xl font-bold text-slate-900">${plan.price}</span>
-                  <span className="text-xs text-slate-400">/mo</span>
-                </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl">
+        {PLANS.map(plan => (
+          <div key={plan.billing} className="rounded-xl border-2 border-slate-200 p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-sm font-bold text-slate-800">{plan.name}</div>
+                <div className="text-xs text-slate-400">Everything included</div>
               </div>
-              <div className="grid grid-cols-2 gap-1.5 mb-4">
-                {plan.features.map(f => (
-                  <div key={f} className="flex items-start gap-1.5 text-xs text-slate-600">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mt-0.5 flex-shrink-0" />
-                    {f}
-                  </div>
-                ))}
+              <div className="text-right">
+                <span className="text-2xl font-bold text-slate-900">${plan.price}</span>
+                <span className="text-xs text-slate-400">{plan.period}</span>
               </div>
-              {isCurrent ? (
-                <div className="text-xs font-bold text-indigo-600 text-center py-2">Current Plan</div>
-              ) : (
-                <button onClick={() => handleCheckout(plan.tier)} disabled={!!checkoutLoading}
-                  className="w-full text-xs font-bold py-2.5 rounded-lg transition disabled:opacity-50 text-white bg-indigo-600 hover:bg-indigo-700">
-                  {checkoutLoading === plan.tier ? "Loading..." : "Subscribe"}
-                </button>
-              )}
             </div>
-          );
-        })}
+            {plan.foundingNote && (
+              <div className="text-[11px] font-semibold text-emerald-600 mb-3">{plan.foundingNote}</div>
+            )}
+            {plan.savingsNote && (
+              <div className="text-[11px] font-semibold text-emerald-600 mb-3">{plan.savingsNote}</div>
+            )}
+            <div className="grid grid-cols-2 gap-1.5 mb-4">
+              {plan.features.map(f => (
+                <div key={f} className="flex items-start gap-1.5 text-xs text-slate-600">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                  {f}
+                </div>
+              ))}
+            </div>
+            <button onClick={() => handleCheckout(plan.billing)} disabled={!!checkoutLoading}
+              className="w-full text-xs font-bold py-2.5 rounded-lg transition disabled:opacity-50 text-white bg-indigo-600 hover:bg-indigo-700">
+              {checkoutLoading === plan.billing ? "Loading..." : `Subscribe ${plan.name.toLowerCase()}`}
+            </button>
+          </div>
+        ))}
       </div>
+      <p className="text-[11px] text-slate-400 mt-3 max-w-2xl">
+        Have a beta promo code? Enter it on the Stripe checkout page after clicking Subscribe.
+      </p>
     </div>
   );
 }

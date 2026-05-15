@@ -1,13 +1,18 @@
 // Pure logic for interpreting claim_founding_slot RPC responses
 // and deciding which Stripe price tier to use.
 //
+// As of 2026-05-14: founding rate is $50/mo, standard $99/mo. Old
+// comments referenced $99/$149 — that was the pre-launch pricing.
+// Annual ($999/yr) is a parallel SKU handled separately in the edge
+// function — does NOT consume a founding slot.
+//
 // The RPC (in 20260520_founding_member_program.sql) returns a jsonb
 // status — one of:
 //
-//   claimed         — new claim, $99 founding
-//   already_member  — re-call by same profile (idempotent), $99
-//   cap_reached     — 50 slots full, $149 standard
-//   forfeited       — previously canceled a founding sub, $149
+//   claimed         — new claim, $50 founding
+//   already_member  — re-call by same profile (idempotent), $50
+//   cap_reached     — 50 slots full, $99 standard
+//   forfeited       — previously canceled a founding sub, $99
 //   no_profile      — caller bug
 //   bad_input       — caller bug
 //
@@ -18,8 +23,8 @@
 export const FOUNDING_MEMBER_CAP = 50;
 
 export const PRICE_TIER = Object.freeze({
-  FOUNDING: "founding", // $99/mo, slot-limited
-  STANDARD: "standard", // $149/mo, default after cap or after forfeit
+  FOUNDING: "founding", // $50/mo, slot-limited
+  STANDARD: "standard", // $99/mo, default after cap or after forfeit
 });
 
 /**
