@@ -417,6 +417,11 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
 }
 
 export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
+  // Defensive null/undefined: callers like effectiveQuoteTotals pre-
+  // wrap with `q || {}`, but the bare function is also called from
+  // analytics rollups where a missing row shouldn't crash. Test IT5
+  // pins this contract.
+  q = q || {};
   const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
   let subtotal = 0;   // sum of baseSubtotals (before rush)
   let rushTotal = 0;   // sum of rushFees
@@ -577,14 +582,32 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
       // Broker quotes need live calc with broker markup; legacy
       // quotes also fall through here. r.lineTotal already includes
       // rushFee (see calcLinkedLinePrice line 382).
-      const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
-      if (!r) return;
-      const unitPriceWithRush = qty > 0 ? r.lineTotal / qty : 0;
+      //
+      // CRITICAL — clientPpp override (customer-negotiated per-piece
+      // price) must win over the standard calc on admin quotes. The
+      // calc helper itself doesn't honor it; calcQuoteTotalsWithLinking
+      // applies it as a top-level subtotal substitution. Mirror that
+      // here so the QB invoice doesn't quietly bill the standard
+      // markup when the shop promised a discounted rate. Pinned by
+      // pricingEdgeCases.test.js QI1.
+      const override = Number(li?.clientPpp);
+      const hasOverride = !isBroker && Number.isFinite(override) && override > 0;
+      let lineTotalForQb;
+      let unitPriceForQb;
+      if (hasOverride) {
+        lineTotalForQb = override * qty;
+        unitPriceForQb = override;
+      } else {
+        const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
+        if (!r) return;
+        lineTotalForQb = r.lineTotal;
+        unitPriceForQb = qty > 0 ? r.lineTotal / qty : 0;
+      }
       lines.push({
         description,
         qty,
-        unitPrice: Number(unitPriceWithRush.toFixed(4)),
-        amount: Number(r.lineTotal.toFixed(2)),
+        unitPrice: Number(unitPriceForQb.toFixed(4)),
+        amount: Number(lineTotalForQb.toFixed(2)),
         itemName,
       });
     }
