@@ -19,6 +19,7 @@ import QuoteEditorModal from "../components/quotes/QuoteEditorModal";
 import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { validateQuoteForSave } from "../lib/quotes/validation";
+import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
 import { useBillingGate } from "../lib/billing-gate";
 
@@ -231,6 +232,22 @@ export default function Quotes() {
       return;
     }
 
+    // Post-send edit guard: warn or block depending on quote status.
+    // Editing a paid quote's pricing silently violates the contract
+    // (Stripe + QB show the original amount; InkTracker would lie).
+    // Contract pinned in lib/quotes/__tests__/editPolicy.test.js.
+    const existingQuote = quotes.find((x) => x.id === q.id);
+    if (existingQuote) {
+      const risk = detectPostSendEditRisk(existingQuote, q);
+      if (risk?.severity === "block") {
+        alert(risk.message);
+        return;
+      }
+      if (risk?.severity === "warn") {
+        if (!window.confirm(risk.message)) return;
+      }
+    }
+
     const customerData = customerMap[q.customer_id];
     const customerEmail = q.customer_email || customerData?.email || "";
     // Sanitize date fields — empty strings break Postgres DATE columns
@@ -241,7 +258,7 @@ export default function Quotes() {
     };
     let saved;
 
-    if (quotes.find((x) => x.id === q.id)) {
+    if (existingQuote) {
       saved = await base44.entities.Quote.update(q.id, {
         ...sanitized,
         customer_email: customerEmail,
