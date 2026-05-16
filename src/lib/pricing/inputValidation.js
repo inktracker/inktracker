@@ -197,3 +197,35 @@ export function validatePricingConfig(config) {
 
   return errors;
 }
+
+// ── Save-gate decision (used by Account.handleSave) ─────────────────
+//
+// Wraps validatePricingConfig into the shape the UI needs to make a
+// save decision in one call: { canSave, alertMessage }.
+//
+// Extracted so the integration contract (alert format, bullet list,
+// abort-on-error) is unit-testable without needing React Testing
+// Library + mocking the whole Account page.
+
+/**
+ * Decide whether a pricing_config can be saved, and if not, what
+ * message to surface to the user.
+ *
+ * @param {object} config — the pricing_config JSONB shape
+ * @returns {{ canSave: boolean, alertMessage: string | null,
+ *             errors: string[] }}
+ *   canSave      — true when validatePricingConfig returns no errors
+ *   alertMessage — null when canSave; otherwise the bulleted text
+ *                  the caller should show via alert()
+ *   errors       — raw error array for callers that want their own UI
+ */
+export function decidePricingSave(config) {
+  const errors = validatePricingConfig(config);
+  if (errors.length === 0) {
+    return { canSave: true, alertMessage: null, errors: [] };
+  }
+  const alertMessage =
+    "Can't save — please fix these fields:\n\n" +
+    errors.map((e) => `• ${e}`).join("\n");
+  return { canSave: false, alertMessage, errors };
+}
