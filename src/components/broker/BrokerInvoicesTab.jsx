@@ -23,6 +23,7 @@ import {
   Clock,
 } from "lucide-react";
 import { exportQuoteToPDF } from "../shared/pdfExport";
+import ModalBackdrop from "../shared/ModalBackdrop";
 import {
   AreaChart,
   Area,
@@ -47,14 +48,8 @@ function JobDetailDrawer({ job, onClose }) {
   const clientTotals = job._clientTotal || 0;
 
   return (
-    <div
-      className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-end"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white w-full max-w-lg h-full overflow-y-auto shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalBackdrop onClose={onClose} z="z-50" bg="bg-slate-900/50" layout="slide-right">
+      <div className="bg-white w-full max-w-lg h-full overflow-y-auto shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
           <div>
@@ -201,7 +196,7 @@ function JobDetailDrawer({ job, onClose }) {
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 

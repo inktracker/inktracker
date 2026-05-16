@@ -18,41 +18,61 @@
 //
 //   import ModalBackdrop from "@/components/shared/ModalBackdrop";
 //
-//   return (
-//     <ModalBackdrop onClose={onClose}>
-//       <div className="bg-white rounded-2xl ...">
-//         {modal contents}
-//       </div>
-//     </ModalBackdrop>
-//   );
+//   // Standard centered modal:
+//   <ModalBackdrop onClose={onClose}>
+//     <div className="bg-white rounded-2xl ...">{children}</div>
+//   </ModalBackdrop>
+//
+//   // Right-aligned slide-out side panel:
+//   <ModalBackdrop onClose={onClose} layout="slide-right">
+//     <div className="bg-white w-full max-w-lg h-full ...">{children}</div>
+//   </ModalBackdrop>
+//
+//   // Custom backdrop color (e.g. landing-page preview with bg-black/80):
+//   <ModalBackdrop onClose={onClose} bg="bg-black/80">{children}</ModalBackdrop>
 //
 // The inner panel is whatever children you pass — ModalBackdrop
 // applies a click handler that stops propagation so clicking inside
 // the panel doesn't dismiss the modal. Clicking the backdrop fires
 // `onClose`. Pass `dismissOnBackdropClick={false}` to opt out (e.g.
-// "are you sure" confirmation modals that should require an explicit
-// cancel button).
+// editor modals that hold unsaved form state).
 
 import { createPortal } from "react-dom";
+
+const LAYOUT_CLASSES = {
+  centered:    "items-center  justify-center",
+  "slide-right": "items-stretch justify-end",
+  "slide-left":  "items-stretch justify-start",
+};
 
 export default function ModalBackdrop({
   onClose,
   children,
   z = "z-[200]",
   className = "",
+  bg = "bg-slate-900/60",
+  layout = "centered",
   dismissOnBackdropClick = true,
 }) {
   function handleBackdropClick() {
     if (dismissOnBackdropClick && onClose) onClose();
   }
 
+  // Slide-outs take a full-height bg-white panel; the inner wrapper
+  // shouldn't constrain layout. Centered modals get the
+  // `w-full flex justify-center` wrapper that keeps the panel
+  // centered even when child has its own width caps.
+  const isSlide = layout === "slide-right" || layout === "slide-left";
+  const innerWrapperClass = isSlide ? "" : "w-full flex justify-center";
+  const layoutClass = LAYOUT_CLASSES[layout] ?? LAYOUT_CLASSES.centered;
+
   return createPortal(
     <div
-      className={`fixed bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto ${z} ${className}`}
+      className={`fixed ${bg} backdrop-blur-sm flex ${layoutClass} ${isSlide ? "" : "p-4 overflow-y-auto"} ${z} ${className}`}
       style={{ top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
       onClick={handleBackdropClick}
     >
-      <div onClick={(e) => e.stopPropagation()} className="w-full flex justify-center">
+      <div onClick={(e) => e.stopPropagation()} className={innerWrapperClass}>
         {children}
       </div>
     </div>,

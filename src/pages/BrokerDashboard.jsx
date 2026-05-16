@@ -46,6 +46,7 @@ import BrokerPerformanceSelf from "../components/broker/BrokerPerformanceSelf";
 import BrokerLayout from "../components/broker/BrokerLayout";
 import BrokerFilesTab from "../components/broker/BrokerFilesTab";
 import BrokerInvoicesTab from "../components/broker/BrokerInvoicesTab";
+import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { exportQuoteToPDF } from "../components/shared/pdfExport";
 import { STANDARD_MARKUP, O_STATUSES } from "../components/shared/pricing";
 import { normalizeQuoteStatus } from "@/lib/broker/quoteStatus";
@@ -184,14 +185,8 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
 
   return (
     <>
-    <div
-      className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex justify-end"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white w-full max-w-lg h-full overflow-y-auto shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <ModalBackdrop onClose={onClose} z="z-50" bg="bg-slate-900/50" layout="slide-right">
+      <div className="bg-white w-full max-w-lg h-full overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
           <div>
             <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
@@ -507,7 +502,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
 
     {showSendModal && (
       <SendQuoteModal
