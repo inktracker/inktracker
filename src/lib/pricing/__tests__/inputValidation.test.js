@@ -225,6 +225,42 @@ describe("validatePricingConfig — catches each invalid surface", () => {
     expect(errors.length).toBe(1);
     expect(errors[0]).toMatch(/First print.*1 color.*50 pcs/);
   });
+
+  it("VC10 — rushRate out of range caught (must be 0..1 as a fraction)", () => {
+    // The UI stores rushRate as a fraction (0.25 = 25%). A negative
+    // value or a value > 1 means something went very wrong upstream
+    // (or someone hand-edited the JSONB).
+    const errBelow = validatePricingConfig({ rushRate: -0.1 });
+    expect(errBelow.length).toBe(1);
+    expect(errBelow[0]).toMatch(/Rush rate/);
+
+    const errAbove = validatePricingConfig({ rushRate: 2 });
+    expect(errAbove.length).toBe(1);
+    expect(errAbove[0]).toMatch(/Rush rate/);
+  });
+
+  it("VC11 — rushRate of 0 is legitimate (shop doesn't offer rush)", () => {
+    expect(validatePricingConfig({ rushRate: 0 })).toEqual([]);
+    expect(validatePricingConfig({ rushRate: 0.25 })).toEqual([]);
+  });
+
+  it("VC12 — brokerMarkupShare out of range caught", () => {
+    const errors = validatePricingConfig({ brokerMarkupShare: 1.5 });
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toMatch(/Broker markup share/);
+  });
+
+  it("VC13 — embroidery digitizingFee bad type caught", () => {
+    const errors = validatePricingConfig({
+      embroidery: { digitizingFee: "abc" },
+    });
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toMatch(/Embroidery digitizing fee.*abc/);
+  });
+
+  it("VC14 — embroidery digitizingFee of 0 is legitimate (no fee)", () => {
+    expect(validatePricingConfig({ embroidery: { digitizingFee: 0 } })).toEqual([]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
