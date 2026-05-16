@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { Toaster } from "@/components/ui/toaster";
 import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
@@ -163,15 +164,12 @@ function FeaturePreviewModal({ feature, onClose }) {
   const media = feature.media;
 
   return (
-    <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 animate-in fade-in"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${feature.title} preview`}
-    >
+    <ModalBackdrop onClose={onClose} z="z-50" bg="bg-black/80" className="animate-in fade-in">
       <div
-        className="bg-slate-900 border border-white/10 rounded-2xl max-w-5xl w-full overflow-hidden shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${feature.title} preview`}
+        className="bg-slate-900 border border-white/10 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
@@ -226,7 +224,7 @@ function FeaturePreviewModal({ feature, onClose }) {
           <p className="text-sm text-slate-300 leading-relaxed">{feature.desc}</p>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 
