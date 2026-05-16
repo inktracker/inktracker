@@ -19,6 +19,11 @@ import {
   sortSizeEntries,
 } from "../components/shared/pricing";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
+import {
+  decideCustomerCharge,
+  buildCheckoutLineItems,
+  InvalidChargeAmountError,
+} from "@/lib/quotes/customerCharge";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -146,16 +151,13 @@ function getLineItemPricing(li, quote) {
   return { qty, pricing, lineTotal, perPiece };
 }
 
-function buildCheckoutLineItems(quote, amount, label) {
-  return [
-    {
-      name: `Quote ${quote?.quote_id || ""}`.trim(),
-      description: label || "Approved quote payment",
-      quantity: 1,
-      unit_amount: Math.max(1, Math.round(Number(amount || 0) * 100)),
-    },
-  ];
-}
+// buildCheckoutLineItems + decideCustomerCharge moved to
+// src/lib/quotes/customerCharge.js so they're testable. See
+// __tests__/customerCharge.test.js for the pinned contracts:
+//   CT1–CT6  effectiveCustomerTotal priority (qb > saved > live)
+//   DC1–DC8  deposit / remaining / full math
+//   BL1–BL5  Stripe line-item shape + refuse-on-$0 contract
+//   XC1–XC4  end-to-end "Stripe charges what the email said"
 
 export default function QuotePayment() {
   const [quote, setQuote] = useState(null);
@@ -362,34 +364,24 @@ export default function QuotePayment() {
     setCheckoutLoading(true);
 
     try {
-      // Prefer QB total > saved total > live calc (in that order)
-      const liveTotals = calcQuoteTotals(quote);
-      const effectiveTotal = quote.qb_total != null ? Number(quote.qb_total)
-        : (Number.isFinite(quote.total) && quote.total > 0) ? quote.total
-        : liveTotals.total;
-      // Customer's default payment terms override the quote's own deposit_pct —
-      // lets the shop flip "pay in full" on a client without re-editing old quotes.
-      const depositPct = customer?.default_deposit_pct != null
-        ? Number(customer.default_deposit_pct) || 0
-        : parseFloat(quote.deposit_pct) || 0;
-      const depositAmount = Math.round(effectiveTotal * (depositPct / 100) * 100) / 100;
-      const depositPaid = quote.deposit_paid;
+      // Decision math + line-item build live in lib/quotes/customerCharge.js
+      // so the contracts are testable. See __tests__/customerCharge.test.js
+      // — CT/DC/BL/XC test groups pin the priority chain, deposit math, and
+      // refuse-on-$0 behavior.
+      const { chargeAmount, isDeposit, label, effectiveTotal } =
+        decideCustomerCharge(quote, customer);
 
-      // Auto-determine what to charge: deposit → remaining balance → full
-      let chargeAmount = effectiveTotal;
-      let isDeposit = false;
-      let paymentLabel = `Quote ${quote.quote_id}`;
-
-      if (depositPct > 0 && !depositPaid) {
-        chargeAmount = depositAmount;
-        isDeposit = true;
-        paymentLabel = `Deposit (${depositPct}%) — Quote ${quote.quote_id}`;
-      } else if (depositPct > 0 && depositPaid) {
-        chargeAmount = Math.round((effectiveTotal - depositAmount) * 100) / 100;
-        paymentLabel = `Remaining Balance — Quote ${quote.quote_id}`;
+      let checkoutLineItems;
+      try {
+        checkoutLineItems = buildCheckoutLineItems(quote, chargeAmount, label);
+      } catch (err) {
+        if (err instanceof InvalidChargeAmountError) {
+          setCheckoutError("This quote has no outstanding balance to pay.");
+          setCheckoutLoading(false);
+          return;
+        }
+        throw err;
       }
-
-      const checkoutLineItems = buildCheckoutLineItems(quote, chargeAmount, paymentLabel);
 
       const response = await base44.functions.invoke("createCheckoutSession", {
         action: "createSession",
