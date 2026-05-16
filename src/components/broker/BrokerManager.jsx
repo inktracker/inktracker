@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import ModalBackdrop from "../shared/ModalBackdrop";
 import {
   Users,
   ChevronDown,
@@ -685,7 +686,11 @@ export default function BrokerManager() {
           )}
 
           {editorOpen && (
-            <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+            <ModalBackdrop
+              onClose={() => setEditorOpen(false)}
+              z="z-50"
+              dismissOnBackdropClick={false}
+            >
               <div className="w-full max-w-5xl max-h-[90vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 shadow-2xl">
                 <div className="p-5 sm:p-6 border-b border-slate-100">
                   <div className="text-xl font-semibold text-slate-900">
@@ -959,7 +964,7 @@ export default function BrokerManager() {
                   </button>
                 </div>
               </div>
-            </div>
+            </ModalBackdrop>
           )}
         </div>
       )}

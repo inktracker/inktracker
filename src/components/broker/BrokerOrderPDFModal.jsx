@@ -1,6 +1,7 @@
 import { X, Download } from "lucide-react";
 import { fmtDate, fmtMoney, getQty, BIG_SIZES, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP } from "../shared/pricing";
 import { exportOrderToPDF } from "../shared/pdfExport";
+import ModalBackdrop from "../shared/ModalBackdrop";
 
 export default function BrokerOrderPDFModal({ order, onClose }) {
   const brokerDiscVal = parseFloat(order.discount || 0);
@@ -25,11 +26,8 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
     : "";
 
   return (
-    <div
-      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-auto"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-4" onMouseDown={e => e.stopPropagation()}>
+    <ModalBackdrop onClose={onClose} z="z-50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
 
         {/* Header */}
         <div className="flex items-start justify-between px-6 py-5 border-b border-slate-200">
@@ -149,6 +147,6 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
           <button onClick={onClose} className="ml-auto px-4 py-2 text-sm font-semibold text-slate-400 rounded-xl hover:bg-slate-100 transition">Close</button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { uploadFile } from "@/lib/uploadFile";
 import { filterAndSortClients } from "@/lib/broker/clientFilter";
+import ModalBackdrop from "../shared/ModalBackdrop";
 import {
   Users,
   Search,
@@ -300,18 +301,11 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
       )}
 
       {editing && (
-        <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => {
-            setEditing(null);
-            setConfirmDel(false);
-            setArtNote("");
-          }}
+        <ModalBackdrop
+          onClose={() => { setEditing(null); setConfirmDel(false); setArtNote(""); }}
+          z="z-50"
         >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 space-y-5 max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-900">Edit Client</h3>
               <button
@@ -610,7 +604,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
               </div>
             )}
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );

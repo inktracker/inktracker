@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
+import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Users, CheckCircle, Clock, Store, Trash2, RefreshCw, ShieldCheck, UserX, Mail, X } from "lucide-react";
@@ -380,14 +381,11 @@ export default function AdminPanel() {
       )}
 
       {showInvite && (
-        <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onMouseDown={(e) => { if (e.target === e.currentTarget && !inviteSending) setShowInvite(false); }}
+        <ModalBackdrop
+          onClose={() => { if (!inviteSending) setShowInvite(false); }}
+          z="z-50"
         >
-          <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center">
@@ -476,7 +474,7 @@ export default function AdminPanel() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );

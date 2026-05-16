@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../components/shared/pricing";
+import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { Loader2, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Trash2, ShoppingCart } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
 import ShoppingList from "../components/inventory/ShoppingList";
@@ -483,9 +484,8 @@ export default function Inventory() {
 
       {/* Edit modal */}
       {editing && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onMouseDown={(e) => { if (e.target === e.currentTarget) setEditing(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4" onMouseDown={e => e.stopPropagation()}>
+        <ModalBackdrop onClose={() => setEditing(null)} z="z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-900">Edit Item</h3>
               <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-600">
@@ -541,7 +541,7 @@ export default function Inventory() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );
@@ -627,9 +627,8 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col" onMouseDown={e => e.stopPropagation()}>
+    <ModalBackdrop onClose={onClose} z="z-50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100">
           <h3 className="text-lg font-bold text-slate-900">{group.baseName}</h3>
           <p className="text-xs text-slate-400 mt-0.5">S&S restock setup · {group.items.length} sizes</p>
@@ -757,7 +756,7 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
 
@@ -836,9 +835,8 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
+    <ModalBackdrop onClose={onClose} z="z-50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
         <div className="px-6 py-4 border-b border-slate-100">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-orange-500" /> S&S Restock Cart
@@ -915,6 +913,6 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
           </div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

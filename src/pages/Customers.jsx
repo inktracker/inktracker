@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { fmtMoney } from "../components/shared/pricing";
+import ModalBackdrop from "../components/shared/ModalBackdrop";
 import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
@@ -537,14 +538,14 @@ export default function Customers() {
       )}
 
       {editing && (
-        <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => {
+        <ModalBackdrop
+          onClose={() => {
             setEditing(null);
             setConfirmDelete(false);
             setArtworkNote("");
             setArtworkColorCount("");
           }}
+          z="z-50"
         >
           <div
             className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl p-6 space-y-5 max-h-[90vh] overflow-y-auto"
@@ -918,7 +919,7 @@ export default function Customers() {
               </div>
             )}
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {showMerge && (
@@ -1090,9 +1091,8 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
   }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col" onMouseDown={e => e.stopPropagation()}>
+    <ModalBackdrop onClose={onClose} z="z-50">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
         <div className="px-6 py-4 border-b border-slate-100">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <GitMerge className="w-5 h-5 text-indigo-600" /> Merge Duplicate Customers
@@ -1151,6 +1151,6 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
           <div className="text-xs text-slate-400">Select the record to keep, others will be merged into it</div>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }
