@@ -11,6 +11,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import { claimWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
 
 const STRIPE_SECRET_KEY      = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const STRIPE_WEBHOOK_SECRET  = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
@@ -219,6 +220,17 @@ Deno.serve(async (req) => {
   }
 
   const supabase = serviceClient();
+
+  // Idempotency: Stripe explicitly delivers webhooks at-least-once.
+  // Without a dedup gate, every retry replays QB payment record +
+  // customer + shop emails. Pure-logic + tests in
+  // _shared/webhookIdempotency.js (CW1–CW6).
+  const dedupId = extractStripeEventId(event);
+  const isFirstDelivery = await claimWebhookEvent(supabase, "stripe", dedupId, event);
+  if (!isFirstDelivery) {
+    console.log(`[stripeWebhook] Duplicate event ${dedupId} — skipping (already processed)`);
+    return Response.json({ received: true, deduplicated: true }, { headers: CORS });
+  }
 
   try {
     if (event.type === "checkout.session.completed") {

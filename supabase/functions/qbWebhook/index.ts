@@ -9,6 +9,7 @@
 
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { makeOrderId } from "../_shared/qbInvoice.js";
+import { claimWebhookEvent, extractQbEventId } from "../_shared/webhookIdempotency.js";
 import {
   buildPaidInvoiceQuery,
   decidePaidInvoiceAction,
@@ -239,6 +240,17 @@ Deno.serve(async (req) => {
 
     // Service-role client for cross-user operations
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+    // Idempotency. QB can re-deliver the same payload on transient
+    // failures; processing notifications twice would over-sync data
+    // (e.g. duplicate quote→order conversions). Tests CW1–CW6 +
+    // WQ1–WQ5 in _shared/__tests__/webhookIdempotency.test.js.
+    const dedupId = extractQbEventId(body);
+    const isFirstDelivery = await claimWebhookEvent(supabase, "qb", dedupId, body);
+    if (!isFirstDelivery) {
+      console.log(`[qbWebhook] Duplicate event ${dedupId} — skipping`);
+      return new Response("ok", { status: 200, headers: CORS });
+    }
 
     await Promise.all(notifications.map((n: any) => processNotification(supabase, n)));
 
