@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
+import { claimWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
 
 const STRIPE_KEY = Deno.env.get("STRIPE_TEST_SECRET_KEY") || Deno.env.get("STRIPE_SECRET_KEY")!;
 const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_BILLING_WEBHOOK_SECRET") || "";
@@ -60,6 +61,17 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[billingWebhook] ${event.type}`);
+
+    // Idempotency. Stripe webhooks deliver at-least-once. Without
+    // a dedup gate, a retry of customer.subscription.created could
+    // fire the trial-activation side effects twice. Tests CW1–CW6
+    // in _shared/__tests__/webhookIdempotency.test.js.
+    const dedupId = extractBillingEventId(event);
+    const isFirstDelivery = await claimWebhookEvent(adminClient(), "billing", dedupId, event);
+    if (!isFirstDelivery) {
+      console.log(`[billingWebhook] Duplicate event ${dedupId} — skipping`);
+      return new Response(JSON.stringify({ received: true, deduplicated: true }), { headers: CORS });
+    }
 
     switch (event.type) {
       case "checkout.session.completed": {
