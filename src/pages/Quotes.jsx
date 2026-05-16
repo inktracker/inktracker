@@ -22,6 +22,7 @@ import { validateQuoteForSave } from "../lib/quotes/validation";
 import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
 import { useBillingGate } from "../lib/billing-gate";
+import ModalBackdrop from "../components/shared/ModalBackdrop";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -431,9 +432,8 @@ export default function Quotes() {
         </div>
       </div>
       {showEmailPaste && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onMouseDown={e => { if (e.target === e.currentTarget) setShowEmailPaste(false); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg" onMouseDown={e => e.stopPropagation()}>
+        <ModalBackdrop onClose={() => setShowEmailPaste(false)} z="z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-100">
               <h3 className="text-lg font-bold text-slate-900">Quote from Email</h3>
               <p className="text-xs text-slate-400 mt-0.5">Paste the email content and we'll create a draft quote</p>
@@ -476,7 +476,7 @@ export default function Quotes() {
               </button>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       <div className="space-y-3">

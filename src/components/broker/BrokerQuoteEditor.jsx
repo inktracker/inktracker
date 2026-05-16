@@ -12,6 +12,7 @@ import {
   STANDARD_MARKUP,
 } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
+import ModalBackdrop from "../shared/ModalBackdrop";
 import BrokerLineItemEditor from "./BrokerLineItemEditor";
 import { Download } from "lucide-react";
 
@@ -292,8 +293,8 @@ export default function BrokerQuoteEditor({
   function handleSubmitToShop() { runSave("Pending"); }
 
   return (
-    <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-start justify-center p-4 overflow-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-4">
+    <ModalBackdrop onClose={onClose} z="z-50" dismissOnBackdropClick={false}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-2xl">
           <div>
             <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
@@ -845,6 +846,6 @@ export default function BrokerQuoteEditor({
           </button>
         </div>
       </div>
-    </div>
+    </ModalBackdrop>
   );
 }

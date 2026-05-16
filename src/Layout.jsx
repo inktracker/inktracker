@@ -2,6 +2,7 @@ import { createPageUrl } from "@/utils";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
+import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
@@ -306,9 +307,8 @@ export default function Layout({ children, currentPageName }) {
 
       {/* Upgrade modal */}
       {showUpgrade && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onMouseDown={e => { if (e.target === e.currentTarget) setShowUpgrade(null); }}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center" onMouseDown={e => e.stopPropagation()}>
+        <ModalBackdrop onClose={() => setShowUpgrade(null)} z="z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mx-auto mb-4">
               <Lock className="w-6 h-6 text-indigo-600" />
             </div>
@@ -327,7 +327,7 @@ export default function Layout({ children, currentPageName }) {
               </Link>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );
