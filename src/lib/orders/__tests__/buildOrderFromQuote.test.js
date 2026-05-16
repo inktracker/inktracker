@@ -153,6 +153,71 @@ describe("buildOrderFromQuote — order defaults", () => {
   });
 });
 
+describe("buildOrderFromQuote — numbers-match contract (saved totals win over live recompute)", () => {
+  // The customer-facing source of truth is what the email said: the
+  // saved quote.total at send time. If the shop changes pricing
+  // config (or anything in the live calc chain) between send and
+  // convert, a fresh recompute will diverge from what the customer
+  // actually paid. The order MUST inherit the saved customer-facing
+  // total, not a stale-config recompute.
+
+  it("uses saved quote.total when present, NOT a recompute that disagrees", () => {
+    // Saved total $999 reflects what was emailed + what the customer
+    // paid via Stripe. If we recomputed and got $850, the order would
+    // show $850 and the invoice would too — but the cash collected
+    // was $999. That's a $149 reconciliation gap.
+    const quote = baseQuote({
+      // line_items here would live-compute to ~$XX, but the SAVED
+      // total $999 reflects the customer-facing price the shop sent.
+      subtotal: 923,
+      tax: 76,
+      total: 999,
+    });
+    const order = buildOrderFromQuote(quote, { userEmail: "shop@x.com", now: NOW });
+    expect(order.total).toBe(999);
+    expect(order.subtotal).toBe(923);
+    expect(order.tax).toBe(76);
+  });
+
+  it("falls back to live recompute when saved totals are missing (new quotes)", () => {
+    // First conversion of a quote that was created and converted in
+    // one session may not yet have saved totals on the row. The
+    // live calc must still produce a sensible answer.
+    const quote = baseQuote();
+    delete quote.subtotal;
+    delete quote.tax;
+    delete quote.total;
+    const order = buildOrderFromQuote(quote, { userEmail: "shop@x.com", now: NOW });
+    expect(order.total).toBeGreaterThan(0);
+    expect(typeof order.subtotal).toBe("number");
+  });
+
+  it("treats total=0 as 'no saved total' (falls back to live calc)", () => {
+    // A blank/draft quote may have total=0 but still have line items.
+    // Pinning 0 would shortcut the live calc and produce $0 orders,
+    // which is exactly the blank-quote bug class.
+    const quote = baseQuote({ total: 0, subtotal: 0, tax: 0 });
+    const order = buildOrderFromQuote(quote, { userEmail: "shop@x.com", now: NOW });
+    expect(order.total).toBeGreaterThan(0);
+  });
+
+  it("broker quotes still respect saved totals (tax_rate forced to 0 separately)", () => {
+    // Broker quotes have their own pricing path but the saved-totals
+    // contract is the same — what was emailed wins.
+    const quote = baseQuote({
+      broker_id: "broker@x.com",
+      broker_name: "Broker Inc",
+      tax_rate: 8.25,           // ignored on output (broker rule)
+      subtotal: 500,
+      tax: 0,                   // brokers don't charge tax
+      total: 500,
+    });
+    const order = buildOrderFromQuote(quote, { userEmail: "shop@x.com", now: NOW });
+    expect(order.total).toBe(500);
+    expect(order.tax_rate).toBe(0);     // broker rule still applies
+  });
+});
+
 describe("buildQuoteConvertedPatch — preserve the original quote", () => {
   it("returns the patch used to mark a quote as converted (never deleted)", () => {
     const patch = buildQuoteConvertedPatch("ORD-2026-XYZ12", { now: NOW });

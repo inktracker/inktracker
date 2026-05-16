@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import { Mail, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
-import { calcQuoteTotals, buildQBInvoicePayload, fmtMoney, BROKER_MARKUP } from "../shared/pricing";
+import { buildQBInvoicePayload, fmtMoney, BROKER_MARKUP } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { quotePaymentUrl } from "@/lib/publicUrls";
@@ -15,21 +15,20 @@ import {
   buildSendQuoteEmailRequest,
   buildPostSendQuotePatch,
 } from "@/lib/quotes/sendOrchestration";
+import { effectiveQuoteTotals } from "@/lib/quotes/effectiveTotals";
 import { useBillingGate } from "@/lib/billing-gate";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
 }
 
+// Saved totals win over live recompute — keeps the email's number
+// pinned to what the editor stamped on the row, so the customer
+// sees what we promised. Contract pinned in effectiveTotals tests
+// ET1–ET8; same helper is used by buildOrderFromQuote so the chain
+// stays consistent end-to-end.
 function getQuoteTotalsForSend(q) {
-  const live = calcQuoteTotals(q || {}, undefined);
-  // Prefer saved totals from "calculate once" when available
-  if (q && Number.isFinite(q.total) && q.total > 0) {
-    live.total = q.total;
-    if (Number.isFinite(q.subtotal)) live.sub = q.subtotal;
-    if (q.tax != null) live.tax = q.tax;
-  }
-  return live;
+  return effectiveQuoteTotals(q);
 }
 
 export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) {

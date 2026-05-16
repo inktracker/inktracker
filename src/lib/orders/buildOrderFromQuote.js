@@ -8,7 +8,8 @@
 // Both inputs (quote, user, now) are accepted by the caller; `now` is
 // injected so tests can pin the order_id timestamp portion.
 
-import { calcQuoteTotals, BROKER_MARKUP } from "../../components/shared/pricing";
+import { BROKER_MARKUP } from "../../components/shared/pricing";
+import { effectiveQuoteTotals } from "../quotes/effectiveTotals";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -48,7 +49,12 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now() } 
   const brokerDisplayName = q.broker_name || q.broker_company || q.broker_id || q.customer_name;
   const brokerClientName = q.customer_name || "";
 
-  const t = calcQuoteTotals(q, brokerOrder ? BROKER_MARKUP : undefined);
+  // Numbers-match: saved totals from send time win over a fresh live
+  // recompute. The customer paid for the saved amount; the order
+  // (and downstream invoice + QB sync) must inherit that, not a
+  // re-priced value that may have drifted with pricing config changes.
+  // Contract pinned in effectiveTotals tests ET1–ET8.
+  const t = effectiveQuoteTotals(q, brokerOrder ? BROKER_MARKUP : undefined);
 
   return {
     order_id: generateOrderId(now),
