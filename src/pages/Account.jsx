@@ -4,6 +4,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2 } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
+import { validatePricingConfig } from "@/lib/pricing/inputValidation";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 
@@ -1531,6 +1532,20 @@ function PricingConfigSection({ user }) {
   }, [user]);
 
   async function handleSave() {
+    // Validation gate. Every onChange handler silently coerces bad
+    // input (parseFloat(x) || 0), so by the time we reach save the
+    // config may already contain 0s where the user typed letters.
+    // This walks the entire shape and surfaces every bad field at
+    // once. Pinned by lib/pricing/__tests__/inputValidation.test.js.
+    const errors = validatePricingConfig(config);
+    if (errors.length > 0) {
+      alert(
+        "Can't save — please fix these fields:\n\n" +
+        errors.map(e => `• ${e}`).join("\n"),
+      );
+      return;
+    }
+
     setSaving(true);
     try {
       const shops = await base44.entities.Shop.filter({ owner_email: user.email });
