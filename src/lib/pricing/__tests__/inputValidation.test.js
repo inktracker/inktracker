@@ -6,6 +6,7 @@ import {
   validateTaxRate,
   validateTierQty,
   validatePricingConfig,
+  decidePricingSave,
 } from "../inputValidation.js";
 
 // ─────────────────────────────────────────────────────────────────────
@@ -223,5 +224,86 @@ describe("validatePricingConfig — catches each invalid surface", () => {
     });
     expect(errors.length).toBe(1);
     expect(errors[0]).toMatch(/First print.*1 color.*50 pcs/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// decidePricingSave — save-gate decision (the contract Account.jsx uses)
+// ─────────────────────────────────────────────────────────────────────
+
+describe("decidePricingSave — save-gate contract", () => {
+  it("DS1 — valid config → canSave: true, no message", () => {
+    const decision = decidePricingSave({
+      tiers: [25, 50],
+      firstPrint: { 1: { 25: 6.30 } },
+    });
+    expect(decision).toEqual({
+      canSave: true,
+      alertMessage: null,
+      errors: [],
+    });
+  });
+
+  it("DS2 — empty/null config → canSave: true (defaults take over downstream)", () => {
+    // Empty config means the shop hasn't customized pricing; the
+    // app falls back to hardcoded defaults. Don't block save on
+    // empty.
+    expect(decidePricingSave({}).canSave).toBe(true);
+    expect(decidePricingSave(null).canSave).toBe(true);
+  });
+
+  it("DS3 — single bad field → canSave: false, message starts with the standard preamble", () => {
+    const decision = decidePricingSave({
+      tiers: [25, "abc", 100],
+    });
+    expect(decision.canSave).toBe(false);
+    expect(decision.alertMessage).toMatch(/^Can't save — please fix these fields:/);
+  });
+
+  it("DS4 — single bad field → one bullet, includes the field's label", () => {
+    const decision = decidePricingSave({
+      tiers: [25, "abc"],
+    });
+    const bulletLines = decision.alertMessage.split("\n").filter((l) => l.startsWith("• "));
+    expect(bulletLines.length).toBe(1);
+    expect(bulletLines[0]).toMatch(/Tier #2/);
+    expect(bulletLines[0]).toMatch(/abc/);
+  });
+
+  it("DS5 — multiple bad fields → one bullet each, all surfaced at once", () => {
+    // Shop owner shouldn't have to fix one field, save, see the
+    // next error, fix, save, ... ad infinitum. They see the full
+    // list immediately.
+    const decision = decidePricingSave({
+      tiers: ["bad1", 50, "bad2"],
+      extras: { colorMatch: "ugly", waterbased: "$1" },
+    });
+    expect(decision.canSave).toBe(false);
+    const bulletLines = decision.alertMessage.split("\n").filter((l) => l.startsWith("• "));
+    expect(bulletLines.length).toBe(4);
+  });
+
+  it("DS6 — errors array is the raw output (for callers that want their own UI)", () => {
+    const decision = decidePricingSave({
+      tiers: ["abc"],
+    });
+    expect(decision.errors.length).toBe(1);
+    expect(decision.errors[0]).toMatch(/Tier/);
+  });
+
+  it("DS7 — alertMessage matches the exact format users see", () => {
+    // Locking this contract so a future "improvement" to copy/format
+    // gets flagged. The message is what the shop owner reads when
+    // their save is blocked — its exact wording is part of the UX.
+    const decision = decidePricingSave({ tiers: ["abc"] });
+    expect(decision.alertMessage).toBe(
+      "Can't save — please fix these fields:\n\n" +
+      "• Tier #1 must be a number (got \"abc\")."
+    );
+  });
+
+  it("DS8 — clean save passes errors: [] (callers can safely .length-check)", () => {
+    // Defensive contract: errors is always an array, never null.
+    expect(decidePricingSave({}).errors).toEqual([]);
   });
 });
