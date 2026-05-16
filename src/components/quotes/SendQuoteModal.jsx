@@ -8,6 +8,13 @@ import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThrea
 import { quotePaymentUrl } from "@/lib/publicUrls";
 import { validateQuoteForSend } from "@/lib/quotes/validation";
 import { deriveQbSendState } from "@/lib/quotes/qbSendState";
+import {
+  parseRecipients,
+  decidePublicToken,
+  shouldClearQbPaymentLink,
+  buildSendQuoteEmailRequest,
+  buildPostSendQuotePatch,
+} from "@/lib/quotes/sendOrchestration";
 import { useBillingGate } from "@/lib/billing-gate";
 
 function isBrokerQuote(q) {
@@ -183,10 +190,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     }
   }
 
-  const recipientEmails = emailsInput
-    .split(',')
-    .map((e) => e.trim())
-    .filter((e) => e.length > 0);
+  // Recipient parsing — comma-split, trim, dedupe (case-insensitive),
+  // filter malformed. Contract pinned by parseRecipients tests R1–R4.
+  const recipientEmails = parseRecipients(emailsInput);
 
   useEffect(() => {
     const shop = shopName || "Your Shop";
@@ -220,19 +226,19 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     setSending(true);
 
     try {
-      // Always link customers through InkTracker's branded approve+pay page;
-      // on that page the "Approve & Pay" button redirects to QB's hosted payment
-      // link when available (QB invoice is source of truth), falling back to Stripe.
-      // The public_token gates anonymous access — without it the quote is unreachable.
-      let publicToken = quote.public_token;
-      if (!publicToken) {
-        // Older quotes may not have a token yet (created before the security fix).
-        // Mint one now and persist it. If this fails we MUST abort — sending
-        // without a token produces a payment link the customer can't open.
+      // Public token: reuse if present, mint+persist if missing.
+      // NEVER rotate an existing token — old email links must stay
+      // valid on resends. Contract pinned by decidePublicToken
+      // tests T1–T5.
+      const tokenDecision = decidePublicToken(quote);
+      let publicToken = tokenDecision.token;
+      if (tokenDecision.needsPersist) {
+        // Persist before validating — sending without a valid token
+        // produces a payment link the customer can't open.
         const fresh = await base44.entities.Quote.update(quote.id, {
-          public_token: (crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/-/g, ""),
+          public_token: publicToken,
         });
-        publicToken = fresh?.public_token;
+        publicToken = fresh?.public_token || publicToken;
       }
 
       // Validate everything before the QB invoice / PDF / email work runs.
@@ -247,11 +253,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       }
 
       const paymentLink = quotePaymentUrl(quote.id, publicToken);
-      // If the user picked Stripe, make sure no stale qb_payment_link
-      // routes the customer to QB on /quotepayment. Authoritative for
-      // re-sends after a prior QB push AND for the within-session case
-      // where they clicked Create QB Invoice then switched to Stripe.
-      if (paymentProvider === "stripe" && (quote.qb_payment_link || qbPaymentLink)) {
+      // Clear stale qb_payment_link if user switched from QB → Stripe.
+      // Contract pinned by shouldClearQbPaymentLink tests C1–C5.
+      if (shouldClearQbPaymentLink(paymentProvider, quote.qb_payment_link, qbPaymentLink)) {
         try {
           await base44.entities.Quote.update(quote.id, { qb_payment_link: null });
         } catch (clearErr) {
@@ -289,38 +293,34 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         quote.shop_owner
       );
 
+      // sendQuoteEmail request body. Contract pinned by
+      // buildSendQuoteEmailRequest tests E1–E5.
+      const sendRequest = buildSendQuoteEmailRequest({
+        quote: { ...quote, total: totals.total },
+        recipients: recipientEmails,
+        taggedSubject,
+        body,
+        paymentLink,
+        shopName,
+        pdfBase64,
+      });
       const { data: res, error: invokeErr } = await supabase.functions.invoke("sendQuoteEmail", {
-        body: {
-          customerEmails: recipientEmails,
-          customerName: quote.customer_name,
-          quoteId: quote.quote_id,
-          quoteTotal: totals.total,
-          paymentLink,
-          approveLink: paymentLink,
-          shopName: shopName || "Your Shop",
-          subject: taggedSubject,
-          body,
-          brokerName: quote.broker_name || "",
-          brokerEmail: quote.broker_id || quote.broker_email || "",
-          pdfBase64,
-          pdfFilename: `Quote-${quote.quote_id || "draft"}.pdf`,
-          shopOwnerEmail: quote.shop_owner || "",
-        },
+        body: sendRequest,
       });
 
       if (invokeErr) throw new Error(invokeErr.message);
       if (res?.error) throw new Error(res.error);
 
-      await base44.entities.Quote.update(quote.id, {
-        status: "Sent",
-        sent_to: recipientEmails.join(", "),
-        sent_date: new Date().toISOString(),
-        subtotal: totals.sub,
-        tax: totals.tax,
-        total: totals.total,
-        tax_rate: isBrokerQuote(quote) ? 0 : quote.tax_rate,
-        customer_email: recipientEmails[0],
-      });
+      // Post-send patch: status / sent_to / sent_date / totals /
+      // customer_email + tax_rate (forced to 0 for broker quotes).
+      // Contract pinned by buildPostSendQuotePatch tests P1–P7.
+      await base44.entities.Quote.update(quote.id, buildPostSendQuotePatch({
+        currentStatus: quote.status,
+        recipients: recipientEmails,
+        totals,
+        isBrokerQuote: isBrokerQuote(quote),
+        currentTaxRate: quote.tax_rate,
+      }));
 
       // Log the sent email into the per-job message thread.
       // Best-effort: don't fail the whole flow if this errors.
