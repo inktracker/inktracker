@@ -8,12 +8,12 @@ import {
   SIZES,
   calcLinkedLinePrice,
   buildLinkedQtyMap,
-  calcQuoteTotals,
   fmtMoney,
   getDisplayName,
   BROKER_MARKUP,
   STANDARD_MARKUP
 } from './pricing';
+import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -25,8 +25,12 @@ function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
 }
 
+// Saved totals win over live recompute — the PDF is a snapshot of
+// what the customer paid for, so it must match the email + the
+// quote/order/invoice rows. Contract pinned in effectiveTotals
+// tests ET1–ET8.
 function getQuoteTotalsForPdf(q) {
-  return calcQuoteTotals(q || {}, isBrokerQuote(q) ? BROKER_MARKUP : undefined);
+  return effectiveQuoteTotals(q, isBrokerQuote(q) ? BROKER_MARKUP : undefined);
 }
 
 function getGroupPriceForPdf(li, rushRate, extras, isBroker, allLineItems) {
@@ -596,16 +600,10 @@ export async function exportQuoteToPDF(
   // Admin (non-broker) quote = always STANDARD_MARKUP
   const hasBroker = isBrokerQuote(quote);
   const pdfMarkup = hasBroker && !isClientMode ? BROKER_MARKUP : STANDARD_MARKUP;
-  const totals = calcQuoteTotals(quote, pdfMarkup);
-  // If saved totals exist and we're using standard markup, prefer them
-  // so the PDF always matches the quote detail view exactly.
-  if (!hasBroker && quote.total != null) {
-    totals.sub = Number(quote.subtotal || totals.sub);
-    totals.subtotal = totals.sub - (totals.rushTotal || 0);
-    totals.tax = Number(quote.tax ?? totals.tax);
-    totals.total = Number(quote.total);
-    totals.afterDisc = totals.total - totals.tax;
-  }
+  // Numbers-match: saved totals win regardless of broker / admin
+  // markup. The PDF is a contract artifact — it must match what
+  // the customer was sent. effectiveQuoteTotals tests ET1–ET8.
+  const totals = effectiveQuoteTotals(quote, pdfMarkup);
   const scale = 1;
   const effectiveTaxRate = getEffectiveTaxRate(quote);
 
