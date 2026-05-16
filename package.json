@@ -11,7 +11,9 @@
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage --coverage.provider=v8 --coverage.reporter=text --coverage.reporter=text-summary",
+    "test:coverage:critical": "vitest run --coverage --coverage.provider=v8 --coverage.reporter=text --coverage.include='src/lib/quotes/**' --coverage.include='src/lib/orders/**' --coverage.include='src/lib/broker/**' --coverage.include='src/components/shared/pricing.jsx' --coverage.include='supabase/functions/_shared/qbInvoice.js' --coverage.include='supabase/functions/_shared/qbWriteContracts.js' --coverage.include='supabase/functions/_shared/billingLogic.js'"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^17.0.0",
@@ -80,6 +82,7 @@
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.6",
     "autoprefixer": "^10.4.20",
     "baseline-browser-mapping": "^2.8.32",
     "eslint": "^9.19.0",
