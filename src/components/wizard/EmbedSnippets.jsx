@@ -31,16 +31,6 @@ export default function EmbedSnippets() {
   title="Request a Quote">
 </iframe>`;
 
-  const shopifySnippet = `<!-- Add to Shopify: Theme Editor → Custom Liquid section -->
-<div style="max-width:960px; margin:0 auto; padding:0 16px;">
-  <iframe
-    src="${WIZARD_URL}"
-    style="width:100%; min-height:1000px; border:none;"
-    allow="clipboard-write"
-    title="Request a Quote">
-  </iframe>
-</div>`;
-
   function copy(text, key) {
     navigator.clipboard.writeText(text).catch(() => {});
     setCopied(key);
@@ -62,24 +52,6 @@ export default function EmbedSnippets() {
           </button>
         </div>
         <div className="bg-slate-50 rounded-xl px-4 py-3 text-sm text-slate-600 font-mono border border-slate-100 break-all">{WIZARD_URL}</div>
-      </div>
-
-      {/* Shopify */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-        <div className="flex justify-between items-center mb-2">
-          <div>
-            <h3 className="font-bold text-slate-800">Shopify Embed</h3>
-            <p className="text-xs text-slate-400 mt-0.5">In Shopify: Pages → Add page → Insert Custom HTML → paste this</p>
-          </div>
-          <button onClick={() => copy(shopifySnippet, "shopify")}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${copied==="shopify" ? "border-emerald-300 text-emerald-600 bg-emerald-50" : "border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"}`}>
-            {copied === "shopify" ? "✓ Copied!" : "Copy Code"}
-          </button>
-        </div>
-        <pre className="bg-slate-50 rounded-xl p-4 text-xs text-slate-500 overflow-x-auto whitespace-pre border border-slate-100">{shopifySnippet}</pre>
-        <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-700">
-          <strong>Shopify tip:</strong> In your Theme Editor, add a <strong>Custom Liquid</strong> section to your quote page and paste this code. The rich text editor may strip iframes — Custom Liquid is the most reliable method.
-        </div>
       </div>
 
       {/* Generic iframe */}

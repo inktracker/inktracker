@@ -90,7 +90,7 @@ export default function Wizard() {
             <div>
               <div className="font-bold text-slate-800">Embed on your website</div>
               <div className="text-xs text-slate-400 mt-0.5">
-                Paste a snippet on Shopify, Wix, Squarespace, or anywhere — customers submit quote requests directly to your Quotes page.
+                Paste a snippet on Wix, Squarespace, or any website — customers submit quote requests directly to your Quotes page.
               </div>
             </div>
           </div>

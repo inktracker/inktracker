@@ -25,7 +25,7 @@
 //     founding_rate_forfeited=true if the canceled sub was on the
 //     founding rate. This is permanent.
 
-const ALL_FEATURES = ["quotes", "orders", "production", "invoices", "customers", "pdf", "qb_sync", "employees", "ss_restock", "wizard", "shopify", "mockups", "broker", "reports"];
+const ALL_FEATURES = ["quotes", "orders", "production", "invoices", "customers", "pdf", "qb_sync", "employees", "ss_restock", "wizard", "mockups", "broker", "reports"];
 
 const TIER_FEATURES = {
   trial: ALL_FEATURES,
@@ -115,7 +115,6 @@ const SHARED_FEATURES = [
   "Unlimited employees",
   "S&S & AS Colour restock",
   "Embeddable quote wizard",
-  "Shopify inventory sync",
   "Artwork proofs",
   "Broker portal",
   "Full performance reports",
