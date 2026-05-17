@@ -458,7 +458,7 @@ function PublicLandingPage() {
                   above the price line. Source the count from the public
                   view / edge function described in src/lib/billing.js. */}
               <p className="text-xs text-slate-500">
-                Founding rate $50/mo for the first 50 shops · Cancel anytime
+                Founding rate $50/mo for the first 10 shops · Cancel anytime
               </p>
             </div>
           </div>
@@ -594,14 +594,14 @@ function PublicLandingPage() {
             <div className="bg-gradient-to-b from-indigo-600 to-indigo-700 border-2 border-indigo-400 rounded-2xl p-8 shadow-2xl shadow-indigo-900/40">
               <div className="text-center mb-6">
                 <p className="text-xs font-semibold text-emerald-300 uppercase tracking-widest mb-3">
-                  Founding rate — First 50 shops
+                  Founding rate — First 10 shops
                 </p>
                 <div className="mb-3">
                   <span className="text-5xl font-extrabold text-white">$50</span>
                   <span className="text-base text-indigo-200">/mo</span>
                 </div>
                 <p className="text-sm text-indigo-100/90 mb-3 max-w-md mx-auto leading-relaxed">
-                  $50/month locked for the life of your subscription — first 50 shops only. After that, $99/month or $999/year (save $189).
+                  $50/month locked for the life of your subscription — first 10 shops only. After that, $99/month or $999/year (save $189).
                 </p>
                 <p className="text-sm text-indigo-200">14-day free trial · No credit card required</p>
               </div>
@@ -723,8 +723,8 @@ function PublicLandingPage() {
                   a: "InkTracker is built and maintained by Biota Mfg, a 13-year-old screen print business based in Reno, Nevada. The shop dogfoods the software daily — if it stops being maintained, our own production stops. The financial structure also funds land conservation, which gives the project a long-horizon commitment the team takes seriously.",
                 },
                 {
-                  q: "What happens after the first 50 founding shops?",
-                  a: "$50/month is the founding rate, capped at the first 50 shops. After those 50 fill, new signups pay $99/month or $999/year (save $189) — still under what comparable shop-management tools charge. Founding members keep $50/month for the life of their subscription.",
+                  q: "What happens after the first 10 founding shops?",
+                  a: "$50/month is the founding rate, capped at the first 10 shops. After those 10 fill, new signups pay $99/month or $999/year (save $189) — still under what comparable shop-management tools charge. Founding members keep $50/month for the life of their subscription.",
                 },
                 {
                   q: "How does the conservation contribution actually work?",

@@ -5,9 +5,10 @@
 // supabase/migrations/20260520_founding_member_program.sql):
 //
 //   founding ($50/mo) — locked for the life of the subscription, for
-//     the first 50 shops to claim it at Stripe checkout. Cap is
+//     the first 10 shops to claim it at Stripe checkout. Cap is
 //     enforced server-side; no public counter is exposed (intentional).
-//   standard ($99/mo) — for signups after the 50 slots fill, AND
+//     Cap was tightened 50 → 10 on 2026-05-16.
+//   standard ($99/mo) — for signups after the 10 slots fill, AND
 //     for any prior founding member who canceled (the forfeit is
 //     permanent — re-signups always pay standard).
 //   annual ($999/yr) — flat parallel SKU. Doesn't consume a founding
@@ -102,7 +103,7 @@ export function isReadOnly(tier, status) {
 // PLANS now represent BILLING CADENCE (monthly vs annual), not feature
 // tiers — every cadence gets every feature. The displayed price on the
 // monthly plan is the standard $99; the founding $50 rate is auto-
-// applied at checkout for the first 50 shops via claim_founding_slot.
+// applied at checkout for the first 10 shops via claim_founding_slot.
 // Annual is a flat $999/yr — no founding discount, no slot consumed.
 //
 // `billing` is the param the checkout endpoint expects. The tier the
@@ -128,7 +129,7 @@ export const PLANS = [
     price: 99,
     period: "/mo",
     foundingPrice: 50,
-    foundingNote: "$50/mo locked for life — first 50 shops",
+    foundingNote: "$50/mo locked for life — first 10 shops",
     features: SHARED_FEATURES,
   },
   {

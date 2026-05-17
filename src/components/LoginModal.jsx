@@ -224,7 +224,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
 
             {mode === "signup" && (
               <p className="text-xs text-slate-500 leading-relaxed mt-3">
-                Founding member rate ($99/month) is tied to a continuous subscription. If you cancel, the founding rate is forfeited — re-signup pricing is the standard $149/month.
+                Founding member rate ($50/month) is tied to a continuous subscription. If you cancel, the founding rate is forfeited — re-signup pricing is the standard $99/month (or $999/year).
               </p>
             )}
           </form>

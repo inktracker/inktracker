@@ -1,17 +1,19 @@
 // Pure logic for interpreting claim_founding_slot RPC responses
 // and deciding which Stripe price tier to use.
 //
-// As of 2026-05-14: founding rate is $50/mo, standard $99/mo. Old
-// comments referenced $99/$149 — that was the pre-launch pricing.
-// Annual ($999/yr) is a parallel SKU handled separately in the edge
+// As of 2026-05-16: founding rate $50/mo, standard $99/mo or $999/yr.
+// Annual SKU is a parallel price handled separately in the edge
 // function — does NOT consume a founding slot.
 //
-// The RPC (in 20260520_founding_member_program.sql) returns a jsonb
-// status — one of:
+// Cap was tightened 50 → 10 on 2026-05-16 (smaller, hand-curated
+// founding cohort). SQL function updated in
+// 20260603_founding_cap_to_10.sql; this constant must match.
+//
+// The RPC returns a jsonb status — one of:
 //
 //   claimed         — new claim, $50 founding
 //   already_member  — re-call by same profile (idempotent), $50
-//   cap_reached     — 50 slots full, $99 standard
+//   cap_reached     — 10 slots full, $99 standard
 //   forfeited       — previously canceled a founding sub, $99
 //   no_profile      — caller bug
 //   bad_input       — caller bug
@@ -20,7 +22,7 @@
 // ID. This helper is the strict contract so the edge function can't
 // drift from the SQL function's behavior.
 
-export const FOUNDING_MEMBER_CAP = 50;
+export const FOUNDING_MEMBER_CAP = 10;
 
 export const PRICE_TIER = Object.freeze({
   FOUNDING: "founding", // $50/mo, slot-limited
