@@ -1454,6 +1454,16 @@ function SupplierKeysSection({ user }) {
         ) : (
           <p className="text-xs text-slate-400">No AS Colour credentials configured. Enter your account details to connect.</p>
         )}
+
+        <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-[11px] text-amber-800 leading-relaxed">
+          <strong className="block mb-1 text-amber-900">Want to place orders too?</strong>
+          The API key above lets you browse the catalog and check live inventory immediately.
+          To actually <strong>submit orders</strong> through InkTracker, AS Colour requires approved <strong>credit terms</strong> (their only API payment option).
+          <br /><br />
+          <strong>How to apply:</strong> email <a href="mailto:support@ascolour.com" className="font-mono underline">support@ascolour.com</a> requesting the credit application. They'll send a PDF; complete and return it. Approval takes <strong>2-4 weeks</strong> (they contact your credit references, then submit to their CFO — speeding up the references step yourself can help).
+          <br /><br />
+          Without credit terms, orders submit but land in <strong>"awaiting payment"</strong> in AS Colour's system until you arrange payment directly with them.
+        </div>
       </div>
 
       {/* SanMar — not currently supported */}
