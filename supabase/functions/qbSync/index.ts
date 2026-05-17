@@ -894,6 +894,37 @@ Deno.serve(async (req) => {
       return Response.json(result, { headers: CORS });
     }
 
+    if (action === "disconnect") {
+      // Clears QB tokens from BOTH profile_secrets (the new home) AND
+      // profiles (legacy fallback). Before this existed, the client did
+      // a direct UPDATE on profiles only — which left profile_secrets
+      // untouched. Since loadProfileWithSecrets prefers profile_secrets,
+      // the "disconnect" wasn't actually disconnecting anything; the next
+      // checkConnection still saw valid tokens and reported connected.
+      // No subscription gate — letting paid-status edge cases prevent
+      // disconnect would lock people out of their own tokens.
+      const adminClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const profile = await loadProfileWithSecrets(adminClient, { auth_id: user.id });
+      if (!profile) {
+        return Response.json({ error: "Profile not found" }, { status: 404, headers: CORS });
+      }
+      await updateProfileSecrets(
+        adminClient,
+        profile.id,
+        {
+          qb_access_token: null,
+          qb_refresh_token: null,
+          qb_realm_id: null,
+          qb_token_expires_at: null,
+        },
+        { dualWrite: true },
+      );
+      return Response.json({ ok: true }, { headers: CORS });
+    }
+
     // Subscription check — QB write operations cost money
     {
       const { data: subProfile } = await supabase.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();

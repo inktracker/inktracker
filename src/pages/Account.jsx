@@ -460,10 +460,20 @@ export default function Account() {
     if (!window.confirm("Disconnect QuickBooks? Existing synced invoices won't be affected.")) return;
     setQbDisconnecting(true);
     try {
-      await supabase
-        .from("profiles")
-        .update({ qb_access_token: null, qb_refresh_token: null, qb_realm_id: null, qb_token_expires_at: null })
-        .eq("id", user.id);
+      // Route through qbSync `disconnect` action — clears tokens from
+      // BOTH profile_secrets (new) and profiles (legacy fallback).
+      // Direct client-side UPDATE on profiles alone left the secrets
+      // table intact, so the next checkConnection still saw valid
+      // tokens and reported connected — disconnect appeared to do
+      // nothing on the next page load.
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "disconnect", accessToken: session?.access_token }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.error) throw new Error(data.error || `Disconnect failed (${res.status})`);
       setQbConnected(false);
       setQbRealmId(null);
       setQbExpiresAt(null);
