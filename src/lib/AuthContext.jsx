@@ -3,6 +3,7 @@ import { supabase } from "@/api/supabaseClient";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import { loadShopTimezone } from "@/lib/shopTimezone";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
+import { setSentryUser, clearSentryUser } from "@/lib/sentry";
 
 const AuthContext = createContext();
 
@@ -62,6 +63,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setIsAuthenticated(false);
     setAuthError({ type: "auth_required", message: "Authentication required" });
+    clearSentryUser();
   }, []);
 
   // Named so it can be called with or without showing the loading spinner.
@@ -81,6 +83,10 @@ export const AuthProvider = ({ children }) => {
         setUser((prev) => (userStateChanged(prev, fullUser) ? fullUser : prev));
         setIsAuthenticated(true);
         setAuthError(null);
+        // Tag future Sentry events with this user's opaque ID. Never
+        // sends email / name — just the auth_id so we can correlate
+        // errors back to a profile when triaging.
+        setSentryUser(fullUser.auth_id || fullUser.id);
       }
     } catch (err) {
       console.error("Auth check failed:", err);
