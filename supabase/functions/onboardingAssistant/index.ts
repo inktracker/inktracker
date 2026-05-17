@@ -18,6 +18,11 @@ import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const MODEL = Deno.env.get("ONBOARDING_ASSISTANT_MODEL") ?? "claude-haiku-4-5-20251001";
 
+// Per-user daily cap. 50 is generous (no human asks 50 onboarding
+// questions in a day) but bounded — worst-case ~$0.20/day per
+// abusive account. Overridable via env if Joe needs to tune.
+const DAILY_LIMIT = Number(Deno.env.get("ONBOARDING_ASSISTANT_DAILY_LIMIT") ?? "50");
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -144,6 +149,25 @@ Deno.serve(async (req) => {
   // Brokers + employees shouldn't see the onboarding assistant
   if (profile.role === "broker" || profile.role === "employee") {
     return json({ error: "Not available for this role." }, 403);
+  }
+
+  // ── 2.5 Per-user daily rate limit ─────────────────────────────────────────
+  // Atomic increment via SECURITY DEFINER function (see migration
+  // 20260602_assistant_usage.sql). Returns the new count for today.
+  // If we're over the limit, 429. The rejected call counts against
+  // the user too — fine, keeps the logic single-statement.
+  const { data: newCount, error: rateErr } = await admin
+    .rpc("increment_assistant_usage", { p_user_id: user.id });
+
+  if (rateErr) {
+    // If the rate-limit infra is unhealthy, fail open rather than
+    // breaking the assistant for everyone. Log so we notice.
+    console.error("assistant rate-limit increment failed:", rateErr);
+  } else if (typeof newCount === "number" && newCount > DAILY_LIMIT) {
+    return json(
+      { error: `You've reached today's question limit (${DAILY_LIMIT}/day). Try again tomorrow.` },
+      429,
+    );
   }
 
   // ── 3. Read body ──────────────────────────────────────────────────────────
