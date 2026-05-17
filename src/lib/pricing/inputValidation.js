@@ -122,11 +122,22 @@ export function validateTierQty(input, label) {
  *   - addlPrint[colors][tier]: each is money ≥ 0
  *   - garmentMarkup[i].above + .markup
  *   - extras[name]: each is money ≥ 0
+ *   - rushRate: 0..1 (stored as fraction, e.g. 0.25 = 25%)
+ *   - brokerMarkupShare: 0..1 (stored as fraction)
  *   - embroidery.qtyTiers: each is a positive integer
  *   - embroidery.pricing[stitchTier][qtyTier]: each is money ≥ 0
+ *   - embroidery.digitizingFee: money ≥ 0
  *
  * Defaults are skipped — if a field isn't present in the config, we
  * don't error (the live code falls back to the hardcoded defaults).
+ *
+ * KNOWN GAP: the Account UI handlers for rushRate / brokerMarkupShare
+ * / digitizingFee silently coerce garbage to 0 at input time (via
+ * `parseFloat(v) || 0`). Since 0 is also a legitimate value, this
+ * walker cannot distinguish "user set 0" from "user typed garbage."
+ * The validator here only catches out-of-range values that survive
+ * the coercion (e.g. negative, > max). Full coverage requires
+ * input-time validation with per-field error state — separate work.
  */
 export function validatePricingConfig(config) {
   const errors = [];
@@ -174,6 +185,18 @@ export function validatePricingConfig(config) {
     }
   }
 
+  // rushRate — stored as fraction (0.25 = 25%). Must land in [0, 1].
+  if (config.rushRate !== undefined && config.rushRate !== null) {
+    const r = parsePricingNumber(config.rushRate, { label: "Rush rate", min: 0, max: 1 });
+    if (!r.ok) errors.push(r.error);
+  }
+
+  // brokerMarkupShare — fraction in [0, 1].
+  if (config.brokerMarkupShare !== undefined && config.brokerMarkupShare !== null) {
+    const r = parsePricingNumber(config.brokerMarkupShare, { label: "Broker markup share", min: 0, max: 1 });
+    if (!r.ok) errors.push(r.error);
+  }
+
   // embroidery
   const emb = config.embroidery;
   if (emb && typeof emb === "object") {
@@ -192,6 +215,10 @@ export function validatePricingConfig(config) {
           if (!r.ok) errors.push(r.error);
         }
       }
+    }
+    if (emb.digitizingFee !== undefined && emb.digitizingFee !== null) {
+      const r = validateMoney(emb.digitizingFee, "Embroidery digitizing fee");
+      if (!r.ok) errors.push(r.error);
     }
   }
 

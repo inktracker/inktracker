@@ -111,7 +111,20 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
               value={hasOverride ? pppOverride : ""}
               onChange={(e) => {
                 const v = e.target.value;
-                onChange({ ...li, clientPpp: v === "" ? null : parseFloat(v) });
+                if (v === "") {
+                  onChange({ ...li, clientPpp: null });
+                  return;
+                }
+                // parseFloat silently returns NaN for garbage input ("abc",
+                // "5e10" → 50 billion, etc.). Use a strict numeric check so
+                // the override is either a real positive number or null
+                // (live calc takes over). Avoids storing NaN on the line.
+                const n = Number(v);
+                if (!Number.isFinite(n) || n < 0) {
+                  onChange({ ...li, clientPpp: null });
+                  return;
+                }
+                onChange({ ...li, clientPpp: n });
               }}
               placeholder={(qty > 0 ? suggestedPpp : 0).toFixed(2)}
               className="w-24 text-xs bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
