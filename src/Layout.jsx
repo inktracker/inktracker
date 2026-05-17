@@ -6,6 +6,7 @@ import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
+import OnboardingAssistant from "./components/onboarding/OnboardingAssistant";
 import { canAccess, getEffectiveTier } from "@/lib/billing";
 import { resolveRoleRedirect } from "@/lib/broker/roleRedirect";
 
@@ -304,6 +305,13 @@ export default function Layout({ children, currentPageName }) {
           {children}
         </div>
       </main>
+
+      {/* Onboarding assistant — shop/admin/manager only.
+          Brokers + employees are gated server-side too (403) but
+          hiding the UI keeps them from seeing a launcher that errors. */}
+      {(user?.role === "shop" || user?.role === "admin" || user?.role === "manager") && (
+        <OnboardingAssistant user={user} />
+      )}
 
       {/* Upgrade modal */}
       {showUpgrade && (
