@@ -143,13 +143,15 @@ export default function Account() {
         // Check QB connection
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "checkConnection", accessToken: session?.access_token }),
+          // base44.functions.invoke wraps supabase.functions.invoke, which
+          // auto-includes the Supabase Authorization header that the
+          // Functions gateway requires. Raw fetch without that header gets
+          // rejected with UNAUTHORIZED_NO_AUTH_HEADER.
+          const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+            action: "checkConnection",
+            accessToken: session?.access_token,
           });
-          if (res.ok) {
-            const data = await res.json();
+          if (!invErr && data) {
             setQbConnected(data.connected);
             setQbRealmId(data.realmId);
             setQbExpiresAt(data.expiresAt);
@@ -466,14 +468,17 @@ export default function Account() {
       // table intact, so the next checkConnection still saw valid
       // tokens and reported connected — disconnect appeared to do
       // nothing on the next page load.
+      //
+      // Use base44.functions.invoke (not raw fetch) so the Supabase
+      // Authorization header is included — gateway requires it even
+      // when verify_jwt=false.
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "disconnect", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "disconnect",
+        accessToken: session?.access_token,
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data.error) throw new Error(data.error || `Disconnect failed (${res.status})`);
+      if (invErr) throw new Error(invErr.message || "Disconnect failed");
+      if (data?.error) throw new Error(data.error);
       setQbConnected(false);
       setQbRealmId(null);
       setQbExpiresAt(null);
@@ -490,13 +495,12 @@ export default function Account() {
     setQbMigrateResult(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "pullCustomers", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "pullCustomers",
+        accessToken: session?.access_token,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Migration failed");
+      if (invErr) throw new Error(invErr.message || "Migration failed");
+      if (data?.error) throw new Error(data.error);
       setQbMigrateResult(data);
     } catch (err) {
       console.error("QB customer migration failed:", err);
@@ -511,13 +515,12 @@ export default function Account() {
     setQbMigrateInvResult(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "pullInvoices", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "pullInvoices",
+        accessToken: session?.access_token,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Migration failed");
+      if (invErr) throw new Error(invErr.message || "Migration failed");
+      if (data?.error) throw new Error(data.error);
       setQbMigrateInvResult(data);
     } catch (err) {
       console.error("QB invoice migration failed:", err);
