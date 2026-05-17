@@ -2068,7 +2068,12 @@ function PricingConfigSection({ user }) {
           className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
           {saving ? "Saving..." : saved ? "Saved" : "Save Pricing"}
         </button>
-        <button onClick={() => setConfig({ ...DEFAULTS })}
+        <button
+          onClick={() => {
+            if (window.confirm("Reset all pricing to defaults? This wipes your custom tiers, print rates, markups, extras, and embroidery config. You'll still need to click Save to persist the reset.")) {
+              setConfig({ ...DEFAULTS });
+            }
+          }}
           className="text-xs text-slate-500 hover:text-slate-700 font-semibold">
           Reset to Defaults
         </button>
