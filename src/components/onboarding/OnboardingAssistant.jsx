@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { base44 } from "@/api/supabaseClient";
+import { displayFirstName } from "@/lib/displayName";
 import { MessageCircle, X, Send, Loader2, Sparkles } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "inktracker-onboarding-assistant:";
@@ -175,7 +176,10 @@ export default function OnboardingAssistant({ user }) {
             {messages.length === 0 && (
               <div className="space-y-3">
                 <div className="text-sm text-slate-600 leading-relaxed">
-                  Hi{user?.full_name ? `, ${user.full_name.split(" ")[0]}` : ""} — I'm here to help you get InkTracker set up. Try one of these to start:
+                  {(() => {
+                    const name = displayFirstName(user);
+                    return `Hi${name ? `, ${name}` : ""} — I'm here to help you get InkTracker set up. Try one of these to start:`;
+                  })()}
                 </div>
                 <div className="space-y-1.5">
                   {SUGGESTED_QUESTIONS.map((q) => (
