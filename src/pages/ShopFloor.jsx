@@ -370,7 +370,7 @@ export default function ShopFloor() {
           <Package className="w-7 h-7" />
           <div>
             <h1 className="text-lg font-bold leading-tight">Shop Floor</h1>
-            <p className="text-indigo-200 text-xs">{displayFullName(user)}</p>
+            <p className="text-indigo-200 text-xs">{user?.shop_name || displayFullName(user)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
