@@ -5,6 +5,7 @@ import { uploadFile } from "@/lib/uploadFile";
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2 } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
+import { loadShopPricingConfig } from "@/components/shared/pricing";
 import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
@@ -1550,6 +1551,11 @@ function PricingConfigSection({ user }) {
       if (shops?.[0]) {
         await base44.entities.Shop.update(shops[0].id, { pricing_config: config });
       }
+      // Refresh the engine's module-level _pc so the change is live
+      // without a full reload. Without this, the shop owner saves a
+      // toggle, hops to Quotes, and sees stale pricing math until they
+      // hard-refresh.
+      loadShopPricingConfig(config);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -1839,6 +1845,41 @@ function PricingConfigSection({ user }) {
         </div>
       </div>
 
+      {/* First-print ordering toggle */}
+      <div>
+        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">First-Print Ordering</h4>
+        <p className="text-[10px] text-slate-400 mb-2">
+          When a job has multiple imprint locations with different color counts, which one absorbs the "first print" rate (where you've baked in setup)?
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            { value: "fewest", label: "Fewest colors first", hint: "Simpler print carries setup. Lower bill on mixed jobs." },
+            { value: "most", label: "Most colors first", hint: "Complex print carries setup. Matches typical industry convention." },
+          ].map(opt => {
+            const current = config.firstPrintOrdering || "fewest";
+            const selected = current === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setConfig(prev => ({ ...prev, firstPrintOrdering: opt.value }))}
+                className={`text-left border rounded-lg p-3 transition ${
+                  selected
+                    ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300"
+                    : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <div className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <span className={`inline-block w-3 h-3 rounded-full border ${selected ? "bg-indigo-500 border-indigo-500" : "border-slate-300"}`} />
+                  {opt.label}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1 ml-4">{opt.hint}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {renderPrintTable("firstPrint", "First Print Location (per piece)")}
       {renderPrintTable("addlPrint", "Additional Print Locations (per piece)")}
 
@@ -2027,7 +2068,12 @@ function PricingConfigSection({ user }) {
           className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
           {saving ? "Saving..." : saved ? "Saved" : "Save Pricing"}
         </button>
-        <button onClick={() => setConfig({ ...DEFAULTS })}
+        <button
+          onClick={() => {
+            if (window.confirm("Reset all pricing to defaults? This wipes your custom tiers, print rates, markups, extras, and embroidery config. You'll still need to click Save to persist the reset.")) {
+              setConfig({ ...DEFAULTS });
+            }
+          }}
           className="text-xs text-slate-500 hover:text-slate-700 font-semibold">
           Reset to Defaults
         </button>

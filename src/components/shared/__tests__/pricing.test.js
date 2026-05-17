@@ -336,6 +336,72 @@ describe("calcLinkedLinePrice", () => {
       expect(r.tier).toBe(100);
       expect(r.printCost).toBeCloseTo(FIRST_PRINT[1][100] * 100, 2);
     });
+
+    describe("firstPrintOrdering toggle", () => {
+      // Mixed-color job used by both ordering tests: 1-color front,
+      // 4-color back, 45 pcs (tier 25). The two orderings reach for
+      // different cells in the FIRST_PRINT / ADDL_PRINT tables.
+      const makeMixed = () => makeLineItem({
+        imprints: [
+          makeImprint({ id: "imp-1", colors: 1, location: "Front" }),
+          makeImprint({ id: "imp-4", colors: 4, location: "Back" }),
+        ],
+      });
+
+      it("default (no config) treats fewest-color imprint as first", () => {
+        loadShopPricingConfig(null);
+        const r = calcLinkedLinePrice(makeMixed(), 0, {}, undefined, {});
+        // Sorted ascending: [1c, 4c] → 1c uses FIRST_PRINT, 4c uses ADDL_PRINT
+        const expected = (FIRST_PRINT[1][25] + ADDL_PRINT[4][25]) * 45;
+        expect(r.printCost).toBeCloseTo(expected, 2);
+        expect(r.printBreakdown[0].isFirst).toBe(true);
+        expect(r.printBreakdown[0].colors).toBe(1);
+      });
+
+      it("explicit 'fewest' matches the default", () => {
+        loadShopPricingConfig({ firstPrintOrdering: "fewest" });
+        const r = calcLinkedLinePrice(makeMixed(), 0, {}, undefined, {});
+        expect(r.printBreakdown[0].colors).toBe(1);
+        expect(r.printBreakdown[0].isFirst).toBe(true);
+      });
+
+      it("'most' treats highest-color imprint as first (industry convention)", () => {
+        loadShopPricingConfig({ firstPrintOrdering: "most" });
+        const r = calcLinkedLinePrice(makeMixed(), 0, {}, undefined, {});
+        // Sorted descending: [4c, 1c] → 4c uses FIRST_PRINT, 1c uses ADDL_PRINT
+        const expected = (FIRST_PRINT[4][25] + ADDL_PRINT[1][25]) * 45;
+        expect(r.printCost).toBeCloseTo(expected, 2);
+        expect(r.printBreakdown[0].isFirst).toBe(true);
+        expect(r.printBreakdown[0].colors).toBe(4);
+      });
+
+      it("'most' produces a different total than 'fewest' for mixed jobs", () => {
+        // Sanity guard: if FIRST_PRINT/ADDL_PRINT defaults ever drift
+        // to a structure where ordering doesn't matter, these tests
+        // become useless. Pin that the toggle actually changes things.
+        loadShopPricingConfig({ firstPrintOrdering: "fewest" });
+        const rFewest = calcLinkedLinePrice(makeMixed(), 0, {}, undefined, {});
+        loadShopPricingConfig({ firstPrintOrdering: "most" });
+        const rMost = calcLinkedLinePrice(makeMixed(), 0, {}, undefined, {});
+        expect(rMost.printCost).not.toBeCloseTo(rFewest.printCost, 2);
+      });
+
+      it("uniform-color jobs are immune to the toggle (no difference)", () => {
+        // Two 2-color imprints: both orderings produce the same bill
+        // since both cells are at color count 2 in the same tables.
+        const uniform = makeLineItem({
+          imprints: [
+            makeImprint({ id: "a", colors: 2, location: "Front" }),
+            makeImprint({ id: "b", colors: 2, location: "Back" }),
+          ],
+        });
+        loadShopPricingConfig({ firstPrintOrdering: "fewest" });
+        const rA = calcLinkedLinePrice(uniform, 0, {}, undefined, {});
+        loadShopPricingConfig({ firstPrintOrdering: "most" });
+        const rB = calcLinkedLinePrice(uniform, 0, {}, undefined, {});
+        expect(rA.printCost).toBeCloseTo(rB.printCost, 2);
+      });
+    });
   });
 
   describe("garment cost and markup", () => {
@@ -888,6 +954,233 @@ describe("Quote Stamping", () => {
       expect(admin.tax).toBeGreaterThan(0);
       expect(broker.tax).toBe(0);
       expect(admin.total).toBeGreaterThan(broker.total);
+    });
+  });
+});
+
+// ── Group 6: Edge Cases ────────────────────────────────────────────────────
+// Scenarios that are unusual but possible in production. Each test below was
+// added as part of pre-launch hardening — failures here mean a real customer
+// could hit the edge case and get a wrong number / crash / surprise.
+
+describe("Edge Cases", () => {
+  beforeEach(() => {
+    loadShopPricingConfig(null);
+  });
+
+  describe("empty quote", () => {
+    it("calcQuoteTotalsWithLinking returns zeros for empty line_items", () => {
+      const t = calcQuoteTotalsWithLinking({ line_items: [] });
+      expect(t.subtotal).toBe(0);
+      expect(t.sub).toBe(0);
+      expect(t.tax).toBe(0);
+      expect(t.total).toBe(0);
+      expect(t.deposit).toBe(0);
+    });
+
+    it("calcQuoteTotalsWithLinking is defensive against null quote", () => {
+      const t = calcQuoteTotalsWithLinking(null);
+      expect(t.total).toBe(0);
+    });
+
+    it("calcQuoteTotalsWithLinking is defensive against undefined quote", () => {
+      const t = calcQuoteTotalsWithLinking(undefined);
+      expect(t.total).toBe(0);
+    });
+
+    it("discount on empty quote does not produce negative total", () => {
+      const t = calcQuoteTotalsWithLinking({
+        line_items: [],
+        discount: 50,
+        discount_type: "flat",
+      });
+      expect(t.total).toBe(0);
+    });
+  });
+
+  describe("single-piece order", () => {
+    it("1-piece order uses lowest tier (25)", () => {
+      const li = makeLineItem({ sizes: { M: "1" } });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      expect(r.qty).toBe(1);
+      expect(r.tier).toBe(25);
+    });
+
+    it("1-piece total still positive", () => {
+      const q = makeQuote({ line_items: [makeLineItem({ sizes: { M: "1" } })] });
+      const t = calcQuoteTotalsWithLinking(q);
+      expect(t.total).toBeGreaterThan(0);
+    });
+  });
+
+  describe("zero garment cost", () => {
+    it("garmentCost=0 still produces a positive lineTotal from print cost", () => {
+      // Customer-supplied garments: cost is 0 but printing still has a price.
+      const li = makeLineItem({ garmentCost: "0" });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      expect(r.gCost).toBe(0);
+      expect(r.printCost).toBeGreaterThan(0);
+      expect(r.lineTotal).toBeGreaterThan(0);
+    });
+
+    it("empty-string garmentCost behaves like 0", () => {
+      const li = makeLineItem({ garmentCost: "" });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      expect(r.gCost).toBe(0);
+    });
+  });
+
+  describe("brokerMarkupShare boundaries", () => {
+    it("share=0 → broker markup is 1.0 (broker pays raw cost)", () => {
+      expect(getBrokerMarkup(5, 0)).toBeCloseTo(1.0, 2);
+    });
+
+    it("share=1 → broker markup equals admin markup", () => {
+      const adminM = getAdminMarkup(5);
+      const brokerM = getBrokerMarkup(5, 1);
+      expect(brokerM).toBeCloseTo(adminM, 2);
+    });
+
+    it("share from config overrides default", () => {
+      loadShopPricingConfig({ brokerMarkupShare: 0.0 });
+      expect(getBrokerMarkupShare()).toBe(0.0);
+      loadShopPricingConfig({ brokerMarkupShare: 1.0 });
+      expect(getBrokerMarkupShare()).toBe(1.0);
+      loadShopPricingConfig(null);
+    });
+  });
+
+  describe("color count clamping", () => {
+    it("colors=9 (above max) clamps to 8 — does not crash or return 0 rate", () => {
+      const li = makeLineItem({
+        imprints: [makeImprint({ colors: 9 })],
+      });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      expect(r.printCost).toBeGreaterThan(0);
+      // 9-color clamped to 8 → uses FIRST_PRINT[8][25]
+      expect(r.printCost).toBeCloseTo(FIRST_PRINT[8][25] * 45, 2);
+    });
+
+    it("very high color count (50) still clamps to 8", () => {
+      const li = makeLineItem({
+        imprints: [makeImprint({ colors: 50 })],
+      });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      expect(r.printCost).toBeCloseTo(FIRST_PRINT[8][25] * 45, 2);
+    });
+  });
+
+  describe("special characters in line item data", () => {
+    it("apostrophe in brand survives QB description", () => {
+      const li = makeLineItem({ brand: "O'Brien's", style: "1717", garmentColor: "Black" });
+      const q = makeQuote({ line_items: [li] });
+      const payload = buildQBInvoicePayload(q);
+      expect(payload.lines[0].description).toContain("O'Brien's");
+    });
+
+    it("ampersand in style survives QB description", () => {
+      const li = makeLineItem({ brand: "Bella+Canvas", style: "Heavy & Soft", garmentColor: "Black" });
+      const q = makeQuote({ line_items: [li] });
+      const payload = buildQBInvoicePayload(q);
+      expect(payload.lines[0].description).toContain("Heavy & Soft");
+    });
+
+    it("multi-byte (unicode) characters survive QB description", () => {
+      const li = makeLineItem({ brand: "Café Décor", style: "1717", garmentColor: "Naïve Beige" });
+      const q = makeQuote({ line_items: [li] });
+      const payload = buildQBInvoicePayload(q);
+      expect(payload.lines[0].description).toContain("Café Décor");
+      expect(payload.lines[0].description).toContain("Naïve Beige");
+    });
+  });
+
+  describe("mixed techniques on same line item", () => {
+    // The pricing engine uses the first (lowest-color) imprint's technique to
+    // decide whether the whole line is screen-print or embroidery. If a shop
+    // accidentally mixes them on one line, the math should still produce a
+    // number — not crash or return null.
+    it("screen print + embroidery imprints on one line item still prices", () => {
+      const li = makeLineItem({
+        imprints: [
+          makeImprint({ id: "s1", technique: "Screen Print", colors: 1, location: "Front" }),
+          makeImprint({ id: "e1", technique: "Embroidery", colors: 2, location: "Left Chest" }),
+        ],
+      });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      expect(r.printCost).toBeGreaterThan(0);
+      expect(r.lineTotal).toBeGreaterThan(0);
+    });
+  });
+
+  describe("many line items in one quote", () => {
+    it("5 line items sum correctly", () => {
+      const items = Array.from({ length: 5 }, (_, i) =>
+        makeLineItem({ id: `li-${i}`, sizes: { M: "10" } })
+      );
+      const q = makeQuote({ line_items: items });
+      const t = calcQuoteTotalsWithLinking(q);
+      // Each item: 10 pcs of identical config — totals should sum cleanly
+      const singleTotal = calcLinkedLinePrice(items[0], 0, {}, undefined, {}).lineTotal;
+      expect(t.subtotal).toBeCloseTo(singleTotal * 5, 1);
+    });
+
+    it("10 line items don't crash and produce expected total", () => {
+      const items = Array.from({ length: 10 }, (_, i) =>
+        makeLineItem({ id: `li-${i}`, sizes: { M: "5" } })
+      );
+      const q = makeQuote({ line_items: items });
+      const t = calcQuoteTotalsWithLinking(q);
+      expect(t.total).toBeGreaterThan(0);
+      expect(Number.isFinite(t.total)).toBe(true);
+    });
+  });
+
+  describe("negative quantity", () => {
+    // A negative size value shouldn't be possible from the UI, but defensively:
+    // parseInt("-5") = -5, and getQty sums them. If total qty drops below 1,
+    // calcLinkedLinePrice returns null. Test the boundary.
+    it("negative size results in negative qty, but calcLinkedLinePrice returns null when total < 1", () => {
+      const li = makeLineItem({ sizes: { S: "-10", M: "5" } });
+      const totalQty = getQty(li); // -10 + 5 = -5
+      expect(totalQty).toBe(-5);
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).toBeNull();
+    });
+
+    it("net-positive qty (even with one negative size) still prices", () => {
+      const li = makeLineItem({ sizes: { S: "-5", M: "50" } });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      expect(r.qty).toBe(45);
+    });
+  });
+
+  describe("rounding consistency", () => {
+    it("fractional cent garmentCost rounds consistently per piece", () => {
+      // 4.625 is mid-point that bankers' rounding handles differently than
+      // standard round. The engine uses Math.round which is half-up.
+      const li = makeLineItem({ garmentCost: "4.625" });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      // Should be deterministic — running twice should give same result
+      const r2 = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r.gCost).toBe(r2.gCost);
+      expect(r.lineTotal).toBe(r2.lineTotal);
+    });
+
+    it("very small garmentCost (0.01) doesn't underflow to 0", () => {
+      const li = makeLineItem({ garmentCost: "0.01" });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r).not.toBeNull();
+      // 0.01 × 1.4 = 0.014 → rounds to 0.01 per piece × 45 = 0.45
+      expect(r.gCost).toBeGreaterThan(0);
+      expect(r.gCost).toBeLessThan(1);
     });
   });
 });

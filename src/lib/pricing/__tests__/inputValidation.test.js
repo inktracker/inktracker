@@ -261,6 +261,17 @@ describe("validatePricingConfig — catches each invalid surface", () => {
   it("VC14 — embroidery digitizingFee of 0 is legitimate (no fee)", () => {
     expect(validatePricingConfig({ embroidery: { digitizingFee: 0 } })).toEqual([]);
   });
+
+  it("VC15 — firstPrintOrdering accepts 'fewest' and 'most'", () => {
+    expect(validatePricingConfig({ firstPrintOrdering: "fewest" })).toEqual([]);
+    expect(validatePricingConfig({ firstPrintOrdering: "most" })).toEqual([]);
+  });
+
+  it("VC16 — firstPrintOrdering rejects unknown values", () => {
+    const errors = validatePricingConfig({ firstPrintOrdering: "biggest" });
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toMatch(/First-print ordering.*biggest/);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
