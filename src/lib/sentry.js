@@ -92,17 +92,38 @@ export function initSentry() {
 
 /**
  * Set the current user for Sentry context. Call after login.
- * Only sends the opaque auth_id — never email/name.
+ *
+ * Sends opaque auth_id + (optionally) shop_name. We do NOT send
+ * email, person name, IP, etc. shop_name is included because it's
+ * the most useful identifier for triage — Sentry's dashboard is
+ * internal-only (only Joe sees it), so the privacy concern that
+ * applies to shop-facing copy doesn't apply here.
+ *
+ * Also sets a "shop" tag so issues are filterable by shop in the
+ * Sentry UI (Issues → search "shop:Biota Mfg").
+ *
+ * @param {string|null|undefined} authId
+ * @param {{ shopName?: string|null }} [opts]
  */
-export function setSentryUser(authId) {
+export function setSentryUser(authId, opts = {}) {
   if (!initialized) return;
-  Sentry.setUser(authId ? { id: authId } : null);
+  if (!authId) {
+    Sentry.setUser(null);
+    Sentry.setTag("shop", undefined);
+    return;
+  }
+  const shopName = opts.shopName && opts.shopName.trim() ? opts.shopName.trim() : null;
+  const user = { id: authId };
+  if (shopName) user.username = shopName; // shows in Sentry's user panel
+  Sentry.setUser(user);
+  Sentry.setTag("shop", shopName || undefined);
 }
 
 /** Clear user context on logout. */
 export function clearSentryUser() {
   if (!initialized) return;
   Sentry.setUser(null);
+  Sentry.setTag("shop", undefined);
 }
 
 /** Manually capture an exception (use in catch blocks where you want to keep going). */

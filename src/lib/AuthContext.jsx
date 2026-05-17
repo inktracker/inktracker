@@ -83,10 +83,11 @@ export const AuthProvider = ({ children }) => {
         setUser((prev) => (userStateChanged(prev, fullUser) ? fullUser : prev));
         setIsAuthenticated(true);
         setAuthError(null);
-        // Tag future Sentry events with this user's opaque ID. Never
-        // sends email / name — just the auth_id so we can correlate
-        // errors back to a profile when triaging.
-        setSentryUser(fullUser.auth_id || fullUser.id);
+        // Tag future Sentry events with this user's opaque ID + their
+        // shop_name (used as Sentry "username" + a filterable tag).
+        // Triage shows "Biota Mfg" directly instead of needing a
+        // Supabase lookup on the auth_id. No email / person name sent.
+        setSentryUser(fullUser.auth_id || fullUser.id, { shopName: fullUser.shop_name });
       }
     } catch (err) {
       console.error("Auth check failed:", err);
