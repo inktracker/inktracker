@@ -5,6 +5,7 @@ import { uploadFile } from "@/lib/uploadFile";
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2 } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
+import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 
@@ -1557,12 +1558,17 @@ function PricingConfigSection({ user }) {
     setSaving(false);
   }
 
+  // Helpers below receive already-parsed numbers from NumericInput
+  // (or pre-arithmetic-transformed numbers from a few remaining
+  // callers). Don't re-coerce — that's how the silent-zero bug crept
+  // in originally. Save-gate (decidePricingSave) catches anything
+  // that slips through.
   function updatePrintTable(table, colors, tier, value) {
     setConfig(prev => ({
       ...prev,
       [table]: {
         ...prev[table],
-        [colors]: { ...prev[table][colors], [tier]: parseFloat(value) || 0 },
+        [colors]: { ...prev[table][colors], [tier]: value },
       },
     }));
   }
@@ -1570,7 +1576,7 @@ function PricingConfigSection({ user }) {
   function updateMarkup(idx, field, value) {
     setConfig(prev => {
       const m = [...prev.garmentMarkup];
-      m[idx] = { ...m[idx], [field]: parseFloat(value) || 0 };
+      m[idx] = { ...m[idx], [field]: value };
       return { ...prev, garmentMarkup: m };
     });
   }
@@ -1578,7 +1584,7 @@ function PricingConfigSection({ user }) {
   function updateExtra(key, value) {
     setConfig(prev => ({
       ...prev,
-      extras: { ...prev.extras, [key]: parseFloat(value) || 0 },
+      extras: { ...prev.extras, [key]: value },
     }));
   }
 
@@ -1681,7 +1687,7 @@ function PricingConfigSection({ user }) {
         ...prev.embroidery,
         pricing: {
           ...prev.embroidery.pricing,
-          [stitchTier]: { ...prev.embroidery.pricing[stitchTier], [qtyTier]: parseFloat(value) || 0 },
+          [stitchTier]: { ...prev.embroidery.pricing[stitchTier], [qtyTier]: value },
         },
       },
     }));
@@ -1692,7 +1698,7 @@ function PricingConfigSection({ user }) {
       ...prev,
       embroidery: {
         ...prev.embroidery,
-        extras: { ...prev.embroidery.extras, [key]: parseFloat(value) || 0 },
+        extras: { ...prev.embroidery.extras, [key]: value },
       },
     }));
   }
@@ -1733,9 +1739,14 @@ function PricingConfigSection({ user }) {
                   <td className="py-1 pr-2 font-semibold text-slate-600 whitespace-nowrap">{c} color{c > 1 ? "s" : ""}</td>
                   {tiers.map(t => (
                     <td key={t} className="py-1 px-0.5">
-                      <input type="number" step="0.01" value={config[tableKey][c]?.[t] ?? ""}
-                        onChange={e => updatePrintTable(tableKey, c, t, e.target.value)}
-                        className={inputCls} />
+                      <NumericInput
+                        value={config[tableKey][c]?.[t]}
+                        onChange={(n) => updatePrintTable(tableKey, c, t, n)}
+                        min={0}
+                        max={10000}
+                        label={`${tableKey === "firstPrint" ? "First print" : "Additional print"} ${c} color × ${t} pcs`}
+                        className={inputCls}
+                      />
                     </td>
                   ))}
                   <td></td>
@@ -1763,9 +1774,15 @@ function PricingConfigSection({ user }) {
                 {tier.above > 0 ? `Above $${tier.above}` : "Default"}
               </label>
               <div className="relative">
-                <input type="number" step="1" value={Math.round((tier.markup - 1) * 100)}
-                  onChange={e => updateMarkup(i, "markup", (parseFloat(e.target.value) || 0) / 100 + 1)}
-                  className={inputCls} />
+                <NumericInput
+                  value={Math.round((tier.markup - 1) * 100)}
+                  onChange={(pct) => updateMarkup(i, "markup", pct / 100 + 1)}
+                  min={0}
+                  max={1000}
+                  integer
+                  label={`Markup tier ${i + 1} %`}
+                  className={inputCls}
+                />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
               </div>
             </div>
@@ -1779,10 +1796,15 @@ function PricingConfigSection({ user }) {
         <p className="text-[10px] text-slate-400 mb-2">Discount off your garment markup that brokers receive on every quote. Higher = lower wholesale price for brokers (they earn margin by reselling above it).</p>
         <div className="flex items-center gap-3">
           <div className="relative w-28">
-            <input type="number" step="1" min="0" max="100"
+            <NumericInput
               value={Math.round((config.brokerMarkupShare ?? 0.2) * 100)}
-              onChange={e => setConfig(prev => ({ ...prev, brokerMarkupShare: (parseFloat(e.target.value) || 0) / 100 }))}
-              className={inputCls} />
+              onChange={(pct) => setConfig(prev => ({ ...prev, brokerMarkupShare: pct / 100 }))}
+              min={0}
+              max={100}
+              integer
+              label="Broker markup share %"
+              className={inputCls}
+            />
             <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
           </div>
           <span className="text-xs text-slate-400">off garment markup for brokers</span>
@@ -1832,9 +1854,14 @@ function PricingConfigSection({ user }) {
                 className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
               <div className="relative w-24 shrink-0">
                 <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-                <input type="number" step="0.01" value={val}
-                  onChange={e => updateExtra(key, e.target.value)}
-                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                <NumericInput
+                  value={val}
+                  onChange={(n) => updateExtra(key, n)}
+                  min={0}
+                  max={10000}
+                  label={`Extras → ${key}`}
+                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                />
               </div>
               <button onClick={() => setConfig(prev => {
                 const next = { ...prev, extras: { ...prev.extras } };
@@ -1862,9 +1889,15 @@ function PricingConfigSection({ user }) {
         <div>
           <label className="text-[10px] text-slate-400 block mb-1">Rush Fee (%)</label>
           <div className="relative">
-            <input type="number" step="1" value={Math.round((config.rushRate || 0) * 100)}
-              onChange={e => setConfig(prev => ({ ...prev, rushRate: (parseInt(e.target.value) || 0) / 100 }))}
-              className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+            <NumericInput
+              value={Math.round((config.rushRate || 0) * 100)}
+              onChange={(pct) => setConfig(prev => ({ ...prev, rushRate: pct / 100 }))}
+              min={0}
+              max={100}
+              integer
+              label="Rush fee %"
+              className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+            />
             <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>
           </div>
         </div>
@@ -1892,9 +1925,14 @@ function PricingConfigSection({ user }) {
               <div className="w-40">
                 <div className="relative">
                   <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-                  <input type="number" step="1" value={emb.digitizingFee}
-                    onChange={e => setConfig(prev => ({ ...prev, embroidery: { ...prev.embroidery, digitizingFee: parseFloat(e.target.value) || 0 } }))}
-                    className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                  <NumericInput
+                    value={emb.digitizingFee}
+                    onChange={(n) => setConfig(prev => ({ ...prev, embroidery: { ...prev.embroidery, digitizingFee: n } }))}
+                    min={0}
+                    max={10000}
+                    label="Digitizing fee"
+                    className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  />
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">One-time fee per new design</p>
               </div>
@@ -1937,9 +1975,14 @@ function PricingConfigSection({ user }) {
                         <td className="py-1 pr-2 font-semibold text-slate-600 whitespace-nowrap">{st}</td>
                         {(emb.qtyTiers || []).map(t => (
                           <td key={t} className="py-1 px-0.5">
-                            <input type="number" step="0.01" value={emb.pricing?.[st]?.[t] ?? ""}
-                              onChange={e => updateEmbroideryPrice(st, t, e.target.value)}
-                              className={inputCls} />
+                            <NumericInput
+                              value={emb.pricing?.[st]?.[t]}
+                              onChange={(n) => updateEmbroideryPrice(st, t, n)}
+                              min={0}
+                              max={10000}
+                              label={`Embroidery "${st}" × ${t} pcs`}
+                              className={inputCls}
+                            />
                           </td>
                         ))}
                       </tr>
@@ -1962,9 +2005,14 @@ function PricingConfigSection({ user }) {
                     <label className="text-[10px] text-slate-400 block mb-1">{label}</label>
                     <div className="relative">
                       <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-                      <input type="number" step="0.01" value={emb.extras?.[key] ?? ""}
-                        onChange={e => updateEmbroideryExtra(key, e.target.value)}
-                        className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                      <NumericInput
+                        value={emb.extras?.[key]}
+                        onChange={(n) => updateEmbroideryExtra(key, n)}
+                        min={0}
+                        max={10000}
+                        label={`Embroidery extra → ${key}`}
+                        className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      />
                     </div>
                   </div>
                 ))}
