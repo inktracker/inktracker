@@ -10,7 +10,11 @@ const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
 const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 const APP_URL          = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
 const SUPABASE_URL     = Deno.env.get("SUPABASE_URL") || "https://skmltfbibaqcjddmeqvi.supabase.co";
-const REDIRECT_URI     = `${SUPABASE_URL}/functions/v1/qbOAuthCallback`;
+// Token-exchange MUST use the same redirect_uri that the initial
+// auth request used. Both now go through the Vercel proxy because
+// the Supabase gateway rejects Intuit's direct redirect (no auth
+// header). See api/qb-callback.js for the proxy.
+const REDIRECT_URI     = `${APP_URL.replace(/\/+$/, "")}/api/qb-callback`;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

@@ -4,7 +4,8 @@ import { User, Save, CheckCircle2, AlertCircle, Link2, Unlink } from "lucide-rea
 import BrokerCredentials from "./BrokerCredentials";
 
 const QB_CLIENT_ID = import.meta.env.VITE_QB_CLIENT_ID;
-const QB_REDIRECT_URI = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qbOAuthCallback`;
+// Routes through Vercel proxy — see src/pages/Account.jsx note.
+const QB_REDIRECT_URI = `${import.meta.env.VITE_APP_URL?.trim() || "https://inktracker.app"}/api/qb-callback`;
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
 function buildQBAuthUrl(state) {
