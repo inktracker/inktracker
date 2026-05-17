@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtDate, sortSizeEntries, O_STATUSES } from "../components/shared/pricing";
+import { displayFullName } from "@/lib/displayName";
 import {
   countGoodsProgress,
   autoCheckOrderGoodsTask,
@@ -369,7 +370,7 @@ export default function ShopFloor() {
           <Package className="w-7 h-7" />
           <div>
             <h1 className="text-lg font-bold leading-tight">Shop Floor</h1>
-            <p className="text-indigo-200 text-xs">{user?.full_name || user?.email}</p>
+            <p className="text-indigo-200 text-xs">{user?.shop_name || displayFullName(user)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

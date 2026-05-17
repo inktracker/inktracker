@@ -53,6 +53,8 @@ export default function Account() {
   const location = useLocation();
   const [user, setUser] = useState(null);
   const [shopName, setShopName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -105,6 +107,8 @@ export default function Account() {
         }
         setUser(currentUser);
         setShopName(currentUser.shop_name || "");
+        setFirstName(currentUser.first_name || "");
+        setLastName(currentUser.last_name || "");
         setLogoUrl(currentUser.logo_url || "");
         setPhone(currentUser.phone || "");
         setAddress(currentUser.address || "");
@@ -269,8 +273,18 @@ export default function Account() {
   async function handleSave() {
     setSaving(true);
     try {
+      // Compose full_name from first + last so the 30+ legacy display
+      // sites (broker UI, admin panel, dashboard greetings) keep
+      // working without a sweep. Trim+collapse whitespace defensively.
+      const cleanFirst = firstName.trim();
+      const cleanLast = lastName.trim();
+      const composedFullName = [cleanFirst, cleanLast].filter(Boolean).join(" ");
+
       const updatedUser = await base44.auth.updateMe({
         shop_name: shopName,
+        first_name: cleanFirst || null,
+        last_name: cleanLast || null,
+        full_name: composedFullName || null,
         logo_url: logoUrl,
         phone: phone.trim(),
         address: address.trim(),
@@ -517,6 +531,29 @@ export default function Account() {
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 px-4 sm:px-6 py-5 space-y-2">
         <Section icon={User} title="Shop Information">
           <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">First Name</label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Joe"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Last Name</label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Smith"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">
                 Shop Name
