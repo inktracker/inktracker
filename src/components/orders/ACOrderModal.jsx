@@ -295,6 +295,10 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
                 <strong>SKU format:</strong> AS Colour uses STYLE-COLOR_CODE-FIT-SIZE (e.g. <span className="font-mono">5102-WHI_M-H-M</span>). Auto-matched from AS Colour's catalog where possible — verify before creating the PO.
               </div>
 
+              <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5 leading-relaxed">
+                <strong>Credit terms required:</strong> AS Colour only fulfills API orders on approved credit. If your account doesn't have credit set up yet, this PO will submit but land in <strong>"awaiting payment"</strong> in their system. Email <a href="mailto:support@ascolour.com" className="font-mono underline">support@ascolour.com</a> to apply (2-4 week approval).
+              </div>
+
               {error && (
                 <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">{error}</div>
               )}
