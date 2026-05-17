@@ -1405,6 +1405,19 @@ function SupplierKeysSection({ user }) {
         )}
       </div>
 
+      {/* SanMar — not currently supported */}
+      <div className="border border-slate-200 bg-slate-50/50 rounded-xl p-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-slate-500">SanMar</span>
+            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">Not available</span>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          SanMar's API requires per-shop integration approval and static-IP whitelisting that doesn't fit our current infrastructure. Add SanMar items by hand for now — we may revisit a partner-route integration in a future release.
+        </p>
+      </div>
+
       {/* Free-freight thresholds */}
       <div className="border border-slate-200 rounded-xl p-4 space-y-3">
         <div>
