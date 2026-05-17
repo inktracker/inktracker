@@ -989,6 +989,20 @@ function BillingSection({ user }) {
   }
 
   async function handlePortal() {
+    // Founding members forfeit their $50/mo rate permanently if they
+    // cancel their subscription. Stripe's hosted portal doesn't know
+    // about that policy, so we warn before sending them in — without
+    // this, someone clicking "Manage billing" to update their card
+    // could absentmindedly hit cancel and lose the rate forever.
+    if (user?.is_founding_member && !user?.founding_rate_forfeited) {
+      const proceed = window.confirm(
+        "Heads up — you have the founding $50/mo rate.\n\n" +
+        "If you cancel your subscription in the next screen, that rate is forfeited permanently. Re-signups pay the standard $99/month (or $999/year).\n\n" +
+        "If you're just updating your card or billing info, that's safe — the warning only matters if you click Cancel.\n\n" +
+        "Continue to billing?"
+      );
+      if (!proceed) return;
+    }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
