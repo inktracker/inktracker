@@ -41,6 +41,13 @@ function buildQBAuthUrl(state) {
     scope:         "com.intuit.quickbooks.accounting",
     redirect_uri:  QB_REDIRECT_URI,
     state,
+    // Force the QB login + company picker every connect. Without
+    // this, Intuit silently auto-connects to whichever company is
+    // active in the user's browser session — fine for single-
+    // company shops, broken for accounting firms / multi-LLC owners
+    // who NEED to pick. Matches the OnboardingWizard QB-connect
+    // flow.
+    prompt:        "login",
   });
   return `https://appcenter.intuit.com/connect/oauth2?${params}`;
 }
