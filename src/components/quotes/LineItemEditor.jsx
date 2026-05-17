@@ -1213,7 +1213,7 @@ export default function LineItemEditor({
                 <div className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-100">
                   {(li.imprints || [])[0]?.technique === "Embroidery"
                     ? "Pricing note: Embroidery priced by stitch count. Additional locations at 70%. Digitizing fee may apply."
-                    : "Pricing note: First print = location with fewest colors. All pricing includes setup."}
+                    : `Pricing note: First print = location with ${getShopPricingConfig()?.firstPrintOrdering === "most" ? "most" : "fewest"} colors. All pricing includes setup.`}
                 </div>
               </div>
             </div>

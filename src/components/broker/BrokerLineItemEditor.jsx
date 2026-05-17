@@ -7,6 +7,7 @@ import {
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
   getQty,
+  getShopPricingConfig,
   uid,
 } from "../shared/pricing";
 import BrokerPricePanel from "./BrokerPricePanel";
@@ -891,7 +892,7 @@ export default function BrokerLineItemEditor({
 
               <div className="mt-2 space-y-2">
                 <div className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-100">
-                  Pricing note: First print = location with fewest colors. All pricing includes setup.
+                  {`Pricing note: First print = location with ${getShopPricingConfig()?.firstPrintOrdering === "most" ? "most" : "fewest"} colors. All pricing includes setup.`}
                 </div>
                 <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 border border-emerald-100">
                   Link matching artwork across garment groups to combine quantity for the print tier.

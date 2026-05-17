@@ -272,7 +272,16 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   const active = li.imprints.filter((i) => (i.colors || 0) > 0);
   if (active.length === 0) return null;
 
-  const sorted = [...active].sort((a, b) => a.colors - b.colors);
+  // firstPrintOrdering controls which imprint absorbs the first-print
+  // rate (setup is typically baked in). "fewest" (default, kept for
+  // backward compat with shops set up before this toggle existed)
+  // puts the smallest-color imprint first; "most" matches industry
+  // convention where the heaviest imprint carries the setup. Per-shop
+  // toggle in Account → Pricing.
+  const ordering = _pc?.firstPrintOrdering || "fewest";
+  const sorted = ordering === "most"
+    ? [...active].sort((a, b) => b.colors - a.colors)
+    : [...active].sort((a, b) => a.colors - b.colors);
   const printBreakdown = [];
 
   let printCost = 0;

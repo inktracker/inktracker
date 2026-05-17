@@ -197,6 +197,16 @@ export function validatePricingConfig(config) {
     if (!r.ok) errors.push(r.error);
   }
 
+  // firstPrintOrdering — must be "fewest" or "most". Anything else
+  // means upstream feeding garbage; engine falls back to "fewest" but
+  // we want the user to know their config is wrong.
+  if (config.firstPrintOrdering !== undefined && config.firstPrintOrdering !== null) {
+    const v = config.firstPrintOrdering;
+    if (v !== "fewest" && v !== "most") {
+      errors.push(`First-print ordering must be "fewest" or "most" (got "${v}").`);
+    }
+  }
+
   // embroidery
   const emb = config.embroidery;
   if (emb && typeof emb === "object") {
