@@ -6,23 +6,23 @@ import {
 } from "../foundingMember";
 
 describe("FOUNDING_MEMBER_CAP", () => {
-  it("is exported as 50 — must match the cap inside claim_founding_slot SQL function", () => {
-    // If you change this, also change v_cap in
-    // 20260520_founding_member_program.sql.
-    expect(FOUNDING_MEMBER_CAP).toBe(50);
+  it("is exported as 10 — must match the cap inside claim_founding_slot SQL function", () => {
+    // If you change this, also change v_cap in the latest founding-cap
+    // migration (20260603_founding_cap_to_10.sql).
+    expect(FOUNDING_MEMBER_CAP).toBe(10);
   });
 });
 
 describe("decidePriceTier — founding path", () => {
   it("maps status='claimed' to FOUNDING", () => {
-    const r = decidePriceTier({ status: "claimed", cap: 50 });
+    const r = decidePriceTier({ status: "claimed", cap: 10 });
     expect(r.tier).toBe(PRICE_TIER.FOUNDING);
     expect(r.reason).toBe("claimed");
     expect(r.isError).toBe(false);
   });
 
   it("maps status='already_member' to FOUNDING (idempotent re-call)", () => {
-    const r = decidePriceTier({ status: "already_member", cap: 50, claimed_at: "2026-05-12T00:00:00Z" });
+    const r = decidePriceTier({ status: "already_member", cap: 10, claimed_at: "2026-05-12T00:00:00Z" });
     expect(r.tier).toBe(PRICE_TIER.FOUNDING);
     expect(r.reason).toBe("already_member");
     expect(r.isError).toBe(false);
@@ -30,15 +30,15 @@ describe("decidePriceTier — founding path", () => {
 });
 
 describe("decidePriceTier — standard path", () => {
-  it("maps status='cap_reached' to STANDARD — slot 50+1 pays $99", () => {
-    const r = decidePriceTier({ status: "cap_reached", cap: 50 });
+  it("maps status='cap_reached' to STANDARD — slot 10+1 pays $99", () => {
+    const r = decidePriceTier({ status: "cap_reached", cap: 10 });
     expect(r.tier).toBe(PRICE_TIER.STANDARD);
     expect(r.reason).toBe("cap_reached");
     expect(r.isError).toBe(false);
   });
 
   it("maps status='forfeited' to STANDARD — prior canceler pays $99 forever", () => {
-    const r = decidePriceTier({ status: "forfeited", cap: 50 });
+    const r = decidePriceTier({ status: "forfeited", cap: 10 });
     expect(r.tier).toBe(PRICE_TIER.STANDARD);
     expect(r.reason).toBe("forfeited");
     expect(r.isError).toBe(false);

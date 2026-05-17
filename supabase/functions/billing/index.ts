@@ -30,10 +30,11 @@ const APP_URL = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "http
 
 // Three monthly tiers + one annual.
 //
-// Founding ($50/mo) is locked for the first 50 shops to claim it
-// (enforced atomically by the claim_founding_slot RPC in
-// 20260520_founding_member_program.sql). Cap is hidden from the
-// public UI — there's no slot counter on the landing page.
+// Founding ($50/mo) is locked for the first 10 shops to claim it
+// (enforced atomically by the claim_founding_slot RPC; cap defined
+// in 20260520_..., tightened 50→10 in 20260603_founding_cap_to_10.sql).
+// Cap is hidden from the public UI — there's no slot counter on
+// the landing page.
 // Standard ($99/mo) kicks in after the cap fills OR for any prior
 // founding member who canceled (the forfeit is permanent).
 // Annual ($999/yr) is a flat option — does NOT consume a founding
