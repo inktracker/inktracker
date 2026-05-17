@@ -122,25 +122,6 @@ export default function Quotes() {
     }
   }, [searchId, quotes]);
 
-  // Handle "Use in Quote" coming from the Catalog page
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("from_catalog") === "1") {
-      const raw = sessionStorage.getItem("ss_prefill");
-      if (raw) {
-        try {
-          const prefill = JSON.parse(raw);
-          // Open new quote editor with the prefilled line item
-          setShowNew({ prefillLineItem: prefill });
-        } catch {}
-        sessionStorage.removeItem("ss_prefill");
-      }
-      // Clean URL
-      const url = new URL(window.location.href);
-      url.searchParams.delete("from_catalog");
-      window.history.replaceState({}, "", url.toString());
-    }
-  }, []);
 
   const handleAdvFilterChange = (key, value) => {
     setPage(1);
