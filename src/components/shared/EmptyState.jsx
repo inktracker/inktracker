@@ -33,7 +33,7 @@ const CONFIGS = {
     title: "No inventory items yet",
     description: "Track your blanks, inks, screens, and supplies. Set reorder points to get alerts when stock runs low.",
     primaryAction: { label: "Add Item", action: "new" },
-    tip: "You can sync inventory from Shopify or order blanks directly from S&S Activewear.",
+    tip: "Order blanks directly from S&S Activewear with live pricing.",
   },
   invoices: {
     icon: Receipt,

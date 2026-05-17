@@ -111,7 +111,7 @@ const FEATURE_CARDS = [
   },
   {
     title: "Inventory & Restock",
-    desc: "Shopify inventory sync. Order blanks from S&S Activewear and AS Colour with live pricing.",
+    desc: "Order blanks from S&S Activewear and AS Colour with live pricing.",
     color: "from-amber-500/20 to-amber-500/5",
     media: { type: "iframe", src: "/landing/inventory-demo/index.html" },
   },
@@ -486,12 +486,11 @@ function PublicLandingPage() {
           <div className="max-w-3xl mx-auto text-center">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Integrates with the tools you already use</p>
             <p className="text-sm text-slate-300 mb-6 leading-relaxed">
-              Live garment pricing from S&amp;S Activewear and AS Colour. Two-way QuickBooks sync. Stripe-powered payments. Shopify inventory in sync.
+              Live garment pricing from S&amp;S Activewear and AS Colour. Two-way QuickBooks sync. Stripe-powered payments.
             </p>
             <div className="flex items-center justify-center gap-8 flex-wrap">
               {[
                 { name: "QuickBooks", color: "#2CA01C" },
-                { name: "Shopify", color: "#96BF48" },
                 { name: "Stripe", color: "#635BFF" },
                 { name: "S&S Activewear", color: "#E53935" },
                 { name: "AS Colour", color: "#94a3b8" },
@@ -616,7 +615,6 @@ function PublicLandingPage() {
                   "Unlimited employees",
                   "S&S & AS Colour restock",
                   "Embeddable quote wizard",
-                  "Shopify inventory sync",
                   "Artwork proofs",
                   "Broker portal",
                   "Performance reports",
