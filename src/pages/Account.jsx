@@ -27,7 +27,11 @@ function Section({ icon: IconComp, title, defaultOpen = false, children }) {
 }
 
 const QB_CLIENT_ID   = import.meta.env.VITE_QB_CLIENT_ID;
-const QB_REDIRECT_URI = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qbOAuthCallback`;
+// QB OAuth redirect routes through a Vercel proxy (api/qb-callback.js)
+// because the Supabase Functions gateway rejects Intuit's redirect
+// (no Authorization header). The proxy injects the anon JWT, then
+// forwards to the qbOAuthCallback edge function.
+const QB_REDIRECT_URI = `${import.meta.env.VITE_APP_URL?.trim() || "https://inktracker.app"}/api/qb-callback`;
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
 function buildQBAuthUrl(state) {
