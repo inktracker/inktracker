@@ -611,6 +611,30 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     console.warn("[createInvoice] no payment link extracted from /send; FULL response shape:", JSON.stringify(invoiceForLink));
   }
 
+  // /send overwrote BillEmail with our sink address. The QBO payment portal
+  // pre-fills "Your info → Email" from BillEmail, so without this restore
+  // the customer lands on the portal and sees `qb-noop@inktracker.app`
+  // staring at them. Sparse-update back to the real customer email; use
+  // the SyncToken from the /send response (which incremented it).
+  if (billEmail && invoiceForLink?.SyncToken != null) {
+    try {
+      await qbUpdate(token, realmId, "invoice", {
+        Id: qbInvoiceId,
+        SyncToken: invoiceForLink.SyncToken,
+        sparse: true,
+        BillEmail: { Address: billEmail },
+      });
+    } catch (restoreErr) {
+      // Non-fatal — share link is already minted and saved. Worst case
+      // the customer sees the sink address on the portal; we log loudly
+      // so we can diagnose without breaking the send.
+      console.warn(
+        "[createInvoice] BillEmail restore after /send failed:",
+        restoreErr instanceof Error ? restoreErr.message : String(restoreErr),
+      );
+    }
+  }
+
   // 4b. If the quote's deposit was already paid, record the payment against this invoice
   const depositAmount = Number(invoicePayload?.depositAmount) || 0;
   if (quote.deposit_paid && depositAmount > 0) {
