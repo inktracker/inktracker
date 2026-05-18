@@ -136,20 +136,6 @@ async function qbCreate(token: string, realmId: string, entity: string, body: ob
   return data;
 }
 
-// GET a QB entity by id, optionally with an `include` param (e.g.
-// "invoiceLink"). The create-invoice response does NOT include the
-// shareable payment URL — that's only returned via a follow-up
-// GET with include=invoiceLink. Throws on non-2xx; caller decides
-// whether to swallow or surface.
-async function qbGet(token: string, realmId: string, entity: string, id: string, includeParam?: string) {
-  const include = includeParam ? `&include=${encodeURIComponent(includeParam)}` : "";
-  const url = `${QB_BASE}/${realmId}/${entity}/${id}?minorversion=65${include}`;
-  const res = await fetch(url, { headers: qbHeaders(token) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(`QB get ${entity}/${id} failed: ${res.status} ${JSON.stringify(data)}`);
-  return data;
-}
-
 // Pick the next free DocNumber for a quote. If `base` is unused, returns base.
 // Otherwise tries base-r2, base-r3, ... up to base-r99. Falls back to a
 // timestamp suffix if (somehow) all 99 revisions are taken.
