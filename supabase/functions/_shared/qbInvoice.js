@@ -156,11 +156,23 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
 export function extractPaymentLink(invoiceData) {
   const inv = invoiceData?.Invoice ?? invoiceData;
   if (!inv) return null;
+  // QBO has used several different field names for the customer-
+  // facing share link across API revisions. The modern format is
+  // `connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-…`
+  // and lives on `InvoiceLink` when fetched with ?include=invoiceLink.
+  // Older sandboxes / shapes used `payment.paymentUri` or a `Links`
+  // array. Check all known variants in priority order — the modern
+  // share link wins if present.
   const candidates = [
-    inv?.payment?.paymentUri,
     inv?.InvoiceLink,
+    inv?.invoiceLink,
+    inv?.SharableLink,
+    inv?.sharableLink,
+    inv?.shareableLink,
+    inv?.payment?.paymentUri,
     inv?.paymentUri,
-    inv?.Links?.find?.((l) => l.Rel === "payment")?.Href,
+    inv?.Links?.find?.((l) => l?.Rel === "payment")?.Href,
+    inv?.Links?.find?.((l) => l?.rel === "payment")?.href,
   ].filter(Boolean);
   return candidates.length > 0 ? candidates[0] : null;
 }

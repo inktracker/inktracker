@@ -129,6 +129,20 @@ async function qbCreate(token: string, realmId: string, entity: string, body: ob
   return data;
 }
 
+// GET a QB entity by id, optionally with an `include` param (e.g.
+// "invoiceLink"). The create-invoice response does NOT include the
+// shareable payment URL — that's only returned via a follow-up
+// GET with include=invoiceLink. Throws on non-2xx; caller decides
+// whether to swallow or surface.
+async function qbGet(token: string, realmId: string, entity: string, id: string, includeParam?: string) {
+  const include = includeParam ? `&include=${encodeURIComponent(includeParam)}` : "";
+  const url = `${QB_BASE}/${realmId}/${entity}/${id}?minorversion=65${include}`;
+  const res = await fetch(url, { headers: qbHeaders(token) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`QB get ${entity}/${id} failed: ${res.status} ${JSON.stringify(data)}`);
+  return data;
+}
+
 // Pick the next free DocNumber for a quote. If `base` is unused, returns base.
 // Otherwise tries base-r2, base-r3, ... up to base-r99. Falls back to a
 // timestamp suffix if (somehow) all 99 revisions are taken.
@@ -551,7 +565,25 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }
   }
 
-  const paymentLink = extractPaymentLink(qbInvoiceFinal || created, realmId);
+  // Re-fetch the invoice with include=invoiceLink — that's the only
+  // way QBO returns the shareable customer-facing payment URL
+  // (connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-…).
+  // The create response itself never includes it. If this GET fails
+  // we fall back to whatever the create response had (likely nothing,
+  // which then triggers the Stripe/Approve-only fallback downstream).
+  let invoiceForLink: any = qbInvoiceFinal || created;
+  try {
+    const linked = await qbGet(token, realmId, "invoice", qbInvoiceId, "invoiceLink");
+    invoiceForLink = linked?.Invoice || linked;
+  } catch (linkErr) {
+    console.warn("[createInvoice] include=invoiceLink fetch failed:", linkErr instanceof Error ? linkErr.message : String(linkErr));
+  }
+  const paymentLink = extractPaymentLink(invoiceForLink, realmId);
+  if (!paymentLink) {
+    // Surface the full invoice shape in logs so we can debug what QB
+    // actually returned. Sentry will also capture this when wired.
+    console.warn("[createInvoice] no payment link extracted; invoice shape:", JSON.stringify(invoiceForLink).slice(0, 1500));
+  }
 
   // 4b. If the quote's deposit was already paid, record the payment against this invoice
   const depositAmount = Number(invoicePayload?.depositAmount) || 0;
