@@ -1,29 +1,34 @@
-import { supabase } from "@/api/supabaseClient";
-
-const FN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/qbSync`;
+import { base44, supabase } from "@/api/supabaseClient";
 
 // Fire-and-forget: push a customer to QuickBooks (find-or-create).
-// Returns { qbCustomerId } on success, or { skipped: true } if no auth/QB.
-// Never throws to the caller — errors are logged so the save flow isn't blocked.
+// Returns { qbCustomerId } on success, or { skipped: true, reason } if the
+// call couldn't run / failed. Never throws — the caller's save flow stays
+// unblocked even when QB is misconfigured or offline.
+//
+// Goes through base44.functions.invoke so the Supabase Authorization
+// header is included automatically. A previous raw fetch implementation
+// was silently failing in prod (gateway returned UNAUTHORIZED_NO_AUTH_HEADER
+// before the function ran), which meant new customers never got their
+// qb_customer_id backfilled.
 export async function syncCustomerToQB(customer) {
   if (!customer?.id) return { skipped: true, reason: "no customer id" };
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) return { skipped: true, reason: "not signed in" };
 
-    const res = await fetch(FN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "syncCustomer",
-        accessToken: session.access_token,
-        customer,
-      }),
+    const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+      action: "syncCustomer",
+      accessToken: session.access_token,
+      customer,
     });
-    const data = await res.json();
-    if (!res.ok || data.error) {
-      console.warn("[QB] customer sync:", data.error || res.status);
-      return { skipped: true, reason: data.error || "sync failed" };
+
+    if (invErr) {
+      console.warn("[QB] customer sync:", invErr.message);
+      return { skipped: true, reason: invErr.message };
+    }
+    if (data?.error) {
+      console.warn("[QB] customer sync:", data.error);
+      return { skipped: true, reason: data.error };
     }
     return data;
   } catch (err) {
