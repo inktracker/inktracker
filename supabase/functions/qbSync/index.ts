@@ -31,13 +31,6 @@ const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
 const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 const QB_BASE          = "https://quickbooks.api.intuit.com/v3/company";
 
-// QBO's /send endpoint forces an email send — there's no flag to suppress
-// it. We point sendTo at a non-existent address on a domain we own so the
-// email bounces silently (no human ever sees it) while QBO synchronously
-// returns the freshly-minted share link in the API response. Zero setup
-// required from shops; zero customer-facing noise.
-const QB_SEND_SINK     = "qb-noop@inktracker.app";
-
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -152,10 +145,13 @@ async function qbUpdate(token: string, realmId: string, entity: string, body: ob
 
 // POST /invoice/{id}/send is the only QBO endpoint that mints the customer-
 // facing share link (`connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-…`).
-// Send-to-self pattern: we point `sendTo` at a sinkhole derived from the
-// shop owner's email (see notificationSinkEmail) so QBO's notification
-// lands in the shop owner's inbox under a +qbnoise filter, NOT the
-// customer's. The response contains the freshly-minted InvoiceLink.
+// We pass the customer's email as `sendTo`. QBO sends them a copy of the
+// invoice (their normal /send flow) AND mints the portal record with their
+// email pre-filled in "Your info → Email" on the payment page. The portal
+// record is snapshotted at /send time and not refreshed by later updates —
+// that's why we use the real address rather than a sink + later restore.
+// Customer ends up with two emails (ours via Resend + QBO's), both linking
+// to the same anonymous-pay portal.
 async function qbSendInvoice(token: string, realmId: string, invoiceId: string, sendTo: string) {
   const url = `${QB_BASE}/${realmId}/invoice/${invoiceId}/send?sendTo=${encodeURIComponent(sendTo)}&minorversion=65`;
   const res = await fetch(url, {
@@ -576,49 +572,34 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   }
 
   // Mint the customer-facing share link. QBO does NOT include the link in
-  // the create response, in a plain GET, or in ?include=invoiceLink on a
+  // the create response, a plain GET, or in ?include=invoiceLink on a
   // draft — the link only exists after the invoice runs through QBO's send
-  // pipeline, which provisions the portal record. We POST /send with sendTo
-  // pointed at a non-existent address on our own domain so QBO's email
-  // bounces silently; the share link still comes back synchronously in the
-  // API response. No human ever sees the QBO email; the customer only gets
-  // our Resend message with this link embedded as the Approve & Pay button.
+  // pipeline, which provisions the portal record (snapshotted at mint
+  // time). We POST /send with sendTo = the real customer email so:
+  //   (a) the portal pre-fills the customer's email in "Your info → Email"
+  //       (using a sink address here leaves the sink showing on the portal,
+  //       and a follow-up BillEmail update doesn't refresh the snapshot)
+  //   (b) the customer gets a QBO-branded copy of the invoice alongside
+  //       our Resend email — standard B2B behavior; both point at the
+  //       same anonymous-pay portal.
+  // If billEmail is missing we can't /send, so paymentLink stays null and
+  // the frontend's send_failed state shows the Retry button.
   let invoiceForLink: any = qbInvoiceFinal || created;
-  try {
-    const sent = await qbSendInvoice(token, realmId, qbInvoiceId, QB_SEND_SINK);
-    invoiceForLink = sent?.Invoice || sent;
-  } catch (sendErr) {
-    console.warn("[createInvoice] /send to mint share link failed:", sendErr instanceof Error ? sendErr.message : String(sendErr));
+  if (billEmail) {
+    try {
+      const sent = await qbSendInvoice(token, realmId, qbInvoiceId, billEmail);
+      invoiceForLink = sent?.Invoice || sent;
+    } catch (sendErr) {
+      console.warn("[createInvoice] /send to mint share link failed:", sendErr instanceof Error ? sendErr.message : String(sendErr));
+    }
+  } else {
+    console.warn("[createInvoice] skipping /send — no billEmail on quote/customer; share link won't be minted");
   }
   const paymentLink = extractPaymentLink(invoiceForLink, realmId);
   if (!paymentLink) {
     // /send was supposed to return InvoiceLink — if it didn't, dump the
     // full shape (no truncation) so we can see what QBO actually returned.
     console.warn("[createInvoice] no payment link extracted from /send; FULL response shape:", JSON.stringify(invoiceForLink));
-  }
-
-  // /send overwrote BillEmail with our sink address. The QBO payment portal
-  // pre-fills "Your info → Email" from BillEmail, so without this restore
-  // the customer lands on the portal and sees `qb-noop@inktracker.app`
-  // staring at them. Sparse-update back to the real customer email; use
-  // the SyncToken from the /send response (which incremented it).
-  if (billEmail && invoiceForLink?.SyncToken != null) {
-    try {
-      await qbUpdate(token, realmId, "invoice", {
-        Id: qbInvoiceId,
-        SyncToken: invoiceForLink.SyncToken,
-        sparse: true,
-        BillEmail: { Address: billEmail },
-      });
-    } catch (restoreErr) {
-      // Non-fatal — share link is already minted and saved. Worst case
-      // the customer sees the sink address on the portal; we log loudly
-      // so we can diagnose without breaking the send.
-      console.warn(
-        "[createInvoice] BillEmail restore after /send failed:",
-        restoreErr instanceof Error ? restoreErr.message : String(restoreErr),
-      );
-    }
   }
 
   // 4b. If the quote's deposit was already paid, record the payment against this invoice
