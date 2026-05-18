@@ -378,10 +378,14 @@ export default function QuoteDetailModal({
     <>
       <ModalBackdrop onClose={onClose} z="z-50">
         <div
-          className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl my-4"
+          className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl my-4 max-h-[calc(100vh-2rem)] overflow-y-auto"
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="flex justify-between items-start px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+          {/* Sticky header so the title + status badges stay visible
+              while user scrolls the long quote contents. Without this,
+              tall quotes scrolled the header off and there was no way
+              to recover the top short of closing + reopening. */}
+          <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 flex justify-between items-start px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700">
             <div className="min-w-0 flex-1">
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
                 {quote.quote_id}
