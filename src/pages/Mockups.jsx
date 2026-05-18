@@ -1,9 +1,8 @@
 import { useState, useRef } from "react";
 import { Search, Download, Upload, RotateCcw, Loader2, FileText } from "lucide-react";
 import MockupCanvas from "../components/mockups/MockupCanvas";
+import { base44 } from "@/api/supabaseClient";
 // jspdf loaded on demand inside generateProofPDF below
-
-const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
 export default function Mockups() {
   const [styleQuery, setStyleQuery] = useState("");
@@ -79,23 +78,17 @@ export default function Mockups() {
     try {
       const code = styleQuery.trim();
       const [ssRes, acRes] = await Promise.allSettled([
-        fetch(`${SUPABASE_FUNC_URL}/functions/v1/ssLookupStyle`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ styleNumber: code }),
-        }).then(r => r.json()),
-        fetch(`${SUPABASE_FUNC_URL}/functions/v1/acLookupStyle`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ styleCode: code }),
-        }).then(r => r.json()),
+        base44.functions.invoke("ssLookupStyle", { styleNumber: code }),
+        base44.functions.invoke("acLookupStyle", { styleCode: code }),
       ]);
       // Distinguish "neither supplier had this style" from "we couldn't
       // reach either supplier" — they produce the same empty array but
       // mean very different things to the user.
-      const ssReached = ssRes.status === "fulfilled" && !ssRes.value.error;
-      const acReached = acRes.status === "fulfilled" && !acRes.value.error;
+      const ssReached = ssRes.status === "fulfilled" && !ssRes.value.error && !ssRes.value.data?.error;
+      const acReached = acRes.status === "fulfilled" && !acRes.value.error && !acRes.value.data?.error;
       const allMatches = [
-        ...(ssReached ? ssRes.value.matches || [] : []),
-        ...(acReached ? acRes.value.matches || [] : []),
+        ...(ssReached ? ssRes.value.data?.matches || [] : []),
+        ...(acReached ? acRes.value.data?.matches || [] : []),
       ];
       if (!allMatches.length) {
         if (!ssReached && !acReached) {

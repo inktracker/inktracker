@@ -80,13 +80,11 @@ export default function OnboardingWizard({ user, onComplete }) {
     setQbChecking(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "checkConnection", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "checkConnection",
+        accessToken: session?.access_token,
       });
-      const data = await res.json();
-      const ok = !!data.connected;
+      const ok = !invErr && !!data?.connected;
       setQbConnected(ok);
       return ok;
     } catch {

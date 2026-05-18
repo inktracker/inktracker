@@ -63,35 +63,30 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
               customer_email: recipientEmails[0] || customer?.email || "",
             };
             const invoicePayload = buildQBInvoicePayload(quoteShape);
-            const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "createInvoice",
-                accessToken: session.access_token,
-                quote: quoteShape,
-                invoicePayload,
-                customer: {
-                  id: invoice.customer_id,
-                  name: invoice.customer_name,
-                  email: recipientEmails[0] || customer?.email || "",
-                  company: customer?.company || "",
-                  phone: customer?.phone || "",
-                  address: customer?.address || "",
-                  qb_customer_id: customer?.qb_customer_id || "",
-                  tax_exempt: customer?.tax_exempt || false,
-                  tax_id: customer?.tax_id || "",
-                },
-              }),
+            const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+              action: "createInvoice",
+              accessToken: session.access_token,
+              quote: quoteShape,
+              invoicePayload,
+              customer: {
+                id: invoice.customer_id,
+                name: invoice.customer_name,
+                email: recipientEmails[0] || customer?.email || "",
+                company: customer?.company || "",
+                phone: customer?.phone || "",
+                address: customer?.address || "",
+                qb_customer_id: customer?.qb_customer_id || "",
+                tax_exempt: customer?.tax_exempt || false,
+                tax_id: customer?.tax_id || "",
+              },
             });
-            const data = await res.json();
-            if (res.ok && !data.error) {
+            if (!invErr && data && !data.error) {
               qbPayLink = data.paymentLink || "";
               if (qbPayLink) {
                 await base44.entities.Invoice.update(invoice.id, { qb_payment_link: qbPayLink });
               }
             } else {
-              console.warn("[SendInvoice] QB create failed:", data.error || res.status);
+              console.warn("[SendInvoice] QB create failed:", data?.error || invErr?.message);
             }
           }
         } catch (err) {

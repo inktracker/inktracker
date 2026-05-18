@@ -274,14 +274,11 @@ export default function QuoteDetailModal({
     setQbCheckingConn(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "checkConnection", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "checkConnection",
+        accessToken: session?.access_token,
       });
-      const data = await res.json();
-      setQbConnected(!!data.connected);
+      setQbConnected(!invErr && !!data?.connected);
     } catch {
       setQbConnected(false);
     } finally {

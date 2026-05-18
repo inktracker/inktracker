@@ -91,13 +91,11 @@ export default function Customers() {
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.access_token) {
-            const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ action: "getCustomerStats", accessToken: session.access_token }),
+            const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+              action: "getCustomerStats",
+              accessToken: session.access_token,
             });
-            if (res.ok) {
-              const data = await res.json();
+            if (!invErr && data) {
               setQbStats(data.stats || {});
             }
           }
@@ -1071,14 +1069,10 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
         if (session?.access_token) {
           for (const dup of duplicates) {
             if (!dup.qb_customer_id) continue;
-            await fetch(`${supabaseFuncUrl}/functions/v1/qbSync`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "deactivateCustomer",
-                accessToken: session.access_token,
-                customerId: dup.qb_customer_id,
-              }),
+            await base44.functions.invoke("qbSync", {
+              action: "deactivateCustomer",
+              accessToken: session.access_token,
+              customerId: dup.qb_customer_id,
             });
           }
         }

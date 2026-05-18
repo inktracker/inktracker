@@ -183,12 +183,11 @@ export default function Account() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "getStripeAccountStatus", accessToken: session.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("billing", {
+        action: "getStripeAccountStatus",
+        accessToken: session.access_token,
       });
-      const data = await res.json();
+      if (invErr) return;
       if (data?.connected) {
         setStripeAccountId(data.accountId || null);
         setStripeAccountStatus(data.status || "pending");
@@ -222,12 +221,11 @@ export default function Account() {
     setStripeMessage(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "connectStripe", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("billing", {
+        action: "connectStripe",
+        accessToken: session?.access_token,
       });
-      const data = await res.json();
+      if (invErr) throw new Error(invErr.message || "Couldn't start Stripe onboarding.");
       if (data?.url) {
         window.location.href = data.url;
         return;
@@ -244,12 +242,11 @@ export default function Account() {
     setOpeningStripeDashboard(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "openStripeDashboard", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("billing", {
+        action: "openStripeDashboard",
+        accessToken: session?.access_token,
       });
-      const data = await res.json();
+      if (invErr) throw new Error(invErr.message || "Couldn't open the Stripe dashboard.");
       if (data?.url) {
         window.open(data.url, "_blank");
         return;
@@ -1013,13 +1010,11 @@ function BillingSection({ user }) {
     async function load() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "getSubscription", accessToken: session?.access_token }),
+        const { data } = await base44.functions.invoke("billing", {
+          action: "getSubscription",
+          accessToken: session?.access_token,
         });
-        const data = await res.json();
-        setSub(data);
+        if (data) setSub(data);
       } catch {}
       setLoading(false);
     }
@@ -1034,14 +1029,14 @@ function BillingSection({ user }) {
     setCheckoutLoading(billing);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "checkout", accessToken: session?.access_token, billing }),
+      const { data, error: invErr } = await base44.functions.invoke("billing", {
+        action: "checkout",
+        accessToken: session?.access_token,
+        billing,
       });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else alert(data.error || "Failed to start checkout");
+      if (invErr) { alert(invErr.message || "Failed to start checkout"); return; }
+      if (data?.url) window.location.href = data.url;
+      else alert(data?.error || "Failed to start checkout");
     } catch (err) {
       alert("Checkout failed: " + err.message);
     } finally {
@@ -1066,14 +1061,13 @@ function BillingSection({ user }) {
     }
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/billing`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "portal", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("billing", {
+        action: "portal",
+        accessToken: session?.access_token,
       });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-      else alert(data.error || "Failed to open billing portal");
+      if (invErr) { alert(invErr.message || "Failed to open billing portal"); return; }
+      if (data?.url) window.location.href = data.url;
+      else alert(data?.error || "Failed to open billing portal");
     } catch (err) {
       alert("Portal failed: " + err.message);
     }
@@ -1164,14 +1158,14 @@ function GmailScannerSection({ user }) {
     async function check() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "checkGmailConnection", accessToken: session?.access_token }),
+        const { data } = await base44.functions.invoke("emailScanner", {
+          action: "checkGmailConnection",
+          accessToken: session?.access_token,
         });
-        const data = await res.json();
-        setConnected(data.connected);
-        setLastScan(data.lastScan);
+        if (data) {
+          setConnected(data.connected);
+          setLastScan(data.lastScan);
+        }
       } catch {}
     }
     check();
@@ -1187,13 +1181,12 @@ function GmailScannerSection({ user }) {
     setConnecting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "getGmailAuthUrl", accessToken: session?.access_token }),
+      const { data, error: invErr } = await base44.functions.invoke("emailScanner", {
+        action: "getGmailAuthUrl",
+        accessToken: session?.access_token,
       });
-      const data = await res.json();
-      if (data.authUrl) window.location.href = data.authUrl;
+      if (invErr) throw new Error(invErr.message || "Failed");
+      if (data?.authUrl) window.location.href = data.authUrl;
     } catch (err) {
       alert("Failed: " + err.message);
     } finally {
@@ -1206,11 +1199,14 @@ function GmailScannerSection({ user }) {
     setResults(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const post = (action) => fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, accessToken: session?.access_token }),
-      }).then((r) => r.json()).catch((err) => ({ error: err?.message || "request failed" }));
+      const post = async (action) => {
+        const { data, error: invErr } = await base44.functions.invoke("emailScanner", {
+          action,
+          accessToken: session?.access_token,
+        });
+        if (invErr) return { error: invErr.message || "request failed" };
+        return data || {};
+      };
 
       // Two distinct passes:
       //   scanEmails  → finds NEW inbound quote requests and creates draft quotes

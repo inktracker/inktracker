@@ -58,10 +58,9 @@ export default function Invoices() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
           // Sync invoices from QB (updates existing, creates new — no duplicates)
-          await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "pullInvoices", accessToken: session.access_token }),
+          await base44.functions.invoke("qbSync", {
+            action: "pullInvoices",
+            accessToken: session.access_token,
           });
           // Reload with fresh data + recompute outstanding from local rows.
           const freshInv = await base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-date", 1000);

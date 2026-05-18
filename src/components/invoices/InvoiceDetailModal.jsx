@@ -112,29 +112,25 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         };
       }
 
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createInvoice",
-          accessToken: session.access_token,
-          quote: quoteShape,
-          invoicePayload,
-          customer: {
-            id: invoice.customer_id,
-            name: invoice.customer_name,
-            email: customer?.email || "",
-            company: customer?.company || "",
-            phone: customer?.phone || "",
-            address: customer?.address || "",
-            qb_customer_id: customer?.qb_customer_id || "",
-            tax_exempt: customer?.tax_exempt || false,
-            tax_id: customer?.tax_id || "",
-          },
-        }),
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "createInvoice",
+        accessToken: session.access_token,
+        quote: quoteShape,
+        invoicePayload,
+        customer: {
+          id: invoice.customer_id,
+          name: invoice.customer_name,
+          email: customer?.email || "",
+          company: customer?.company || "",
+          phone: customer?.phone || "",
+          address: customer?.address || "",
+          qb_customer_id: customer?.qb_customer_id || "",
+          tax_exempt: customer?.tax_exempt || false,
+          tax_id: customer?.tax_id || "",
+        },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create");
+      if (invErr) throw new Error(invErr.message || "Failed to create");
+      if (data?.error) throw new Error(data.error);
       setQbStatus({ type: "success", text: `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}` });
     } catch (err) {
       setQbStatus({ type: "error", text: err.message });
@@ -191,17 +187,12 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   async function fetchQBInvoicePdfBlob(qbInvoiceId) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getInvoicePDF",
-          accessToken: session?.access_token,
-          qbInvoiceId,
-        }),
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "getInvoicePDF",
+        accessToken: session?.access_token,
+        qbInvoiceId,
       });
-      const data = await res.json();
-      if (!data?.pdf) return null;
+      if (invErr || !data?.pdf) return null;
       const byteChars = atob(data.pdf);
       const byteArray = new Uint8Array(byteChars.length);
       for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);

@@ -280,13 +280,16 @@ export default function OrderDetailModal({
   async function callFedEx(action, params) {
     setShipError("");
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/fedexShipping`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, accessToken: session?.access_token, ...params }),
+    const { data, error: invErr } = await base44.functions.invoke("fedexShipping", {
+      action,
+      accessToken: session?.access_token,
+      ...params,
     });
-    const data = await res.json();
-    if (data.error) setShipError(data.error);
+    if (invErr) {
+      setShipError(invErr.message || "FedEx request failed");
+      return { error: invErr.message };
+    }
+    if (data?.error) setShipError(data.error);
     return data;
   }
 
