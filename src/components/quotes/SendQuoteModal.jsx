@@ -56,6 +56,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     quote.qb_payment_link && quote.qb_invoice_id ? "qb" : "stripe"
   );
   const [qbConnected, setQbConnected] = useState(false);
+  const [stripeConnected, setStripeConnected] = useState(false);
   const [qbInvoiceId, setQbInvoiceId] = useState(quote.qb_invoice_id ?? null);
   const [qbPaymentLink, setQbPaymentLink] = useState(quote.qb_payment_link ?? null);
   const [creatingQbInvoice, setCreatingQbInvoice] = useState(false);
@@ -126,20 +127,39 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     }
 
     // Check QB connection so we know whether to even show the QB option.
+    // Use base44.functions.invoke (not raw fetch) so the Supabase
+    // Authorization header is included — gateway returns
+    // UNAUTHORIZED_NO_AUTH_HEADER otherwise. Was the bug behind QB showing
+    // grayed out for already-connected shops.
     (async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) return;
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-        const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "checkConnection", accessToken: session.access_token }),
+        const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+          action: "checkConnection",
+          accessToken: session.access_token,
         });
-        const data = await res.json();
-        if (active) setQbConnected(!!data.connected);
+        if (active && !invErr && data) setQbConnected(!!data.connected);
       } catch {
         if (active) setQbConnected(false);
+      }
+    })();
+
+    // Check Stripe Connect status. Without this, the Stripe radio
+    // was always enabled even for shops with no Connect account — the
+    // customer would then hit the payment page and get an error from
+    // the createCheckoutSession function instead of a friendly
+    // "connect Stripe first" hint at send time.
+    (async () => {
+      try {
+        const me = await base44.auth.me();
+        if (!active) return;
+        // Stripe Connect lands on either stripe_account_id or the
+        // legacy stripe_connect_account_id. Either means connected.
+        const connected = !!(me?.stripe_account_id || me?.stripe_connect_account_id);
+        setStripeConnected(connected);
+      } catch {
+        if (active) setStripeConnected(false);
       }
     })();
 
@@ -351,7 +371,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   return (
     <ModalBackdrop onClose={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-200">
+        {/* Sticky header so title + close button stay visible while
+            user scrolls the modal contents. Without this, long modals
+            on short screens lost the top — user couldn't dismiss or
+            see the title without scrolling to top. */}
+        <div className="sticky top-0 z-10 bg-white flex items-center gap-3 px-6 py-4 border-b border-slate-200">
           <Mail className="w-5 h-5 text-indigo-600" />
           <h2 className="text-base font-semibold text-slate-900">Send Quote Email</h2>
           <button
@@ -467,17 +491,19 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   Payment method
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <label className={`flex items-start gap-2 p-3 border rounded-xl cursor-pointer transition ${paymentProvider === "stripe" ? "border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-200" : "border-slate-200 hover:border-slate-300"}`}>
+                  <label className={`flex items-start gap-2 p-3 border rounded-xl transition ${!stripeConnected ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${paymentProvider === "stripe" ? "border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-200" : "border-slate-200 hover:border-slate-300"}`}>
                     <input
                       type="radio"
                       checked={paymentProvider === "stripe"}
                       onChange={() => setPaymentProvider("stripe")}
-                      disabled={sending}
+                      disabled={sending || !stripeConnected}
                       className="mt-0.5 accent-indigo-600"
                     />
                     <span className="text-sm">
                       <span className="block font-semibold text-slate-800">Stripe</span>
-                      <span className="block text-xs text-slate-500 mt-0.5">Customer pays through Stripe Checkout.</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">
+                        {stripeConnected ? "Customer pays through Stripe Checkout." : "Connect Stripe in Account first."}
+                      </span>
                     </span>
                   </label>
                   <label className={`flex items-start gap-2 p-3 border rounded-xl transition ${!qbConnected ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${paymentProvider === "qb" ? "border-[#2CA01C] bg-green-50/50 ring-1 ring-green-200" : "border-slate-200 hover:border-slate-300"}`}>
@@ -550,7 +576,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
               )}
             </div>
 
-            <div className="flex gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
+            <div className="sticky bottom-0 flex gap-3 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
               <button
                 onClick={onClose}
                 disabled={sending}
