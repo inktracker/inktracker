@@ -31,6 +31,13 @@ const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
 const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 const QB_BASE          = "https://quickbooks.api.intuit.com/v3/company";
 
+// QBO's /send endpoint forces an email send — there's no flag to suppress
+// it. We point sendTo at a non-existent address on a domain we own so the
+// email bounces silently (no human ever sees it) while QBO synchronously
+// returns the freshly-minted share link in the API response. Zero setup
+// required from shops; zero customer-facing noise.
+const QB_SEND_SINK     = "qb-noop@inktracker.app";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -154,6 +161,23 @@ async function qbUpdate(token: string, realmId: string, entity: string, body: ob
   const res = await fetch(url, { method: "POST", headers: qbHeaders(token), body: JSON.stringify(body) });
   const data = await res.json();
   if (!res.ok) throw new Error(`QB update ${entity} failed: ${res.status} ${JSON.stringify(data)}`);
+  return data;
+}
+
+// POST /invoice/{id}/send is the only QBO endpoint that mints the customer-
+// facing share link (`connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-…`).
+// Send-to-self pattern: we point `sendTo` at a sinkhole derived from the
+// shop owner's email (see notificationSinkEmail) so QBO's notification
+// lands in the shop owner's inbox under a +qbnoise filter, NOT the
+// customer's. The response contains the freshly-minted InvoiceLink.
+async function qbSendInvoice(token: string, realmId: string, invoiceId: string, sendTo: string) {
+  const url = `${QB_BASE}/${realmId}/invoice/${invoiceId}/send?sendTo=${encodeURIComponent(sendTo)}&minorversion=65`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/octet-stream" },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`QB send invoice/${invoiceId} failed: ${res.status} ${JSON.stringify(data)}`);
   return data;
 }
 
@@ -565,24 +589,26 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }
   }
 
-  // Re-fetch the invoice with include=invoiceLink — that's the only
-  // way QBO returns the shareable customer-facing payment URL
-  // (connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-…).
-  // The create response itself never includes it. If this GET fails
-  // we fall back to whatever the create response had (likely nothing,
-  // which then triggers the Stripe/Approve-only fallback downstream).
+  // Mint the customer-facing share link. QBO does NOT include the link in
+  // the create response, in a plain GET, or in ?include=invoiceLink on a
+  // draft — the link only exists after the invoice runs through QBO's send
+  // pipeline, which provisions the portal record. We POST /send with sendTo
+  // pointed at a non-existent address on our own domain so QBO's email
+  // bounces silently; the share link still comes back synchronously in the
+  // API response. No human ever sees the QBO email; the customer only gets
+  // our Resend message with this link embedded as the Approve & Pay button.
   let invoiceForLink: any = qbInvoiceFinal || created;
   try {
-    const linked = await qbGet(token, realmId, "invoice", qbInvoiceId, "invoiceLink");
-    invoiceForLink = linked?.Invoice || linked;
-  } catch (linkErr) {
-    console.warn("[createInvoice] include=invoiceLink fetch failed:", linkErr instanceof Error ? linkErr.message : String(linkErr));
+    const sent = await qbSendInvoice(token, realmId, qbInvoiceId, QB_SEND_SINK);
+    invoiceForLink = sent?.Invoice || sent;
+  } catch (sendErr) {
+    console.warn("[createInvoice] /send to mint share link failed:", sendErr instanceof Error ? sendErr.message : String(sendErr));
   }
   const paymentLink = extractPaymentLink(invoiceForLink, realmId);
   if (!paymentLink) {
-    // Surface the full invoice shape in logs so we can debug what QB
-    // actually returned. Sentry will also capture this when wired.
-    console.warn("[createInvoice] no payment link extracted; invoice shape:", JSON.stringify(invoiceForLink).slice(0, 1500));
+    // /send was supposed to return InvoiceLink — if it didn't, dump the
+    // full shape (no truncation) so we can see what QBO actually returned.
+    console.warn("[createInvoice] no payment link extracted from /send; FULL response shape:", JSON.stringify(invoiceForLink));
   }
 
   // 4b. If the quote's deposit was already paid, record the payment against this invoice
