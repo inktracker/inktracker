@@ -7,24 +7,25 @@
  *   }
  *
  * The frontend stores `quote.qb_payment_link` whenever a quote was synced to
- * QuickBooks. Some of those URLs are **real** customer-facing payment pages
- * (issued by QB Payments), others are internal Intuit URLs that require the
- * customer to log into their own QB account — useless for paying. We have to
- * tell them apart.
+ * QuickBooks. `connect.intuit.com` is messy: it hosts BOTH the real anonymous-
+ * pay customer-facing share link AND a legacy login-required portal. We tell
+ * them apart by path, not host:
  *
- * Heuristic: a QB link is a usable payment URL only when it points at a
- * payments host (`payments.intuit.com`, `quickbooks.intuit.com/payments/…`,
- * etc.). Hosts known to require an Intuit login (the legacy
- * `connect.intuit.com/portal/asei/…` fallback, the QBO web app at
- * `app.qbo.intuit.com`) are rejected and the caller falls through to Stripe.
+ *   ACCEPT — anonymous-pay share link (minted by POST /invoice/{id}/send):
+ *     https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-…
+ *
+ *   REJECT — legacy fabricated fallback we used to construct (requires the
+ *   customer to log into their own Intuit account):
+ *     https://connect.intuit.com/portal/asei/CommerceNetwork/consumer/view-invoice?…
+ *
+ * Other Intuit payment hosts (`payments.intuit.com`, the payments subdomain
+ * of `quickbooks.intuit.com`, etc.) are accepted at the host level. Known
+ * login-only hosts (`app.qbo.intuit.com`, `accounts.intuit.com`) are
+ * rejected at the host level.
  */
 
-const QB_LOGIN_HOSTS = [
-  "connect.intuit.com",       // legacy CommerceNetwork fallback (login required)
-  "app.qbo.intuit.com",       // QBO web app (login required)
-  "qbo.intuit.com",
-  "accounts.intuit.com",      // Intuit SSO
-];
+// connect.intuit.com hosts both real and fake payment URLs — distinguish by path.
+const QB_SHARE_LINK_PATH_PREFIX = "/portal/app/CommerceNetwork/view/scs-";
 
 const QB_PAYMENT_HOST_PATTERNS = [
   /(^|\.)payments\.intuit\.com$/i,
@@ -32,18 +33,33 @@ const QB_PAYMENT_HOST_PATTERNS = [
   /(^|\.)intuit-payments\.com$/i,
 ];
 
-function parseHost(url) {
+const QB_LOGIN_HOSTS = [
+  "app.qbo.intuit.com",       // QBO web app (login required)
+  "qbo.intuit.com",
+  "accounts.intuit.com",      // Intuit SSO
+];
+
+function parseUrl(url) {
   if (typeof url !== "string" || !url.startsWith("http")) return null;
   try {
-    return new URL(url).hostname.toLowerCase();
+    return new URL(url);
   } catch {
     return null;
   }
 }
 
 export function isQBPaymentLink(url) {
-  const host = parseHost(url);
-  if (!host) return false;
+  const parsed = parseUrl(url);
+  if (!parsed) return false;
+  const host = parsed.hostname.toLowerCase();
+
+  // connect.intuit.com: accept only the real share-link path. The legacy
+  // `/portal/asei/CommerceNetwork/consumer/view-invoice` fake URL falls
+  // through and gets rejected here.
+  if (host === "connect.intuit.com") {
+    return parsed.pathname.startsWith(QB_SHARE_LINK_PATH_PREFIX);
+  }
+
   if (QB_LOGIN_HOSTS.includes(host)) return false;
   return QB_PAYMENT_HOST_PATTERNS.some((re) => re.test(host));
 }
