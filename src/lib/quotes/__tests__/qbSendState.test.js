@@ -26,26 +26,31 @@ describe("deriveQbSendState", () => {
     });
   });
 
-  describe("created_no_link — invoice exists, no QB Payments URL", () => {
-    // This is the case that produced the duplicate bug. Before the
-    // fix, qbPaymentLink === null was treated as "not created" and
-    // the Create button kept rendering → re-clicks → duplicate QB
-    // invoices.
-    it("returns created_no_link + send-ENABLED when only the id is set", () => {
+  describe("send_failed — invoice exists, /send didn't return a payment link", () => {
+    // Post-PR #174 (which switched to POST /invoice/{id}/send for minting
+    // the share link), the only way to land here is if our /send call
+    // failed transiently. The previous "QB Payments isn't enabled" framing
+    // was a misdiagnosis. The Retry UX re-invokes createInvoice → the
+    // backend's UPDATE path runs /send again on the existing invoice id,
+    // never creating a duplicate.
+    it("returns send_failed + send-DISABLED when only the id is set", () => {
       const state = deriveQbSendState({ qbInvoiceId: "qb-123", qbPaymentLink: null });
-      expect(state.status).toBe("created_no_link");
-      expect(state.sendDisabledByQb).toBe(false);
+      expect(state.status).toBe("send_failed");
+      expect(state.sendDisabledByQb).toBe(true);
     });
 
-    it("surfaces a warning explaining the QB Payments fallback to Stripe", () => {
+    it("surfaces a retryable warning that doesn't blame QB Payments setup", () => {
       const { warning } = deriveQbSendState({ qbInvoiceId: "qb-123", qbPaymentLink: null });
-      expect(warning).toMatch(/QB Payments isn't enabled/i);
-      expect(warning).toMatch(/Stripe/);
+      expect(warning).toMatch(/Couldn't get the payment link/i);
+      expect(warning).toMatch(/Try again/i);
+      // Don't lie to the user about why — pre-#174 we wrongly told them
+      // QB Payments wasn't enabled.
+      expect(warning).not.toMatch(/QB Payments isn't enabled/i);
     });
 
     it("treats empty-string paymentLink as missing", () => {
       expect(deriveQbSendState({ qbInvoiceId: "qb-123", qbPaymentLink: "" }).status)
-        .toBe("created_no_link");
+        .toBe("send_failed");
     });
   });
 
@@ -60,14 +65,13 @@ describe("deriveQbSendState", () => {
   });
 
   describe("state-machine invariants", () => {
-    // Cross-state property checks to lock in the contract — these
-    // would have caught the original bug at PR time.
+    // Cross-state property checks to lock in the contract.
 
     const cases = [
-      { qbInvoiceId: null,   qbPaymentLink: null,           expectStatus: "needs_create"    },
-      { qbInvoiceId: null,   qbPaymentLink: "url",          expectStatus: "needs_create"    },
-      { qbInvoiceId: "id",   qbPaymentLink: null,           expectStatus: "created_no_link" },
-      { qbInvoiceId: "id",   qbPaymentLink: "url",          expectStatus: "ready"           },
+      { qbInvoiceId: null,   qbPaymentLink: null,           expectStatus: "needs_create" },
+      { qbInvoiceId: null,   qbPaymentLink: "url",          expectStatus: "needs_create" },
+      { qbInvoiceId: "id",   qbPaymentLink: null,           expectStatus: "send_failed"  },
+      { qbInvoiceId: "id",   qbPaymentLink: "url",          expectStatus: "ready"        },
     ];
 
     it.each(cases)(
@@ -77,19 +81,19 @@ describe("deriveQbSendState", () => {
       },
     );
 
-    it("sendDisabledByQb is true IF AND ONLY IF status === needs_create", () => {
-      // The Create button gates Send. Once an invoice exists in QB
-      // (even without a payment URL), Send can fire.
+    it("sendDisabledByQb is true UNLESS status === ready", () => {
+      // Send needs BOTH the invoice and the link. Either one missing
+      // blocks send.
       for (const { qbInvoiceId, qbPaymentLink, expectStatus } of cases) {
         const { sendDisabledByQb } = deriveQbSendState({ qbInvoiceId, qbPaymentLink });
-        expect(sendDisabledByQb).toBe(expectStatus === "needs_create");
+        expect(sendDisabledByQb).toBe(expectStatus !== "ready");
       }
     });
 
-    it("warning is non-null IF AND ONLY IF status === created_no_link", () => {
+    it("warning is non-null IF AND ONLY IF status === send_failed", () => {
       for (const { qbInvoiceId, qbPaymentLink, expectStatus } of cases) {
         const { warning } = deriveQbSendState({ qbInvoiceId, qbPaymentLink });
-        if (expectStatus === "created_no_link") expect(warning).toBeTruthy();
+        if (expectStatus === "send_failed") expect(warning).toBeTruthy();
         else expect(warning).toBeNull();
       }
     });
