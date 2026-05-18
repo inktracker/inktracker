@@ -27,6 +27,10 @@ export function initSentry() {
   Sentry.init({
     dsn: DSN,
     environment: ENV,
+    // Release tag matches the source-map upload done by sentryVitePlugin
+    // (vite.config.js). Without this, Sentry can't pair events with the
+    // uploaded maps and stack traces stay minified.
+    release: import.meta.env.VITE_SENTRY_RELEASE,
     // Sample 100% of errors for now (we're at ~10 shops; volume is
     // tiny). Lower to 0.25 once we cross 100K events/mo.
     sampleRate: 1.0,
