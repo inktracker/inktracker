@@ -15,11 +15,44 @@ describe("isQBPaymentLink", () => {
     ).toBe(true);
   });
 
+  it("accepts the real QBO share link on connect.intuit.com", () => {
+    // The customer-facing payment link minted by POST /invoice/{id}/send.
+    // Anonymous-pay capable — no Intuit login required.
+    expect(
+      isQBPaymentLink(
+        "https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-abc123def456"
+      )
+    ).toBe(true);
+  });
+
+  it("accepts share-link with query string and fragment intact", () => {
+    expect(
+      isQBPaymentLink(
+        "https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-abc?ref=email#receipt"
+      )
+    ).toBe(true);
+  });
+
   it("rejects the legacy connect.intuit.com login fallback URL", () => {
+    // The fabricated URL we used to construct before commit 5768c01 —
+    // requires the customer to log in to their own Intuit account.
     expect(
       isQBPaymentLink(
         "https://connect.intuit.com/portal/asei/CommerceNetwork/consumer/view-invoice?businessId=42&invoiceId=99"
       )
+    ).toBe(false);
+  });
+
+  it("rejects unknown connect.intuit.com paths (conservative default)", () => {
+    // Anything on connect.intuit.com that isn't the known share-link
+    // prefix is rejected. If QBO ever ships a new URL format we'll have
+    // to whitelist it explicitly — better than silently routing customers
+    // to a URL that may require a login.
+    expect(
+      isQBPaymentLink("https://connect.intuit.com/some/other/path")
+    ).toBe(false);
+    expect(
+      isQBPaymentLink("https://connect.intuit.com/")
     ).toBe(false);
   });
 
@@ -55,6 +88,13 @@ describe("resolveCheckoutTarget", () => {
     });
     expect(r.provider).toBe("qb");
     expect(r.url).toBe("https://payments.intuit.com/payment/xyz");
+  });
+
+  it("routes to QB when qb_payment_link is the real connect.intuit.com share link", () => {
+    const link = "https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-abc123";
+    const r = resolveCheckoutTarget({ qb_payment_link: link });
+    expect(r.provider).toBe("qb");
+    expect(r.url).toBe(link);
   });
 
   it("routes to Stripe when qb_payment_link is the broken connect.intuit.com fallback", () => {
