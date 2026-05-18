@@ -97,6 +97,15 @@ describe("resolveCheckoutTarget", () => {
     expect(r.url).toBe(link);
   });
 
+  it("routes to QB on the literal production-shape share link (regression guard)", () => {
+    // Pinned verbatim from a 2026-05-18 prod test (quote Q-2026-89SU). If
+    // this ever fails, the classifier diverged from what QBO actually emits.
+    const link = "https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-7f190a8f3c6d403997092f7999a40c2d49c2c1b3acea4921ae25435d9673123aed8a7db05aae4f2aa78dfe6d08ed235d?locale=en_US&cta=v3invoicelink";
+    const r = resolveCheckoutTarget({ qb_payment_link: link });
+    expect(r.provider).toBe("qb");
+    expect(r.url).toBe(link);
+  });
+
   it("routes to Stripe when qb_payment_link is the broken connect.intuit.com fallback", () => {
     const r = resolveCheckoutTarget({
       qb_payment_link:
