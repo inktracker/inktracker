@@ -334,28 +334,13 @@ export default function QuotePayment() {
     }
 
     // Prefer QB payment page when the link is a real customer-facing payment
-    // URL (not the legacy login-required fallback). resolveCheckoutTarget
-    // filters out URLs that would dump the customer at an Intuit login screen.
+    // URL. resolveCheckoutTarget rejects anything that would land the customer
+    // at an Intuit login screen.
     const qbTarget = resolveCheckoutTarget(quote);
     if (qbTarget.provider === "qb" && qbTarget.url) {
       window.location.href = qbTarget.url;
       return;
     }
-
-    // Try a fresh fetch in case the QB link was issued after page load.
-    try {
-      const response = await base44.functions.invoke("createCheckoutSession", {
-        action: "getQuote",
-        quoteId: quote.id,
-        token: publicToken,
-      });
-      const refreshed = response?.data?.quote;
-      const refreshedTarget = resolveCheckoutTarget(refreshed);
-      if (refreshedTarget.provider === "qb" && refreshedTarget.url) {
-        window.location.href = refreshedTarget.url;
-        return;
-      }
-    } catch {}
 
     // No usable QB link — fall through to Stripe checkout
     setCheckoutLoading(true);
