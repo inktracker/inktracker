@@ -176,7 +176,6 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Not signed in.");
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const customerPayload = customer ?? {
         name: quote.customer_name || "",
         email: quote.customer_email || "",
@@ -187,19 +186,20 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         quote,
         isBrokerQuote(quote) ? BROKER_MARKUP : undefined,
       );
-      const res = await fetch(`${supabaseUrl}/functions/v1/qbSync`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createInvoice",
-          accessToken: session.access_token,
-          quote,
-          customer: customerPayload,
-          invoicePayload,
-        }),
+      // base44.functions.invoke (not raw fetch) so the Supabase
+      // Authorization header is included — gateway returns 401
+      // UNAUTHORIZED_NO_AUTH_HEADER otherwise. Bug Joe surfaced
+      // 2026-05-18: the user saw "QuickBooks rejected the invoice"
+      // because the gateway rejected before QB was ever called.
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "createInvoice",
+        accessToken: session.access_token,
+        quote,
+        customer: customerPayload,
+        invoicePayload,
       });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "QuickBooks rejected the invoice.");
+      if (invErr) throw new Error(invErr.message || "Couldn't reach QuickBooks. Please try again.");
+      if (data?.error) throw new Error(data.error);
       setQbInvoiceId(data.qbInvoiceId);
       setQbPaymentLink(data.paymentLink || null);
     } catch (err) {
