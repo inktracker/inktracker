@@ -433,14 +433,14 @@ export default function Quotes() {
                 setParsing(true);
                 try {
                   const { data: { session } } = await supabase.auth.getSession();
-                  const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "parseAndCreate", accessToken: session?.access_token, emailBody: emailText.trim() }),
+                  const { data, error: invErr } = await base44.functions.invoke("emailScanner", {
+                    action: "parseAndCreate",
+                    accessToken: session?.access_token,
+                    emailBody: emailText.trim(),
                   });
-                  const data = await res.json();
-                  if (data.error) { alert(data.error); }
-                  else if (data.quoteId) {
+                  if (invErr) { alert(invErr.message || "Failed"); }
+                  else if (data?.error) { alert(data.error); }
+                  else if (data?.quoteId) {
                     const fresh = await base44.entities.Quote.list("-created_date", 500);
                     setQuotes(fresh);
                     setShowEmailPaste(false);

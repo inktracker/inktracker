@@ -205,25 +205,15 @@ function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
       }
 
       // PUBLIC REPLY: hit sendReply edge function, then log the Message row.
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/sendReply`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({
-          to: customerEmail,
-          subject,
-          body: body.trim(),
-          shopName: shopName || "InkTracker",
-          shopOwnerEmail: currentUserEmail,
-        }),
+      const { data, error: invErr } = await base44.functions.invoke("sendReply", {
+        to: customerEmail,
+        subject,
+        body: body.trim(),
+        shopName: shopName || "InkTracker",
+        shopOwnerEmail: currentUserEmail,
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || data?.error) {
-        throw new Error(data?.error || `Send failed (${res.status})`);
-      }
+      if (invErr) throw new Error(invErr.message || "Send failed");
+      if (data?.error) throw new Error(data.error);
 
       const row = await logOutboundMessage({
         threadId,

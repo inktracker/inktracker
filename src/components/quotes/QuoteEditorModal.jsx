@@ -198,17 +198,16 @@ export default function QuoteEditorModal({
         setPasteError("Not signed in. Please refresh and try again.");
         return;
       }
-      const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/emailScanner`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "parseOnly",
-          text: pasteText,
-          accessToken: session.access_token,
-        }),
+      const { data, error: invErr } = await base44.functions.invoke("emailScanner", {
+        action: "parseOnly",
+        text: pasteText,
+        accessToken: session.access_token,
       });
-      const data = await res.json();
-      if (data.error) {
+      if (invErr) {
+        setPasteError(invErr.message || "Failed to parse");
+        return;
+      }
+      if (data?.error) {
         setPasteError(data.error);
         return;
       }

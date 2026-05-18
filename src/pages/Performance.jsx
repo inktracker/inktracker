@@ -51,13 +51,11 @@ export default function Performance() {
       (async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
-          const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "checkConnection", accessToken: session?.access_token }),
+          const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+            action: "checkConnection",
+            accessToken: session?.access_token,
           });
-          const data = await res.json();
-          setQbConnected(!!data?.connected);
+          setQbConnected(!invErr && !!data?.connected);
         } catch {
           setQbConnected(false);
         }

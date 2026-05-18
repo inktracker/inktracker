@@ -585,12 +585,13 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
     setSsColors([]);
     setSsLabel("");
     try {
-      const res = await fetch(`${supabaseFuncUrl}/functions/v1/ssLookupStyle`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ styleNumber: styleNumber.trim() }),
+      const { data, error: invErr } = await base44.functions.invoke("ssLookupStyle", {
+        styleNumber: styleNumber.trim(),
       });
-      const data = await res.json();
+      if (invErr) {
+        setSsError(invErr.message || "Lookup failed");
+        return;
+      }
       const matches = data.matches || [];
       if (!matches.length) { setSsError("Style not found"); return; }
       const product = matches[0];
@@ -708,22 +709,20 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
               if (!styleNumber.trim() || !ssColor) { alert("Set S&S Style # and Color first."); return; }
               setOrdering(true);
               try {
-                const res = await fetch(`${supabaseFuncUrl}/functions/v1/ssLookupStyle`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ styleNumber: styleNumber.trim() }),
+                const { data, error: invErr1 } = await base44.functions.invoke("ssLookupStyle", {
+                  styleNumber: styleNumber.trim(),
                 });
-                const data = await res.json();
-                const matches = data.matches || [];
+                if (invErr1) { alert(invErr1.message || "Lookup failed"); return; }
+                const matches = data?.matches || [];
                 if (!matches.length) { alert("Style not found on S&S"); return; }
                 const product = matches[0];
                 // Fetch per-size SKUs
-                const skuRes = await fetch(`${supabaseFuncUrl}/functions/v1/ssLookupStyle`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ styleNumber: styleNumber.trim(), action: "rawSkus", color: ssColor }),
+                const { data: skuData, error: invErr2 } = await base44.functions.invoke("ssLookupStyle", {
+                  styleNumber: styleNumber.trim(),
+                  action: "rawSkus",
+                  color: ssColor,
                 });
-                const skuData = await skuRes.json();
+                if (invErr2) { alert(invErr2.message || "SKU lookup failed"); return; }
                 const sizeSku = skuData.skus || {};
                 if (!Object.keys(sizeSku).length) { alert(`No SKUs found for ${ssColor}`); return; }
                 const cartItems = [];

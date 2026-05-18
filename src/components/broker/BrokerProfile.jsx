@@ -169,13 +169,11 @@ function BrokerQBSection({ user }) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) return;
-        const res = await fetch(`${SUPABASE_FUNC_URL}/functions/v1/qbSync`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "checkConnection", accessToken: session.access_token }),
+        const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+          action: "checkConnection",
+          accessToken: session.access_token,
         });
-        if (res.ok) {
-          const data = await res.json();
+        if (!invErr && data) {
           setQbConnected(!!data.connected);
           setQbRealmId(data.realmId || "");
         }

@@ -152,7 +152,13 @@ export function createQuickBooksTaxProvider({
 
       const res = await httpClient(qbSyncUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // Supabase Functions gateway requires a JWT in Authorization
+        // even when verify_jwt = false. Reuse the user's accessToken —
+        // it's already passed for the function's own auth check.
+        headers: {
+          "Content-Type": "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify(body),
       });
       const data = await res.json();

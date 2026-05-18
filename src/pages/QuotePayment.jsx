@@ -305,15 +305,12 @@ export default function QuotePayment() {
     if (recaptchaReady && window.grecaptcha) {
       try {
         const token = await window.grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: "checkout" });
-        const verifyRes = await fetch(`${SUPABASE_URL}/functions/v1/verifyRecaptcha`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
-        });
-        const verifyData = await verifyRes.json();
-        if (!verifyData.success) {
-          console.warn("[QuotePayment] reCAPTCHA score too low:", verifyData.score);
+        const { data: verifyData, error: invErr } = await base44.functions.invoke("verifyRecaptcha", { token });
+        if (invErr) {
+          console.warn("[QuotePayment] reCAPTCHA verify failed:", invErr.message);
           // Don't block — Stripe Checkout has its own fraud prevention
+        } else if (!verifyData?.success) {
+          console.warn("[QuotePayment] reCAPTCHA score too low:", verifyData?.score);
         }
       } catch {
         // If reCAPTCHA itself errors (blocked, network), allow through
