@@ -537,13 +537,24 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   </div>
                 )}
 
-                {paymentProvider === "qb" && qbState.status === "created_no_link" && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2">
-                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                    <div className="text-xs text-amber-800 leading-relaxed">
-                      <div className="font-semibold mb-0.5">QB invoice #{qbInvoiceId} created.</div>
-                      {qbState.warning}
+                {paymentProvider === "qb" && qbState.status === "send_failed" && (
+                  <div className="space-y-2">
+                    <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                      <div className="text-xs text-red-700 leading-relaxed">
+                        <div className="font-semibold mb-0.5">QB invoice #{qbInvoiceId} created, but the payment link didn't come back.</div>
+                        {qbState.warning}
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={handleCreateQbInvoice}
+                      disabled={creatingQbInvoice || sending}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
+                    >
+                      {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      {creatingQbInvoice ? "Retrying…" : "Retry — Get Payment Link"}
+                    </button>
                   </div>
                 )}
 
