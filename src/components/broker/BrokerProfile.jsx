@@ -15,6 +15,8 @@ function buildQBAuthUrl(state) {
     scope: "com.intuit.quickbooks.accounting",
     redirect_uri: QB_REDIRECT_URI,
     state,
+    // Force QB login + company picker — matches Account.jsx + OnboardingWizard.
+    prompt: "login",
   });
   return `https://appcenter.intuit.com/connect/oauth2?${params}`;
 }
