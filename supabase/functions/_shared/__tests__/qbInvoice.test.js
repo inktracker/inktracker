@@ -6,6 +6,7 @@ import {
   escapeQbStringLiteral,
   buildInvoiceLinesFromPayload,
   extractPaymentLink,
+  buildQbSendInvoiceUrl,
   makeOrderId,
 } from "../qbInvoice";
 
@@ -386,6 +387,77 @@ describe("extractPaymentLink", () => {
     const result = extractPaymentLink({ Invoice: { Id: "42" } });
     expect(result).toBeNull();
     expect(result === null || !String(result).includes("connect.intuit.com")).toBe(true);
+  });
+
+  it("extracts the production-shape scs-v1 share link from /send response", () => {
+    // The exact shape we get from POST /invoice/{id}/send on a real
+    // shop with QB Payments enabled. Pinned verbatim from a 2026-05-18
+    // production test (quote Q-2026-89SU, invoice 3669).
+    const prodResponse = {
+      Invoice: {
+        Id: "3669",
+        SyncToken: "1",
+        DocNumber: "Q-2026-89SU",
+        EmailStatus: "EmailSent",
+        InvoiceLink: "https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-7f190a8f3c6d403997092f7999a40c2d49c2c1b3acea4921ae25435d9673123aed8a7db05aae4f2aa78dfe6d08ed235d?locale=en_US&cta=v3invoicelink",
+        BillEmail: { Address: "customer@example.com" },
+      },
+    };
+    expect(extractPaymentLink(prodResponse)).toBe(prodResponse.Invoice.InvoiceLink);
+  });
+});
+
+// ── buildQbSendInvoiceUrl ───────────────────────────────────────────────────
+
+describe("buildQbSendInvoiceUrl", () => {
+  const BASE = "https://quickbooks.api.intuit.com/v3/company";
+
+  it("constructs the canonical /invoice/{id}/send URL with sendTo + minorversion", () => {
+    expect(buildQbSendInvoiceUrl(BASE, "9341452", "3669", "customer@example.com"))
+      .toBe("https://quickbooks.api.intuit.com/v3/company/9341452/invoice/3669/send?sendTo=customer%40example.com&minorversion=65");
+  });
+
+  it("URL-encodes plus-addresses in sendTo (regression — bare `+` decodes to space)", () => {
+    // joe+test@biotamfg.co would otherwise become joe test@biotamfg.co on QBO's side
+    const url = buildQbSendInvoiceUrl(BASE, "1", "1", "joe+test@biotamfg.co");
+    expect(url).toContain("sendTo=joe%2Btest%40biotamfg.co");
+    expect(url).not.toContain("joe+test@");
+  });
+
+  it("URL-encodes ampersands and = in sendTo (prevents query-string injection)", () => {
+    // Pathological input — should never come from a real email, but the encoder
+    // must not let it punch through and inject extra query params.
+    const url = buildQbSendInvoiceUrl(BASE, "1", "1", "a&minorversion=99@x.com");
+    expect(url).toContain("sendTo=a%26minorversion%3D99%40x.com");
+    // The only minorversion in the final URL must be ours
+    expect(url.match(/minorversion=/g) || []).toHaveLength(1);
+    expect(url).toMatch(/minorversion=65$/);
+  });
+
+  it("trims trailing slashes from baseUrl so we don't get a double slash", () => {
+    expect(buildQbSendInvoiceUrl(`${BASE}/`,  "1", "1", "a@b.co")).toContain("/company/1/invoice/");
+    expect(buildQbSendInvoiceUrl(`${BASE}//`, "1", "1", "a@b.co")).toContain("/company/1/invoice/");
+  });
+
+  it("encodes realmId and invoiceId (defensive — both arrive as strings from QBO)", () => {
+    const url = buildQbSendInvoiceUrl(BASE, "realm with space", "id/with/slash", "a@b.co");
+    expect(url).toContain("/company/realm%20with%20space/invoice/id%2Fwith%2Fslash/send");
+  });
+
+  it("coerces numeric realmId / invoiceId without crashing", () => {
+    const url = buildQbSendInvoiceUrl(BASE, 9341452, 3669, "a@b.co");
+    expect(url).toBe("https://quickbooks.api.intuit.com/v3/company/9341452/invoice/3669/send?sendTo=a%40b.co&minorversion=65");
+  });
+
+  it("throws when any required arg is missing — caller MUST NOT call /send without a recipient", () => {
+    // /send with a missing sendTo would either fail at QBO with a useless error
+    // OR silently use a stale default; either way, we want a hard local error
+    // rather than the API call going out.
+    expect(() => buildQbSendInvoiceUrl("", "1", "1", "a@b.co")).toThrow(/baseUrl required/);
+    expect(() => buildQbSendInvoiceUrl(BASE, "", "1", "a@b.co")).toThrow(/realmId required/);
+    expect(() => buildQbSendInvoiceUrl(BASE, "1", "", "a@b.co")).toThrow(/invoiceId required/);
+    expect(() => buildQbSendInvoiceUrl(BASE, "1", "1", "")).toThrow(/sendTo required/);
+    expect(() => buildQbSendInvoiceUrl(BASE, "1", "1", null)).toThrow(/sendTo required/);
   });
 });
 

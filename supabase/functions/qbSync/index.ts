@@ -16,6 +16,7 @@ import {
   escapeQbStringLiteral,
   buildInvoiceLinesFromPayload as sharedBuildInvoiceLinesFromPayload,
   extractPaymentLink as sharedExtractPaymentLink,
+  buildQbSendInvoiceUrl,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -153,7 +154,7 @@ async function qbUpdate(token: string, realmId: string, entity: string, body: ob
 // Customer ends up with two emails (ours via Resend + QBO's), both linking
 // to the same anonymous-pay portal.
 async function qbSendInvoice(token: string, realmId: string, invoiceId: string, sendTo: string) {
-  const url = `${QB_BASE}/${realmId}/invoice/${invoiceId}/send?sendTo=${encodeURIComponent(sendTo)}&minorversion=65`;
+  const url = buildQbSendInvoiceUrl(QB_BASE, realmId, invoiceId, sendTo);
   const res = await fetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/octet-stream" },

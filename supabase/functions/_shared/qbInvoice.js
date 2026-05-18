@@ -177,6 +177,25 @@ export function extractPaymentLink(invoiceData) {
   return candidates.length > 0 ? candidates[0] : null;
 }
 
+// ── Build the URL for POST /invoice/{id}/send ──────────────────────────────
+// QBO's only way to mint the customer-facing share link (the scs-v1-… URL the
+// payment portal lives at). The `sendTo` query param doubles as the recipient
+// of the email QBO inevitably sends — we use the real customer's email so
+// the portal pre-fills their address (QBO snapshots that at mint time and
+// doesn't refresh it on later updates; see project_qb_payment_flow_canonical
+// memory for the back-story).
+//
+// `baseUrl` is injected (rather than hardcoded) so this helper stays pure
+// and the edge function can wire in `QB_BASE`.
+export function buildQbSendInvoiceUrl(baseUrl, realmId, invoiceId, sendTo) {
+  if (!baseUrl)   throw new Error("buildQbSendInvoiceUrl: baseUrl required");
+  if (!realmId)   throw new Error("buildQbSendInvoiceUrl: realmId required");
+  if (!invoiceId) throw new Error("buildQbSendInvoiceUrl: invoiceId required");
+  if (!sendTo)    throw new Error("buildQbSendInvoiceUrl: sendTo required");
+  const base = String(baseUrl).replace(/\/+$/, "");
+  return `${base}/${encodeURIComponent(String(realmId))}/invoice/${encodeURIComponent(String(invoiceId))}/send?sendTo=${encodeURIComponent(String(sendTo))}&minorversion=65`;
+}
+
 // ── New-order ID generator (used by qbWebhook when auto-converting quotes) ─
 // Format: ORD-{year}-{base36-of-now-uppercased-last-5}. `now` is injectable
 // for tests so we get deterministic IDs.
