@@ -581,8 +581,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const paymentLink = extractPaymentLink(invoiceForLink, realmId);
   if (!paymentLink) {
     // Surface the full invoice shape in logs so we can debug what QB
-    // actually returned. Sentry will also capture this when wired.
-    console.warn("[createInvoice] no payment link extracted; invoice shape:", JSON.stringify(invoiceForLink).slice(0, 1500));
+    // actually returned. Dumping the WHOLE thing (not truncated) so
+    // we can confirm whether InvoiceLink is present under some other
+    // field name. Will revert to truncated logging once we know the
+    // right field name.
+    console.warn("[createInvoice] no payment link extracted; FULL invoice shape:", JSON.stringify(invoiceForLink));
   }
 
   // 4b. If the quote's deposit was already paid, record the payment against this invoice
