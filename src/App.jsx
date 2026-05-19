@@ -666,7 +666,7 @@ function PublicLandingPage() {
                 <p className="text-slate-400 leading-relaxed mb-6">
                   Every InkTracker subscription directly contributes to this mission. When your shop grows, conservation funding grows with it.
                 </p>
-                <a href="https://www.biotamfg.co/pages/conservation" target="_blank" rel="noopener noreferrer"
+                <a href="https://biotamfg.com/pages/wildways" target="_blank" rel="noopener noreferrer"
                   className="text-sm font-semibold text-emerald-400 hover:text-emerald-300 transition">
                   Read our conservation roadmap &rarr;
                 </a>
@@ -728,7 +728,7 @@ function PublicLandingPage() {
                 },
                 {
                   q: "How does the conservation contribution actually work?",
-                  a: "10% of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota Mfg. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.co/pages/conservation.",
+                  a: "10% of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota Mfg. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.com/pages/wildways.",
                 },
               ].map((item) => (
                 <details key={item.q} className="group bg-white/[0.02] border border-white/10 rounded-2xl hover:border-white/20 transition">
