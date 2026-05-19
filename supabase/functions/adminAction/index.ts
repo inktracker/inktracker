@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkAdminTargetAccess } from "../_shared/adminTargetAccess.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -106,28 +107,31 @@ serve(async (req) => {
       const adminEmail = callerProfile?.email || user.email;
       let data, error;
       if (!profileId && authId) {
-        // Refuse if a profile already exists for this authId belonging to a
-        // different shop — without this, any admin could call setRole with
-        // another shop's authId and either duplicate or claim that profile.
+        // setRole expects an existing profile. If the authId has no profile,
+        // we MUST NOT create a new one from this code path — doing so would
+        // let any authenticated shop claim an orphan auth identity into their
+        // tenant. Use `inviteBroker` to create new users; `setRole` only
+        // mutates roles on profiles that already exist.
         const { data: existingForAuth } = await adminClient
           .from("profiles")
           .select("id, shop_owner, assigned_shops, email")
           .eq("auth_id", authId)
           .maybeSingle();
-        if (existingForAuth) {
-          const isOwnShop = existingForAuth.shop_owner === adminEmail ||
-            (Array.isArray(existingForAuth.assigned_shops) && existingForAuth.assigned_shops.includes(adminEmail)) ||
-            existingForAuth.email === adminEmail;
-          if (!isOwnShop) {
-            return new Response(JSON.stringify({ error: "Cannot set role on a user from another shop" }), {
-              status: 403,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
+        const access = checkAdminTargetAccess({ targetProfile: existingForAuth, adminEmail });
+        if (!access.ok) {
+          const status = access.reason === "not_found" ? 404 : 403;
+          const msg = access.reason === "not_found"
+            ? "No profile exists for that auth user. Use 'inviteBroker' to create one."
+            : "Cannot set role on a user from another shop";
+          return new Response(JSON.stringify({ error: msg }), {
+            status,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
         ({ data, error } = await adminClient
           .from("profiles")
-          .insert({ auth_id: authId, role, shop_name: callerProfile?.shop_name || "", shop_owner: adminEmail, created_at: new Date().toISOString() })
+          .update({ role })
+          .eq("id", existingForAuth.id)
           .select()
           .single());
       } else if (profileId) {
@@ -140,17 +144,17 @@ serve(async (req) => {
           .from("profiles")
           .select("shop_owner, assigned_shops, email")
           .eq("id", profileId)
-          .single();
-        if (targetProfile) {
-          const isOwnShop = targetProfile.shop_owner === adminEmail ||
-            (Array.isArray(targetProfile.assigned_shops) && targetProfile.assigned_shops.includes(adminEmail)) ||
-            targetProfile.email === adminEmail;
-          if (!isOwnShop) {
-            return new Response(JSON.stringify({ error: "Cannot change role on a user from another shop" }), {
-              status: 403,
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
+          .maybeSingle();
+        const access = checkAdminTargetAccess({ targetProfile, adminEmail });
+        if (!access.ok) {
+          const status = access.reason === "not_found" ? 404 : 403;
+          const msg = access.reason === "not_found"
+            ? "Target user not found"
+            : "Cannot change role on a user from another shop";
+          return new Response(JSON.stringify({ error: msg }), {
+            status,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
         ({ data, error } = await adminClient
           .from("profiles")
@@ -303,32 +307,33 @@ serve(async (req) => {
         });
       }
 
-      // Verify the target user belongs to this admin's shop before deleting
+      // Verify the target user belongs to this admin's shop before deleting.
+      // Uses maybeSingle so a missing target lands as null (not an error) and
+      // the access check refuses cleanly. Pre-fix this was .single() + an
+      // `if (targetProfile)` block — the null path skipped the tenant check
+      // and let deleteUser proceed against any authId.
       const targetQuery = profileId
-        ? adminClient.from("profiles").select("auth_id, email, shop_owner, assigned_shops").eq("id", profileId).single()
-        : adminClient.from("profiles").select("auth_id, email, shop_owner, assigned_shops").eq("auth_id", authId).single();
+        ? adminClient.from("profiles").select("auth_id, email, shop_owner, assigned_shops").eq("id", profileId).maybeSingle()
+        : adminClient.from("profiles").select("auth_id, email, shop_owner, assigned_shops").eq("auth_id", authId).maybeSingle();
       const { data: targetProfile } = await targetQuery;
 
-      if (targetProfile) {
-        const isOwnShop = targetProfile.shop_owner === adminEmail ||
-          (Array.isArray(targetProfile.assigned_shops) && targetProfile.assigned_shops.includes(adminEmail));
-        if (!isOwnShop && targetProfile.email !== adminEmail) {
-          return new Response(JSON.stringify({ error: "Cannot delete a user from another shop" }), {
-            status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
+      const access = checkAdminTargetAccess({ targetProfile, adminEmail });
+      if (!access.ok) {
+        const status = access.reason === "not_found" ? 404 : 403;
+        const msg = access.reason === "not_found"
+          ? "Target user not found"
+          : "Cannot delete a user from another shop";
+        return new Response(JSON.stringify({ error: msg }), {
+          status,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
-      let resolvedAuthId = authId;
-      if (profileId) {
-        const { data: profile } = await adminClient
-          .from("profiles")
-          .select("auth_id")
-          .eq("id", profileId)
-          .single();
-        resolvedAuthId = profile?.auth_id || authId;
-      }
+      // The tenant check above already fetched the target profile (including
+      // auth_id), so no second roundtrip needed. Fall back to the caller-
+      // provided authId only if the profile row had no auth_id (orphan
+      // pre-created profile case).
+      const resolvedAuthId = targetProfile.auth_id || authId;
 
       // Delete the auth user (cascades to profile via ON DELETE CASCADE).
       if (resolvedAuthId) {
