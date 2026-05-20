@@ -75,15 +75,20 @@ export async function loadProfileWithSecrets(
 }
 
 /**
- * Updates secret fields. Writes to profile_secrets (upsert). Optionally
- * dual-writes to the old profiles columns during the migration window so
- * frontend code that hasn't been updated still sees current values.
+ * Updates secret fields. Writes to profile_secrets (upsert).
+ *
+ * `dualWrite` defaults to `false` now that the legacy secret columns
+ * have been dropped from `profiles` (migration
+ * 20260520_drop_legacy_profile_secret_columns). Existing callers that
+ * still pass `{ dualWrite: true }` will log a non-fatal warning when
+ * the profiles update hits the dropped columns; harmless but noisy.
+ * Drop the `dualWrite: true` arg in those callers at your convenience.
  */
 export async function updateProfileSecrets(
   admin: any,
   profileId: string,
   updates: Partial<Record<SecretKey, string | null>>,
-  opts: { dualWrite?: boolean } = { dualWrite: true },
+  opts: { dualWrite?: boolean } = { dualWrite: false },
 ): Promise<void> {
   const filtered: Record<string, any> = {};
   for (const [k, v] of Object.entries(updates)) {

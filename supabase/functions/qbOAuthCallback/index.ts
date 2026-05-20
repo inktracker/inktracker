@@ -72,46 +72,50 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: profile, error: findErr } = await supabaseAdmin
-      .from("profiles")
-      .select("id, role")
+    // Look up the profile via profile_secrets (where qb_oauth_state now
+    // lives, post-secrets-migration). Falls back to profiles for old
+    // pending connects that started before the migration.
+    let profileId: string | null = null;
+    let profileRole: string | null = null;
+    const { data: secretRow } = await supabaseAdmin
+      .from("profile_secrets")
+      .select("profile_id")
       .eq("qb_oauth_state", state)
-      .single();
+      .maybeSingle();
+    if (secretRow?.profile_id) {
+      profileId = secretRow.profile_id;
+      const { data: p } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", profileId)
+        .maybeSingle();
+      profileRole = p?.role ?? null;
+    }
 
-    if (findErr || !profile) {
-      console.error("Could not find profile for state:", state, findErr);
+    if (!profileId) {
+      console.error("Could not find profile for state:", state);
       return Response.redirect(`${appBaseUrl}/Account?qb_error=state_mismatch`);
     }
 
     // Pure builder + tests live in ../_shared/connectionLogic.js + __tests__.
     const tokenFields = buildOAuthTokenFields(tokens, realmId, expiresAt);
 
-    // PRIMARY write — profiles (the legacy path that all readers still use).
-    // If this fails the connection is broken regardless of where else we write,
-    // so it's the operation that must succeed.
-    const { error: updateErr } = await supabaseAdmin
-      .from("profiles")
-      .update(tokenFields)
-      .eq("id", profile.id);
-
-    if (updateErr) {
-      console.error("Failed to store QB tokens in profiles:", updateErr);
+    // Single write — profile_secrets is the canonical location for tokens.
+    // The legacy `profiles` columns were dropped in the
+    // 20260520_drop_legacy_profile_secret_columns migration.
+    const { error: upsertErr } = await supabaseAdmin
+      .from("profile_secrets")
+      .upsert(
+        { profile_id: profileId, ...tokenFields, updated_at: new Date().toISOString() },
+        { onConflict: "profile_id" },
+      );
+    if (upsertErr) {
+      console.error("Failed to store QB tokens in profile_secrets:", upsertErr);
       return Response.redirect(`${appBaseUrl}/Account?qb_error=storage_failed`);
     }
 
-    // SECONDARY write — profile_secrets (new RLS-locked home). Best-effort
-    // during migration. A failure here doesn't break the user's connection.
-    try {
-      await supabaseAdmin
-        .from("profile_secrets")
-        .upsert({ profile_id: profile.id, ...tokenFields, updated_at: new Date().toISOString() },
-                { onConflict: "profile_id" });
-    } catch (secretsErr) {
-      console.warn("[qbOAuthCallback] dual-write to profile_secrets failed (non-fatal):", secretsErr);
-    }
-
-    console.error("QB OAuth success for profile:", profile.id, "realmId:", realmId);
-    const redirectPage = profile.role === "broker" ? "/BrokerDashboard?tab=profile&qb_connected=1" : "/Account?qb_connected=1";
+    console.error("QB OAuth success for profile:", profileId, "realmId:", realmId);
+    const redirectPage = profileRole === "broker" ? "/BrokerDashboard?tab=profile&qb_connected=1" : "/Account?qb_connected=1";
     return Response.redirect(`${appBaseUrl}${redirectPage}`);
   } catch (err) {
     console.error("qbOAuthCallback exception:", err);

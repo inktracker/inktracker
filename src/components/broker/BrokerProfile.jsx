@@ -186,13 +186,18 @@ function BrokerQBSection({ user }) {
     if (!user) return;
     setQbConnecting(true);
     try {
-      const state = crypto.randomUUID();
-      const { error } = await supabase
-        .from("profiles")
-        .update({ qb_oauth_state: state })
-        .eq("id", user.id);
-      if (error) throw error;
-      window.location.href = buildQBAuthUrl(state);
+      // qb_oauth_state lives on profile_secrets (service-role-only). The
+      // profileSecrets edge function generates and stores the state UUID
+      // and returns it for the OAuth URL.
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error: invErr } = await base44.functions.invoke("profileSecrets", {
+        action: "startConnect",
+        provider: "qb",
+        accessToken: session?.access_token,
+      });
+      if (invErr) throw invErr;
+      if (!data?.state) throw new Error("Failed to generate OAuth state");
+      window.location.href = buildQBAuthUrl(data.state);
     } catch (err) {
       setQbMessage({ type: "error", text: "Could not start QuickBooks connection." });
       setQbConnecting(false);
@@ -202,12 +207,13 @@ function BrokerQBSection({ user }) {
   async function handleDisconnect() {
     if (!window.confirm("Disconnect QuickBooks?")) return;
     try {
-      await supabase.from("profiles").update({
-        qb_access_token: null,
-        qb_refresh_token: null,
-        qb_realm_id: null,
-        qb_token_expires_at: null,
-      }).eq("id", user.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error: invErr } = await base44.functions.invoke("profileSecrets", {
+        action: "disconnectProvider",
+        provider: "qb",
+        accessToken: session?.access_token,
+      });
+      if (invErr) throw invErr;
       setQbConnected(false);
       setQbRealmId("");
       setQbMessage({ type: "success", text: "QuickBooks disconnected." });
