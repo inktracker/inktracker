@@ -5,7 +5,7 @@ import { O_STATUSES } from "../components/shared/pricing";
 import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
-import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, List, Eye, EyeOff } from "lucide-react";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import EmptyState from "../components/shared/EmptyState";
 import { todayInShopTz } from "@/lib/shopTimezone";
@@ -52,11 +52,21 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-function getCompanyName(order, customers) {
-  const cust = customers[order.customer_id];
-  if (cust?.company?.trim()) return cust.company.trim();
+// Resolve the best label for a quote or order chip. Company always wins —
+// either from the linked customer record OR the denormalized snapshot
+// stored on the quote/order itself (quotes write a `company` field from
+// the wizard). Only falls back to a person's name when no company is on
+// file. Applied uniformly to order chips, quote chips, and the bottom
+// "Active jobs" list so the calendar never mixes naming conventions.
+function getCompanyName(rec, customers) {
+  const cust = customers[rec?.customer_id];
+  const company =
+    (typeof cust?.company === "string" && cust.company.trim()) ||
+    (typeof rec?.company === "string" && rec.company.trim()) ||
+    "";
+  if (company) return company;
   if (cust?.name) return cust.name;
-  if (order.customer_name) return order.customer_name;
+  if (rec?.customer_name) return rec.customer_name;
   return "—";
 }
 
@@ -73,10 +83,17 @@ export default function Calendar() {
   const [view, setView] = useState("month");
   const [dragOverDate, setDragOverDate] = useState(null);
   const [user, setUser] = useState(null);
-  const [expandedDates, setExpandedDates] = useState({});
   // All quotes for the shop. Drives Quote Sent / Quote Approved chips —
   // independent of whether the quote has been converted to an order.
   const [quotes, setQuotes] = useState([]);
+  // Set of step labels currently hidden from the grid. Clicking a legend
+  // chip toggles whether that chip type is rendered on day cells. Empty
+  // set = show everything (default).
+  const [hiddenSteps, setHiddenSteps] = useState(() => new Set());
+  // Completed jobs stay on the calendar in green by default — the
+  // emerald chips serve as a "what shipped when" historical record.
+  // Toggle to hide them when the current month gets too crowded.
+  const [hideCompleted, setHideCompleted] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -104,30 +121,38 @@ export default function Calendar() {
     load();
   }, []);
 
-  // Point events: single-date chips keyed by date
+  // Point events: single-date chips keyed by date. Respects the
+  // hideCompleted toggle and the per-step hiddenSteps filter so the
+  // grid stays readable as a shop accumulates history.
   const pointEvents = useMemo(() => {
     const map = {};
+    const push = (date, ev) => {
+      if (hiddenSteps.has(ev.step)) return;
+      if (!map[date]) map[date] = [];
+      map[date].push(ev);
+    };
     orders.forEach((o) => {
+      if (hideCompleted && o.status === "Completed") return;
       const stepDates = o.step_dates || {};
       O_STATUSES.forEach((step) => {
         const val = stepDates[step];
         if (val && typeof val === "string") {
-          if (!map[val]) map[val] = [];
-          map[val].push({ order: o, step, isDue: false });
+          push(val, { order: o, step, isDue: false });
         }
       });
       // Add "Order Goods" chip if order_date exists
       if (o.date) {
-        if (!map[o.date]) map[o.date] = [];
-        map[o.date].push({ order: o, step: "Order Goods", isDue: false });
+        push(o.date, { order: o, step: "Order Goods", isDue: false });
       }
       // Completed orders don't get a red "Due" chip — the job is done, the
       // due date is no longer a thing the shop owner needs flagged.
       if (o.due_date && o.status !== "Completed") {
-        if (!map[o.due_date]) map[o.due_date] = [];
-        map[o.due_date].push({ order: o, step: "Due", isDue: true });
+        // The "Due" chip rides the hiddenSteps filter under the label "Due".
+        if (!hiddenSteps.has("Due")) {
+          if (!map[o.due_date]) map[o.due_date] = [];
+          map[o.due_date].push({ order: o, step: "Due", isDue: true });
+        }
       }
-
     });
 
     // Quote lifecycle chips — pushed directly from quote rows. A quote
@@ -135,23 +160,29 @@ export default function Calendar() {
     quotes.forEach((q) => {
       if (q.sent_date) {
         const d = String(q.sent_date).slice(0, 10);
-        if (!map[d]) map[d] = [];
-        map[d].push({ kind: "quote", quote: q, step: "Quote Sent", isDue: false });
+        if (!hiddenSteps.has("Quote Sent")) {
+          if (!map[d]) map[d] = [];
+          map[d].push({ kind: "quote", quote: q, step: "Quote Sent", isDue: false });
+        }
       }
       if (q.client_approved_at) {
         const d = String(q.client_approved_at).slice(0, 10);
-        if (!map[d]) map[d] = [];
-        map[d].push({ kind: "quote", quote: q, step: "Quote Approved", isDue: false });
+        if (!hiddenSteps.has("Quote Approved")) {
+          if (!map[d]) map[d] = [];
+          map[d].push({ kind: "quote", quote: q, step: "Quote Approved", isDue: false });
+        }
       }
     });
 
     return map;
-  }, [orders, quotes]);
+  }, [orders, quotes, hiddenSteps, hideCompleted]);
 
   // Printing events as point events (single date)
   const printingEvents = useMemo(() => {
     const map = {};
+    if (hiddenSteps.has("Printing")) return map;
     orders.forEach((o) => {
+      if (hideCompleted && o.status === "Completed") return;
       const val = o.step_dates?.["Printing"];
       if (!val) return;
       if (typeof val === "object" && val.start) {
@@ -163,7 +194,7 @@ export default function Calendar() {
       }
     });
     return map;
-  }, [orders]);
+  }, [orders, hiddenSteps, hideCompleted]);
 
   const ordersNoDueDate = useMemo(() => orders.filter((o) => !o.due_date), [orders]);
 
@@ -316,13 +347,37 @@ export default function Calendar() {
     setViewing(updated);
   }
 
-  function handleDragStart(e, order) {
+  // Drag payload carries WHICH chip is being dragged so the drop handler
+  // can update the correct underlying field. Previously every drop wrote
+  // due_date no matter what chip you grabbed — the subtitle promised
+  // "Drag to reschedule" but only due dates actually moved.
+  //
+  //   field === "due_date"   → update orders.due_date
+  //   field === "date"       → update orders.date (legacy Order Goods slot)
+  //   field === "step_dates" → update orders.step_dates[step]
+  function handleDragStart(e, order, step, field) {
     e.dataTransfer.setData("orderId", order.id);
+    e.dataTransfer.setData("step", step || "");
+    e.dataTransfer.setData("field", field || "due_date");
   }
-  function handleDrop(e, dateStr) {
+  async function handleDrop(e, dateStr) {
     e.preventDefault();
     const orderId = e.dataTransfer.getData("orderId");
-    if (orderId) handleUpdateDueDate(orderId, dateStr);
+    const step    = e.dataTransfer.getData("step");
+    const field   = e.dataTransfer.getData("field") || "due_date";
+    if (!orderId) { setDragOverDate(null); return; }
+    try {
+      if (field === "step_dates" && step) {
+        await handleUpdateStepDate(orderId, step, dateStr);
+      } else if (field === "date") {
+        const updated = await base44.entities.Order.update(orderId, { date: dateStr });
+        setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+      } else {
+        await handleUpdateDueDate(orderId, dateStr);
+      }
+    } catch (err) {
+      notify.error("Couldn't reschedule", err);
+    }
     setDragOverDate(null);
   }
   function handleDragOver(e, dateStr) {
@@ -354,7 +409,7 @@ export default function Calendar() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Production Calendar</h2>
-          <p className="text-slate-400 text-sm mt-0.5">Due dates auto-filled from quotes • Schedule each step • Drag to reschedule</p>
+          <p className="text-slate-400 text-sm mt-0.5">Each chip is one step of one job. Click to open · drag to a different day to reschedule that step.</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -380,22 +435,54 @@ export default function Calendar() {
         </div>
       )}
 
-      {/* Chip legend — quick visual key. Mirror of Production.jsx legend. */}
+      {/* Filter legend — each chip is clickable to toggle that event
+          type on/off in the grid. Hidden chips render desaturated so
+          users can see what's filtered without consulting state.
+          The "Hide completed" toggle drops every chip belonging to a
+          Completed order — separate from the per-step filter so the
+          shop owner can still hide just one step at a time. */}
       {!loading && view === "month" && (
         <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[10px] font-semibold">
           {[
             { label: "Quote Sent",     cls: STATUS_COLORS["Quote Sent"] },
             { label: "Quote Approved", cls: STATUS_COLORS["Quote Approved"] },
+            { label: "Art Approval",   cls: STATUS_COLORS["Art Approval"] },
             { label: "Order Goods",    cls: STATUS_COLORS["Order Goods"] },
             { label: "Pre-Press",      cls: STATUS_COLORS["Pre-Press"] },
             { label: "Printing",       cls: STATUS_COLORS["Printing"] },
             { label: "Due",            cls: "bg-rose-50 border-rose-300 text-rose-700" },
             { label: "Completed",      cls: STATUS_COLORS["Completed"] },
-          ].map((item) => (
-            <span key={item.label} className={`px-1.5 py-0.5 rounded border ${item.cls}`}>
-              {item.label}
-            </span>
-          ))}
+          ].map((item) => {
+            const hidden = hiddenSteps.has(item.label);
+            return (
+              <button
+                key={item.label}
+                type="button"
+                onClick={() => {
+                  setHiddenSteps((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(item.label)) next.delete(item.label);
+                    else next.add(item.label);
+                    return next;
+                  });
+                }}
+                aria-pressed={!hidden}
+                title={hidden ? `Show ${item.label}` : `Hide ${item.label}`}
+                className={`px-1.5 py-0.5 rounded border transition ${item.cls} ${hidden ? "opacity-30 line-through" : "hover:brightness-95"}`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setHideCompleted((v) => !v)}
+            className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-200 text-slate-500 hover:bg-slate-50 transition"
+            title={hideCompleted ? "Show completed orders" : "Hide completed orders"}
+          >
+            {hideCompleted ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+            {hideCompleted ? "Completed hidden" : "Completed shown"}
+          </button>
         </div>
       )}
 
@@ -404,11 +491,25 @@ export default function Calendar() {
       ) : view === "month" ? (
         <>
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-            {/* Day headers */}
+            {/* Day headers — today's weekday is highlighted so the user
+                can spot the column at a glance even when the date number
+                isn't visible (e.g. scrolled past on a long week). */}
             <div className="grid grid-cols-7 border-b border-slate-100">
-              {DAY_LABELS.map((d) => (
-                <div key={d} className="py-2 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest">{d}</div>
-              ))}
+              {DAY_LABELS.map((d, i) => {
+                const isTodayCol = (() => {
+                  const t = new Date(today + "T00:00:00");
+                  // Only highlight if "today" is in the visible month
+                  return t.getFullYear() === year && t.getMonth() === month && t.getDay() === i;
+                })();
+                return (
+                  <div
+                    key={d}
+                    className={`py-2 text-center text-xs font-semibold uppercase tracking-widest ${isTodayCol ? "text-indigo-600 bg-indigo-50" : "text-slate-400"}`}
+                  >
+                    {d}
+                  </div>
+                );
+              })}
             </div>
 
             {/* Week rows */}
@@ -447,7 +548,7 @@ export default function Calendar() {
                                const isQuoteEvent = ev.kind === "quote";
                                const subject = isQuoteEvent ? ev.quote : ev.order;
                                const subjectName = isQuoteEvent
-                                 ? (ev.quote.customer_name || "—")
+                                 ? getCompanyName(ev.quote, customers)
                                  : companyName(ev.order);
                                const isCompleted = !isQuoteEvent && ev.order?.status === "Completed";
                                const chipClass = isCompleted
@@ -455,17 +556,26 @@ export default function Calendar() {
                                  : ev.isDue
                                    ? "bg-rose-50 border-rose-300 text-rose-700"
                                    : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 text-slate-600";
+                               // Field this chip represents — drives where
+                               // a drop will write. Due chip → due_date.
+                               // Order Goods chip → order.date (legacy slot).
+                               // Anything else → step_dates[step].
+                               const field = ev.isDue
+                                 ? "due_date"
+                                 : (ev.step === "Order Goods" && ev.order?.date === dateStr)
+                                   ? "date"
+                                   : "step_dates";
                                return (
                                  <div
                                    key={`${subject.id}-${ev.step}-${idx}`}
                                    draggable={!isQuoteEvent}
-                                   onDragStart={isQuoteEvent ? undefined : (e) => handleDragStart(e, ev.order)}
+                                   onDragStart={isQuoteEvent ? undefined : (e) => handleDragStart(e, ev.order, ev.step, field)}
                                    onClick={() => {
                                      if (isQuoteEvent) navigate(`/Quotes?id=${ev.quote.id}`);
                                      else setViewing(ev.order);
                                    }}
                                    className={`w-full text-[10px] font-semibold px-1.5 py-0.5 rounded border ${isQuoteEvent ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} whitespace-nowrap overflow-hidden text-ellipsis ${chipClass}`}
-                                   title={`${subjectName} — ${ev.step}`}
+                                   title={isQuoteEvent ? `${subjectName} — ${ev.step}` : `${subjectName} — ${ev.step} · drag to reschedule`}
                                  >
                                    {subjectName}
                                    <span className="opacity-60 ml-1">· {ev.step}</span>
@@ -485,7 +595,7 @@ export default function Calendar() {
           {allActiveOrders.length > 0 && (
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">All Active Orders ({allActiveOrders.length}) — Click to expand & schedule</div>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active jobs · {allActiveOrders.length} · click a row to schedule its steps</div>
               </div>
               {allActiveOrders.map((o) => (
                 <OrderScheduleRow
@@ -510,7 +620,7 @@ export default function Calendar() {
           ) : (
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
               <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">All Active Orders ({allActiveOrders.length}) — Click to expand & schedule</div>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active jobs · {allActiveOrders.length} · click a row to schedule its steps</div>
               </div>
               {allActiveOrders.map((o) => (
                 <OrderScheduleRow
