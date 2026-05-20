@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/api/supabaseClient";
-import ErrorBoundary from "@/components/ErrorBoundary";
+import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { Toaster } from "@/components/ui/toaster";
 import Privacy from "./pages/Privacy.jsx";
@@ -1000,7 +1000,7 @@ function AppRoutes() {
           path="/"
           element={
             <LayoutWrapper currentPageName={mainPageKey}>
-              <MainPage />
+              <RouteErrorBoundary><MainPage /></RouteErrorBoundary>
             </LayoutWrapper>
           }
         />
@@ -1011,7 +1011,7 @@ function AppRoutes() {
             path={`/${path}`}
             element={
               <LayoutWrapper currentPageName={path}>
-                <Page />
+                <RouteErrorBoundary><Page /></RouteErrorBoundary>
               </LayoutWrapper>
             }
           />
