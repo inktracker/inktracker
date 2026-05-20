@@ -153,15 +153,126 @@ async function qbUpdate(token: string, realmId: string, entity: string, body: ob
 // that's why we use the real address rather than a sink + later restore.
 // Customer ends up with two emails (ours via Resend + QBO's), both linking
 // to the same anonymous-pay portal.
+//
+// Retries on 5xx + transient network errors (up to 3 attempts, 500ms /
+// 1.5s backoff). QBO has occasional blips and a single failure here is
+// the most common reason a shop ends up with an invoice + no payment
+// link (the "send_failed" frontend state). 4xx errors are NOT retried —
+// they're configuration problems (auth, malformed payload, etc.) that
+// won't get better with another attempt.
 async function qbSendInvoice(token: string, realmId: string, invoiceId: string, sendTo: string) {
   const url = buildQbSendInvoiceUrl(QB_BASE, realmId, invoiceId, sendTo);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/octet-stream" },
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(`QB send invoice/${invoiceId} failed: ${res.status} ${JSON.stringify(data)}`);
-  return data;
+  const delays = [0, 500, 1500];
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    if (delays[attempt] > 0) await new Promise((r) => setTimeout(r, delays[attempt]));
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/octet-stream" },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) return data;
+      if (res.status >= 500) {
+        // Transient — retry
+        lastErr = new Error(`QB send invoice/${invoiceId} ${res.status}: ${JSON.stringify(data)}`);
+        console.warn(`[qbSendInvoice] attempt ${attempt + 1} failed (${res.status}), will retry`);
+        continue;
+      }
+      // 4xx — caller config / data problem, don't retry
+      throw new Error(`QB send invoice/${invoiceId} failed: ${res.status} ${JSON.stringify(data)}`);
+    } catch (err) {
+      lastErr = err;
+      // Network errors (fetch threw): retry
+      if (!(err instanceof Error) || !err.message?.startsWith("QB send invoice")) {
+        console.warn(`[qbSendInvoice] attempt ${attempt + 1} network/parse error, will retry:`, err);
+        continue;
+      }
+      // 4xx-style errors thrown above — rethrow immediately
+      throw err;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(`QB send invoice/${invoiceId} failed after retries`);
+}
+
+// Re-fetch an invoice with ?include=invoiceLink. QBO's portal record is
+// provisioned asynchronously, so /send sometimes returns 200 without the
+// share link populated. A subsequent GET a moment later picks it up.
+async function qbFetchInvoiceWithLink(token: string, realmId: string, invoiceId: string) {
+  const url = `${QB_BASE}/${realmId}/invoice/${invoiceId}?minorversion=65&include=invoiceLink`;
+  const res = await fetch(url, { headers: qbHeaders(token) });
+  if (!res.ok) {
+    console.warn(`[qbFetchInvoiceWithLink] GET /invoice/${invoiceId}?include=invoiceLink → ${res.status}`);
+    return null;
+  }
+  return res.json();
+}
+
+// Wraps the full "mint a customer-facing payment link" flow:
+//   1. POST /invoice/{id}/send (with built-in 5xx retries)
+//   2. extractPaymentLink — return immediately if present
+//   3. Sleep 1.5s, GET /invoice/{id}?include=invoiceLink (catches async
+//      portal provisioning)
+//   4. Sleep another 3s, refetch one more time
+//   5. Give up — return a structured reason so the frontend can show
+//      actionable guidance (the most likely cause when QBO claims success
+//      but doesn't mint a link is that the shop hasn't activated QB
+//      Payments on their account)
+//
+// Returns { link, finalInvoice, reason } where reason is null on success
+// and a short string code otherwise: "send_failed" | "no_link_after_retry"
+// | "no_bill_email"
+async function mintInvoicePaymentLink(
+  token: string,
+  realmId: string,
+  invoiceId: string,
+  billEmail: string | null,
+  initialInvoice: any,
+): Promise<{ link: string | null; finalInvoice: any; reason: string | null }> {
+  if (!billEmail) {
+    console.warn("[mintInvoicePaymentLink] no billEmail — skipping /send. Customer email is required to mint a share link.");
+    return { link: null, finalInvoice: initialInvoice, reason: "no_bill_email" };
+  }
+
+  let invoiceForLink: any = initialInvoice;
+  try {
+    const sent = await qbSendInvoice(token, realmId, invoiceId, billEmail);
+    invoiceForLink = sent?.Invoice || sent || invoiceForLink;
+  } catch (sendErr) {
+    console.warn("[mintInvoicePaymentLink] /send failed after retries:", sendErr instanceof Error ? sendErr.message : String(sendErr));
+    // We still try the refetch path — sometimes /send 500s but the portal
+    // record IS provisioned and a follow-up GET picks it up.
+  }
+
+  let link = sharedExtractPaymentLink(invoiceForLink);
+  if (link) return { link, finalInvoice: invoiceForLink, reason: null };
+
+  // First refetch — wait a beat for async portal provisioning.
+  await new Promise((r) => setTimeout(r, 1500));
+  let refetched = await qbFetchInvoiceWithLink(token, realmId, invoiceId);
+  if (refetched) {
+    invoiceForLink = refetched?.Invoice || refetched;
+    link = sharedExtractPaymentLink(invoiceForLink);
+    if (link) {
+      console.log("[mintInvoicePaymentLink] link picked up on first refetch");
+      return { link, finalInvoice: invoiceForLink, reason: null };
+    }
+  }
+
+  // Second refetch — give QBO more time for the slow provisioning path.
+  await new Promise((r) => setTimeout(r, 3000));
+  refetched = await qbFetchInvoiceWithLink(token, realmId, invoiceId);
+  if (refetched) {
+    invoiceForLink = refetched?.Invoice || refetched;
+    link = sharedExtractPaymentLink(invoiceForLink);
+    if (link) {
+      console.log("[mintInvoicePaymentLink] link picked up on second refetch");
+      return { link, finalInvoice: invoiceForLink, reason: null };
+    }
+  }
+
+  console.warn("[mintInvoicePaymentLink] no link after retries + 2 refetches. Most likely cause: shop hasn't activated QB Payments on their QuickBooks account. Final invoice shape:", JSON.stringify(invoiceForLink));
+  return { link: null, finalInvoice: invoiceForLink, reason: "no_link_after_retry" };
 }
 
 // ── Find or create QB Customer ──────────────────────────────────────────────
@@ -576,32 +687,15 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // the create response, a plain GET, or in ?include=invoiceLink on a
   // draft — the link only exists after the invoice runs through QBO's send
   // pipeline, which provisions the portal record (snapshotted at mint
-  // time). We POST /send with sendTo = the real customer email so:
-  //   (a) the portal pre-fills the customer's email in "Your info → Email"
-  //       (using a sink address here leaves the sink showing on the portal,
-  //       and a follow-up BillEmail update doesn't refresh the snapshot)
-  //   (b) the customer gets a QBO-branded copy of the invoice alongside
-  //       our Resend email — standard B2B behavior; both point at the
-  //       same anonymous-pay portal.
-  // If billEmail is missing we can't /send, so paymentLink stays null and
-  // the frontend's send_failed state shows the Retry button.
-  let invoiceForLink: any = qbInvoiceFinal || created;
-  if (billEmail) {
-    try {
-      const sent = await qbSendInvoice(token, realmId, qbInvoiceId, billEmail);
-      invoiceForLink = sent?.Invoice || sent;
-    } catch (sendErr) {
-      console.warn("[createInvoice] /send to mint share link failed:", sendErr instanceof Error ? sendErr.message : String(sendErr));
-    }
-  } else {
-    console.warn("[createInvoice] skipping /send — no billEmail on quote/customer; share link won't be minted");
-  }
-  const paymentLink = extractPaymentLink(invoiceForLink, realmId);
-  if (!paymentLink) {
-    // /send was supposed to return InvoiceLink — if it didn't, dump the
-    // full shape (no truncation) so we can see what QBO actually returned.
-    console.warn("[createInvoice] no payment link extracted from /send; FULL response shape:", JSON.stringify(invoiceForLink));
-  }
+  // time). mintInvoicePaymentLink wraps the full flow: /send with built-in
+  // retries, then two refetches via GET ?include=invoiceLink to catch
+  // async portal provisioning, then returns a structured reason so the
+  // caller can show actionable guidance.
+  const initialInvoice: any = qbInvoiceFinal || created;
+  const linkResult = await mintInvoicePaymentLink(token, realmId, qbInvoiceId, billEmail, initialInvoice);
+  const paymentLink = linkResult.link;
+  const linkFailureReason = linkResult.reason;
+  const invoiceForLink = linkResult.finalInvoice;
 
   // 4b. If the quote's deposit was already paid, record the payment against this invoice
   const depositAmount = Number(invoicePayload?.depositAmount) || 0;
@@ -652,6 +746,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     qbDocNumber,
     isRevision: qbDocNumber !== baseDocNumber,
     paymentLink,
+    // Surfaces to the frontend so it can show actionable guidance:
+    //   null                 → success (paymentLink populated)
+    //   "no_bill_email"      → quote/customer is missing an email; can't /send
+    //   "no_link_after_retry"→ /send succeeded but no portal link minted
+    //                          after retries + 2 refetches. The most likely
+    //                          cause is QB Payments isn't activated on the
+    //                          shop's QuickBooks account.
+    linkFailureReason,
     qbSubtotal,
     qbTaxAmount,
     qbTotal,

@@ -179,6 +179,25 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       if (data?.error) throw new Error(data.error);
       setQbInvoiceId(data.qbInvoiceId);
       setQbPaymentLink(data.paymentLink || null);
+      // Translate the structured failure reason from the edge function
+      // into a human-readable error. Without a payment link the modal
+      // falls through to `send_failed`/`needs_create`; this string
+      // shows up under either banner.
+      if (!data.paymentLink && data.linkFailureReason) {
+        if (data.linkFailureReason === "no_link_after_retry") {
+          setQbError(
+            "QuickBooks created the invoice but didn't mint a payment link, even after retries. " +
+            "The most common cause is that QB Payments isn't activated on your QuickBooks account. " +
+            "Open QuickBooks → Settings (gear icon) → Payments → Get Started, then retry. " +
+            "If QB Payments is already on, this is a transient QBO issue — try again in a minute.",
+          );
+        } else if (data.linkFailureReason === "no_bill_email") {
+          setQbError(
+            "Can't get a payment link from QuickBooks without the customer's email. " +
+            "Add an email to the customer record (or this quote) and try again.",
+          );
+        }
+      }
     } catch (err) {
       setQbError(err.message || "Couldn't create the QB invoice. Try again.");
     } finally {
@@ -505,6 +524,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                         You can send the quote anyway — the customer will see the line items + total but won't have a pay-now button. Or retry below to get the link.
                       </div>
                     </div>
+                    {qbError && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-xs text-amber-800 leading-relaxed">
+                        {qbError}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={handleCreateQbInvoice}
