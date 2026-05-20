@@ -27,7 +27,7 @@ const STEP_TASKS = {
   // every size received → receive goods done). "Confirm delivery date"
   // was dropped — the supplier returns it on the order and operators
   // don't need to track it as a separate gate.
-  "Order Goods":  ["Check inventory", "Place blank order", "Receive goods"],
+  "Order Goods":  ["Place blank order", "Receive goods"],
   "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
   "Printing": [
     "Mount screens on press",
