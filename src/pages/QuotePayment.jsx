@@ -19,11 +19,6 @@ import {
   sortSizeEntries,
 } from "../components/shared/pricing";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
-import {
-  decideCustomerCharge,
-  buildCheckoutLineItems,
-  InvalidChargeAmountError,
-} from "@/lib/quotes/customerCharge";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -165,7 +160,10 @@ export default function QuotePayment() {
   const [customer, setCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  // checkoutLoading was used by the removed Stripe path. Keeping the
+  // variable name in the JSX (alongside approveLoading) — always false
+  // now so the button disable state degrades to "while approving" only.
+  const checkoutLoading = false;
   const [checkoutError, setCheckoutError] = useState("");
   const [recaptchaReady, setRecaptchaReady] = useState(false);
   const [approveLoading, setApproveLoading] = useState(false);
@@ -250,18 +248,14 @@ export default function QuotePayment() {
   })();
 
   // ── Payment-provider availability ──────────────────────────────────
-  // A shop must have at least one set up before we surface an "Approve
-  // & Pay" button. Otherwise the customer sees an Approve-only button
-  // and pays out-of-band.
-  //   QB available     — shop has a usable customer-facing payment link
-  //                       (the heuristic in resolveCheckoutTarget already
-  //                       rejects the legacy login-required Intuit URLs).
-  //   Stripe available — shop's stripe_account_status is "active"
-  //                       (Stripe Connect is set up + verified).
-  const stripeAvailable = shop?.stripe_account_status === "active";
+  // Stripe Connect was removed for the initial launch — QuickBooks is the
+  // only customer-payment path. The customer needs a usable QB payment
+  // link or the page falls back to Approve-only ("pay out-of-band").
+  // resolveCheckoutTarget already rejects legacy login-required Intuit
+  // URLs so qbAvailable here means a real customer-facing share link.
   const qbCheckoutTarget = resolveCheckoutTarget(quote);
   const qbAvailable = qbCheckoutTarget.provider === "qb" && Boolean(qbCheckoutTarget.url);
-  const canCollectPayment = qbAvailable || stripeAvailable;
+  const canCollectPayment = qbAvailable;
 
   async function handleApprove() {
     if (!quote?.id) return false;
@@ -342,53 +336,13 @@ export default function QuotePayment() {
       return;
     }
 
-    // No usable QB link — fall through to Stripe checkout
-    setCheckoutLoading(true);
-
-    try {
-      // Decision math + line-item build live in lib/quotes/customerCharge.js
-      // so the contracts are testable. See __tests__/customerCharge.test.js
-      // — CT/DC/BL/XC test groups pin the priority chain, deposit math, and
-      // refuse-on-$0 behavior.
-      const { chargeAmount, isDeposit, label, effectiveTotal } =
-        decideCustomerCharge(quote, customer);
-
-      let checkoutLineItems;
-      try {
-        checkoutLineItems = buildCheckoutLineItems(quote, chargeAmount, label);
-      } catch (err) {
-        if (err instanceof InvalidChargeAmountError) {
-          setCheckoutError("This quote has no outstanding balance to pay.");
-          setCheckoutLoading(false);
-          return;
-        }
-        throw err;
-      }
-
-      const response = await base44.functions.invoke("createCheckoutSession", {
-        action: "createSession",
-        quoteId: quote.id,
-        token: publicToken,
-        quoteTotal: effectiveTotal,
-        amountPaid: chargeAmount,
-        isDeposit,
-        shopOwnerEmail: quote.shop_owner || "",
-        customerEmail: quote.customer_email || quote.sent_to || "",
-        customerName: quote.customer_name || "Customer",
-        shopName: shop?.shop_name || "Shop",
-        lineItems: checkoutLineItems,
-      });
-
-      if (response.data?.url) {
-        window.location.href = response.data.url;
-      } else {
-        setCheckoutError(response.data?.error || "Failed to create checkout session.");
-      }
-    } catch (err) {
-      setCheckoutError(err.message || "An error occurred. Please try again.");
-    } finally {
-      setCheckoutLoading(false);
-    }
+    // Stripe Connect was removed for the initial launch — QuickBooks is
+    // the only payment path. If we got here without a usable QB link
+    // (e.g. the shop sent the quote before connecting QB), tell the
+    // customer to reach out to the shop instead of silently failing.
+    setCheckoutError(
+      "Online payment isn't available on this quote yet. Please contact the shop directly to arrange payment.",
+    );
   }
 
   if (loading) {
