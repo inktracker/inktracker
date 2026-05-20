@@ -27,8 +27,8 @@ async function resolveSSAuth(accessToken?: string): Promise<string> {
       if (user) {
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
-        if (profile?.ss_account && profile?.ss_api_key) {
-          return btoa(`${profile.ss_account}:${profile.ss_api_key}`);
+        if (profile?.ss_account_number && profile?.ss_api_key) {
+          return btoa(`${profile.ss_account_number}:${profile.ss_api_key}`);
         }
       }
     } catch (err) {

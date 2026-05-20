@@ -31,7 +31,7 @@ export type ProfileWithSecrets = {
   gmail_oauth_state?: string | null;
   ac_password?: string | null;
   ac_subscription_key?: string | null;
-  ss_account?: string | null;
+  ss_account_number?: string | null;
   ss_api_key?: string | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;

@@ -20,7 +20,12 @@ export const SECRET_KEYS = [
   "gmail_oauth_state",
   "ac_password",
   "ac_subscription_key",
-  "ss_account",
+  // The S&S account number column on `profiles` is `ss_account_number`
+  // (verified in production schema). An earlier draft of the profile_secrets
+  // migration used the shorter name `ss_account`; the actual data lives in
+  // `ss_account_number`, so reads must use that name. If the `profile_secrets`
+  // table also has a column under the old name, it's now orphaned.
+  "ss_account_number",
   "ss_api_key",
   "stripe_customer_id",
   "stripe_subscription_id",
