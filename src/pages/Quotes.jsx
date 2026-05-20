@@ -23,6 +23,7 @@ import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
 import { useBillingGate } from "../lib/billing-gate";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
+import { notify } from "@/lib/notify";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -105,7 +106,7 @@ export default function Quotes() {
           });
         setBrokerMap(bMap);
       } catch (error) {
-        console.error("Error loading data:", error);
+        notify.error("Couldn't load quotes", error);
       } finally {
         setLoading(false);
       }
@@ -310,8 +311,7 @@ export default function Quotes() {
       setViewing(null);
       setEditing(created);
     } catch (err) {
-      console.error("[Quotes] duplicate failed:", err);
-      alert("Couldn't duplicate this quote. Please try again.");
+      notify.error("Couldn't duplicate quote", err);
     } finally {
       setDuplicating(false);
     }
@@ -351,11 +351,7 @@ export default function Quotes() {
       // Don't let conversion errors die in the console. The button
       // (in QuoteDetailModal) wraps this in callAction which swallows
       // rejections; without surfacing here, the click looks dead.
-      console.error("Convert to Order failed:", err);
-      alert(
-        "Convert to Order failed: " + (err?.message || String(err)) +
-        "\n\nCheck the browser console for full stack trace.",
-      );
+      notify.error("Convert to Order failed", err);
     } finally {
       setConverting(false);
     }

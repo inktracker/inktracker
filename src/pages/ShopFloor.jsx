@@ -9,6 +9,7 @@ import {
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
 import { Package, ChevronRight, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { notify } from "@/lib/notify";
 
 // ShopFloor STEPS used to be its own copy of the order pipeline.
 // Consolidated to O_STATUSES on 2026-05-12 so all status lists in
@@ -166,7 +167,7 @@ export default function ShopFloor() {
         } catch { setOrders([]); }
       }
     } catch (err) {
-      console.error("Load failed:", err);
+      notify.error("Couldn't load shop floor", err);
     } finally {
       setLoading(false);
     }

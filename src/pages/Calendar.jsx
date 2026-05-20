@@ -9,6 +9,7 @@ import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import EmptyState from "../components/shared/EmptyState";
 import { todayInShopTz } from "@/lib/shopTimezone";
+import { notify } from "@/lib/notify";
 
 // Calendar status colors. Mirrors O_STATUSES — 5 stages — plus the
 // pre-order quote lifecycle chips (Quote Sent, Quote Approved). Keep this
@@ -79,21 +80,26 @@ export default function Calendar() {
 
   useEffect(() => {
     async function load() {
-      const u = await base44.auth.me();
-      setUser(u);
-      const [o, c, q] = await Promise.all([
-        base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
-        base44.entities.Customer.filter({ shop_owner: u.email }),
-        // All quotes — surfaces "Quote Sent" / "Quote Approved" chips even
-        // before a quote is converted to an order.
-        base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 500).catch(() => []),
-      ]);
-      setOrders(o || []);
-      const map = {};
-      (c || []).forEach((cust) => (map[cust.id] = cust));
-      setCustomers(map);
-      setQuotes(q || []);
-      setLoading(false);
+      try {
+        const u = await base44.auth.me();
+        setUser(u);
+        const [o, c, q] = await Promise.all([
+          base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
+          base44.entities.Customer.filter({ shop_owner: u.email }),
+          // All quotes — surfaces "Quote Sent" / "Quote Approved" chips even
+          // before a quote is converted to an order.
+          base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 500).catch(() => []),
+        ]);
+        setOrders(o || []);
+        const map = {};
+        (c || []).forEach((cust) => (map[cust.id] = cust));
+        setCustomers(map);
+        setQuotes(q || []);
+      } catch (err) {
+        notify.error("Couldn't load calendar", err);
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, []);

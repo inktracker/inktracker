@@ -14,6 +14,7 @@ import {
   formatDependentsMessage,
 } from "@/lib/customers/countCustomerDependents";
 import { useBillingGate } from "@/lib/billing-gate";
+import { notify } from "@/lib/notify";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -103,7 +104,7 @@ export default function Customers() {
           console.warn("[QB stats] failed:", err?.message);
         }
       } catch (error) {
-        console.error("Error loading customers:", error);
+        notify.error("Couldn't load customers", error);
       } finally {
         setLoading(false);
       }
@@ -165,8 +166,7 @@ export default function Customers() {
         invoices: uniq([iById, iByName]),
       });
     } catch (err) {
-      console.error("[Customers] dependent count failed:", err);
-      alert("Couldn't verify this customer's history. Please try again.");
+      notify.error("Couldn't verify customer's history", err);
       return;
     }
 
@@ -176,10 +176,14 @@ export default function Customers() {
       return;
     }
 
-    await base44.entities.Customer.delete(id);
-    setCustomers((prev) => prev.filter((c) => c.id !== id));
-    setConfirmDelete(false);
-    setEditing(null);
+    try {
+      await base44.entities.Customer.delete(id);
+      setCustomers((prev) => prev.filter((c) => c.id !== id));
+      setConfirmDelete(false);
+      setEditing(null);
+    } catch (err) {
+      notify.error("Couldn't delete customer", err);
+    }
   }
 
   async function handleAdd() {
@@ -196,8 +200,7 @@ export default function Customers() {
         orders: 0,
       });
     } catch (err) {
-      console.error("[Customers] add failed:", err);
-      alert("Couldn't add this customer. Please try again.");
+      notify.error("Couldn't add customer", err);
       setAddingCustomer(false);
       return;
     }
@@ -236,8 +239,7 @@ export default function Customers() {
       // Push to QB — if no qb_customer_id yet, creates it; otherwise idempotent.
       syncCustomerToQB(updated);
     } catch (err) {
-      console.error("[Customers] save edit failed:", err);
-      alert("Couldn't save changes. Please try again.");
+      notify.error("Couldn't save customer", err);
     } finally {
       setEditSaving(false);
     }
@@ -267,8 +269,7 @@ export default function Customers() {
       setArtworkColorCount("");
       e.target.value = "";
     } catch (error) {
-      console.error("Error uploading artwork:", error);
-      alert("Artwork upload failed. Please try again.");
+      notify.error("Artwork upload failed", error);
     } finally {
       setUploadingArtwork(false);
     }
@@ -277,9 +278,12 @@ export default function Customers() {
   async function handleRemoveArtwork(artworkId) {
     if (!editing) return;
     if (!window.confirm("Remove this artwork from the client library?")) return;
-
-    await base44.entities.BrokerDocument.delete(artworkId);
-    setArtworkDocs((prev) => prev.filter((doc) => doc.id !== artworkId));
+    try {
+      await base44.entities.BrokerDocument.delete(artworkId);
+      setArtworkDocs((prev) => prev.filter((doc) => doc.id !== artworkId));
+    } catch (err) {
+      notify.error("Couldn't remove artwork", err);
+    }
   }
 
   const handleFilterChange = (key, value) => {
