@@ -75,11 +75,19 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-function getCompanyName(order, customers) {
-  const cust = customers[order.customer_id];
-  if (cust?.company?.trim()) return cust.company.trim();
+// Same resolver as Calendar.jsx — company always wins, whether it lives
+// on the linked customer record or as a denormalized field on the
+// quote/order itself (quotes write `company` from the order wizard).
+// Falls through to a person's name only when no company is on file.
+function getCompanyName(rec, customers) {
+  const cust = customers[rec?.customer_id];
+  const company =
+    (typeof cust?.company === "string" && cust.company.trim()) ||
+    (typeof rec?.company === "string" && rec.company.trim()) ||
+    "";
+  if (company) return company;
   if (cust?.name) return cust.name;
-  if (order.customer_name) return order.customer_name;
+  if (rec?.customer_name) return rec.customer_name;
   return "—";
 }
 
@@ -728,7 +736,7 @@ export default function Production() {
                                   const isQuoteEvent = ev.kind === "quote";
                                   const subject = isQuoteEvent ? ev.quote : ev.order;
                                   const subjectName = isQuoteEvent
-                                    ? (ev.quote.customer_name || "—")
+                                    ? getCompanyName(ev.quote, customers)
                                     : companyName(ev.order);
                                   const isCompleted = !isQuoteEvent && ev.order?.status === "Completed";
                                   const chipClass = isCompleted
