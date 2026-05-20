@@ -9,6 +9,7 @@ import { loadShopPricingConfig } from "@/components/shared/pricing";
 import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
+import { notify } from "@/lib/notify";
 
 function Section({ icon: IconComp, title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -1034,11 +1035,11 @@ function BillingSection({ user }) {
         accessToken: session?.access_token,
         billing,
       });
-      if (invErr) { alert(invErr.message || "Failed to start checkout"); return; }
+      if (invErr) { notify.error("Couldn't start checkout", invErr); return; }
       if (data?.url) window.location.href = data.url;
-      else alert(data?.error || "Failed to start checkout");
+      else notify.error("Couldn't start checkout", data?.error);
     } catch (err) {
-      alert("Checkout failed: " + err.message);
+      notify.error("Checkout failed", err);
     } finally {
       setCheckoutLoading(null);
     }
@@ -1065,11 +1066,11 @@ function BillingSection({ user }) {
         action: "portal",
         accessToken: session?.access_token,
       });
-      if (invErr) { alert(invErr.message || "Failed to open billing portal"); return; }
+      if (invErr) { notify.error("Couldn't open billing portal", invErr); return; }
       if (data?.url) window.location.href = data.url;
-      else alert(data?.error || "Failed to open billing portal");
+      else notify.error("Couldn't open billing portal", data?.error);
     } catch (err) {
-      alert("Portal failed: " + err.message);
+      notify.error("Couldn't open billing portal", err);
     }
   }
 
@@ -1188,7 +1189,7 @@ function GmailScannerSection({ user }) {
       if (invErr) throw new Error(invErr.message || "Failed");
       if (data?.authUrl) window.location.href = data.authUrl;
     } catch (err) {
-      alert("Failed: " + err.message);
+      notify.error("Gmail connect failed", err);
     } finally {
       setConnecting(false);
     }
@@ -1227,7 +1228,7 @@ function GmailScannerSection({ user }) {
       });
       setLastScan(new Date().toISOString());
     } catch (err) {
-      alert("Scan failed: " + err.message);
+      notify.error("Email scan failed", err);
     } finally {
       setScanning(false);
     }
@@ -1353,7 +1354,7 @@ function SupplierKeysSection({ user }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      alert("Save failed: " + err.message);
+      notify.error("Couldn't save supplier credentials", err);
     } finally {
       setSaving(false);
     }
@@ -1378,7 +1379,7 @@ function SupplierKeysSection({ user }) {
       if (supplier === "ac") { setAcSubKey(""); setAcEmail(""); setAcPassword(""); setAcEditing(true); }
       else { setSsAccount(""); setSsKey(""); setSsEditing(true); }
     } catch (err) {
-      alert("Disconnect failed: " + err.message);
+      notify.error("Disconnect failed", err);
     } finally {
       setSaving(false);
     }
@@ -1635,7 +1636,7 @@ function PricingConfigSection({ user }) {
     // past CI.
     const decision = decidePricingSave(config);
     if (!decision.canSave) {
-      alert(decision.alertMessage);
+      notify.error("Can't save pricing", decision.alertMessage);
       return;
     }
 
@@ -1653,7 +1654,7 @@ function PricingConfigSection({ user }) {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      alert("Save failed: " + err.message);
+      notify.error("Couldn't save pricing", err);
     }
     setSaving(false);
   }
