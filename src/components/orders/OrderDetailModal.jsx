@@ -10,6 +10,7 @@ import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
   countGoodsProgress,
   autoCheckOrderGoodsTask,
+  bulkSetOrderGoodsStep,
   nextGoodsStatusOnTap,
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
@@ -233,6 +234,16 @@ export default function OrderDetailModal({
     if (!next) return;
     gp[key] = { status: next, by: shopName || "Admin", at: new Date().toISOString() };
     checklist.goods_progress = gp;
+    const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
+    setLiveOrder(prev => ({ ...prev, ...updated }));
+  }
+
+  // Bulk override for the Order Goods parent tasks. Lets a shop whose
+  // blanks don't flow through the AS Colour PO integration mark all
+  // sizes as ordered/received in one click instead of tapping each.
+  async function bulkOrderGoodsStep(target) {
+    const checklist = { ...(liveOrder.checklist || {}) };
+    checklist.goods_progress = bulkSetOrderGoodsStep(liveOrder, target, shopName || "Admin");
     const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
     setLiveOrder(prev => ({ ...prev, ...updated }));
   }
@@ -1122,19 +1133,30 @@ export default function OrderDetailModal({
                               {tasks.map(task => {
                                 const auto = autoDone(task);
                                 const done = isDone(task);
+                                // Auto-derived tasks (Place blank order / Receive
+                                // goods) get a bulk-action click handler — sets
+                                // every size to the corresponding status. Lets
+                                // shops whose blanks don't come through the AS
+                                // Colour PO integration check these off without
+                                // tapping each size individually.
+                                const bulkTarget =
+                                  task === "Place blank order" ? "ordered" :
+                                  task === "Receive goods"     ? "received" :
+                                  null;
+                                const handleClick = bulkTarget
+                                  ? () => bulkOrderGoodsStep(bulkTarget)
+                                  : () => floorToggleTask(task);
                                 return (
                                   <button key={task}
-                                    onClick={() => { if (auto === null) floorToggleTask(task); }}
-                                    disabled={auto !== null}
-                                    title={auto !== null ? "Auto-tracked from per-size status below" : undefined}
-                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"} ${auto !== null ? "cursor-default" : ""}`}>
+                                    onClick={handleClick}
+                                    title={bulkTarget
+                                      ? `Marks every size as ${bulkTarget}. Or tap individual sizes below for partial.`
+                                      : undefined}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
                                     <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                                       {done && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                                     </div>
                                     <span className={`text-sm ${done ? "text-emerald-700 line-through" : "text-slate-700"}`}>{task}</span>
-                                    {auto !== null && (
-                                      <span className="ml-auto text-[10px] uppercase tracking-widest text-slate-400">Auto</span>
-                                    )}
                                   </button>
                                 );
                               })}

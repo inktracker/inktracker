@@ -83,3 +83,54 @@ export function unreceivedCount(order) {
   const { total, received } = countGoodsProgress(order);
   return Math.max(0, total - received);
 }
+
+/**
+ * Bulk-set every size on every line item to the given target status.
+ * Used by the parent Order Goods tasks ("Place blank order" / "Receive
+ * goods") as a manual override for shops whose blanks don't come from
+ * an InkTracker-integrated supplier (AS Colour). Without this bulk
+ * action, those shops had no way to advance sizes from blank → ordered
+ * at all — the per-size tap only handles ordered → received, leaving
+ * the Order Goods stage uncompletable.
+ *
+ * Semantics:
+ *   target = "ordered"  → any blank size becomes "ordered"; sizes
+ *                         already at "ordered" or "received" are left
+ *                         alone (received is more advanced — don't
+ *                         regress).
+ *   target = "received" → any blank or "ordered" size becomes
+ *                         "received". Sizes already received are
+ *                         left alone (no-op).
+ *
+ * @param {object} order
+ * @param {"ordered" | "received"} target
+ * @param {string} actor — display name to stamp on `by` for updated keys
+ * @returns {object} the new goods_progress map (don't mutate the input)
+ */
+export function bulkSetOrderGoodsStep(order, target, actor) {
+  if (target !== "ordered" && target !== "received") return order?.checklist?.goods_progress || {};
+  const lineItems = order?.line_items || [];
+  const gp = { ...(order?.checklist?.goods_progress || {}) };
+  const now = new Date().toISOString();
+  for (let idx = 0; idx < lineItems.length; idx++) {
+    const li = lineItems[idx];
+    for (const [size, count] of Object.entries(li?.sizes || {})) {
+      if ((parseInt(count) || 0) <= 0) continue;
+      const key = `${idx}-${size}`;
+      const current = gp[key]?.status;
+      if (target === "ordered") {
+        // Only promote blanks; don't touch already-advanced sizes.
+        if (!current) {
+          gp[key] = { status: "ordered", by: actor || "Manual", at: now };
+        }
+      } else {
+        // target === "received" — promote anything that isn't already
+        // received (covers blank AND ordered).
+        if (current !== "received") {
+          gp[key] = { status: "received", by: actor || "Manual", at: now };
+        }
+      }
+    }
+  }
+  return gp;
+}
