@@ -361,6 +361,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
               toEmail: to,
               subject: taggedSubject,
               body: body || `Quote ${quote.quote_id} sent to ${to}.`,
+              shopOwner: quote.shop_owner || "",
             })
           )
         );

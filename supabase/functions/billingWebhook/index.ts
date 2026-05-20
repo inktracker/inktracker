@@ -2,7 +2,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
 import { claimWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
 
-const STRIPE_KEY = Deno.env.get("STRIPE_TEST_SECRET_KEY") || Deno.env.get("STRIPE_SECRET_KEY")!;
+// Prefer prod key over test — matches `billing/index.ts`. If both are set
+// (during local testing), prod wins. Previously this preferred test, which
+// would route prod webhook signature-verified events through the test SDK.
+const STRIPE_KEY = Deno.env.get("STRIPE_SECRET_KEY") || Deno.env.get("STRIPE_TEST_SECRET_KEY")!;
 const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_BILLING_WEBHOOK_SECRET") || "";
 const stripe = new Stripe(STRIPE_KEY, { apiVersion: "2023-10-16" });
 

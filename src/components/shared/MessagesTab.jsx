@@ -197,6 +197,7 @@ function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
           toEmail: "",
           subject,
           body: `${INTERNAL_PREFIX}${body.trim()}`,
+          shopOwner: currentUserEmail,
         });
         if (row) onPosted?.(row);
         setBody("");
@@ -222,6 +223,7 @@ function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
         toEmail: customerEmail,
         subject,
         body: body.trim(),
+        shopOwner: currentUserEmail,
       });
       if (row) onPosted?.(row);
       setBody("");

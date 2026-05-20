@@ -71,6 +71,11 @@ export function parseRefTag(subject) {
 // Insert a Message row recording an outbound email. Best-effort — never throws.
 // Call this AFTER the email send returns success.
 //
+// `shopOwner` is required for multi-tenant RLS: the messages table policy
+// gates SELECT by from_email/to_email matching the JWT, but for team members
+// (managers, employees) to see the thread we also need a shop_owner column.
+// Without it, only the literal sender/recipient sees the row.
+//
 // Note: the existing `messages` table (shared with BrokerMessaging) doesn't
 // have a `subject` column. We fold the subject into the body so we don't lose
 // it, and MessagesTab parses it back out at display time.
@@ -81,6 +86,7 @@ export async function logOutboundMessage({
   toEmail,
   subject,
   body,
+  shopOwner,
 }) {
   if (!threadId || !fromEmail) return null;
   try {
@@ -94,6 +100,7 @@ export async function logOutboundMessage({
       to_email: toEmail || "",
       body: composedBody,
       read: true, // outbound is always "read" from our perspective
+      ...(shopOwner ? { shop_owner: shopOwner } : {}),
     });
   } catch (err) {
     // Don't surface — the email already sent, the message log is bonus.
