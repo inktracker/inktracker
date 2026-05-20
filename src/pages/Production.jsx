@@ -195,6 +195,13 @@ export default function Production() {
         if (!map[o.date]) map[o.date] = [];
         map[o.date].push({ order: o, step: "Order Goods", isDue: false });
       }
+      // Completed orders get a green chip on completed_date so the
+      // calendar serves as a historical "what shipped when" record even
+      // when an order had no scheduled steps.
+      if (o.status === "Completed" && o.completed_date) {
+        if (!map[o.completed_date]) map[o.completed_date] = [];
+        map[o.completed_date].push({ order: o, step: "Completed", isDue: false });
+      }
       // Completed orders don't get a red "Due" chip — the job is done.
       if (o.due_date && o.status !== "Completed") {
         if (!map[o.due_date]) map[o.due_date] = [];

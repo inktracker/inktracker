@@ -149,6 +149,13 @@ export default function Calendar() {
       if (o.date && !stepDates["Order Goods"]) {
         push(o.date, { order: o, step: "Order Goods", isDue: false });
       }
+      // Completed orders get a green chip on their completion date so the
+      // calendar serves as a "what shipped when" historical record. Always
+      // pushed under the "Completed" step label so it picks up the emerald
+      // styling and the hiddenSteps "Completed" filter toggle.
+      if (o.status === "Completed" && o.completed_date) {
+        push(o.completed_date, { order: o, step: "Completed", isDue: false });
+      }
       // Completed orders don't get a red "Due" chip — the job is done, the
       // due date is no longer a thing the shop owner needs flagged.
       if (o.due_date && o.status !== "Completed") {
