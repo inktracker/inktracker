@@ -4,6 +4,7 @@ import {
   autoCheckOrderGoodsTask,
   nextGoodsStatusOnTap,
   unreceivedCount,
+  bulkSetOrderGoodsStep,
 } from "../orderGoodsProgress.js";
 
 describe("countGoodsProgress", () => {
@@ -121,24 +122,87 @@ describe("autoCheckOrderGoodsTask", () => {
   });
 });
 
-describe("nextGoodsStatusOnTap", () => {
-  it("advances ordered → received", () => {
+describe("nextGoodsStatusOnTap (cycles blank → ordered → received → blank)", () => {
+  it("blank → ordered (undefined/null/'' all start the cycle)", () => {
+    expect(nextGoodsStatusOnTap(undefined)).toBe("ordered");
+    expect(nextGoodsStatusOnTap(null)).toBe("ordered");
+    expect(nextGoodsStatusOnTap("")).toBe("ordered");
+  });
+
+  it("ordered → received", () => {
     expect(nextGoodsStatusOnTap("ordered")).toBe("received");
   });
 
-  it("blocks blank → ordered (manual click never advances from blank — that's the API auto-mark's job)", () => {
-    expect(nextGoodsStatusOnTap(undefined)).toBe(null);
-    expect(nextGoodsStatusOnTap(null)).toBe(null);
-    expect(nextGoodsStatusOnTap("")).toBe(null);
-  });
-
-  it("blocks received → anything (received is terminal)", () => {
+  it("received → null (caller deletes the entry; cycles back to blank)", () => {
     expect(nextGoodsStatusOnTap("received")).toBe(null);
   });
 
-  it("blocks unknown status values defensively", () => {
-    expect(nextGoodsStatusOnTap("pending")).toBe(null);
-    expect(nextGoodsStatusOnTap("delivered")).toBe(null);
+  it("treats unknown status values as blank (defensive — restart the cycle)", () => {
+    expect(nextGoodsStatusOnTap("pending")).toBe("ordered");
+    expect(nextGoodsStatusOnTap("delivered")).toBe("ordered");
+  });
+});
+
+describe("bulkSetOrderGoodsStep — toggle (forward / undo)", () => {
+  const orderWith = (gp = {}) => ({
+    line_items: [{ sizes: { S: 5, M: 5, L: 5 } }],
+    checklist: { goods_progress: gp },
+  });
+
+  it("returns empty for empty order", () => {
+    expect(bulkSetOrderGoodsStep({}, "ordered", "Test")).toEqual({});
+  });
+
+  it("'ordered' forward — marks every blank size as ordered, leaves advanced sizes alone", () => {
+    const order = orderWith({
+      "0-S": { status: "received" }, // already advanced
+      // M, L blank
+    });
+    const result = bulkSetOrderGoodsStep(order, "ordered", "Joe");
+    expect(result["0-S"].status).toBe("received");      // untouched
+    expect(result["0-M"].status).toBe("ordered");       // promoted
+    expect(result["0-L"].status).toBe("ordered");       // promoted
+    expect(result["0-M"].by).toBe("Joe");
+  });
+
+  it("'ordered' undo — when all sizes already at-target, clears every key back to blank", () => {
+    const order = orderWith({
+      "0-S": { status: "ordered" },
+      "0-M": { status: "received" },
+      "0-L": { status: "ordered" },
+    });
+    const result = bulkSetOrderGoodsStep(order, "ordered", "Joe");
+    expect(result["0-S"]).toBeUndefined();
+    expect(result["0-M"]).toBeUndefined();
+    expect(result["0-L"]).toBeUndefined();
+  });
+
+  it("'received' forward — promotes blank + ordered to received", () => {
+    const order = orderWith({
+      "0-S": { status: "ordered" },
+      // M, L blank
+    });
+    const result = bulkSetOrderGoodsStep(order, "received", "Joe");
+    expect(result["0-S"].status).toBe("received");
+    expect(result["0-M"].status).toBe("received");
+    expect(result["0-L"].status).toBe("received");
+  });
+
+  it("'received' undo — when all received, rolls back to ordered (not blank)", () => {
+    const order = orderWith({
+      "0-S": { status: "received" },
+      "0-M": { status: "received" },
+      "0-L": { status: "received" },
+    });
+    const result = bulkSetOrderGoodsStep(order, "received", "Joe");
+    expect(result["0-S"].status).toBe("ordered");
+    expect(result["0-M"].status).toBe("ordered");
+    expect(result["0-L"].status).toBe("ordered");
+  });
+
+  it("ignores invalid target", () => {
+    const order = orderWith({});
+    expect(bulkSetOrderGoodsStep(order, "garbage", "Joe")).toEqual({});
   });
 });
 

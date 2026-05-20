@@ -66,12 +66,26 @@ export function autoCheckOrderGoodsTask(step, task, counts) {
 
 /**
  * Decide the next status when an operator taps a per-size button in
- * Order Goods. Manual flow only — ordered → received. Blank and
- * received are both no-ops. Returns the new status or null.
+ * Order Goods. Cycles through the three states so a wrong tap is
+ * always undoable:
+ *
+ *   blank → "ordered" → "received" → blank → "ordered" → …
+ *
+ * Returns:
+ *   "ordered"  — caller should set status to "ordered"
+ *   "received" — caller should set status to "received"
+ *   null       — caller should DELETE the entry (cycle back to blank)
+ *
+ * Note: this is a contract change from the old "ordered → received,
+ * everything else is no-op" version. The old behavior assumed sizes
+ * could only get to "ordered" via the AS Colour PO auto-mark; for
+ * shops not on that integration, the cycle lets them advance through
+ * blank → ordered → received manually.
  */
 export function nextGoodsStatusOnTap(currentStatus) {
-  if (currentStatus === "ordered") return "received";
-  return null;
+  if (currentStatus === "received") return null;       // received → blank (cycle)
+  if (currentStatus === "ordered") return "received";  // ordered → received
+  return "ordered";                                    // blank → ordered
 }
 
 /**
@@ -85,26 +99,35 @@ export function unreceivedCount(order) {
 }
 
 /**
- * Bulk-set every size on every line item to the given target status.
- * Used by the parent Order Goods tasks ("Place blank order" / "Receive
- * goods") as a manual override for shops whose blanks don't come from
- * an InkTracker-integrated supplier (AS Colour). Without this bulk
- * action, those shops had no way to advance sizes from blank → ordered
- * at all — the per-size tap only handles ordered → received, leaving
- * the Order Goods stage uncompletable.
+ * Bulk-toggle every size on every line item for the given parent task.
+ * Used by the Order Goods parent buttons ("Place blank order" /
+ * "Receive goods") as a manual override for shops whose blanks don't
+ * come from an InkTracker-integrated supplier (AS Colour).
  *
- * Semantics:
- *   target = "ordered"  → any blank size becomes "ordered"; sizes
- *                         already at "ordered" or "received" are left
- *                         alone (received is more advanced — don't
- *                         regress).
- *   target = "received" → any blank or "ordered" size becomes
- *                         "received". Sizes already received are
- *                         left alone (no-op).
+ * The function is a TOGGLE — clicking the parent advances if the
+ * step isn't complete, and undoes if it is:
+ *
+ *   target = "ordered"  ("Place blank order")
+ *     Not yet at-target → set every blank size to "ordered" (leaves
+ *                         sizes already ordered/received alone — no
+ *                         regression)
+ *     At-target         → CLEAR every size back to blank. (If the
+ *                         user accidentally clicked "Place blank
+ *                         order," they get a one-click undo.)
+ *
+ *   target = "received" ("Receive goods")
+ *     Not yet at-target → set every blank/ordered size to "received"
+ *     At-target         → roll every size back to "ordered" (less
+ *                         destructive than clearing to blank — the
+ *                         shop usually still wants to remember the
+ *                         order was placed)
+ *
+ * "At-target" semantics mirror autoCheckOrderGoodsTask so the parent
+ * button's visual state matches its toggle behavior.
  *
  * @param {object} order
  * @param {"ordered" | "received"} target
- * @param {string} actor — display name to stamp on `by` for updated keys
+ * @param {string} actor — display name to stamp on `by` for set keys
  * @returns {object} the new goods_progress map (don't mutate the input)
  */
 export function bulkSetOrderGoodsStep(order, target, actor) {
@@ -112,23 +135,44 @@ export function bulkSetOrderGoodsStep(order, target, actor) {
   const lineItems = order?.line_items || [];
   const gp = { ...(order?.checklist?.goods_progress || {}) };
   const now = new Date().toISOString();
+
+  // Collect every real size key so we can act on all of them atomically.
+  const allKeys = [];
   for (let idx = 0; idx < lineItems.length; idx++) {
-    const li = lineItems[idx];
-    for (const [size, count] of Object.entries(li?.sizes || {})) {
+    for (const [size, count] of Object.entries(lineItems[idx]?.sizes || {})) {
       if ((parseInt(count) || 0) <= 0) continue;
-      const key = `${idx}-${size}`;
+      allKeys.push(`${idx}-${size}`);
+    }
+  }
+  if (allKeys.length === 0) return gp;
+
+  const isAtTarget = (key) => {
+    const s = gp[key]?.status;
+    if (target === "ordered") return s === "ordered" || s === "received";  // any non-blank counts
+    return s === "received";
+  };
+  const allAtTarget = allKeys.every(isAtTarget);
+
+  if (allAtTarget) {
+    // UNDO branch
+    if (target === "ordered") {
+      // "Place blank order" undo: clear everything back to blank.
+      for (const key of allKeys) delete gp[key];
+    } else {
+      // "Receive goods" undo: roll back to ordered (don't lose that
+      // the order was placed at all).
+      for (const key of allKeys) {
+        gp[key] = { status: "ordered", by: actor || "Manual", at: now };
+      }
+    }
+  } else {
+    // FORWARD branch
+    for (const key of allKeys) {
       const current = gp[key]?.status;
       if (target === "ordered") {
-        // Only promote blanks; don't touch already-advanced sizes.
-        if (!current) {
-          gp[key] = { status: "ordered", by: actor || "Manual", at: now };
-        }
+        if (!current) gp[key] = { status: "ordered", by: actor || "Manual", at: now };
       } else {
-        // target === "received" — promote anything that isn't already
-        // received (covers blank AND ordered).
-        if (current !== "received") {
-          gp[key] = { status: "received", by: actor || "Manual", at: now };
-        }
+        if (current !== "received") gp[key] = { status: "received", by: actor || "Manual", at: now };
       }
     }
   }

@@ -225,14 +225,20 @@ export default function OrderDetailModal({
     setLiveOrder(prev => ({ ...prev, ...updated }));
   }
 
-  // Per-size goods tap — decision in lib/orderGoodsProgress.
+  // Per-size goods tap — cycles blank → ordered → received → blank
+  // (decision in lib/orderGoodsProgress). A `null` return from
+  // nextGoodsStatusOnTap means "clear" — delete the entry so the
+  // size goes back to blank.
   async function floorToggleGoods(liIdx, size) {
     const checklist = { ...(liveOrder.checklist || {}) };
     const gp = { ...(checklist.goods_progress || {}) };
     const key = `${liIdx}-${size}`;
     const next = nextGoodsStatusOnTap(gp[key]?.status);
-    if (!next) return;
-    gp[key] = { status: next, by: shopName || "Admin", at: new Date().toISOString() };
+    if (next === null) {
+      delete gp[key];
+    } else {
+      gp[key] = { status: next, by: shopName || "Admin", at: new Date().toISOString() };
+    }
     checklist.goods_progress = gp;
     const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
     setLiveOrder(prev => ({ ...prev, ...updated }));
