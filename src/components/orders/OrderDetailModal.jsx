@@ -973,7 +973,13 @@ export default function OrderDetailModal({
                 const printProgress = checklist.print_progress || {};
                 const stepTasks = checklist;
                 const hasPrintData = Object.keys(printProgress).length > 0;
-                const hasChecklistData = Object.keys(stepTasks).some(k => k !== "print_progress" && Object.keys(stepTasks[k] || {}).length > 0);
+                // print_progress and goods_progress are internal per-size
+                // tracking maps, NOT user-facing checklist sections. Exclude
+                // them from the "X checklist" rollup so the order detail
+                // doesn't render a "goods_progress checklist" row with the
+                // raw data-store key.
+                const INTERNAL_CHECKLIST_KEYS = new Set(["print_progress", "goods_progress"]);
+                const hasChecklistData = Object.keys(stepTasks).some(k => !INTERNAL_CHECKLIST_KEYS.has(k) && Object.keys(stepTasks[k] || {}).length > 0);
                 const hasStepNotes = Object.keys(order.step_notes || {}).some(k => ((order.step_notes || {})[k] || []).length > 0);
 
                 if (!hasPrintData && !hasChecklistData && !hasStepNotes) return null;
@@ -1026,7 +1032,7 @@ export default function OrderDetailModal({
                       })}
 
                       {/* Step checklist progress */}
-                      {hasChecklistData && Object.entries(stepTasks).filter(([k]) => k !== "print_progress").map(([step, tasks]) => {
+                      {hasChecklistData && Object.entries(stepTasks).filter(([k]) => !INTERNAL_CHECKLIST_KEYS.has(k)).map(([step, tasks]) => {
                         if (!tasks || typeof tasks !== "object") return null;
                         const entries = Object.entries(tasks);
                         const done = entries.filter(([, v]) => !!v).length;
