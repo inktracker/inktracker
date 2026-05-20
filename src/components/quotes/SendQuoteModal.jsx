@@ -45,18 +45,13 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const [shopTemplate, setShopTemplate] = useState(null);
 
   // ── Payment provider selection ──────────────────────────────────────
-  // "stripe" (default) — customer pays via Stripe Checkout on /quotepayment.
-  // "qb"               — customer pays via the QB-issued payment link. The
-  //                      shop must explicitly click "Create QB Invoice"
-  //                      before Send becomes enabled.
-  // The choice is implicit at the data layer: resolveCheckoutTarget picks
-  // QB iff quote.qb_payment_link is set. So on Stripe we clear that field;
-  // on QB we populate it via the Create Invoice button below.
-  const [paymentProvider, setPaymentProvider] = useState(
-    quote.qb_payment_link && quote.qb_invoice_id ? "qb" : "stripe"
-  );
+  // QuickBooks is the only customer-payment path for the initial launch
+  // (Stripe Connect removed for v1 — see PR #201). The provider is hard-
+  // pinned to "qb" so downstream logic that reads `paymentProvider` keeps
+  // working unchanged. Re-introducing Stripe is a UI-only change (the
+  // edge functions stay).
+  const paymentProvider = "qb";
   const [qbConnected, setQbConnected] = useState(false);
-  const [stripeConnected, setStripeConnected] = useState(false);
   const [qbInvoiceId, setQbInvoiceId] = useState(quote.qb_invoice_id ?? null);
   const [qbPaymentLink, setQbPaymentLink] = useState(quote.qb_payment_link ?? null);
   const [creatingQbInvoice, setCreatingQbInvoice] = useState(false);
@@ -142,31 +137,6 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         if (active && !invErr && data) setQbConnected(!!data.connected);
       } catch {
         if (active) setQbConnected(false);
-      }
-    })();
-
-    // Check Stripe Connect status. Without this, the Stripe radio
-    // was always enabled even for shops with no Connect account — the
-    // customer would then hit the payment page and get an error from
-    // the createCheckoutSession function instead of a friendly
-    // "connect Stripe first" hint at send time.
-    //
-    // Data lives on shops.stripe_account_id (migration 20260522).
-    // Status must be "active" — mirrors the gate in createCheckoutSession
-    // so we don't enable the radio for shops that started onboarding
-    // but never finished Stripe identity verification.
-    (async () => {
-      try {
-        const { data: shop } = await supabase
-          .from("shops")
-          .select("stripe_account_id, stripe_account_status")
-          .eq("owner_email", quote.shop_owner)
-          .maybeSingle();
-        if (!active) return;
-        const connected = !!(shop?.stripe_account_id && shop.stripe_account_status === "active");
-        setStripeConnected(connected);
-      } catch {
-        if (active) setStripeConnected(false);
       }
     })();
 
@@ -493,42 +463,23 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                 </div>
               </div>
 
-              {/* ── Payment method picker ─────────────────────────────────── */}
+              {/* ── Payment via QuickBooks ───────────────────────────────── */}
               <div className="space-y-2">
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
                   Payment method
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className={`flex items-start gap-2 p-3 border rounded-xl transition ${!stripeConnected ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${paymentProvider === "stripe" ? "border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-200" : "border-slate-200 hover:border-slate-300"}`}>
-                    <input
-                      type="radio"
-                      checked={paymentProvider === "stripe"}
-                      onChange={() => setPaymentProvider("stripe")}
-                      disabled={sending || !stripeConnected}
-                      className="mt-0.5 accent-indigo-600"
-                    />
-                    <span className="text-sm">
-                      <span className="block font-semibold text-slate-800">Stripe</span>
-                      <span className="block text-xs text-slate-500 mt-0.5">
-                        {stripeConnected ? "Customer pays through Stripe Checkout." : "Connect Stripe in Account first."}
-                      </span>
+                <div className={`flex items-start gap-2 p-3 border rounded-xl ${qbConnected ? "border-[#2CA01C] bg-green-50/50" : "border-amber-200 bg-amber-50/40"}`}>
+                  {qbConnected
+                    ? <CheckCircle2 className="w-4 h-4 text-[#2CA01C] shrink-0 mt-0.5" />
+                    : <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />}
+                  <span className="text-sm">
+                    <span className="block font-semibold text-slate-800">QuickBooks</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">
+                      {qbConnected
+                        ? "Customer pays via the QB invoice link."
+                        : "Connect QuickBooks in Account → Integrations before sending this quote."}
                     </span>
-                  </label>
-                  <label className={`flex items-start gap-2 p-3 border rounded-xl transition ${!qbConnected ? "opacity-50 cursor-not-allowed" : "cursor-pointer"} ${paymentProvider === "qb" ? "border-[#2CA01C] bg-green-50/50 ring-1 ring-green-200" : "border-slate-200 hover:border-slate-300"}`}>
-                    <input
-                      type="radio"
-                      checked={paymentProvider === "qb"}
-                      onChange={() => setPaymentProvider("qb")}
-                      disabled={sending || !qbConnected}
-                      className="mt-0.5 accent-[#2CA01C]"
-                    />
-                    <span className="text-sm">
-                      <span className="block font-semibold text-slate-800">QuickBooks</span>
-                      <span className="block text-xs text-slate-500 mt-0.5">
-                        {qbConnected ? "Customer pays via the QB invoice link." : "Connect QuickBooks in Account first."}
-                      </span>
-                    </span>
-                  </label>
+                  </span>
                 </div>
 
                 {/* QB Create / status gate. Branches on qbInvoiceId (NOT
@@ -645,7 +596,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           >
             <h3 className="text-base font-bold text-slate-900 mb-2">Send this quote?</h3>
             <p className="text-sm text-slate-600 leading-relaxed">
-              About to email <span className="font-semibold">{recipientEmails.join(", ")}</span> with the {paymentProvider === "qb" ? "QuickBooks" : "Stripe"} payment link.
+              About to email <span className="font-semibold">{recipientEmails.join(", ")}</span> with the QuickBooks payment link.
             </p>
             <div className="mt-5 flex gap-2">
               <button
