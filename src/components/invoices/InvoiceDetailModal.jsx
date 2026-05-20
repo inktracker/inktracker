@@ -10,6 +10,7 @@ import CollapsibleSection from "../shared/CollapsibleSection";
 import { invoiceThreadId } from "@/lib/messageThreads";
 import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
+import { notify } from "@/lib/notify";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice }) {
   const [loading, setLoading] = useState(false);
@@ -164,7 +165,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       setReordered(true);
       setTimeout(() => setReordered(false), 3000);
     } catch (err) {
-      console.error("Reorder failed:", err);
+      notify.error("Reorder failed", err);
     } finally {
       setReordering(false);
     }
