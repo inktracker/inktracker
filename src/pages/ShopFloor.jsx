@@ -246,20 +246,24 @@ export default function ShopFloor() {
     }
   }
 
-  // Per-size goods tap. Decision lives in lib/orderGoodsProgress; this
-  // shell just wires the DB write. Manual flow only — ordered → received.
+  // Per-size goods tap — cycles blank → ordered → received → blank
+  // (decision in lib/orderGoodsProgress). A `null` return means
+  // "clear" — delete the entry so the size goes back to blank.
   async function toggleGoods(order, liIdx, size) {
     try {
       const checklist = { ...(order.checklist || {}) };
       const goodsProgress = { ...(checklist.goods_progress || {}) };
       const key = `${liIdx}-${size}`;
       const next = nextGoodsStatusOnTap(goodsProgress[key]?.status);
-      if (!next) return;
-      goodsProgress[key] = {
-        status: next,
-        by: user?.full_name || user?.email || "Employee",
-        at: new Date().toISOString(),
-      };
+      if (next === null) {
+        delete goodsProgress[key];
+      } else {
+        goodsProgress[key] = {
+          status: next,
+          by: user?.full_name || user?.email || "Employee",
+          at: new Date().toISOString(),
+        };
+      }
       checklist.goods_progress = goodsProgress;
       const updated = await base44.entities.Order.update(order.id, { checklist });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
