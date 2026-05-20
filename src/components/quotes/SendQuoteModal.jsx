@@ -150,13 +150,20 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     // customer would then hit the payment page and get an error from
     // the createCheckoutSession function instead of a friendly
     // "connect Stripe first" hint at send time.
+    //
+    // Data lives on shops.stripe_account_id (migration 20260522).
+    // Status must be "active" — mirrors the gate in createCheckoutSession
+    // so we don't enable the radio for shops that started onboarding
+    // but never finished Stripe identity verification.
     (async () => {
       try {
-        const me = await base44.auth.me();
+        const { data: shop } = await supabase
+          .from("shops")
+          .select("stripe_account_id, stripe_account_status")
+          .eq("owner_email", quote.shop_owner)
+          .maybeSingle();
         if (!active) return;
-        // Stripe Connect lands on either stripe_account_id or the
-        // legacy stripe_connect_account_id. Either means connected.
-        const connected = !!(me?.stripe_account_id || me?.stripe_connect_account_id);
+        const connected = !!(shop?.stripe_account_id && shop.stripe_account_status === "active");
         setStripeConnected(connected);
       } catch {
         if (active) setStripeConnected(false);

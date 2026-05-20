@@ -206,7 +206,7 @@ Deno.serve(async (req) => {
 
   const [{ data: shopRow }, quoteCount, orderCount, customerCount] = await Promise.all([
     shopOwnerEmail
-      ? admin.from("shops").select("*").eq("shop_owner", shopOwnerEmail).maybeSingle()
+      ? admin.from("shops").select("*").eq("owner_email", shopOwnerEmail).maybeSingle()
       : Promise.resolve({ data: null }),
     countSafe(admin, "quotes", shopOwnerEmail),
     countSafe(admin, "orders", shopOwnerEmail),
@@ -340,7 +340,9 @@ function describeSetup(
   }
 
   // Integrations
-  const stripeConnected = truthyVal(profile.stripe_account_id) || truthyVal(profile.stripe_connect_account_id);
+  // Stripe Connect data is on shops.stripe_account_id (migration 20260522).
+  // Active status mirrors the gate used by createCheckoutSession.
+  const stripeConnected = truthyVal(shop?.stripe_account_id) && shop?.stripe_account_status === "active";
   lines.push(`Stripe Connect: ${stripeConnected ? "connected" : "not connected"} (needed for online quote payments)`);
 
   const qbConnected = truthyVal(profile.qb_access_token);
