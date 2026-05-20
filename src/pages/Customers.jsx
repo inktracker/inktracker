@@ -172,7 +172,7 @@ export default function Customers() {
 
     const blockMessage = formatDependentsMessage(counts, customer.name || "this customer");
     if (blockMessage) {
-      alert(blockMessage);
+      notify.error("Can't delete customer", blockMessage);
       return;
     }
 
@@ -997,13 +997,12 @@ export default function Customers() {
 
             const failedNames = partiallyFailed.map(d => d.name).join(", ");
             if (partiallyFailed.length > 0) {
-              alert(
-                `Merged ${fullyMergedIds.length} of ${duplicates.length}. ` +
-                `Could not finish merging ${partiallyFailed.length} duplicate(s) (${failedNames}) — some child records didn't reassign and were left in place to avoid orphans. ` +
-                `${totalMoved} record(s) moved overall.`,
+              notify.error(
+                `Merged ${fullyMergedIds.length} of ${duplicates.length}`,
+                `Couldn't finish merging ${partiallyFailed.length} duplicate(s) (${failedNames}) — some child records didn't reassign and were left in place to avoid orphans. ${totalMoved} record(s) moved overall.`,
               );
             } else {
-              alert(`Merged ${duplicates.length} duplicate(s) into ${primary.name}. ${totalMoved} records reassigned.`);
+              notify.success(`Merged ${duplicates.length} duplicate(s) into ${primary.name}`, `${totalMoved} records reassigned.`);
             }
             setCustomers(prev => prev.filter(c => !fullyMergedIds.includes(c.id)));
           }}
@@ -1082,7 +1081,7 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
         }
       } catch {}
     } catch (err) {
-      alert("Merge failed: " + err.message);
+      notify.error("Merge failed", err);
     } finally {
       setMerging(false);
     }

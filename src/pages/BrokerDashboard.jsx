@@ -55,6 +55,7 @@ import {
   getClientTotalSafe as getClientTotalSafeLib,
 } from "@/lib/broker/quoteTotals";
 import SendQuoteModal from "../components/quotes/SendQuoteModal";
+import { notify } from "@/lib/notify";
 
 // Broker dashboard's per-order progress strip. Now uses the canonical
 // O_STATUSES (slim 5-stage pipeline) instead of its own copy.
@@ -385,7 +386,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
                   });
                 } catch (err) {
                   console.error("[BrokerDashboard] Shop PDF export failed:", err);
-                  alert("Could not generate the Shop Order Form PDF: " + (err?.message || err));
+                  notify.error("Couldn't generate Shop Order Form PDF", err);
                 }
               }}
               className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
@@ -401,7 +402,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
                   });
                 } catch (err) {
                   console.error("[BrokerDashboard] Client PDF export failed:", err);
-                  alert("Could not generate the Client Quote PDF: " + (err?.message || err));
+                  notify.error("Couldn't generate Client Quote PDF", err);
                 }
               }}
               className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
@@ -677,8 +678,9 @@ export default function BrokerDashboard() {
     const isSubmittingToShop = nextStatus === "Pending";
 
     if (isSubmittingToShop && !assignedShop) {
-      alert(
-        "Your account isn't linked to a shop yet. Ask the shop admin to re-send your invite or assign you from the Admin Panel → Broker Manager."
+      notify.error(
+        "Your account isn't linked to a shop",
+        "Ask the shop admin to re-send your invite or assign you from the Admin Panel → Broker Manager."
       );
       return;
     }

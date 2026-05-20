@@ -630,7 +630,7 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
       setSaved(true);
       setTimeout(() => onClose(), 800);
     } catch (err) {
-      alert("Save failed: " + err.message);
+      notify.error("Save failed", err);
     } finally {
       setSaving(false);
     }
@@ -714,16 +714,16 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
               const needs = sortedItems
                 .map(item => ({ size: (item.variantName || "").toUpperCase(), need: Math.max(0, (targets[item.id] || 0) - (item.qty || 0)) }))
                 .filter(n => n.need > 0);
-              if (!needs.length) { alert("All sizes are at or above target."); return; }
-              if (!styleNumber.trim() || !ssColor) { alert("Set S&S Style # and Color first."); return; }
+              if (!needs.length) { notify.info("All sizes are at or above target."); return; }
+              if (!styleNumber.trim() || !ssColor) { notify.info("Set S&S Style # and Color first."); return; }
               setOrdering(true);
               try {
                 const { data, error: invErr1 } = await base44.functions.invoke("ssLookupStyle", {
                   styleNumber: styleNumber.trim(),
                 });
-                if (invErr1) { alert(invErr1.message || "Lookup failed"); return; }
+                if (invErr1) { notify.error("Lookup failed", invErr1); return; }
                 const matches = data?.matches || [];
-                if (!matches.length) { alert("Style not found on S&S"); return; }
+                if (!matches.length) { notify.error("Style not found on S&S"); return; }
                 const product = matches[0];
                 // Fetch per-size SKUs
                 const { data: skuData, error: invErr2 } = await base44.functions.invoke("ssLookupStyle", {
@@ -731,9 +731,9 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
                   action: "rawSkus",
                   color: ssColor,
                 });
-                if (invErr2) { alert(invErr2.message || "SKU lookup failed"); return; }
+                if (invErr2) { notify.error("SKU lookup failed", invErr2); return; }
                 const sizeSku = skuData.skus || {};
-                if (!Object.keys(sizeSku).length) { alert(`No SKUs found for ${ssColor}`); return; }
+                if (!Object.keys(sizeSku).length) { notify.error(`No SKUs found for ${ssColor}`); return; }
                 const cartItems = [];
                 for (const { size, need } of needs) {
                   const match = sizeSku[size];
@@ -748,11 +748,11 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
                     price: match.price || 0,
                   });
                 }
-                if (!cartItems.length) { alert("Could not match any sizes to S&S SKUs"); return; }
+                if (!cartItems.length) { notify.error("Could not match any sizes to S&S SKUs"); return; }
                 onAddToCart(cartItems);
                 onClose();
               } catch (err) {
-                alert("Error: " + err.message);
+                notify.error("S&S cart add failed", err);
               } finally {
                 setOrdering(false);
               }
