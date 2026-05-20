@@ -528,7 +528,14 @@ Deno.serve(async (req) => {
     // ── getAuthUrl ──────────────────────────────────────────────────
     if (action === "getGmailAuthUrl") {
       const state = crypto.randomUUID();
-      await adminClient().from("profiles").update({ gmail_oauth_state: state }).eq("id", profile.id);
+      // gmail_oauth_state lives on profile_secrets post the
+      // 20260520_drop_legacy_profile_secret_columns migration.
+      await adminClient()
+        .from("profile_secrets")
+        .upsert(
+          { profile_id: profile.id, gmail_oauth_state: state, updated_at: new Date().toISOString() },
+          { onConflict: "profile_id" },
+        );
 
       const params = new URLSearchParams({
         client_id: GMAIL_CLIENT_ID,

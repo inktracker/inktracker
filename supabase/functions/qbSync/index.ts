@@ -100,7 +100,7 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
   // Write rotated tokens — use service role client for profile_secrets (RLS blocks user client)
   try {
     const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    await updateProfileSecrets(adminClient, profile.id, refreshedFields, { dualWrite: true });
+    await updateProfileSecrets(adminClient, profile.id, refreshedFields);
   } catch (err) {
     console.error("[qbSync] CRITICAL: failed to persist refreshed QB tokens:", err);
     throw new Error("Could not save refreshed QuickBooks tokens. Please try again.");
@@ -970,7 +970,6 @@ Deno.serve(async (req) => {
           qb_realm_id: null,
           qb_token_expires_at: null,
         },
-        { dualWrite: true },
       );
       return Response.json({ ok: true }, { headers: CORS });
     }

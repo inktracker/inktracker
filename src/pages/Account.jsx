@@ -449,13 +449,18 @@ export default function Account() {
     if (!user) return;
     setQbConnecting(true);
     try {
-      const state = crypto.randomUUID();
-      const { error } = await supabase
-        .from("profiles")
-        .update({ qb_oauth_state: state })
-        .eq("id", user.id);
-      if (error) throw error;
-      window.location.href = buildQBAuthUrl(state);
+      // qb_oauth_state lives on profile_secrets now (service-role-only RLS).
+      // Frontend can't write it directly — go through the profileSecrets
+      // edge function which generates the UUID and stores it for us.
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error: invErr } = await base44.functions.invoke("profileSecrets", {
+        action: "startConnect",
+        provider: "qb",
+        accessToken: session?.access_token,
+      });
+      if (invErr) throw invErr;
+      if (!data?.state) throw new Error("Failed to generate OAuth state");
+      window.location.href = buildQBAuthUrl(data.state);
     } catch (err) {
       console.error("QB connect error:", err);
       setQbMessage({ type: "error", text: "Could not start QuickBooks connection. Please try again." });
@@ -1296,17 +1301,49 @@ function maskValue(val) {
 }
 
 function SupplierKeysSection({ user }) {
-  const ssHasKey = !!(user?.ss_account_number && user?.ss_api_key);
-  const acHasKey = !!user?.ac_subscription_key;
-  const [ssAccount, setSsAccount] = useState(ssHasKey ? maskValue(user.ss_account_number) : "");
-  const [ssKey, setSsKey] = useState(ssHasKey ? maskValue(user.ss_api_key) : "");
-  const [acSubKey, setAcSubKey] = useState(acHasKey ? maskValue(user.ac_subscription_key) : "");
-  const [acEmail, setAcEmail] = useState(user?.ac_email || "");
-  const [acPassword, setAcPassword] = useState(user?.ac_password ? "********" : "");
-  const [ssEditing, setSsEditing] = useState(!ssHasKey);
-  const [acEditing, setAcEditing] = useState(!acHasKey);
+  // Supplier secrets (ss_*, ac_*) live on profile_secrets now — the
+  // service-role-only RLS-locked table. The frontend can't read them
+  // back directly; we fetch boolean flags + the non-secret ac_email
+  // via the profileSecrets edge function instead. Once flags load,
+  // the "Connected" badges + editing state derive from them.
+  const [ssHasKey, setSsHasKey] = useState(false);
+  const [acHasKey, setAcHasKey] = useState(false);
+  const [acEmailFromServer, setAcEmailFromServer] = useState("");
+  const [ssAccount, setSsAccount] = useState("");
+  const [ssKey, setSsKey] = useState("");
+  const [acSubKey, setAcSubKey] = useState("");
+  const [acEmail, setAcEmail] = useState("");
+  const [acPassword, setAcPassword] = useState("");
+  const [ssEditing, setSsEditing] = useState(true);
+  const [acEditing, setAcEditing] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Load connection flags on mount. Until they load, we render in "no
+  // connection" mode so the user doesn't briefly see stale state.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+        const { data, error } = await base44.functions.invoke("profileSecrets", {
+          action: "getFlags",
+          accessToken: session.access_token,
+        });
+        if (!alive || error || !data) return;
+        setSsHasKey(!!data.ss);
+        setAcHasKey(!!data.ac);
+        setAcEmailFromServer(data.ac_email || "");
+        setSsEditing(!data.ss);
+        setAcEditing(!data.ac);
+        if (data.ac_email) setAcEmail(data.ac_email);
+      } catch {
+        // Stay in "no connection" mode — the user can still re-enter creds.
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
 
   // Free-freight thresholds — drives the progress bar on Purchase Orders.
   // Per supplier so each can have its own minimum (AS Colour vs S&S vs others).
@@ -1322,24 +1359,28 @@ function SupplierKeysSection({ user }) {
     setSaving(true);
     setSaved(false);
     try {
-      const updates = {};
-      // Only send fields that the user actually typed something into.
-      // An empty input in edit mode is not a "clear me" signal — that's
-      // a footgun (a shop walking away from the form without typing
-      // would otherwise null their saved keys). To explicitly disconnect
-      // a supplier, use the "Disconnect" button below the inputs.
+      // Secret credentials (ss_*, ac_*) go through the profileSecrets edge
+      // function — they live on the service-role-only profile_secrets table.
+      // Non-secret prefs (thresholds, warehouse) still go through updateMe
+      // which writes to profiles.
+      //
+      // Only send fields the user actually typed into. An empty input is
+      // NOT a "clear" signal — that's a footgun (walking away from the
+      // form would otherwise null saved keys). Use Disconnect to clear.
+      const supplierSecrets = {};
       if (ssEditing) {
-        if (ssAccount.trim()) updates.ss_account_number = ssAccount.trim();
-        if (ssKey.trim()) updates.ss_api_key = ssKey.trim();
+        if (ssAccount.trim()) supplierSecrets.ss_account_number = ssAccount.trim();
+        if (ssKey.trim()) supplierSecrets.ss_api_key = ssKey.trim();
       }
       if (acEditing) {
-        if (acSubKey.trim()) updates.ac_subscription_key = acSubKey.trim();
-        if (acEmail.trim()) updates.ac_email = acEmail.trim();
+        if (acSubKey.trim()) supplierSecrets.ac_subscription_key = acSubKey.trim();
+        if (acEmail.trim()) supplierSecrets.ac_email = acEmail.trim();
         if (acPassword.trim() && acPassword !== "********") {
-          updates.ac_password = acPassword.trim();
+          supplierSecrets.ac_password = acPassword.trim();
         }
       }
-      // Always send thresholds — they're cheap and the user expects edits to stick.
+
+      const profileUpdates = {};
       const thresholds = { ...initialThresholds };
       const acT = Number(acThreshold);
       const ssT = Number(ssThreshold);
@@ -1347,10 +1388,31 @@ function SupplierKeysSection({ user }) {
       else if (acT > 0) thresholds["AS Colour"] = acT;
       if (ssThreshold === "" || ssT === 0) delete thresholds["S&S Activewear"];
       else if (ssT > 0) thresholds["S&S Activewear"] = ssT;
-      updates.free_freight_thresholds = thresholds;
-      updates.default_ac_warehouse = defaultAcWarehouse || "CA";
-      if (Object.keys(updates).length === 0) { setSaving(false); return; }
-      await base44.auth.updateMe(updates);
+      profileUpdates.free_freight_thresholds = thresholds;
+      profileUpdates.default_ac_warehouse = defaultAcWarehouse || "CA";
+
+      if (Object.keys(supplierSecrets).length > 0) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const { error: invErr, data } = await base44.functions.invoke("profileSecrets", {
+          action: "update",
+          updates: supplierSecrets,
+          accessToken: session?.access_token,
+        });
+        if (invErr) throw invErr;
+        if (data?.error) throw new Error(data.error);
+        // Refresh flags so badges update without a full page reload.
+        if (supplierSecrets.ss_account_number || supplierSecrets.ss_api_key) {
+          setSsHasKey(true);
+          setSsEditing(false);
+        }
+        if (supplierSecrets.ac_subscription_key) {
+          setAcHasKey(true);
+          setAcEditing(false);
+        }
+        if (supplierSecrets.ac_email) setAcEmailFromServer(supplierSecrets.ac_email);
+      }
+
+      await base44.auth.updateMe(profileUpdates);
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -1361,7 +1423,9 @@ function SupplierKeysSection({ user }) {
   }
 
   // Explicit disconnect — only way to actually null the credentials.
-  // Save never wipes; users have to opt in here.
+  // Save never wipes; users have to opt in here. Goes through the
+  // profileSecrets edge function since the secrets live on the
+  // service-role-only profile_secrets table.
   async function handleDisconnect(supplier) {
     const labels = {
       ss: "S&S Activewear",
@@ -1372,12 +1436,21 @@ function SupplierKeysSection({ user }) {
     }
     setSaving(true);
     try {
-      const updates = supplier === "ac"
-        ? { ac_subscription_key: null, ac_email: null, ac_password: null }
-        : { ss_account_number: null, ss_api_key: null };
-      await base44.auth.updateMe(updates);
-      if (supplier === "ac") { setAcSubKey(""); setAcEmail(""); setAcPassword(""); setAcEditing(true); }
-      else { setSsAccount(""); setSsKey(""); setSsEditing(true); }
+      const { data: { session } } = await supabase.auth.getSession();
+      const { error: invErr, data } = await base44.functions.invoke("profileSecrets", {
+        action: "disconnectProvider",
+        provider: supplier,
+        accessToken: session?.access_token,
+      });
+      if (invErr) throw invErr;
+      if (data?.error) throw new Error(data.error);
+      if (supplier === "ac") {
+        setAcSubKey(""); setAcEmail(""); setAcPassword("");
+        setAcHasKey(false); setAcEditing(true); setAcEmailFromServer("");
+      } else {
+        setSsAccount(""); setSsKey("");
+        setSsHasKey(false); setSsEditing(true);
+      }
     } catch (err) {
       notify.error("Disconnect failed", err);
     } finally {
@@ -1424,9 +1497,8 @@ function SupplierKeysSection({ user }) {
             <p className="text-[10px] text-slate-400">Find these in your S&S Activewear account under API settings.</p>
           </>
         ) : ssHasKey ? (
-          <div className="grid grid-cols-2 gap-3 text-xs text-slate-500">
-            <div>Account: <span className="font-mono">{maskValue(user.ss_account_number)}</span></div>
-            <div>API Key: <span className="font-mono">{maskValue(user.ss_api_key)}</span></div>
+          <div className="text-xs text-slate-500">
+            Credentials saved. Click <span className="font-semibold">Edit</span> to replace.
           </div>
         ) : (
           <p className="text-xs text-slate-400">No S&S credentials configured. Enter your account details to connect.</p>
@@ -1469,8 +1541,8 @@ function SupplierKeysSection({ user }) {
           </>
         ) : acHasKey ? (
           <div className="text-xs text-slate-500 space-y-1">
-            <div>Subscription Key: <span className="font-mono">{maskValue(user.ac_subscription_key)}</span></div>
-            <div>Email: {user.ac_email}</div>
+            <div>Credentials saved. Click <span className="font-semibold">Edit</span> to replace.</div>
+            {acEmailFromServer && <div>Email: {acEmailFromServer}</div>}
           </div>
         ) : (
           <p className="text-xs text-slate-400">No AS Colour credentials configured. Enter your account details to connect.</p>

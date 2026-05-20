@@ -42,13 +42,14 @@ Deno.serve(async (req) => {
     const tokens = await tokenRes.json();
     const supabaseAdmin = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-    const { data: profile, error: findErr } = await supabaseAdmin
-      .from("profiles")
-      .select("id, gmail_refresh_token")
+    // Look up via profile_secrets where gmail_oauth_state now lives.
+    const { data: secretRow, error: findErr } = await supabaseAdmin
+      .from("profile_secrets")
+      .select("profile_id, gmail_refresh_token")
       .eq("gmail_oauth_state", state)
-      .single();
+      .maybeSingle();
 
-    if (findErr || !profile) {
+    if (findErr || !secretRow) {
       return Response.redirect(`${APP_URL}/Account?gmail_error=state_mismatch`);
     }
 
@@ -58,27 +59,19 @@ Deno.serve(async (req) => {
     // doesn't silently break the next time the access token expires.
     const tokenFields = {
       gmail_access_token:     tokens.access_token,
-      gmail_refresh_token:    tokens.refresh_token ?? profile.gmail_refresh_token,
+      gmail_refresh_token:    tokens.refresh_token ?? secretRow.gmail_refresh_token,
       gmail_token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
       gmail_oauth_state:      null,
     };
 
-    // PRIMARY write — profiles (the proven path that all readers still use).
+    // Single write — profile_secrets is the canonical location post the
+    // 20260520_drop_legacy_profile_secret_columns migration.
     await supabaseAdmin
-      .from("profiles")
-      .update(tokenFields)
-      .eq("id", profile.id);
-
-    // SECONDARY write — profile_secrets (new RLS-locked home). Best-effort
-    // during migration; a failure here doesn't break the user's connection.
-    try {
-      await supabaseAdmin
-        .from("profile_secrets")
-        .upsert({ profile_id: profile.id, ...tokenFields, updated_at: new Date().toISOString() },
-                { onConflict: "profile_id" });
-    } catch (secretsErr) {
-      console.warn("[gmailOAuthCallback] dual-write to profile_secrets failed (non-fatal):", secretsErr);
-    }
+      .from("profile_secrets")
+      .upsert(
+        { profile_id: secretRow.profile_id, ...tokenFields, updated_at: new Date().toISOString() },
+        { onConflict: "profile_id" },
+      );
 
     return Response.redirect(`${APP_URL}/Account?gmail_connected=1`);
   } catch (err) {

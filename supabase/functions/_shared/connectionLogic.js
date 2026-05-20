@@ -18,6 +18,7 @@ export const SECRET_KEYS = [
   "gmail_refresh_token",
   "gmail_token_expires_at",
   "gmail_oauth_state",
+  "ac_email",
   "ac_password",
   "ac_subscription_key",
   // The S&S account number column on `profiles` is `ss_account_number`
