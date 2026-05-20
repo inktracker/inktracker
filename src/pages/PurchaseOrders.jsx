@@ -207,7 +207,7 @@ export default function PurchaseOrders() {
       setMergeMode(false);
       setMergeSelection(new Set());
     } catch (err) {
-      alert("Merge failed: " + (err?.message || String(err)));
+      notify.error("Merge failed", err);
     } finally {
       setMerging(false);
     }

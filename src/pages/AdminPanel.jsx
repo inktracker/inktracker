@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Users, CheckCircle, Clock, Store, Trash2, RefreshCw, ShieldCheck, UserX, Mail, X } from "lucide-react";
 import BrokerManager from "@/components/broker/BrokerManager";
+import { notify } from "@/lib/notify";
 
 function roleBadge(role) {
   const map = {
@@ -95,7 +96,7 @@ export default function AdminPanel() {
         })
       );
     } catch (err) {
-      alert("Failed: " + (err.message || err));
+      notify.error("Action failed", err);
     } finally {
       setActionLoading(prev => ({ ...prev, [key]: false }));
     }
@@ -139,7 +140,7 @@ export default function AdminPanel() {
 
   async function deleteUser(profileId, authId) {
     if (profileId === user.id) {
-      alert("You cannot delete your own account.");
+      notify.error("You cannot delete your own account.");
       return;
     }
     const key = profileId || authId;
@@ -156,7 +157,7 @@ export default function AdminPanel() {
 
       setUsers(prev => prev.filter(u => u.id !== profileId && u.auth_id !== authId));
     } catch (err) {
-      alert("Failed to delete user: " + (err.message || err));
+      notify.error("Couldn't delete user", err);
     } finally {
       setActionLoading(prev => ({ ...prev, [key]: false }));
     }

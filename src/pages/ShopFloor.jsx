@@ -203,7 +203,7 @@ export default function ShopFloor() {
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
     } catch (err) {
-      alert("Update failed: " + err.message);
+      notify.error("Update failed", err);
     } finally {
       setUpdating(false);
     }
@@ -223,7 +223,7 @@ export default function ShopFloor() {
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
     } catch (err) {
-      alert("Failed to update: " + err.message);
+      notify.error("Update failed", err);
     }
   }
 
@@ -241,7 +241,7 @@ export default function ShopFloor() {
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
     } catch (err) {
-      alert("Failed: " + err.message);
+      notify.error("Update failed", err);
     }
   }
 
@@ -264,7 +264,7 @@ export default function ShopFloor() {
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
     } catch (err) {
-      alert("Failed: " + err.message);
+      notify.error("Update failed", err);
     }
   }
 
@@ -301,7 +301,7 @@ export default function ShopFloor() {
       setSelected(updated);
       setNote("");
     } catch (err) {
-      alert("Failed: " + err.message);
+      notify.error("Update failed", err);
     } finally {
       setSending(false);
     }

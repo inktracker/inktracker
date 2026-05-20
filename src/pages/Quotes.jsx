@@ -211,7 +211,7 @@ export default function Quotes() {
     if (billingGate("save quotes")) return;
     const validationErrors = validateQuoteForSave(q);
     if (validationErrors) {
-      alert(validationErrors.join("\n"));
+      notify.error("Can't save quote", validationErrors.join(" · "));
       return;
     }
 
@@ -223,7 +223,7 @@ export default function Quotes() {
     if (existingQuote) {
       const risk = detectPostSendEditRisk(existingQuote, q);
       if (risk?.severity === "block") {
-        alert(risk.message);
+        notify.error("Can't save quote", risk.message);
         return;
       }
       if (risk?.severity === "warn") {
@@ -321,7 +321,7 @@ export default function Quotes() {
     if (converting) return;
     if (billingGate("convert quotes to orders")) return;
     if (q.converted_order_id) {
-      alert("This quote has already been converted to an order.");
+      notify.info("This quote has already been converted to an order.");
       return;
     }
     setConverting(true);
@@ -434,8 +434,8 @@ export default function Quotes() {
                     accessToken: session?.access_token,
                     emailBody: emailText.trim(),
                   });
-                  if (invErr) { alert(invErr.message || "Failed"); }
-                  else if (data?.error) { alert(data.error); }
+                  if (invErr) { notify.error("Couldn't create quote from email", invErr); }
+                  else if (data?.error) { notify.error("Couldn't create quote from email", data.error); }
                   else if (data?.quoteId) {
                     const fresh = await base44.entities.Quote.list("-created_date", 500);
                     setQuotes(fresh);
@@ -444,7 +444,7 @@ export default function Quotes() {
                     const created = fresh.find(q => q.quote_id === data.quoteId);
                     if (created) setViewing(created);
                   }
-                } catch (err) { alert("Failed: " + err.message); }
+                } catch (err) { notify.error("Couldn't create quote from email", err); }
                 setParsing(false);
               }} disabled={parsing || !emailText.trim()}
                 className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">

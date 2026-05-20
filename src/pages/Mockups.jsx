@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { Search, Download, Upload, RotateCcw, Loader2, FileText } from "lucide-react";
 import MockupCanvas from "../components/mockups/MockupCanvas";
 import { base44 } from "@/api/supabaseClient";
+import { notify } from "@/lib/notify";
 // jspdf loaded on demand inside generateProofPDF below
 
 export default function Mockups() {
@@ -92,9 +93,9 @@ export default function Mockups() {
       ];
       if (!allMatches.length) {
         if (!ssReached && !acReached) {
-          alert("Couldn't reach S&S or AS Colour. Check your supplier API credentials in Account settings.");
+          notify.error("Couldn't reach S&S or AS Colour. Check your supplier API credentials in Account settings.");
         } else {
-          alert("Style not found");
+          notify.info("Style not found");
         }
         return;
       }
@@ -104,7 +105,7 @@ export default function Mockups() {
         setBrandMatches(allMatches);
       }
     } catch (err) {
-      alert("Search failed: " + err.message);
+      notify.error("Search failed", err);
     } finally {
       setSearching(false);
     }
