@@ -44,7 +44,7 @@ const STEP_TASKS = {
   // → receive goods done). "Confirm delivery date" was dropped — the
   // supplier returns it on the order and operators don't need a separate
   // gate for it.
-  "Order Goods":  ["Check inventory", "Place blank order", "Receive goods"],
+  "Order Goods":  ["Place blank order", "Receive goods"],
   "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
   "Printing":     [
     "Mount screens on press",
