@@ -12,6 +12,7 @@ import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
 import { useBillingGate } from "@/lib/billing-gate";
+import { notify } from "@/lib/notify";
 
 const STATUS_COLORS = {
   // Quote lifecycle (visually distinct from production steps — these come
@@ -144,7 +145,7 @@ export default function Production() {
         }
         setPoByOrderId(poMap);
       } catch (err) {
-        console.error("Production load failed:", err);
+        notify.error("Couldn't load production schedule", err);
       } finally {
         setLoading(false);
       }

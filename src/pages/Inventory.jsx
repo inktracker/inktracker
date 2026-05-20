@@ -5,6 +5,7 @@ import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { Loader2, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Trash2, ShoppingCart } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
 import ShoppingList from "../components/inventory/ShoppingList";
+import { notify } from "@/lib/notify";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -68,11 +69,18 @@ export default function Inventory() {
   useEffect(() => {
     base44.auth.me().then(async (u) => {
       setUser(u);
-      base44.entities.InventoryItem.filter({ shop_owner: u.email }).then(i => {
+      try {
+        const i = await base44.entities.InventoryItem.filter({ shop_owner: u.email });
         setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
+      } catch (err) {
+        notify.error("Couldn't load inventory", err);
+      } finally {
         setLoading(false);
-      });
-    }).catch(() => setLoading(false));
+      }
+    }).catch((err) => {
+      notify.error("Couldn't load inventory", err);
+      setLoading(false);
+    });
   }, []);
 
   async function updateQty(id, newQty) {
@@ -80,8 +88,7 @@ export default function Inventory() {
       const updated = await base44.entities.InventoryItem.update(id, { qty: parseInt(newQty) || 0 });
       setItems(prev => prev.map(i => i.id === id ? updated : i));
     } catch (err) {
-      console.error("Inventory updateQty failed:", err);
-      alert("Couldn't update quantity: " + (err?.message || "Unknown error"));
+      notify.error("Couldn't update quantity", err);
     }
   }
 
@@ -95,8 +102,7 @@ export default function Inventory() {
     try {
       created = await base44.entities.InventoryItem.create({ ...form, shop_owner: user?.email });
     } catch (err) {
-      console.error("Inventory add failed:", err);
-      alert("Couldn't add item: " + (err?.message || "Unknown error"));
+      notify.error("Couldn't add item", err);
       setAdding(false);
       return;
     }
@@ -116,17 +122,20 @@ export default function Inventory() {
       setSaveStatus("saved");
       setTimeout(() => { setSaveStatus(null); setEditing(null); }, 1000);
     } catch (err) {
-      console.error("Save failed:", err);
       setSaveStatus(null);
-      alert("Save failed: " + (err.message || "Unknown error"));
+      notify.error("Save failed", err);
     }
   }
 
   async function handleDelete(id) {
     if (!window.confirm("Delete this item?")) return;
-    await base44.entities.InventoryItem.delete(id);
-    setItems(prev => prev.filter(i => i.id !== id));
-    setEditing(null);
+    try {
+      await base44.entities.InventoryItem.delete(id);
+      setItems(prev => prev.filter(i => i.id !== id));
+      setEditing(null);
+    } catch (err) {
+      notify.error("Couldn't delete item", err);
+    }
   }
 
   const hasShopify = items.some(i => i.category === "Shopify" || i._shopifyLive);

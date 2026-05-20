@@ -18,6 +18,7 @@ import {
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check } from "lucide-react";
+import { notify } from "@/lib/notify";
 
 const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", cancelled: "Cancelled" };
 
@@ -51,10 +52,18 @@ export default function PurchaseOrders() {
   useEffect(() => {
     base44.auth.me().then(async (u) => {
       setUser(u);
-      const rows = await base44.entities.PurchaseOrder.filter({ shop_owner: u.email });
-      setPos([...rows].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")));
+      try {
+        const rows = await base44.entities.PurchaseOrder.filter({ shop_owner: u.email });
+        setPos([...rows].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")));
+      } catch (err) {
+        notify.error("Couldn't load purchase orders", err);
+      } finally {
+        setLoading(false);
+      }
+    }).catch((err) => {
+      notify.error("Couldn't load purchase orders", err);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    });
   }, []);
 
   // Suppliers actually present on this shop's POs — used to populate

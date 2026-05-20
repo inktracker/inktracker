@@ -10,6 +10,7 @@ import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
 import { useBillingGate } from "@/lib/billing-gate";
+import { notify } from "@/lib/notify";
 
 function getOrderArtworkCount(order) {
   const keys = new Set();
@@ -70,7 +71,7 @@ export default function Orders() {
           navigate("/Orders", { replace: true });
         }
       } catch (err) {
-        console.error("Orders load failed:", err);
+        notify.error("Couldn't load orders", err);
       } finally {
         setLoading(false);
       }
