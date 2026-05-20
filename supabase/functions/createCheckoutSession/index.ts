@@ -46,9 +46,12 @@ async function handleGetQuote(quoteId: string, token?: string) {
     return { error: "Quote not found." };
   }
 
+  // Public-safe allowlist — this object is returned to the unauthenticated
+  // quote-payment page. Adding new sensitive columns to the shops table
+  // won't leak unless they're added here intentionally.
   const { data: shops } = await supabase
     .from("shops")
-    .select("*")
+    .select("owner_email, shop_name, logo_url, phone, email, address, city, state, zip, website, terms_and_conditions, stripe_account_id, stripe_account_status")
     .eq("owner_email", quote.shop_owner)
     .limit(1);
 
@@ -93,9 +96,12 @@ async function handleApproveQuote(quoteId: string, token?: string) {
 
   if (error || !quote) return { error: "Failed to approve quote." };
 
+  // Public-safe allowlist — this object is returned to the unauthenticated
+  // quote-payment page. Adding new sensitive columns to the shops table
+  // won't leak unless they're added here intentionally.
   const { data: shops } = await supabase
     .from("shops")
-    .select("*")
+    .select("owner_email, shop_name, logo_url, phone, email, address, city, state, zip, website, terms_and_conditions, stripe_account_id, stripe_account_status")
     .eq("owner_email", quote.shop_owner)
     .limit(1);
 

@@ -6,8 +6,13 @@ import { notify } from "@/lib/notify";
 /**
  * Shared messaging component used by both broker portal and admin dashboard.
  * threadId = `${brokerEmail}:${shopEmail}`
+ *
+ * `shopOwner` is the canonical shop_owner email for RLS — pass it in so the
+ * Message row is visible to all team members of that shop, not just the
+ * literal sender/recipient. Without it, the row is created without
+ * shop_owner set and disappears from team views.
  */
-export default function BrokerMessaging({ currentUser, otherEmail, otherName, threadId }) {
+export default function BrokerMessaging({ currentUser, otherEmail, otherName, threadId, shopOwner }) {
   const [messages, setMessages] = useState([]);
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
@@ -36,6 +41,11 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
   async function handleSend() {
     if (!body.trim()) return;
     setSending(true);
+    // shop_owner falls back to whichever of (from_email, to_email) is the
+    // shop side of this conversation. For broker→shop messages, the
+    // shopOwner prop carries the canonical value; absent that, prefer
+    // otherEmail (assumed to be the counterpart shop in the broker portal).
+    const resolvedShopOwner = shopOwner || otherEmail || currentUser.email;
     await base44.entities.Message.create({
       thread_id: threadId,
       from_email: currentUser.email,
@@ -43,6 +53,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
       to_email: otherEmail,
       body: body.trim(),
       read: false,
+      shop_owner: resolvedShopOwner,
     });
     setBody("");
     setSending(false);
