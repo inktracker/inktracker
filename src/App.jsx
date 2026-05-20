@@ -659,7 +659,7 @@ function PublicLandingPage() {
                   <span className="w-2 h-2 rounded-full bg-emerald-400" />
                   <span className="text-xs font-semibold text-emerald-400">Conservation Mission</span>
                 </div>
-                <h2 className="text-3xl font-extrabold mb-4">Built by printers.<br/>Funded for conservation.</h2>
+                <h2 className="text-3xl font-extrabold mb-4">Built by printers.<br/>Driven by conservation.</h2>
                 <p className="text-slate-400 leading-relaxed mb-4">
                   InkTracker is built by Biota Mfg, a mission-driven print shop in Reno, NV. A portion of all revenue goes toward protecting natural landscapes for the long term.
                 </p>
