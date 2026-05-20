@@ -977,13 +977,24 @@ Deno.serve(async (req) => {
 
     // Subscription check — QB write operations cost money
     {
-      const { data: subProfile } = await supabase.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+      const { data: subProfile } = await supabase.from("profiles").select("subscription_tier, subscription_status, trial_ends_at, shop_owner, email").eq("auth_id", user.id).maybeSingle();
       const blocked = requireActiveSubscription(subProfile);
       if (blocked) return blocked;
     }
 
     // All other actions need valid QB tokens
     const { accessToken: qbToken, realmId } = await getValidTokens(supabase, user.id, user.email ?? null);
+
+    // Resolve the SHOP owner email for tenant scoping. For shop owners this
+    // is identical to user.email; for brokers/managers it's the assigned
+    // shop's owner_email. Previously these handlers used user.email
+    // directly, which mis-scoped pulls for any non-owner role.
+    const { data: shopProfile } = await supabase
+      .from("profiles")
+      .select("shop_owner, email")
+      .eq("auth_id", user.id)
+      .maybeSingle();
+    const shopOwnerEmail = shopProfile?.shop_owner || shopProfile?.email || user.email || "";
 
     let result: any;
     switch (action) {
@@ -998,10 +1009,10 @@ Deno.serve(async (req) => {
         break;
       }
       case "pullCustomers":
-        result = await handlePullCustomers(qbToken, realmId, supabase, user.email ?? "");
+        result = await handlePullCustomers(qbToken, realmId, supabase, shopOwnerEmail);
         break;
       case "pullInvoices":
-        result = await handlePullInvoices(qbToken, realmId, supabase, user.email ?? "");
+        result = await handlePullInvoices(qbToken, realmId, supabase, shopOwnerEmail);
         break;
       case "getCustomerStats":
         result = await handleGetCustomerStats(qbToken, realmId);
