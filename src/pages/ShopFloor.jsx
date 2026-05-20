@@ -5,6 +5,7 @@ import { displayFullName } from "@/lib/displayName";
 import {
   countGoodsProgress,
   autoCheckOrderGoodsTask,
+  bulkSetOrderGoodsStep,
   nextGoodsStatusOnTap,
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
@@ -260,6 +261,26 @@ export default function ShopFloor() {
         at: new Date().toISOString(),
       };
       checklist.goods_progress = goodsProgress;
+      const updated = await base44.entities.Order.update(order.id, { checklist });
+      setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
+      setSelected(updated);
+    } catch (err) {
+      notify.error("Update failed", err);
+    }
+  }
+
+  // Bulk override for the Order Goods parent tasks. Manual escape hatch
+  // for shops whose blanks don't flow through the AS Colour PO
+  // integration — they couldn't otherwise advance sizes from blank →
+  // ordered (the per-size tap only handles ordered → received).
+  async function bulkOrderGoodsStep(order, target) {
+    try {
+      const checklist = { ...(order.checklist || {}) };
+      checklist.goods_progress = bulkSetOrderGoodsStep(
+        order,
+        target,
+        user?.full_name || user?.email || "Employee",
+      );
       const updated = await base44.entities.Order.update(order.id, { checklist });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
@@ -534,12 +555,23 @@ export default function ShopFloor() {
                         const auto = autoDone(task);
                         const done = isDone(task);
                         const info = stepChecks[task];
+                        // Order Goods parent tasks become bulk-action
+                        // buttons. Always clickable. See OrderDetailModal
+                        // for the equivalent on the admin side.
+                        const bulkTarget =
+                          task === "Place blank order" ? "ordered" :
+                          task === "Receive goods"     ? "received" :
+                          null;
+                        const handleClick = bulkTarget
+                          ? () => bulkOrderGoodsStep(selected, bulkTarget)
+                          : () => toggleTask(selected, task);
                         return (
                           <button key={task}
-                            onClick={() => { if (auto === null) toggleTask(selected, task); }}
-                            disabled={auto !== null}
-                            title={auto !== null ? "Auto-tracked from per-size status below" : undefined}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"} ${auto !== null ? "cursor-default" : ""}`}>
+                            onClick={handleClick}
+                            title={bulkTarget
+                              ? `Marks every size as ${bulkTarget}. Or tap individual sizes below for partial.`
+                              : undefined}
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center flex-shrink-0 transition ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                               {done && <CheckCircle2 className="w-4 h-4 text-white" />}
                             </div>
@@ -548,8 +580,8 @@ export default function ShopFloor() {
                               {done && auto === null && info?.by && (
                                 <p className="text-[10px] text-emerald-500 mt-0.5">{info.by} · {info.at ? new Date(info.at).toLocaleTimeString() : ""}</p>
                               )}
-                              {auto !== null && (
-                                <p className="text-[10px] text-slate-400 mt-0.5">Auto · from sizes below</p>
+                              {bulkTarget && !done && (
+                                <p className="text-[10px] text-slate-400 mt-0.5">Tap to mark all sizes</p>
                               )}
                             </div>
                           </button>
