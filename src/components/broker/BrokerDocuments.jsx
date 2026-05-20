@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { Upload, FileText, Trash2, Download, Paperclip } from "lucide-react";
+import { notify } from "@/lib/notify";
 
 /**
  * Document sharing component.
@@ -21,7 +22,7 @@ export default function BrokerDocuments({ brokerEmail, shopOwner, isAdmin = fals
       : { broker_id: brokerEmail };
     base44.entities.BrokerDocument.filter(query, "-created_date", 100)
       .then(d => { setDocs(d); })
-      .catch(err => console.error("BrokerDocuments load failed:", err))
+      .catch(err => notify.error("Couldn't load documents", err))
       .finally(() => setLoading(false));
   }, [brokerEmail, shopOwner, isAdmin]);
 

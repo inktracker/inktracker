@@ -10,6 +10,7 @@ import {
   Store, Image, Mail, CheckCircle2, ChevronRight,
   Loader2, Upload, X, FileText, Package, Users, Settings
 } from "lucide-react";
+import { notify } from "@/lib/notify";
 
 const QB_CLIENT_ID    = import.meta.env.VITE_QB_CLIENT_ID;
 // Routes through Vercel proxy — see src/pages/Account.jsx note.
@@ -147,9 +148,9 @@ export default function OnboardingWizard({ user, onComplete }) {
       // Force reload to ensure fresh state
       window.location.href = "/";
     } catch (err) {
-      console.error("Onboarding save error:", err);
-      // Still try to proceed — profile may have saved even if shop failed
-      window.location.href = "/";
+      // Surface and stay on the wizard so the user can retry instead of
+      // getting silently redirected into a possibly half-saved state.
+      notify.error("Onboarding save failed", err);
     } finally {
       setSaving(false);
     }

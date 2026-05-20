@@ -15,6 +15,7 @@
 import { useMemo, useState } from "react";
 import { ShoppingCart, CheckCircle2, Truck, Package } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
+import { notify } from "@/lib/notify";
 
 const ALL = "All";
 const UNSPECIFIED = "Unspecified";
@@ -103,7 +104,7 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
       );
       setCheckedIds(new Set());
     } catch (err) {
-      console.error("[ShoppingList] markCheckedAsOrdered failed:", err);
+      notify.error("Couldn't mark items as ordered", err);
       onRefresh?.(); // resync if anything went sideways
     } finally {
       setBusy(false);
@@ -121,7 +122,7 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
       });
       onItemUpdated?.(updated);
     } catch (err) {
-      console.error("[ShoppingList] receiveItem failed:", err);
+      notify.error("Couldn't receive item", err);
       onRefresh?.();
     } finally {
       setBusy(false);
@@ -137,7 +138,7 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
       });
       onItemUpdated?.(updated);
     } catch (err) {
-      console.error("[ShoppingList] cancelOrder failed:", err);
+      notify.error("Couldn't cancel order", err);
       onRefresh?.();
     } finally {
       setBusy(false);

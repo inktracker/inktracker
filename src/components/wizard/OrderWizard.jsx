@@ -5,6 +5,7 @@ import { supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { analyzeColors } from "@/lib/colorAnalyzer";
 import ColorAnalysisResult from "../shared/ColorAnalysisResult";
+import { notify } from "@/lib/notify";
 
 export const DEFAULT_WIZARD_STYLES = [
   // T-Shirts
@@ -590,8 +591,9 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
       const { file_url } = await uploadFile(file);
       setArtFiles(prev => ({ ...prev, [idx]: { name: file.name, url: file_url } }));
     } catch (err) {
-      console.error("[artUpload] upload failed:", err);
-      // Still show the file name even if upload fails so user sees the color analysis
+      // Notify so the customer knows the artwork didn't attach — otherwise
+      // they see the filename + color analysis and assume the upload worked.
+      notify.error("Artwork upload failed", err);
       setArtFiles(prev => ({ ...prev, [idx]: { name: file.name, url: "" } }));
     }
 

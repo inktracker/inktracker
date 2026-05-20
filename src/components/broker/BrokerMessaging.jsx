@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { Send, MessageSquare } from "lucide-react";
+import { notify } from "@/lib/notify";
 
 /**
  * Shared messaging component used by both broker portal and admin dashboard.
@@ -17,7 +18,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
     if (!threadId) return;
     base44.entities.Message.filter({ thread_id: threadId }, "created_date", 200)
       .then(msgs => { setMessages(msgs); })
-      .catch(err => console.error("BrokerMessaging load failed:", err))
+      .catch(err => notify.error("Couldn't load messages", err))
       .finally(() => setLoading(false));
 
     const unsub = base44.entities.Message.subscribe(event => {

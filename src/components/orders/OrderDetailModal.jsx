@@ -30,6 +30,7 @@ import {
 import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2 } from "lucide-react";
+import { notify } from "@/lib/notify";
 
 // Per-stage default checklist. Folded the old "Finishing", "Quality
 // Check", and "Packing" checklists into Printing so those tasks
@@ -269,7 +270,7 @@ export default function OrderDetailModal({
       setCostSaved(true);
       setTimeout(() => setCostSaved(false), 2000);
     } catch (err) {
-      console.error("Failed to save job cost:", err);
+      notify.error("Couldn't save job cost", err);
     } finally {
       setSavingCost(false);
     }
@@ -350,7 +351,7 @@ export default function OrderDetailModal({
       setShippingSaved(true);
       setTimeout(() => setShippingSaved(false), 2000);
     } catch (err) {
-      console.error("Failed to save shipping:", err);
+      notify.error("Couldn't save shipping", err);
     } finally {
       setSavingShipping(false);
     }
@@ -439,7 +440,7 @@ export default function OrderDetailModal({
       setReordered(true);
       setTimeout(() => setReordered(false), 3000);
     } catch (err) {
-      console.error("Reorder failed:", err);
+      notify.error("Reorder failed", err);
     } finally {
       setSaving(false);
     }

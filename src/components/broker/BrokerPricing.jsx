@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { Tag } from "lucide-react";
 import { fmtMoney, fmtDate } from "../shared/pricing";
+import { notify } from "@/lib/notify";
 
 // NOTE on terminology:
 // This table lives on the `commissions` DB table for historical reasons,
@@ -39,7 +40,7 @@ export default function BrokerPricing({ brokerEmail, shopOwner, isAdmin = false 
       : { broker_id: brokerEmail };
     base44.entities.BrokerPricing.filter(query, "-created_date", 200)
       .then((data) => { setRows(data); })
-      .catch((err) => console.error("BrokerPricing load failed:", err))
+      .catch((err) => notify.error("Couldn't load broker pricing", err))
       .finally(() => setLoading(false));
   }, [brokerEmail, shopOwner, isAdmin]);
 
