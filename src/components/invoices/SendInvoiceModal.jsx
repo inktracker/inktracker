@@ -122,6 +122,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
               toEmail:   to,
               subject:   taggedSubject,
               body:      body || `Invoice ${invoice.invoice_id} sent to ${to}.`,
+              shopOwner: invoice.shop_owner || "",
             })
           )
         );

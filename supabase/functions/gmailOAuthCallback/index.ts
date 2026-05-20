@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
 
     const { data: profile, error: findErr } = await supabaseAdmin
       .from("profiles")
-      .select("id")
+      .select("id, gmail_refresh_token")
       .eq("gmail_oauth_state", state)
       .single();
 
@@ -52,9 +52,13 @@ Deno.serve(async (req) => {
       return Response.redirect(`${APP_URL}/Account?gmail_error=state_mismatch`);
     }
 
+    // Google only returns refresh_token on the first consent. On re-consent
+    // (e.g. user re-authorizes without revoking access first) it may be
+    // undefined — preserve the existing one in that case so the connection
+    // doesn't silently break the next time the access token expires.
     const tokenFields = {
       gmail_access_token:     tokens.access_token,
-      gmail_refresh_token:    tokens.refresh_token,
+      gmail_refresh_token:    tokens.refresh_token ?? profile.gmail_refresh_token,
       gmail_token_expires_at: new Date(Date.now() + tokens.expires_in * 1000).toISOString(),
       gmail_oauth_state:      null,
     };

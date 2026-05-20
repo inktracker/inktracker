@@ -194,9 +194,27 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { styleNumber, action, color, debug = false, accessToken } = body;
 
+    // Auth required — without this any caller can drain the platform's
+    // S&S API quota using the global credentials. Mirrors the gate in
+    // ssSearchCatalog. accessToken can come from the body or the
+    // Authorization header; verify it resolves to a real Supabase user.
+    const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || accessToken || "";
+    if (!authHeader) {
+      return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+    }
+    {
+      const supabase = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        { global: { headers: { Authorization: `Bearer ${authHeader}` } } },
+      );
+      const { data: { user } } = await supabase.auth.getUser(authHeader);
+      if (!user) {
+        return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
+      }
+    }
+
     // Resolve per-shop or global S&S credentials
-    // accessToken can come from the body or from the Authorization header
-    const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
     const requestAuth = await resolveSSAuth(accessToken || authHeader);
 
     // Raw SKU lookup: returns per-size SKUs for a style+color

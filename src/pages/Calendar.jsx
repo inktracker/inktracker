@@ -140,8 +140,13 @@ export default function Calendar() {
           push(val, { order: o, step, isDue: false });
         }
       });
-      // Add "Order Goods" chip if order_date exists
-      if (o.date) {
+      // Legacy fallback: older orders stored the Order Goods date in
+      // o.date instead of step_dates["Order Goods"]. Only add this chip
+      // when the canonical step_dates slot is empty — otherwise the
+      // canonical step loop above already pushed the right chip, and
+      // a duplicate would render on a different day if the two fields
+      // drifted out of sync.
+      if (o.date && !stepDates["Order Goods"]) {
         push(o.date, { order: o, step: "Order Goods", isDue: false });
       }
       // Completed orders don't get a red "Due" chip — the job is done, the

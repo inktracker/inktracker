@@ -6,7 +6,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@biotamfg.co";
+// Default to the verified InkTracker domain (SPF/DKIM/DMARC set up there).
+// biotamfg.co isn't an InkTracker sending domain; if FROM_EMAIL env var is
+// unset, fall back to inktracker.app so mail actually delivers.
+const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

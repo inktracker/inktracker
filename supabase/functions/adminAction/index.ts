@@ -52,6 +52,7 @@ serve(async (req) => {
 
     if (callerProfile?.role !== "admin" && callerProfile?.role !== "shop") {
       return new Response(JSON.stringify({ error: "Forbidden: admin only", yourRole: callerProfile?.role ?? null }), {
+        status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -98,6 +99,7 @@ serve(async (req) => {
     if (action === "setRole") {
       if (!role) {
         return new Response(JSON.stringify({ error: "role required" }), {
+          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -164,6 +166,7 @@ serve(async (req) => {
           .single());
       } else {
         return new Response(JSON.stringify({ error: "profileId or authId required" }), {
+          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -171,6 +174,7 @@ serve(async (req) => {
       if (error) {
         console.error("setRole error:", JSON.stringify(error));
         return new Response(JSON.stringify({ error: error.message || "Failed to set role", detail: JSON.stringify(error) }), {
+          status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -186,6 +190,7 @@ serve(async (req) => {
       const cleanEmail = (email ?? "").trim().toLowerCase();
       if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
         return new Response(JSON.stringify({ error: "Valid email required" }), {
+          status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -200,6 +205,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({
           error: `A ${existing.role} account already exists for ${cleanEmail}. Delete it first if you want to re-invite.`,
         }), {
+          status: 409,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -219,6 +225,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({
           error: `Failed to send invite: ${inviteErr.message}`,
         }), {
+          status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
