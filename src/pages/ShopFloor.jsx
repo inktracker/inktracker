@@ -651,29 +651,37 @@ export default function ShopFloor() {
                             {/* Sizes — interaction depends on stage */}
                             <div className="flex flex-wrap gap-2">
                               {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
-                                // ── Order Goods: ordered (API) → received (manual) ──
+                                // ── Order Goods: blank → ordered → received → blank ──
+                                // All three states tap-able (cycle).
                                 if (stage === "Order Goods") {
                                   const status = goodsProgress[`${idx}-${size}`]?.status;
-                                  const actionable = status === "ordered";
+                                  const label =
+                                    status === "received" ? "Received"
+                                    : status === "ordered" ? "Ordered"
+                                    : "Blank";
+                                  const tooltip =
+                                    status === "received" ? "Tap to clear back to blank"
+                                    : status === "ordered" ? "Tap to mark received"
+                                    : "Tap to mark ordered";
                                   return (
                                     <button key={size}
                                       onClick={() => toggleGoods(selected, idx, size)}
-                                      disabled={!actionable}
-                                      title={
-                                        status === "received" ? "Received"
-                                        : status === "ordered" ? "Tap to mark received"
-                                        : "Place a supplier PO to mark this size as ordered"
-                                      }
-                                      className={`text-sm rounded-xl px-4 py-2.5 font-bold border-2 transition ${
+                                      title={tooltip}
+                                      className={`text-sm rounded-xl px-4 py-2.5 font-bold border-2 transition flex flex-col items-center min-w-[72px] ${
                                         status === "received"
-                                          ? "bg-emerald-100 border-emerald-400 text-emerald-700 cursor-default"
+                                          ? "bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-50"
                                           : status === "ordered"
                                             ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
-                                            : "bg-slate-50 border-slate-200 text-slate-400 cursor-default"
+                                            : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
                                       }`}>
-                                      {size}: {count}
-                                      {status === "received" && <span className="ml-1">✓</span>}
-                                      {status === "ordered" && <span className="ml-1">·</span>}
+                                      <span>{size}: {count}</span>
+                                      <span className={`text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${
+                                        status === "received" ? "text-emerald-600"
+                                        : status === "ordered" ? "text-amber-600"
+                                        : "text-slate-400"
+                                      }`}>
+                                        {label}
+                                      </span>
                                     </button>
                                   );
                                 }
