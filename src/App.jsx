@@ -486,12 +486,11 @@ function PublicLandingPage() {
           <div className="max-w-3xl mx-auto text-center">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Integrates with the tools you already use</p>
             <p className="text-sm text-slate-300 mb-6 leading-relaxed">
-              Live garment pricing from S&amp;S Activewear and AS Colour. Two-way QuickBooks sync. Stripe-powered payments.
+              Live garment pricing from S&amp;S Activewear and AS Colour. Two-way sync with QuickBooks Online, including customer payment links.
             </p>
             <div className="flex items-center justify-center gap-8 flex-wrap">
               {[
-                { name: "QuickBooks", color: "#2CA01C" },
-                { name: "Stripe", color: "#635BFF" },
+                { name: "QuickBooks Online", color: "#2CA01C" },
                 { name: "S&S Activewear", color: "#E53935" },
                 { name: "AS Colour", color: "#94a3b8" },
               ].map(i => (
@@ -538,7 +537,7 @@ function PublicLandingPage() {
             <div className="grid md:grid-cols-4 gap-8">
               {[
                 { step: "1", title: "Sign up", desc: "Create your account and set up your shop. Takes under two minutes." },
-                { step: "2", title: "Connect QuickBooks", desc: "Link your QB account with one click. Invoices and expenses sync automatically." },
+                { step: "2", title: "Connect QuickBooks Online", desc: "Link your QBO account with one click. Invoices and expenses sync automatically. (Requires QuickBooks Online — not Desktop.)" },
                 { step: "3", title: "Send your first quote", desc: "Build a quote with live garment pricing. Send it. Customer approves and pays online." },
                 { step: "4", title: "Track production", desc: "Move orders through your pipeline. Your team updates from tablets or phones." },
               ].map(s => (
