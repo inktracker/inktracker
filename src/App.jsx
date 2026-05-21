@@ -45,6 +45,7 @@ const PUBLIC_PAGE_NAMES = [
   "ArtApproval",
   "OrderStatus",
   "ShopFloor",
+  "ResetPassword",
   "privacy",
   "terms",
   "changelog",

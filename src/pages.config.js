@@ -11,6 +11,7 @@ import QuotePaymentCancel from './pages/QuotePaymentCancel';
 import QuotePaymentSuccess from './pages/QuotePaymentSuccess';
 import QuoteRequest from './pages/QuoteRequest';
 import Quotes from './pages/Quotes';
+import ResetPassword from './pages/ResetPassword';
 import Wizard from './pages/Wizard';
 import Performance from './pages/Performance';
 import AdminPanel from './pages/AdminPanel';
@@ -37,6 +38,7 @@ export const PAGES = {
     "QuotePaymentSuccess": QuotePaymentSuccess,
     "QuoteRequest": QuoteRequest,
     "Quotes": Quotes,
+    "ResetPassword": ResetPassword,
     "Wizard": Wizard,
     "Performance": Performance,
     "AdminPanel": AdminPanel,
