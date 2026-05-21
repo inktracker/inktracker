@@ -658,7 +658,7 @@ export default function ShopFloor() {
                                   const label =
                                     status === "received" ? "Received"
                                     : status === "ordered" ? "Ordered"
-                                    : "Blank";
+                                    : null;
                                   const tooltip =
                                     status === "received" ? "Tap to clear back to blank"
                                     : status === "ordered" ? "Tap to mark received"
@@ -675,13 +675,13 @@ export default function ShopFloor() {
                                             : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
                                       }`}>
                                       <span>{size}: {count}</span>
-                                      <span className={`text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${
-                                        status === "received" ? "text-emerald-600"
-                                        : status === "ordered" ? "text-amber-600"
-                                        : "text-slate-400"
-                                      }`}>
-                                        {label}
-                                      </span>
+                                      {label && (
+                                        <span className={`text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${
+                                          status === "received" ? "text-emerald-600" : "text-amber-600"
+                                        }`}>
+                                          {label}
+                                        </span>
+                                      )}
                                     </button>
                                   );
                                 }
