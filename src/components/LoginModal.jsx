@@ -17,6 +17,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   const [success, setSuccess] = useState("");
   const [resendLoading, setResendLoading] = useState(false);
   const [pendingConfirmEmail, setPendingConfirmEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
 
   if (!isOpen) return null;
 
@@ -74,6 +75,27 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     }
   };
 
+  const handleResetPassword = async () => {
+    setError("");
+    setSuccess("");
+    if (!email.trim()) {
+      setError("Enter your email first, then click \"Send reset link.\"");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/ResetPassword`,
+      });
+      if (resetErr) throw resetErr;
+      setSuccess(`Sent a password-reset link to ${email.trim()}. Click it to set a new password.`);
+    } catch (err) {
+      setError(err.message || "Couldn't send the reset link.");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
   const handleMagicLink = async () => {
     setError("");
     setSuccess("");
@@ -111,7 +133,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-lg font-bold text-slate-900">
-            {mode === "signup" ? "Create Account" : "Sign In"}
+            {mode === "signup"
+              ? "Create Account"
+              : mode === "forgot"
+              ? "Reset Password"
+              : "Sign In"}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
             <X className="w-5 h-5" />
@@ -164,7 +190,37 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
             </div>
           )}
 
-          {/* Form */}
+          {/* Forgot-password mode: email field + "Send reset link" only. */}
+          {mode === "forgot" ? (
+            <div className="space-y-4">
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Enter your account email. We'll send a link that lets you set a new password.
+              </p>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  Email address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="you@example.com"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                disabled={resetLoading}
+                className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
+              >
+                <Mail className="w-4 h-4" />
+                {resetLoading ? "Sending…" : "Send reset link"}
+              </button>
+            </div>
+          ) : (
+          /* Form */
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-1.5">
@@ -182,9 +238,20 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                Password
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-semibold text-slate-700">
+                  Password
+                </label>
+                {mode === "signin" && (
+                  <button
+                    type="button"
+                    onClick={() => switchMode("forgot")}
+                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                  >
+                    Forgot password?
+                  </button>
+                )}
+              </div>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"}
@@ -228,6 +295,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               </p>
             )}
           </form>
+          )}
 
           {mode === "signin" && (
             <>
@@ -261,6 +329,16 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                   className="font-semibold text-indigo-600 hover:text-indigo-700"
                 >
                   Create one
+                </button>
+              </p>
+            ) : mode === "forgot" ? (
+              <p className="text-sm text-slate-500">
+                Remembered it?{" "}
+                <button
+                  onClick={() => switchMode("signin")}
+                  className="font-semibold text-indigo-600 hover:text-indigo-700"
+                >
+                  Back to sign in
                 </button>
               </p>
             ) : (
