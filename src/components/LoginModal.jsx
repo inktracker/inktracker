@@ -88,7 +88,12 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         redirectTo: `${window.location.origin}/ResetPassword`,
       });
       if (resetErr) throw resetErr;
-      setSuccess(`Sent a password-reset link to ${email.trim()}. Click it to set a new password.`);
+      // Intentionally neutral wording — don't confirm whether the email
+      // exists in our system. Lets an attacker probing for valid accounts
+      // come away with the same response either way. Supabase's own API
+      // returns success regardless of whether the user exists; this just
+      // matches that behavior in the UI.
+      setSuccess("If an account exists for that email, we've sent a password-reset link. Check your inbox and spam folder.");
     } catch (err) {
       setError(err.message || "Couldn't send the reset link.");
     } finally {
