@@ -177,7 +177,12 @@ export default function Layout({ children, currentPageName }) {
   }, []);
 
   // Public pages that bypass auth entirely
-  const PUBLIC_PAGES = ["BrokerDashboard", "BrokerOnboarding", "QuotePayment", "QuotePaymentSuccess", "QuotePaymentCancel", "QuoteRequest", "ShopFloor"];
+  // ResetPassword is a public flow that has its own logic (verify recovery
+  // session, prompt for new password, full-page redirect on success). Layout
+  // must NOT trigger its role-based redirect here — otherwise a user landing
+  // on /ResetPassword from a reset email gets bounced to BrokerDashboard /
+  // ShopFloor before they can type a new password.
+  const PUBLIC_PAGES = ["BrokerDashboard", "BrokerOnboarding", "QuotePayment", "QuotePaymentSuccess", "QuotePaymentCancel", "QuoteRequest", "ShopFloor", "ResetPassword"];
 
   useEffect(() => {
     if (PUBLIC_PAGES.includes(currentPageName)) return;

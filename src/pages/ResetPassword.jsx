@@ -85,9 +85,15 @@ export default function ResetPassword() {
       const { error: updErr } = await supabase.auth.updateUser({ password });
       if (updErr) throw updErr;
       setSuccess(true);
-      // updateUser leaves the user signed in. Send them to the dashboard
-      // after a beat so they see the confirmation.
-      setTimeout(() => navigate("/"), 1500);
+      // Full-page navigation rather than client-side route change so
+      // AuthContext re-runs its initial auth check and picks up the
+      // (now finalized) signed-in session. A client-side navigate("/")
+      // would land on the public landing page because AuthContext's
+      // SIGNED_IN handler is intentionally skipped while on the reset
+      // page (see AuthContext password-recovery special-case).
+      setTimeout(() => {
+        window.location.assign("/");
+      }, 1500);
     } catch (err) {
       setError(err?.message || "Couldn't update password. Try requesting a new reset link.");
     } finally {

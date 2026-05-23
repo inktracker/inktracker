@@ -35,9 +35,21 @@ async function fetchUserWithProfile() {
     return { auth_id: user.id, email: user.email, role: "user" };
   }
 
-  // Load per-shop pricing config + timezone
+  // Load per-shop pricing config + timezone. Brokers (and other team
+  // roles) inherit from their assigned shop, not from their own email —
+  // a broker has no shops row keyed to their email, so without this
+  // they'd silently fall back to default pricing config. That defaulting
+  // made broker-side broker prices diverge from shop-side numbers
+  // because the shop's customized `brokerMarkupShare` was ignored.
   try {
-    const shopOwner = profile.shop_owner || profile.email || user.email;
+    const assignedShop = Array.isArray(profile.assigned_shops)
+      ? profile.assigned_shops[0]
+      : null;
+    const shopOwner =
+      profile.shop_owner ||
+      assignedShop ||
+      profile.email ||
+      user.email;
     const { data: shop } = await supabase
       .from("shops")
       .select("pricing_config, timezone")
@@ -105,6 +117,25 @@ export const AuthProvider = ({ children }) => {
     // when refocusing the tab; running a silent refresh avoids remounting
     // the app tree (which was causing the "everything reloads on tab switch" UX).
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      // Password-recovery flow special-case. When a user clicks a reset
+      // email link, supabase-js fires PASSWORD_RECOVERY immediately
+      // followed by SIGNED_IN (the recovery session IS a signed-in
+      // session). If we run the normal SIGNED_IN handler, the app
+      // re-renders as authenticated and unmounts ResetPassword.jsx
+      // before the user can type a new password — they get bounced to
+      // the dashboard with no chance to reset. We also have to skip
+      // the URL hash cleanup so ResetPassword's fallback detection
+      // (`hash.includes("type=recovery")`) still works.
+      if (event === "PASSWORD_RECOVERY") {
+        return;
+      }
+      const pathname = (window.location.pathname || "").toLowerCase();
+      const onResetPage = pathname.includes("/resetpassword");
+      if (onResetPage && (event === "SIGNED_IN" || event === "USER_UPDATED")) {
+        // Stay out of the way — ResetPassword.jsx owns this screen until
+        // the user submits a new password and navigates away itself.
+        return;
+      }
       if (event === "SIGNED_IN" || event === "USER_UPDATED") {
         // If URL has auth tokens (email confirmation link), do a full non-silent check
         const hasTokens = window.location.hash?.includes("access_token") || window.location.search?.includes("code=");

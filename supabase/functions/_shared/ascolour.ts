@@ -30,16 +30,43 @@ export interface AcCreds {
 
 /**
  * Build credentials from a profile row, falling back to platform-level env
- * defaults. Returns null if no usable credentials exist (caller should refuse
- * the request rather than silently using env credentials in an authenticated
- * context).
+ * defaults. Returns null if no usable credentials exist.
+ *
+ * Resolution is all-or-nothing per source — we never mix shop-level email
+ * with env-level subscription key, etc. (Mixing would mean a shop that set
+ * just one field would silently authenticate against the platform's AS
+ * Colour account with the wrong email, which the API rejects.)
+ *
+ * Order:
+ *   1. Shop creds — used if the shop has set a subscription key. (Email +
+ *      password fall back to "" only for read-only Subscription-Key
+ *      endpoints; Bearer-token endpoints will fail with a clear 401 if
+ *      those aren't set, which is the right behaviour.)
+ *   2. Platform env defaults — used when the shop hasn't configured AS
+ *      Colour at all. This lets brand-new shops browse the catalog before
+ *      they've signed up for AS Colour wholesale.
  */
 export function credsFromProfile(profile: { ac_subscription_key?: string | null; ac_email?: string | null; ac_password?: string | null } | null | undefined): AcCreds | null {
-  const subKey   = profile?.ac_subscription_key || Deno.env.get("ASCOLOUR_SUBSCRIPTION_KEY") || "";
-  const email    = profile?.ac_email             || Deno.env.get("ASCOLOUR_EMAIL")             || "";
-  const password = profile?.ac_password          || Deno.env.get("ASCOLOUR_PASSWORD")          || "";
-  if (!subKey) return null;
-  return { subKey, email, password };
+  const shopSub = profile?.ac_subscription_key || "";
+  if (shopSub) {
+    console.error(`[ascolour:creds] using shop creds (profile.id=${(profile as any)?.id ?? "?"}, email=${profile?.ac_email ? "set" : "missing"})`);
+    return {
+      subKey: shopSub,
+      email: profile?.ac_email || "",
+      password: profile?.ac_password || "",
+    };
+  }
+  const envSub = Deno.env.get("ASCOLOUR_SUBSCRIPTION_KEY") || "";
+  if (!envSub) {
+    console.error(`[ascolour:creds] no shop subKey and no env subKey — returning null`);
+    return null;
+  }
+  console.error(`[ascolour:creds] using env defaults (profile.id=${(profile as any)?.id ?? "anon"})`);
+  return {
+    subKey: envSub,
+    email: Deno.env.get("ASCOLOUR_EMAIL") || "",
+    password: Deno.env.get("ASCOLOUR_PASSWORD") || "",
+  };
 }
 
 export const FETCH_TIMEOUT_MS = 20_000;
@@ -212,10 +239,18 @@ export function normalizeProduct(p: any) {
     }
   }
 
+  // AS Colour's `styleName` often contains the full marketing description
+  // ("The AS Colour Staple Tee. Enduring comfort in a regular fit...") rather
+  // than a short product name. Trim to the first sentence so quote headers
+  // stay readable. The full description is still available via `description`.
+  const rawTitle = (p.styleName ?? p.title ?? p.name ?? "").replace(/\s*\|\s*\d+\s*$/, "");
+  const firstSentence = rawTitle.split(/(?<=\.)\s+/)[0] || rawTitle;
+  const shortTitle = firstSentence.replace(/\.$/, "").trim();
+
   return {
     id: String(p.styleCode ?? p.id ?? p.code ?? ""),
     styleCode: String(p.styleCode ?? p.code ?? p.id ?? ""),
-    title: (p.styleName ?? p.title ?? p.name ?? "").replace(/\s*\|\s*\d+\s*$/, ""),
+    title: shortTitle,
     description: stripHtml(p.description ?? ""),
     category: p.productType ?? p.category ?? p.styleCategory ?? "",
     fabric: p.composition ?? p.fabric ?? "",

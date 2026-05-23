@@ -14,7 +14,7 @@ import {
   Search,
   ChevronRight,
   X,
-  Download,
+  Eye,
   Calendar,
   User,
   Hash,
@@ -24,6 +24,21 @@ import {
 } from "lucide-react";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
+
+// Open the generated PDF in a new tab instead of triggering a download.
+// Window is opened synchronously from the click to avoid popup blockers,
+// then navigated to the blob URL once it's ready.
+async function previewPdf(buildPromise) {
+  const win = window.open("", "_blank");
+  try {
+    const blobUrl = await buildPromise;
+    if (win) win.location.href = blobUrl;
+    else window.location.href = blobUrl;
+  } catch (err) {
+    if (win) win.close();
+    throw err;
+  }
+}
 import {
   AreaChart,
   Area,
@@ -165,22 +180,22 @@ function JobDetailDrawer({ job, onClose }) {
             )}
           </div>
 
-          {/* Downloads */}
+          {/* Previews */}
           {job._rawQuote && (
             <div>
-              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Downloads</div>
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Preview</div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => exportQuoteToPDF(job._rawQuote, "", "", "", "", "", "shop")}
+                  onClick={() => previewPdf(exportQuoteToPDF(job._rawQuote, { mode: "shop", output: "blob" }))}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
                 >
-                  <Download className="w-3.5 h-3.5" /> Shop Form
+                  <Eye className="w-3.5 h-3.5" /> Shop Form
                 </button>
                 <button
-                  onClick={() => exportQuoteToPDF(job._rawQuote, "", "", "", "", "", "client")}
+                  onClick={() => previewPdf(exportQuoteToPDF(job._rawQuote, { mode: "client", output: "blob" }))}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
                 >
-                  <Download className="w-3.5 h-3.5" /> Client Form
+                  <Eye className="w-3.5 h-3.5" /> Client Form
                 </button>
               </div>
             </div>

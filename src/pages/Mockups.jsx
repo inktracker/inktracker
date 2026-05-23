@@ -1,7 +1,8 @@
-import { useState, useRef } from "react";
-import { Search, Download, Upload, RotateCcw, Loader2, FileText } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Search, Download, Upload, RotateCcw, Loader2, FileText, Link2 } from "lucide-react";
 import MockupCanvas from "../components/mockups/MockupCanvas";
 import { base44 } from "@/api/supabaseClient";
+import { uploadFile } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
 // jspdf loaded on demand inside generateProofPDF below
 
@@ -20,6 +21,32 @@ export default function Mockups() {
   const frontRef = useRef(null);
   const backRef = useRef(null);
   const fileRef = useRef(null);
+
+  // Active orders the user can link a proof to. Loaded once on mount;
+  // proof selection auto-fills customer/quantity/dates from the picked
+  // order. Limited to non-completed jobs — production rarely needs a
+  // proof on a finished order.
+  const [orders, setOrders] = useState([]);
+  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [linking, setLinking] = useState(false);
+
+  useEffect(() => {
+    async function loadOrders() {
+      try {
+        const me = await base44.auth.me();
+        if (!me?.email) return;
+        const list = await base44.entities.Order.filter(
+          { shop_owner: me.email },
+          "-created_date",
+          200,
+        );
+        setOrders((list || []).filter(o => o.status !== "Completed"));
+      } catch {
+        // Best-effort — the rest of the page still works without the picker.
+      }
+    }
+    loadOrders();
+  }, []);
 
   // Proof detail fields
   const [proofDetails, setProofDetails] = useState({
@@ -43,6 +70,29 @@ export default function Mockups() {
 
   function updateProof(patch) {
     setProofDetails(prev => ({ ...prev, ...patch }));
+  }
+
+  // Picking an order: hydrate the proof fields from the order so the user
+  // doesn't have to retype customer/quote#/quantity/due-date. Doesn't
+  // touch design fields (print sizes, colors, notes) — those belong to
+  // the proof itself, not the underlying job.
+  function pickOrderToLink(orderId) {
+    setSelectedOrderId(orderId);
+    if (!orderId) return;
+    const o = orders.find(x => x.id === orderId);
+    if (!o) return;
+    const qty = (o.line_items || []).reduce((sum, li) => {
+      const sizes = li.sizes || {};
+      return sum + Object.values(sizes).reduce((s, v) => s + (parseInt(v, 10) || 0), 0);
+    }, 0);
+    setProofDetails(prev => ({
+      ...prev,
+      customerName: o.customer_name || prev.customerName,
+      quoteNumber:  o.quote_id || o.order_id || prev.quoteNumber,
+      dueDate:      o.due_date || prev.dueDate,
+      dateOrdered:  o.date || prev.dateOrdered,
+      quantity:     qty ? String(qty) : prev.quantity,
+    }));
   }
 
   function updateFrontColor(idx, val) {
@@ -92,8 +142,19 @@ export default function Mockups() {
         ...(acReached ? acRes.value.data?.matches || [] : []),
       ];
       if (!allMatches.length) {
+        // Prefer the supplier's own error message when one is set —
+        // distinguishes "no API credentials" from "supplier had no rows".
+        const supplierError =
+          (ssRes.status === "fulfilled" && ssRes.value.data?.error) ||
+          (acRes.status === "fulfilled" && acRes.value.data?.error) ||
+          (ssRes.status === "fulfilled" && ssRes.value.error?.message) ||
+          (acRes.status === "fulfilled" && acRes.value.error?.message);
         if (!ssReached && !acReached) {
-          notify.error("Couldn't reach S&S or AS Colour. Check your supplier API credentials in Account settings.");
+          notify.error(supplierError || "Couldn't reach S&S or AS Colour. Check your supplier API credentials in Account settings.");
+        } else if (supplierError && !ssReached) {
+          // S&S errored (likely auth) and AS Colour just had nothing —
+          // surface the S&S problem since that's the one the user can fix.
+          notify.error(supplierError);
         } else {
           notify.info("Style not found");
         }
@@ -155,7 +216,11 @@ export default function Mockups() {
     URL.revokeObjectURL(url);
   }
 
-  async function generateProofPDF() {
+  // Accepts an optional `mode`:
+  //   "download" (default) — triggers a local download via doc.save
+  //   "blob"               — returns the PDF as a Blob so the caller can
+  //                          upload + attach it to an order instead
+  async function generateProofPDF(mode = "download") {
     setGeneratingProof(true);
     try {
       const { jsPDF } = await import("jspdf");
@@ -365,9 +430,50 @@ export default function Mockups() {
       doc.setTextColor(255, 255, 255);
       doc.text("www.biotamfg.com", pw / 2, ph - 9, { align: "center" });
 
-      doc.save(`Art-Proof-${proofDetails.quoteNumber || proofDetails.customerName || "proof"}.pdf`);
+      const filename = `Art-Proof-${proofDetails.quoteNumber || proofDetails.customerName || "proof"}.pdf`;
+      if (mode === "blob") return { blob: doc.output("blob"), filename };
+      doc.save(filename);
+      return null;
     } finally {
       setGeneratingProof(false);
+    }
+  }
+
+  // Generates the proof PDF, uploads it, and appends it to the selected
+  // order's selected_artwork so it shows up in the order's artwork panel
+  // during production. Doesn't replace previous proofs on the same order
+  // — additional proofs stack (the shop can manually remove old ones).
+  async function saveAndLinkProofToOrder() {
+    if (!selectedOrderId) {
+      notify.error("Pick an order to link the proof to first.");
+      return;
+    }
+    setLinking(true);
+    try {
+      const result = await generateProofPDF("blob");
+      if (!result?.blob) throw new Error("Couldn't generate the proof PDF.");
+      const file = new File([result.blob], result.filename, { type: "application/pdf" });
+      const { file_url } = await uploadFile(file);
+      const target = orders.find(o => o.id === selectedOrderId);
+      if (!target) throw new Error("Order not found.");
+      const next = [
+        ...(target.selected_artwork || []),
+        {
+          id: `proof-${Date.now()}`,
+          name: result.filename,
+          url: file_url,
+          file_url,
+          type: "proof",
+          uploaded_at: new Date().toISOString(),
+        },
+      ];
+      const updated = await base44.entities.Order.update(target.id, { selected_artwork: next });
+      setOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
+      notify.success(`Proof linked to ${target.order_id || "order"}.`);
+    } catch (err) {
+      notify.error("Couldn't link the proof", err);
+    } finally {
+      setLinking(false);
     }
   }
 
@@ -453,6 +559,28 @@ export default function Mockups() {
           {/* Proof Details */}
           <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-3">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Proof Details</div>
+
+            {/* Link to existing order — auto-populates the fields below and
+                enables "Save & Link" so the proof shows up on the order */}
+            <div>
+              <label className="text-[10px] text-slate-400 block mb-0.5 flex items-center gap-1">
+                <Link2 className="w-3 h-3" /> Link to Order
+              </label>
+              <select
+                value={selectedOrderId}
+                onChange={e => pickOrderToLink(e.target.value)}
+                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+              >
+                <option value="">— Standalone proof (no order) —</option>
+                {orders.map(o => (
+                  <option key={o.id} value={o.id}>
+                    {(o.order_id || o.quote_id || o.id.slice(0, 8))} · {o.customer_name || "Unknown"}
+                    {o.status ? ` · ${o.status}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[10px] text-slate-400 block mb-0.5">Customer</label>
@@ -460,7 +588,7 @@ export default function Mockups() {
                   placeholder="Customer name" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">Quote #</label>
+                <label className="text-[10px] text-slate-400 block mb-0.5">Quote / Order #</label>
                 <input value={proofDetails.quoteNumber} onChange={e => updateProof({ quoteNumber: e.target.value })}
                   placeholder="Q-2026-XXX" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
               </div>
@@ -566,9 +694,18 @@ export default function Mockups() {
                 <RotateCcw className="w-4 h-4" />
               </button>
             </div>
-            <button onClick={generateProofPDF} disabled={!garmentImg || generatingProof}
+            <button onClick={() => generateProofPDF("download")} disabled={!garmentImg || generatingProof || linking}
               className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40">
-              <FileText className="w-4 h-4" /> {generatingProof ? "Generating..." : "Generate Art Proof PDF"}
+              <FileText className="w-4 h-4" /> {generatingProof && !linking ? "Generating..." : "Generate Art Proof PDF"}
+            </button>
+            <button
+              onClick={saveAndLinkProofToOrder}
+              disabled={!garmentImg || !selectedOrderId || generatingProof || linking}
+              title={!selectedOrderId ? "Pick an order above to enable linking" : "Generate proof PDF and attach it to the linked order"}
+              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+              {linking ? "Linking to order..." : "Save & Link to Order"}
             </button>
           </div>
         </div>

@@ -2,9 +2,10 @@ import { Link } from "react-router-dom";
 import { useState } from "react";
 import {
   BarChart2, Users, Package, TrendingUp, MessageSquare,
-  Paperclip, FolderOpen, FileText, UserCircle, Menu, X, LogOut,
+  FileText, UserCircle, Menu, X, LogOut,
 } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
+import OnboardingAssistant from "../onboarding/OnboardingAssistant";
 
 const INKTRACKER_LOGO =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png";
@@ -14,14 +15,24 @@ const NAV = [
   { id: "clients", label: "Clients", icon: Users },
   { id: "orders", label: "Orders", icon: Package },
   { id: "performance", label: "Performance", icon: TrendingUp },
+  // Paperwork + Job Files folded into Messages — file sharing now happens
+  // as message attachments so there's one inbox the broker and shop both
+  // watch, instead of three siloed lists.
   { id: "messages", label: "Messages", icon: MessageSquare },
-  { id: "documents", label: "Documents", icon: Paperclip },
-  { id: "jobfiles", label: "Files", icon: FolderOpen },
   { id: "invoices", label: "Invoices", icon: FileText },
   { id: "profile", label: "Profile", icon: UserCircle },
 ];
 
-export default function BrokerLayout({ user, tab, setTab, children }) {
+export default function BrokerLayout({
+  user,
+  tab,
+  setTab,
+  children,
+  // Optional per-tab badge counts. Map of tab id → count (0 hides the badge).
+  // Passed from BrokerDashboard which is the only place that knows the
+  // current state of messages / quotes.
+  badges = {},
+}) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const displayName = user?.display_name || user?.full_name || "Broker";
@@ -43,6 +54,7 @@ export default function BrokerLayout({ user, tab, setTab, children }) {
         <nav className="flex-1 py-4 space-y-0.5 px-2">
           {NAV.map(({ id, label, icon: Icon }) => {
             const active = tab === id;
+            const badge = badges[id] || 0;
             return (
               <button
                 key={id}
@@ -54,7 +66,16 @@ export default function BrokerLayout({ user, tab, setTab, children }) {
                 }`}
               >
                 <Icon className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
-                {label}
+                <span className="flex-1 text-left">{label}</span>
+                {badge > 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-full ${
+                    active
+                      ? "bg-white text-indigo-600"
+                      : "bg-rose-500 text-white"
+                  }`}>
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -98,6 +119,7 @@ export default function BrokerLayout({ user, tab, setTab, children }) {
               <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
                 {NAV.map(({ id, label, icon: Icon }) => {
                   const active = tab === id;
+                  const badge = badges[id] || 0;
                   return (
                     <button
                       key={id}
@@ -109,7 +131,16 @@ export default function BrokerLayout({ user, tab, setTab, children }) {
                       }`}
                     >
                       <Icon className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
-                      {label}
+                      <span className="flex-1 text-left">{label}</span>
+                      {badge > 0 && (
+                        <span className={`text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-full ${
+                          active
+                            ? "bg-white text-indigo-600"
+                            : "bg-rose-500 text-white"
+                        }`}>
+                          {badge > 99 ? "99+" : badge}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -130,6 +161,11 @@ export default function BrokerLayout({ user, tab, setTab, children }) {
           {children}
         </div>
       </main>
+
+      {/* Help / Assistant — same widget the shop side uses. The edge
+          function detects role=broker and serves the broker-specific
+          system prompt + setup snapshot. */}
+      {user && <OnboardingAssistant user={user} />}
     </div>
   );
 }

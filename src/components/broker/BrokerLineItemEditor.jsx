@@ -14,12 +14,27 @@ import BrokerPricePanel from "./BrokerPricePanel";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 
+// Query both S&S Activewear and AS Colour in parallel and merge results,
+// matching the shop-side LineItemEditor. Either supplier failing/returning
+// empty doesn't break the lookup; we just use whatever came back. The broker
+// portal previously only queried S&S, so AS Colour styles were invisible.
 async function lookupStyle(styleNumber) {
-  const { data, error } = await supabase.functions.invoke("ssLookupStyle", {
-    body: { styleNumber: String(styleNumber || "").trim().toUpperCase() },
-  });
-  if (error) throw error;
-  return data;
+  const code = String(styleNumber || "").trim().toUpperCase();
+  if (!code) return { matches: [] };
+
+  const [ssRes, acRes] = await Promise.allSettled([
+    supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: code } }),
+    supabase.functions.invoke("acLookupStyle", { body: { styleCode: code } }),
+  ]);
+
+  const grab = (r) => {
+    if (r.status !== "fulfilled") return [];
+    const data = r.value?.data;
+    if (!data || data.error) return [];
+    return data.matches || data.results || data.items || data.products || [];
+  };
+
+  return { matches: [...grab(ssRes), ...grab(acRes)] };
 }
 
 function cleanText(value) {
@@ -287,12 +302,18 @@ function buildBrandOptions(matches, typedStyleNumber) {
 
 function applySelectedMatch(li, selectedMatch) {
   const styleNumber = cleanText(selectedMatch.styleNumber).toUpperCase();
-  // Prefer the edge function's raw product description ("Unisex Heavyweight
-  // Hooded Sweatshirt") — the option-level `description` is often a
-  // brand+partnumber label that doesn't carry garment-type keywords.
-  const description = cleanText(
+  // Long marketing copy — used for category keyword detection only.
+  const longDescription = cleanText(
     selectedMatch.raw?.description ||
     selectedMatch.description
+  );
+  // Short garment title for quote headers ("Staple Tee", "Heavyweight Hoodie").
+  // Falls back to longDescription only if no short title is available.
+  const shortTitle = cleanText(
+    selectedMatch.resolvedTitle ||
+    selectedMatch.title ||
+    selectedMatch.styleName ||
+    longDescription
   );
   const colors = selectedMatch.colors || [];
   const firstColor =
@@ -301,6 +322,10 @@ function applySelectedMatch(li, selectedMatch) {
     li.garmentColor;
 
   const selectedPrice = (selectedMatch.priceMap && selectedMatch.priceMap[firstColor]) || {};
+  const supplierFromMatch =
+    cleanText(selectedMatch.raw?.brandName).toLowerCase() === "as colour"
+      ? "AS Colour"
+      : "S&S Activewear";
 
   return {
     ...li,
@@ -317,23 +342,23 @@ function applySelectedMatch(li, selectedMatch) {
         : selectedMatch.casePrice || 0
     ),
     garmentColor: firstColor,
-    styleName: description || li.styleName,
+    styleName: shortTitle || li.styleName,
     garmentNumber: styleNumber || li.garmentNumber,
     resolvedStyleNumber: styleNumber || li.resolvedStyleNumber,
     styleNumber: styleNumber || li.styleNumber || "",
     productNumber: styleNumber || li.productNumber || "",
     supplierStyleNumber: styleNumber || li.supplierStyleNumber || "",
-    productTitle: description || li.productTitle || "",
-    resolvedTitle: description || li.resolvedTitle || "",
-    resolvedDescription: description || li.resolvedDescription || "",
-    productDescription: description || li.productDescription || "",
-    description: description || li.description || "",
-    garmentName: description || li.garmentName || "",
+    productTitle: shortTitle || li.productTitle || "",
+    resolvedTitle: shortTitle || li.resolvedTitle || "",
+    resolvedDescription: shortTitle || li.resolvedDescription || "",
+    productDescription: shortTitle || li.productDescription || "",
+    description: shortTitle || li.description || "",
+    garmentName: shortTitle || li.garmentName || "",
     category: mapSSCategoryToGarment(
       selectedMatch.styleCategory,
-      description || selectedMatch.description
+      longDescription || shortTitle || selectedMatch.description
     ) || li.category || "",
-    supplier: "S&S Activewear",
+    supplier: supplierFromMatch,
     supplierLastLookupAt: new Date().toISOString(),
     sizePrices: (selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {},
   };
@@ -409,7 +434,7 @@ export default function BrokerLineItemEditor({
         ) || options[0];
 
       if (!selected) {
-        throw new Error("No valid S&S results found");
+        throw new Error("No supplier results found");
       }
 
       setSsColors(selected.colors || []);
@@ -421,7 +446,7 @@ export default function BrokerLineItemEditor({
       setSsColors([]);
       setSsInventory({});
       setSsPriceMap({});
-      setSsError("Style not found on S&S");
+      setSsError("Style not found on S&S or AS Colour");
     } finally {
       setSsLoading(false);
     }

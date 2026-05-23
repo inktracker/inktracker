@@ -24,12 +24,25 @@ import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/bui
 import { useBillingGate } from "../lib/billing-gate";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { notify } from "@/lib/notify";
+import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
 }
 
+// A saved quote is a snapshot — read what was stamped at save time. We
+// only fall back to live calc for legacy rows that never got stamped
+// (no `total` field saved on the quote yet).
 function getQuoteTotalsForDisplay(q) {
+  if (q && Number.isFinite(q.total)) {
+    return {
+      sub:       Number(q.subtotal ?? q.total),
+      subtotal:  Number(q.subtotal ?? q.total),
+      tax:       Number(q.tax || 0),
+      total:     Number(q.total),
+      afterDisc: Number(q.total) - Number(q.tax || 0),
+    };
+  }
   return calcQuoteTotals(q, isBrokerQuote(q) ? BROKER_MARKUP : undefined);
 }
 
@@ -283,12 +296,24 @@ export default function Quotes() {
     const updated = await base44.entities.Quote.update(id, { status: "Approved" });
     setQuotes((prev) => prev.map((q) => (q.id === id ? updated : q)));
     setViewing(null);
+    // If this is a broker-originated quote, notify the broker so the
+    // badge on their Overview tab lights up.
+    notifyBrokerOfShopAction({
+      quote: updated,
+      action: "shop_approved_quote",
+      shopEmail: user?.email,
+    });
   }
 
   async function handleDecline(id) {
     const updated = await base44.entities.Quote.update(id, { status: "Declined" });
     setQuotes((prev) => prev.map((q) => (q.id === id ? updated : q)));
     setViewing(null);
+    notifyBrokerOfShopAction({
+      quote: updated,
+      action: "shop_declined_quote",
+      shopEmail: user?.email,
+    });
   }
 
   async function handleDelete(id) {
@@ -568,20 +593,33 @@ export default function Quotes() {
                   <td className="px-5 py-3.5 font-mono text-xs text-slate-400">
                     {q.quote_id}
                     {q.source === "email" && <span className="ml-1 text-indigo-500" title="From email">✉</span>}
-                    {q.broker_id && (
-                      <div className="text-indigo-500 font-semibold mt-0.5">
-                        🤝 {brokerMap[q.broker_id]?.full_name || q.broker_name || q.broker_id}
-                        {(brokerMap[q.broker_id]?.company_name || q.broker_company)
-                          ? ` · ${
-                              brokerMap[q.broker_id]?.company_name || q.broker_company
-                            }`
-                          : ""}
-                      </div>
-                    )}
                   </td>
 
-                  <td className="px-5 py-3.5 font-semibold text-slate-800 dark:text-slate-200">
-                    {getDisplayName(customerMap[q.customer_id] || q.customer_name) || "—"}
+                  {/* Customer column. For broker quotes the broker IS the
+                      shop's customer (they're the one paying us), so we show
+                      the broker's name + company here. The end client is
+                      surfaced as a "Reference: …" in the row's secondary
+                      line. For non-broker quotes, the linked customer wins. */}
+                  <td className="px-5 py-3.5 text-slate-800 dark:text-slate-200">
+                    {q.broker_id ? (
+                      <div className="min-w-0">
+                        <div className="font-semibold truncate">
+                          {brokerMap[q.broker_id]?.full_name || q.broker_name || q.broker_id}
+                          {(brokerMap[q.broker_id]?.company_name || q.broker_company)
+                            ? ` · ${brokerMap[q.broker_id]?.company_name || q.broker_company}`
+                            : ""}
+                        </div>
+                        {q.customer_name && (
+                          <div className="text-xs text-slate-400 mt-0.5 truncate">
+                            Reference: {q.customer_name}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="font-semibold">
+                        {getDisplayName(customerMap[q.customer_id] || q.customer_name) || "—"}
+                      </span>
+                    )}
                   </td>
 
                   <td className="px-5 py-3.5 text-slate-500">{fmtDate(q.date)}</td>
@@ -631,11 +669,27 @@ export default function Quotes() {
             return (
               <div key={q.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(q)}>
                 <div className="flex justify-between items-start mb-2">
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-mono text-xs text-slate-400">{q.quote_id}</div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">
-                      {getDisplayName(customerMap[q.customer_id] || q.customer_name) || "—"}
-                    </div>
+                    {q.broker_id ? (
+                      <>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          {brokerMap[q.broker_id]?.full_name || q.broker_name || q.broker_id}
+                          {(brokerMap[q.broker_id]?.company_name || q.broker_company)
+                            ? ` · ${brokerMap[q.broker_id]?.company_name || q.broker_company}`
+                            : ""}
+                        </div>
+                        {q.customer_name && (
+                          <div className="text-xs text-slate-400 truncate">
+                            Reference: {q.customer_name}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="font-semibold text-slate-800 dark:text-slate-200">
+                        {getDisplayName(customerMap[q.customer_id] || q.customer_name) || "—"}
+                      </div>
+                    )}
                   </div>
                   <Badge s={q.status} />
                 </div>

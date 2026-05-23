@@ -453,13 +453,8 @@ function PublicLandingPage() {
                 </a>
               </div>
 
-              {/* TODO (founding member program — separate PR): when the
-                  internal founding-member counter is wired up, render
-                  "Founding spots remaining: X of 100" here in muted text
-                  above the price line. Source the count from the public
-                  view / edge function described in src/lib/billing.js. */}
               <p className="text-xs text-slate-500">
-                Founding rate $50/mo for the first 10 shops · Cancel anytime
+                14-day free trial · Cancel anytime
               </p>
             </div>
           </div>
@@ -538,7 +533,7 @@ function PublicLandingPage() {
             <div className="grid md:grid-cols-4 gap-8">
               {[
                 { step: "1", title: "Sign up", desc: "Create your account and set up your shop. Takes under two minutes." },
-                { step: "2", title: "Connect QuickBooks Online", desc: "Link your QBO account with one click. Invoices and expenses sync automatically. (Requires QuickBooks Online — not Desktop.)" },
+                { step: "2", title: "Connect QuickBooks Online", desc: "Link your QBO account with one click. Invoices and expenses sync automatically." },
                 { step: "3", title: "Send your first quote", desc: "Build a quote with live garment pricing. Send it. Customer approves and pays online." },
                 { step: "4", title: "Track production", desc: "Move orders through your pipeline. Your team updates from tablets or phones." },
               ].map(s => (
@@ -574,7 +569,7 @@ function PublicLandingPage() {
                   From one print maker<br/>to another.
                 </h2>
                 <p className="text-slate-300 leading-relaxed mb-5">
-                  I run Biota Mfg, a screen print shop in Reno, Nevada. After 13 years on the press, every shop-management tool I tried left me asking, "Has anyone who designed this even worked in a shop before?" One would try to do everything and miss the basics; the next would nail one thing but miss the rest of the workflow. So I built the shop-management software I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. It's also another avenue for me to help fund the land-conservation work I'm doing through Biota — 10% of every InkTracker subscription goes toward that five-year roadmap. — Joe
+                  I run Biota Mfg, a screen print shop in Reno, Nevada. After 13 years on the press, every shop-management tool I tried left me asking, "Has anyone who designed this even worked in a shop before?" One would try to do everything and miss the basics; the next would nail one thing but miss the rest of the workflow. So I built the shop-management software I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. It's also another avenue for me to help fund the land-conservation work I'm doing through Biota — a conservation contribution is baked into every InkTracker subscription. — Joe
                 </p>
                 <p className="text-xs text-slate-500">
                   Joe Grennan · Founder · joe@biotamfg.co
@@ -593,15 +588,12 @@ function PublicLandingPage() {
             </div>
             <div className="bg-gradient-to-b from-indigo-600 to-indigo-700 border-2 border-indigo-400 rounded-2xl p-8 shadow-2xl shadow-indigo-900/40">
               <div className="text-center mb-6">
-                <p className="text-xs font-semibold text-emerald-300 uppercase tracking-widest mb-3">
-                  Founding rate — First 10 shops
-                </p>
                 <div className="mb-3">
-                  <span className="text-5xl font-extrabold text-white">$50</span>
+                  <span className="text-5xl font-extrabold text-white">$99</span>
                   <span className="text-base text-indigo-200">/mo</span>
                 </div>
                 <p className="text-sm text-indigo-100/90 mb-3 max-w-md mx-auto leading-relaxed">
-                  $50/month locked for the life of your subscription — first 10 shops only. After that, $99/month or $999/year (save $189).
+                  One plan, every feature included. Or save $189 with annual billing at $999/year.
                 </p>
                 <p className="text-sm text-indigo-200">14-day free trial · No credit card required</p>
               </div>
@@ -644,7 +636,7 @@ function PublicLandingPage() {
             {/* Conservation anchor — scrolls to the Conservation Mission section below. */}
             <div className="text-center mt-6">
               <a href="#conservation" className="text-sm font-semibold text-emerald-400 hover:text-emerald-300 transition">
-                10% of every subscription funds land conservation. →
+                Every subscription funds land conservation. →
               </a>
             </div>
           </div>
@@ -723,12 +715,12 @@ function PublicLandingPage() {
                   a: "InkTracker is built and maintained by Biota Mfg, a 13-year-old screen print business based in Reno, Nevada. The shop dogfoods the software daily — if it stops being maintained, our own production stops. The financial structure also funds land conservation, which gives the project a long-horizon commitment the team takes seriously.",
                 },
                 {
-                  q: "What happens after the first 10 founding shops?",
-                  a: "$50/month is the founding rate, capped at the first 10 shops. After those 10 fill, new signups pay $99/month or $999/year (save $189) — still under what comparable shop-management tools charge. Founding members keep $50/month for the life of their subscription.",
+                  q: "How much does InkTracker cost?",
+                  a: "$99/month, or save $189 with annual billing at $999/year. One plan with every feature included — quotes, orders, production tracking, invoicing, QuickBooks sync, broker portal, all of it. Free for the first 14 days, no card required.",
                 },
                 {
                   q: "How does the conservation contribution actually work?",
-                  a: "10% of every InkTracker subscription is allocated to a long-term land conservation fund operated by Biota Mfg. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.com/pages/wildways.",
+                  a: "A conservation contribution is baked into every InkTracker subscription and allocated to a long-term land conservation fund operated by Biota Mfg. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.com/pages/wildways.",
                 },
               ].map((item) => (
                 <details key={item.q} className="group bg-white/[0.02] border border-white/10 rounded-2xl hover:border-white/20 transition">
@@ -1116,13 +1108,16 @@ function PublicRouteGuard() {
   const pathname = (location.pathname || "/").toLowerCase();
   const isPublic = PUBLIC_PATHS.has(pathname);
 
-  if (isPublic) {
-    return <AppRoutes />;
-  }
-
+  // AuthProvider is always mounted, even on "public" routes. The provider
+  // doesn't REQUIRE an authenticated user — it just makes the context
+  // available. Without it, components like SendQuoteModal that call
+  // useBillingGate() → useAuth() crash on the broker portal (which is in
+  // PUBLIC_PATHS to bypass the shop-side role redirects). The public
+  // distinction is purely about which routing tree we render — auth
+  // context is universal.
   return (
     <AuthProvider>
-      <AuthenticatedApp />
+      {isPublic ? <AppRoutes /> : <AuthenticatedApp />}
     </AuthProvider>
   );
 }

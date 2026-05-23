@@ -13,6 +13,8 @@ import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
 import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
+import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
+import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
 
 const STATUS_COLORS = {
   // Quote lifecycle (visually distinct from production steps — these come
@@ -122,6 +124,9 @@ export default function Production() {
   const { gate: billingGate } = useBillingGate(user);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
+  // Day clicked in the calendar → opens the agenda panel showing all jobs
+  // in-the-works on that date (created ≤ date ≤ due).
+  const [selectedDate, setSelectedDate] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -391,13 +396,29 @@ export default function Production() {
     const updated = await base44.entities.Order.update(plan.orderUpdate.id, plan.orderUpdate.patch);
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(null);
+
+    // Notify the broker (if this was a broker order). Best-effort.
+    // The helper looks at broker_id / broker_name / broker_company /
+    // customer_name / id directly on the row, so the order object works
+    // without re-shaping. Item label falls back to the order_id so the
+    // feed entry reads "completed your order — ORD-2026-XXXX".
+    notifyBrokerOfShopAction({
+      quote: { ...updated, quote_id: updated.order_id || updated.quote_id },
+      action: "shop_completed_order",
+      shopEmail: user?.email,
+    });
   }
 
   async function handleDelete(id) {
     if (!window.confirm("Delete this order?")) return;
+    const order = orders.find((o) => o.id === id);
     await base44.entities.Order.delete(id);
     setOrders((prev) => prev.filter((o) => o.id !== id));
     setViewing(null);
+
+    // If the deleted order originated from a broker quote, roll the quote
+    // back to "Client Approved" and notify the broker via ShopActionFeed.
+    handleBrokerOrderDeletion(order);
   }
 
   async function handleTogglePaid(order) {
@@ -718,10 +739,12 @@ export default function Production() {
                           return (
                             <div
                               key={dateStr}
-                              className={`min-h-[110px] p-1.5 flex flex-col transition ${isDragOver ? "bg-indigo-50 ring-2 ring-inset ring-indigo-400" : "hover:bg-slate-50 dark:bg-slate-800"}`}
+                              className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${isDragOver ? "bg-indigo-50 ring-2 ring-inset ring-indigo-400" : selectedDate === dateStr ? "bg-indigo-50/60" : "hover:bg-slate-50 dark:bg-slate-800"}`}
+                              onClick={() => setSelectedDate(dateStr)}
                               onDrop={(e) => handleDrop(e, dateStr)}
                               onDragOver={(e) => handleDragOver(e, dateStr)}
                               onDragLeave={() => setDragOverDate(null)}
+                              title="Click to see the day's agenda"
                             >
                               <div className={`text-xs font-bold mb-1 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-indigo-600 text-white" : "text-slate-400"}`}>
                                 {day}
@@ -812,6 +835,134 @@ export default function Production() {
         </>
       )}
 
+
+      {/* Agenda side panel — opens when a day cell is clicked. Shows every
+          job in the works on that date: any order whose creation date
+          (o.date) is on or before the date AND whose due date (o.due_date)
+          is on or after the date. Sorted by creation date ascending — the
+          oldest in-progress jobs first.
+          Completed orders are included if they were completed ON or AFTER
+          the selected date (so a job completed yesterday still shows up on
+          a day it was actively being worked on last week).
+          Empty day still opens the panel so a click never feels broken. */}
+      {selectedDate && (() => {
+        const inWorks = orders.filter((o) => {
+          if (!o.date) return false;
+          const start = String(o.date).slice(0, 10);
+          // End date: completed_date wins for completed orders (the job
+          // was no longer "in the works" after completion), otherwise the
+          // due_date. Orders with no due_date are open-ended and considered
+          // in-the-works from creation onward.
+          const end =
+            o.status === "Completed" && o.completed_date
+              ? String(o.completed_date).slice(0, 10)
+              : o.due_date
+                ? String(o.due_date).slice(0, 10)
+                : null;
+          if (start > selectedDate) return false;
+          if (end && end < selectedDate) return false;
+          return true;
+        }).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+        const fmtDateLong = (s) => {
+          const [yr, mo, dy] = String(s).split("-").map(Number);
+          if (!yr) return s;
+          const d = new Date(yr, mo - 1, dy);
+          return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+        };
+
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-slate-900/40 flex justify-end"
+            onMouseDown={() => setSelectedDate(null)}
+          >
+            <div
+              className="bg-white w-full max-w-md h-full overflow-y-auto shadow-2xl"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">Agenda</div>
+                  <h3 className="text-lg font-bold text-slate-900 mt-0.5">{fmtDateLong(selectedDate)}</h3>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    {inWorks.length === 0 ? "No jobs in the works." : `${inWorks.length} ${inWorks.length === 1 ? "job" : "jobs"} in the works`}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(null)}
+                  className="text-slate-400 hover:text-slate-700 text-lg leading-none px-2"
+                  aria-label="Close agenda"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="p-5">
+                {inWorks.length === 0 ? (
+                  <div className="text-sm text-slate-400 italic text-center py-10">
+                    No active or completed jobs on this date.
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
+                    {inWorks.map((o) => {
+                      const start = String(o.date || "").slice(0, 10);
+                      const end = o.due_date ? String(o.due_date).slice(0, 10) : null;
+                      const isStartDay = start === selectedDate;
+                      const isDueDay = end === selectedDate;
+                      const isCompletedDay =
+                        o.status === "Completed" &&
+                        o.completed_date &&
+                        String(o.completed_date).slice(0, 10) === selectedDate;
+                      return (
+                        <button
+                          key={o.id}
+                          type="button"
+                          onClick={() => {
+                            setViewing(o);
+                            setSelectedDate(null);
+                          }}
+                          className="w-full text-left px-4 py-3 hover:bg-slate-50 transition flex items-start justify-between gap-3"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-semibold text-slate-800 text-sm truncate">
+                              {companyName(o)}
+                            </div>
+                            <div className="text-xs text-slate-400 mt-0.5 truncate">
+                              {o.order_id}
+                              {start && <span className="ml-2">· Started {start}</span>}
+                              {end && <span className="ml-2">· Due {end}</span>}
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                              <Badge s={o.status} />
+                              {isStartDay && (
+                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded">
+                                  Created today
+                                </span>
+                              )}
+                              {isDueDay && o.status !== "Completed" && (
+                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded">
+                                  Due today
+                                </span>
+                              )}
+                              {isCompletedDay && (
+                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                  Completed today
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-slate-300 shrink-0 mt-1" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {viewing && (
         <OrderDetailModal

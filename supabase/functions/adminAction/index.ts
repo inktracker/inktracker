@@ -72,13 +72,17 @@ serve(async (req) => {
 
       if (error) throw error;
 
-      // Fetch auth emails via admin API
+      // Fetch auth user data via admin API — emails + last_sign_in_at so the
+      // admin UI can tell which invites are still unaccepted ("Pending invite"
+      // = auth row exists but user has never signed in).
       let emailMap: Record<string, string> = {};
+      let lastSignInMap: Record<string, string | null> = {};
       try {
         const { data: authUsers } = await adminClient.auth.admin.listUsers({ perPage: 1000 });
         if (authUsers?.users) {
           for (const u of authUsers.users) {
             emailMap[u.id] = u.email ?? "";
+            lastSignInMap[u.id] = u.last_sign_in_at ?? null;
           }
         }
       } catch (emailErr) {
@@ -89,6 +93,7 @@ serve(async (req) => {
       const enriched = profiles.map((p: { auth_id: string }) => ({
         ...p,
         email: emailMap[p.auth_id] || "",
+        last_sign_in_at: lastSignInMap[p.auth_id] || null,
       }));
 
       return new Response(JSON.stringify({ users: enriched }), {
@@ -300,6 +305,63 @@ serve(async (req) => {
       if (profileErr) throw profileErr;
 
       return new Response(JSON.stringify({ profile }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "resendInvite") {
+      // Re-send the Supabase invite email for a user who hasn't accepted yet.
+      // Tenant-guarded: target must be in the admin's shop (broker assigned
+      // to them OR employee/manager with shop_owner = admin.email).
+      const { email } = body;
+      const cleanEmail = (email ?? "").trim().toLowerCase();
+      if (!cleanEmail) {
+        return new Response(JSON.stringify({ error: "Email required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: target } = await adminClient
+        .from("profiles")
+        .select("id, role, email, shop_owner, assigned_shops, auth_id")
+        .eq("email", cleanEmail)
+        .maybeSingle();
+      if (!target) {
+        return new Response(JSON.stringify({ error: "No user with that email" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const adminEmail = callerProfile?.email || user.email;
+      const access = checkAdminTargetAccess({ targetProfile: target, adminEmail });
+      if (!access.ok) {
+        return new Response(JSON.stringify({ error: "Cannot re-invite a user from another shop" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const appUrl = Deno.env.get("APP_URL");
+      const redirectPage = target.role === "broker"
+        ? "BrokerOnboarding"
+        : target.role === "employee"
+          ? "ShopFloor"
+          : "Dashboard";
+      const redirectTo = appUrl ? `${appUrl}/${redirectPage}` : undefined;
+      const { error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(
+        cleanEmail,
+        redirectTo ? { redirectTo } : undefined,
+      );
+      if (inviteErr) {
+        return new Response(JSON.stringify({ error: `Resend failed: ${inviteErr.message}` }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({ resent: true, email: cleanEmail }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

@@ -29,7 +29,7 @@ function runToCompletion(start = INITIAL_STATE, maxSteps = 500) {
 describe("typewriter copy", () => {
   it("exposes the two-line headline used by the hero", () => {
     expect(TYPEWRITER_LINES).toEqual([
-      "Run your print shop",
+      "Run your shop",
       "without the chaos.",
     ]);
   });

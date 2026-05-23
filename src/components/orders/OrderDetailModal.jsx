@@ -30,7 +30,7 @@ import {
 } from "../shared/pricing";
 import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
-import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2 } from "lucide-react";
+import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2, ArrowLeft } from "lucide-react";
 import { notify } from "@/lib/notify";
 
 // Per-stage default checklist. Folded the old "Finishing", "Quality
@@ -168,6 +168,10 @@ export default function OrderDetailModal({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [localArtwork, setLocalArtwork] = useState(order.selected_artwork || []);
+  // In-modal preview: when set, the order content is hidden behind an
+  // overlay that renders the artwork inline (PDF/image) so the user
+  // doesn't lose their place by bouncing to a new browser tab.
+  const [previewArt, setPreviewArt] = useState(null);
   const [showJobCost, setShowJobCost] = useState(false);
   const [actualCost, setActualCost] = useState(order.actual_cost ?? "");
   const [laborHours, setLaborHours] = useState(order.actual_labor_hours ?? "");
@@ -731,14 +735,13 @@ export default function OrderDetailModal({
                       </div>
 
                       {art.url ? (
-                        <a
-                          href={art.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => setPreviewArt(art)}
                           className="shrink-0 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
                         >
                           Open
-                        </a>
+                        </button>
                       ) : null}
                     </div>
                   ))}
@@ -891,14 +894,13 @@ export default function OrderDetailModal({
                                   </div>
 
                                   {art.url ? (
-                                    <a
-                                      href={art.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
+                                    <button
+                                      type="button"
+                                      onClick={() => setPreviewArt(art)}
                                       className="shrink-0 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
                                     >
                                       Open
-                                    </a>
+                                    </button>
                                   ) : null}
                                 </div>
                               </div>
@@ -1699,8 +1701,67 @@ export default function OrderDetailModal({
           </div>
         </div>
       </div>
+
+      {previewArt && (
+        <ArtworkPreviewOverlay
+          art={previewArt}
+          onClose={() => setPreviewArt(null)}
+        />
+      )}
     </div>,
     document.body,
+  );
+}
+
+// Inline artwork viewer rendered on top of the order modal. Keeps the
+// user inside the app instead of bouncing to a new browser tab — they
+// hit Back and they're right back on the order they came from. PDFs and
+// images render natively via <iframe>; anything else falls back to the
+// download link.
+function ArtworkPreviewOverlay({ art, onClose }) {
+  const url = art?.url || "";
+  const name = art?.name || "Artwork";
+  const ext = String(name).split(".").pop()?.toLowerCase() || "";
+  const isImage = /^(png|jpe?g|gif|webp|svg|bmp)$/i.test(ext);
+  // Default to iframe for PDFs and anything we don't explicitly recognize —
+  // most browsers will render PDFs inline, and an iframe is harmless for
+  // formats that just download (the body will be empty, the Download
+  // button below covers the fallback).
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] bg-slate-900 flex flex-col"
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-800 text-white border-b border-slate-700">
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-200 hover:text-white"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to order
+        </button>
+        <div className="text-xs font-semibold truncate flex-1 text-center px-2">{name}</div>
+        <a
+          href={url}
+          download={name}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-200 hover:text-white"
+        >
+          <Download className="w-4 h-4" /> Download
+        </a>
+      </div>
+      <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-auto">
+        {isImage ? (
+          <img src={url} alt={name} className="max-w-full max-h-full object-contain" />
+        ) : (
+          <iframe
+            src={url}
+            title={name}
+            className="w-full h-full border-0 bg-white"
+          />
+        )}
+      </div>
+    </div>
   );
 }
 
