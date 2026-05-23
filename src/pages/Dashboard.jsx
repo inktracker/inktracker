@@ -579,7 +579,17 @@ export default function Dashboard() {
                 squeezed at the left third of the row. */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
               {O_STATUSES.map(status => {
-                const inStage = orders.filter((o) => o.status === status);
+                // "Completed" is terminal — show only jobs completed in the
+                // last 30 days. Without this the column accumulates forever
+                // and the count stops being useful (was showing 6+ months
+                // of completed jobs on a freshly-onboarded shop).
+                const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+                const inStage = orders.filter((o) => {
+                  if (o.status !== status) return false;
+                  if (status !== "Completed") return true;
+                  const t = o.completed_date ? new Date(o.completed_date).getTime() : 0;
+                  return t >= thirtyDaysAgo;
+                });
                 return (
                   <div key={status} className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
                     <button
