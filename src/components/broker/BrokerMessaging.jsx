@@ -41,6 +41,14 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
       await Promise.all(
         unread.map(m => base44.entities.Message.update(m.id, { read: true }))
       );
+      // Same-tab signal so badge counters (e.g. Dashboard's Brokers-tab
+      // chip) can decrement immediately without depending on Supabase
+      // realtime UPDATE events — the messages table's publication
+      // doesn't reliably fire UPDATE events, so listeners can't see
+      // the read=true flip and the badge would otherwise stay pegged.
+      window.dispatchEvent(new CustomEvent("inktracker:messages-marked-read", {
+        detail: { messageIds: unread.map(m => m.id) },
+      }));
     } catch {
       // Best-effort; the read flag is informational, not load-bearing.
     }

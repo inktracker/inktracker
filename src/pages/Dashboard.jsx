@@ -423,6 +423,26 @@ export default function Dashboard() {
     return () => { if (typeof cleanup === "function") cleanup(); };
   }, [brokers]);
 
+  // Same-tab decrement when BrokerMessaging marks messages as read on view.
+  // We can't rely on Supabase realtime UPDATE events for the messages table
+  // (publication isn't configured to emit them), so BrokerMessaging dispatches
+  // a window event with the affected ids and we drop them from our tracking
+  // map right away. Realtime still handles INSERTs from other clients.
+  useEffect(() => {
+    function handler(e) {
+      const ids = e?.detail?.messageIds || [];
+      if (!ids.length) return;
+      const map = unreadMsgsRef.current;
+      let changed = false;
+      for (const id of ids) {
+        if (map.has(id)) { map.delete(id); changed = true; }
+      }
+      if (changed) recomputeBrokerUnread();
+    }
+    window.addEventListener("inktracker:messages-marked-read", handler);
+    return () => window.removeEventListener("inktracker:messages-marked-read", handler);
+  }, []);
+
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading…</div>;
 
   const sumTotals = (items) => items.reduce((s, x) => s + (Number(x.total) || 0), 0);
