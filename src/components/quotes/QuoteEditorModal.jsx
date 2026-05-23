@@ -6,6 +6,8 @@ import {
   calcQuoteTotals,
   calcLinkedLinePrice,
   buildLinkedQtyMap,
+  calcSetupFees,
+  getShopPricingConfig,
   getQty,
   fmtMoney,
   tod,
@@ -127,6 +129,22 @@ export default function QuoteEditorModal({
   const [pasteError, setPasteError] = useState("");
 
   const totals = calcQuoteTotals(q);
+
+  // Setup fees layered on top of the line-item totals. Computed live in
+  // the editor; stamped onto the saved quote at handleSave time so
+  // viewers read the static `setup_total` (snapshot invariant).
+  const setupFeesConfig = getShopPricingConfig()?.setupFees || {};
+  const setupFees = calcSetupFees({
+    lineItems: q.line_items,
+    override: Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : undefined,
+    isReorder: !!q.is_reorder,
+    config: setupFeesConfig,
+  });
+  // Tax base = (subtotal − discount) + setup. Discounts don't apply to
+  // setup (it's pass-through cost), but setup is part of the taxable sale.
+  const taxableBaseWithSetup = totals.afterDisc + setupFees.total;
+  const taxWithSetup = Math.round(taxableBaseWithSetup * ((parseFloat(q.tax_rate) || 0) / 100) * 100) / 100;
+  const totalWithSetup = Math.round((taxableBaseWithSetup + taxWithSetup) * 100) / 100;
 
   useEffect(() => {
     async function loadUser() {
@@ -379,11 +397,34 @@ export default function QuoteEditorModal({
       const discVal = parseFloat(q.discount) || 0;
       const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
       const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
-      const tax = Math.round(afterDisc * ((parseFloat(q.tax_rate) || 0) / 100) * 100) / 100;
-      const total = Math.round((afterDisc + tax) * 100) / 100;
+
+      // Setup fees — snapshotted onto the quote at save time so all
+      // downstream viewers (customer, broker, invoice, QB sync) read
+      // the same number without depending on per-viewer pricing config.
+      const setupSnap = calcSetupFees({
+        lineItems: stampedItems,
+        override: Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : undefined,
+        isReorder: !!q.is_reorder,
+        config: getShopPricingConfig()?.setupFees || {},
+      });
+      const setupTotalSnap = Math.round(setupSnap.total * 100) / 100;
+
+      // Setup is added AFTER discount, BEFORE tax — discounts don't
+      // apply to setup, but setup is part of the taxable base.
+      const taxableBase = afterDisc + setupTotalSnap;
+      const tax = Math.round(taxableBase * ((parseFloat(q.tax_rate) || 0) / 100) * 100) / 100;
+      const total = Math.round((taxableBase + tax) * 100) / 100;
 
       const stampedQuote = { ...q, line_items: stampedItems };
-      await onSave({ ...stampedQuote, subtotal: sub, tax, total });
+      await onSave({
+        ...stampedQuote,
+        subtotal: sub,
+        setup_total: setupTotalSnap,
+        is_reorder: !!q.is_reorder,
+        setup_screens_override: Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : null,
+        tax,
+        total,
+      });
     } catch (err) {
       setSaveError(err.message || "Failed to save quote. Please try again.");
     } finally {
@@ -871,17 +912,64 @@ export default function QuoteEditorModal({
                 </div>
               </div>
 
+              {/* Setup fees — per-screen multiplier, editable here so the
+                  user can pair screens or correct edge cases right next to
+                  the total. Only renders when the shop has enabled setup
+                  fees in Account → Pricing. */}
+              {setupFees.enabled && (
+                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-500 font-semibold">Setup</span>
+                    <span className="font-semibold text-slate-700">{fmtMoney(setupFees.total)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-slate-500">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : setupFees.screens}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setQ({ ...q, setup_screens_override: v === "" ? null : Math.max(0, parseInt(v, 10) || 0) });
+                      }}
+                      title="Number of screens to bill — defaults to auto-counted color count. Lower it to pair screens across designs."
+                      className="w-14 text-right border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                    />
+                    <span>screens × {fmtMoney(setupFees.rate)}</span>
+                    {Number.isInteger(q.setup_screens_override) && q.setup_screens_override !== calcSetupFees({ lineItems: q.line_items, config: setupFeesConfig, isReorder: q.is_reorder }).screens && (
+                      <button
+                        type="button"
+                        onClick={() => setQ({ ...q, setup_screens_override: null })}
+                        className="text-[10px] text-indigo-600 font-semibold hover:text-indigo-800"
+                        title="Reset to auto-counted screen count"
+                      >
+                        reset
+                      </button>
+                    )}
+                  </div>
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={!!q.is_reorder}
+                      onChange={(e) => setQ({ ...q, is_reorder: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600"
+                    />
+                    Reorder — use reduced per-screen rate (screens already exist)
+                  </label>
+                </div>
+              )}
+
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Tax</span>
                 <span className="font-semibold text-slate-700">
-                  {fmtMoney(totals.tax)}
+                  {fmtMoney(taxWithSetup)}
                 </span>
               </div>
 
               <div className="border-t border-slate-200 dark:border-slate-700 pt-2.5 flex justify-between items-center">
                 <span className="font-bold text-slate-800 dark:text-slate-200">Total</span>
                 <span className="font-bold text-2xl text-slate-900 dark:text-slate-100">
-                  {fmtMoney(totals.total)}
+                  {fmtMoney(totalWithSetup)}
                 </span>
               </div>
 
@@ -920,7 +1008,7 @@ export default function QuoteEditorModal({
                 </div>
                 {Number(q.deposit_pct) > 0 && (
                   <span className="font-bold text-indigo-800">
-                    {fmtMoney(totals.deposit)}
+                    {fmtMoney(Math.round(totalWithSetup * (Number(q.deposit_pct) / 100) * 100) / 100)}
                   </span>
                 )}
               </div>

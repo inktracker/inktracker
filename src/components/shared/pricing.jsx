@@ -265,6 +265,54 @@ export function buildLinkedQtyMap(lineItems) {
   return qtyMap;
 }
 
+// Count distinct screens needed for a quote's screen-print imprints.
+// Same artwork shared across multiple line items (same `getPrintKey`)
+// only counts ONCE — the shop only burns one set of screens for it.
+// Embroidery imprints aren't counted (no screens, separate digitizing).
+export function calcSetupScreenCount(lineItems) {
+  const seen = new Map();  // print-key → max color count seen for this print
+  (lineItems || []).forEach((li) => {
+    (li.imprints || []).forEach((imp) => {
+      const tech = imp?.technique || "Screen Print";
+      if (tech !== "Screen Print") return;
+      const colors = Math.max(0, Number(imp?.colors) || 0);
+      if (colors === 0) return;
+      const key = getPrintKey(imp);
+      // If the same print key shows up twice with different color counts
+      // (shouldn't normally — colors are part of the imprint config not
+      // the key — but be defensive), take the higher count so we don't
+      // under-charge.
+      seen.set(key, Math.max(seen.get(key) || 0, colors));
+    });
+  });
+  let total = 0;
+  for (const n of seen.values()) total += n;
+  return total;
+}
+
+// Compute setup-fee total for a quote.
+//   lineItems     — the quote's line items (for auto-screen-count)
+//   override      — when a positive integer, use this screen count instead
+//                   of the auto-computed one (lets the shop pair screens
+//                   or correct edge cases at the bottom of the editor)
+//   isReorder     — when true, use reorderPerScreenRate (cheaper — screens
+//                   already exist from the first run, just pulling them off
+//                   the shelf)
+//   config        — { enabled, perScreenRate, reorderPerScreenRate } from
+//                   the shop's pricing config
+// Returns { enabled, screens, rate, total } so the UI can render the
+// "4 screens × $25 = $100" breakdown without re-deriving anything.
+export function calcSetupFees({ lineItems, override, isReorder, config } = {}) {
+  const enabled = !!config?.enabled;
+  if (!enabled) return { enabled: false, screens: 0, rate: 0, total: 0 };
+  const auto = calcSetupScreenCount(lineItems);
+  const screens = Number.isInteger(override) && override >= 0 ? override : auto;
+  const rate = Number(
+    isReorder ? config?.reorderPerScreenRate ?? 0 : config?.perScreenRate ?? 0
+  ) || 0;
+  return { enabled: true, screens, rate, total: screens * rate };
+}
+
 export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, sizePricesOverride) {
   const qty = getQty(li);
   if (!qty || qty < 1 || !li.imprints || li.imprints.length === 0) return null;

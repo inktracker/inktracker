@@ -17,6 +17,8 @@ import {
   calcQuoteTotals,
   buildQBInvoicePayload,
   loadShopPricingConfig,
+  calcSetupScreenCount,
+  calcSetupFees,
   STANDARD_MARKUP,
   BROKER_MARKUP,
   FIRST_PRINT,
@@ -1189,5 +1191,113 @@ describe("Edge Cases", () => {
       expect(r.gCost).toBeGreaterThan(0);
       expect(r.gCost).toBeLessThan(1);
     });
+  });
+});
+
+// ── Setup Fees (per-screen) ────────────────────────────────────────────────
+describe("calcSetupScreenCount", () => {
+  it("returns 0 for empty / null input", () => {
+    expect(calcSetupScreenCount([])).toBe(0);
+    expect(calcSetupScreenCount(null)).toBe(0);
+    expect(calcSetupScreenCount(undefined)).toBe(0);
+  });
+
+  it("sums colors across a single line item's imprints", () => {
+    const li = {
+      imprints: [
+        { technique: "Screen Print", title: "Front", colors: 4 },
+        { technique: "Screen Print", title: "Back", colors: 2 },
+      ],
+    };
+    expect(calcSetupScreenCount([li])).toBe(6);
+  });
+
+  it("dedupes imprints sharing the same print-key across line items (linked artwork)", () => {
+    // Two line items, both using the same Front imprint (same key) → one
+    // set of screens. Plus a distinct Back on one of them.
+    const front = { technique: "Screen Print", title: "Front", width: 10, height: 10, colors: 3 };
+    const back  = { technique: "Screen Print", title: "Back",  width: 10, height: 10, colors: 1 };
+    const li1 = { imprints: [front, back] };
+    const li2 = { imprints: [front] };
+    expect(calcSetupScreenCount([li1, li2])).toBe(4); // 3 (front) + 1 (back), front not double-counted
+  });
+
+  it("ignores embroidery imprints (no screens used)", () => {
+    const li = {
+      imprints: [
+        { technique: "Embroidery", title: "LC", colors: 5 },
+        { technique: "Screen Print", title: "Back", colors: 2 },
+      ],
+    };
+    expect(calcSetupScreenCount([li])).toBe(2);
+  });
+
+  it("ignores zero-color imprints", () => {
+    const li = {
+      imprints: [
+        { technique: "Screen Print", title: "Front", colors: 0 },
+        { technique: "Screen Print", title: "Back", colors: 3 },
+      ],
+    };
+    expect(calcSetupScreenCount([li])).toBe(3);
+  });
+});
+
+describe("calcSetupFees", () => {
+  const lineItems = [{ imprints: [{ technique: "Screen Print", title: "Front", colors: 4 }] }];
+
+  it("returns disabled shape when config.enabled is falsy", () => {
+    const r = calcSetupFees({ lineItems, config: { enabled: false, perScreenRate: 25 } });
+    expect(r).toEqual({ enabled: false, screens: 0, rate: 0, total: 0 });
+  });
+
+  it("auto-computes screens × per-screen rate", () => {
+    const r = calcSetupFees({ lineItems, config: { enabled: true, perScreenRate: 25 } });
+    expect(r).toEqual({ enabled: true, screens: 4, rate: 25, total: 100 });
+  });
+
+  it("honors an integer override (pairing screens, manual correction)", () => {
+    const r = calcSetupFees({
+      lineItems,
+      override: 2,
+      config: { enabled: true, perScreenRate: 25 },
+    });
+    expect(r.screens).toBe(2);
+    expect(r.total).toBe(50);
+  });
+
+  it("uses the reorder rate when isReorder=true (skips re-burning screens)", () => {
+    const r = calcSetupFees({
+      lineItems,
+      isReorder: true,
+      config: { enabled: true, perScreenRate: 25, reorderPerScreenRate: 5 },
+    });
+    expect(r.rate).toBe(5);
+    expect(r.total).toBe(20);
+  });
+
+  it("treats a 0 override as 'free' (zero screens) — explicit zero is a valid choice", () => {
+    const r = calcSetupFees({
+      lineItems,
+      override: 0,
+      config: { enabled: true, perScreenRate: 25 },
+    });
+    expect(r.screens).toBe(0);
+    expect(r.total).toBe(0);
+  });
+
+  it("ignores a non-integer override and falls back to auto-count", () => {
+    const r = calcSetupFees({
+      lineItems,
+      override: "abc",
+      config: { enabled: true, perScreenRate: 25 },
+    });
+    expect(r.screens).toBe(4); // auto
+  });
+
+  it("missing rate (undefined) yields 0 total without throwing", () => {
+    const r = calcSetupFees({ lineItems, config: { enabled: true } });
+    expect(r.rate).toBe(0);
+    expect(r.total).toBe(0);
   });
 });
