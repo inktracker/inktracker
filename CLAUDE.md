@@ -29,7 +29,6 @@ Single plan: $99/mo "Shop" tier. 14-day free trial. All features included.
 | Auth context | `src/lib/AuthContext.jsx` |
 | Layout + sidebar nav | `src/Layout.jsx` |
 | Pricing engine | `src/components/shared/pricing.jsx` |
-| Per-shop pricing config | `src/lib/pricingConfig.js` |
 | Billing/feature gating | `src/lib/billing.js` |
 | Onboarding wizard | `src/components/OnboardingWizard.jsx` |
 | Quote line item editor | `src/components/quotes/LineItemEditor.jsx` |
