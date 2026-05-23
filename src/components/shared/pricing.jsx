@@ -290,27 +290,64 @@ export function calcSetupScreenCount(lineItems) {
   return total;
 }
 
+// Normalize a shop's setup-fee config to the array shape, accepting both
+// the legacy single-rate shape and the current items-list shape. Lets
+// older shops who only set perScreenRate continue to bill correctly
+// while the UI is upgrading to multi-fee.
+function resolveFeeItems(config) {
+  if (Array.isArray(config?.items) && config.items.length > 0) {
+    return config.items
+      .filter((f) => f && f.id)
+      .map((f) => ({
+        id: String(f.id),
+        label: f.label || f.id,
+        rate: Number(f.rate) || 0,
+        reorderRate: Number(f.reorderRate) || 0,
+      }));
+  }
+  // Legacy single-rate config — synthesize one "Screens" item so old
+  // shops keep working without a data migration.
+  if (config?.perScreenRate != null || config?.reorderPerScreenRate != null) {
+    return [{
+      id: "screens",
+      label: "Screens",
+      rate: Number(config.perScreenRate) || 0,
+      reorderRate: Number(config.reorderPerScreenRate) || 0,
+    }];
+  }
+  return [];
+}
+
 // Compute setup-fee total for a quote.
-//   lineItems     — the quote's line items (for auto-screen-count)
-//   override      — when a positive integer, use this screen count instead
-//                   of the auto-computed one (lets the shop pair screens
-//                   or correct edge cases at the bottom of the editor)
-//   isReorder     — when true, use reorderPerScreenRate (cheaper — screens
-//                   already exist from the first run, just pulling them off
-//                   the shelf)
-//   config        — { enabled, perScreenRate, reorderPerScreenRate } from
-//                   the shop's pricing config
-// Returns { enabled, screens, rate, total } so the UI can render the
-// "4 screens × $25 = $100" breakdown without re-deriving anything.
-export function calcSetupFees({ lineItems, override, isReorder, config } = {}) {
+//   lineItems        — the quote's line items (for auto-screen-count)
+//   override         — when a positive integer, use this screen count
+//                      instead of the auto-computed one (lets the shop
+//                      pair screens or correct edge cases at the bottom
+//                      of the editor)
+//   isReorder        — when true, each fee uses its reorderRate instead
+//                      of rate (cheaper — screens already exist from the
+//                      first run, film/burn skipped)
+//   skippedFeeIds    — array of fee ids to skip for this quote (e.g.
+//                      ["colorMatch"] when the design doesn't need PMS)
+//   config           — { enabled, items: [{ id, label, rate, reorderRate }] }
+//                      or legacy { enabled, perScreenRate, reorderPerScreenRate }
+// Returns { enabled, screens, items: [{ id, label, rate, total }], total }
+// so the UI can render the line-by-line breakdown.
+export function calcSetupFees({ lineItems, override, isReorder, skippedFeeIds, config } = {}) {
   const enabled = !!config?.enabled;
-  if (!enabled) return { enabled: false, screens: 0, rate: 0, total: 0 };
+  if (!enabled) return { enabled: false, screens: 0, items: [], total: 0 };
   const auto = calcSetupScreenCount(lineItems);
   const screens = Number.isInteger(override) && override >= 0 ? override : auto;
-  const rate = Number(
-    isReorder ? config?.reorderPerScreenRate ?? 0 : config?.perScreenRate ?? 0
-  ) || 0;
-  return { enabled: true, screens, rate, total: screens * rate };
+  const skip = new Set(Array.isArray(skippedFeeIds) ? skippedFeeIds : []);
+  const allItems = resolveFeeItems(config);
+  const active = allItems
+    .filter((f) => !skip.has(f.id))
+    .map((f) => {
+      const rate = isReorder ? f.reorderRate : f.rate;
+      return { id: f.id, label: f.label, rate, total: Math.round(screens * rate * 100) / 100 };
+    });
+  const total = active.reduce((s, f) => s + f.total, 0);
+  return { enabled: true, screens, items: active, total: Math.round(total * 100) / 100 };
 }
 
 export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, sizePricesOverride) {

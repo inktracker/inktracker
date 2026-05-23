@@ -1508,12 +1508,18 @@ function PricingConfigSection({ user }) {
       { above: 0, markup: 1.4 },
     ],
     extras: { colorMatch: 1.0, difficultPrint: 0.5, waterbased: 1.0, tags: 1.5 },
-    // Per-screen setup fee billing. Off by default so existing shops
-    // don't suddenly start charging an extra line they hadn't agreed to.
-    // perScreenRate covers screens + film + burn + color match for the
-    // new run; reorderPerScreenRate is the (cheaper) rate when the
-    // screens already exist from a previous job — film/burn skipped.
-    setupFees: { enabled: false, perScreenRate: 25, reorderPerScreenRate: 5 },
+    // Per-screen setup fee billing. Off by default. Shops define their
+    // own named fees (Screens, Film, Color Match, etc.) each with a
+    // per-screen rate plus a cheaper reorder rate (used when "Reorder"
+    // is checked on the quote — screens already exist from the first run).
+    setupFees: {
+      enabled: false,
+      items: [
+        { id: "screens",    label: "Screens",     rate: 25, reorderRate: 5 },
+        { id: "film",       label: "Film",        rate: 10, reorderRate: 0 },
+        { id: "colorMatch", label: "Color Match", rate: 5,  reorderRate: 5 },
+      ],
+    },
     rushRate: 0.20,
     // Embroidery pricing: stitch count tiers × quantity tiers
     embroidery: {
@@ -1956,13 +1962,13 @@ function PricingConfigSection({ user }) {
         </div>
       </div>
 
-      {/* Setup Fees — per-screen multiplier */}
+      {/* Setup Fees — per-screen multiplier (list) */}
       <div className="border-t border-slate-100 dark:border-slate-700 pt-5 mt-5">
         <div className="flex items-center justify-between mb-3">
           <div>
             <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Setup Fees</div>
             <p className="text-[11px] text-slate-400 mt-0.5">
-              Per-screen charge added to each quote. Counts every color across imprints; linked artwork shared between line items only counts once. Editable per-quote.
+              Per-screen charges added to each quote (e.g. Screens, Film, Color Match). Each fee multiplies by the screen count. Linked artwork shared between line items only counts once. Editable per-quote.
             </p>
           </div>
           <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">
@@ -1978,40 +1984,90 @@ function PricingConfigSection({ user }) {
             Enabled
           </label>
         </div>
-        <div className={`grid grid-cols-2 gap-4 ${config.setupFees?.enabled ? "" : "opacity-50 pointer-events-none"}`}>
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Per-Screen Rate</label>
-            <div className="relative">
-              <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-              <NumericInput
-                value={Number(config.setupFees?.perScreenRate ?? 25)}
-                onChange={(v) => setConfig(prev => ({
-                  ...prev,
-                  setupFees: { ...(prev.setupFees || {}), perScreenRate: v },
-                }))}
-                min={0}
-                label="Per-screen rate"
-                className="w-full text-xs border border-slate-200 rounded pl-5 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-              />
-            </div>
+
+        <div className={config.setupFees?.enabled ? "" : "opacity-50 pointer-events-none"}>
+          {/* Column headers */}
+          <div className="grid grid-cols-[1fr_120px_120px_32px] gap-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 px-1">
+            <div>Fee Name</div>
+            <div>Per-Screen Rate</div>
+            <div>Reorder Rate</div>
+            <div />
           </div>
-          <div>
-            <label className="text-[10px] text-slate-400 block mb-1">Reorder Per-Screen Rate</label>
-            <div className="relative">
-              <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-              <NumericInput
-                value={Number(config.setupFees?.reorderPerScreenRate ?? 5)}
-                onChange={(v) => setConfig(prev => ({
-                  ...prev,
-                  setupFees: { ...(prev.setupFees || {}), reorderPerScreenRate: v },
-                }))}
-                min={0}
-                label="Reorder per-screen rate"
-                className="w-full text-xs border border-slate-200 rounded pl-5 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+
+          {(config.setupFees?.items || []).map((fee, idx) => (
+            <div key={fee.id || idx} className="grid grid-cols-[1fr_120px_120px_32px] gap-2 mb-2">
+              <input
+                type="text"
+                value={fee.label || ""}
+                onChange={(e) => setConfig(prev => {
+                  const items = [...(prev.setupFees?.items || [])];
+                  items[idx] = { ...items[idx], label: e.target.value };
+                  return { ...prev, setupFees: { ...(prev.setupFees || {}), items } };
+                })}
+                placeholder="e.g. Screens"
+                className="text-xs border border-slate-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
               />
-              <p className="text-[10px] text-slate-400 mt-1">Used when "Reorder" is checked on the quote — screens already exist from the first run.</p>
+              <div className="relative">
+                <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
+                <NumericInput
+                  value={Number(fee.rate || 0)}
+                  onChange={(v) => setConfig(prev => {
+                    const items = [...(prev.setupFees?.items || [])];
+                    items[idx] = { ...items[idx], rate: v };
+                    return { ...prev, setupFees: { ...(prev.setupFees || {}), items } };
+                  })}
+                  min={0}
+                  label={`${fee.label} per-screen rate`}
+                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                />
+              </div>
+              <div className="relative">
+                <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
+                <NumericInput
+                  value={Number(fee.reorderRate || 0)}
+                  onChange={(v) => setConfig(prev => {
+                    const items = [...(prev.setupFees?.items || [])];
+                    items[idx] = { ...items[idx], reorderRate: v };
+                    return { ...prev, setupFees: { ...(prev.setupFees || {}), items } };
+                  })}
+                  min={0}
+                  label={`${fee.label} reorder rate`}
+                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setConfig(prev => {
+                  const items = (prev.setupFees?.items || []).filter((_, i) => i !== idx);
+                  return { ...prev, setupFees: { ...(prev.setupFees || {}), items } };
+                })}
+                title={`Remove ${fee.label || "fee"}`}
+                className="text-slate-300 hover:text-red-500 transition flex items-center justify-center"
+              >
+                ×
+              </button>
             </div>
-          </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={() => setConfig(prev => {
+              const items = [...(prev.setupFees?.items || [])];
+              // Generate a unique id by combining a slug with a timestamp
+              // suffix — labels can collide ("Color Match" twice) so the
+              // id has to be the stable handle for skippedFeeIds.
+              const id = `fee_${Date.now().toString(36)}`;
+              items.push({ id, label: "New Fee", rate: 0, reorderRate: 0 });
+              return { ...prev, setupFees: { ...(prev.setupFees || {}), items } };
+            })}
+            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 mt-1 transition"
+          >
+            + Add fee
+          </button>
+
+          <p className="text-[10px] text-slate-400 mt-3">
+            Reorder rate is used when "Reorder" is checked on the quote — screens already exist from the first run, so film/burn can be skipped.
+          </p>
         </div>
       </div>
 
