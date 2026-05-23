@@ -1508,6 +1508,12 @@ function PricingConfigSection({ user }) {
       { above: 0, markup: 1.4 },
     ],
     extras: { colorMatch: 1.0, difficultPrint: 0.5, waterbased: 1.0, tags: 1.5 },
+    // Per-screen setup fee billing. Off by default so existing shops
+    // don't suddenly start charging an extra line they hadn't agreed to.
+    // perScreenRate covers screens + film + burn + color match for the
+    // new run; reorderPerScreenRate is the (cheaper) rate when the
+    // screens already exist from a previous job — film/burn skipped.
+    setupFees: { enabled: false, perScreenRate: 25, reorderPerScreenRate: 5 },
     rushRate: 0.20,
     // Embroidery pricing: stitch count tiers × quantity tiers
     embroidery: {
@@ -1946,6 +1952,65 @@ function PricingConfigSection({ user }) {
               className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
             />
             <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Setup Fees — per-screen multiplier */}
+      <div className="border-t border-slate-100 dark:border-slate-700 pt-5 mt-5">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Setup Fees</div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Per-screen charge added to each quote. Counts every color across imprints; linked artwork shared between line items only counts once. Editable per-quote.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!config.setupFees?.enabled}
+              onChange={(e) => setConfig(prev => ({
+                ...prev,
+                setupFees: { ...(prev.setupFees || {}), enabled: e.target.checked },
+              }))}
+              className="w-4 h-4 rounded border-slate-300 text-indigo-600"
+            />
+            Enabled
+          </label>
+        </div>
+        <div className={`grid grid-cols-2 gap-4 ${config.setupFees?.enabled ? "" : "opacity-50 pointer-events-none"}`}>
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Per-Screen Rate</label>
+            <div className="relative">
+              <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
+              <NumericInput
+                value={Number(config.setupFees?.perScreenRate ?? 25)}
+                onChange={(v) => setConfig(prev => ({
+                  ...prev,
+                  setupFees: { ...(prev.setupFees || {}), perScreenRate: v },
+                }))}
+                min={0}
+                label="Per-screen rate"
+                className="w-full text-xs border border-slate-200 rounded pl-5 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] text-slate-400 block mb-1">Reorder Per-Screen Rate</label>
+            <div className="relative">
+              <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
+              <NumericInput
+                value={Number(config.setupFees?.reorderPerScreenRate ?? 5)}
+                onChange={(v) => setConfig(prev => ({
+                  ...prev,
+                  setupFees: { ...(prev.setupFees || {}), reorderPerScreenRate: v },
+                }))}
+                min={0}
+                label="Reorder per-screen rate"
+                className="w-full text-xs border border-slate-200 rounded pl-5 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">Used when "Reorder" is checked on the quote — screens already exist from the first run.</p>
+            </div>
           </div>
         </div>
       </div>
