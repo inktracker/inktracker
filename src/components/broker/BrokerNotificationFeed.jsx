@@ -33,7 +33,10 @@ const ACTION_META = {
     page: "Dashboard",
   },
   client_approved_quote: {
-    label: "client approved a quote — ready to convert to order",
+    // Action name preserved for backward compat with existing rows; under
+    // the new client-first workflow this fires when the broker submits a
+    // client-approved quote to the shop for production review.
+    label: "submitted a client-approved quote — ready for shop review",
     icon: ThumbsUp,
     color: "text-teal-600",
     bg: "bg-teal-50",
@@ -102,7 +105,7 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
 
   if (loading) return <div className="text-sm text-slate-400 py-8 text-center">Loading notifications…</div>;
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unread = notifications.filter(n => !n.read).length;
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
@@ -114,12 +117,12 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
         >
           <Bell className="w-4 h-4 text-slate-500" />
           <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">Broker Activity</span>
-          {unreadCount > 0 && (
-            <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unreadCount} new</span>
+          {unread > 0 && (
+            <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unread} new</span>
           )}
           {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
         </button>
-        {unreadCount > 0 && expanded && (
+        {unread > 0 && expanded && (
           <button
             onClick={markAllRead}
             className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition"

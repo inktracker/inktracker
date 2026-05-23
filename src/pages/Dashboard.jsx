@@ -256,6 +256,11 @@ export default function Dashboard() {
   const [shopOwners, setShopOwners] = useState([]);
   const [tab, setTab] = useState("overview");
   const [brokerUnreadCount, setBrokerUnreadCount] = useState(0);
+  // Unread messages from brokers (separate from BrokerNotification rows
+  // which cover quote-submission events). Combined with brokerUnreadCount
+  // for the single Brokers-tab badge so one indicator covers "anything
+  // broker-related needing attention".
+  const [brokerMessageUnreadCount, setBrokerMessageUnreadCount] = useState(0);
   const [customerCount, setCustomerCount] = useState(0);
   // id → customer entity. Used by getDisplayName / getOrderDisplayClient
   // so the Order Pipeline + Recent Quotes cards show the company first,
@@ -309,10 +314,59 @@ export default function Dashboard() {
       // loosening can't accidentally enumerate other shops' users.
       setBrokers(allUsers.filter(u => u.role === "broker" && (u.assigned_shops || []).includes(currentUser.email)));
       setShopOwners(allUsers.filter(u => u.role !== "broker"));
+
+      // Unread broker-message count for the Brokers-tab badge. Messages
+      // addressed to this shop owner that haven't been opened yet. Combined
+      // with BrokerNotification unread to form the single visible badge.
+      try {
+        const unread = await base44.entities.Message.filter({
+          to_email: currentUser.email,
+          read: false,
+        }, "-created_date", 200);
+        setBrokerMessageUnreadCount((unread || []).length);
+      } catch {
+        // Best-effort.
+      }
+
       setLoading(false);
     }
     loadData();
   }, [navigate]);
+
+  // Realtime: keep brokerMessageUnreadCount fresh as messages arrive and
+  // as the shop owner opens conversations (BrokerMessaging flips read=true
+  // on view). Same shape as the broker dashboard's listener.
+  useEffect(() => {
+    async function ensureSub() {
+      let me;
+      try {
+        me = await base44.auth.me();
+      } catch { return; }
+      if (!me?.email) return;
+      const myEmail = me.email;
+      const unsub = base44.entities.Message.subscribe((payload) => {
+        const row = payload?.new || payload?.old;
+        if (!row || row.to_email !== myEmail) return;
+        if (payload.eventType === "INSERT") {
+          if (!row.read) setBrokerMessageUnreadCount((n) => n + 1);
+        } else if (payload.eventType === "UPDATE") {
+          const wasUnread = payload.old?.read === false;
+          const isNowRead = row.read === true;
+          if (wasUnread && isNowRead) {
+            setBrokerMessageUnreadCount((n) => Math.max(0, n - 1));
+          }
+        } else if (payload.eventType === "DELETE") {
+          if (payload.old?.read === false) {
+            setBrokerMessageUnreadCount((n) => Math.max(0, n - 1));
+          }
+        }
+      });
+      return unsub;
+    }
+    let cleanup;
+    ensureSub().then((fn) => { cleanup = fn; });
+    return () => { if (typeof cleanup === "function") cleanup(); };
+  }, []);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading…</div>;
 
@@ -367,8 +421,21 @@ export default function Dashboard() {
       <div className="flex gap-0 border-b border-slate-200 dark:border-slate-700">
         {[
           { id: "overview", label: "Overview", icon: TrendingUp },
-          { id: "brokers", label: "Brokers", icon: Users, badge: brokerUnreadCount, hint: "Sales reps who submit orders on behalf of your shop. Manage brokers from Account > Admin Panel." },
-        ].map(({ id, label, icon: NavIcon, badge, hint }) => (
+          {
+            id: "brokers",
+            label: "Brokers",
+            icon: Users,
+            badge: brokerUnreadCount + brokerMessageUnreadCount,
+            // Tooltip on the badge breaks down what's contributing to the
+            // count so users don't have to click through to figure out
+            // whether it's broker activity, unread messages, or both.
+            badgeTitle: [
+              brokerUnreadCount > 0 && `${brokerUnreadCount} broker activity`,
+              brokerMessageUnreadCount > 0 && `${brokerMessageUnreadCount} unread message${brokerMessageUnreadCount === 1 ? "" : "s"}`,
+            ].filter(Boolean).join(" + "),
+            hint: "Independent resellers who bring their own clients to your shop for production. Manage brokers from Account > Admin Panel.",
+          },
+        ].map(({ id, label, icon: NavIcon, badge, badgeTitle, hint }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -379,7 +446,10 @@ export default function Dashboard() {
             <NavIcon className="w-4 h-4" /> {label}
             {hint && <HintTip text={hint} side="bottom" />}
             {badge > 0 && (
-              <span className="bg-indigo-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none">
+              <span
+                title={badgeTitle || undefined}
+                className="bg-indigo-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none"
+              >
                 {badge}
               </span>
             )}
