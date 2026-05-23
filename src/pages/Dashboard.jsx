@@ -7,7 +7,7 @@ import { createPageUrl } from "@/utils";
 import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig, getDisplayName, getOrderDisplayClient } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { bucketQuotes } from "@/lib/broker/quoteStatus";
-import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText } from "lucide-react";
+import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText, Bell } from "lucide-react";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerDocuments from "../components/broker/BrokerDocuments";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
@@ -312,18 +312,22 @@ export default function Dashboard() {
       // assigned to THIS shop. User.list() returns whatever RLS allows;
       // the assigned_shops filter is the in-app guard so a future RLS
       // loosening can't accidentally enumerate other shops' users.
-      setBrokers(allUsers.filter(u => u.role === "broker" && (u.assigned_shops || []).includes(currentUser.email)));
+      const myBrokers = allUsers.filter(u => u.role === "broker" && (u.assigned_shops || []).includes(currentUser.email));
+      setBrokers(myBrokers);
       setShopOwners(allUsers.filter(u => u.role !== "broker"));
 
-      // Unread broker-message count for the Brokers-tab badge. Messages
-      // addressed to this shop owner that haven't been opened yet. Combined
-      // with BrokerNotification unread to form the single visible badge.
+      // Unread broker-message count for the Brokers-tab badge. Filtered
+      // to messages whose sender is one of THIS shop's brokers — otherwise
+      // unread customer/system messages would inflate the badge too and
+      // make it confusing (the badge is labelled "Brokers" not "Messages").
       try {
         const unread = await base44.entities.Message.filter({
           to_email: currentUser.email,
           read: false,
         }, "-created_date", 200);
-        setBrokerMessageUnreadCount((unread || []).length);
+        const brokerEmails = new Set(myBrokers.map(b => b.email));
+        const fromBrokers = (unread || []).filter(m => brokerEmails.has(m.from_email));
+        setBrokerMessageUnreadCount(fromBrokers.length);
       } catch {
         // Best-effort.
       }
@@ -335,7 +339,9 @@ export default function Dashboard() {
 
   // Realtime: keep brokerMessageUnreadCount fresh as messages arrive and
   // as the shop owner opens conversations (BrokerMessaging flips read=true
-  // on view). Same shape as the broker dashboard's listener.
+  // on view). Counts only messages where the sender is one of THIS shop's
+  // brokers — matches the initial-load filter so the badge stays
+  // consistent (label says "Brokers", not "Messages").
   useEffect(() => {
     async function ensureSub() {
       let me;
@@ -344,9 +350,12 @@ export default function Dashboard() {
       } catch { return; }
       if (!me?.email) return;
       const myEmail = me.email;
+      const brokerEmails = new Set(brokers.map(b => b.email));
+      const isFromBroker = (row) => row && brokerEmails.has(row.from_email);
       const unsub = base44.entities.Message.subscribe((payload) => {
         const row = payload?.new || payload?.old;
         if (!row || row.to_email !== myEmail) return;
+        if (!isFromBroker(payload.new) && !isFromBroker(payload.old)) return;
         if (payload.eventType === "INSERT") {
           if (!row.read) setBrokerMessageUnreadCount((n) => n + 1);
         } else if (payload.eventType === "UPDATE") {
@@ -366,7 +375,7 @@ export default function Dashboard() {
     let cleanup;
     ensureSub().then((fn) => { cleanup = fn; });
     return () => { if (typeof cleanup === "function") cleanup(); };
-  }, []);
+  }, [brokers]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading…</div>;
 
@@ -425,17 +434,24 @@ export default function Dashboard() {
             id: "brokers",
             label: "Brokers",
             icon: Users,
-            badge: brokerUnreadCount + brokerMessageUnreadCount,
-            // Tooltip on the badge breaks down what's contributing to the
-            // count so users don't have to click through to figure out
-            // whether it's broker activity, unread messages, or both.
-            badgeTitle: [
-              brokerUnreadCount > 0 && `${brokerUnreadCount} broker activity`,
-              brokerMessageUnreadCount > 0 && `${brokerMessageUnreadCount} unread message${brokerMessageUnreadCount === 1 ? "" : "s"}`,
-            ].filter(Boolean).join(" + "),
+            // Split into two distinct chips so the source is obvious at a
+            // glance — a single combined "5" left users guessing whether
+            // it meant unread messages, broker activity, or both.
+            chips: [
+              brokerUnreadCount > 0 && {
+                icon: Bell,
+                count: brokerUnreadCount,
+                title: `${brokerUnreadCount} new broker activity event${brokerUnreadCount === 1 ? "" : "s"}`,
+              },
+              brokerMessageUnreadCount > 0 && {
+                icon: MessageSquare,
+                count: brokerMessageUnreadCount,
+                title: `${brokerMessageUnreadCount} unread message${brokerMessageUnreadCount === 1 ? "" : "s"} from brokers`,
+              },
+            ].filter(Boolean),
             hint: "Independent resellers who bring their own clients to your shop for production. Manage brokers from Account > Admin Panel.",
           },
-        ].map(({ id, label, icon: NavIcon, badge, badgeTitle, hint }) => (
+        ].map(({ id, label, icon: NavIcon, chips, hint }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -445,14 +461,15 @@ export default function Dashboard() {
           >
             <NavIcon className="w-4 h-4" /> {label}
             {hint && <HintTip text={hint} side="bottom" />}
-            {badge > 0 && (
+            {(chips || []).map(({ icon: ChipIcon, count, title }, i) => (
               <span
-                title={badgeTitle || undefined}
-                className="bg-indigo-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none"
+                key={i}
+                title={title}
+                className="inline-flex items-center gap-1 bg-indigo-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none"
               >
-                {badge}
+                <ChipIcon className="w-3 h-3" /> {count}
               </span>
-            )}
+            ))}
           </button>
         ))}
       </div>
