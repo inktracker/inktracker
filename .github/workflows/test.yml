@@ -25,3 +25,12 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      # Production build — catches things vitest can't, like orphan
+      # imports from pages that aren't unit-tested. Vercel runs the
+      # same command at deploy time, so a green check here matches
+      # what'll happen in production. SENTRY_AUTH_TOKEN is not set
+      # in CI; sentry-vite-plugin no-ops the source-map upload when
+      # the token is absent, so this works without secrets.
+      - name: Production build
+        run: npm run build
