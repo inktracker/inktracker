@@ -17,7 +17,7 @@ import {
   type AcCreds,
 } from "../_shared/ascolour.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
+import { loadShopProfileForUser } from "../_shared/profileSecrets.ts";
 
 const PAGE_SIZE = 250;
 
@@ -30,7 +30,7 @@ async function resolveAcCredentials(accessToken?: string): Promise<AcCreds | nul
       const { data: { user } } = await supabase.auth.getUser(accessToken);
       if (user) {
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
+        const { profile } = await loadShopProfileForUser(admin, user.id);
         const perShop = credsFromProfile(profile);
         if (perShop) return perShop;
       }

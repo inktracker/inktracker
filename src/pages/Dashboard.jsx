@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 
@@ -64,9 +64,11 @@ function getMonthlyData(orders) {
     .map(m => ({ ...m, month: m.month.slice(5) + "/" + m.month.slice(2, 4) }));
 }
 
-function BrokerCard({ broker, shopOwners, currentUser, orders }) {
+function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCount = 0 }) {
   const [open, setOpen] = useState(false);
-  const [subTab, setSubTab] = useState("performance");
+  // Default to the Messages sub-tab when the user opens a card that has
+  // unread messages — that's almost certainly why they're clicking in.
+  const [subTab, setSubTab] = useState(unreadMessageCount > 0 ? "messages" : "performance");
   const [clients, setClients] = useState([]);
   const [loadingClients, setLoadingClients] = useState(false);
 
@@ -113,6 +115,14 @@ function BrokerCard({ broker, shopOwners, currentUser, orders }) {
             {assignedShopNames.length > 0 && assignedShopNames.map((name, i) => (
               <span key={i} className="text-xs bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded-full">{name}</span>
             ))}
+            {unreadMessageCount > 0 && (
+              <span
+                title={`${unreadMessageCount} unread message${unreadMessageCount === 1 ? "" : "s"} from this broker`}
+                className="inline-flex items-center gap-1 text-xs bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-full"
+              >
+                <MessageSquare className="w-3 h-3" /> {unreadMessageCount}
+              </span>
+            )}
           </div>
           <div className="text-xs text-slate-400 mt-0.5">{broker.email}</div>
         </div>
@@ -136,15 +146,20 @@ function BrokerCard({ broker, shopOwners, currentUser, orders }) {
             {[
               { id: "performance", label: "Performance", icon: BarChart2 },
               { id: "clients", label: "Clients", icon: Users },
-              { id: "messages", label: "Messages", icon: MessageSquare },
+              { id: "messages", label: "Messages", icon: MessageSquare, badge: unreadMessageCount },
               { id: "documents", label: "Documents", icon: Paperclip },
-            ].map(({ id, label, icon: Icon }) => (
+            ].map(({ id, label, icon: Icon, badge }) => (
               <button
                 key={id}
                 onClick={() => handleSubTab(id)}
                 className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition ${subTab === id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-400 hover:text-slate-700"}`}
               >
                 <Icon className="w-3.5 h-3.5" />{label}
+                {badge > 0 && (
+                  <span className="bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                    {badge}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -261,6 +276,17 @@ export default function Dashboard() {
   // for the single Brokers-tab badge so one indicator covers "anything
   // broker-related needing attention".
   const [brokerMessageUnreadCount, setBrokerMessageUnreadCount] = useState(0);
+  // Map of broker email → unread message count from that broker. Drives
+  // the per-row indicator on the broker list so the user can see WHICH
+  // broker's messages are unread without clicking through.
+  const [brokerUnreadByEmail, setBrokerUnreadByEmail] = useState({});
+  // Tracked set of unread message IDs (id → from_email). Lets us
+  // decrement accurately on realtime UPDATE/DELETE events without
+  // depending on `payload.old.read`, which Supabase only includes when
+  // the table has REPLICA IDENTITY FULL — which the messages table does
+  // not. Without this, the badge wouldn't go down when BrokerMessaging
+  // marked messages read on view.
+  const unreadMsgsRef = useRef(new Map());
   const [customerCount, setCustomerCount] = useState(0);
   // id → customer entity. Used by getDisplayName / getOrderDisplayClient
   // so the Order Pipeline + Recent Quotes cards show the company first,
@@ -327,7 +353,11 @@ export default function Dashboard() {
         }, "-created_date", 200);
         const brokerEmails = new Set(myBrokers.map(b => b.email));
         const fromBrokers = (unread || []).filter(m => brokerEmails.has(m.from_email));
-        setBrokerMessageUnreadCount(fromBrokers.length);
+        // Build the authoritative tracking map: message id → sender email.
+        // Counts derive from this so realtime updates can decrement by id
+        // without needing the old read state in the payload.
+        unreadMsgsRef.current = new Map(fromBrokers.map(m => [m.id, m.from_email]));
+        recomputeBrokerUnread();
       } catch {
         // Best-effort.
       }
@@ -337,11 +367,25 @@ export default function Dashboard() {
     loadData();
   }, [navigate]);
 
+  // Recompute counts from the ID-tracking ref. Single source of truth so
+  // the per-broker map and the total stay in sync; called whenever the
+  // ref changes (initial load, realtime add/remove).
+  function recomputeBrokerUnread() {
+    const byEmail = {};
+    for (const sender of unreadMsgsRef.current.values()) {
+      byEmail[sender] = (byEmail[sender] || 0) + 1;
+    }
+    setBrokerUnreadByEmail(byEmail);
+    setBrokerMessageUnreadCount(unreadMsgsRef.current.size);
+  }
+
   // Realtime: keep brokerMessageUnreadCount fresh as messages arrive and
   // as the shop owner opens conversations (BrokerMessaging flips read=true
-  // on view). Counts only messages where the sender is one of THIS shop's
-  // brokers — matches the initial-load filter so the badge stays
-  // consistent (label says "Brokers", not "Messages").
+  // on view). Tracks by message ID instead of relying on the OLD payload's
+  // `read` field — Supabase only includes the full old row under REPLICA
+  // IDENTITY FULL, which this table doesn't have, so the prior
+  // "old.read === false" check never fired and the badge wouldn't decrement
+  // when conversations were opened.
   useEffect(() => {
     async function ensureSub() {
       let me;
@@ -356,19 +400,21 @@ export default function Dashboard() {
         const row = payload?.new || payload?.old;
         if (!row || row.to_email !== myEmail) return;
         if (!isFromBroker(payload.new) && !isFromBroker(payload.old)) return;
-        if (payload.eventType === "INSERT") {
-          if (!row.read) setBrokerMessageUnreadCount((n) => n + 1);
+        const map = unreadMsgsRef.current;
+        const id = row.id;
+        let changed = false;
+        if (payload.eventType === "INSERT" && payload.new && !payload.new.read) {
+          if (!map.has(id)) { map.set(id, payload.new.from_email); changed = true; }
         } else if (payload.eventType === "UPDATE") {
-          const wasUnread = payload.old?.read === false;
-          const isNowRead = row.read === true;
-          if (wasUnread && isNowRead) {
-            setBrokerMessageUnreadCount((n) => Math.max(0, n - 1));
+          // Flipping read=true is the common case (opening a conversation).
+          // Just drop the id from our set; no dependence on the old payload.
+          if (payload.new?.read === true && map.has(id)) {
+            map.delete(id); changed = true;
           }
         } else if (payload.eventType === "DELETE") {
-          if (payload.old?.read === false) {
-            setBrokerMessageUnreadCount((n) => Math.max(0, n - 1));
-          }
+          if (map.has(id)) { map.delete(id); changed = true; }
         }
+        if (changed) recomputeBrokerUnread();
       });
       return unsub;
     }
@@ -678,7 +724,14 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-3">
               {brokers.map(broker => (
-                <BrokerCard key={broker.id} broker={broker} shopOwners={shopOwners} currentUser={user} orders={orders} />
+                <BrokerCard
+                  key={broker.id}
+                  broker={broker}
+                  shopOwners={shopOwners}
+                  currentUser={user}
+                  orders={orders}
+                  unreadMessageCount={brokerUnreadByEmail[broker.email] || 0}
+                />
               ))}
             </div>
           )}

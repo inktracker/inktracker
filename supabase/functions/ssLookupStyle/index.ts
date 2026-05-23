@@ -260,6 +260,12 @@ Deno.serve(async (req) => {
 
     // Collect all raw product rows from every source, keyed by SKU to deduplicate
     const rowsBySku = new Map<string, any>();
+    // Track the worst HTTP status across attempts so we can distinguish
+    // "supplier responded with no matches" from "supplier rejected our auth".
+    // Without this, the client sees `{ matches: [] }` either way and shows
+    // a misleading "Style not found" when the real issue is missing API creds.
+    let anySuccess = false;
+    let lastFailStatus = 0;
 
     function mergeRows(newRows: any[]) {
       for (const row of newRows) {
@@ -274,9 +280,14 @@ Deno.serve(async (req) => {
       const url = `${SS_BASE}/products?partnumber=${encodeURIComponent(query)}`;
       const { ok, status, data } = await ssFetch(url, requestAuth);
       logs.push({ strategy: "partnumber", url, status });
-      if (ok && Array.isArray(data) && data.length > 0) {
-        mergeRows(data);
-        console.error(`[ssLookupStyle] partnumber: ${data.length} rows`);
+      if (ok) {
+        anySuccess = true;
+        if (Array.isArray(data) && data.length > 0) {
+          mergeRows(data);
+          console.error(`[ssLookupStyle] partnumber: ${data.length} rows`);
+        }
+      } else if (status >= 400) {
+        lastFailStatus = status;
       }
     }
 
@@ -288,6 +299,8 @@ Deno.serve(async (req) => {
       const stylesUrl = `${SS_BASE}/styles?search=${encodeURIComponent(query)}`;
       const { ok, status, data } = await ssFetch(stylesUrl, requestAuth);
       logs.push({ strategy: "styles-search", url: stylesUrl, status });
+      if (ok) anySuccess = true;
+      else if (status >= 400) lastFailStatus = status;
 
       if (ok && Array.isArray(data) && data.length > 0) {
         console.error(`[ssLookupStyle] styles search: ${data.length} styles`);
@@ -332,16 +345,34 @@ Deno.serve(async (req) => {
       const url = `${SS_BASE}/products?style=${encodeURIComponent(query)}`;
       const { ok, status, data } = await ssFetch(url, requestAuth);
       logs.push({ strategy: "style-param", url, status });
-      if (ok && Array.isArray(data) && data.length > 0) {
-        mergeRows(data);
-        console.error(`[ssLookupStyle] style-param: ${data.length} rows`);
+      if (ok) {
+        anySuccess = true;
+        if (Array.isArray(data) && data.length > 0) {
+          mergeRows(data);
+          console.error(`[ssLookupStyle] style-param: ${data.length} rows`);
+        }
+      } else if (status >= 400) {
+        lastFailStatus = status;
       }
     }
 
     const allRows = Array.from(rowsBySku.values());
     const matches = allRows.length > 0 ? groupRowsByBrand(allRows) : [];
 
-    console.error(`[ssLookupStyle] final: ${matches.length} match(es) for "${query}"`);
+    console.error(`[ssLookupStyle] final: ${matches.length} match(es) for "${query}" (anySuccess=${anySuccess}, lastFailStatus=${lastFailStatus})`);
+
+    // If every S&S endpoint we tried failed, that's an infrastructure /
+    // credentials problem — not a genuine "no match". Surface it so the
+    // client can prompt the user to fix their API credentials instead of
+    // showing a misleading "Style not found" toast.
+    if (!anySuccess && lastFailStatus > 0) {
+      const reason = lastFailStatus === 401 || lastFailStatus === 403
+        ? "S&S authentication failed — check your S&S Account # and API key in Account settings."
+        : `S&S API error (HTTP ${lastFailStatus}). Try again in a moment.`;
+      const response: any = { matches: [], error: reason, _status: lastFailStatus };
+      if (debug) response._debug = logs;
+      return Response.json(response, { headers: CORS });
+    }
 
     const response: any = { matches };
     if (debug) response._debug = logs;

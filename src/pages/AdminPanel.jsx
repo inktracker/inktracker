@@ -138,6 +138,26 @@ export default function AdminPanel() {
     }
   }
 
+  async function resendInvite(email) {
+    if (!email) return;
+    setActionLoading(prev => ({ ...prev, [`resend-${email}`]: true }));
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session?.data?.session?.access_token;
+      const { data, error: fnError } = await supabase.functions.invoke("adminAction", {
+        body: { action: "resendInvite", email },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
+      notify.success(`Invite re-sent to ${email}`);
+    } catch (err) {
+      notify.error("Couldn't resend invite", err);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`resend-${email}`]: false }));
+    }
+  }
+
   async function deleteUser(profileId, authId) {
     if (profileId === user.id) {
       notify.error("You cannot delete your own account.");
@@ -282,8 +302,18 @@ export default function AdminPanel() {
                   </div>
                 </div>
 
-                {/* Role badge */}
-                <div className="shrink-0">{roleBadge(u.role)}</div>
+                {/* Role badge + pending-invite indicator */}
+                <div className="shrink-0 flex items-center gap-2">
+                  {(u.role === "broker" || u.role === "employee" || u.role === "manager") && !u.last_sign_in_at && (
+                    <span
+                      className="text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full"
+                      title="They haven't signed in yet — invite is still pending."
+                    >
+                      Pending invite
+                    </span>
+                  )}
+                  {roleBadge(u.role)}
+                </div>
 
                 {/* Actions */}
                 <div className="flex items-center gap-2 shrink-0">
@@ -325,6 +355,16 @@ export default function AdminPanel() {
                       role from the admin panel would lock out a shop owner
                       and orphan their data. Use Delete for that, never
                       Revoke. */}
+                  {(u.role === "broker" || u.role === "employee" || u.role === "manager") && !u.last_sign_in_at && u.email && (
+                    <button
+                      onClick={() => resendInvite(u.email)}
+                      disabled={actionLoading[`resend-${u.email}`]}
+                      className="text-xs font-semibold border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                      title="Email the invite link again — useful if they lost it or it expired."
+                    >
+                      {actionLoading[`resend-${u.email}`] ? "…" : "Resend invite"}
+                    </button>
+                  )}
                   {(u.role === "broker" || u.role === "employee" || u.role === "manager") && (
                     <button
                       onClick={() => setRole(u.id, u.auth_id, "user")}

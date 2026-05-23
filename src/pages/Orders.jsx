@@ -11,6 +11,8 @@ import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
+import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
+import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
 
 function getOrderArtworkCount(order) {
   const keys = new Set();
@@ -142,7 +144,15 @@ export default function Orders() {
     const idx = O_STATUSES.indexOf(order.status);
     const nextStatus = idx >= 0 && idx < O_STATUSES.length - 1 ? O_STATUSES[idx + 1] : null;
     if (nextStatus) {
-      const updated = await base44.entities.Order.update(id, { status: nextStatus });
+      // Calendar/Production filter requires completed_date to show the
+      // green "Completed" chip. Mirror Production.jsx handleAdvance so
+      // the order doesn't fall off the calendar when marked complete
+      // from this list.
+      const payload = { status: nextStatus };
+      if (nextStatus === "Completed" && !order.completed_date) {
+        payload.completed_date = new Date().toISOString().split("T")[0];
+      }
+      const updated = await base44.entities.Order.update(id, payload);
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       if (viewing?.id === id) setViewing(updated);
     }
@@ -234,6 +244,15 @@ export default function Orders() {
     const updated = await base44.entities.Order.update(plan.orderUpdate.id, plan.orderUpdate.patch);
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(null);
+
+    // Notify the broker (no-op for non-broker orders). Helper looks at
+    // broker_id / customer_name / id on the row directly — quote_id falls
+    // back to order_id so the feed reads "completed your order — ORD-XXX".
+    notifyBrokerOfShopAction({
+      quote: { ...updated, quote_id: updated.order_id || updated.quote_id },
+      action: "shop_completed_order",
+      shopEmail: user?.email,
+    });
   }
 
   async function handleDelete(id) {
@@ -253,6 +272,11 @@ export default function Orders() {
         console.warn("[Orders] broker-pricing cleanup failed:", err);
       }
     }
+
+    // If this was a broker order, roll the source quote back so the
+    // broker isn't staring at a "Converted to Order" status with no
+    // underlying order, and ping their ShopActionFeed.
+    handleBrokerOrderDeletion(order);
   }
 
   async function handleTogglePaid(order) {

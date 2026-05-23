@@ -75,6 +75,71 @@ export async function loadProfileWithSecrets(
 }
 
 /**
+ * Loads the **shop owner's** profile + secrets for a signed-in user.
+ *
+ * For shop owners / managers / employees, this is just their own profile.
+ * For brokers (role === "broker"), the broker's own profile has no supplier
+ * credentials — the relevant creds live on the assigned shop's profile. We
+ * resolve the assigned shop via `profile.assigned_shops[0]` (the email of
+ * the shop they're working under) and load THAT profile instead.
+ *
+ * Use this in any edge function that needs supplier creds (QB, AS Colour,
+ * S&S, Shopify, Gmail), not just user-scoped lookups.
+ *
+ * Returns `{ profile, isBroker, brokerEmail }` so callers can stamp broker
+ * context onto created records without re-querying.
+ */
+export async function loadShopProfileForUser(
+  admin: any,
+  authUserId: string,
+): Promise<{
+  profile: ProfileWithSecrets | null;
+  isBroker: boolean;
+  brokerEmail: string | null;
+  brokerProfile: ProfileWithSecrets | null;
+}> {
+  const userProfile = await loadProfileWithSecrets(admin, { auth_id: authUserId });
+  if (!userProfile) return { profile: null, isBroker: false, brokerEmail: null, brokerProfile: null };
+
+  const role = (userProfile as any).role;
+  const isBroker = role === "broker";
+  if (!isBroker) {
+    return { profile: userProfile, isBroker: false, brokerEmail: null, brokerProfile: null };
+  }
+
+  const assignedShops = Array.isArray((userProfile as any).assigned_shops)
+    ? (userProfile as any).assigned_shops
+    : [];
+  const shopEmail = assignedShops[0];
+  if (!shopEmail) {
+    // Broker with no assigned shops — return the broker's profile so the caller
+    // can produce a clear error rather than silently swapping to env defaults.
+    return {
+      profile: userProfile,
+      isBroker: true,
+      brokerEmail: userProfile.email,
+      brokerProfile: userProfile,
+    };
+  }
+
+  const shopProfile = await loadProfileWithSecrets(admin, { email: shopEmail });
+  if (!shopProfile) {
+    return {
+      profile: userProfile,
+      isBroker: true,
+      brokerEmail: userProfile.email,
+      brokerProfile: userProfile,
+    };
+  }
+  return {
+    profile: shopProfile,
+    isBroker: true,
+    brokerEmail: userProfile.email,
+    brokerProfile: userProfile,
+  };
+}
+
+/**
  * Updates secret fields. Writes to profile_secrets (upsert).
  *
  * `dualWrite` defaults to `false` now that the legacy secret columns

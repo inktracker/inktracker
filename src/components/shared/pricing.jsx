@@ -576,8 +576,14 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
     // Both silently dropped the rush charge from QB invoices,
     // so customers paid one price (per the email/PDF) while QB
     // recorded a lower number. Pinned by numbersMatch.test.js N3.
+    // Quote-snapshot invariant: prefer saved per-line stamps from
+    // BrokerQuoteEditor/QuoteEditorModal at save time. The QB invoice's
+    // lines must match what the customer saw on the quote PDF/email,
+    // which means matching the same saved numbers — never a live
+    // recompute with the current viewer's pricing config. See memory:
+    // project_quote_immutability.md
     const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
-    if (hasSaved && !isBroker) {
+    if (hasSaved) {
       const lineTotalWithRush = li._lineTotal + (Number.isFinite(li._rushFee) ? li._rushFee : 0);
       const unitPriceWithRush = qty > 0 ? lineTotalWithRush / qty : 0;
       lines.push({
@@ -588,10 +594,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
         itemName,
       });
     } else {
-      // Broker quotes need live calc with broker markup; legacy
-      // quotes also fall through here. r.lineTotal already includes
-      // rushFee (see calcLinkedLinePrice line 382).
-      //
+      // Legacy fallback for line items predating the per-line stamping.
       // CRITICAL — clientPpp override (customer-negotiated per-piece
       // price) must win over the standard calc on admin quotes. The
       // calc helper itself doesn't honor it; calcQuoteTotalsWithLinking

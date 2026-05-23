@@ -17,12 +17,12 @@ import {
   type AcCreds,
 } from "../_shared/ascolour.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
+import { loadShopProfileForUser } from "../_shared/profileSecrets.ts";
 
 // Returns the AcCreds bundle to use for this request. Tries the authenticated
 // user's per-shop credentials first; falls back to platform env credentials
 // for anonymous callers (the public wizard at /quoterequest still has to be
-// able to look up garments).
+// able to look up garments). For brokers, resolves the assigned shop's creds.
 async function resolveAcCredentials(accessToken?: string): Promise<AcCreds | null> {
   if (accessToken) {
     try {
@@ -32,7 +32,7 @@ async function resolveAcCredentials(accessToken?: string): Promise<AcCreds | nul
       const { data: { user } } = await supabase.auth.getUser(accessToken);
       if (user) {
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
+        const { profile } = await loadShopProfileForUser(admin, user.id);
         const perShop = credsFromProfile(profile);
         if (perShop) return perShop;
       }

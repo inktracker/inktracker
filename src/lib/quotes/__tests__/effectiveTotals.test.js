@@ -115,4 +115,84 @@ describe("effectiveQuoteTotals — saved wins, live is fallback", () => {
     expect(tAdmin.total).toBe(500);
     expect(tBroker.total).toBe(500);
   });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Snapshot-invariant tests. The bug these pin:
+  //
+  // The PDF and quote modals render "Subtotal:" from `totals.subtotal`
+  // (without rush) — NOT from `totals.sub` (with rush). Earlier versions
+  // of effectiveQuoteTotals only overrode `sub` from the saved row but
+  // left `subtotal` from the live calc. When the viewer's pricing
+  // config differed from the quote-author's pricing config (e.g. shop
+  // with custom brokerMarkupShare vs broker on defaults), the live
+  // subtotal computed in the viewer's session diverged from the saved
+  // subtotal stored in the DB — and the PDF showed the viewer's number
+  // for "Subtotal:" while showing the saved number for "Total:".
+  //
+  // Concrete failure mode: broker saved $12.62 / $12.62, shop opened
+  // PDF and saw "Subtotal: $14.02 / Total: $12.62" with no discount
+  // line to explain the gap. Pin this so any regression is caught.
+  //
+  // See memory: project_quote_immutability.md
+  // ──────────────────────────────────────────────────────────────────
+  describe("snapshot invariant — saved fields are not overridden by live calc", () => {
+    it("ET9 — saved row exposes SAVED `subtotal`, not live `subtotal`", () => {
+      // Saved 500 should win even if the live calc would produce a different
+      // subtotal (e.g. because the caller's pricing config differs from the
+      // author's). We can't easily mock _pc divergence inside the test, but
+      // we can prove that the returned `subtotal` matches the saved one
+      // regardless of what live would have produced.
+      const saved = makeQuote({ subtotal: 500, tax: 0, total: 500 });
+      const t = effectiveQuoteTotals(saved);
+      expect(t.subtotal).toBe(500);
+      expect(t.sub).toBe(500);
+      expect(t.total).toBe(500);
+    });
+
+    it("ET10 — saved subtotal differs from live subtotal → SAVED wins", () => {
+      // Make the saved subtotal an obviously-not-derivable number so we
+      // can prove it was read straight from the row. The live calc on
+      // this line item would produce something else entirely (depends on
+      // garmentCost × markup + print cost), but the returned subtotal
+      // must be 1234.56.
+      const saved = makeQuote({ subtotal: 1234.56, tax: 100, total: 1334.56 });
+      const t = effectiveQuoteTotals(saved);
+      expect(t.subtotal).toBe(1234.56);
+      expect(t.sub).toBe(1234.56);
+      // tax + total too — full snapshot
+      expect(t.tax).toBe(100);
+      expect(t.total).toBe(1334.56);
+    });
+
+    it("ET11 — broker quote: saved subtotal NOT recomputed regardless of markup arg", () => {
+      // The whole point: a broker quote saved with the broker's pricing
+      // must read the SAME number when later viewed by a shop owner with
+      // different pricing. effectiveQuoteTotals can't be the leak.
+      const saved = makeQuote({
+        broker_id: "broker@example.com",
+        subtotal: 12.62,
+        tax: 0,
+        total: 12.62,
+      });
+      const tBroker = effectiveQuoteTotals(saved, BROKER_MARKUP);
+      const tAdmin  = effectiveQuoteTotals(saved);
+      // Both subtotal AND total locked to saved — viewer cannot influence.
+      expect(tBroker.subtotal).toBe(12.62);
+      expect(tBroker.total).toBe(12.62);
+      expect(tAdmin.subtotal).toBe(12.62);
+      expect(tAdmin.total).toBe(12.62);
+    });
+
+    it("ET12 — partial save (subtotal missing) falls back ONLY for that field", () => {
+      // If subtotal isn't on the row, fall back to live. But total still
+      // wins from saved (it's the contract). This is the exact behavior
+      // ET5 covered for `sub`; verify it for `subtotal` too.
+      const quote = makeQuote({ total: 999 });
+      delete quote.subtotal;
+      const t = effectiveQuoteTotals(quote);
+      expect(t.total).toBe(999);
+      // subtotal field populated from live calc (no saved value to use)
+      expect(t.subtotal).toBeGreaterThan(0);
+    });
+  });
 });

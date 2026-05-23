@@ -72,6 +72,24 @@ function getDisplayStyleNumber(li) {
   return rawStyle || "GARMENT";
 }
 
+// Some suppliers (notably AS Colour) return the full marketing description
+// in the "title" / "styleName" fields ("The AS Colour Staple Tee. Enduring
+// comfort in a regular fit, crafted from 5.3 oz..."). For quote headers we
+// only want the first sentence — anything longer turns the header into a
+// paragraph. Existing line items saved with the long text before this fix
+// also get cleaned up by this trim, so users don't have to re-look up
+// every style they've already touched.
+function trimToShortTitle(text) {
+  if (!text) return "";
+  const firstSentence = String(text).split(/(?<=\.)\s+/)[0] || text;
+  const trimmed = firstSentence.replace(/\.$/, "").trim();
+  // Hard cap as a belt-and-suspenders measure for descriptions without
+  // sentence breaks. 80 chars ≈ a long product title; anything longer is
+  // marketing copy.
+  if (trimmed.length > 80) return trimmed.slice(0, 77).trimEnd() + "…";
+  return trimmed;
+}
+
 function getDisplayDescription(li) {
   const styleNumber = getDisplayStyleNumber(li).toLowerCase();
 
@@ -97,7 +115,7 @@ function getDisplayDescription(li) {
     if (normalized === "shirt") continue;
     if (normalized === "garment") continue;
 
-    return candidate;
+    return trimToShortTitle(candidate);
   }
 
   return "";

@@ -29,6 +29,60 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const BROKER_CONTEXT = `
+You are the InkTracker Broker Assistant — a friendly, plain-spoken helper for
+brokers (sales reps / resellers) who quote screen-printing and embroidery jobs
+to their clients and submit them to a shop for production. Brokers do NOT run
+their own production — they're the middle-tier between a buyer and a shop.
+
+What a broker can do in InkTracker:
+- BrokerDashboard — main view: their quotes, clients, orders, profit
+- Quotes tab — build a quote with line items, send to the shop for review,
+  then send to the client. Two outputs per quote: a Shop Order Form (what
+  the broker pays the shop, broker price) and a Client Quote (what the
+  broker charges the client, retail price). The difference is the broker's profit.
+- Clients tab — broker's own CRM-lite list of their end clients
+- Orders tab — quotes that became orders after shop approval + payment
+- Messages tab — chat with the shop
+- Documents tab — files shared with the shop
+- Files tab — artwork/job files
+- Performance tab — broker's profit and order analytics
+- Invoices tab — broker's billing history with their clients
+- Profile tab — broker's own info (name, company, phone, address)
+
+Flow they live in:
+  1. Build a quote with line items, save as Draft.
+  2. Submit to Shop → status becomes Pending. Shop reviews.
+  3. Shop Approves (or pushes back). Broker sees "Shop Approved".
+  4. Broker sends to Client. Status: Sent to Client.
+  5. Client approves. Broker collects deposit. Status moves through
+     Client Approved → Deposit Paid → Paid in Full.
+  6. Quote converts to an Order; the shop produces and ships.
+
+Pricing model the broker should understand:
+- Broker Price (lower) = what the shop charges the broker. This is the wholesale
+  rate the shop has set for its brokers.
+- Client Total (higher) = what the broker charges the end client. The broker can
+  adjust the per-line price on the quote.
+- Total Broker Profit = Client Total − Broker Price.
+- The shop never charges the broker tax (B2B). The broker chooses whether to
+  charge their own client tax via the broker tax rate field on the quote.
+
+Tone:
+- Warm, concise, practical. Short answers (2-4 sentences) unless the user asks
+  for detail.
+- Brokers are sales-minded; speak in terms of their margin, close rate, and
+  client relationship — not shop-floor concepts (presses, inks, etc.).
+- Never invent features that aren't listed above. If you don't know, say so
+  and suggest they email support.
+- You're read-only. Recommend, don't act.
+
+CRITICAL — DO NOT INVENT UI DETAILS:
+You can't see the user's screen. Describe actions in general terms — never
+invent specific button labels or positions. Page names listed above are stable
+to cite; sub-controls inside pages should be referred to in general terms.
+`.trim();
+
 const PRODUCT_CONTEXT = `
 You are the InkTracker Onboarding Assistant — a friendly, plain-spoken helper for
 shop owners who run screen-printing and embroidery businesses. InkTracker is
@@ -146,10 +200,12 @@ Deno.serve(async (req) => {
   const blocked = requireActiveSubscription(profile);
   if (blocked) return blocked;
 
-  // Brokers + employees shouldn't see the onboarding assistant
-  if (profile.role === "broker" || profile.role === "employee") {
+  // Employees don't get the assistant (shop floor only — no setup decisions).
+  // Brokers DO get it, with a broker-specific system prompt and snapshot.
+  if (profile.role === "employee") {
     return json({ error: "Not available for this role." }, 403);
   }
+  const isBroker = profile.role === "broker";
 
   // ── 2.5 Per-user daily rate limit ─────────────────────────────────────────
   // Atomic increment via SECURITY DEFINER function (see migration
@@ -202,29 +258,46 @@ Deno.serve(async (req) => {
   }
 
   // ── 4. Build the per-user context block ───────────────────────────────────
-  const shopOwnerEmail = profile.email || user.email || "";
+  // Shop owners are scoped by their own email; brokers are scoped by
+  // broker_id (their email used as the broker identity on quotes/orders).
+  // Customer count for brokers is meaningless (brokers track their own
+  // client list separately), so we skip it.
+  const userEmail = profile.email || user.email || "";
 
-  const [{ data: shopRow }, quoteCount, orderCount, customerCount] = await Promise.all([
-    shopOwnerEmail
-      ? admin.from("shops").select("*").eq("owner_email", shopOwnerEmail).maybeSingle()
-      : Promise.resolve({ data: null }),
-    countSafe(admin, "quotes", shopOwnerEmail),
-    countSafe(admin, "orders", shopOwnerEmail),
-    countSafe(admin, "customers", shopOwnerEmail),
-  ]);
-
-  const setup = describeSetup(profile, shopRow, { quoteCount, orderCount, customerCount });
+  let setup: string;
+  if (isBroker) {
+    const assignedShop = Array.isArray(profile.assigned_shops) ? profile.assigned_shops[0] : null;
+    const [{ data: shopOwnerProfile }, brokerQuoteCount, brokerOrderCount] = await Promise.all([
+      assignedShop
+        ? admin.from("profiles").select("shop_name, email").eq("email", assignedShop).maybeSingle()
+        : Promise.resolve({ data: null }),
+      countBrokerScoped(admin, "quotes", userEmail),
+      countBrokerScoped(admin, "orders", userEmail),
+    ]);
+    setup = describeBrokerSetup(profile, shopOwnerProfile, {
+      quoteCount: brokerQuoteCount,
+      orderCount: brokerOrderCount,
+    });
+  } else {
+    const [{ data: shopRow }, quoteCount, orderCount, customerCount] = await Promise.all([
+      userEmail
+        ? admin.from("shops").select("*").eq("owner_email", userEmail).maybeSingle()
+        : Promise.resolve({ data: null }),
+      countSafe(admin, "quotes", userEmail),
+      countSafe(admin, "orders", userEmail),
+      countSafe(admin, "customers", userEmail),
+    ]);
+    setup = describeSetup(profile, shopRow, { quoteCount, orderCount, customerCount });
+  }
 
   const systemPrompt = [
-    PRODUCT_CONTEXT,
+    isBroker ? BROKER_CONTEXT : PRODUCT_CONTEXT,
     "",
     "=== THIS USER'S CURRENT SETUP ===",
     setup,
     "",
-    "When relevant, reference the user's actual setup state above. For example,",
-    "if they ask 'how do I send a quote?' and you can see they haven't connected",
-    "Stripe yet, mention that they'll need that for the customer to pay online.",
-    "Don't recite the whole setup block back at them — use it silently.",
+    "When relevant, reference the user's actual setup state above. Don't",
+    "recite the whole block back at them — use it silently.",
   ].join("\n");
 
   // ── 5. Call Anthropic ─────────────────────────────────────────────────────
@@ -298,6 +371,51 @@ async function countSafe(
   } catch {
     return 0;
   }
+}
+
+// Brokers' rows are keyed by `broker_id` (= their email), not shop_owner.
+async function countBrokerScoped(
+  admin: ReturnType<typeof createClient>,
+  table: string,
+  brokerEmail: string,
+): Promise<number> {
+  if (!brokerEmail) return 0;
+  try {
+    const { count, error } = await admin
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq("broker_id", brokerEmail);
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Broker-specific setup snapshot. */
+function describeBrokerSetup(
+  profile: Record<string, any>,
+  shopOwnerProfile: Record<string, any> | null,
+  counts: { quoteCount: number; orderCount: number },
+): string {
+  const lines: string[] = [];
+  lines.push(`Broker: ${profile.full_name || profile.email || "(unknown)"} <${profile.email || "?"}>`);
+  if (profile.company_name) lines.push(`Company: ${profile.company_name}`);
+  if (profile.broker_phone) lines.push(`Phone on file: yes`);
+  else                      lines.push(`Phone on file: NOT set (Profile)`);
+  if (profile.broker_address) lines.push(`Address on file: yes`);
+  else                        lines.push(`Address on file: NOT set (Profile)`);
+
+  if (shopOwnerProfile?.shop_name) {
+    lines.push(`Assigned to shop: ${shopOwnerProfile.shop_name} <${shopOwnerProfile.email}>`);
+  } else {
+    lines.push(`Assigned to shop: NOT yet linked — they need an invite from their shop admin`);
+  }
+
+  lines.push(`Quotes created: ${counts.quoteCount}`);
+  lines.push(`Orders converted: ${counts.orderCount}`);
+
+  return lines.join("\n");
 }
 
 /** Convert raw profile/shop data into a short, human-readable status block. */

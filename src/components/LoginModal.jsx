@@ -165,11 +165,50 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
           )}
 
           {/* Error / success banners */}
-          {error && (
-            <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-              {error}
-            </div>
-          )}
+          {error && (() => {
+            // "Invalid login credentials" is Supabase's catch-all for THREE
+            // distinct cases (anti-enumeration design): account has no
+            // password set (invited user who never set one), email never
+            // confirmed, or wrong password. The bare error message dead-ends
+            // the user. When we see exactly that string in sign-in mode,
+            // show a recovery panel with the two paths that work in all
+            // three cases: magic link + password reset.
+            const isInvalidCreds =
+              mode === "signin" &&
+              /invalid\s+login\s+credentials/i.test(error);
+            if (!isInvalidCreds) {
+              return (
+                <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              );
+            }
+            return (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 space-y-3">
+                <p className="leading-relaxed">
+                  We couldn't sign you in with that password. If you were invited to InkTracker, you may not have a password set yet — or you may have reset it since.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={handleMagicLink}
+                    disabled={magicLoading}
+                    className="inline-flex items-center justify-center gap-1.5 border border-amber-300 bg-white text-amber-800 font-semibold py-2 px-3 rounded-lg text-xs hover:bg-amber-50 transition disabled:opacity-60"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    {magicLoading ? "Sending…" : "Email me a sign-in link"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchMode("forgot")}
+                    className="inline-flex items-center justify-center gap-1.5 border border-amber-300 bg-white text-amber-800 font-semibold py-2 px-3 rounded-lg text-xs hover:bg-amber-50 transition"
+                  >
+                    Reset password
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
           {success && (
             <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-700">
               {success}
@@ -294,11 +333,6 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               {!loading && <ArrowRight className="w-4 h-4" />}
             </button>
 
-            {mode === "signup" && (
-              <p className="text-xs text-slate-500 leading-relaxed mt-3">
-                Founding member rate ($50/month) is tied to a continuous subscription. If you cancel, the founding rate is forfeited — re-signup pricing is the standard $99/month (or $999/year).
-              </p>
-            )}
           </form>
           )}
 

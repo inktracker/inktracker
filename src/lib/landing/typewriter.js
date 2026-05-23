@@ -6,7 +6,7 @@
 // next and which timer kind to schedule.
 
 export const TYPEWRITER_LINES = Object.freeze([
-  "Run your print shop",
+  "Run your shop",
   "without the chaos.",
 ]);
 

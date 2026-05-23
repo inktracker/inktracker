@@ -18,7 +18,7 @@ import {
 } from "../_shared/ascolour.ts";
 import { credsForOrderPlacement } from "../_shared/acOrderLogic.js";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
+import { loadShopProfileForUser } from "../_shared/profileSecrets.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
     }
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
+    const { profile } = await loadShopProfileForUser(admin, user.id);
 
     // STRICT per-shop creds. No env fallback — see acPlaceOrder for why.
     const creds = credsForOrderPlacement(profile);

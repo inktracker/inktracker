@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Eye, EyeOff } from "lucide-react";
 import { base44, supabase } from "@/api/supabaseClient";
 
 export default function BrokerOnboarding() {
@@ -12,10 +13,21 @@ export default function BrokerOnboarding() {
     broker_address: "",
     broker_notes: "",
   });
+  // Brokers reach this page via a magic-link sign-in from the invite email
+  // (no password yet). Forcing password creation here closes the gap where
+  // a broker could finish onboarding and then be unable to sign in by
+  // email+password later — they'd have to keep using "Forgot password" or
+  // request a new magic link every time. If `existing_password` is true we
+  // skip the prompt (returning users completing onboarding incrementally).
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+
+  const [hostShop, setHostShop] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -24,6 +36,23 @@ export default function BrokerOnboarding() {
         await base44.auth.redirectToLogin();
         return;
       }
+
+      // If this broker already finished onboarding (name set + auth user
+      // has a password configured), send them straight to the dashboard.
+      // Revisiting /BrokerOnboarding from an old link shouldn't dump them
+      // into an empty form pretending it's fresh.
+      try {
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        const hasPassword = !!authUser?.user_metadata?.has_password
+          || authUser?.identities?.some((i) => i.provider === "email" && i.identity_data?.email_verified);
+        if (currentUser.full_name?.trim() && hasPassword) {
+          window.location.assign("/BrokerDashboard");
+          return;
+        }
+      } catch {
+        // Don't block onboarding on a check failure — let them complete the form.
+      }
+
       setUser(currentUser);
       setDraft({
         full_name:      currentUser.full_name ?? "",
@@ -32,6 +61,22 @@ export default function BrokerOnboarding() {
         broker_address: currentUser.broker_address ?? currentUser.address ?? "",
         broker_notes:   currentUser.broker_notes ?? currentUser.notes ?? "",
       });
+
+      // Load the inviting shop's profile so we can welcome the broker by
+      // name and reassure them they're in the right place. `assigned_shops`
+      // is set by adminAction.inviteBroker to [shopOwnerEmail].
+      const assignedShop = Array.isArray(currentUser.assigned_shops) ? currentUser.assigned_shops[0] : null;
+      if (assignedShop) {
+        try {
+          const shopProfile = await base44.entities.User.filter({ email: assignedShop });
+          if (Array.isArray(shopProfile) && shopProfile[0]) {
+            setHostShop(shopProfile[0]);
+          }
+        } catch {
+          // Best-effort: missing shop context is okay, just no welcome line.
+        }
+      }
+
       setLoading(false);
     }
     load();
@@ -46,11 +91,25 @@ export default function BrokerOnboarding() {
       setError("Your name is required.");
       return;
     }
+    if (password.length < 6) {
+      setError("Set a password (at least 6 characters) so you can sign in later.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords don't match.");
+      return;
+    }
     setError("");
     setSaving(true);
     try {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) throw new Error("Not signed in");
+
+      // Set the password BEFORE the profile update. If this fails (rare —
+      // expired session, weak password), we want to know before partially
+      // updating the profile.
+      const { error: pwErr } = await supabase.auth.updateUser({ password });
+      if (pwErr) throw pwErr;
 
       const updates = {
         full_name:      draft.full_name.trim(),
@@ -94,10 +153,33 @@ export default function BrokerOnboarding() {
     <div className="min-h-screen bg-slate-50 py-12 px-4">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-sm p-6 sm:p-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">Welcome — complete your profile</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Tell us about yourself so we can get you set up.
-          </p>
+          {hostShop?.shop_name ? (
+            <>
+              <div className="flex items-center gap-3 mb-3">
+                {hostShop.logo_url && (
+                  <img
+                    src={hostShop.logo_url}
+                    alt={`${hostShop.shop_name} logo`}
+                    className="h-9 w-9 rounded-lg object-contain border border-slate-200 bg-white"
+                  />
+                )}
+                <div className="text-xs font-semibold uppercase tracking-widest text-indigo-600">
+                  Welcome from {hostShop.shop_name}
+                </div>
+              </div>
+              <h1 className="text-2xl font-bold text-slate-900">Set up your broker account</h1>
+              <p className="text-sm text-slate-500 mt-1">
+                You've been invited to broker for <span className="font-semibold text-slate-700">{hostShop.shop_name}</span>. Finish the steps below and you'll be ready to send your first quote.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-2xl font-bold text-slate-900">Welcome — complete your profile</h1>
+              <p className="text-sm text-slate-500 mt-1">
+                Tell us about yourself so we can get you set up.
+              </p>
+            </>
+          )}
         </div>
 
         <div className="rounded-2xl border border-slate-200 p-4 mb-5">
@@ -151,6 +233,48 @@ export default function BrokerOnboarding() {
                 value={draft.broker_notes}
                 onChange={(e) => updateDraft("broker_notes", e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 p-4 mb-5">
+          <div className="text-base font-semibold text-slate-900 mb-1">Create a password</div>
+          <p className="text-xs text-slate-500 mb-4">
+            You signed in from your invite email — now set a password so you can sign in directly next time.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Password *</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-2.5 pr-11 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="At least 6 characters"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Confirm password *</label>
+              <input
+                type={showPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                minLength={6}
+                autoComplete="new-password"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Re-type to confirm"
               />
             </div>
           </div>

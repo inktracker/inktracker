@@ -165,8 +165,8 @@ export default function OnboardingWizard({ user, onComplete }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[300] bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 flex items-center justify-center p-4">
-      <div className="w-full max-w-lg">
+    <div className="fixed inset-0 z-[300] bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 overflow-y-auto flex items-start justify-center p-4 sm:py-8">
+      <div className="w-full max-w-lg my-auto">
         {/* Progress bar */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
@@ -382,22 +382,10 @@ export default function OnboardingWizard({ user, onComplete }) {
                     )}
                   </div>
 
-                  {/* Stripe */}
-                  <div className="border border-slate-200 rounded-xl p-4 flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
-                      <svg viewBox="0 0 28 28" fill="currentColor" className="w-5 h-5"><path d="M13.6 8c-2 0-3.2 1-3.2 2.5 0 3.2 5.3 2.3 5.3 5 0 1.2-.9 2-2.7 2-1.7 0-3.2-.7-4.2-1.7l-1.2 2c1.2 1.2 3 2 5.4 2 2.6 0 4.4-1.4 4.4-3.6 0-3.4-5.3-2.6-5.3-5 0-1 .8-1.7 2.2-1.7 1.2 0 2.4.5 3.2 1.2l1.2-2C17.5 8.5 15.8 8 13.6 8z"/></svg>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-slate-800">Stripe Payments</div>
-                      <div className="text-xs text-slate-500">Set up later from <strong>Account → Stripe Payments</strong></div>
-                    </div>
-                    {/* Stripe Connect onboarding is several screens of identity
-                        verification on Stripe's side — too much to interleave
-                        into the wizard. The Account page has the real flow
-                        (PR #69 / #73 gate it to admin/shop). Keep the wizard
-                        focused; just signal that the feature exists. */}
-                    <span className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-2 py-1 rounded-full shrink-0">Available</span>
-                  </div>
+                  {/* Stripe Connect was removed in v1 (QuickBooks-only).
+                      Customer payments flow through QB's Commerce Network
+                      payment links on quotes. If/when Stripe Connect comes
+                      back, restore the integration row here. */}
                 </div>
               </div>
             )}

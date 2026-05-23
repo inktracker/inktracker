@@ -39,8 +39,18 @@ function getGroupPriceForPdf(li, rushRate, extras, isBroker, allLineItems) {
   return calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap);
 }
 
-function getEffectiveTaxRate(record) {
-  return isBrokerQuote(record) ? 0 : parseFloat(record?.tax_rate || 0);
+// Effective tax rate by render mode:
+//   - Broker quote, shop form (broker → shop): always 0%. Shops don't
+//     charge brokers tax — broker is B2B.
+//   - Broker quote, client form (broker → end client): broker_tax_rate.
+//     This is what the broker collects from their client. Independent
+//     of the shop-side rate.
+//   - Non-broker quote: tax_rate. Standard shop-to-customer.
+function getEffectiveTaxRate(record, isClientMode = false) {
+  if (isBrokerQuote(record)) {
+    return isClientMode ? parseFloat(record?.broker_tax_rate || 0) : 0;
+  }
+  return parseFloat(record?.tax_rate || 0);
 }
 
 function getOrderPdfClientName(order) {
@@ -141,6 +151,19 @@ function getGarmentNumber(li) {
   return cleanText(li?.style) || 'Garment';
 }
 
+// AS Colour returns the full marketing description in styleName/title
+// ("The AS Colour Staple Tee. Enduring comfort in a regular fit, crafted from
+// 5.3 oz 100% combed cotton..."). Without a trim the PDF line header runs off
+// the page into the price column. Take the first sentence and hard-cap at
+// 80 chars as a safety net for descriptions without sentence breaks.
+function trimToShortGarmentTitle(text) {
+  if (!text) return '';
+  const firstSentence = String(text).split(/(?<=\.)\s+/)[0] || text;
+  const trimmed = firstSentence.replace(/\.$/, '').trim();
+  if (trimmed.length > 80) return trimmed.slice(0, 77).trimEnd() + '…';
+  return trimmed;
+}
+
 function getGarmentDescription(li) {
   const candidates = [
     stripTrailingGarmentNumber(li?.productTitle),
@@ -165,7 +188,7 @@ function getGarmentDescription(li) {
     if (normalized === garmentNumber) continue;
     if (looksLikeCode(candidate)) continue;
 
-    return candidate;
+    return trimToShortGarmentTitle(candidate);
   }
 
   if (cleanText(li?.brand)) return cleanText(li.brand);
@@ -176,7 +199,7 @@ function getItemHeaderLine(li) {
   const garmentNumber = getGarmentNumber(li);
   const storedName = (li?.productName || '').trim();
   const description = (storedName && !looksLikeCode(storedName))
-    ? storedName
+    ? trimToShortGarmentTitle(storedName)
     : getGarmentDescription(li);
 
   if (description) {
@@ -233,7 +256,12 @@ async function addHeader(
   doc.setFontSize(8);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(120, 120, 140);
-  doc.text(shopName || 'InkTracker', margin + 17, yPos + 1);
+  // If the caller explicitly passed an empty shopName (e.g. broker client
+  // form where the broker hasn't filled in a company name), leave the slot
+  // blank rather than branding the client's PDF as "InkTracker". Only
+  // legacy positional callers that pass `undefined` get the default.
+  const headerBrand = shopName === '' ? '' : (shopName || 'InkTracker');
+  if (headerBrand) doc.text(headerBrand, margin + 17, yPos + 1);
 
   doc.setFontSize(7.5);
   doc.setTextColor(140, 140, 160);
@@ -265,7 +293,17 @@ async function addHeader(
   doc.setFontSize(8);
   doc.setTextColor(100, 100, 120);
 
-  if (customerEmail) {
+  // Suppress the email line if it's just a repeat of the customer header
+  // (happens when a quote has only an email and no company/name — the
+  // header falls back to the email, then we'd print it again as a subtitle).
+  const primaryDisplay = String(customerPrimary || '').trim().toLowerCase();
+  const secondaryDisplay = String(customerSecondary || '').trim().toLowerCase();
+  const emailDisplay = String(customerEmail || '').trim().toLowerCase();
+  const emailIsDuplicate =
+    emailDisplay &&
+    (emailDisplay === primaryDisplay || emailDisplay === secondaryDisplay);
+
+  if (customerEmail && !emailIsDuplicate) {
     doc.text(customerEmail, margin, yPos);
     yPos += 4;
   }
@@ -273,7 +311,7 @@ async function addHeader(
     doc.text(customerPhone, margin, yPos);
     yPos += 4;
   }
-  if (!customerEmail && !customerPhone) yPos += 1;
+  if ((!customerEmail || emailIsDuplicate) && !customerPhone) yPos += 1;
 
   if (meta1) doc.text(meta1, margin, yPos);
   if (meta2) doc.text(meta2, pageWidth - margin, yPos, { align: 'right' });
@@ -329,11 +367,35 @@ function renderLineItems(
     doc.setTextColor(30, 30, 50);
     doc.text(headerLine, margin + 2, yPos);
 
-    // Use saved per-line pricing when available; fall back to calc for legacy
-    const override = Number(li?.clientPpp);
-    const useLineOverride = Number.isFinite(override) && override > 0 && qty > 0;
-    const avgPpp = useLineOverride ? override : (li._ppp != null ? li._ppp : (r ? r.ppp : 0));
-    const lineTotal = useLineOverride ? override * qty : (li._lineTotal != null ? li._lineTotal : avgPpp * qty);
+    // Read per-line pricing straight from the line item — never recompute
+    // here. Both sides were stamped at save time:
+    //   shop form:    li._ppp / li._lineTotal       (broker-side)
+    //   client form:  li._client_ppp / li._client_lineTotal
+    // Legacy line items (saved before client_* stamping existed) fall back
+    // to live calc as a last resort so older quotes still render.
+    let avgPpp;
+    let lineTotal;
+    if (isBroker && isClientMode) {
+      if (li._client_ppp != null) {
+        avgPpp = li._client_ppp;
+        lineTotal = li._client_lineTotal != null ? li._client_lineTotal : avgPpp * qty;
+      } else {
+        // Legacy fallback: clientPpp override → STANDARD live calc.
+        const override = Number(li?.clientPpp);
+        const useOverride = Number.isFinite(override) && override > 0 && qty > 0;
+        avgPpp = useOverride ? override : (r ? r.ppp : 0);
+        lineTotal = avgPpp * qty;
+      }
+    } else if (li._ppp != null) {
+      avgPpp = li._ppp;
+      lineTotal = li._lineTotal != null ? li._lineTotal : avgPpp * qty;
+    } else {
+      // Legacy non-broker fallback (no stamping).
+      const override = Number(li?.clientPpp);
+      const useOverride = !isBroker && Number.isFinite(override) && override > 0 && qty > 0;
+      avgPpp = useOverride ? override : (r ? r.ppp : 0);
+      lineTotal = avgPpp * qty;
+    }
 
     if (r || lineTotal > 0) {
       doc.setFontSize(9);
@@ -600,12 +662,30 @@ export async function exportQuoteToPDF(
   // Admin (non-broker) quote = always STANDARD_MARKUP
   const hasBroker = isBrokerQuote(quote);
   const pdfMarkup = hasBroker && !isClientMode ? BROKER_MARKUP : STANDARD_MARKUP;
-  // Numbers-match: saved totals win regardless of broker / admin
-  // markup. The PDF is a contract artifact — it must match what
-  // the customer was sent. effectiveQuoteTotals tests ET1–ET8.
-  const totals = effectiveQuoteTotals(quote, pdfMarkup);
+  // A saved quote is a snapshot. Both broker-side AND client-side totals
+  // are stamped at save time (BrokerQuoteEditor.runSave) and we read them
+  // straight through here — no live recomputation, no pricing-config
+  // divergence between broker and shop or between viewers.
+  //
+  //   - Shop form (broker→shop):    quote.subtotal / quote.total
+  //   - Client form (broker→client): quote.client_subtotal / quote.client_total
+  //   - Non-broker:                  quote.subtotal / quote.total
+  //
+  // For broker client mode we swap the saved client-* fields into the
+  // standard subtotal/tax/total fields so effectiveQuoteTotals reads them
+  // through its existing saved-totals path.
+  const effectiveTaxRate = getEffectiveTaxRate(quote, isClientMode);
+  const quoteForTotals = (hasBroker && isClientMode)
+    ? {
+        ...quote,
+        tax_rate: effectiveTaxRate,
+        subtotal: quote.client_subtotal,
+        tax:      quote.client_tax,
+        total:    quote.client_total,
+      }
+    : quote;
+  const totals = effectiveQuoteTotals(quoteForTotals, pdfMarkup);
   const scale = 1;
-  const effectiveTaxRate = getEffectiveTaxRate(quote);
 
   // Shop Order Form: broker is the "customer" for the shop (they pay the shop).
   // The end client shows as a reference line underneath.
@@ -619,8 +699,16 @@ export async function exportQuoteToPDF(
       quote.broker_email ||
       quote.broker_id ||
       '—';
+    // Subtitle packs the broker contact name (when company is also set, so
+    // it's not redundant with the big-bold line) plus a Reference: line for
+    // the end client. Either part may be empty; joined with " · " when both
+    // are present.
+    const brokerContactName = quote.broker_company && quote.broker_name
+      ? quote.broker_name
+      : '';
     const clientName = customerCompany || quote.customer_name;
-    displayContact = clientName ? `Reference: ${clientName}` : '';
+    const refLine = clientName ? `Reference: ${clientName}` : '';
+    displayContact = [brokerContactName, refLine].filter(Boolean).join(' · ');
   } else {
     displayCompany = customerCompany || quote.customer_name || '—';
     displayContact = customerCompany && quote.customer_name ? quote.customer_name : '';
@@ -634,10 +722,15 @@ export async function exportQuoteToPDF(
     ? null
     : (quote.due_date ? `In-hands: ${fmtDate(quote.due_date)}` : null);
 
-  // In shop mode, header email = broker's (they're the "customer" to the shop)
+  // In shop mode, header email/phone = broker's (they're the "customer" to
+  // the shop), so the shop sees full broker contact info just like any
+  // other client would see in a normal quote.
   const headerEmail = (hasBroker && !isClientMode)
     ? (quote.broker_email || quote.broker_id || '')
     : (customerEmail || quote.customer_email || '');
+  const headerPhone = (hasBroker && !isClientMode)
+    ? (quote.broker_phone || '')
+    : (customerPhone || quote.customer_phone || '');
 
   let yPos = await addHeader(
     doc,
@@ -650,7 +743,7 @@ export async function exportQuoteToPDF(
     shopName,
     logoUrl,
     headerEmail,
-    customerPhone || ''
+    headerPhone
   );
 
   const quoteDiscType = quote.discount_type || 'percent';

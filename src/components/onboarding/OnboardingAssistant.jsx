@@ -17,15 +17,24 @@ import { MessageCircle, X, Send, Loader2, Sparkles } from "lucide-react";
 const STORAGE_KEY_PREFIX = "inktracker-onboarding-assistant:";
 const MAX_HISTORY = 30; // keep client + server caps aligned
 
-const SUGGESTED_QUESTIONS = [
+const SHOP_SUGGESTED_QUESTIONS = [
   "What should I set up first?",
   "How do I connect Stripe so customers can pay?",
   "How do I configure my pricing?",
   "How do I send my first quote?",
 ];
 
+const BROKER_SUGGESTED_QUESTIONS = [
+  "How does broker pricing work?",
+  "How do I send a quote to a client?",
+  "Where do I see my profit on a job?",
+  "How do I charge sales tax to my client?",
+];
+
 export default function OnboardingAssistant({ user }) {
   const storageKey = user?.id ? `${STORAGE_KEY_PREFIX}${user.id}` : null;
+  const isBroker = user?.role === "broker";
+  const SUGGESTED_QUESTIONS = isBroker ? BROKER_SUGGESTED_QUESTIONS : SHOP_SUGGESTED_QUESTIONS;
 
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);

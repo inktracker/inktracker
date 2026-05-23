@@ -1191,12 +1191,29 @@ function SupplierKeysSection({ user }) {
       // form would otherwise null saved keys). Use Disconnect to clear.
       const supplierSecrets = {};
       if (ssEditing) {
-        if (ssAccount.trim()) supplierSecrets.ss_account_number = ssAccount.trim();
-        if (ssKey.trim()) supplierSecrets.ss_api_key = ssKey.trim();
+        const acct = ssAccount.trim();
+        const key = ssKey.trim();
+        // S&S account numbers are numeric only. Browsers will sometimes
+        // autofill the user's email into the Account # input because it
+        // sits next to a password field — without this guard that string
+        // would silently overwrite a working set of credentials on save.
+        if (acct && !/^\d+$/.test(acct)) {
+          notify.error("S&S Account Number must be digits only. Saved credentials were not touched.");
+          setSaving(false);
+          return;
+        }
+        if (acct) supplierSecrets.ss_account_number = acct;
+        if (key) supplierSecrets.ss_api_key = key;
       }
       if (acEditing) {
+        const email = acEmail.trim();
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          notify.error("AS Colour email looks invalid. Saved credentials were not touched.");
+          setSaving(false);
+          return;
+        }
         if (acSubKey.trim()) supplierSecrets.ac_subscription_key = acSubKey.trim();
-        if (acEmail.trim()) supplierSecrets.ac_email = acEmail.trim();
+        if (email) supplierSecrets.ac_email = email;
         if (acPassword.trim() && acPassword !== "********") {
           supplierSecrets.ac_password = acPassword.trim();
         }

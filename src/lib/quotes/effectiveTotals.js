@@ -45,9 +45,24 @@ export function effectiveQuoteTotals(quote, markup = undefined) {
   const live = calcQuoteTotals(quote || {}, markup);
 
   if (quote && Number.isFinite(quote.total) && quote.total > 0) {
+    // Override `subtotal` (without rush) too — not just `sub` (with rush).
+    // The PDF reads `totals.subtotal ?? totals.sub` for its "Subtotal:"
+    // line, and if we leave `subtotal` from the live calc, broker quotes
+    // viewed by a shop with a different pricing config will render the
+    // shop's live-computed broker price (e.g. $14.02) instead of what
+    // the broker actually quoted (e.g. $12.62). Saved totals are the
+    // contract — read them straight through.
+    //
+    // Note: editors today save `quote.subtotal` as sub-WITH-rush (sum of
+    // line totals plus rushTotal). Locking `subtotal` and `sub` to the
+    // same saved value here is fine for the no-rush case (subtotal === sub)
+    // and matches the legacy display path for rush>0 (Subtotal line
+    // includes rush, separate Rush Fee line shown alongside).
+    const savedSubtotal = Number.isFinite(quote.subtotal) ? quote.subtotal : null;
     return {
       ...live,
-      sub:   Number.isFinite(quote.subtotal) ? quote.subtotal : live.sub,
+      subtotal: savedSubtotal != null ? savedSubtotal : live.subtotal,
+      sub:   savedSubtotal != null ? savedSubtotal : live.sub,
       tax:   quote.tax != null ? quote.tax : live.tax,
       total: quote.total,
       source: "saved",

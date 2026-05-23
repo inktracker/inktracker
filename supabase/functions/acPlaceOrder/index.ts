@@ -35,7 +35,7 @@ import {
   buildOrderRequestBody,
 } from "../_shared/acOrderLogic.js";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
+import { loadShopProfileForUser, loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 
 Deno.serve(async (req) => {
@@ -58,17 +58,23 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
     }
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const profile = await loadProfileWithSecrets(admin, { auth_id: user.id });
 
-    // Role gate — defense in depth on top of credsForOrderPlacement.
-    // Even if an employee/broker/user somehow has AC creds on their
-    // profile, ordering blanks isn't their job. Pinned by tests.
-    if (!canPlaceOrder(profile)) {
+    // Role gate must run against the SIGNED-IN user's profile, not the shop
+    // owner's — otherwise a broker resolved to their assigned shop would
+    // inherit the shop owner's "shop" role and bypass the gate (privilege
+    // escalation). Brokers/employees can't place supplier orders.
+    const callerProfile = await loadProfileWithSecrets(admin, { auth_id: user.id });
+    if (!canPlaceOrder(callerProfile)) {
       return Response.json(
         { error: "Your account role can't place supplier orders. Ask your shop owner or manager." },
         { status: 403, headers: CORS },
       );
     }
+
+    // Now that we've confirmed the caller is a shop owner/admin/manager, load
+    // the shop profile — for non-brokers this is just the caller's profile,
+    // but routing through the helper keeps the code path uniform.
+    const { profile } = await loadShopProfileForUser(admin, user.id);
 
     // Subscription gate — order placement costs real money downstream.
     const blocked = requireActiveSubscription(profile);

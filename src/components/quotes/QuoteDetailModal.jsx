@@ -30,6 +30,51 @@ function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
 }
 
+// For broker quotes the SHOP's "customer" is the broker (they pay the
+// shop); the end client is a reference. For non-broker quotes the
+// customer is just the customer. Mirrors the PDF Shop Form logic.
+function getShopFacingCustomer(quote, fallbackCustomer) {
+  if (isBrokerQuote(quote)) {
+    return (
+      quote?.broker_company ||
+      quote?.broker_name ||
+      quote?.broker_email ||
+      quote?.broker_id ||
+      "—"
+    );
+  }
+  return getDisplayName(fallbackCustomer || quote?.customer_name) || "—";
+}
+
+function getShopFacingReference(quote, fallbackCustomer) {
+  if (!isBrokerQuote(quote)) return "";
+  // getDisplayName returns the literal "Unknown" when the customer record
+  // is empty/missing — which is the common case here, since the shop's
+  // own customers list doesn't include the broker's end clients. Treat
+  // "Unknown" as no-data and fall through to the broker-quote fields
+  // that DO carry the end client name.
+  const fromCustomer = fallbackCustomer ? getDisplayName(fallbackCustomer) : "";
+  const usableFromCustomer = fromCustomer && fromCustomer !== "Unknown" ? fromCustomer : "";
+  const clientName =
+    usableFromCustomer ||
+    quote?.customer_name ||
+    quote?.broker_client_name;
+  return clientName ? `Reference: ${clientName}` : "";
+}
+
+// Some suppliers (AS Colour) stuff the full marketing description into the
+// title field. Trim to the first sentence + 80-char cap so quote views
+// don't render a paragraph where a product name should be. Mirrors
+// trimToShortTitle in BrokerPricePanel and trimToShortGarmentTitle in
+// pdfExport.
+function trimToShortTitle(text) {
+  if (!text) return "";
+  const firstSentence = String(text).split(/(?<=\.)\s+/)[0] || text;
+  const trimmed = firstSentence.replace(/\.$/, "").trim();
+  if (trimmed.length > 80) return trimmed.slice(0, 77).trimEnd() + "…";
+  return trimmed;
+}
+
 function getQuoteTotalsForDisplay(q) {
   return calcQuoteTotals(q || {}, isBrokerQuote(q) ? BROKER_MARKUP : undefined);
 }
@@ -38,7 +83,11 @@ function getLinePrice(li, quote) {
   const markup = isBrokerQuote(quote) ? BROKER_MARKUP : STANDARD_MARKUP;
   const qty = getQty(li);
 
-  // Use saved pricing if available (stamped at save time)
+  // Use saved pricing when stamped — true for both broker and non-broker
+  // quotes now that BrokerQuoteEditor.runSave stamps _ppp with BROKER_MARKUP.
+  // Recomputing live here would use the SHOP user's pricing config, which
+  // can diverge from the broker's pricing config and give a different
+  // broker price than what the broker quoted.
   if (li._ppp != null && li._lineTotal != null) {
     return { ppp: li._ppp, lineTotal: li._lineTotal, rushFee: li._rushFee || 0, qty, baseSubtotal: li._lineTotal, garment: 0, imprint: 0, gCost: 0, printCost: 0, extraCost: 0, tier: getTier(qty) };
   }
@@ -184,9 +233,10 @@ function getPreferredGarmentDescription(li) {
 function getGarmentHeader(li) {
   const number = getPreferredGarmentNumber(li);
   const storedName = cleanText(li?.productName || "");
-  const description = (storedName && !looksLikeCode(storedName))
+  const rawDescription = (storedName && !looksLikeCode(storedName))
     ? storedName
     : getPreferredGarmentDescription(li);
+  const description = trimToShortTitle(rawDescription);
   return description ? `${number} - ${description}` : number;
 }
 
@@ -350,7 +400,11 @@ export default function QuoteDetailModal({
       .catch(() => {});
   }, []);
 
-  // Use saved totals when available; fall back to recalculation for legacy quotes
+  // Use saved totals when available; fall back to live recalc for legacy
+  // quotes that pre-date the line-item stamping. Saved totals are the
+  // single source of truth — both broker quotes (BROKER_MARKUP, stamped by
+  // BrokerQuoteEditor.runSave) and non-broker quotes use this path so the
+  // shop's view stays in lockstep with what the broker / shop quoted.
   const totals = useMemo(() => {
     if (quote?.total != null && quote?.subtotal != null) {
       return {
@@ -388,7 +442,7 @@ export default function QuoteDetailModal({
                 {quote.quote_id}
               </div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
-                {getDisplayName(customer || quote.customer_name)}
+                {getShopFacingCustomer(quote, customer)}
               </h2>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 {quote.date && (
@@ -427,10 +481,17 @@ export default function QuoteDetailModal({
                   Customer
                 </div>
                 <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                  {getDisplayName(customer || quote.customer_name) || "—"}
+                  {getShopFacingCustomer(quote, customer)}
                 </div>
+                {isBrokerQuote(quote) && getShopFacingReference(quote, customer) && (
+                  <div className="text-sm text-slate-500">
+                    {getShopFacingReference(quote, customer)}
+                  </div>
+                )}
                 <div className="text-sm text-slate-500">
-                  {quote.customer_email || "—"}
+                  {isBrokerQuote(quote)
+                    ? (quote.broker_email || quote.broker_id || "—")
+                    : (quote.customer_email || "—")}
                 </div>
               </div>
 
@@ -799,22 +860,6 @@ export default function QuoteDetailModal({
             >
               Preview PDF
             </button>
-            <button
-              onClick={() =>
-                exportQuoteToPDF(
-                  quote,
-                  shopName,
-                  logoUrl,
-                  customer?.company || "",
-                  quote.customer_email || customer?.email || "",
-                  quote.customer_phone || customer?.phone || ""
-                )
-              }
-              className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
-            >
-              Download PDF
-            </button>
-
             {STATUS_ACTIONABLE.includes(quote.status) && (
               <>
                 <button

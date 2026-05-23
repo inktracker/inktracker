@@ -736,12 +736,19 @@ describe("buildQBInvoicePayload", () => {
     expect(payload.lines[0].amount).toBeGreaterThan(0);
   });
 
-  it("broker quotes always recalculate (ignore saved values)", () => {
+  it("broker quotes USE saved per-line values (quote-snapshot invariant)", () => {
+    // Updated 2026-06: BrokerQuoteEditor now stamps _ppp / _lineTotal
+    // with BROKER_MARKUP at save time, so reading those values here is
+    // correct AND avoids the per-viewer pricing-config divergence that
+    // produced the broker $12.62 vs shop $14.02 bug. The QB invoice's
+    // numbers must match what the broker quoted; a live recompute in
+    // the shop's session can drift from that. See memory:
+    // project_quote_immutability.md
     const li = makeLineItem({ _ppp: 15.50, _lineTotal: 697.50 });
-    const q = makeQuote({ line_items: [li] });
+    const q = makeQuote({ broker_id: "b@example.com", line_items: [li] });
     const payload = buildQBInvoicePayload(q, BROKER_MARKUP);
-    // Broker should NOT use saved 15.50 — should recalculate with broker markup
-    expect(payload.lines[0].unitPrice).not.toBeCloseTo(15.50, 2);
+    expect(payload.lines[0].unitPrice).toBeCloseTo(15.50, 4);
+    expect(payload.lines[0].amount).toBeCloseTo(697.50, 2);
   });
 
   it("skips zero-qty lines", () => {

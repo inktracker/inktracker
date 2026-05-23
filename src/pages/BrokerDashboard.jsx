@@ -40,8 +40,8 @@ import {
 import BrokerQuoteEditor from "../components/broker/BrokerQuoteEditor";
 import BrokerClientList from "../components/broker/BrokerClientList";
 import BrokerProfile from "../components/broker/BrokerProfile";
+import ShopActionFeed from "../components/broker/ShopActionFeed";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
-import BrokerDocuments from "../components/broker/BrokerDocuments";
 import BrokerPerformanceSelf from "../components/broker/BrokerPerformanceSelf";
 import BrokerLayout from "../components/broker/BrokerLayout";
 import BrokerInvoicesTab from "../components/broker/BrokerInvoicesTab";
@@ -90,25 +90,56 @@ function QuoteStatusBadge({ status }) {
 }
 
 function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdate, shop, user }) {
-  const brokerTotals = calcQuoteTotals(quote, BROKER_MARKUP);
-  // Prefer saved totals for client-facing price so broker sees same number as client
-  const liveClient = calcQuoteTotals(quote, STANDARD_MARKUP);
-  const clientTotals = (Number.isFinite(quote.total) && quote.total > 0)
-    ? { ...liveClient, sub: quote.subtotal || liveClient.sub, tax: quote.tax ?? liveClient.tax, total: quote.total }
-    : liveClient;
-  const normalizedStatus = normalizeStatus(quote.status);
+  // Both broker-side and client-side totals are read straight from the
+  // saved quote. The broker editor stamps both at save time
+  // (BrokerQuoteEditor.runSave). No recomputation — saved is the contract.
+  // Legacy quotes saved before client_* columns existed fall back to live
+  // calc so older rows still display sensibly.
+  const brokerTotals = (Number.isFinite(quote.total) && Number.isFinite(quote.subtotal))
+    ? {
+        sub:       Number(quote.subtotal),
+        afterDisc: Number(quote.total) - Number(quote.tax || 0),
+        tax:       Number(quote.tax || 0),
+        total:     Number(quote.total),
+        deposit:   (Number(quote.total)) * ((parseFloat(quote.deposit_pct) || 0) / 100),
+      }
+    : calcQuoteTotals(quote, BROKER_MARKUP);
+  const clientTotals = (Number.isFinite(quote.client_total) && Number.isFinite(quote.client_subtotal))
+    ? {
+        sub:       Number(quote.client_subtotal),
+        afterDisc: Number(quote.client_total) - Number(quote.client_tax || 0),
+        tax:       Number(quote.client_tax || 0),
+        total:     Number(quote.client_total),
+        deposit:   (Number(quote.client_total)) * ((parseFloat(quote.deposit_pct) || 0) / 100),
+      }
+    : calcQuoteTotals(quote, STANDARD_MARKUP);
+  const normalizedStatus = normalizeQuoteStatus(quote.status);
   const canSubmit = normalizedStatus === "Draft";
   const canDelete = normalizedStatus === "Draft";
   const [actionLoading, setActionLoading] = useState(null);
   const [showPaymentPicker, setShowPaymentPicker] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
 
+  // New workflow (2026-05-22): broker → client FIRST, then client → shop.
+  // The shop only sees quotes that the broker's client has already approved.
+  // This stops the shop from reviewing quotes that never materialize.
+  //
+  //   Draft           → Send to Client       (sets status: "Sent to Client")
+  //   Sent to Client  → Mark Client Approved → "Client Approved"
+  //   Client Approved → Submit to Shop       (sets status: "Pending")
+  //   Pending         → (shop reviews)       → "Shop Approved"
+  //   Shop Approved   → (shop produces)      → "Converted to Order"
   const shopApproved = quote.status === "Shop Approved" || quote.status === "Approved" || quote.status === "Approved and Paid";
   const sentToClient = quote.status === "Sent to Client";
-  const canSendToClient = shopApproved || sentToClient;
-  const canMarkClientApproved = shopApproved || sentToClient;
+  const clientApproved = quote.status === "Client Approved";
+  // Send to Client is available from Draft (initial send) and Sent to Client
+  // (resend). Once the client has approved, no point in resending.
+  const canSendToClient = normalizedStatus === "Draft" || sentToClient;
+  const canMarkClientApproved = sentToClient;
   const canMarkClientResponse = sentToClient;
-  const canRecordPayment = quote.status === "Client Approved";
+  // Submit to Shop is gated on client approval.
+  const canSubmitToShop = clientApproved;
+  const canRecordPayment = clientApproved || shopApproved;
   const isConverted = quote.status === "Converted to Order";
 
   async function doUpdate(fields, loadingKey) {
@@ -134,26 +165,16 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
   }
 
   async function handleMarkClientApproved() {
+    // Under the new client-first workflow, the shop doesn't get notified
+    // here — the quote is still broker-only at this point (status:
+    // "Client Approved"). Notification fires when the broker explicitly
+    // hits "Submit to Shop" (see handleSubmitDraft).
     await doUpdate({
       status: "Client Approved",
       client_status: "Approved",
       client_approved_at: new Date().toISOString(),
       payment_status: quote.payment_status || "Unpaid",
     }, "clientApproved");
-    // Notify shop to convert quote to order
-    if (quote.shop_owner) {
-      await base44.entities.BrokerNotification.create({
-        shop_owner: quote.shop_owner,
-        broker_id: quote.broker_id || quote.broker_email || "",
-        broker_name: quote.broker_name || "",
-        broker_company: quote.broker_company || "",
-        action: "client_approved_quote",
-        item_label: `${quote.quote_id} — ${quote.customer_name}`,
-        item_id: quote.id,
-        item_entity: "Quote",
-        read: false,
-      });
-    }
   }
 
   async function handleMarkClientRejected() {
@@ -222,34 +243,35 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
             )}
           </div>
 
-          {/* Status banners */}
+          {/* Status banners — wording reflects the client-first workflow:
+              quotes must be approved by the client BEFORE they go to the shop. */}
           {normalizedStatus === "Draft" && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700">
-              <span className="font-semibold">Saved as draft.</span> Submit to shop when ready.
-            </div>
-          )}
-          {normalizedStatus === "Pending" && (
-            <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800">
-              <span className="font-semibold">Awaiting shop review.</span> You'll see this updated once the shop responds.
-            </div>
-          )}
-          {canMarkClientApproved && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-800">
-              <span className="font-semibold">Shop approved!</span> Mark as client approved when your client confirms.
+              <span className="font-semibold">Saved as draft.</span> Send to your client to get approval before submitting to the shop.
             </div>
           )}
           {quote.status === "Sent to Client" && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-sm text-blue-800">
-              <span className="font-semibold">Sent to client.</span> Waiting for client response.
+              <span className="font-semibold">Sent to client.</span> Waiting for their response — once they approve, you can submit to the shop.
               {quote.sent_to_client_at && <div className="text-xs mt-1 text-blue-600">Sent: {new Date(quote.sent_to_client_at).toLocaleDateString()}</div>}
             </div>
           )}
           {quote.status === "Client Approved" && (
             <div className="bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 text-sm text-teal-800">
-              <span className="font-semibold">Client approved!</span> The shop will be notified to convert this into a production order.
+              <span className="font-semibold">Client approved!</span> Submit to your shop to start production.
               {quote.payment_status && quote.payment_status !== "Unpaid" && (
                 <div className="text-xs mt-1 font-semibold text-teal-600">Payment: {quote.payment_status}</div>
               )}
+            </div>
+          )}
+          {normalizedStatus === "Pending" && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800">
+              <span className="font-semibold">Awaiting shop review.</span> The client has approved and the shop is now reviewing the order.
+            </div>
+          )}
+          {shopApproved && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-sm text-emerald-800">
+              <span className="font-semibold">Shop approved!</span> Production is starting.
             </div>
           )}
           {quote.status === "Client Rejected" && (
@@ -410,7 +432,9 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
             </button>
           </div>
 
-          {/* Draft actions */}
+          {/* Draft → Edit + Send to Client. The broker MUST get the client
+              to approve before submitting to the shop, so "Submit to Shop"
+              is intentionally not available from Draft. */}
           {canSubmit && (
             <div className="flex gap-2">
               <button
@@ -420,22 +444,33 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
                 <Pencil className="w-4 h-4" /> Edit Draft
               </button>
               <button
-                onClick={() => onSubmit(quote)}
+                onClick={handleSendToClient}
                 className="flex-1 inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl transition"
               >
-                <Send className="w-4 h-4" /> Submit to Shop
+                <Send className="w-4 h-4" /> Send to Client
               </button>
             </div>
           )}
 
-          {/* Send to Client */}
-          {canSendToClient && (
+          {/* Resend to Client (post-send / pre-client-response) */}
+          {sentToClient && (
             <button
               onClick={handleSendToClient}
+              className="w-full inline-flex items-center justify-center gap-2 border border-indigo-200 text-indigo-600 text-sm font-semibold py-2.5 rounded-xl hover:bg-indigo-50 transition"
+            >
+              <Send className="w-4 h-4" /> Resend to Client
+            </button>
+          )}
+
+          {/* Client Approved → Submit to Shop. This is the trigger that
+              moves the quote into the shop's queue. Only here do we set
+              status="Pending" so the shop sees it. */}
+          {canSubmitToShop && (
+            <button
+              onClick={() => onSubmit(quote)}
               className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl transition"
             >
-              <Send className="w-4 h-4" />
-              {sentToClient ? "Resend to Client" : "Send to Client"}
+              <Send className="w-4 h-4" /> Submit to Shop
             </button>
           )}
 
@@ -533,6 +568,15 @@ export default function BrokerDashboard() {
   const [previewOrder, setPreviewOrder] = useState(null);
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [filterStatus, setFilterStatus] = useState("All");
+  // Unread message count addressed to this broker. Used by BrokerLayout to
+  // show a badge on the Messages tab so the broker notices new messages
+  // without sitting on that tab.
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  // Unread BrokerNotification rows where this broker is the recipient
+  // (shop-side actions: approved / declined / order completed). Mirror of
+  // the shop's brokerUnreadCount — gives the broker a heads-up when their
+  // shop has acted on something.
+  const [shopActionUnreadCount, setShopActionUnreadCount] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -555,14 +599,26 @@ export default function BrokerDashboard() {
         }
 
         const assignedShop = (u.assigned_shops || [])[0] || null;
-        const [allQuotes, myClients, myOrders, shopResults] = await Promise.all([
+        const [allQuotes, myClients, myOrders, shopResults, shopProfileResults] = await Promise.all([
           base44.entities.Quote.filter({ broker_id: u.email }, "-created_date", 200),
           base44.entities.Customer.filter({ shop_owner: `broker:${u.email}` }),
           base44.entities.Order.filter({ broker_id: u.email }, "-created_date", 100),
           assignedShop ? base44.entities.Shop.filter({ owner_email: assignedShop }) : Promise.resolve([]),
+          // shop_name and logo_url live on the shop owner's profile (not on
+          // the shops table). Fetch them so the broker's shop-form PDF can
+          // show the host shop's branding.
+          assignedShop ? base44.entities.User.filter({ email: assignedShop }) : Promise.resolve([]),
         ]);
         const shopRecord = (shopResults || [])[0] || null;
-        setShop(shopRecord);
+        const shopProfile = (shopProfileResults || [])[0] || null;
+        // Merge profile fields onto the shop object so existing consumers
+        // (BrokerQuoteEditor's shop?.shop_name etc.) just work.
+        setShop(shopRecord || shopProfile ? {
+          ...(shopRecord || {}),
+          shop_name: shopProfile?.shop_name || shopRecord?.shop_name || "",
+          logo_url: shopProfile?.logo_url || shopRecord?.logo_url || "",
+          owner_email: assignedShop || shopRecord?.owner_email || "",
+        } : null);
         if (shopRecord?.addons?.length) {
           setShopAddons(shopRecord.addons.map(a => ({ ...a, rate: parseFloat(a.rate) || 0 })));
         }
@@ -581,6 +637,24 @@ export default function BrokerDashboard() {
         setQuotes(myQuotes);
         setClients([...(myClients || [])].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })));
         setOrders(myOrders || []);
+
+        // Unread message count for the Messages-tab badge. Anything where
+        // the broker is the recipient and the row hasn't been marked read
+        // yet. BrokerMessaging flips read=true on view, so this naturally
+        // drops as the broker reads their inbox.
+        try {
+          const unread = await base44.entities.Message.filter({
+            to_email: u.email,
+            read: false,
+          }, "-created_date", 200);
+          setUnreadMessageCount((unread || []).length);
+        } catch {
+          // Best-effort — bad count just hides the badge, doesn't break.
+        }
+
+        // Shop-action notification count comes from the ShopActionFeed
+        // component (it owns the list + realtime subscription and reports
+        // unread count up via onUnreadCountChange).
       } catch (e) {
         console.error(e);
       } finally {
@@ -590,6 +664,37 @@ export default function BrokerDashboard() {
 
     load();
   }, []);
+
+  // (Shop-action notification realtime is owned by ShopActionFeed — it
+  // pushes the unread count back via onUnreadCountChange.)
+
+  // Realtime: keep the unread-message badge fresh as new messages arrive
+  // and as the broker (or the open thread) flips read=true on view.
+  useEffect(() => {
+    if (!user?.email) return;
+    const unsub = base44.entities.Message.subscribe((payload) => {
+      const row = payload?.new || payload?.old;
+      if (!row) return;
+      // Only care about messages addressed to this broker.
+      const isMine = row.to_email === user.email;
+      if (!isMine) return;
+      if (payload.eventType === "INSERT") {
+        if (!row.read) setUnreadMessageCount((n) => n + 1);
+      } else if (payload.eventType === "UPDATE") {
+        // Catch the unread → read flip from BrokerMessaging's read-on-view.
+        const wasUnread = payload.old?.read === false;
+        const isNowRead = row.read === true;
+        if (wasUnread && isNowRead) {
+          setUnreadMessageCount((n) => Math.max(0, n - 1));
+        }
+      } else if (payload.eventType === "DELETE") {
+        if (payload.old?.read === false) {
+          setUnreadMessageCount((n) => Math.max(0, n - 1));
+        }
+      }
+    });
+    return unsub;
+  }, [user?.email]);
 
   useEffect(() => {
     if (!user) return;
@@ -707,9 +812,35 @@ export default function BrokerDashboard() {
     setSelectedQuote(saved);
     setShowEditor(false);
     setEditorQuote(null);
+
+    // Shop notification fires HERE — on the broker's "Submit to Shop"
+    // action (post-client-approval), not on Mark-Client-Approved. Before
+    // this point the shop has nothing to do; only now does a quote land
+    // in their Pending queue. Best-effort: don't block the broker on a
+    // failed notification insert.
+    if (isSubmittingToShop && assignedShop) {
+      try {
+        await base44.entities.BrokerNotification.create({
+          shop_owner: assignedShop,
+          broker_id: user.email,
+          broker_name: user.display_name || user.full_name || "",
+          broker_company: user.company_name || "",
+          action: "client_approved_quote",
+          item_label: `${saved.quote_id} — ${saved.customer_name || "Unknown client"}`,
+          item_id: saved.id,
+          item_entity: "Quote",
+          read: false,
+        });
+      } catch (err) {
+        console.warn("Couldn't create shop notification (non-fatal):", err);
+      }
+    }
   }
 
   async function handleSubmitDraft(quote) {
+    // Called from the broker drawer's "Submit to Shop" button — gated on
+    // Client Approved status. Sets quote.status = "Pending" and the shop
+    // becomes able to see the quote in their queue.
     await handleSaveQuote({
       ...quote,
       status: "Pending",
@@ -776,18 +907,41 @@ export default function BrokerDashboard() {
 
   const statusCounts = { All: quotes.length };
   ["Draft", "Pending", "Shop Approved", "Sent to Client", "Client Approved", "Declined", "Converted to Order"].forEach((s) => {
-    statusCounts[s] = quotes.filter((q) => (normalizeStatus(q.status) === s || q.status === s)).length;
+    statusCounts[s] = quotes.filter((q) => (normalizeQuoteStatus(q.status) === s || q.status === s)).length;
   });
 
   const filteredQuotes =
     filterStatus === "All"
       ? quotes
-      : quotes.filter((q) => normalizeStatus(q.status) === filterStatus || q.status === filterStatus);
+      : quotes.filter((q) => normalizeQuoteStatus(q.status) === filterStatus || q.status === filterStatus);
 
-  const actionableQuotes = quotes.filter((q) => ACTION_STATUSES.includes(normalizeStatus(q.status)));
+  const actionableQuotes = quotes.filter((q) => ACTION_STATUSES.includes(normalizeQuoteStatus(q.status)));
+
+  // "Needs you" badge on Overview — quotes where SOMETHING JUST HAPPENED
+  // and the broker has a next move:
+  //   - Client Approved → broker should submit to shop
+  //   - Shop Approved   → shop OK'd production, broker should notify client
+  // Draft / Sent to Client / Pending intentionally excluded (no broker
+  // action available, just waiting).
+  const needsAttentionCount = quotes.filter((q) => {
+    const s = normalizeQuoteStatus(q.status);
+    return s === "Client Approved" || s === "Shop Approved";
+  }).length;
 
   return (
-    <BrokerLayout user={user} tab={tab} setTab={setTab}>
+    <BrokerLayout
+      user={user}
+      tab={tab}
+      setTab={setTab}
+      badges={{
+        // Overview badge sums two signals so one indicator covers
+        // everything the broker should react to:
+        //   - quotes in their action queue (Client Approved / Shop Approved)
+        //   - shop-side notifications (approved / declined / order done)
+        quotes: needsAttentionCount + shopActionUnreadCount,
+        messages: unreadMessageCount,
+      }}
+    >
       <div>
         {tab === "quotes" && (
           <div className="space-y-6">
@@ -807,7 +961,15 @@ export default function BrokerDashboard() {
               </button>
             </div>
 
-            <BrokerPerformanceSelf orders={orders} brokerEmail={user.email} />
+            {/* Shop-action feed — surfaces approvals, declines, and order
+                completions that happened on the broker's quotes. Renders
+                nothing when empty (own-empty-state, see component). Owns
+                its own unread count and reports it up so the Overview
+                badge stays accurate without duplicate queries. */}
+            <ShopActionFeed
+              brokerId={user.email}
+              onUnreadCountChange={setShopActionUnreadCount}
+            />
 
             <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
               <div className="flex items-start justify-between gap-4">
@@ -850,7 +1012,7 @@ export default function BrokerDashboard() {
                 <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden divide-y divide-slate-100">
                   {filteredQuotes
                     .map((q) => {
-                      const normalized = normalizeStatus(q.status);
+                      const normalized = normalizeQuoteStatus(q.status);
 
                       return (
                         <button
@@ -900,6 +1062,8 @@ export default function BrokerDashboard() {
                 </div>
               )}
             </div>
+
+            <BrokerPerformanceSelf orders={orders} brokerEmail={user.email} />
           </div>
         )}
 
@@ -1093,22 +1257,11 @@ export default function BrokerDashboard() {
           </div>
         )}
 
-        {tab === "documents" && user && (
-          <div className="space-y-5">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">Documents</h1>
-              <p className="text-slate-500 text-sm mt-0.5">
-                Upload and share files with your assigned shop.
-              </p>
-            </div>
-
-            <BrokerDocuments
-              brokerEmail={user.email}
-              shopOwner={(user.assigned_shops || [])[0] || ""}
-              isAdmin={false}
-            />
-          </div>
-        )}
+        {/* Paperwork + Job Files were removed — both flows now happen inside
+            Messages as attachments. If a broker has bookmarked one of those
+            tab URLs, the layout still parses the tab param but no handler
+            renders, so the page goes blank gracefully (Messages is the
+            sibling that replaced them). */}
 
         {tab === "performance" && user && (
           <BrokerPerformance orders={orders} />
