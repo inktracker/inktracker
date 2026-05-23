@@ -44,7 +44,6 @@ import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerDocuments from "../components/broker/BrokerDocuments";
 import BrokerPerformanceSelf from "../components/broker/BrokerPerformanceSelf";
 import BrokerLayout from "../components/broker/BrokerLayout";
-import BrokerFilesTab from "../components/broker/BrokerFilesTab";
 import BrokerInvoicesTab from "../components/broker/BrokerInvoicesTab";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { exportQuoteToPDF } from "../components/shared/pdfExport";
@@ -1109,10 +1108,6 @@ export default function BrokerDashboard() {
               isAdmin={false}
             />
           </div>
-        )}
-
-        {tab === "jobfiles" && user && (
-          <BrokerFilesTab brokerEmail={user.email} orders={orders} />
         )}
 
         {tab === "performance" && user && (
