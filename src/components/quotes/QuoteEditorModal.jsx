@@ -138,8 +138,17 @@ export default function QuoteEditorModal({
     lineItems: q.line_items,
     override: Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : undefined,
     isReorder: !!q.is_reorder,
+    skippedFeeIds: q.setup_skipped_fee_ids || [],
     config: setupFeesConfig,
   });
+  // All shop-configured fees, including the skipped ones, so the editor
+  // can render every fee as a toggleable row (skipped ones show with
+  // strike-through, not hidden).
+  const allFeeItems = (setupFeesConfig.items || []);
+  const skippedSet = new Set(q.setup_skipped_fee_ids || []);
+  const autoScreenCount = setupFees.enabled ? (
+    Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : setupFees.screens
+  ) : 0;
   // Tax base = (subtotal − discount) + setup. Discounts don't apply to
   // setup (it's pass-through cost), but setup is part of the taxable sale.
   const taxableBaseWithSetup = totals.afterDisc + setupFees.total;
@@ -400,11 +409,12 @@ export default function QuoteEditorModal({
 
       // Setup fees — snapshotted onto the quote at save time so all
       // downstream viewers (customer, broker, invoice, QB sync) read
-      // the same number without depending on per-viewer pricing config.
+      // the same numbers without depending on per-viewer pricing config.
       const setupSnap = calcSetupFees({
         lineItems: stampedItems,
         override: Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : undefined,
         isReorder: !!q.is_reorder,
+        skippedFeeIds: q.setup_skipped_fee_ids || [],
         config: getShopPricingConfig()?.setupFees || {},
       });
       const setupTotalSnap = Math.round(setupSnap.total * 100) / 100;
@@ -422,6 +432,11 @@ export default function QuoteEditorModal({
         setup_total: setupTotalSnap,
         is_reorder: !!q.is_reorder,
         setup_screens_override: Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : null,
+        setup_skipped_fee_ids: q.setup_skipped_fee_ids || [],
+        // Save the per-fee breakdown so customer views can render the
+        // itemized lines without re-resolving against shop config that
+        // might have drifted since the quote was sent.
+        setup_fee_breakdown: { screens: setupSnap.screens, items: setupSnap.items },
         tax,
         total,
       });
@@ -912,50 +927,89 @@ export default function QuoteEditorModal({
                 </div>
               </div>
 
-              {/* Setup fees — per-screen multiplier, editable here so the
-                  user can pair screens or correct edge cases right next to
-                  the total. Only renders when the shop has enabled setup
+              {/* Setup fees — per-screen multipliers (one row per shop-
+                  configured fee, each toggleable on this quote). Editable
+                  screen count + reorder toggle live here so the user can
+                  pair screens or correct edge cases right next to the
+                  total. Only renders when the shop has enabled setup
                   fees in Account → Pricing. */}
-              {setupFees.enabled && (
-                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 space-y-1.5">
+              {setupFees.enabled && allFeeItems.length > 0 && (
+                <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-500 font-semibold">Setup</span>
                     <span className="font-semibold text-slate-700">{fmtMoney(setupFees.total)}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : setupFees.screens}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setQ({ ...q, setup_screens_override: v === "" ? null : Math.max(0, parseInt(v, 10) || 0) });
-                      }}
-                      title="Number of screens to bill — defaults to auto-counted color count. Lower it to pair screens across designs."
-                      className="w-14 text-right border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                    />
-                    <span>screens × {fmtMoney(setupFees.rate)}</span>
-                    {Number.isInteger(q.setup_screens_override) && q.setup_screens_override !== calcSetupFees({ lineItems: q.line_items, config: setupFeesConfig, isReorder: q.is_reorder }).screens && (
-                      <button
-                        type="button"
-                        onClick={() => setQ({ ...q, setup_screens_override: null })}
-                        className="text-[10px] text-indigo-600 font-semibold hover:text-indigo-800"
-                        title="Reset to auto-counted screen count"
-                      >
-                        reset
-                      </button>
-                    )}
+
+                  {/* Per-fee breakdown — checkbox + label + math + line total. */}
+                  <div className="space-y-1">
+                    {allFeeItems.map((fee) => {
+                      const skipped = skippedSet.has(fee.id);
+                      const rate = q.is_reorder ? Number(fee.reorderRate) || 0 : Number(fee.rate) || 0;
+                      const lineTotal = skipped ? 0 : autoScreenCount * rate;
+                      return (
+                        <label
+                          key={fee.id}
+                          className={`flex items-center gap-2 text-xs cursor-pointer select-none ${skipped ? "text-slate-300" : "text-slate-500"}`}
+                          title={skipped ? "Click to include this fee" : "Click to skip this fee on this quote"}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!skipped}
+                            onChange={(e) => {
+                              const ids = new Set(q.setup_skipped_fee_ids || []);
+                              if (e.target.checked) ids.delete(fee.id); else ids.add(fee.id);
+                              setQ({ ...q, setup_skipped_fee_ids: Array.from(ids) });
+                            }}
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600"
+                          />
+                          <span className={`flex-1 ${skipped ? "line-through" : ""}`}>
+                            {fee.label} <span className="text-slate-400">({autoScreenCount} × {fmtMoney(rate)})</span>
+                          </span>
+                          <span className={`font-semibold tabular-nums ${skipped ? "" : "text-slate-700"}`}>
+                            {fmtMoney(lineTotal)}
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
-                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={!!q.is_reorder}
-                      onChange={(e) => setQ({ ...q, is_reorder: e.target.checked })}
-                      className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600"
-                    />
-                    Reorder — use reduced per-screen rate (screens already exist)
-                  </label>
+
+                  {/* Screen count + reorder toggle — apply to all enabled fees. */}
+                  <div className="border-t border-slate-100 dark:border-slate-700 pt-2 space-y-1.5">
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : setupFees.screens}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setQ({ ...q, setup_screens_override: v === "" ? null : Math.max(0, parseInt(v, 10) || 0) });
+                        }}
+                        title="Number of screens to bill — defaults to auto-counted color count. Lower it to pair screens across designs."
+                        className="w-14 text-right border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                      />
+                      <span>screens (applies to all fees)</span>
+                      {Number.isInteger(q.setup_screens_override) && (
+                        <button
+                          type="button"
+                          onClick={() => setQ({ ...q, setup_screens_override: null })}
+                          className="text-[10px] text-indigo-600 font-semibold hover:text-indigo-800"
+                          title="Reset to auto-counted screen count"
+                        >
+                          reset
+                        </button>
+                      )}
+                    </div>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={!!q.is_reorder}
+                        onChange={(e) => setQ({ ...q, is_reorder: e.target.checked })}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600"
+                      />
+                      Reorder — use reduced per-screen rates (screens already exist)
+                    </label>
+                  </div>
                 </div>
               )}
 

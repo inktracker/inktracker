@@ -1245,42 +1245,64 @@ describe("calcSetupScreenCount", () => {
 
 describe("calcSetupFees", () => {
   const lineItems = [{ imprints: [{ technique: "Screen Print", title: "Front", colors: 4 }] }];
+  const items = [
+    { id: "screens",  label: "Screens",     rate: 25, reorderRate: 5 },
+    { id: "film",     label: "Film",        rate: 10, reorderRate: 0 },
+  ];
 
   it("returns disabled shape when config.enabled is falsy", () => {
-    const r = calcSetupFees({ lineItems, config: { enabled: false, perScreenRate: 25 } });
-    expect(r).toEqual({ enabled: false, screens: 0, rate: 0, total: 0 });
+    const r = calcSetupFees({ lineItems, config: { enabled: false, items } });
+    expect(r).toEqual({ enabled: false, screens: 0, items: [], total: 0 });
   });
 
-  it("auto-computes screens × per-screen rate", () => {
-    const r = calcSetupFees({ lineItems, config: { enabled: true, perScreenRate: 25 } });
-    expect(r).toEqual({ enabled: true, screens: 4, rate: 25, total: 100 });
+  it("sums each fee item: screens × rate", () => {
+    const r = calcSetupFees({ lineItems, config: { enabled: true, items } });
+    expect(r.screens).toBe(4);
+    expect(r.items).toEqual([
+      { id: "screens", label: "Screens", rate: 25, total: 100 },
+      { id: "film",    label: "Film",    rate: 10, total: 40 },
+    ]);
+    expect(r.total).toBe(140);
   });
 
-  it("honors an integer override (pairing screens, manual correction)", () => {
+  it("honors integer override across all fees", () => {
     const r = calcSetupFees({
       lineItems,
       override: 2,
-      config: { enabled: true, perScreenRate: 25 },
+      config: { enabled: true, items },
     });
     expect(r.screens).toBe(2);
-    expect(r.total).toBe(50);
+    expect(r.total).toBe(2 * 25 + 2 * 10); // 70
   });
 
-  it("uses the reorder rate when isReorder=true (skips re-burning screens)", () => {
+  it("uses each fee's reorderRate when isReorder=true", () => {
     const r = calcSetupFees({
       lineItems,
       isReorder: true,
-      config: { enabled: true, perScreenRate: 25, reorderPerScreenRate: 5 },
+      config: { enabled: true, items },
     });
-    expect(r.rate).toBe(5);
+    expect(r.items).toEqual([
+      { id: "screens", label: "Screens", rate: 5, total: 20 },
+      { id: "film",    label: "Film",    rate: 0, total: 0 },
+    ]);
     expect(r.total).toBe(20);
   });
 
-  it("treats a 0 override as 'free' (zero screens) — explicit zero is a valid choice", () => {
+  it("skippedFeeIds removes specific fees from the bill", () => {
+    const r = calcSetupFees({
+      lineItems,
+      skippedFeeIds: ["film"],
+      config: { enabled: true, items },
+    });
+    expect(r.items.map((i) => i.id)).toEqual(["screens"]);
+    expect(r.total).toBe(100);
+  });
+
+  it("treats a 0 override as zero screens (explicit zero is valid)", () => {
     const r = calcSetupFees({
       lineItems,
       override: 0,
-      config: { enabled: true, perScreenRate: 25 },
+      config: { enabled: true, items },
     });
     expect(r.screens).toBe(0);
     expect(r.total).toBe(0);
@@ -1290,14 +1312,25 @@ describe("calcSetupFees", () => {
     const r = calcSetupFees({
       lineItems,
       override: "abc",
-      config: { enabled: true, perScreenRate: 25 },
+      config: { enabled: true, items },
     });
-    expect(r.screens).toBe(4); // auto
+    expect(r.screens).toBe(4);
   });
 
-  it("missing rate (undefined) yields 0 total without throwing", () => {
+  it("legacy single-rate config still works (perScreenRate without items array)", () => {
+    const r = calcSetupFees({
+      lineItems,
+      config: { enabled: true, perScreenRate: 25, reorderPerScreenRate: 5 },
+    });
+    expect(r.items).toEqual([
+      { id: "screens", label: "Screens", rate: 25, total: 100 },
+    ]);
+    expect(r.total).toBe(100);
+  });
+
+  it("no items and no legacy rate yields zero total without throwing", () => {
     const r = calcSetupFees({ lineItems, config: { enabled: true } });
-    expect(r.rate).toBe(0);
+    expect(r.items).toEqual([]);
     expect(r.total).toBe(0);
   });
 });
