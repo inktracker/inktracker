@@ -640,7 +640,20 @@ export default function Dashboard() {
                   {quotes.slice(0, 6).map(q => (
                     <button
                       key={q.id}
-                      onClick={() => navigate(`/Quotes?id=${q.id}`)}
+                      onClick={() => {
+                        // "Converted to Order" quotes have an empty editor —
+                        // the actual job lives on the order. Route the user
+                        // to that order if we can find it; otherwise fall
+                        // back to the quote (rare — would mean stale data).
+                        if (q.status === "Converted to Order" && q.converted_order_id) {
+                          const target = orders.find(o => o.order_id === q.converted_order_id);
+                          if (target) {
+                            navigate(`/Orders?id=${target.id}`);
+                            return;
+                          }
+                        }
+                        navigate(`/Quotes?id=${q.id}`);
+                      }}
                       className="w-full text-left px-5 py-3 flex items-center justify-between hover:bg-slate-50 dark:bg-slate-800 transition"
                     >
                       <div>
