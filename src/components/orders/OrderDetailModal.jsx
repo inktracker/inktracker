@@ -181,7 +181,6 @@ export default function OrderDetailModal({
   const [stepNotes, setStepNotes] = useState(order.step_notes || {});
   const [savingCost, setSavingCost] = useState(false);
   const [costSaved, setCostSaved] = useState(false);
-  const [floorMode, setFloorMode] = useState(false);
   const [liveOrder, setLiveOrder] = useState(order);
   // Existing invoice for this order/quote, if any. Drives whether the
   // action bar shows "Create Invoice" vs "Preview Invoice" + the
@@ -1098,8 +1097,17 @@ export default function OrderDetailModal({
               {/* Floor Mode Panel — stage-aware per-size tracking.
                   Order Goods: ordered/received cycle (goods_progress).
                   Printing:    per-imprint print tracking (print_progress).
-                  Other stages: read-only quantity (no leaked dots). */}
-              {floorMode && (() => {
+                  Other stages: read-only quantity (no leaked dots).
+                  Wrapped in a CollapsibleSection that starts collapsed
+                  so non-floor users don't have the panel taking up
+                  half the modal by default. */}
+              <CollapsibleSection
+                title={`Floor Mode — ${liveOrder.status || "Pre-Press"}`}
+                icon={<Hammer className="w-4 h-4 text-slate-500" />}
+                storageKey={`order-floor-mode-collapsed-${order.id}`}
+                defaultCollapsed
+              >
+              {(() => {
                 const step = liveOrder.status || "Pre-Press";
                 const tasks = STEP_TASKS[step] || [];
                 const checklist = liveOrder.checklist || {};
@@ -1276,6 +1284,7 @@ export default function OrderDetailModal({
                   </div>
                 );
               })()}
+              </CollapsibleSection>
 
               {/* Shipping */}
               <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -1676,12 +1685,6 @@ export default function OrderDetailModal({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
             >
               <Eye className="w-3.5 h-3.5" /> Preview
-            </button>
-            <button
-              onClick={() => setFloorMode(f => !f)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition ${floorMode ? "bg-indigo-600 text-white" : "text-slate-600 border border-slate-200 dark:border-slate-700 hover:bg-slate-100"}`}
-            >
-              <Hammer className="w-3.5 h-3.5" /> {floorMode ? "Exit Floor Mode" : "Floor Mode"}
             </button>
             {/* The Create PO button only makes sense while the order is
                 actively at the Order Goods stage — once blanks are in,
