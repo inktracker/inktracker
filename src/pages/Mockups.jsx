@@ -22,30 +22,35 @@ export default function Mockups() {
   const backRef = useRef(null);
   const fileRef = useRef(null);
 
-  // Active orders the user can link a proof to. Loaded once on mount;
-  // proof selection auto-fills customer/quantity/dates from the picked
-  // order. Limited to non-completed jobs — production rarely needs a
-  // proof on a finished order.
+  // Active orders + quotes the user can link a proof to. Loaded once on
+  // mount; selection auto-fills customer/quantity/dates from the picked
+  // record. Orders limited to non-completed jobs; quotes exclude
+  // terminal states (Converted to Order is already in `orders`,
+  // Declined/Voided don't need proofs).
   const [orders, setOrders] = useState([]);
-  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [quotes, setQuotes] = useState([]);
+  // Composite selection key: "order:<uuid>" or "quote:<uuid>". Empty
+  // string = standalone (no link).
+  const [selectedTargetKey, setSelectedTargetKey] = useState("");
   const [linking, setLinking] = useState(false);
 
   useEffect(() => {
-    async function loadOrders() {
+    async function loadTargets() {
       try {
         const me = await base44.auth.me();
         if (!me?.email) return;
-        const list = await base44.entities.Order.filter(
-          { shop_owner: me.email },
-          "-created_date",
-          200,
-        );
-        setOrders((list || []).filter(o => o.status !== "Completed"));
+        const [ordersRes, quotesRes] = await Promise.all([
+          base44.entities.Order.filter({ shop_owner: me.email }, "-created_date", 200),
+          base44.entities.Quote.filter({ shop_owner: me.email }, "-created_date", 200),
+        ]);
+        setOrders((ordersRes || []).filter(o => o.status !== "Completed"));
+        const TERMINAL_QUOTE_STATUSES = new Set(["Converted to Order", "Declined", "Voided"]);
+        setQuotes((quotesRes || []).filter(q => !TERMINAL_QUOTE_STATUSES.has(q.status)));
       } catch {
         // Best-effort — the rest of the page still works without the picker.
       }
     }
-    loadOrders();
+    loadTargets();
   }, []);
 
   // Proof detail fields
@@ -72,25 +77,41 @@ export default function Mockups() {
     setProofDetails(prev => ({ ...prev, ...patch }));
   }
 
-  // Picking an order: hydrate the proof fields from the order so the user
-  // doesn't have to retype customer/quote#/quantity/due-date. Doesn't
-  // touch design fields (print sizes, colors, notes) — those belong to
-  // the proof itself, not the underlying job.
-  function pickOrderToLink(orderId) {
-    setSelectedOrderId(orderId);
-    if (!orderId) return;
-    const o = orders.find(x => x.id === orderId);
-    if (!o) return;
-    const qty = (o.line_items || []).reduce((sum, li) => {
+  // Resolve a composite "type:id" key back to { type, record } from
+  // whichever list (orders/quotes) holds it. Returns null if not found.
+  function resolveTarget(key) {
+    if (!key) return null;
+    const [type, id] = String(key).split(":");
+    if (type === "order") {
+      const record = orders.find(o => o.id === id);
+      return record ? { type, record } : null;
+    }
+    if (type === "quote") {
+      const record = quotes.find(q => q.id === id);
+      return record ? { type, record } : null;
+    }
+    return null;
+  }
+
+  // Picking a target: hydrate the proof fields from the order or quote
+  // so the user doesn't have to retype customer/quote#/quantity/due-date.
+  // Doesn't touch design fields (print sizes, colors, notes) — those
+  // belong to the proof itself, not the underlying job.
+  function pickTargetToLink(key) {
+    setSelectedTargetKey(key);
+    const target = resolveTarget(key);
+    if (!target) return;
+    const r = target.record;
+    const qty = (r.line_items || []).reduce((sum, li) => {
       const sizes = li.sizes || {};
       return sum + Object.values(sizes).reduce((s, v) => s + (parseInt(v, 10) || 0), 0);
     }, 0);
     setProofDetails(prev => ({
       ...prev,
-      customerName: o.customer_name || prev.customerName,
-      quoteNumber:  o.quote_id || o.order_id || prev.quoteNumber,
-      dueDate:      o.due_date || prev.dueDate,
-      dateOrdered:  o.date || prev.dateOrdered,
+      customerName: r.customer_name || prev.customerName,
+      quoteNumber:  r.quote_id || r.order_id || prev.quoteNumber,
+      dueDate:      r.due_date || prev.dueDate,
+      dateOrdered:  r.date || prev.dateOrdered,
       quantity:     qty ? String(qty) : prev.quantity,
     }));
   }
@@ -443,9 +464,10 @@ export default function Mockups() {
   // order's selected_artwork so it shows up in the order's artwork panel
   // during production. Doesn't replace previous proofs on the same order
   // — additional proofs stack (the shop can manually remove old ones).
-  async function saveAndLinkProofToOrder() {
-    if (!selectedOrderId) {
-      notify.error("Pick an order to link the proof to first.");
+  async function saveAndLinkProof() {
+    const target = resolveTarget(selectedTargetKey);
+    if (!target) {
+      notify.error("Pick an order or quote to link the proof to first.");
       return;
     }
     setLinking(true);
@@ -454,10 +476,9 @@ export default function Mockups() {
       if (!result?.blob) throw new Error("Couldn't generate the proof PDF.");
       const file = new File([result.blob], result.filename, { type: "application/pdf" });
       const { path, file_url } = await uploadFile(file);
-      const target = orders.find(o => o.id === selectedOrderId);
-      if (!target) throw new Error("Order not found.");
+      const r = target.record;
       const next = [
-        ...(target.selected_artwork || []),
+        ...(r.selected_artwork || []),
         {
           id: `proof-${Date.now()}`,
           name: result.filename,
@@ -473,9 +494,15 @@ export default function Mockups() {
           uploaded_at: new Date().toISOString(),
         },
       ];
-      const updated = await base44.entities.Order.update(target.id, { selected_artwork: next });
-      setOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
-      notify.success(`Proof linked to ${target.order_id || "order"}.`);
+      const Entity = target.type === "order" ? base44.entities.Order : base44.entities.Quote;
+      const updated = await Entity.update(r.id, { selected_artwork: next });
+      if (target.type === "order") {
+        setOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
+      } else {
+        setQuotes(prev => prev.map(q => (q.id === updated.id ? updated : q)));
+      }
+      const label = r.order_id || r.quote_id || target.type;
+      notify.success(`Proof linked to ${label}.`);
     } catch (err) {
       notify.error("Couldn't link the proof", err);
     } finally {
@@ -566,24 +593,40 @@ export default function Mockups() {
           <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-3">
             <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Proof Details</div>
 
-            {/* Link to existing order — auto-populates the fields below and
-                enables "Save & Link" so the proof shows up on the order */}
+            {/* Link to existing order or quote — auto-populates the
+                fields below and enables "Save & Link" so the proof
+                shows up on the linked record. Orders and quotes are
+                grouped so the user can pick either. */}
             <div>
               <label className="text-[10px] text-slate-400 block mb-0.5 flex items-center gap-1">
-                <Link2 className="w-3 h-3" /> Link to Order
+                <Link2 className="w-3 h-3" /> Link to Order or Quote
               </label>
               <select
-                value={selectedOrderId}
-                onChange={e => pickOrderToLink(e.target.value)}
+                value={selectedTargetKey}
+                onChange={e => pickTargetToLink(e.target.value)}
                 className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
               >
-                <option value="">— Standalone proof (no order) —</option>
-                {orders.map(o => (
-                  <option key={o.id} value={o.id}>
-                    {(o.order_id || o.quote_id || o.id.slice(0, 8))} · {o.customer_name || "Unknown"}
-                    {o.status ? ` · ${o.status}` : ""}
-                  </option>
-                ))}
+                <option value="">— Standalone proof (no link) —</option>
+                {orders.length > 0 && (
+                  <optgroup label="Orders">
+                    {orders.map(o => (
+                      <option key={o.id} value={`order:${o.id}`}>
+                        {(o.order_id || o.quote_id || o.id.slice(0, 8))} · {o.customer_name || "Unknown"}
+                        {o.status ? ` · ${o.status}` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {quotes.length > 0 && (
+                  <optgroup label="Quotes">
+                    {quotes.map(q => (
+                      <option key={q.id} value={`quote:${q.id}`}>
+                        {(q.quote_id || q.id.slice(0, 8))} · {q.customer_name || "Unknown"}
+                        {q.status ? ` · ${q.status}` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -705,13 +748,13 @@ export default function Mockups() {
               <FileText className="w-4 h-4" /> {generatingProof && !linking ? "Generating..." : "Generate Art Proof PDF"}
             </button>
             <button
-              onClick={saveAndLinkProofToOrder}
-              disabled={!garmentImg || !selectedOrderId || generatingProof || linking}
-              title={!selectedOrderId ? "Pick an order above to enable linking" : "Generate proof PDF and attach it to the linked order"}
+              onClick={saveAndLinkProof}
+              disabled={!garmentImg || !selectedTargetKey || generatingProof || linking}
+              title={!selectedTargetKey ? "Pick an order or quote above to enable linking" : "Generate proof PDF and attach it to the linked record"}
               className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
-              {linking ? "Linking to order..." : "Save & Link to Order"}
+              {linking ? "Linking..." : "Save & Link"}
             </button>
           </div>
         </div>
