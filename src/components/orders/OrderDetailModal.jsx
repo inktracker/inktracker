@@ -1686,7 +1686,14 @@ export default function OrderDetailModal({
             >
               <Hammer className="w-3.5 h-3.5" /> {floorMode ? "Exit Floor Mode" : "Floor Mode"}
             </button>
-            {onOrderFromAC && <ACOrderButton order={order} sourcePO={sourcePO} onOrderFromAC={onOrderFromAC} disabled={saving} />}
+            {/* The Create PO button only makes sense while the order is
+                actively at the Order Goods stage — once blanks are in,
+                placing a new PO from the same order is noise. Limits
+                the footer to actions that are relevant to the current
+                stage. */}
+            {onOrderFromAC && liveOrder.status === "Order Goods" && (
+              <ACOrderButton order={order} sourcePO={sourcePO} onOrderFromAC={onOrderFromAC} disabled={saving} />
+            )}
             {onDelete && (
               <button
                 onClick={() => callAction(onDelete, order.id)}
@@ -1802,7 +1809,7 @@ function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled }) {
       title="Create a draft AS Colour PO from this order's line items"
       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition disabled:opacity-50"
     >
-      <Truck className="w-3.5 h-3.5" /> Order from AS Colour
+      <Truck className="w-3.5 h-3.5" /> Create PO
     </button>
   );
 }
