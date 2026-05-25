@@ -30,7 +30,7 @@ import {
 } from "../shared/pricing";
 import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
-import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2, ArrowLeft } from "lucide-react";
+import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2, ArrowLeft, ChevronDown } from "lucide-react";
 import { notify } from "@/lib/notify";
 
 // Per-stage default checklist. Folded the old "Finishing", "Quality
@@ -172,6 +172,23 @@ export default function OrderDetailModal({
   // overlay that renders the artwork inline (PDF/image) so the user
   // doesn't lose their place by bouncing to a new browser tab.
   const [previewArt, setPreviewArt] = useState(null);
+  // Floor Mode collapsed state — persisted per-order so each shop can
+  // remember whether they want the panel open by default. Defaults to
+  // collapsed so users browsing for costs/status aren't hit with a
+  // big panel they have to scroll past.
+  const floorStorageKey = `order-floor-mode-collapsed-${order.id}`;
+  const [floorCollapsed, setFloorCollapsed] = useState(() => {
+    try {
+      const stored = localStorage.getItem(floorStorageKey);
+      if (stored === "false") return false;
+      if (stored === "true")  return true;
+    } catch (_) { /* ignore */ }
+    return true;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(floorStorageKey, floorCollapsed ? "true" : "false"); }
+    catch (_) { /* ignore */ }
+  }, [floorStorageKey, floorCollapsed]);
   const [showJobCost, setShowJobCost] = useState(false);
   const [actualCost, setActualCost] = useState(order.actual_cost ?? "");
   const [laborHours, setLaborHours] = useState(order.actual_labor_hours ?? "");
@@ -1098,15 +1115,9 @@ export default function OrderDetailModal({
                   Order Goods: ordered/received cycle (goods_progress).
                   Printing:    per-imprint print tracking (print_progress).
                   Other stages: read-only quantity (no leaked dots).
-                  Wrapped in a CollapsibleSection that starts collapsed
-                  so non-floor users don't have the panel taking up
-                  half the modal by default. */}
-              <CollapsibleSection
-                title={`Floor Mode — ${liveOrder.status || "Pre-Press"}`}
-                icon={<Hammer className="w-4 h-4 text-slate-500" />}
-                storageKey={`order-floor-mode-collapsed-${order.id}`}
-                defaultCollapsed
-              >
+                  The indigo bar IS the collapsible header (clickable);
+                  panel body only renders when expanded. Per-order
+                  localStorage remembers the user's preference. */}
               {(() => {
                 const step = liveOrder.status || "Pre-Press";
                 const tasks = STEP_TASKS[step] || [];
@@ -1119,19 +1130,31 @@ export default function OrderDetailModal({
 
                 return (
                   <div className="border-2 border-indigo-400 rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 bg-indigo-600 text-white flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setFloorCollapsed(c => !c)}
+                      aria-expanded={!floorCollapsed}
+                      className="w-full px-4 py-3 bg-indigo-600 text-white flex items-center justify-between hover:bg-indigo-700 transition text-left"
+                    >
                       <div className="flex items-center gap-2">
                         <Hammer className="w-4 h-4" />
                         <span className="text-sm font-bold">Floor Mode — {step}</span>
                       </div>
-                      {step === "Order Goods" && goodsTotal > 0 && (
-                        <span className="text-xs font-semibold text-indigo-100">
-                          <span className="text-white">{goodsReceived}</span> received
-                          {goodsOrdered > 0 && <> · <span className="text-white">{goodsOrdered}</span> ordered</>}
-                          {" · "}{goodsTotal} total
-                        </span>
-                      )}
-                    </div>
+                      <div className="flex items-center gap-3">
+                        {step === "Order Goods" && goodsTotal > 0 && (
+                          <span className="text-xs font-semibold text-indigo-100">
+                            <span className="text-white">{goodsReceived}</span> received
+                            {goodsOrdered > 0 && <> · <span className="text-white">{goodsOrdered}</span> ordered</>}
+                            {" · "}{goodsTotal} total
+                          </span>
+                        )}
+                        <ChevronDown
+                          className={`w-4 h-4 text-indigo-100 transition-transform duration-200 ${floorCollapsed ? "-rotate-90" : "rotate-0"}`}
+                          aria-hidden="true"
+                        />
+                      </div>
+                    </button>
+                    {!floorCollapsed && (
                     <div className="p-4 space-y-4">
                       {/* Checklist — Order Goods has two auto-derived
                           tasks (Place blank order / Receive goods) so
@@ -1281,10 +1304,10 @@ export default function OrderDetailModal({
                         );
                       })}
                     </div>
+                    )}
                   </div>
                 );
               })()}
-              </CollapsibleSection>
 
               {/* Shipping */}
               <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
