@@ -1515,9 +1515,8 @@ function PricingConfigSection({ user }) {
     setupFees: {
       enabled: false,
       items: [
-        { id: "screens",    label: "Screens",     rate: 25, reorderRate: 5 },
-        { id: "film",       label: "Film",        rate: 10, reorderRate: 0 },
-        { id: "colorMatch", label: "Color Match", rate: 5,  reorderRate: 5 },
+        { id: "screens", label: "Screens", rate: 25, reorderRate: 5 },
+        { id: "film",    label: "Film",    rate: 10, reorderRate: 0 },
       ],
     },
     rushRate: 0.20,
