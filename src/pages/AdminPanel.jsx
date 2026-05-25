@@ -62,7 +62,10 @@ export default function AdminPanel() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (fnError) throw fnError;
+      // Edge function returns a JSON body with `error` on non-2xx; the
+      // Supabase JS client surfaces a generic "non-2xx" message in
+      // `fnError`, so prefer the server-supplied message if present.
+      if (fnError) throw new Error(data?.error || fnError.message || "Request failed");
       setUsers([...(data.users ?? [])].sort((a, b) => ((a.full_name || a.email) || "").localeCompare((b.full_name || b.email) || "", undefined, { sensitivity: 'base' })));
     } catch (err) {
       setError(err.message || "Failed to load users");
@@ -87,7 +90,10 @@ export default function AdminPanel() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (fnError) throw fnError;
+      // Edge function returns a JSON body with `error` on non-2xx; the
+      // Supabase JS client surfaces a generic "non-2xx" message in
+      // `fnError`, so prefer the server-supplied message if present.
+      if (fnError) throw new Error(data?.error || fnError.message || "Request failed");
       if (data?.error) throw new Error(data.error);
       setUsers(prev =>
         prev.map(u => {
@@ -120,7 +126,10 @@ export default function AdminPanel() {
         },
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (fnError) throw fnError;
+      // Edge function returns a JSON body with `error` on non-2xx; the
+      // Supabase JS client surfaces a generic "non-2xx" message in
+      // `fnError`, so prefer the server-supplied message if present.
+      if (fnError) throw new Error(data?.error || fnError.message || "Request failed");
       if (data?.error) throw new Error(data.error);
 
       setInviteSuccess(`Invite sent to ${inviteEmail.trim()}`);
@@ -148,7 +157,10 @@ export default function AdminPanel() {
         body: { action: "resendInvite", email },
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (fnError) throw fnError;
+      // Edge function returns a JSON body with `error` on non-2xx; the
+      // Supabase JS client surfaces a generic "non-2xx" message in
+      // `fnError`, so prefer the server-supplied message if present.
+      if (fnError) throw new Error(data?.error || fnError.message || "Request failed");
       if (data?.error) throw new Error(data.error);
       notify.success(`Invite re-sent to ${email}`);
     } catch (err) {
