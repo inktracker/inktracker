@@ -1663,6 +1663,10 @@ export default function OrderDetailModal({
               <Link2 className="w-3.5 h-3.5" />
               {copied === "status" ? "Copied!" : "Status Link"}
             </button>
+            {/* Preview opens the PDF in a new tab; the browser's
+                native viewer has its own Download button, so we don't
+                render a separate "Download PDF" pill here (matches
+                Quote + Invoice modals). */}
             <button
               onClick={async () => {
                 const url = await exportOrderToPDF(order, shopName, logoUrl, "blob");
@@ -1672,13 +1676,6 @@ export default function OrderDetailModal({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
             >
               <Eye className="w-3.5 h-3.5" /> Preview
-            </button>
-            <button
-              onClick={() => exportOrderToPDF(order, shopName, logoUrl)}
-              title="Download PDF"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
-            >
-              <Download className="w-3.5 h-3.5" /> PDF
             </button>
             <button
               onClick={() => setFloorMode(f => !f)}
