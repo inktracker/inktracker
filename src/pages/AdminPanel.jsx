@@ -8,6 +8,29 @@ import { Users, CheckCircle, Clock, Store, Trash2, RefreshCw, ShieldCheck, UserX
 import BrokerManager from "@/components/broker/BrokerManager";
 import { notify } from "@/lib/notify";
 
+// Supabase functions-js returns { data: null, error: FunctionsHttpError }
+// on non-2xx responses — error.message is the generic "non-2xx" string,
+// and the actual JSON body lives in error.context (a Response).
+// Pull the server's `error` field out of that body so users see the
+// real reason ("User already registered" / rate limit / etc.) instead
+// of the opaque platform message.
+async function extractFnErrorMessage(fnError) {
+  if (!fnError) return null;
+  const ctx = fnError.context;
+  if (ctx && typeof ctx.json === "function") {
+    try {
+      const body = await ctx.clone().json();
+      if (body?.error) return String(body.error);
+    } catch {
+      try {
+        const text = await ctx.clone().text();
+        if (text) return text;
+      } catch { /* ignore */ }
+    }
+  }
+  return fnError.message || "Request failed";
+}
+
 function roleBadge(role) {
   const map = {
     admin:    { label: "Owner",    cls: "bg-violet-100 text-violet-700" },
@@ -62,10 +85,7 @@ export default function AdminPanel() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      // Edge function returns a JSON body with `error` on non-2xx; the
-      // Supabase JS client surfaces a generic "non-2xx" message in
-      // `fnError`, so prefer the server-supplied message if present.
-      if (fnError) throw new Error(data?.error || fnError.message || "Request failed");
+      if (fnError) throw new Error(await extractFnErrorMessage(fnError));
       setUsers([...(data.users ?? [])].sort((a, b) => ((a.full_name || a.email) || "").localeCompare((b.full_name || b.email) || "", undefined, { sensitivity: 'base' })));
     } catch (err) {
       setError(err.message || "Failed to load users");
@@ -90,10 +110,7 @@ export default function AdminPanel() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      // Edge function returns a JSON body with `error` on non-2xx; the
-      // Supabase JS client surfaces a generic "non-2xx" message in
-      // `fnError`, so prefer the server-supplied message if present.
-      if (fnError) throw new Error(data?.error || fnError.message || "Request failed");
+      if (fnError) throw new Error(await extractFnErrorMessage(fnError));
       if (data?.error) throw new Error(data.error);
       setUsers(prev =>
         prev.map(u => {
@@ -126,10 +143,7 @@ export default function AdminPanel() {
         },
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Edge function returns a JSON body with `error` on non-2xx; the
-      // Supabase JS client surfaces a generic "non-2xx" message in
-      // `fnError`, so prefer the server-supplied message if present.
-      if (fnError) throw new Error(data?.error || fnError.message || "Request failed");
+      if (fnError) throw new Error(await extractFnErrorMessage(fnError));
       if (data?.error) throw new Error(data.error);
 
       setInviteSuccess(`Invite sent to ${inviteEmail.trim()}`);
@@ -157,10 +171,7 @@ export default function AdminPanel() {
         body: { action: "resendInvite", email },
         headers: { Authorization: `Bearer ${token}` },
       });
-      // Edge function returns a JSON body with `error` on non-2xx; the
-      // Supabase JS client surfaces a generic "non-2xx" message in
-      // `fnError`, so prefer the server-supplied message if present.
-      if (fnError) throw new Error(data?.error || fnError.message || "Request failed");
+      if (fnError) throw new Error(await extractFnErrorMessage(fnError));
       if (data?.error) throw new Error(data.error);
       notify.success(`Invite re-sent to ${email}`);
     } catch (err) {
