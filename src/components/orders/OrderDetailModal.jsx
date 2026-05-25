@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useMemo } from "react";
+import { signArtworkUrl } from "@/lib/uploadFile";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -1749,8 +1750,22 @@ export default function OrderDetailModal({
 // images render natively via <iframe>; anything else falls back to the
 // download link.
 function ArtworkPreviewOverlay({ art, onClose }) {
-  const url = art?.url || "";
+  const fallbackUrl = art?.url || art?.file_url || "";
   const name = art?.name || "Artwork";
+  // Prefer a freshly-signed URL when we can resolve a storage path.
+  // Falls back to whatever URL was stored on the artwork record (legacy
+  // public URLs continue to work; bucket is still public today, so the
+  // user-visible behavior doesn't change until the bucket flips private).
+  const [url, setUrl] = useState(fallbackUrl);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const signed = await signArtworkUrl(art?.path || fallbackUrl);
+      if (!cancelled && signed) setUrl(signed);
+    })();
+    return () => { cancelled = true; };
+  }, [art?.path, fallbackUrl]);
+
   const ext = String(name).split(".").pop()?.toLowerCase() ||
               (url.split("?")[0].split(".").pop() || "").toLowerCase();
   const isImage = /^(png|jpe?g|gif|webp|svg|bmp)$/i.test(ext);

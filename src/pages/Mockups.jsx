@@ -453,7 +453,7 @@ export default function Mockups() {
       const result = await generateProofPDF("blob");
       if (!result?.blob) throw new Error("Couldn't generate the proof PDF.");
       const file = new File([result.blob], result.filename, { type: "application/pdf" });
-      const { file_url } = await uploadFile(file);
+      const { path, file_url } = await uploadFile(file);
       const target = orders.find(o => o.id === selectedOrderId);
       if (!target) throw new Error("Order not found.");
       const next = [
@@ -461,6 +461,12 @@ export default function Mockups() {
         {
           id: `proof-${Date.now()}`,
           name: result.filename,
+          // Store BOTH the storage path (canonical, lets us re-sign on
+          // every view) and the legacy public URL (backward compat for
+          // anonymous/customer-facing reads while the bucket is still
+          // public). Once the bucket flips private, the path is the
+          // load-bearing field; file_url becomes stale.
+          path,
           url: file_url,
           file_url,
           type: "proof",
