@@ -1728,19 +1728,31 @@ export default function OrderDetailModal({
 function ArtworkPreviewOverlay({ art, onClose }) {
   const url = art?.url || "";
   const name = art?.name || "Artwork";
-  const ext = String(name).split(".").pop()?.toLowerCase() || "";
+  const ext = String(name).split(".").pop()?.toLowerCase() ||
+              (url.split("?")[0].split(".").pop() || "").toLowerCase();
   const isImage = /^(png|jpe?g|gif|webp|svg|bmp)$/i.test(ext);
-  // Default to iframe for PDFs and anything we don't explicitly recognize —
-  // most browsers will render PDFs inline, and an iframe is harmless for
-  // formats that just download (the body will be empty, the Download
-  // button below covers the fallback).
+  const isPdf   = ext === "pdf" || /\.pdf(\?|$)/i.test(url);
 
-  return (
+  // Append PDF viewer hints — fit page to width, hide the thumbnail
+  // sidebar + toolbar. Without these the browser's native viewer shows
+  // a left thumbnail rail and large gutters around an undersized page
+  // which made the overlay look broken.
+  const pdfSrc = isPdf
+    ? `${url}${url.includes("#") ? "&" : "#"}view=FitH&navpanes=0&toolbar=0&statusbar=0`
+    : url;
+
+  // Use a portal at document.body so the overlay isn't constrained by
+  // the order modal's containing block (its outer wrapper has
+  // `backdrop-blur-sm` → a CSS filter → which creates a new containing
+  // block and was confining `fixed inset-0` inside the modal instead of
+  // covering the full viewport).
+  return createPortal(
     <div
-      className="fixed inset-0 z-[70] bg-slate-900 flex flex-col"
+      className="fixed inset-0 z-[80] bg-slate-900 flex flex-col"
+      style={{ top: 0, left: 0, right: 0, bottom: 0 }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-800 text-white border-b border-slate-700">
+      <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-800 text-white border-b border-slate-700 shrink-0">
         <button
           type="button"
           onClick={onClose}
@@ -1757,9 +1769,16 @@ function ArtworkPreviewOverlay({ art, onClose }) {
           <Download className="w-4 h-4" /> Download
         </a>
       </div>
-      <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-auto">
+      <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-auto min-h-0">
         {isImage ? (
           <img src={url} alt={name} className="max-w-full max-h-full object-contain" />
+        ) : isPdf ? (
+          // <object> with <iframe> fallback renders PDFs more
+          // consistently across browsers than a bare iframe — Chrome
+          // honors the viewer fragment, Safari doesn't crop the page.
+          <object data={pdfSrc} type="application/pdf" className="w-full h-full bg-white">
+            <iframe src={pdfSrc} title={name} className="w-full h-full border-0 bg-white" />
+          </object>
         ) : (
           <iframe
             src={url}
@@ -1768,7 +1787,8 @@ function ArtworkPreviewOverlay({ art, onClose }) {
           />
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
