@@ -1,4 +1,7 @@
 import { supabase } from "@/api/supabaseClient";
+import { resolveArtworkPath } from "./artworkPath";
+
+export { resolveArtworkPath };
 
 const BUCKET = "artwork";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -47,22 +50,3 @@ export async function signArtworkUrl(pathOrUrl, expiresInSec = DEFAULT_SIGNED_TT
   }
 }
 
-// Extract the bucket-relative storage path from any form we've stored.
-// Handles three cases:
-//   1. bare path:           "1738282838-x1y2z3.pdf"
-//   2. public URL:          ".../storage/v1/object/public/artwork/<path>"
-//   3. existing signed URL: ".../storage/v1/object/sign/artwork/<path>?token=..."
-// Anything else returns null.
-export function resolveArtworkPath(input) {
-  if (!input) return null;
-  const s = String(input);
-  // Bare path — no scheme, no slashes that look like a URL
-  if (!/^https?:\/\//i.test(s)) return s;
-  // Match the bucket segment in both public and signed Supabase URLs.
-  const m = s.match(/\/storage\/v1\/object\/(?:public|sign)\/artwork\/([^?]+)/);
-  if (m && m[1]) {
-    try { return decodeURIComponent(m[1]); }
-    catch { return m[1]; }
-  }
-  return null;
-}

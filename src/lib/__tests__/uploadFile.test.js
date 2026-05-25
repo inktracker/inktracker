@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveArtworkPath } from "../uploadFile";
+import { resolveArtworkPath } from "../artworkPath";
 
 describe("resolveArtworkPath", () => {
   it("returns null for empty / falsy input", () => {
