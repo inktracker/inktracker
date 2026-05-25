@@ -1733,12 +1733,12 @@ function ArtworkPreviewOverlay({ art, onClose }) {
   const isImage = /^(png|jpe?g|gif|webp|svg|bmp)$/i.test(ext);
   const isPdf   = ext === "pdf" || /\.pdf(\?|$)/i.test(url);
 
-  // Append PDF viewer hints — fit page to width, hide the thumbnail
-  // sidebar + toolbar. Without these the browser's native viewer shows
-  // a left thumbnail rail and large gutters around an undersized page
-  // which made the overlay look broken.
+  // PDF viewer hints — fit the whole page in view + hide the thumbnail
+  // sidebar, but KEEP the toolbar so the user has native zoom in/out
+  // controls. `view=Fit` fits both dimensions; `zoom=page-fit` is the
+  // Chrome equivalent that older builds respect.
   const pdfSrc = isPdf
-    ? `${url}${url.includes("#") ? "&" : "#"}view=FitH&navpanes=0&toolbar=0&statusbar=0`
+    ? `${url}${url.includes("#") ? "&" : "#"}view=Fit&zoom=page-fit&navpanes=0`
     : url;
 
   // Use a portal at document.body so the overlay isn't constrained by
