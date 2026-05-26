@@ -4,8 +4,9 @@ import { fmtMoney } from "../components/shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { QB_REPORTS, qbReportUrl } from "@/lib/reports/qbReportLink";
-import { ShoppingBag, DollarSign, Receipt, Layers, Activity, FileText, ExternalLink } from "lucide-react";
+import { ShoppingBag, DollarSign, Receipt, Layers, Activity, FileText, ExternalLink, RefreshCw } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
 
 const COMPLETED_STATUSES = new Set(["Completed", "Shipped", "Delivered", "Picked Up"]);
 const CANCELLED_STATUSES = new Set(["Cancelled", "Canceled", "Voided"]);
@@ -39,10 +40,40 @@ export default function Performance() {
   const [loading, setLoading] = useState(true);
   const [qbConnected, setQbConnected] = useState(false);
   const [qbMetrics, setQbMetrics] = useState(null);
+  const [qbRefreshing, setQbRefreshing] = useState(false);
   const [dateRange, setDateRange] = useState("thisMonth");
   const [loadError, setLoadError] = useState("");
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
+
+  async function fetchQbMetrics({ force = false } = {}) {
+    try {
+      const me = await base44.auth.me();
+      const shopOwner = me?.email;
+      if (!force && shopOwner) {
+        const cached = readMetricsCache(shopOwner);
+        if (cached) { setQbMetrics(cached); return; }
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data: m, error: mErr } = await base44.functions.invoke("qbSync", {
+        action: "getDashboardMetrics",
+        accessToken: session?.access_token,
+      });
+      if (!mErr && m && typeof m === "object") {
+        setQbMetrics(m);
+        if (shopOwner) writeMetricsCache(shopOwner, m);
+      }
+    } catch {
+      // Fall back to local — chip will show local fields if QB fetch fails.
+    }
+  }
+
+  async function handleRefreshQb() {
+    setQbRefreshing(true);
+    clearMetricsCache();
+    try { await fetchQbMetrics({ force: true }); }
+    finally { setQbRefreshing(false); }
+  }
 
   useEffect(() => {
     async function load() {
@@ -50,7 +81,8 @@ export default function Performance() {
 
       // Background QB connection check + metrics fetch. When connected
       // we pull Revenue + AR from QB and overlay them on the cards.
-      // Same two-step pattern as Dashboard.jsx.
+      // Same two-step pattern as Dashboard.jsx (cache-aware via
+      // fetchQbMetrics → readMetricsCache).
       (async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -62,12 +94,7 @@ export default function Performance() {
           const connected = !invErr && !!data?.connected;
           setQbConnected(connected);
           if (!connected) return;
-
-          const { data: m, error: mErr } = await base44.functions.invoke("qbSync", {
-            action: "getDashboardMetrics",
-            accessToken: token,
-          });
-          if (!mErr && m && typeof m === "object") setQbMetrics(m);
+          await fetchQbMetrics();
         } catch {
           setQbConnected(false);
           setQbMetrics(null);
@@ -242,9 +269,21 @@ export default function Performance() {
               </p>
             )}
             {qbReady && (
-              <p className="text-xs text-slate-400 -mt-4">
-                Total Sales + Outstanding Invoices sourced from QuickBooks. Avg. Order Value remains a local estimate. As of {new Date(qbMetrics.asOf || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
-              </p>
+              <div className="-mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                <span>
+                  Total Sales + Outstanding Invoices sourced from QuickBooks. Avg. Order Value remains a local estimate. As of {new Date(qbMetrics.asOf || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
+                </span>
+                <button
+                  type="button"
+                  onClick={handleRefreshQb}
+                  disabled={qbRefreshing}
+                  className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+                  title="Refresh now — bypasses the 5-minute cache and re-queries QuickBooks"
+                >
+                  <RefreshCw className={`w-3 h-3 ${qbRefreshing ? "animate-spin" : ""}`} />
+                  {qbRefreshing ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
             )}
           </>
         );
