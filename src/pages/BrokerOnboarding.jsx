@@ -37,15 +37,20 @@ export default function BrokerOnboarding() {
         return;
       }
 
-      // If this broker already finished onboarding (name set + auth user
-      // has a password configured), send them straight to the dashboard.
-      // Revisiting /BrokerOnboarding from an old link shouldn't dump them
-      // into an empty form pretending it's fresh.
+      // If this broker already finished onboarding (name set + password
+      // we set ourselves via handleSave), send them straight to the
+      // dashboard. Revisiting /BrokerOnboarding from an old link
+      // shouldn't dump them into an empty form pretending it's fresh.
+      //
+      // Why user_metadata.has_password and not email_verified: Supabase
+      // flips email_verified=true the instant the magic link is used,
+      // which would bounce every freshly-invited broker straight past
+      // this page (their full_name is pre-filled from the invite). We
+      // set has_password ourselves in handleSave so this check only
+      // fires for brokers who actually completed onboarding.
       try {
         const { data: { user: authUser } } = await supabase.auth.getUser();
-        const hasPassword = !!authUser?.user_metadata?.has_password
-          || authUser?.identities?.some((i) => i.provider === "email" && i.identity_data?.email_verified);
-        if (currentUser.full_name?.trim() && hasPassword) {
+        if (currentUser.full_name?.trim() && authUser?.user_metadata?.has_password) {
           window.location.assign("/BrokerDashboard");
           return;
         }
@@ -107,8 +112,13 @@ export default function BrokerOnboarding() {
 
       // Set the password BEFORE the profile update. If this fails (rare —
       // expired session, weak password), we want to know before partially
-      // updating the profile.
-      const { error: pwErr } = await supabase.auth.updateUser({ password });
+      // updating the profile. The has_password metadata flag is what the
+      // load-time redirect check above reads — without it, returning
+      // brokers would land on this page again with an empty form.
+      const { error: pwErr } = await supabase.auth.updateUser({
+        password,
+        data: { has_password: true },
+      });
       if (pwErr) throw pwErr;
 
       const updates = {
