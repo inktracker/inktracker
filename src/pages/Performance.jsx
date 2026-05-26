@@ -132,7 +132,9 @@ export default function Performance() {
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Performance</h2>
           <p className="text-sm text-slate-500 mt-0.5">
-            Quick local stats. For full accounting reports, open them in QuickBooks below.
+            {qbConnected
+              ? "Operational view of recent orders. QuickBooks is the source of truth for sales, tax, and accounts receivable — open the reports below for those numbers."
+              : "Quick local stats. Connect QuickBooks for authoritative sales and AR reports."}
           </p>
         </div>
 
@@ -154,51 +156,81 @@ export default function Performance() {
         </div>
       </div>
 
-      {/* Local stats — period-bound */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard
-          icon={ShoppingBag}
-          label="Orders (period)"
-          value={totalOrders}
-          sub={dateRange === "all" ? "All time" : "Completed in range"}
-          color="indigo"
-        />
-        {/* The underlying ShopPerformance.total field is the order's
-            grand total — tax + rush + extras included. "Gross Sales" in
-            accounting usually means revenue before tax, so the label
-            was misleading. Renamed to make the inclusion explicit. */}
-        <StatCard
-          icon={DollarSign}
-          label="Total Sales (incl. tax)"
-          value={fmtMoney(grossSales)}
-          sub={`${totalOrders} completed`}
-          color="emerald"
-        />
-        <StatCard
-          icon={Layers}
-          label="Avg. Order Value"
-          value={fmtMoney(aov)}
-          color="slate"
-        />
-      </div>
+      {/* Local stats.
+            When QB is NOT connected we render the full operational +
+            financial set — local data is the only source the shop has.
+            When QB IS connected we hide the three financial cards
+            (Total Sales / Avg Order Value / Outstanding Invoices) and
+            keep only the operational ones (order counts, WIP). QB is
+            the source of truth for sales / AR; showing local financials
+            alongside QB just creates two numbers that don't agree. The
+            Detailed Reports section below routes the user to QB for
+            those figures. */}
+      {qbConnected ? (
+        <div className="grid grid-cols-2 gap-4">
+          <StatCard
+            icon={ShoppingBag}
+            label="Orders (period)"
+            value={totalOrders}
+            sub={dateRange === "all" ? "All time" : "Completed in range"}
+            color="indigo"
+          />
+          <StatCard
+            icon={Activity}
+            label="Active Orders"
+            value={activeCount}
+            sub={activeValue > 0 ? `${fmtMoney(activeValue)} in production` : "Work in progress"}
+            color="indigo"
+          />
+        </div>
+      ) : (
+        <>
+          {/* Period-bound */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <StatCard
+              icon={ShoppingBag}
+              label="Orders (period)"
+              value={totalOrders}
+              sub={dateRange === "all" ? "All time" : "Completed in range"}
+              color="indigo"
+            />
+            {/* ShopPerformance.total is the order's grand total — tax + rush
+                + extras included. "Gross Sales" in accounting usually means
+                revenue before tax, so the label spells out the inclusion. */}
+            <StatCard
+              icon={DollarSign}
+              label="Total Sales (incl. tax)"
+              value={fmtMoney(grossSales)}
+              sub={`${totalOrders} completed`}
+              color="emerald"
+            />
+            <StatCard
+              icon={Layers}
+              label="Avg. Order Value"
+              value={fmtMoney(aov)}
+              color="slate"
+            />
+          </div>
 
-      {/* Local stats — current state (not date-bound) */}
-      <div className="grid grid-cols-2 gap-4">
-        <StatCard
-          icon={Activity}
-          label="Active Orders"
-          value={activeCount}
-          sub={activeValue > 0 ? `${fmtMoney(activeValue)} in production` : null}
-          color="indigo"
-        />
-        <StatCard
-          icon={Receipt}
-          label="Outstanding Invoices"
-          value={fmtMoney(outstandingTotals.total)}
-          sub={`${outstandingTotals.count} unpaid`}
-          color="amber"
-        />
-      </div>
+          {/* Current state (not date-bound) */}
+          <div className="grid grid-cols-2 gap-4">
+            <StatCard
+              icon={Activity}
+              label="Active Orders"
+              value={activeCount}
+              sub={activeValue > 0 ? `${fmtMoney(activeValue)} in production` : null}
+              color="indigo"
+            />
+            <StatCard
+              icon={Receipt}
+              label="Outstanding Invoices"
+              value={fmtMoney(outstandingTotals.total)}
+              sub={`${outstandingTotals.count} unpaid`}
+              color="amber"
+            />
+          </div>
+        </>
+      )}
 
       {/* QuickBooks Reports — deep-link card (only when connected). */}
       {qbConnected && (
