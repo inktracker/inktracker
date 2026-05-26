@@ -33,33 +33,12 @@ import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2, ChevronDown } from "lucide-react";
 import { notify } from "@/lib/notify";
-
-// Per-stage default checklist. Folded the old "Finishing", "Quality
-// Check", and "Packing" checklists into Printing so those tasks
-// don't disappear from the UI when the pipeline slimmed from 8 → 5
-// stages on 2026-05-12 (see O_STATUSES doc).
-const STEP_TASKS = {
-  "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
-  // "Place blank order" + "Receive goods" auto-derive from goods_progress
-  // (every size at-least-ordered → blank order done; every size received
-  // → receive goods done). "Confirm delivery date" was dropped — the
-  // supplier returns it on the order and operators don't need a separate
-  // gate for it.
-  "Order Goods":  ["Place blank order", "Receive goods"],
-  "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
-  "Printing":     [
-    "Mount screens on press",
-    "Run test prints",
-    "Get test approval",
-    "Run full batch",
-    "Flash/cure prints",
-    "Quality inspect",
-    "Fold & tag",
-    "Count pieces",
-    "Bag/box order",
-    "Stage for pickup/shipping",
-  ],
-};
+// Per-stage checklist tasks now live in src/lib/productionTasks.js so
+// each shop can customize them via Account → Production Tasks. The
+// helper falls back to the shipped defaults when a stage isn't
+// customized. Auto-derived "Place blank order" / "Receive goods" on
+// Order Goods only fire when those canonical names are in the list.
+import { getStageTasks } from "@/lib/productionTasks";
 
 // STATUS_ORDER previously had its own (different — missing "Order
 // Goods") list; replaced with the canonical O_STATUSES so the
@@ -1121,7 +1100,7 @@ export default function OrderDetailModal({
                   localStorage remembers the user's preference. */}
               {(() => {
                 const step = liveOrder.status || "Pre-Press";
-                const tasks = STEP_TASKS[step] || [];
+                const tasks = getStageTasks(step);
                 const checklist = liveOrder.checklist || {};
                 const stepChecks = checklist[step] || {};
                 const printProgress = checklist.print_progress || {};
