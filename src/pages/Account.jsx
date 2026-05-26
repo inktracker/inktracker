@@ -812,6 +812,10 @@ export default function Account() {
           <ProductionTasksSection user={user} />
         </Section>
 
+        <Section icon={Wand2} title="Presses">
+          <PressesSection user={user} />
+        </Section>
+
         <Section icon={Package} title="Supplier API Keys">
           <SupplierKeysSection user={user} />
         </Section>
@@ -1314,6 +1318,130 @@ function ProductionTasksSection({ user }) {
           className="text-xs text-slate-500 hover:text-slate-700 font-semibold"
         >
           Reset to Defaults
+        </button>
+        {saved && <span className="text-xs text-emerald-600 font-semibold">Saved</span>}
+      </div>
+    </div>
+  );
+}
+
+// Shop-configured press list. Drives the "Assigned Press" dropdown
+// on the Order Detail modal. Free-text inputs were too easy to typo
+// (Auto 1 vs auto-1 vs Press A) and gave no canonical list to filter
+// reports by.
+function PressesSection({ user }) {
+  const [presses, setPresses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!user?.email) return;
+        const { data: shop } = await supabase
+          .from("shops")
+          .select("presses")
+          .eq("owner_email", user.email)
+          .maybeSingle();
+        if (alive) setPresses(Array.isArray(shop?.presses) ? [...shop.presses] : []);
+      } catch {
+        if (alive) setPresses([]);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [user?.email]);
+
+  function updatePress(idx, value) {
+    setPresses(prev => {
+      const next = [...prev];
+      next[idx] = value;
+      return next;
+    });
+  }
+
+  function removePress(idx) {
+    setPresses(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function addPress() {
+    setPresses(prev => [...prev, ""]);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const cleaned = presses.map(p => String(p).trim()).filter(Boolean);
+      const { error } = await supabase
+        .from("shops")
+        .update({ presses: cleaned })
+        .eq("owner_email", user?.email);
+      if (error) throw error;
+      setPresses(cleaned);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      notify.error("Couldn't save presses", err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="text-sm text-slate-400">Loading…</div>;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500 leading-relaxed">
+        List the presses your shop runs jobs on (e.g. "Auto 1", "Manual A"). They'll appear as picker options under <span className="font-semibold">Assigned Press</span> on each order. Operators are picked from the employees you invited via Admin Panel — no extra setup here.
+      </p>
+
+      <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-2">
+        {presses.length === 0 ? (
+          <div className="text-xs text-slate-400 italic">No presses yet — add one below.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {presses.map((press, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={press}
+                  onChange={e => updatePress(idx, e.target.value)}
+                  placeholder="Press name"
+                  className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                />
+                <button
+                  type="button"
+                  onClick={() => removePress(idx)}
+                  title="Remove press"
+                  className="text-slate-300 hover:text-red-500 transition w-7 h-7 flex items-center justify-center"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={addPress}
+          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 mt-1 transition"
+        >
+          + Add press
+        </button>
+      </div>
+
+      <div className="flex items-center gap-3 pt-1">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
+        >
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          {saving ? "Saving…" : saved ? "Saved" : "Save Presses"}
         </button>
         {saved && <span className="text-xs text-emerald-600 font-semibold">Saved</span>}
       </div>

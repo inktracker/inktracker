@@ -183,6 +183,13 @@ export default function OrderDetailModal({
   // action bar shows "Create Invoice" vs "Preview Invoice" + the
   // optional "View in QB" link. Fetched once on mount.
   const [relatedInvoice, setRelatedInvoice] = useState(null);
+  // Shop-configured press list (Account → Production Setup) + this
+  // shop's employees, used to populate the two Assigned dropdowns
+  // below the cost fields. Empty arrays just mean the dropdown shows
+  // no options — the UI gracefully falls back to a free-text input
+  // when there's nothing to pick from.
+  const [presses, setPresses] = useState([]);
+  const [employees, setEmployees] = useState([]);
 
   // Shipping
   const [showShipping, setShowShipping] = useState(false);
@@ -524,6 +531,42 @@ export default function OrderDetailModal({
     })();
     return () => { cancelled = true; };
   }, [order?.id, order?.order_id, order?.quote_id, order?.shop_owner]);
+
+  // Load the shop's configured press list + this shop's employees so
+  // the two Assigned dropdowns have real options. Best-effort — empty
+  // arrays just collapse the dropdowns to "no options" + fall back to
+  // a free-text input so the field still works.
+  useEffect(() => {
+    if (!order?.shop_owner) { setPresses([]); setEmployees([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: shop } = await supabase
+          .from("shops")
+          .select("presses")
+          .eq("owner_email", order.shop_owner)
+          .maybeSingle();
+        if (!cancelled) setPresses(Array.isArray(shop?.presses) ? shop.presses : []);
+      } catch {
+        if (!cancelled) setPresses([]);
+      }
+      try {
+        const all = await base44.entities.User.list();
+        if (cancelled) return;
+        // Pull employees + managers — both are eligible to run a job
+        // (manager doubles as senior operator at small shops). Filter
+        // to people whose assigned_shops actually includes this shop.
+        const team = (all || []).filter(u =>
+          (u.role === "employee" || u.role === "manager") &&
+          (u.assigned_shops || []).includes(order.shop_owner)
+        );
+        setEmployees(team);
+      } catch {
+        if (!cancelled) setEmployees([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [order?.shop_owner]);
 
   const isBrokerOrder = Boolean(order?.broker_id || order?.broker_email || order?.brokerId);
   const displayClient = isBrokerOrder
@@ -1370,15 +1413,54 @@ export default function OrderDetailModal({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
                         <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Assigned Press</label>
-                        <input type="text" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}
-                          placeholder="e.g. Manual Press 1, Auto Press"
-                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                        {presses.length > 0 ? (
+                          <select
+                            value={assignedPress}
+                            onChange={e => setAssignedPress(e.target.value)}
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5"
+                          >
+                            <option value="">— Unassigned —</option>
+                            {presses.map(p => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                            {/* Preserve a saved legacy/free-text value
+                                that's not in the shop's current list so
+                                we don't silently drop it. */}
+                            {assignedPress && !presses.includes(assignedPress) && (
+                              <option value={assignedPress}>{assignedPress} (custom)</option>
+                            )}
+                          </select>
+                        ) : (
+                          <input type="text" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}
+                            placeholder="Add presses in Account → Production Setup"
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                        )}
                       </div>
                       <div>
                         <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Assigned Operator</label>
-                        <input type="text" value={assignedOperator} onChange={e => setAssignedOperator(e.target.value)}
-                          placeholder="e.g. John, Maria"
-                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                        {employees.length > 0 ? (
+                          <select
+                            value={assignedOperator}
+                            onChange={e => setAssignedOperator(e.target.value)}
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5"
+                          >
+                            <option value="">— Unassigned —</option>
+                            {employees.map(u => {
+                              const label = u.full_name || u.email;
+                              return <option key={u.id} value={label}>{label}</option>;
+                            })}
+                            {/* Preserve a saved legacy/free-text value
+                                that doesn't match any current employee. */}
+                            {assignedOperator &&
+                             !employees.some(u => (u.full_name || u.email) === assignedOperator) && (
+                              <option value={assignedOperator}>{assignedOperator} (custom)</option>
+                            )}
+                          </select>
+                        ) : (
+                          <input type="text" value={assignedOperator} onChange={e => setAssignedOperator(e.target.value)}
+                            placeholder="Invite employees from Account → Admin Panel"
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                        )}
                       </div>
                     </div>
 
