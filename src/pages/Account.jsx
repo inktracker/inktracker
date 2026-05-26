@@ -1250,7 +1250,17 @@ function ProductionTasksSection({ user }) {
         Customize the checklist shown on Shop Floor + Order Detail for each production stage. Tasks render in the order shown. The Order Goods tasks "Place blank order" and "Receive goods" auto-check from per-size goods tracking — keep those exact names to preserve auto-derive.
       </p>
 
-      {stages.map(stage => (
+      {stages.map(stage => {
+        // Order Goods has two canonical task names ("Place blank order"
+        // and "Receive goods") that get auto-checked by per-size goods
+        // tracking. If the shop renames or removes either, auto-derive
+        // silently stops working — warn explicitly so they know what
+        // they're giving up.
+        const list = tasks[stage] || [];
+        const missingAutoTasks = stage === "Order Goods"
+          ? ["Place blank order", "Receive goods"].filter(name => !list.includes(name))
+          : [];
+        return (
         <div key={stage} className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-sm font-bold text-slate-700 dark:text-slate-200">{stage}</div>
@@ -1263,6 +1273,11 @@ function ProductionTasksSection({ user }) {
               Reset to defaults
             </button>
           </div>
+          {missingAutoTasks.length > 0 && (
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 leading-relaxed">
+              <strong>Heads up:</strong> {missingAutoTasks.join(" and ")} {missingAutoTasks.length === 1 ? "is" : "are"} missing — auto-check from per-size goods tracking will stop firing for {missingAutoTasks.length === 1 ? "it" : "them"}. Add the exact name{missingAutoTasks.length === 1 ? "" : "s"} back or operators will need to check manually.
+            </div>
+          )}
           {(tasks[stage] || []).length === 0 ? (
             <div className="text-xs text-slate-400 italic">No tasks — this stage will fall back to defaults.</div>
           ) : (
@@ -1296,7 +1311,8 @@ function ProductionTasksSection({ user }) {
             + Add task
           </button>
         </div>
-      ))}
+        );
+      })}
 
       <div className="flex items-center gap-3 pt-2">
         <button

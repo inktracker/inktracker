@@ -57,7 +57,18 @@ async function refreshToken(refreshTok: string) {
     }
     throw new Error("QuickBooks connection error. Please reconnect in Account settings.");
   }
-  return res.json();
+  // Validate the response shape before trusting it. A malformed OK
+  // response (missing access_token / refresh_token / expires_in) would
+  // otherwise get persisted with `undefined` values via the caller's
+  // updateProfileSecrets — silently locking the shop out of QB because
+  // the next request short-circuits with "QuickBooks not connected"
+  // (the `!profile?.qb_access_token` gate downstream).
+  const fresh = await res.json();
+  if (!fresh?.access_token || !fresh?.refresh_token || !fresh?.expires_in) {
+    console.error("[qbSync] Token refresh returned malformed body:", fresh);
+    throw new Error("QuickBooks token refresh returned an unexpected response. Please reconnect in Account settings.");
+  }
+  return fresh;
 }
 
 async function findUserProfile(supabase: any, authId: string, email: string | null) {

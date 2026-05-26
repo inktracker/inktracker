@@ -27,6 +27,21 @@ const QB_VERIFIER_TOKEN     = Deno.env.get("QB_WEBHOOK_VERIFIER_TOKEN") ?? "";
 const SUPABASE_URL          = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// Loud, one-shot startup warning when the verifier token isn't set.
+// Without it, every webhook request fails signature verification and
+// returns 401, which means QB retries with exponential backoff until
+// it gives up — and we'd see no payment-driven quote→order conversions
+// at all. Before this log, the misconfiguration only surfaced as silent
+// failed deliveries inside Intuit's webhook dashboard.
+if (!QB_VERIFIER_TOKEN) {
+  console.error(
+    "[qbWebhook] FATAL CONFIG: QB_WEBHOOK_VERIFIER_TOKEN is not set. " +
+    "All incoming QB webhooks will fail signature verification → no " +
+    "automatic quote/order conversion on customer payment. " +
+    "Set it via `npx supabase secrets set QB_WEBHOOK_VERIFIER_TOKEN=...`."
+  );
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, intuit-signature",

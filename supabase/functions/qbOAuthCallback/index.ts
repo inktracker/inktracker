@@ -9,7 +9,15 @@ const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
 const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 const APP_URL          = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
-const SUPABASE_URL     = Deno.env.get("SUPABASE_URL") || "https://skmltfbibaqcjddmeqvi.supabase.co";
+// Was: `Deno.env.get("SUPABASE_URL") || "https://skmltfbibaqcjddmeqvi.supabase.co"`.
+// The hardcoded fallback meant a staging/preview deploy with no
+// SUPABASE_URL set would silently upsert QB tokens into the PROD
+// project. Fail loudly instead — the env var must be set by the
+// Supabase Edge Functions deploy config.
+const SUPABASE_URL     = Deno.env.get("SUPABASE_URL")!;
+if (!SUPABASE_URL) {
+  console.error("[qbOAuthCallback] SUPABASE_URL env var is not set. Refusing to start.");
+}
 // Token-exchange MUST use the same redirect_uri that the initial
 // auth request used. Both now go through the Vercel proxy because
 // the Supabase gateway rejects Intuit's direct redirect (no auth

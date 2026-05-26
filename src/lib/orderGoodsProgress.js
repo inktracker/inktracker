@@ -53,12 +53,20 @@ export function countGoodsProgress(order) {
  *   true  — auto-derived done
  *   false — auto-derive applies but condition not met
  */
+// Canonical task names that get auto-derived from per-size
+// goods_progress. If a shop renames either via Account → Production
+// Tasks, auto-derive stops firing for that task and the operator
+// has to check it manually — the UI warns them about this in the
+// Production Tasks editor.
+export const ORDER_GOODS_AUTO_PLACE = "Place blank order";
+export const ORDER_GOODS_AUTO_RECEIVE = "Receive goods";
+
 export function autoCheckOrderGoodsTask(step, task, counts) {
   if (step !== "Order Goods") return null;
-  if (task === "Place blank order") {
+  if (task === ORDER_GOODS_AUTO_PLACE) {
     return (counts?.total || 0) > 0 && (counts?.marked || 0) === counts.total;
   }
-  if (task === "Receive goods") {
+  if (task === ORDER_GOODS_AUTO_RECEIVE) {
     return (counts?.total || 0) > 0 && (counts?.received || 0) === counts.total;
   }
   return null;
