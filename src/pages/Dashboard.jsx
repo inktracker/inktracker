@@ -7,10 +7,9 @@ import { createPageUrl } from "@/utils";
 import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig, getDisplayName, getOrderDisplayClient } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { bucketQuotes } from "@/lib/broker/quoteStatus";
-import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText, Bell, RefreshCw } from "lucide-react";
+import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, BarChart2, Package, DollarSign, FileText, Bell, RefreshCw } from "lucide-react";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
-import BrokerDocuments from "../components/broker/BrokerDocuments";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
 import GettingStartedChecklist from "../components/GettingStartedChecklist";
 import HintTip from "../components/shared/HintTip";
@@ -164,7 +163,6 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
               { id: "performance", label: "Performance", icon: BarChart2 },
               { id: "clients", label: "Clients", icon: Users },
               { id: "messages", label: "Messages", icon: MessageSquare, badge: unreadMessageCount },
-              { id: "documents", label: "Documents", icon: Paperclip },
             ].map(({ id, label, icon: Icon, badge }) => (
               <button
                 key={id}
@@ -263,11 +261,6 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
                 otherName={broker.full_name || broker.email}
                 threadId={threadId}
               />
-            )}
-
-            {/* Documents */}
-            {subTab === "documents" && (
-              <BrokerDocuments brokerEmail={broker.email} shopOwner={currentUser?.email} isAdmin={true} />
             )}
           </div>
         </div>
