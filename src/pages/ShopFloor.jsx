@@ -720,11 +720,20 @@ export default function ShopFloor() {
                               <span className="text-lg font-bold text-indigo-600">{qty}</span>
                             </div>
 
-                            {/* Imprint locations */}
+                            {/* Imprint locations — lead with the imprint's
+                                title when set so operators can spot a
+                                specific print at a glance instead of
+                                parsing "Front · 1c · Screen Print" three
+                                imprints at a time. */}
                             <div className="flex flex-wrap gap-2 mb-3">
                               {imprints.map((imp, ii) => (
-                                <span key={ii} className="text-xs font-semibold text-slate-500 bg-white border border-slate-200 rounded-lg px-2 py-1">
-                                  {imp.location} · {imp.colors}c · {imp.technique || "Screen Print"}
+                                <span key={ii} className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2 py-1">
+                                  {imp.title && (
+                                    <span className="text-slate-800">{imp.title} </span>
+                                  )}
+                                  <span className="text-slate-500">
+                                    {imp.title ? "· " : ""}{imp.location} · {imp.colors}c · {imp.technique || "Screen Print"}
+                                  </span>
                                 </span>
                               ))}
                             </div>
