@@ -10,6 +10,7 @@ import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 import { notify } from "@/lib/notify";
+import { getMissingAutoDerivedTasks } from "@/lib/productionTasks";
 
 function Section({ icon: IconComp, title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -1251,15 +1252,11 @@ function ProductionTasksSection({ user }) {
       </p>
 
       {stages.map(stage => {
-        // Order Goods has two canonical task names ("Place blank order"
-        // and "Receive goods") that get auto-checked by per-size goods
-        // tracking. If the shop renames or removes either, auto-derive
-        // silently stops working — warn explicitly so they know what
-        // they're giving up.
-        const list = tasks[stage] || [];
-        const missingAutoTasks = stage === "Order Goods"
-          ? ["Place blank order", "Receive goods"].filter(name => !list.includes(name))
-          : [];
+        // Warn explicitly when the shop has renamed/removed either of
+        // the two Order Goods tasks that auto-check from per-size goods
+        // tracking — without the warning, auto-derive silently stops
+        // firing and operators have to check those tasks manually.
+        const missingAutoTasks = getMissingAutoDerivedTasks(stage, tasks[stage]);
         return (
         <div key={stage} className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-2">
           <div className="flex items-center justify-between">

@@ -22,6 +22,7 @@ import {
   reconcileQbInvoice,
   RECONCILE_SEVERITY,
 } from "../_shared/qbWriteContracts.js";
+import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
 import {
   recordShopNotification,
   buildQbDriftNotification,
@@ -57,15 +58,14 @@ async function refreshToken(refreshTok: string) {
     }
     throw new Error("QuickBooks connection error. Please reconnect in Account settings.");
   }
-  // Validate the response shape before trusting it. A malformed OK
-  // response (missing access_token / refresh_token / expires_in) would
-  // otherwise get persisted with `undefined` values via the caller's
-  // updateProfileSecrets — silently locking the shop out of QB because
-  // the next request short-circuits with "QuickBooks not connected"
-  // (the `!profile?.qb_access_token` gate downstream).
+  // Validate the response shape before trusting it. See
+  // validateQbTokenResponse for why this matters — malformed OK
+  // responses from Intuit would otherwise persist undefined tokens
+  // to profile_secrets and lock the shop out.
   const fresh = await res.json();
-  if (!fresh?.access_token || !fresh?.refresh_token || !fresh?.expires_in) {
-    console.error("[qbSync] Token refresh returned malformed body:", fresh);
+  const check = validateQbTokenResponse(fresh);
+  if (!check.ok) {
+    console.error(`[qbSync] Token refresh returned malformed body (${check.reason}):`, fresh);
     throw new Error("QuickBooks token refresh returned an unexpected response. Please reconnect in Account settings.");
   }
   return fresh;

@@ -8,6 +8,25 @@
 
 export const PRODUCTION_STAGES = ["Art Approval", "Order Goods", "Pre-Press", "Printing"];
 
+// Canonical task names on the Order Goods stage that auto-check from
+// per-size goods_progress. If a shop renames or removes either, the
+// auto-derive in autoCheckOrderGoodsTask stops firing — these are the
+// names we check against, and Account UI warns when they're missing.
+export const ORDER_GOODS_AUTO_DERIVED_TASKS = [
+  "Place blank order",
+  "Receive goods",
+];
+
+// Return the auto-derived task names that are MISSING from the shop's
+// current list for a given stage. Empty array means everything that
+// should auto-check is still in place. Only Order Goods has auto-derived
+// tasks today; other stages always return [].
+export function getMissingAutoDerivedTasks(stage, taskList) {
+  if (stage !== "Order Goods") return [];
+  const set = new Set(Array.isArray(taskList) ? taskList : []);
+  return ORDER_GOODS_AUTO_DERIVED_TASKS.filter((name) => !set.has(name));
+}
+
 export const DEFAULT_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
   // "Place blank order" + "Receive goods" auto-derive from per-size
