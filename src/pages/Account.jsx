@@ -713,7 +713,14 @@ export default function Account() {
                 Quotes can now be sent as QuickBooks invoices. Once your client pays via the QB payment link, InkTracker automatically converts the quote to an order.
               </p>
               <div className="border-t border-emerald-200 pt-3 mt-3">
-                <div className="text-sm font-semibold text-slate-700 mb-2">Data Migration</div>
+                {/* Renamed from "Data Migration" + "Import" — these
+                    actions dedupe on the QB id under the hood
+                    (pullCustomers checks customers.qb_customer_id;
+                    pullInvoices checks invoices.invoice_id) so they
+                    can be re-run safely without creating duplicates.
+                    "Sync" reflects that better than "Import", which
+                    sounds like a one-shot copy. */}
+                <div className="text-sm font-semibold text-slate-700 mb-2">Data Sync</div>
                 <button
                   onClick={handleMigrateCustomers}
                   disabled={qbMigrating}
@@ -722,20 +729,20 @@ export default function Account() {
                   {qbMigrating ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      Importing Customers…
+                      Syncing Customers…
                     </>
                   ) : (
                     <>
                       <DownloadCloud className="w-4 h-4" />
-                      Import Customers from QuickBooks
+                      Sync Customers from QuickBooks
                     </>
                   )}
                 </button>
                 {qbMigrateResult && !qbMigrateResult.error && (
                   <div className="mt-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                    Imported <strong>{qbMigrateResult.created}</strong> new customer{qbMigrateResult.created !== 1 ? "s" : ""},
+                    Added <strong>{qbMigrateResult.created}</strong> new customer{qbMigrateResult.created !== 1 ? "s" : ""},
                     updated <strong>{qbMigrateResult.updated}</strong>,
-                    skipped <strong>{qbMigrateResult.skipped}</strong> already synced.
+                    skipped <strong>{qbMigrateResult.skipped}</strong> already in sync.
                   </div>
                 )}
                 {qbMigrateResult?.error && (
@@ -751,24 +758,24 @@ export default function Account() {
                   {qbMigratingInv ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin" />
-                      Importing Invoices…
+                      Syncing Invoices…
                     </>
                   ) : (
                     <>
                       <DownloadCloud className="w-4 h-4" />
-                      Import Invoices from QuickBooks
+                      Sync Invoices from QuickBooks
                     </>
                   )}
                 </button>
                 {qbMigrateInvResult && !qbMigrateInvResult.error && (
                   <div className="mt-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                    Imported <strong>{qbMigrateInvResult.imported}</strong> invoice{qbMigrateInvResult.imported !== 1 ? "s" : ""},
-                    skipped <strong>{qbMigrateInvResult.skipped}</strong> already imported.
+                    Added <strong>{qbMigrateInvResult.imported}</strong> invoice{qbMigrateInvResult.imported !== 1 ? "s" : ""},
+                    skipped <strong>{qbMigrateInvResult.skipped}</strong> already in sync.
                   </div>
                 )}
                 {qbMigrateInvResult?.error && (
                   <div className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                    Invoice import failed: {qbMigrateInvResult.error}
+                    Invoice sync failed: {qbMigrateInvResult.error}
                   </div>
                 )}
               </div>

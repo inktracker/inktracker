@@ -7,7 +7,8 @@ import { createPageUrl } from "@/utils";
 import { fmtMoney, fmtDate, O_STATUSES, getShopPricingConfig, getDisplayName, getOrderDisplayClient } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { bucketQuotes } from "@/lib/broker/quoteStatus";
-import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText, Bell } from "lucide-react";
+import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, Paperclip, BarChart2, Package, DollarSign, FileText, Bell, RefreshCw } from "lucide-react";
+import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerDocuments from "../components/broker/BrokerDocuments";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
@@ -302,44 +303,63 @@ export default function Dashboard() {
   // which is why those cards drifted from the Orders/Quotes pages.
   const [customers, setCustomers] = useState({});
 
-  // Background QB connection check + metrics fetch. Two-step:
-  //   1. checkConnection → boolean
-  //   2. if connected, getDashboardMetrics → { revenueLast30Days,
-  //      revenueOrderCount, openInvoicesCount, openInvoicesTotal }
-  // Best-effort — a failure of either step leaves the chips on local
-  // data with the "local estimates" disclaimer, which is the safest
-  // first-load fallback.
+  const [qbRefreshing, setQbRefreshing] = useState(false);
+
+  // Pull QB metrics, honoring the 5-min localStorage cache unless the
+  // caller passes { force: true } (e.g. via the Refresh button).
+  // Extracted so both the initial-load effect and the manual refresh
+  // share one code path. Best-effort: errors leave qbMetrics null,
+  // chips fall back to local estimates.
+  async function fetchQbMetrics({ force = false } = {}) {
+    try {
+      const me = await base44.auth.me();
+      const shopOwner = me?.email;
+      if (!force && shopOwner) {
+        const cached = readMetricsCache(shopOwner);
+        if (cached) { setQbMetrics(cached); return; }
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data: m, error: mErr } = await base44.functions.invoke("qbSync", {
+        action: "getDashboardMetrics",
+        accessToken: session?.access_token,
+      });
+      if (!mErr && m && typeof m === "object") {
+        setQbMetrics(m);
+        if (shopOwner) writeMetricsCache(shopOwner, m);
+      }
+    } catch {
+      // Swallow — chips fall back to local estimates.
+    }
+  }
+
+  // Background QB connection check + metrics fetch on mount.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
         const { data, error: invErr } = await base44.functions.invoke("qbSync", {
           action: "checkConnection",
-          accessToken: token,
+          accessToken: session?.access_token,
         });
         const connected = !invErr && !!data?.connected;
         if (cancelled) return;
         setQbConnected(connected);
         if (!connected) return;
-
-        // Pull QB-sourced Revenue + AR. This is one paginated read of
-        // every Invoice (just the four columns we summarize) — fine
-        // for a dashboard load and matches the existing
-        // getCustomerStats pattern.
-        const { data: m, error: mErr } = await base44.functions.invoke("qbSync", {
-          action: "getDashboardMetrics",
-          accessToken: token,
-        });
-        if (cancelled) return;
-        if (!mErr && m && typeof m === "object") setQbMetrics(m);
+        await fetchQbMetrics();
       } catch {
         if (!cancelled) { setQbConnected(false); setQbMetrics(null); }
       }
     })();
     return () => { cancelled = true; };
   }, []);
+
+  async function handleRefreshQb() {
+    setQbRefreshing(true);
+    clearMetricsCache();
+    try { await fetchQbMetrics({ force: true }); }
+    finally { setQbRefreshing(false); }
+  }
 
   useEffect(() => {
     async function loadData() {
@@ -655,9 +675,21 @@ export default function Dashboard() {
                   </p>
                 )}
                 {qbReady && (
-                  <p className="text-[11px] text-slate-400 -mt-3">
-                    Open Invoices + Revenue sourced from QuickBooks · as of {new Date(qbMetrics.asOf || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </p>
+                  <div className="-mt-3 flex items-center gap-2 text-[11px] text-slate-400">
+                    <span>
+                      Open Invoices + Revenue sourced from QuickBooks · as of {new Date(qbMetrics.asOf || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleRefreshQb}
+                      disabled={qbRefreshing}
+                      className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+                      title="Refresh now — bypasses the 5-minute cache and re-queries QuickBooks"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${qbRefreshing ? "animate-spin" : ""}`} />
+                      {qbRefreshing ? "Refreshing…" : "Refresh"}
+                    </button>
+                  </div>
                 )}
               </>
             );
