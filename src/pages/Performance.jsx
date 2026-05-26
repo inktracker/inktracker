@@ -38,6 +38,7 @@ export default function Performance() {
   const [invoices, setInvoices] = useState([]); // local invoices (for outstanding)
   const [loading, setLoading] = useState(true);
   const [qbConnected, setQbConnected] = useState(false);
+  const [qbMetrics, setQbMetrics] = useState(null);
   const [dateRange, setDateRange] = useState("thisMonth");
   const [loadError, setLoadError] = useState("");
 
@@ -47,17 +48,29 @@ export default function Performance() {
     async function load() {
       const u = await base44.auth.me();
 
-      // Background QB connection check — drives whether the Reports card shows.
+      // Background QB connection check + metrics fetch. When connected
+      // we pull Revenue + AR from QB and overlay them on the cards.
+      // Same two-step pattern as Dashboard.jsx.
       (async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
+          const token = session?.access_token;
           const { data, error: invErr } = await base44.functions.invoke("qbSync", {
             action: "checkConnection",
-            accessToken: session?.access_token,
+            accessToken: token,
           });
-          setQbConnected(!invErr && !!data?.connected);
+          const connected = !invErr && !!data?.connected;
+          setQbConnected(connected);
+          if (!connected) return;
+
+          const { data: m, error: mErr } = await base44.functions.invoke("qbSync", {
+            action: "getDashboardMetrics",
+            accessToken: token,
+          });
+          if (!mErr && m && typeof m === "object") setQbMetrics(m);
         } catch {
           setQbConnected(false);
+          setQbMetrics(null);
         }
       })();
 
@@ -156,61 +169,86 @@ export default function Performance() {
         </div>
       </div>
 
-      {/* Local stats — period-bound. All five cards always render so
-          a QB-connected shop sees MORE data, not less, on this page.
-          When QB is connected we surface a small disclaimer below to
-          tell them QB is authoritative for accounting-grade Sales / AR
-          numbers and these are local estimates. A future pass will
-          source the financial cards from QB directly when connected. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard
-          icon={ShoppingBag}
-          label="Orders (period)"
-          value={totalOrders}
-          sub={dateRange === "all" ? "All time" : "Completed in range"}
-          color="indigo"
-        />
-        {/* ShopPerformance.total is the order's grand total — tax + rush
-            + extras included. "Gross Sales" in accounting usually means
-            revenue before tax, so the label spells out the inclusion. */}
-        <StatCard
-          icon={DollarSign}
-          label="Total Sales (incl. tax)"
-          value={fmtMoney(grossSales)}
-          sub={`${totalOrders} completed`}
-          color="emerald"
-        />
-        <StatCard
-          icon={Layers}
-          label="Avg. Order Value"
-          value={fmtMoney(aov)}
-          color="slate"
-        />
-      </div>
+      {/* Local stats — period-bound. All five cards always render.
+          When QB is connected AND the getDashboardMetrics call returned,
+          Total Sales (30d) + Outstanding Invoices show QB-sourced
+          numbers with a "via QuickBooks" badge in the label. Orders
+          (period) + Avg. Order Value stay local — QB doesn't give us
+          a directly comparable invoice count per arbitrary date-range
+          here, and AOV derives from those two anyway.
+          Note: the QB Total Sales is fixed to the last 30 days
+          regardless of the page's date-range selector — `getDashboardMetrics`
+          today returns just the 30d window. We surface that in the sub
+          label so the user isn't confused when they pick "Last Year"
+          and see a 30d-only QB number. */}
+      {(() => {
+        const qbReady = qbConnected && qbMetrics;
+        const salesLabel = qbReady ? "Total Sales (QB, 30d)" : "Total Sales (incl. tax)";
+        const salesValue = qbReady ? fmtMoney(qbMetrics.revenueLast30Days) : fmtMoney(grossSales);
+        const salesSub   = qbReady
+          ? `${qbMetrics.revenueOrderCount} invoice${qbMetrics.revenueOrderCount === 1 ? "" : "s"} · live from QuickBooks`
+          : `${totalOrders} completed`;
+        const arLabel = qbReady ? "Outstanding Invoices (QB)" : "Outstanding Invoices";
+        const arValue = qbReady ? fmtMoney(qbMetrics.openInvoicesTotal) : fmtMoney(outstandingTotals.total);
+        const arSub   = qbReady
+          ? `${qbMetrics.openInvoicesCount} unpaid · live from QuickBooks`
+          : `${outstandingTotals.count} unpaid`;
+        return (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <StatCard
+                icon={ShoppingBag}
+                label="Orders (period)"
+                value={totalOrders}
+                sub={dateRange === "all" ? "All time" : "Completed in range"}
+                color="indigo"
+              />
+              <StatCard
+                icon={DollarSign}
+                label={salesLabel}
+                value={salesValue}
+                sub={salesSub}
+                color="emerald"
+              />
+              <StatCard
+                icon={Layers}
+                label="Avg. Order Value"
+                value={fmtMoney(aov)}
+                color="slate"
+              />
+            </div>
 
-      {/* Current state (not date-bound) */}
-      <div className="grid grid-cols-2 gap-4">
-        <StatCard
-          icon={Activity}
-          label="Active Orders"
-          value={activeCount}
-          sub={activeValue > 0 ? `${fmtMoney(activeValue)} in production` : null}
-          color="indigo"
-        />
-        <StatCard
-          icon={Receipt}
-          label="Outstanding Invoices"
-          value={fmtMoney(outstandingTotals.total)}
-          sub={`${outstandingTotals.count} unpaid`}
-          color="amber"
-        />
-      </div>
+            {/* Current state (not date-bound) */}
+            <div className="grid grid-cols-2 gap-4">
+              <StatCard
+                icon={Activity}
+                label="Active Orders"
+                value={activeCount}
+                sub={activeValue > 0 ? `${fmtMoney(activeValue)} in production` : null}
+                color="indigo"
+              />
+              <StatCard
+                icon={Receipt}
+                label={arLabel}
+                value={arValue}
+                sub={arSub}
+                color="amber"
+              />
+            </div>
 
-      {qbConnected && (
-        <p className="text-xs text-slate-400 -mt-4">
-          Numbers above are local InkTracker estimates. For accounting-grade Sales + AR figures, use the QuickBooks reports below — QB is the source of truth when connected.
-        </p>
-      )}
+            {qbConnected && !qbMetrics && (
+              <p className="text-xs text-slate-400 -mt-4">
+                Loading authoritative numbers from QuickBooks…
+              </p>
+            )}
+            {qbReady && (
+              <p className="text-xs text-slate-400 -mt-4">
+                Total Sales + Outstanding Invoices sourced from QuickBooks. Avg. Order Value remains a local estimate. As of {new Date(qbMetrics.asOf || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
+              </p>
+            )}
+          </>
+        );
+      })()}
 
       {/* QuickBooks Reports — deep-link card (only when connected). */}
       {qbConnected && (

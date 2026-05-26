@@ -23,6 +23,7 @@ import {
   RECONCILE_SEVERITY,
 } from "../_shared/qbWriteContracts.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
+import { summarizeInvoicesForDashboard } from "../_shared/qbDashboardMetrics.js";
 import {
   recordShopNotification,
   buildQbDriftNotification,
@@ -989,6 +990,34 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
 
 // ── Action: getCustomerStats (live from QB) ────────────────────────────────
 
+// ── Action: getDashboardMetrics (Dashboard + Performance) ────────────────
+// Returns the four QB-sourced numbers the dashboard chips display when
+// the shop has QB connected:
+//   revenueLast30Days / revenueOrderCount   — invoices billed in last 30 days
+//   openInvoicesCount / openInvoicesTotal   — AR (Balance > 0)
+//
+// Strategy: pull every Invoice once (paginated, just Id/TxnDate/TotalAmt
+// /Balance columns) and let the pure summarizer do the math. Cheaper
+// than two separate filtered queries against QB and matches how
+// handleGetCustomerStats already works.
+async function handleGetDashboardMetrics(token: string, realmId: string) {
+  const all: any[] = [];
+  let start = 1;
+  const pageSize = 1000;
+  while (true) {
+    const res = await qbQuery(token, realmId,
+      `SELECT Id, TxnDate, TotalAmt, Balance FROM Invoice STARTPOSITION ${start} MAXRESULTS ${pageSize}`
+    );
+    const batch: any[] = res?.QueryResponse?.Invoice ?? [];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+    start += pageSize;
+    if (start > 10000) break;
+  }
+  const summary = summarizeInvoicesForDashboard(all, Date.now(), 30);
+  return { ...summary, asOf: new Date().toISOString(), source: "quickbooks" };
+}
+
 async function handleGetCustomerStats(token: string, realmId: string) {
   const all: any[] = [];
   let start = 1;
@@ -1128,6 +1157,9 @@ Deno.serve(async (req) => {
         break;
       case "getCustomerStats":
         result = await handleGetCustomerStats(qbToken, realmId);
+        break;
+      case "getDashboardMetrics":
+        result = await handleGetDashboardMetrics(qbToken, realmId);
         break;
       case "getInvoicePDF": {
         const invId = params.qbInvoiceId;
