@@ -57,23 +57,35 @@ export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back"
     <div
       className="fixed inset-0 z-[80] bg-slate-900 flex flex-col"
       style={{ top: 0, left: 0, right: 0, bottom: 0 }}
-      onMouseDown={(e) => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-800 text-white border-b border-slate-700 shrink-0">
+      {/* z-10 + relative pins the header above the embed's stacking
+          context — iOS Safari can otherwise let the PDF viewer swallow
+          taps near its edges. Bigger padding + touch-action:manipulation
+          makes the back/download targets reliably hit on mobile. */}
+      <div className="relative z-10 flex items-center justify-between gap-3 px-3 py-3 bg-slate-800 text-white border-b border-slate-700 shrink-0">
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-200 hover:text-white"
+          style={{ touchAction: "manipulation" }}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-200 hover:text-white px-2 py-1 -ml-2 rounded"
         >
-          <ArrowLeft className="w-4 h-4" /> {backLabel}
+          <ArrowLeft className="w-5 h-5" /> {backLabel}
         </button>
         <div className="text-xs font-semibold truncate flex-1 text-center px-2">{name}</div>
+        {/* iOS Safari ignores <a download> for cross-origin URLs (our
+            Supabase Storage host counts as cross-origin), so the link
+            previously did nothing on mobile. target=_blank opens the
+            file in the device's native viewer where the user can save
+            via the share sheet — works everywhere. */}
         <a
           href={url}
+          target="_blank"
+          rel="noopener noreferrer"
           download={name}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-200 hover:text-white"
+          style={{ touchAction: "manipulation" }}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-200 hover:text-white px-2 py-1 -mr-2 rounded"
         >
-          <Download className="w-4 h-4" /> Download
+          <Download className="w-5 h-5" /> <span className="hidden sm:inline">Download</span>
         </a>
       </div>
       <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-auto min-h-0 p-2 sm:p-4">
