@@ -598,29 +598,28 @@ export default function Dashboard() {
       {/* ── OVERVIEW TAB ── */}
       {tab === "overview" && (
         <div className="space-y-6">
-          {/* Metrics.
-                When QB is NOT connected we show all 5 chips — local data
-                is the only number the shop has.
-                When QB IS connected we hide Open Invoices + Revenue (30d)
-                because QB is the source of truth for AR + sales and two-
-                numbers-that-don't-agree is worse than one. Same treatment
-                as Performance.jsx (PR #256). The Units Sold (30d) chip
-                stays — it's a production metric (garments shipped), not
-                an accounting number, so it doesn't compete with QB. */}
+          {/* Metrics — all 5 chips always visible.
+                Numbers are calculated from local order/invoice data.
+                When QB is connected we render a small disclaimer below
+                so the shop knows QB is the source of truth for the
+                accounting-grade figures (Revenue, Open Invoices). A
+                future pass will swap these to QB-sourced values when
+                connected; for now they're local with an honest label. */}
           <div
             data-tour="metrics"
-            className={`grid grid-cols-2 gap-3 ${qbConnected ? "sm:grid-cols-3" : "sm:grid-cols-3 lg:grid-cols-5"}`}
+            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
           >
             <MetricCard label="Quotes" value={totalQuotesCount} sub={fmtMoney(totalQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
             <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
-            {!qbConnected && (
-              <MetricCard label="Open Invoices" value={openInvoicesCount} sub={fmtMoney(openInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
-            )}
-            {!qbConnected && (
-              <MetricCard label="Revenue (30d)" value={fmtMoney(revenueLast30)} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
-            )}
+            <MetricCard label="Open Invoices" value={openInvoicesCount} sub={fmtMoney(openInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
+            <MetricCard label="Revenue (30d)" value={fmtMoney(revenueLast30)} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
             <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-violet-600" onClick={() => navigate(createPageUrl("Performance"))} />
           </div>
+          {qbConnected && (
+            <p className="text-[11px] text-slate-400 -mt-3">
+              Numbers from local InkTracker data. For accounting-grade Revenue + AR figures, open the QuickBooks reports linked from Performance.
+            </p>
+          )}
 
           {/* Getting Started Checklist */}
           <div data-tour="checklist">
