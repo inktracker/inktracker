@@ -12,6 +12,7 @@ import {
 import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
+import { getStageTasks } from "@/lib/productionTasks";
 
 // Collect every artwork file attached to an order so press operators
 // can preview them inline. Mirrors OrderDetailModal.getOrderArtwork:
@@ -64,32 +65,6 @@ function getShopFloorArtwork(order) {
 // Consolidated to O_STATUSES on 2026-05-12 so all status lists in
 // the app come from a single source of truth.
 const STEPS = O_STATUSES;
-
-// Per-stage checklist for the shop-floor view. Old Finishing / QC /
-// Ready-for-Pickup tasks rolled into Printing — same simplification
-// as OrderDetailModal.
-const STEP_TASKS = {
-  "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
-  // "Place blank order" + "Receive goods" auto-derive from the per-size
-  // goods_progress (every size at-least-ordered → blank order done;
-  // every size received → receive goods done). "Confirm delivery date"
-  // was dropped — the supplier returns it on the order and operators
-  // don't need to track it as a separate gate.
-  "Order Goods":  ["Place blank order", "Receive goods"],
-  "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
-  "Printing": [
-    "Mount screens on press",
-    "Run test prints",
-    "Get test approval",
-    "Run full batch",
-    "Flash/cure prints",
-    "Quality inspect",
-    "Fold & tag",
-    "Count pieces",
-    "Bag/box order",
-    "Stage for pickup/shipping",
-  ],
-};
 
 const STEP_COLORS = {
   "Art Approval": { bg: "bg-purple-500", light: "bg-purple-50 text-purple-700 border-purple-200" },
@@ -595,7 +570,7 @@ export default function ShopFloor() {
               {/* Checklist */}
               {(() => {
                 const step = selected.status || "Pre-Press";
-                const tasks = STEP_TASKS[step] || [];
+                const tasks = getStageTasks(step);
                 if (tasks.length === 0) return null;
                 const checklist = selected.checklist || {};
                 const stepChecks = checklist[step] || {};

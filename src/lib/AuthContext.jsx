@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect, useCallback } fr
 import { supabase } from "@/api/supabaseClient";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import { loadShopTimezone } from "@/lib/shopTimezone";
+import { loadShopProductionTasks } from "@/lib/productionTasks";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
 import { setSentryUser, clearSentryUser } from "@/lib/sentry";
 
@@ -52,14 +53,16 @@ async function fetchUserWithProfile() {
       user.email;
     const { data: shop } = await supabase
       .from("shops")
-      .select("pricing_config, timezone")
+      .select("pricing_config, timezone, production_tasks")
       .eq("owner_email", shopOwner)
       .maybeSingle();
     loadShopPricingConfig(shop?.pricing_config || null);
     loadShopTimezone(shop?.timezone || null);
+    loadShopProductionTasks(shop?.production_tasks || null);
   } catch {
     loadShopPricingConfig(null);
     loadShopTimezone(null);
+    loadShopProductionTasks(null);
   }
 
   return { ...profile, email: user.email };
