@@ -270,6 +270,11 @@ export default function Dashboard() {
   const [brokers, setBrokers] = useState([]);
   const [shopOwners, setShopOwners] = useState([]);
   const [tab, setTab] = useState("overview");
+  // QB connection drives which metric chips show. When QB is connected
+  // we hide the local financials (Revenue + Open Invoices) since QB is
+  // authoritative for those and two-numbers-don't-agree is worse than
+  // one. Matches the Performance page's behavior (PR #256).
+  const [qbConnected, setQbConnected] = useState(false);
   const [brokerUnreadCount, setBrokerUnreadCount] = useState(0);
   // Unread messages from brokers (separate from BrokerNotification rows
   // which cover quote-submission events). Combined with brokerUnreadCount
@@ -294,6 +299,26 @@ export default function Dashboard() {
   // to use raw order.customer_name / quote.customer_name (contact only),
   // which is why those cards drifted from the Orders/Quotes pages.
   const [customers, setCustomers] = useState({});
+
+  // Background QB connection check. Fires once on mount; same pattern as
+  // Performance.jsx. Best-effort — a failed check just leaves the local
+  // chips visible, which is the safer default for a first-load glitch.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+          action: "checkConnection",
+          accessToken: session?.access_token,
+        });
+        if (!cancelled) setQbConnected(!invErr && !!data?.connected);
+      } catch {
+        if (!cancelled) setQbConnected(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     async function loadData() {
@@ -573,23 +598,27 @@ export default function Dashboard() {
       {/* ── OVERVIEW TAB ── */}
       {tab === "overview" && (
         <div className="space-y-6">
-          {/* Metrics */}
-          {/* New 5-chip set:
-                Quotes        — every quote, count + dollar total
-                Open Orders   — non-terminal orders, count + unpaid $
-                Open Invoices — outstanding invoices, count + $
-                Revenue (30d) — completed orders in the last 30 days
-                Units Sold (30d) — garments shipped in the last 30 days
-              The two 30-day chips read as the shop's recent activity
-              dashboard; the first three are work-in-progress queues.
-              QB-connected shops will eventually source Revenue/Units
-              from QB's reports — see Dashboard.jsx derived-state
-              comment for the follow-up plan. */}
-          <div data-tour="metrics" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {/* Metrics.
+                When QB is NOT connected we show all 5 chips — local data
+                is the only number the shop has.
+                When QB IS connected we hide Open Invoices + Revenue (30d)
+                because QB is the source of truth for AR + sales and two-
+                numbers-that-don't-agree is worse than one. Same treatment
+                as Performance.jsx (PR #256). The Units Sold (30d) chip
+                stays — it's a production metric (garments shipped), not
+                an accounting number, so it doesn't compete with QB. */}
+          <div
+            data-tour="metrics"
+            className={`grid grid-cols-2 gap-3 ${qbConnected ? "sm:grid-cols-3" : "sm:grid-cols-3 lg:grid-cols-5"}`}
+          >
             <MetricCard label="Quotes" value={totalQuotesCount} sub={fmtMoney(totalQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
             <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
-            <MetricCard label="Open Invoices" value={openInvoicesCount} sub={fmtMoney(openInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
-            <MetricCard label="Revenue (30d)" value={fmtMoney(revenueLast30)} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
+            {!qbConnected && (
+              <MetricCard label="Open Invoices" value={openInvoicesCount} sub={fmtMoney(openInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
+            )}
+            {!qbConnected && (
+              <MetricCard label="Revenue (30d)" value={fmtMoney(revenueLast30)} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
+            )}
             <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-violet-600" onClick={() => navigate(createPageUrl("Performance"))} />
           </div>
 
