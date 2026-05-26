@@ -11,6 +11,54 @@ import {
 } from "@/lib/orderGoodsProgress";
 import { Package, ChevronRight, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { notify } from "@/lib/notify";
+import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
+
+// Collect every artwork file attached to an order so press operators
+// can preview them inline. Mirrors OrderDetailModal.getOrderArtwork:
+// merge `selected_artwork` (proofs + connected designs) with per-imprint
+// artwork, deduped by id/url/name. Each row carries `path` when present
+// so the previewer can re-sign against the artwork bucket.
+function getShopFloorArtwork(order) {
+  const map = new Map();
+  (order?.selected_artwork || []).forEach((art) => {
+    const key = art.id || art.path || art.url || art.file_url || art.name;
+    if (!key || map.has(key)) return;
+    map.set(key, {
+      id: art.id || key,
+      name: art.name || "Artwork",
+      url: art.url || art.file_url || "",
+      file_url: art.file_url || art.url || "",
+      path: art.path || null,
+      colors: art.colors || art.artwork_colors || "",
+      source: art.source || "Attached to order",
+      placements: [],
+    });
+  });
+  (order?.line_items || []).forEach((li) => {
+    (li.imprints || []).forEach((imp) => {
+      if (!imp.artwork_id && !imp.artwork_url && !imp.artwork_name) return;
+      const id = imp.artwork_id || imp.artwork_url || imp.artwork_name;
+      const placement = [imp.location, imp.title].filter(Boolean).join(" · ");
+      const existing = map.get(id);
+      if (existing) {
+        if (placement && !existing.placements.includes(placement)) existing.placements.push(placement);
+        if (!existing.colors && imp.artwork_colors) existing.colors = imp.artwork_colors;
+        return;
+      }
+      map.set(id, {
+        id,
+        name: imp.artwork_name || "Attached Artwork",
+        url: imp.artwork_url || "",
+        file_url: imp.artwork_url || "",
+        path: imp.artwork_path || null,
+        colors: imp.artwork_colors || "",
+        source: "Linked to production imprint",
+        placements: placement ? [placement] : [],
+      });
+    });
+  });
+  return Array.from(map.values());
+}
 
 // ShopFloor STEPS used to be its own copy of the order pipeline.
 // Consolidated to O_STATUSES on 2026-05-12 so all status lists in
@@ -100,6 +148,8 @@ export default function ShopFloor() {
   const [customers, setCustomers] = useState({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+  // Artwork preview overlay — opens the in-app PDF/image viewer.
+  const [previewArt, setPreviewArt] = useState(null);
   const [filter, setFilter] = useState("Active");
   const [refreshing, setRefreshing] = useState(false);
   const [note, setNote] = useState("");
@@ -596,6 +646,45 @@ export default function ShopFloor() {
                 );
               })()}
 
+              {/* Artwork — list every proof / file attached to this order
+                  so the press operator can preview them in-app without
+                  needing access to the order detail modal. Same lookup
+                  shape as OrderDetailModal.getOrderArtwork: merge
+                  selected_artwork (proofs + connected designs) with
+                  per-imprint artwork. Tap a row to open the in-app
+                  PDF/image viewer. */}
+              {(() => {
+                const art = getShopFloorArtwork(selected);
+                if (!art.length) return null;
+                return (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-5">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
+                      Artwork ({art.length})
+                    </h3>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {art.map((a) => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => a.url && setPreviewArt(a)}
+                          disabled={!a.url}
+                          className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-left hover:bg-indigo-50 hover:border-indigo-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold text-slate-800 truncate">{a.name}</div>
+                            <div className="text-[11px] text-slate-400 truncate">
+                              {a.colors ? `${a.colors} color${String(a.colors) === "1" ? "" : "s"} · ` : ""}
+                              {a.placements?.length ? a.placements.join(", ") : a.source}
+                            </div>
+                          </div>
+                          <span className="shrink-0 text-xs font-semibold text-indigo-600">Open</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Job ticket — stage-aware per-size tracking.
                   Order Goods: ordered/received cycle (goods_progress).
                   Printing:    per-imprint print tracking (print_progress).
@@ -799,6 +888,14 @@ export default function ShopFloor() {
           )}
         </div>
       </div>
+
+      {previewArt && (
+        <ArtworkPreviewOverlay
+          art={previewArt}
+          onClose={() => setPreviewArt(null)}
+          backLabel="Back to job"
+        />
+      )}
     </div>
   );
 }
