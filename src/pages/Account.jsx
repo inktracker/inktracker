@@ -617,6 +617,11 @@ export default function Account() {
             >
               {saving ? "Saving..." : "Save Changes"}
             </button>
+
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-5 mt-2">
+              <div className="text-sm font-semibold text-slate-700 mb-2">Presses</div>
+              <PressesSection user={user} />
+            </div>
           </div>
         </Section>
 
@@ -818,10 +823,6 @@ export default function Account() {
 
         <Section icon={CheckSquare} title="Production Tasks">
           <ProductionTasksSection user={user} />
-        </Section>
-
-        <Section icon={Wand2} title="Presses">
-          <PressesSection user={user} />
         </Section>
 
         <Section icon={Package} title="Supplier API Keys">
