@@ -9,7 +9,7 @@ import {
   nextGoodsStatusOnTap,
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
-import { Package, ChevronRight, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 
@@ -150,6 +150,23 @@ export default function ShopFloor() {
   const [selected, setSelected] = useState(null);
   // Artwork preview overlay — opens the in-app PDF/image viewer.
   const [previewArt, setPreviewArt] = useState(null);
+  // Updates panel collapsed state, per-order. Defaults collapsed so
+  // operators see Production / Checklist / Artwork / Job Ticket first;
+  // they can expand history when they actually need it.
+  const updatesStorageKey = selected?.id ? `shopfloor-updates-collapsed-${selected.id}` : null;
+  const [updatesCollapsed, setUpdatesCollapsed] = useState(true);
+  useEffect(() => {
+    if (!updatesStorageKey) return;
+    try {
+      const stored = localStorage.getItem(updatesStorageKey);
+      setUpdatesCollapsed(stored === "false" ? false : true);
+    } catch { /* ignore */ }
+  }, [updatesStorageKey]);
+  useEffect(() => {
+    if (!updatesStorageKey) return;
+    try { localStorage.setItem(updatesStorageKey, updatesCollapsed ? "true" : "false"); }
+    catch { /* ignore */ }
+  }, [updatesStorageKey, updatesCollapsed]);
   const [filter, setFilter] = useState("Active");
   const [refreshing, setRefreshing] = useState(false);
   const [note, setNote] = useState("");
@@ -854,18 +871,33 @@ export default function ShopFloor() {
                 if (allNotes.length === 0) return null;
                 return (
                   <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Updates</h3>
-                    <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {allNotes.map((n, i) => (
-                        <div key={i} className="flex gap-3 text-sm">
-                          <div className="w-2 h-2 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
-                          <div>
-                            <p className="text-slate-700">{n.text}</p>
-                            <p className="text-xs text-slate-400">{n.by} · {n.step} · {n.at ? new Date(n.at).toLocaleString() : ""}</p>
+                    <button
+                      type="button"
+                      onClick={() => setUpdatesCollapsed((c) => !c)}
+                      aria-expanded={!updatesCollapsed}
+                      className={`w-full flex items-center justify-between text-left ${updatesCollapsed ? "" : "mb-3"}`}
+                    >
+                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                        Updates <span className="text-slate-300 font-semibold">({allNotes.length})</span>
+                      </h3>
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${updatesCollapsed ? "-rotate-90" : "rotate-0"}`}
+                        aria-hidden="true"
+                      />
+                    </button>
+                    {!updatesCollapsed && (
+                      <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {allNotes.map((n, i) => (
+                          <div key={i} className="flex gap-3 text-sm">
+                            <div className="w-2 h-2 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
+                            <div>
+                              <p className="text-slate-700">{n.text}</p>
+                              <p className="text-xs text-slate-400">{n.by} · {n.step} · {n.at ? new Date(n.at).toLocaleString() : ""}</p>
+                            </div>
                           </div>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
