@@ -452,21 +452,25 @@ export default function Dashboard() {
   // both Approved and Approved and Paid. Bucketing lives in
   // lib/broker/quoteStatus.js + unit tests so the shop and broker
   // views can't drift.
-  const { pending, approved: approvedQuotesList, draft } = bucketQuotes(quotes);
-  const openQuotesList     = [...draft, ...pending];
-  const openQuotes         = openQuotesList.length;
-  const approvedQuotes     = approvedQuotesList.length;
-  const openQuotesValue    = sumTotals(openQuotesList);
-  const approvedQuotesValue = sumTotals(approvedQuotesList);
-
-  // Open orders that are NOT yet paid. Pre-paid orders (paid===true)
-  // contribute zero to the outstanding sum since the money's already
-  // in. Their count still shows in `activeOrders` for the pipeline UI;
-  // the metric card just doesn't add them to the dollar total.
+  // ── New 5-chip set ─────────────────────────────────────────────────
+  // 1. Quotes — ALL quotes (count + total value across every status)
+  // 2. Open Orders — non-terminal orders
+  // 3. Open Invoices — outstanding (unpaid) invoices
+  // 4. Revenue (last 30 days) — sum of completed orders in the window
+  // 5. Units Sold (last 30 days) — total garment count from those orders
   //
-  // Excludes Completed AND Cancelled/Voided — both are terminal states.
-  // Without the second filter, cancelled jobs inflated the open-orders
-  // count and dollar total even though they'll never be invoiced.
+  // Per the project memory, QB is the v1 sole customer-payment integration.
+  // When the shop is QB-connected, #4 + #5 ought to pull from QB's reports
+  // for the authoritative number (some invoices may be created directly in
+  // QB and synced back). The QB read path isn't wired here yet — local
+  // order data is the source until we add a `getDashboardMetrics` action
+  // to qbSync. Tracked in AUDIT_2026-05-26.md as a follow-up.
+  const totalQuotesCount = quotes.length;
+  const totalQuotesValue = sumTotals(quotes);
+
+  // Open orders excludes Completed AND Cancelled/Voided — all three are
+  // terminal states. Cancelled jobs used to inflate the count + dollar
+  // total even though they'd never invoice.
   const TERMINAL_STATUSES = new Set(["Completed", "Cancelled", "Voided"]);
   const activeOrders = orders.filter(o => !TERMINAL_STATUSES.has(o.status));
   const unpaidOpenOrders = activeOrders.filter(o => !o.paid);
@@ -474,13 +478,39 @@ export default function Dashboard() {
   const openOrdersValue = sumTotals(unpaidOpenOrders);
 
   const outstanding = computeOutstanding(invoices);
-  const unpaidInvoicesCount = outstanding.count;
-  const unpaidInvoicesValue = outstanding.total;
+  const openInvoicesCount = outstanding.count;
+  const openInvoicesValue = outstanding.total;
 
-  // Items where qty AND reorder are both 0 aren't really "low stock" —
-  // they're just uninitialized rows. Require a reorder threshold > 0
-  // before flagging, so the alert only fires once the shop has set a
-  // par level for the SKU.
+  // Last-30-day revenue + units. Scoped to orders whose status is
+  // "Completed" AND whose completed_date falls inside the window. Matches
+  // the Order Pipeline's Completed column scoping (PR #225) so the numbers
+  // line up between the two surfaces.
+  const REVENUE_WINDOW_DAYS = 30;
+  const REVENUE_WINDOW_MS = REVENUE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const revenueWindowCutoff = Date.now() - REVENUE_WINDOW_MS;
+  const recentCompleted = orders.filter(o => {
+    if (o.status !== "Completed") return false;
+    const t = o.completed_date ? new Date(o.completed_date).getTime() : 0;
+    return t >= revenueWindowCutoff;
+  });
+  const revenueLast30 = sumTotals(recentCompleted);
+  const unitsLast30 = recentCompleted.reduce((sum, o) => {
+    return sum + (o.line_items || []).reduce((s, li) => {
+      const sizes = li.sizes || {};
+      return s + Object.values(sizes).reduce((a, v) => a + (parseInt(v, 10) || 0), 0);
+    }, 0);
+  }, 0);
+
+  // Legacy aliases still used by GettingStartedChecklist + lower-half UI
+  // (the Open Quotes count + dollar total appear on the order-pipeline
+  // chips below the new metric row).
+  const { pending, approved: approvedQuotesList, draft } = bucketQuotes(quotes);
+  const openQuotesList     = [...draft, ...pending];
+  const openQuotes         = openQuotesList.length;
+  const approvedQuotes     = approvedQuotesList.length;
+  const openQuotesValue    = sumTotals(openQuotesList);
+  const approvedQuotesValue = sumTotals(approvedQuotesList);
+
   const lowStockItems = inventory.filter(i => (i.reorder || 0) > 0 && (i.qty || 0) <= (i.reorder || 0));
 
   return (
@@ -544,17 +574,23 @@ export default function Dashboard() {
       {tab === "overview" && (
         <div className="space-y-6">
           {/* Metrics */}
-          {/* 5 chips at the wide breakpoint (was 6, brokers removed).
-              Each chip shows the count up top with its dollar value
-              directly underneath — value-first reads consistent. The
-              Open Orders sum excludes pre-paid orders (their money is
-              already in). */}
+          {/* New 5-chip set:
+                Quotes        — every quote, count + dollar total
+                Open Orders   — non-terminal orders, count + unpaid $
+                Open Invoices — outstanding invoices, count + $
+                Revenue (30d) — completed orders in the last 30 days
+                Units Sold (30d) — garments shipped in the last 30 days
+              The two 30-day chips read as the shop's recent activity
+              dashboard; the first three are work-in-progress queues.
+              QB-connected shops will eventually source Revenue/Units
+              from QB's reports — see Dashboard.jsx derived-state
+              comment for the follow-up plan. */}
           <div data-tour="metrics" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <MetricCard label="Open Quotes" value={openQuotes} sub={fmtMoney(openQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
-            <MetricCard label="Approved" value={approvedQuotes} sub={fmtMoney(approvedQuotesValue)} color="text-emerald-600" onClick={() => navigate(createPageUrl("Quotes"))} />
+            <MetricCard label="Quotes" value={totalQuotesCount} sub={fmtMoney(totalQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
             <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
-            <MetricCard label="Unpaid Invoices" value={unpaidInvoicesCount} sub={fmtMoney(unpaidInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
-            <MetricCard label="Low Stock Items" value={lowStockItems.length} sub="Need reorder" color="text-red-600" onClick={() => navigate(createPageUrl("Inventory"))} />
+            <MetricCard label="Open Invoices" value={openInvoicesCount} sub={fmtMoney(openInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
+            <MetricCard label="Revenue (30d)" value={fmtMoney(revenueLast30)} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
+            <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-violet-600" onClick={() => navigate(createPageUrl("Performance"))} />
           </div>
 
           {/* Getting Started Checklist */}
