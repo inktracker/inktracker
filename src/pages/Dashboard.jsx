@@ -270,11 +270,13 @@ export default function Dashboard() {
   const [brokers, setBrokers] = useState([]);
   const [shopOwners, setShopOwners] = useState([]);
   const [tab, setTab] = useState("overview");
-  // QB connection drives which metric chips show. When QB is connected
-  // we hide the local financials (Revenue + Open Invoices) since QB is
-  // authoritative for those and two-numbers-don't-agree is worse than
-  // one. Matches the Performance page's behavior (PR #256).
+  // QB connection drives where the financial chips source their
+  // numbers from. When connected we kick off a getDashboardMetrics
+  // call to pull Revenue + AR directly from QB; the chips render
+  // those values instead of the local estimates. When not connected,
+  // chips fall back to local order/invoice data.
   const [qbConnected, setQbConnected] = useState(false);
+  const [qbMetrics, setQbMetrics] = useState(null);
   const [brokerUnreadCount, setBrokerUnreadCount] = useState(0);
   // Unread messages from brokers (separate from BrokerNotification rows
   // which cover quote-submission events). Combined with brokerUnreadCount
@@ -300,21 +302,40 @@ export default function Dashboard() {
   // which is why those cards drifted from the Orders/Quotes pages.
   const [customers, setCustomers] = useState({});
 
-  // Background QB connection check. Fires once on mount; same pattern as
-  // Performance.jsx. Best-effort — a failed check just leaves the local
-  // chips visible, which is the safer default for a first-load glitch.
+  // Background QB connection check + metrics fetch. Two-step:
+  //   1. checkConnection → boolean
+  //   2. if connected, getDashboardMetrics → { revenueLast30Days,
+  //      revenueOrderCount, openInvoicesCount, openInvoicesTotal }
+  // Best-effort — a failure of either step leaves the chips on local
+  // data with the "local estimates" disclaimer, which is the safest
+  // first-load fallback.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
         const { data, error: invErr } = await base44.functions.invoke("qbSync", {
           action: "checkConnection",
-          accessToken: session?.access_token,
+          accessToken: token,
         });
-        if (!cancelled) setQbConnected(!invErr && !!data?.connected);
+        const connected = !invErr && !!data?.connected;
+        if (cancelled) return;
+        setQbConnected(connected);
+        if (!connected) return;
+
+        // Pull QB-sourced Revenue + AR. This is one paginated read of
+        // every Invoice (just the four columns we summarize) — fine
+        // for a dashboard load and matches the existing
+        // getCustomerStats pattern.
+        const { data: m, error: mErr } = await base44.functions.invoke("qbSync", {
+          action: "getDashboardMetrics",
+          accessToken: token,
+        });
+        if (cancelled) return;
+        if (!mErr && m && typeof m === "object") setQbMetrics(m);
       } catch {
-        if (!cancelled) setQbConnected(false);
+        if (!cancelled) { setQbConnected(false); setQbMetrics(null); }
       }
     })();
     return () => { cancelled = true; };
@@ -599,27 +620,48 @@ export default function Dashboard() {
       {tab === "overview" && (
         <div className="space-y-6">
           {/* Metrics — all 5 chips always visible.
-                Numbers are calculated from local order/invoice data.
-                When QB is connected we render a small disclaimer below
-                so the shop knows QB is the source of truth for the
-                accounting-grade figures (Revenue, Open Invoices). A
-                future pass will swap these to QB-sourced values when
-                connected; for now they're local with an honest label. */}
-          <div
-            data-tour="metrics"
-            className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
-          >
-            <MetricCard label="Quotes" value={totalQuotesCount} sub={fmtMoney(totalQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
-            <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
-            <MetricCard label="Open Invoices" value={openInvoicesCount} sub={fmtMoney(openInvoicesValue)} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
-            <MetricCard label="Revenue (30d)" value={fmtMoney(revenueLast30)} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
-            <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-violet-600" onClick={() => navigate(createPageUrl("Performance"))} />
-          </div>
-          {qbConnected && (
-            <p className="text-[11px] text-slate-400 -mt-3">
-              Numbers from local InkTracker data. For accounting-grade Revenue + AR figures, open the QuickBooks reports linked from Performance.
-            </p>
-          )}
+                When QB is connected AND the getDashboardMetrics call
+                returned, Open Invoices + Revenue (30d) display the
+                QB-sourced numbers (with a "via QuickBooks" label).
+                If QB isn't connected, or the metrics call is still in
+                flight / errored, those chips fall back to the local
+                estimates so the user always sees a value. Units Sold
+                stays local — QB doesn't track garment counts. */}
+          {(() => {
+            const qbReady = qbConnected && qbMetrics;
+            const invoicesLabel = qbReady ? "Open Invoices (QB)" : "Open Invoices";
+            const invoicesValue = qbReady ? qbMetrics.openInvoicesCount : openInvoicesCount;
+            const invoicesSub   = qbReady ? fmtMoney(qbMetrics.openInvoicesTotal) : fmtMoney(openInvoicesValue);
+            const revenueLabel  = qbReady ? "Revenue (30d, QB)" : "Revenue (30d)";
+            const revenueValue  = qbReady ? fmtMoney(qbMetrics.revenueLast30Days) : fmtMoney(revenueLast30);
+            const revenueSub    = qbReady
+              ? `${qbMetrics.revenueOrderCount} invoice${qbMetrics.revenueOrderCount === 1 ? "" : "s"}`
+              : `${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`;
+            return (
+              <>
+                <div
+                  data-tour="metrics"
+                  className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"
+                >
+                  <MetricCard label="Quotes" value={totalQuotesCount} sub={fmtMoney(totalQuotesValue)} color="text-yellow-600" onClick={() => navigate(createPageUrl("Quotes"))} />
+                  <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
+                  <MetricCard label={invoicesLabel} value={invoicesValue} sub={invoicesSub} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
+                  <MetricCard label={revenueLabel} value={revenueValue} sub={revenueSub} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
+                  <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-violet-600" onClick={() => navigate(createPageUrl("Performance"))} />
+                </div>
+                {qbConnected && !qbMetrics && (
+                  <p className="text-[11px] text-slate-400 -mt-3">
+                    Loading authoritative numbers from QuickBooks…
+                  </p>
+                )}
+                {qbReady && (
+                  <p className="text-[11px] text-slate-400 -mt-3">
+                    Open Invoices + Revenue sourced from QuickBooks · as of {new Date(qbMetrics.asOf || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                )}
+              </>
+            );
+          })()}
 
           {/* Getting Started Checklist */}
           <div data-tour="checklist">
