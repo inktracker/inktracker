@@ -84,13 +84,25 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
   async function loadClients() {
     if (clients.length > 0) return;
     setLoadingClients(true);
-    const res = await base44.entities.Customer.filter({ shop_owner: `broker:${broker.email}` });
-    setClients(res);
-    setLoadingClients(false);
+    try {
+      const res = await base44.entities.Customer.filter({ shop_owner: `broker:${broker.email}` });
+      setClients(res);
+    } catch (e) {
+      console.error("[BrokerCard] clients fetch failed:", e);
+    } finally {
+      setLoadingClients(false);
+    }
   }
 
+  // Pre-load the client list so the count shows on the collapsed card
+  // header without the user needing to expand. N parallel queries
+  // (one per broker on this shop) — bounded; acceptable.
+  useEffect(() => {
+    loadClients();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [broker.email]);
+
   function toggle() {
-    if (!open && subTab === "clients") loadClients();
     setOpen(v => !v);
   }
 
@@ -129,6 +141,10 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
         </div>
         {/* Quick stats */}
         <div className="flex items-center gap-4 shrink-0 ml-4">
+          <div className="text-right hidden sm:block">
+            <div className="text-xs text-slate-400">Clients</div>
+            <div className="font-bold text-violet-700 text-sm">{loadingClients ? "…" : clients.length}</div>
+          </div>
           <div className="text-right hidden sm:block">
             <div className="text-xs text-slate-400">Orders</div>
             <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">{brokerOrders.length}</div>
