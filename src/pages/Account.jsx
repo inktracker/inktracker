@@ -630,14 +630,21 @@ export default function Account() {
         </Section>}
 
         <Section icon={User} title="Account">
-          <div className="space-y-3">
-            <div>
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Email</div>
-              <div className="text-sm text-slate-700 font-semibold">{user?.email}</div>
+          <div className="space-y-5">
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Email</div>
+                <div className="text-sm text-slate-700 font-semibold">{user?.email}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Role</div>
+                <div className="text-sm text-slate-700 font-semibold capitalize">{user?.role || "user"}</div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Role</div>
-              <div className="text-sm text-slate-700 font-semibold capitalize">{user?.role || "user"}</div>
+
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-5">
+              <div className="text-sm font-semibold text-slate-700 mb-2">Export Data</div>
+              <ExportDataSection user={user} />
             </div>
           </div>
         </Section>
@@ -1347,6 +1354,126 @@ function ProductionTasksSection({ user }) {
 }
 
 // Shop-configured press list. Drives the "Assigned Press" dropdown
+// Per-entity CSV + a single full-backup JSON. Pulls via base44.entities
+// scoped to shop_owner so RLS already constrains the read; no edge
+// function or service-role key involved. Browser-side CSV builder —
+// good enough for the row counts a shop generates over its lifetime.
+function ExportDataSection({ user }) {
+  const [busy, setBusy] = useState(null);
+
+  const ENTITIES = [
+    { key: "customers", label: "Customers", entity: base44.entities.Customer },
+    { key: "quotes",    label: "Quotes",    entity: base44.entities.Quote },
+    { key: "orders",    label: "Orders",    entity: base44.entities.Order },
+    { key: "invoices",  label: "Invoices",  entity: base44.entities.Invoice },
+    { key: "inventory", label: "Inventory", entity: base44.entities.InventoryItem },
+  ];
+
+  function dateStamp() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function downloadBlob(content, filename, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function toCsv(rows) {
+    if (!rows || rows.length === 0) return "";
+    // Union of keys across all rows — partial rows (older schema versions,
+    // optional fields) would otherwise drop columns silently.
+    const headerSet = new Set();
+    for (const r of rows) {
+      if (r && typeof r === "object") for (const k of Object.keys(r)) headerSet.add(k);
+    }
+    const headers = Array.from(headerSet);
+    const escape = (v) => {
+      if (v == null) return "";
+      const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [headers.join(",")];
+    for (const r of rows) lines.push(headers.map((h) => escape(r?.[h])).join(","));
+    return lines.join("\n");
+  }
+
+  async function fetchAll(entity) {
+    try {
+      return await entity.filter({ shop_owner: user.email }, "-created_date", 100000);
+    } catch (e) {
+      console.error("[Export] fetch failed:", e);
+      return [];
+    }
+  }
+
+  async function exportCsv(item) {
+    setBusy(item.key);
+    try {
+      const rows = await fetchAll(item.entity);
+      downloadBlob(toCsv(rows), `inktracker-${item.key}-${dateStamp()}.csv`, "text/csv");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function exportFullBackup() {
+    setBusy("backup");
+    try {
+      const results = await Promise.all(
+        ENTITIES.map((e) => fetchAll(e.entity).then((r) => [e.key, r]))
+      );
+      const data = Object.fromEntries(results);
+      const payload = JSON.stringify(
+        { exportedAt: new Date().toISOString(), shopOwner: user.email, ...data },
+        null,
+        2,
+      );
+      downloadBlob(payload, `inktracker-backup-${dateStamp()}.json`, "application/json");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-slate-500 leading-relaxed">
+        Download your shop's data for backup or migration. CSVs open cleanly in Excel/Sheets; the full backup JSON includes every entity in one file. Large datasets may take a moment.
+      </p>
+      <div className="grid sm:grid-cols-2 gap-2">
+        {ENTITIES.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => exportCsv(item)}
+            disabled={busy !== null}
+            className="flex items-center justify-between px-3 py-2 text-sm font-semibold rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          >
+            <span className="flex items-center gap-2">
+              <DownloadCloud className="w-4 h-4 text-indigo-500" />
+              {item.label} (CSV)
+            </span>
+            {busy === item.key && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={exportFullBackup}
+        disabled={busy !== null}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60 disabled:cursor-not-allowed transition"
+      >
+        {busy === "backup" ? <Loader2 className="w-4 h-4 animate-spin" /> : <DownloadCloud className="w-4 h-4" />}
+        {busy === "backup" ? "Building backup…" : "Download Full Backup (JSON)"}
+      </button>
+    </div>
+  );
+}
+
 // on the Order Detail modal. Free-text inputs were too easy to typo
 // (Auto 1 vs auto-1 vs Press A) and gave no canonical list to filter
 // reports by.
