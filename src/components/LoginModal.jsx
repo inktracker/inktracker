@@ -10,6 +10,13 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   }, [isOpen, defaultMode]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Signup-only — second password field that has to match `password`
+  // so a typo on signup doesn't quietly lock the user out of their
+  // account. The previous flow only had one field, so a typo got
+  // saved as the real password and the user couldn't sign in — they
+  // ended up using "Forgot password" to set one they actually knew.
+  // BrokerOnboarding + ResetPassword both already have this pattern.
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [magicLoading, setMagicLoading] = useState(false);
@@ -26,6 +33,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     setError("");
     setSuccess("");
     setPendingConfirmEmail("");
+    setConfirmPassword("");
   };
 
   const handleResendConfirmation = async () => {
@@ -54,6 +62,20 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
 
     try {
       if (mode === "signup") {
+        // Cheap client-side guards so a typo doesn't propagate into the
+        // saved password. Supabase enforces minLength=6 server-side too,
+        // but we want a clear inline error instead of the generic API
+        // message.
+        if (password.length < 6) {
+          setError("Password must be at least 6 characters.");
+          setLoading(false);
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError("Passwords don't match.");
+          setLoading(false);
+          return;
+        }
         const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
         if (signUpError) throw signUpError;
         // If email confirmation is disabled, user is immediately signed in
@@ -319,6 +341,31 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 <p className="text-xs text-slate-400 mt-1">Minimum 6 characters</p>
               )}
             </div>
+
+            {/* Confirm password — signup only. Catches typos before
+                they get saved as the real password, which would
+                otherwise leave the user unable to sign in until they
+                reset via email. */}
+            {mode === "signup" && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  Confirm password
+                </label>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="new-password"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="••••••••"
+                />
+                {confirmPassword.length > 0 && password !== confirmPassword && (
+                  <p className="text-xs text-red-600 mt-1">Passwords don't match yet</p>
+                )}
+              </div>
+            )}
 
             <button
               type="submit"
