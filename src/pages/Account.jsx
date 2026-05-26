@@ -1303,6 +1303,18 @@ function ProductionTasksSection({ user }) {
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           {saving ? "Saving…" : saved ? "Saved" : "Save Production Tasks"}
         </button>
+        <button
+          onClick={() => {
+            if (window.confirm("Reset every stage to InkTracker's default task lists? Your customizations will be wiped. You'll still need to click Save to persist the reset.")) {
+              const fresh = {};
+              for (const stage of stages) fresh[stage] = [...(defaults[stage] || [])];
+              setTasks(fresh);
+            }
+          }}
+          className="text-xs text-slate-500 hover:text-slate-700 font-semibold"
+        >
+          Reset to Defaults
+        </button>
         {saved && <span className="text-xs text-emerald-600 font-semibold">Saved</span>}
       </div>
     </div>
