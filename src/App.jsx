@@ -13,6 +13,7 @@ import { pagesConfig } from "./pages.config";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import PageNotFound from "./lib/PageNotFound";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
+import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
 import OnboardingWizard from "@/components/OnboardingWizard";
 import {
@@ -1057,10 +1058,20 @@ const AuthenticatedApp = () => {
     return <PendingApprovalPage />;
   }
 
-  // Brokers belong in their own portal
+  // Brokers belong in their own portal. As of the shared-routes
+  // refactor (PRs #283/#284), brokers can also reach the shared
+  // top-level routes (Quotes, Orders, Customers, Invoices,
+  // Performance) which dispatch to the broker variant via the
+  // *Route components in pages.config.js. Anywhere else, bounce
+  // them back to /BrokerDashboard. Source of truth for the
+  // allowlist is lib/broker/roleRedirect — Layout.jsx uses the same
+  // list for its own check, so both layers stay in sync.
   if (user.role === "broker") {
-    window.location.replace("/BrokerDashboard");
-    return <FullScreenSpinner />;
+    const pageName = location.pathname.replace(/^\//, "");
+    if (!BROKER_ALLOWED_PAGES.includes(pageName)) {
+      window.location.replace("/BrokerDashboard");
+      return <FullScreenSpinner />;
+    }
   }
 
   // Managers get full app access — no onboarding needed (they inherit shop from owner)
