@@ -80,7 +80,7 @@ export function interpretActivationResponse({ rpcResult, rpcError }) {
       return {
         state: ACTIVATION_STATES.PERMANENT,
         message:
-          "We couldn't find a profile for your account. Sign up may have failed partway through — please contact joe@biotamfg.co.",
+          "We couldn't find a profile for your account. Sign up may have failed partway through — please contact support@inktracker.app.",
         retryable: false,
       };
 
@@ -89,7 +89,7 @@ export function interpretActivationResponse({ rpcResult, rpcError }) {
         state: ACTIVATION_STATES.PERMANENT,
         message:
           rpcResult.message ??
-          "This account type doesn't get a free trial. Contact joe@biotamfg.co if you're not sure why you're seeing this.",
+          "This account type doesn't get a free trial. Contact support@inktracker.app if you're not sure why you're seeing this.",
         retryable: false,
       };
 

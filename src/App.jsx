@@ -574,7 +574,7 @@ function PublicLandingPage() {
                   I run Biota Mfg, a screen print shop in Reno, Nevada. After 13 years on the press, every shop-management tool I tried left me asking, "Has anyone who designed this even worked in a shop before?" One would try to do everything and miss the basics; the next would nail one thing but miss the rest of the workflow. So I built the shop-management software I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. It's also another avenue for me to help fund the land-conservation work I'm doing through Biota — a conservation contribution is baked into every InkTracker subscription. — Joe
                 </p>
                 <p className="text-xs text-slate-500">
-                  Joe Grennan · Founder · joe@biotamfg.co
+                  Joe Grennan · Founder
                 </p>
               </div>
             </div>
@@ -628,8 +628,8 @@ function PublicLandingPage() {
                 </button>
                 <p className="text-xs text-teal-200 mt-3">
                   Have a question?{" "}
-                  <a href="mailto:joe@biotamfg.co" className="underline underline-offset-4 hover:text-white transition">
-                    Email joe@biotamfg.co
+                  <a href="mailto:support@inktracker.app" className="underline underline-offset-4 hover:text-white transition">
+                    Email support@inktracker.app
                   </a>
                 </p>
               </div>
@@ -898,7 +898,7 @@ function PostConfirmSpinner() {
         // Exhausted retries — show an error with manual retry.
         if (!cancelled) {
           setPhase("error");
-          setErrorMessage("Activation kept failing. Please try again or contact joe@biotamfg.co.");
+          setErrorMessage("Activation kept failing. Please try again or contact support@inktracker.app.");
           setErrorRetryable(true);
         }
         return;
@@ -959,7 +959,7 @@ function PostConfirmSpinner() {
             </button>
           )}
           <a
-            href="mailto:joe@biotamfg.co?subject=InkTracker activation issue"
+            href="mailto:support@inktracker.app?subject=InkTracker activation issue"
             className="px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-200 hover:bg-slate-50 rounded-lg"
           >
             Email support

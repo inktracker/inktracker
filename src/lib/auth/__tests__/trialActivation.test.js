@@ -43,7 +43,7 @@ describe("interpretActivationResponse — permanent failures", () => {
     expect(r.state).toBe(ACTIVATION_STATES.PERMANENT);
     expect(r.retryable).toBe(false);
     expect(r.message).toMatch(/profile/);
-    expect(r.message).toMatch(/joe@biotamfg.co/); // user has an action to take
+    expect(r.message).toMatch(/support@inktracker\.app/); // user has an action to take
   });
 
   it("maps status='wrong_role' to PERMANENT — broker/employee/manager", () => {
