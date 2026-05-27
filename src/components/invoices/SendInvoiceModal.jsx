@@ -221,12 +221,17 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                 </div>
               )}
 
+              {/* QB readiness is informational, not blocking. Shops that
+                  don't use QB (or take payment via Stripe / check / wire)
+                  can still send the invoice — the email just won't carry
+                  a QB Pay button. Adding your own payment instructions in
+                  the message body above is the alternative. */}
               {qbState.status === "needs_create" && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                   <div className="text-xs text-amber-800 leading-relaxed">
-                    <div className="font-semibold mb-0.5">This invoice isn't in QuickBooks yet.</div>
-                    Close this dialog and click <span className="font-semibold">Create in QB</span> on the invoice first, then come back to send. Otherwise the customer email won't include a working payment link.
+                    <div className="font-semibold mb-0.5">No QuickBooks payment link will be included.</div>
+                    If you use QB, close this and click <span className="font-semibold">Create in QB</span> first to add a Pay button. Otherwise add your own payment instructions to the message above and send away.
                   </div>
                 </div>
               )}
@@ -236,7 +241,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                   <div className="text-xs text-red-700 leading-relaxed">
                     <div className="font-semibold mb-0.5">QB invoice #{qbInvoiceId} exists, but no payment link.</div>
-                    Close this dialog and click <span className="font-semibold">Create in QB</span> again to retry the share-link mint.
+                    The email will go out without a QB Pay button. Close this and click <span className="font-semibold">Create in QB</span> again to retry the share-link mint, or send now and include your own payment instructions above.
                   </div>
                 </div>
               )}
@@ -252,7 +257,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
               </button>
               <button
                 onClick={handleSend}
-                disabled={sending || recipientEmails.length === 0 || qbState.sendDisabledByQb}
+                disabled={sending || recipientEmails.length === 0}
                 className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-50"
               >
                 {sending ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : <><Mail className="w-4 h-4" /> Send Invoice</>}
