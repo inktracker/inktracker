@@ -18,6 +18,7 @@ import AdminPanel from './pages/AdminPanel';
 import ArtApproval from './pages/ArtApproval';
 import OrderStatus from './pages/OrderStatus';
 import BrokerOnboarding from './pages/BrokerOnboarding';
+import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import Mockups from './pages/Mockups';
 import Production from './pages/Production';
 import PurchaseOrders from './pages/PurchaseOrders';
@@ -45,6 +46,7 @@ export const PAGES = {
     "ArtApproval": ArtApproval,
     "OrderStatus": OrderStatus,
     "BrokerOnboarding": BrokerOnboarding,
+    "EmployeeOnboarding": EmployeeOnboarding,
     "Mockups": Mockups,
     "Production": Production,
     "PurchaseOrders": PurchaseOrders,

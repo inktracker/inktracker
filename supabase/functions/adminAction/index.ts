@@ -219,7 +219,12 @@ serve(async (req) => {
       // likely thing to fail (rate limits, SMTP config, etc). If it succeeds,
       // create the pre-linked profile.
       const appUrl = Deno.env.get("APP_URL");
-      const redirectPage = assignRole === "broker" ? "BrokerOnboarding" : assignRole === "employee" ? "ShopFloor" : assignRole === "manager" ? "Dashboard" : "Dashboard";
+      // Employees were going straight to /ShopFloor, which gated them
+      // behind an email+password form they hadn't set up yet (magic
+      // link sign-in invalidated as soon as the page rejected them).
+      // Route them through EmployeeOnboarding to set a password first,
+      // then it forwards to /ShopFloor.
+      const redirectPage = assignRole === "broker" ? "BrokerOnboarding" : assignRole === "employee" ? "EmployeeOnboarding" : assignRole === "manager" ? "Dashboard" : "Dashboard";
       const redirectTo = appUrl ? `${appUrl}/${redirectPage}` : undefined;
       const { data: inviteData, error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(
         cleanEmail,
