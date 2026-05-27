@@ -87,9 +87,37 @@ async function handleApproveQuote(quoteId: string, token?: string) {
     return { error: "Quote not found." };
   }
 
+  // Need broker_id + broker_email so we can route the approval to the
+  // right next state. Re-select with the fields we'll branch on; the
+  // first select was just for the token verification.
+  const { data: pre } = await supabase
+    .from("quotes")
+    .select("broker_id, broker_email")
+    .eq("id", quoteId)
+    .single();
+
+  // Broker quotes follow client-first workflow: the customer clicking
+  // Approve is the broker's END CLIENT, NOT the shop. Setting status
+  // to "Approved" here would skip the broker's "Submit to Shop" step
+  // entirely and the broker portal would render the quote as
+  // "Shop Approved" (per BrokerDashboard.jsx — Approved + Shop Approved
+  // are treated the same). Mirror the broker portal's
+  // handleMarkClientApproved so the state is exactly what the broker
+  // would set if they marked it manually: status "Client Approved",
+  // client_status "Approved", client_approved_at = now. The broker
+  // still has to hit Submit to Shop to move it into the shop's queue.
+  const isBrokerQuote = Boolean(pre?.broker_id || pre?.broker_email);
+  const updatePayload: any = isBrokerQuote
+    ? {
+        status: "Client Approved",
+        client_status: "Approved",
+        client_approved_at: new Date().toISOString(),
+      }
+    : { status: "Approved" };
+
   const { data: quote, error } = await supabase
     .from("quotes")
-    .update({ status: "Approved" })
+    .update(updatePayload)
     .eq("id", quoteId)
     .select("*")
     .single();
