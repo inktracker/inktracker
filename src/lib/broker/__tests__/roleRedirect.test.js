@@ -3,21 +3,27 @@ import { resolveRoleRedirect } from "../roleRedirect.js";
 
 describe("resolveRoleRedirect", () => {
   it("redirects broker on any non-allowed page to BrokerDashboard", () => {
-    // Quotes is on the broker allowlist now (route shared with shop;
-    // pages.config.js dispatches to the broker variant) — see the
-    // separate test below.
+    // Shop-only routes — broker can't view these directly.
     expect(resolveRoleRedirect({ role: "broker" }, "Dashboard")).toBe("BrokerDashboard");
     expect(resolveRoleRedirect({ role: "broker" }, "AdminPanel")).toBe("BrokerDashboard");
     expect(resolveRoleRedirect({ role: "broker" }, "ShopFloor")).toBe("BrokerDashboard");
-    expect(resolveRoleRedirect({ role: "broker" }, "Orders")).toBe("BrokerDashboard");
+    expect(resolveRoleRedirect({ role: "broker" }, "Inventory")).toBe("BrokerDashboard");
+    expect(resolveRoleRedirect({ role: "broker" }, "Production")).toBe("BrokerDashboard");
+    expect(resolveRoleRedirect({ role: "broker" }, "Account")).toBe("BrokerDashboard");
   });
 
   it("returns null when broker is already on BrokerDashboard", () => {
     expect(resolveRoleRedirect({ role: "broker" }, "BrokerDashboard")).toBe(null);
   });
 
-  it("allows broker on Quotes (shared route with role-dispatch wrapper)", () => {
+  it("allows broker on shared routes that have role-dispatch wrappers", () => {
+    // Each of these maps to a *Route dispatcher in pages.config.js
+    // that renders the broker variant via BrokerDashboard initialTab.
     expect(resolveRoleRedirect({ role: "broker" }, "Quotes")).toBe(null);
+    expect(resolveRoleRedirect({ role: "broker" }, "Orders")).toBe(null);
+    expect(resolveRoleRedirect({ role: "broker" }, "Customers")).toBe(null);
+    expect(resolveRoleRedirect({ role: "broker" }, "Invoices")).toBe(null);
+    expect(resolveRoleRedirect({ role: "broker" }, "Performance")).toBe(null);
   });
 
   it("redirects employee on any non-floor page to ShopFloor", () => {

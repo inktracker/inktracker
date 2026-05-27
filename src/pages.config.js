@@ -20,6 +20,10 @@ import OrderStatus from './pages/OrderStatus';
 import BrokerOnboarding from './pages/BrokerOnboarding';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
 import QuotesRoute from './pages/QuotesRoute';
+import OrdersRoute from './pages/OrdersRoute';
+import CustomersRoute from './pages/CustomersRoute';
+import InvoicesRoute from './pages/InvoicesRoute';
+import PerformanceRoute from './pages/PerformanceRoute';
 import Mockups from './pages/Mockups';
 import Production from './pages/Production';
 import PurchaseOrders from './pages/PurchaseOrders';
@@ -29,22 +33,25 @@ import __Layout from './Layout.jsx';
 export const PAGES = {
     "Account": Account,
     "BrokerDashboard": BrokerDashboard,
-    "Customers": Customers,
+    // Shared routes — *Route dispatchers pick the broker variant when
+    // user.role === "broker", else render the shop page. See
+    // src/pages/QuotesRoute.jsx for the pattern. Imports above kept
+    // for direct references (Customers, Orders, Invoices, Performance
+    // are still imported because the dispatchers use them inside).
+    "Customers": CustomersRoute,
     "Dashboard": Dashboard,
     "Embed": Embed,
     "Inventory": Inventory,
-    "Invoices": Invoices,
-    "Orders": Orders,
+    "Invoices": InvoicesRoute,
+    "Orders": OrdersRoute,
     "QuotePayment": QuotePayment,
     "QuotePaymentCancel": QuotePaymentCancel,
     "QuotePaymentSuccess": QuotePaymentSuccess,
     "QuoteRequest": QuoteRequest,
-    // /Quotes is a shared route — QuotesRoute dispatches to the broker
-    // dashboard or the shop Quotes page based on user.role.
     "Quotes": QuotesRoute,
     "ResetPassword": ResetPassword,
     "Wizard": Wizard,
-    "Performance": Performance,
+    "Performance": PerformanceRoute,
     "AdminPanel": AdminPanel,
     "ArtApproval": ArtApproval,
     "OrderStatus": OrderStatus,

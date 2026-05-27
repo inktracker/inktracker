@@ -39,6 +39,12 @@ const NAV = [
 // own follow-up PR).
 const SECTION_ROUTES = {
   quotes: "Quotes",
+  orders: "Orders",
+  // Broker calls them "clients"; shop calls them "customers". Same
+  // shared route — /Customers — different audience labels.
+  clients: "Customers",
+  invoices: "Invoices",
+  performance: "Performance",
 };
 
 export default function BrokerLayout({
