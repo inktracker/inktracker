@@ -1,19 +1,19 @@
 import Account from './pages/Account';
 import BrokerDashboard from './pages/BrokerDashboard';
-import Customers from './pages/Customers';
+// Shop pages for shared routes (Customers, Orders, Invoices,
+// Performance, Quotes) are imported inside their *Route dispatchers
+// — not here — so this file stays focused on the route → component
+// map. Dashboard, Embed, Inventory, etc. are still imported below
+// because they aren't behind a dispatcher.
 import Dashboard from './pages/Dashboard';
 import Embed from './pages/Embed';
 import Inventory from './pages/Inventory';
-import Invoices from './pages/Invoices';
-import Orders from './pages/Orders';
 import QuotePayment from './pages/QuotePayment';
 import QuotePaymentCancel from './pages/QuotePaymentCancel';
 import QuotePaymentSuccess from './pages/QuotePaymentSuccess';
 import QuoteRequest from './pages/QuoteRequest';
-import Quotes from './pages/Quotes';
 import ResetPassword from './pages/ResetPassword';
 import Wizard from './pages/Wizard';
-import Performance from './pages/Performance';
 import AdminPanel from './pages/AdminPanel';
 import ArtApproval from './pages/ArtApproval';
 import OrderStatus from './pages/OrderStatus';
@@ -35,9 +35,10 @@ export const PAGES = {
     "BrokerDashboard": BrokerDashboard,
     // Shared routes — *Route dispatchers pick the broker variant when
     // user.role === "broker", else render the shop page. See
-    // src/pages/QuotesRoute.jsx for the pattern. Imports above kept
-    // for direct references (Customers, Orders, Invoices, Performance
-    // are still imported because the dispatchers use them inside).
+    // src/pages/QuotesRoute.jsx for the pattern. The shop-side
+    // components (Customers, Orders, Invoices, Performance, Quotes)
+    // are imported inside their dispatcher files; this map only
+    // references the dispatchers.
     "Customers": CustomersRoute,
     "Dashboard": Dashboard,
     "Embed": Embed,

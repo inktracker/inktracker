@@ -60,15 +60,18 @@ export default function BrokerLayout({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
-  // Section-aware click handler. When the section has a real route,
-  // navigate to it (so the browser URL reflects what's shown and
-  // back/forward works naturally). Otherwise fall through to setTab
-  // for the legacy ?tab= driven sections still living inside
-  // /BrokerDashboard.
+  // Section-aware click handler. Every click navigates to a URL so
+  // the browser URL always reflects what's shown — no more URL-vs-
+  // state drift (broker on /Quotes clicks Messages → URL stayed at
+  // /Quotes pre-fix).
   //
-  // Overview ("overview") explicitly routes back to /BrokerDashboard
-  // with no ?tab=, so the user returns to a clean URL after visiting
-  // a section route.
+  //   Sections with a top-level route → navigate to that route.
+  //   Overview → /BrokerDashboard (clean URL, no ?tab=).
+  //   Everything else (messages, profile) → /BrokerDashboard?tab=X.
+  //
+  // setTab prop is kept for backwards compat but no longer called
+  // from here; each navigate() re-mounts BrokerDashboard and its
+  // useState seed re-reads initialTab / ?tab= / default.
   function goToSection(id) {
     if (SECTION_ROUTES[id]) {
       navigate(createPageUrl(SECTION_ROUTES[id]));
@@ -78,7 +81,7 @@ export default function BrokerLayout({
       navigate(createPageUrl("BrokerDashboard"));
       return;
     }
-    setTab(id);
+    navigate(createPageUrl("BrokerDashboard") + "?tab=" + id);
   }
 
   const displayName = user?.display_name || user?.full_name || "Broker";
