@@ -562,14 +562,22 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
   );
 }
 
-export default function BrokerDashboard() {
+// initialTab lets a top-level route wrapper (e.g. QuotesRoute) mount
+// the broker dashboard already pinned to a section without needing
+// the ?tab= query string. Used by the shared /Quotes route — when a
+// broker navigates there, QuotesRoute renders BrokerDashboard
+// initialTab="quotes" so the section opens directly. Falls back to
+// ?tab= and finally to "overview" when no signal is provided.
+export default function BrokerDashboard({ initialTab } = {}) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(() => {
+    // initialTab (from a top-level route wrapper like QuotesRoute) wins
+    // over the legacy ?tab= query string, which itself overrides the
+    // default landing "overview" (was "quotes" — the combined
+    // Overview+List page that got split on 2026-05-27).
+    if (initialTab) return initialTab;
     const params = new URLSearchParams(window.location.search);
-    // Default landing is "overview" as of 2026-05-27 (was "quotes",
-    // which used to be a combined Overview+List page). The full
-    // quotes list now lives under tab="quotes" as its own section.
     return params.get("tab") || "overview";
   });
   const [quotes, setQuotes] = useState([]);
