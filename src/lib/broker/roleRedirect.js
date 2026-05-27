@@ -16,7 +16,10 @@
 // render the broker's version when role === "broker". Added 2026-05-27
 // for the broker-portal mirrors-shop-layout refactor; expanded one
 // route at a time as each section's dispatcher is wired up.
-const BROKER_ALLOWED_PAGES = [
+// Exported so App.jsx's AuthenticatedApp can reuse the same allowlist
+// for its own broker route guard. Keeping the source of truth here
+// means there's one place to update when a new shared route lands.
+export const BROKER_ALLOWED_PAGES = [
   "BrokerDashboard",
   "Quotes",
   "Orders",
