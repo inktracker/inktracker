@@ -274,7 +274,12 @@ export default function OrderDetailModal({
         if (!ok) return;
       }
     }
-    return callAction(onAdvance, order.id).then(onClose);
+    // Keep the modal open as the order walks through the production
+    // pipeline — parent's handleAdvance does setViewing(updated) so
+    // the modal re-renders with the new status and the next pair of
+    // prev/next buttons. Closing on every click made you lose your
+    // place every time you advanced.
+    return callAction(onAdvance, order.id);
   }
 
   async function handleSaveJobCost() {
@@ -1539,7 +1544,7 @@ export default function OrderDetailModal({
           <div className="flex flex-wrap items-center gap-2">
             {onRevert && prevStatus && (
               <button
-                onClick={() => callAction(onRevert, order.id).then(onClose)}
+                onClick={() => callAction(onRevert, order.id)}
                 disabled={saving}
                 className="px-3 py-2 text-sm font-semibold text-slate-500 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition disabled:opacity-50"
               >
