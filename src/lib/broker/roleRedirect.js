@@ -19,6 +19,10 @@
 const BROKER_ALLOWED_PAGES = [
   "BrokerDashboard",
   "Quotes",
+  "Orders",
+  "Customers",
+  "Invoices",
+  "Performance",
 ];
 
 export function resolveRoleRedirect(user, currentPageName) {
