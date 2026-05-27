@@ -115,7 +115,18 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
     : calcQuoteTotals(quote, STANDARD_MARKUP);
   const normalizedStatus = normalizeQuoteStatus(quote.status);
   const canSubmit = normalizedStatus === "Draft";
-  const canDelete = normalizedStatus === "Draft";
+  // Brokers can delete anything that doesn't have a real order behind
+  // it. "Converted to Order" is the lock — there's an active Order row
+  // tied to this quote; deleting the source would orphan the audit
+  // trail (OrderDetailModal looks up quote.id → totals, line items,
+  // message thread). Everything else (Draft, Sent to Client, Client
+  // Approved/Rejected, Pending, Shop Approved, Declined) is fair game.
+  const canDelete = normalizedStatus !== "Converted to Order";
+  // Shop-visible statuses — warn the broker before yanking it from
+  // the shop's queue. The shop will just see it vanish; no cross-
+  // tenant notification yet (follow-up).
+  const isShopVisible =
+    normalizedStatus === "Pending" || normalizedStatus === "Shop Approved";
   const [actionLoading, setActionLoading] = useState(null);
   const [showPaymentPicker, setShowPaymentPicker] = useState(false);
   const [showSendModal, setShowSendModal] = useState(false);
@@ -528,10 +539,10 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
             )}
             {canDelete && (
               <button
-                onClick={() => onDelete(quote)}
+                onClick={() => onDelete(quote, { isShopVisible })}
                 className="inline-flex items-center justify-center gap-2 border border-red-200 text-red-600 text-sm font-semibold py-2 px-4 rounded-xl hover:bg-red-50 transition"
               >
-                <Trash2 className="w-4 h-4" /> Delete Draft
+                <Trash2 className="w-4 h-4" /> Delete Quote
               </button>
             )}
           </div>
@@ -850,9 +861,16 @@ export default function BrokerDashboard() {
     });
   }
 
-  async function handleDeleteDraft(quote) {
+  async function handleDeleteQuote(quote, { isShopVisible = false } = {}) {
     if (!quote?.id) return;
-    if (!window.confirm("Delete this draft? This cannot be undone.")) return;
+    // Warn more loudly when the shop has already seen it — they'll
+    // notice it vanish from their queue with no cross-tenant
+    // notification yet. The drawer's `isShopVisible` flag covers
+    // Pending + Shop Approved (the two states the shop reviews).
+    const msg = isShopVisible
+      ? "This quote is in the shop's queue. Deleting will remove it from their view immediately. Continue?"
+      : "Delete this quote? This cannot be undone.";
+    if (!window.confirm(msg)) return;
 
     await base44.entities.Quote.delete(quote.id);
     setQuotes((prev) => prev.filter((q) => q.id !== quote.id));
@@ -1343,7 +1361,7 @@ export default function BrokerDashboard() {
           onClose={() => setSelectedQuote(null)}
           onEdit={openDraftEditor}
           onSubmit={handleSubmitDraft}
-          onDelete={handleDeleteDraft}
+          onDelete={handleDeleteQuote}
           onUpdate={(updated) => {
             setQuotes((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
             setSelectedQuote(updated);
