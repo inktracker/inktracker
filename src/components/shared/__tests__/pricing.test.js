@@ -1250,9 +1250,24 @@ describe("calcSetupFees", () => {
     { id: "film",     label: "Film",        rate: 10, reorderRate: 0 },
   ];
 
-  it("returns disabled shape when config.enabled is falsy", () => {
-    const r = calcSetupFees({ lineItems, config: { enabled: false, items } });
+  it("returns disabled shape when config has no items AND enabled is false", () => {
+    // True empty config — shop hasn't entered any fees.
+    const r = calcSetupFees({ lineItems, config: { enabled: false, items: [] } });
     expect(r).toEqual({ enabled: false, screens: 0, items: [], total: 0 });
+  });
+
+  it("returns disabled shape when config is missing entirely", () => {
+    const r = calcSetupFees({ lineItems });
+    expect(r).toEqual({ enabled: false, screens: 0, items: [], total: 0 });
+  });
+
+  it("rescue clause: items configured but enabled=false → treated as enabled", () => {
+    // Mirrors the embroidery gate fix. Shop entered fees in the pricing UI
+    // but didn't separately toggle the enable flag — fees still apply.
+    const r = calcSetupFees({ lineItems, config: { enabled: false, items } });
+    expect(r.enabled).toBe(true);
+    expect(r.screens).toBe(4);
+    expect(r.total).toBe(140);
   });
 
   it("sums each fee item: screens × rate", () => {
