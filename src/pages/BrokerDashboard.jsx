@@ -556,7 +556,10 @@ export default function BrokerDashboard() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(() => {
     const params = new URLSearchParams(window.location.search);
-    return params.get("tab") || "quotes";
+    // Default landing is "overview" as of 2026-05-27 (was "quotes",
+    // which used to be a combined Overview+List page). The full
+    // quotes list now lives under tab="quotes" as its own section.
+    return params.get("tab") || "overview";
   });
   const [quotes, setQuotes] = useState([]);
   const [clients, setClients] = useState([]);
@@ -934,22 +937,28 @@ export default function BrokerDashboard() {
       tab={tab}
       setTab={setTab}
       badges={{
-        // Overview badge sums two signals so one indicator covers
-        // everything the broker should react to:
-        //   - quotes in their action queue (Client Approved / Shop Approved)
-        //   - shop-side notifications (approved / declined / order done)
-        quotes: needsAttentionCount + shopActionUnreadCount,
+        // Overview badge = shop-side notifications (approved / declined /
+        // order done) since Shop Action Feed lives on Overview.
+        overview: shopActionUnreadCount,
+        // Quotes badge = quotes in the broker's action queue (Client
+        // Approved or Shop Approved) since those rows live on Quotes.
+        quotes: needsAttentionCount,
         messages: unreadMessageCount,
       }}
     >
       <div>
-        {tab === "quotes" && (
+        {/* Overview — KPIs + shop-action feed + performance summary.
+            The full filterable quotes list moved to its own tab below
+            on 2026-05-27 so the broker portal mirrors the shop sidebar
+            layout. No state / calc changes — JSX was lifted, not
+            rewritten. */}
+        {tab === "overview" && (
           <div className="space-y-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">Overview</h1>
                 <p className="text-slate-500 text-sm mt-0.5">
-                  Track your performance and manage the quotes that still need action.
+                  Track your performance and the quotes that still need action.
                 </p>
               </div>
 
@@ -961,26 +970,55 @@ export default function BrokerDashboard() {
               </button>
             </div>
 
-            {/* Shop-action feed — surfaces approvals, declines, and order
-                completions that happened on the broker's quotes. Renders
-                nothing when empty (own-empty-state, see component). Owns
-                its own unread count and reports it up so the Overview
-                badge stays accurate without duplicate queries. */}
             <ShopActionFeed
               brokerId={user.email}
               onUnreadCountChange={setShopActionUnreadCount}
             />
 
-            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-              <div className="flex items-start justify-between gap-4">
+            {needsAttentionCount > 0 && (
+              <button
+                onClick={() => setTab("quotes")}
+                className="w-full bg-white border border-indigo-200 rounded-2xl px-5 py-4 flex items-center justify-between hover:bg-indigo-50 transition text-left group"
+              >
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900">All Quotes</h2>
-                  <p className="text-slate-500 text-sm mt-0.5">
-                    Click any quote to view details and download Shop or Client forms.
-                  </p>
+                  <div className="text-sm font-semibold text-indigo-700">
+                    {needsAttentionCount} quote{needsAttentionCount === 1 ? "" : "s"} waiting on you
+                  </div>
+                  <div className="text-xs text-slate-500 mt-0.5">
+                    Client Approved or Shop Approved — open Quotes to act on them.
+                  </div>
                 </div>
+                <ChevronRight className="w-5 h-5 text-indigo-400 group-hover:text-indigo-700 transition" />
+              </button>
+            )}
+
+            <BrokerPerformanceSelf orders={orders} brokerEmail={user.email} />
+          </div>
+        )}
+
+        {/* Quotes — full filterable list. Promoted from a section inside
+            the old Overview tab to its own page (2026-05-27). All data,
+            filters, sorting, and click handlers point at the same state
+            as before. */}
+        {tab === "quotes" && (
+          <div className="space-y-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-900">Quotes</h1>
+                <p className="text-slate-500 text-sm mt-0.5">
+                  All your quotes. Click any to view details and download Shop or Client forms.
+                </p>
               </div>
 
+              <button
+                onClick={openNewQuoteEditor}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition shrink-0"
+              >
+                <Plus className="w-4 h-4" /> New Quote
+              </button>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
               <div className="flex gap-2 flex-wrap">
                 {["All", "Draft", "Pending", "Shop Approved", "Sent to Client", "Client Approved", "Declined", "Converted to Order"].map((s) => {
                   const active = filterStatus === s;
@@ -1062,8 +1100,6 @@ export default function BrokerDashboard() {
                 </div>
               )}
             </div>
-
-            <BrokerPerformanceSelf orders={orders} brokerEmail={user.email} />
           </div>
         )}
 
