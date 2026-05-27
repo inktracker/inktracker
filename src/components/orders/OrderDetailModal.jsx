@@ -7,6 +7,8 @@ import { base44, supabase } from "@/api/supabaseClient";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
+import { buildShortfallReorderPayload, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
+import { notify } from "@/lib/notify";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
   countGoodsProgress,
@@ -34,7 +36,6 @@ import {
 import Badge from "../shared/Badge";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2, ChevronDown } from "lucide-react";
-import { notify } from "@/lib/notify";
 // Per-stage checklist tasks now live in src/lib/productionTasks.js so
 // each shop can customize them via Account → Production Tasks. The
 // helper falls back to the shipped defaults when a stage isn't
@@ -270,6 +271,39 @@ export default function OrderDetailModal({
   // the derived numbers. Pricing / invoice totals untouched — billing
   // adjustment for shortfall (credit / reorder) is a separate decision
   // (Phase B).
+  // Phase B — Reorder Shortfall. Creates a draft PurchaseOrder
+  // pre-populated with the shortfall items from this order. Shop
+  // reviews + sends from /PurchaseOrders. Defaults supplier to AC
+  // (operator can switch in the PO editor). Best-effort: failure
+  // surfaces a notify.error; the shortfall data already persisted.
+  const [reorderCreating, setReorderCreating] = useState(false);
+  async function handleReorderShortfall() {
+    const total = totalOrderShortfall(liveOrder);
+    if (total === 0) return;
+    if (reorderCreating) return;
+    if (!window.confirm(
+      `Create a draft purchase order for ${total} replacement piece${total === 1 ? "" : "s"}?\n\n` +
+      `You'll review and send it from the Purchase Orders page. Default supplier is AS Colour — change in the editor if needed.`,
+    )) return;
+    setReorderCreating(true);
+    try {
+      const payload = buildShortfallReorderPayload(liveOrder, { email: liveOrder.shop_owner });
+      if (!payload) {
+        notify.error("Nothing to reorder", "No shortfall recorded on this order.");
+        return;
+      }
+      const created = await base44.entities.PurchaseOrder.create(payload);
+      notify.success(
+        "Draft PO created",
+        `Reorder for ${total} pcs is in Purchase Orders → ${created.reference}.`,
+      );
+    } catch (err) {
+      notify.error("Couldn't create reorder PO", err);
+    } finally {
+      setReorderCreating(false);
+    }
+  }
+
   async function saveShortfall(lineItemId, size, rawValue) {
     const n = Math.max(0, parseInt(rawValue, 10) || 0);
     const nextLineItems = (liveOrder.line_items || []).map((li) => {
@@ -1106,6 +1140,34 @@ export default function OrderDetailModal({
                 </div>
               )}
 
+              {/* Reorder Shortfall — appears only when any line item
+                  has _shortfall > 0. One click creates a draft PO
+                  with the missing pieces; shop reviews + sends from
+                  Purchase Orders. See lib/orders/shortfallReorder.js. */}
+              {(() => {
+                const totalShort = totalOrderShortfall(liveOrder);
+                if (totalShort === 0) return null;
+                return (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm text-amber-800">
+                      <div className="font-semibold">
+                        Shortfall: {totalShort} piece{totalShort === 1 ? "" : "s"}
+                      </div>
+                      <div className="text-xs text-amber-700 mt-0.5">
+                        Reorder to make the customer whole — creates a draft PO with these sizes.
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleReorderShortfall}
+                      disabled={reorderCreating}
+                      className="inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl transition disabled:opacity-60"
+                    >
+                      <ShoppingCart className="w-4 h-4" />
+                      {reorderCreating ? "Creating…" : `Reorder Shortfall (${totalShort} pcs)`}
+                    </button>
+                  </div>
+                );
+              })()}
 
               {/* Floor Mode Panel — stage-aware per-size tracking.
                   Order Goods: ordered/received cycle (goods_progress).
