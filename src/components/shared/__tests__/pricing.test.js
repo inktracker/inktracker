@@ -3,6 +3,7 @@ import {
   getQty,
   getShortfallQty,
   getCompletedQty,
+  getOrderUnits,
   getTier,
   getAdminMarkup,
   getBrokerMarkup,
@@ -133,6 +134,19 @@ describe("Helper Functions", () => {
 
     it("CQ3 — clamps at 0 if shortfall somehow exceeds qty", () => {
       expect(getCompletedQty({ sizes: { S: 10 }, _shortfall: { S: 999 } })).toBe(0);
+    });
+  });
+
+  describe("getOrderUnits", () => {
+    it("OU1 — sums getQty across all line items", () => {
+      const order = { line_items: [{ sizes: { S: 5, M: 10 } }, { sizes: { L: 3 } }] };
+      expect(getOrderUnits(order)).toBe(18);
+    });
+
+    it("OU2 — returns 0 for empty / missing line_items / null", () => {
+      expect(getOrderUnits({ line_items: [] })).toBe(0);
+      expect(getOrderUnits({})).toBe(0);
+      expect(getOrderUnits(null)).toBe(0);
     });
   });
 

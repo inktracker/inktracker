@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { fmtMoney } from "../components/shared/pricing";
+import { fmtMoney, getOrderUnits } from "../components/shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { QB_REPORTS, qbReportUrl } from "@/lib/reports/qbReportLink";
-import { ShoppingBag, DollarSign, Receipt, Layers, Activity, FileText, ExternalLink, RefreshCw } from "lucide-react";
+import { ShoppingBag, DollarSign, Receipt, Layers, Activity, FileText, ExternalLink, RefreshCw, Package } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
 
@@ -18,6 +18,7 @@ function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
     amber:   "bg-amber-50 text-amber-600",
     rose:    "bg-rose-50 text-rose-600",
     slate:   "bg-slate-50 text-slate-600",
+    violet:  "bg-violet-50 text-violet-600",
   };
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-5">
@@ -142,6 +143,25 @@ export default function Performance() {
   const grossSales  = filteredRecords.reduce((s, r) => s + (Number(r.total) || 0), 0);
   const aov         = totalOrders > 0 ? grossSales / totalOrders : 0;
 
+  // Units sold = total garment pieces across completed orders in the
+  // period. ShopPerformance only stores totals, not line items, so
+  // join back to the full Order row by order_id and sum getQty across
+  // each line item's sizes. Orders not yet loaded / not matched
+  // (legacy rows) contribute 0.
+  const ordersByOrderId = useMemo(() => {
+    const m = new Map();
+    for (const o of orders) {
+      if (o.order_id) m.set(o.order_id, o);
+    }
+    return m;
+  }, [orders]);
+  const totalUnits = useMemo(() => {
+    return filteredRecords.reduce((sum, r) => {
+      const o = ordersByOrderId.get(r.order_id);
+      return sum + getOrderUnits(o);
+    }, 0);
+  }, [filteredRecords, ordersByOrderId]);
+
   const activeOrders = useMemo(() => {
     return orders.filter((o) => {
       const s = o?.status;
@@ -222,7 +242,7 @@ export default function Performance() {
           : `${outstandingTotals.count} unpaid`;
         return (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard
                 icon={ShoppingBag}
                 label="Orders (period)"
@@ -242,6 +262,13 @@ export default function Performance() {
                 label="Avg. Order Value"
                 value={fmtMoney(aov)}
                 color="slate"
+              />
+              <StatCard
+                icon={Package}
+                label="Units Sold"
+                value={totalUnits.toLocaleString()}
+                sub={`${totalOrders} order${totalOrders === 1 ? "" : "s"}`}
+                color="violet"
               />
             </div>
 
