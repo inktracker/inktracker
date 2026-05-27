@@ -389,33 +389,50 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   let firstPPP = 0;
   let displayTier = getTier(qty);
 
-  const technique = sorted[0]?.technique || "Screen Print";
-  const isEmbroidery = technique === "Embroidery";
   const fp = _pc?.firstPrint || FIRST_PRINT;
   const ap = _pc?.addlPrint || ADDL_PRINT;
   const maxColors = _pc?.maxColors || 8;
 
-  sorted.forEach((imp, index) => {
+  // Per-imprint technique pricing: each imprint uses its OWN technique's
+  // rate table. Group-local "first" counter so a mix of embroidery +
+  // screen print on the same line prices each correctly — embroidery
+  // gets embroidery rates with its 30% additional-decoration discount;
+  // screen prints get the screen-print first/additional tables. Was a
+  // real bug where the whole line was priced under the FIRST imprint's
+  // technique (e.g. setting imprint 2 to "Screen Print" silently still
+  // charged embroidery × 0.7).
+  //
+  // For single-technique lines (the 99% case) this collapses to the
+  // pre-fix behavior identically: all imprints share a technique →
+  // share a group → group-local isFirst == overall isFirst.
+  const groupCount = {}; // technique → count seen so far (used as next index)
+
+  sorted.forEach((imp, overallIndex) => {
+    const tech = imp.technique || "Screen Print";
+    const isEmb = tech === "Embroidery";
+    const gIdx = groupCount[tech] = (groupCount[tech] ?? -1) + 1;
+    const isFirstInGroup = gIdx === 0;
+
     const colors = Math.min(maxColors, Math.max(1, imp.colors || 1));
     const linkedKey = imp.linked ? getPrintKey(imp) : null;
     const tierQty = linkedKey && linkedQtyMap[linkedKey] ? linkedQtyMap[linkedKey] : qty;
     let tier, rate;
-    if (isEmbroidery) {
+    if (isEmb) {
       const stitchIdx = Math.max(0, colors - 1);
       rate = getEmbroideryPPP(stitchIdx, tierQty);
-      if (index > 0) rate *= 0.7;
+      if (!isFirstInGroup) rate *= 0.7;
       const embTiers = _pc?.embroidery?.qtyTiers || [12, 24, 48, 72, 144];
       const stiers = [...embTiers].sort((a, b) => b - a);
       tier = stiers[stiers.length - 1];
       for (const t of stiers) { if (tierQty >= t) { tier = t; break; } }
     } else {
       tier = getTier(tierQty);
-      const table = index === 0 ? fp : ap;
+      const table = isFirstInGroup ? fp : ap;
       rate = table[colors]?.[tier] ?? table[Math.min(colors, 8)]?.[tier] ?? 0;
     }
     const lineCost = Math.round(rate * qty * 100) / 100;
 
-    if (index === 0) {
+    if (overallIndex === 0) {
       firstPPP = rate;
       displayTier = tier;
     }
@@ -427,19 +444,31 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
       title: imp.title || "",
       location: imp.location || "",
       colors,
+      technique: tech,         // NEW: lets renderers show accurate per-imprint labels
+      groupIndex: gIdx,        // NEW: position within technique group (0 = first)
       linked: !!imp.linked,
       tierQty,
       tier,
       rate,
       lineCost,
-      isFirst: index === 0,
+      isFirst: isFirstInGroup, // SEMANTIC: first within technique group, not overall
     });
   });
 
   const isBroker = markup === BROKER_MARKUP;
   const roundedPrintCost = Math.round(printCost * 100) / 100;
 
-  const er = isEmbroidery ? (_pc?.embroidery?.extras || {}) : (_pc?.extras || EXTRA_RATES);
+  // Extras lookup is line-level. For single-technique lines this
+  // matches the pre-fix behavior exactly; for mixed lines we merge
+  // both tables (their key sets are disjoint — e.g. puffEmbroidery vs
+  // flashCure) so whichever extra the user toggles on resolves
+  // against the right rate.
+  const hasEmbroidery = sorted.some((i) => (i.technique || "Screen Print") === "Embroidery");
+  const hasScreenPrint = sorted.some((i) => (i.technique || "Screen Print") !== "Embroidery");
+  const er = {
+    ...(hasScreenPrint ? (_pc?.extras || EXTRA_RATES) : {}),
+    ...(hasEmbroidery ? (_pc?.embroidery?.extras || {}) : {}),
+  };
   let extraPPP = 0;
   Object.entries(extras || {}).forEach(([k, on]) => {
     if (on) extraPPP += typeof on === "number" ? on : (er[k] || EXTRA_RATES[k] || 0);
