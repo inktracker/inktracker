@@ -2,7 +2,12 @@
 import { useState, useEffect } from "react";
 
 const TOAST_LIMIT = 20;
-const TOAST_REMOVE_DELAY = 1000000;
+// Time between DISMISS (open:false) and REMOVE (drop from array). The
+// shadcn default of 1_000_000ms (~16 min) only makes sense when paired
+// with Radix Toast's exit animation; without that infrastructure it
+// just leaks dismissed toasts into memory until the user reloads. The
+// Toaster filters open:false toasts out immediately, so 1s is plenty.
+const TOAST_REMOVE_DELAY = 1000;
 
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",

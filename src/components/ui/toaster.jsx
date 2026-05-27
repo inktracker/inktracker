@@ -11,9 +11,14 @@ import {
 export function Toaster() {
   const { toasts } = useToast();
 
+  // Filter out dismissed toasts so they leave the DOM immediately on
+  // close. The reducer's REMOVE happens after TOAST_REMOVE_DELAY (kept
+  // small post-fix); this gate is what makes the X click feel instant.
+  const visible = toasts.filter((t) => t.open !== false);
+
   return (
     <ToastProvider>
-      {toasts.map(function ({ id, title, description, action, ...props }) {
+      {visible.map(function ({ id, title, description, action, ...props }) {
         return (
           <Toast key={id} {...props}>
             <div className="grid gap-1">
@@ -23,7 +28,7 @@ export function Toaster() {
               )}
             </div>
             {action}
-            <ToastClose />
+            <ToastClose toastId={id} />
           </Toast>
         );
       })}
