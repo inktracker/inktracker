@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { useState } from "react";
 import {
   BarChart2, Users, Package, TrendingUp, MessageSquare,
-  FileText, UserCircle, Menu, X, LogOut,
+  FileText, UserCircle, Menu, X, LogOut, FilePen,
 } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 import OnboardingAssistant from "../onboarding/OnboardingAssistant";
@@ -10,8 +10,14 @@ import OnboardingAssistant from "../onboarding/OnboardingAssistant";
 const INKTRACKER_LOGO =
   "https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png";
 
+// Quotes promoted to its own section on 2026-05-27 so the broker
+// portal mirrors the shop's sidebar layout. Overview keeps KPIs +
+// action feed + performance summary; the full filterable quotes list
+// now lives under Quotes. The old `?tab=quotes` URL param continues
+// to resolve cleanly — it now lands on the dedicated Quotes page.
 const NAV = [
-  { id: "quotes", label: "Overview", icon: BarChart2 },
+  { id: "overview", label: "Overview", icon: BarChart2 },
+  { id: "quotes", label: "Quotes", icon: FilePen },
   { id: "clients", label: "Clients", icon: Users },
   { id: "orders", label: "Orders", icon: Package },
   { id: "performance", label: "Performance", icon: TrendingUp },
