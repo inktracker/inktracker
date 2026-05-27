@@ -38,6 +38,7 @@ const INKTRACKER_LOGO =
 const PUBLIC_PAGE_NAMES = [
   "BrokerDashboard",
   "BrokerOnboarding",
+  "EmployeeOnboarding",
   "QuotePayment",
   "QuotePaymentSuccess",
   "QuotePaymentCancel",

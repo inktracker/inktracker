@@ -79,14 +79,42 @@ function LoginScreen() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   async function handleLogin(e) {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setResetSent(false);
     const { error: err } = await supabase.auth.signInWithPassword({ email, password });
     if (err) setError(err.message);
     setLoading(false);
+  }
+
+  // Forgot-password — fires Supabase's recovery email, which lands the
+  // user on /ResetPassword (same flow used by the main login modal).
+  // Neutral success wording so we don't confirm whether an account
+  // exists (account enumeration guard).
+  async function handleForgot() {
+    setError("");
+    setResetSent(false);
+    if (!email.trim()) {
+      setError("Enter your email first, then tap \"Forgot password?\"");
+      return;
+    }
+    setResetLoading(true);
+    try {
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/ResetPassword`,
+      });
+      if (resetErr) throw resetErr;
+      setResetSent(true);
+    } catch (err) {
+      setError(err.message || "Couldn't send the reset link.");
+    } finally {
+      setResetLoading(false);
+    }
   }
 
   return (
@@ -105,9 +133,22 @@ function LoginScreen() {
             placeholder="Password" required
             className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
           {error && <p className="text-sm text-red-500">{error}</p>}
+          {resetSent && (
+            <p className="text-sm text-emerald-600">
+              If an account exists for that email, we've sent a reset link. Check your inbox.
+            </p>
+          )}
           <button type="submit" disabled={loading}
             className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50">
             {loading ? "Signing in..." : "Sign In"}
+          </button>
+          <button
+            type="button"
+            onClick={handleForgot}
+            disabled={resetLoading}
+            className="w-full text-sm font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50 pt-1"
+          >
+            {resetLoading ? "Sending…" : "Forgot password?"}
           </button>
         </form>
       </div>
