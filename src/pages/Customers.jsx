@@ -15,6 +15,7 @@ import {
 } from "@/lib/customers/countCustomerDependents";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
+import { isValidEmail } from "@/lib/email";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -190,6 +191,13 @@ export default function Customers() {
     if (!form.name.trim() || !user?.email) return;
     if (addingCustomer) return; // re-entry guard: double-click would create dupes
     if (billingGate("add new customers")) return;
+    // Email is optional, but if present it must look like an email.
+    // Junk in this field (names, phone numbers) breaks the QB sync
+    // downstream — fix-up at save time so bad data never lands.
+    if (form.email && !isValidEmail(form.email)) {
+      notify.error("Invalid email", "Enter a valid email address or leave it blank.");
+      return;
+    }
     setAddingCustomer(true);
 
     let created;
@@ -224,6 +232,10 @@ export default function Customers() {
 
   async function handleSaveEdit() {
     if (!editing?.name?.trim()) return;
+    if (editing?.email && !isValidEmail(editing.email)) {
+      notify.error("Invalid email", "Enter a valid email address or leave it blank.");
+      return;
+    }
     setEditSaving(true);
     try {
       // Strip server-managed and tenancy fields from the patch. RLS would
