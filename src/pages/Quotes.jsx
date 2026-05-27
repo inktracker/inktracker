@@ -295,7 +295,12 @@ export default function Quotes() {
   async function handleApprove(id) {
     const updated = await base44.entities.Quote.update(id, { status: "Approved" });
     setQuotes((prev) => prev.map((q) => (q.id === id ? updated : q)));
-    setViewing(null);
+    // Keep the modal open with the freshly-updated quote so the user
+    // sees their action took effect (status badge flips, Convert to
+    // Order button appears). Same in-place pattern as handleTogglePaid
+    // and handleQuoteSent. Closing the modal on every action was
+    // disorienting — you'd click a button and lose your place.
+    setViewing(updated);
     // If this is a broker-originated quote, notify the broker so the
     // badge on their Overview tab lights up.
     notifyBrokerOfShopAction({
@@ -308,7 +313,7 @@ export default function Quotes() {
   async function handleDecline(id) {
     const updated = await base44.entities.Quote.update(id, { status: "Declined" });
     setQuotes((prev) => prev.map((q) => (q.id === id ? updated : q)));
-    setViewing(null);
+    setViewing(updated);
     notifyBrokerOfShopAction({
       quote: updated,
       action: "shop_declined_quote",
@@ -363,7 +368,7 @@ export default function Quotes() {
       //   - OrderDetailModal can resolve order.quote_id → originating quote
       //     for invoice lookup, the message thread, and header display
       //   - the audit trail survives ("what did we actually quote them?")
-      await base44.entities.Quote.update(
+      const updated = await base44.entities.Quote.update(
         q.id,
         buildQuoteConvertedPatch(orderPayload.order_id),
       );
@@ -371,7 +376,10 @@ export default function Quotes() {
       // (line ~74) excludes "Converted to Order" quotes, so the row would
       // otherwise re-appear under the "All" filter until reload.
       setQuotes((prev) => prev.filter((x) => x.id !== q.id));
-      setViewing(null);
+      // Keep the modal open showing the now-converted state so the user
+      // sees the action took effect (status → "Converted to Order",
+      // action buttons collapse). They can close manually when done.
+      setViewing(updated);
     } catch (err) {
       // Don't let conversion errors die in the console. The button
       // (in QuoteDetailModal) wraps this in callAction which swallows
