@@ -164,7 +164,7 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
               <YAxis yAxisId="right" orientation="right" tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
               <Tooltip formatter={(val, name) => name === "Revenue" ? fmtMoney(val) : val} />
               <Legend />
-              <Bar yAxisId="left" dataKey="orders" name="Orders" fill="#14b8a6" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="orders" name="Orders" fill="#458465" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="right" dataKey="revenue" name="Revenue" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
