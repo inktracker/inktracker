@@ -10,6 +10,25 @@ module.exports = {
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		colors: {
+  			// Brand palette override. The PR #297 sweep converted every
+  			// indigo/violet/purple class to teal/green; this overrides
+  			// the stock Tailwind `teal` scale with a forest-green
+  			// palette so the existing teal-* class usage now renders
+  			// in the InkTracker brand color. teal-600 anchors at the
+  			// "SHOP NOW" sample the user provided (≈ #3a7050).
+  			teal: {
+  				50:  '#f0f7f2',
+  				100: '#dbedde',
+  				200: '#b8dbc2',
+  				300: '#8cc1a1',
+  				400: '#5fa07d',
+  				500: '#458465',
+  				600: '#3a7050',
+  				700: '#305c43',
+  				800: '#284937',
+  				900: '#1f3a2c',
+  				950: '#0f1f17',
+  			},
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			card: {

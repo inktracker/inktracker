@@ -374,8 +374,8 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
             <AreaChart data={monthlyData} margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#458465" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#458465" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -386,7 +386,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
                 type="monotone"
                 dataKey="revenue"
                 name="Revenue"
-                stroke="#14b8a6"
+                stroke="#458465"
                 strokeWidth={2}
                 fill="url(#revenueGrad)"
               />

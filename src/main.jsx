@@ -17,7 +17,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <h1 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Something went wrong</h1>
         <p style={{ fontSize: 14, color: '#475569', marginBottom: 16 }}>
           The error has been reported. Try refreshing the page. If this keeps happening, email{' '}
-          <a href="mailto:support@inktracker.app" style={{ color: '#0d9488' }}>support@inktracker.app</a>.
+          <a href="mailto:support@inktracker.app" style={{ color: '#3a7050' }}>support@inktracker.app</a>.
         </p>
         {import.meta.env.DEV && error?.message && (
           <pre style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'pre-wrap' }}>{error.message}</pre>
