@@ -146,7 +146,7 @@ function ProductVariantPicker({ product, onAdd }) {
             onClick={() => setActiveColour(c)}
             className={`text-[11px] px-2 py-1 rounded-full border ${
               activeColour === c
-                ? "bg-indigo-600 text-white border-indigo-600"
+                ? "bg-teal-600 text-white border-teal-600"
                 : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
             }`}
           >
@@ -173,7 +173,7 @@ function ProductVariantPicker({ product, onAdd }) {
             <button
               onClick={() => add(v)}
               disabled={!Number(qtyByVariant[v.sku])}
-              className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-700 disabled:text-slate-300 px-2 py-1"
+              className="flex items-center gap-1 text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:text-slate-300 px-2 py-1"
             >
               <Plus className="w-3.5 h-3.5" /> Add
             </button>

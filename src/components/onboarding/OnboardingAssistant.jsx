@@ -140,7 +140,7 @@ export default function OnboardingAssistant({ user }) {
           type="button"
           onClick={() => setOpen(true)}
           aria-label="Open onboarding assistant"
-          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl hover:shadow-2xl transition-all flex items-center justify-center group"
+          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-teal-600 hover:bg-teal-700 text-white shadow-xl hover:shadow-2xl transition-all flex items-center justify-center group"
         >
           <MessageCircle className="w-6 h-6" />
           <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-white" />
@@ -154,17 +154,17 @@ export default function OnboardingAssistant({ user }) {
       {open && (
         <div className="fixed bottom-6 right-6 z-40 w-[calc(100vw-3rem)] sm:w-[380px] h-[min(560px,calc(100vh-3rem))] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center gap-2 px-4 py-3 bg-indigo-600 text-white">
+          <div className="flex items-center gap-2 px-4 py-3 bg-teal-600 text-white">
             <Sparkles className="w-4 h-4" />
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold">Setup Assistant</div>
-              <div className="text-[11px] text-indigo-200">Ask me anything about InkTracker</div>
+              <div className="text-[11px] text-teal-200">Ask me anything about InkTracker</div>
             </div>
             {messages.length > 0 && (
               <button
                 type="button"
                 onClick={clearConversation}
-                className="text-[11px] px-2 py-1 rounded-md hover:bg-indigo-500 transition text-indigo-100"
+                className="text-[11px] px-2 py-1 rounded-md hover:bg-teal-500 transition text-teal-100"
                 title="Clear conversation"
               >
                 Clear
@@ -174,7 +174,7 @@ export default function OnboardingAssistant({ user }) {
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Close"
-              className="p-1 rounded-md hover:bg-indigo-500 transition"
+              className="p-1 rounded-md hover:bg-teal-500 transition"
             >
               <X className="w-4 h-4" />
             </button>
@@ -196,7 +196,7 @@ export default function OnboardingAssistant({ user }) {
                       key={q}
                       type="button"
                       onClick={() => send(q)}
-                      className="w-full text-left text-sm px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-700 transition"
+                      className="w-full text-left text-sm px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-teal-300 hover:bg-teal-50 text-slate-700 transition"
                     >
                       {q}
                     </button>
@@ -213,7 +213,7 @@ export default function OnboardingAssistant({ user }) {
                 <div
                   className={
                     m.role === "user"
-                      ? "max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-indigo-600 text-white text-sm leading-relaxed whitespace-pre-wrap"
+                      ? "max-w-[85%] px-3 py-2 rounded-2xl rounded-br-md bg-teal-600 text-white text-sm leading-relaxed whitespace-pre-wrap"
                       : "max-w-[85%] px-3 py-2 rounded-2xl rounded-bl-md bg-white border border-slate-200 text-slate-800 text-sm leading-relaxed whitespace-pre-wrap"
                   }
                 >
@@ -250,14 +250,14 @@ export default function OnboardingAssistant({ user }) {
               onKeyDown={handleKeyDown}
               placeholder="Ask about pricing, integrations, sending quotes…"
               rows={1}
-              className="flex-1 resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-300 max-h-32"
+              className="flex-1 resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300 max-h-32"
               disabled={sending}
             />
             <button
               type="submit"
               disabled={sending || !input.trim()}
               aria-label="Send"
-              className="shrink-0 w-9 h-9 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white flex items-center justify-center transition"
+              className="shrink-0 w-9 h-9 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white flex items-center justify-center transition"
             >
               <Send className="w-4 h-4" />
             </button>

@@ -81,7 +81,7 @@ export default function Security() {
             Your data is yours. You can export your customers, quotes, orders, and invoices to CSV at
             any time. If you cancel your account, we delete your data within 30 days unless you ask
             us to retain it. Email{" "}
-            <a href="mailto:support@inktracker.app" className="text-indigo-600 underline">
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
             </a>{" "}
             to request deletion or export.
@@ -100,7 +100,7 @@ export default function Security() {
         <Section title="Reporting a vulnerability">
           <p>
             If you believe you've found a security issue, please email{" "}
-            <a href="mailto:security@inktracker.app" className="text-indigo-600 underline">
+            <a href="mailto:security@inktracker.app" className="text-teal-600 underline">
               security@inktracker.app
             </a>{" "}
             with details. We will acknowledge within 48 hours. We do not currently run a paid bug
@@ -112,7 +112,7 @@ export default function Security() {
           <p>
             For any security or compliance question — including help responding to your customers'
             vendor security reviews —{" "}
-            <a href="mailto:security@inktracker.app" className="text-indigo-600 underline">
+            <a href="mailto:security@inktracker.app" className="text-teal-600 underline">
               security@inktracker.app
             </a>
             .

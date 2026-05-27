@@ -19,7 +19,7 @@ import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletio
 const STATUS_COLORS = {
   // Quote lifecycle (visually distinct from production steps — these come
   // BEFORE the order exists, so a different color family for fast scanning).
-  "Quote Sent":     "bg-violet-50 border-violet-300 text-violet-700",
+  "Quote Sent":     "bg-green-50 border-green-300 text-green-700",
   "Quote Approved": "bg-green-50 border-green-300 text-green-700",
   // Production pipeline
   "Art Approval": "bg-slate-100 border-slate-300 text-slate-700",
@@ -509,7 +509,7 @@ export default function Production() {
             { id: "table", icon: List, label: "Table" },
           ].map(v => (
             <button key={v.id} onClick={() => setViewMode(v.id)}
-              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl transition ${viewMode === v.id ? "bg-indigo-600 text-white" : "border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:bg-slate-800 text-slate-600"}`}>
+              className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl transition ${viewMode === v.id ? "bg-teal-600 text-white" : "border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:bg-slate-800 text-slate-600"}`}>
               <v.icon className="w-4 h-4" /> {v.label}
             </button>
           ))}
@@ -523,7 +523,7 @@ export default function Production() {
               <button
                 key={s}
                 onClick={() => setFilter(s)}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"}`}
+                className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter === s ? "bg-teal-600 text-white border-teal-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-teal-300"}`}
               >
                 {s}
               </button>
@@ -543,12 +543,12 @@ export default function Production() {
           <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />
 
           {selectedIds.size > 0 && (
-            <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5">
-              <span className="text-sm font-semibold text-indigo-700">{selectedIds.size} selected</span>
+            <div className="flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-xl px-4 py-2.5">
+              <span className="text-sm font-semibold text-teal-700">{selectedIds.size} selected</span>
               <select
                 value={bulkStatus}
                 onChange={(e) => setBulkStatus(e.target.value)}
-                className="text-sm border border-indigo-200 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                className="text-sm border border-teal-200 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400"
               >
                 <option value="">Set status…</option>
                 {O_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -556,7 +556,7 @@ export default function Production() {
               <button
                 onClick={handleBulkStatusUpdate}
                 disabled={!bulkStatus}
-                className="text-sm font-semibold px-3 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition"
+                className="text-sm font-semibold px-3 py-1 bg-teal-600 text-white rounded-lg hover:bg-teal-700 disabled:opacity-40 transition"
               >
                 Apply
               </button>
@@ -579,7 +579,7 @@ export default function Production() {
                         type="checkbox"
                         checked={filteredTable.length > 0 && selectedIds.size === filteredTable.length}
                         onChange={toggleSelectAll}
-                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                        className="w-4 h-4 rounded border-slate-300 text-teal-600 cursor-pointer"
                       />
                     </th>
                     {["Order ID", "Customer", "Due", "Press", "Status", ""].map((h) => (
@@ -601,7 +601,7 @@ export default function Production() {
                     return (
                       <tr
                         key={o.id}
-                        className={`border-b border-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition ${isChecked ? "bg-indigo-50/50" : ""} ${isOverdue ? "bg-red-50/50 dark:bg-red-950/20" : ""}`}
+                        className={`border-b border-slate-50 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition ${isChecked ? "bg-teal-50/50" : ""} ${isOverdue ? "bg-red-50/50 dark:bg-red-950/20" : ""}`}
                         onClick={() => setViewing(o)}
                       >
                         <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
@@ -609,7 +609,7 @@ export default function Production() {
                             type="checkbox"
                             checked={isChecked}
                             onChange={() => toggleSelectOne(o.id)}
-                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 cursor-pointer"
+                            className="w-4 h-4 rounded border-slate-300 text-teal-600 cursor-pointer"
                           />
                         </td>
                         <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{o.order_id}</td>
@@ -633,11 +633,11 @@ export default function Production() {
                         </td>
                         <td className="px-5 py-3.5">
                           {o.assigned_press ? (
-                            <span className="text-[11px] font-semibold text-violet-700 bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-full">{o.assigned_press}</span>
+                            <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">{o.assigned_press}</span>
                           ) : <span className="text-xs text-slate-300">—</span>}
                         </td>
                         <td className="px-5 py-3.5"><Badge s={o.status} /></td>
-                        <td className="px-5 py-3.5 text-right text-indigo-400 text-xs font-semibold">View →</td>
+                        <td className="px-5 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
                       </tr>
                     );
                   })}
@@ -669,7 +669,7 @@ export default function Production() {
                     </div>
                     {artworkCount > 0 && (
                       <div className="mt-2">
-                        <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-full">
+                        <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-1 rounded-full">
                           {artworkCount} artwork file{artworkCount === 1 ? "" : "s"}
                         </span>
                       </div>
@@ -688,7 +688,7 @@ export default function Production() {
             <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition">
               <ChevronLeft className="w-4 h-4 text-slate-600" />
             </button>
-            <button onClick={goToday} className="text-sm font-semibold text-indigo-600 hover:underline">Today</button>
+            <button onClick={goToday} className="text-sm font-semibold text-teal-600 hover:underline">Today</button>
             <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition">
               <ChevronRight className="w-4 h-4 text-slate-600" />
             </button>
@@ -739,14 +739,14 @@ export default function Production() {
                           return (
                             <div
                               key={dateStr}
-                              className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${isDragOver ? "bg-indigo-50 ring-2 ring-inset ring-indigo-400" : selectedDate === dateStr ? "bg-indigo-50/60" : "hover:bg-slate-50 dark:bg-slate-800"}`}
+                              className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${isDragOver ? "bg-teal-50 ring-2 ring-inset ring-teal-400" : selectedDate === dateStr ? "bg-teal-50/60" : "hover:bg-slate-50 dark:bg-slate-800"}`}
                               onClick={() => setSelectedDate(dateStr)}
                               onDrop={(e) => handleDrop(e, dateStr)}
                               onDragOver={(e) => handleDragOver(e, dateStr)}
                               onDragLeave={() => setDragOverDate(null)}
                               title="Click to see the day's agenda"
                             >
-                              <div className={`text-xs font-bold mb-1 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-indigo-600 text-white" : "text-slate-400"}`}>
+                              <div className={`text-xs font-bold mb-1 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-teal-600 text-white" : "text-slate-400"}`}>
                                 {day}
                               </div>
                               <div className="space-y-0.5 flex-1 overflow-hidden">
@@ -936,7 +936,7 @@ export default function Production() {
                             <div className="mt-1.5 flex flex-wrap items-center gap-1">
                               <Badge s={o.status} />
                               {isStartDay && (
-                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded">
+                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded">
                                   Created today
                                 </span>
                               )}

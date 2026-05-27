@@ -693,12 +693,12 @@ export default function OrderDetailModal({
                 <div className="text-sm text-slate-400">Due: {fmtDate(order.due_date)}</div>
               )}
               {artworkFiles.length > 0 && (
-                <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full">
+                <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-full">
                   {artworkFiles.length} artwork file{artworkFiles.length === 1 ? "" : "s"}
                 </span>
               )}
               {order.assigned_press && (
-                <span className="text-[11px] font-semibold text-violet-700 bg-violet-50 border border-violet-100 px-2.5 py-1 rounded-full">
+                <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2.5 py-1 rounded-full">
                   {order.assigned_press}
                 </span>
               )}
@@ -753,9 +753,9 @@ export default function OrderDetailModal({
                     }}
                     disabled={Math.abs(i - currentIdx) > 1}
                     className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
-                      active ? "bg-indigo-600 text-white shadow-sm" :
+                      active ? "bg-teal-600 text-white shadow-sm" :
                       done ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer" :
-                      i === currentIdx + 1 ? "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 hover:text-indigo-600 cursor-pointer" :
+                      i === currentIdx + 1 ? "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-teal-300 hover:text-teal-600 cursor-pointer" :
                       "bg-white dark:bg-slate-900 text-slate-300 border border-slate-100 dark:border-slate-700"
                     }`}
                   >
@@ -772,17 +772,17 @@ export default function OrderDetailModal({
         </div>
 
         <div className="p-4 sm:p-6 space-y-5">
-          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3">
+          <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4 space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-widest text-indigo-400">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-teal-400">
                     Artwork for Approval
                   </div>
                   <div className="text-sm text-slate-500 mt-1">
                     Files uploaded here appear on the customer art approval page.
                   </div>
                 </div>
-                <label className={`shrink-0 cursor-pointer px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${uploading ? "opacity-50 pointer-events-none" : ""} text-indigo-600 border-indigo-200 bg-white hover:bg-indigo-50`}>
+                <label className={`shrink-0 cursor-pointer px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${uploading ? "opacity-50 pointer-events-none" : ""} text-teal-600 border-teal-200 bg-white hover:bg-teal-50`}>
                   {uploading ? "Uploading…" : "+ Upload"}
                   <input
                     type="file"
@@ -810,7 +810,7 @@ export default function OrderDetailModal({
                   {artworkFiles.map((art) => (
                     <div
                       key={art.id || art.url || art.name}
-                      className="bg-white dark:bg-slate-900 border border-indigo-200 rounded-xl p-3 flex items-start justify-between gap-3"
+                      className="bg-white dark:bg-slate-900 border border-teal-200 rounded-xl p-3 flex items-start justify-between gap-3"
                     >
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
@@ -825,7 +825,7 @@ export default function OrderDetailModal({
 
                         <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
                           {art.colors && (
-                            <span className="text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-full font-semibold">
+                            <span className="text-teal-700 bg-teal-50 border border-teal-100 px-2 py-1 rounded-full font-semibold">
                               {art.colors} color{String(art.colors) === "1" ? "" : "s"}
                             </span>
                           )}
@@ -847,7 +847,7 @@ export default function OrderDetailModal({
                         <button
                           type="button"
                           onClick={() => setPreviewArt(art)}
-                          className="shrink-0 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
+                          className="shrink-0 text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
                         >
                           Open
                         </button>
@@ -1023,7 +1023,7 @@ export default function OrderDetailModal({
                                 {imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}
                               </span>
                               {imp.pantones && (
-                                <span className="text-indigo-600 font-medium">{imp.pantones}</span>
+                                <span className="text-teal-600 font-medium">{imp.pantones}</span>
                               )}
                               {imp.details && (
                                 <span className="text-slate-400 italic">{imp.details}</span>
@@ -1037,8 +1037,8 @@ export default function OrderDetailModal({
                             )}
 
                             {art && (
-                              <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3">
-                                <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 mb-2">
+                              <div className="bg-teal-50 border border-teal-100 rounded-xl px-4 py-3">
+                                <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400 mb-2">
                                   Attached Artwork
                                 </div>
                                 <div className="flex items-center justify-between gap-3">
@@ -1052,7 +1052,7 @@ export default function OrderDetailModal({
                                       </div>
                                     )}
                                     {art.colors && (
-                                      <div className="text-xs text-indigo-600 font-semibold mt-1">
+                                      <div className="text-xs text-teal-600 font-semibold mt-1">
                                         Artwork colors: {art.colors}
                                       </div>
                                     )}
@@ -1062,7 +1062,7 @@ export default function OrderDetailModal({
                                     <button
                                       type="button"
                                       onClick={() => setPreviewArt(art)}
-                                      className="shrink-0 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
+                                      className="shrink-0 text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
                                     >
                                       Open
                                     </button>
@@ -1075,7 +1075,7 @@ export default function OrderDetailModal({
                       })}
 
                       {r && (
-                        <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2 space-y-1">
+                        <div className="bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 space-y-1">
                           <div className="flex justify-between text-xs text-slate-600">
                             <span>Line Subtotal</span>
                             <span className="font-semibold text-slate-800 dark:text-slate-200">
@@ -1094,9 +1094,9 @@ export default function OrderDetailModal({
                               </div>
                             );
                           })()}
-                          <div className="flex justify-between text-xs text-slate-600 border-t border-indigo-200 pt-1">
+                          <div className="flex justify-between text-xs text-slate-600 border-t border-teal-200 pt-1">
                             <span>Final Cost (incl. tax)</span>
-                            <span className="font-bold text-indigo-700">
+                            <span className="font-bold text-teal-700">
                               {fmtMoney(
                                 (isFlat ? Math.max(0, r.lineTotal - discVal) : r.lineTotal * (1 - discVal / 100)) *
                                   (1 + parseFloat(order.tax_rate) / 100)
@@ -1187,12 +1187,12 @@ export default function OrderDetailModal({
                 const { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived } = countGoodsProgress(liveOrder);
 
                 return (
-                  <div className="border-2 border-indigo-400 rounded-xl overflow-hidden">
+                  <div className="border-2 border-teal-400 rounded-xl overflow-hidden">
                     <button
                       type="button"
                       onClick={() => setFloorCollapsed(c => !c)}
                       aria-expanded={!floorCollapsed}
-                      className="w-full px-4 py-3 bg-indigo-600 text-white flex items-center justify-between hover:bg-indigo-700 transition text-left"
+                      className="w-full px-4 py-3 bg-teal-600 text-white flex items-center justify-between hover:bg-teal-700 transition text-left"
                     >
                       <div className="flex items-center gap-2">
                         <Hammer className="w-4 h-4" />
@@ -1200,14 +1200,14 @@ export default function OrderDetailModal({
                       </div>
                       <div className="flex items-center gap-3">
                         {step === "Order Goods" && goodsTotal > 0 && (
-                          <span className="text-xs font-semibold text-indigo-100">
+                          <span className="text-xs font-semibold text-teal-100">
                             <span className="text-white">{goodsReceived}</span> received
                             {goodsOrdered > 0 && <> · <span className="text-white">{goodsOrdered}</span> ordered</>}
                             {" · "}{goodsTotal} total
                           </span>
                         )}
                         <ChevronDown
-                          className={`w-4 h-4 text-indigo-100 transition-transform duration-200 ${floorCollapsed ? "-rotate-90" : "rotate-0"}`}
+                          className={`w-4 h-4 text-teal-100 transition-transform duration-200 ${floorCollapsed ? "-rotate-90" : "rotate-0"}`}
                           aria-hidden="true"
                         />
                       </div>
@@ -1230,7 +1230,7 @@ export default function OrderDetailModal({
                           <div>
                             <div className="flex items-center justify-between mb-2">
                               <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Checklist</span>
-                              <span className="text-xs font-bold text-indigo-600">{doneCount}/{tasks.length}</span>
+                              <span className="text-xs font-bold text-teal-600">{doneCount}/{tasks.length}</span>
                             </div>
                             <div className="space-y-1">
                               {tasks.map(task => {
@@ -1333,7 +1333,7 @@ export default function OrderDetailModal({
                                           if (next !== -1) floorTogglePrint(liIdx, size, next);
                                         }
                                       }}
-                                        className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300"}`}>
+                                        className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-slate-200 text-slate-700 hover:border-teal-300"}`}>
                                         {size}: {count}{allDone && " ✓"}
                                       </button>
                                       {imprints.length > 1 && (
@@ -1410,7 +1410,7 @@ export default function OrderDetailModal({
                             </a>
                             {shipLabelUrl && (
                               <a href={shipLabelUrl} target="_blank" rel="noopener noreferrer"
-                                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 flex items-center gap-1">
+                                className="text-xs font-semibold text-teal-600 hover:text-teal-700 flex items-center gap-1">
                                 Label <Download className="w-3 h-3" />
                               </a>
                             )}
@@ -1428,16 +1428,16 @@ export default function OrderDetailModal({
                           <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Ship To</div>
                           <div className="space-y-2">
                             <input type="text" placeholder="Street address" value={shipStreet} onChange={e => setShipStreet(e.target.value)}
-                              className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                              className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                               <input type="text" placeholder="City" value={shipCity} onChange={e => setShipCity(e.target.value)}
-                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                               <input type="text" placeholder="State" value={shipState} onChange={e => setShipState(e.target.value)} maxLength={2}
-                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 uppercase" />
+                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 uppercase" />
                               <input type="text" placeholder="ZIP" value={shipZip} onChange={e => setShipZip(e.target.value)}
-                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                               <select value={shipCountry} onChange={e => setShipCountry(e.target.value)}
-                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
                                 <option value="US">US</option>
                                 <option value="CA">CA</option>
                               </select>
@@ -1452,22 +1452,22 @@ export default function OrderDetailModal({
                             <div>
                               <label className="text-[10px] text-slate-400">Weight (lbs)</label>
                               <input type="number" min="0" step="0.1" value={shipWeight} onChange={e => setShipWeight(e.target.value)}
-                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                             </div>
                             <div>
                               <label className="text-[10px] text-slate-400">Length (in)</label>
                               <input type="number" min="0" step="1" value={shipLength} onChange={e => setShipLength(e.target.value)}
-                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                             </div>
                             <div>
                               <label className="text-[10px] text-slate-400">Width (in)</label>
                               <input type="number" min="0" step="1" value={shipWidth} onChange={e => setShipWidth(e.target.value)}
-                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                             </div>
                             <div>
                               <label className="text-[10px] text-slate-400">Height (in)</label>
                               <input type="number" min="0" step="1" value={shipHeight} onChange={e => setShipHeight(e.target.value)}
-                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                             </div>
                           </div>
                         </div>
@@ -1493,7 +1493,7 @@ export default function OrderDetailModal({
                                 <button key={r.serviceType} onClick={() => setShipService(r.serviceType)}
                                   className={`w-full text-left flex items-center justify-between px-3 py-2.5 rounded-lg border transition text-sm ${
                                     shipService === r.serviceType
-                                      ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                                      ? "border-teal-400 bg-teal-50 text-teal-700"
                                       : "border-slate-200 hover:border-slate-300 text-slate-700"
                                   }`}>
                                   <div>
@@ -1510,7 +1510,7 @@ export default function OrderDetailModal({
                         {/* Create Label */}
                         {shipService && (
                           <button onClick={handleCreateLabel} disabled={creatingLabel}
-                            className="text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-5 py-2.5 rounded-xl transition disabled:opacity-50 w-full sm:w-auto">
+                            className="text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 px-5 py-2.5 rounded-xl transition disabled:opacity-50 w-full sm:w-auto">
                             {creatingLabel
                               ? <span className="flex items-center justify-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Creating label...</span>
                               : "Create Shipping Label"}
@@ -1547,20 +1547,20 @@ export default function OrderDetailModal({
                         <div className="relative mt-0.5">
                           <span className="absolute left-2 top-1.5 text-slate-400 text-sm">$</span>
                           <input type="number" min="0" step="0.01" value={actualCost} onChange={e => setActualCost(e.target.value)}
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                         </div>
                       </div>
                       <div>
                         <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Labor Hours</label>
                         <input type="number" min="0" step="0.25" value={laborHours} onChange={e => setLaborHours(e.target.value)}
-                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                       </div>
                       <div>
                         <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Labor Cost</label>
                         <div className="relative mt-0.5">
                           <span className="absolute left-2 top-1.5 text-slate-400 text-sm">$</span>
                           <input type="number" min="0" step="0.01" value={laborCost} onChange={e => setLaborCost(e.target.value)}
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                         </div>
                       </div>
                     </div>
@@ -1571,7 +1571,7 @@ export default function OrderDetailModal({
                           <select
                             value={assignedPress}
                             onChange={e => setAssignedPress(e.target.value)}
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5"
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5"
                           >
                             <option value="">— Unassigned —</option>
                             {presses.map(p => (
@@ -1587,7 +1587,7 @@ export default function OrderDetailModal({
                         ) : (
                           <input type="text" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}
                             placeholder="Add presses in Account → Production Setup"
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                         )}
                       </div>
                       <div>
@@ -1596,7 +1596,7 @@ export default function OrderDetailModal({
                           <select
                             value={assignedOperator}
                             onChange={e => setAssignedOperator(e.target.value)}
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5"
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5"
                           >
                             <option value="">— Unassigned —</option>
                             {employees.map(u => {
@@ -1613,7 +1613,7 @@ export default function OrderDetailModal({
                         ) : (
                           <input type="text" value={assignedOperator} onChange={e => setAssignedOperator(e.target.value)}
                             placeholder="Invite employees from Account → Admin Panel"
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                         )}
                       </div>
                     </div>
@@ -1639,7 +1639,7 @@ export default function OrderDetailModal({
 
                     <div className="flex items-center gap-2">
                       <button onClick={handleSaveJobCost} disabled={savingCost}
-                        className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+                        className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
                         {savingCost ? "Saving…" : "Save"}
                       </button>
                       {costSaved && <span className="text-xs text-emerald-600 font-semibold">Saved</span>}
@@ -1704,7 +1704,7 @@ export default function OrderDetailModal({
               <button
                 onClick={advanceWithGoodsGuard}
                 disabled={saving}
-                className="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-50"
+                className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
               >
                 {saving ? "Saving…" : `${order.status} Complete →`}
               </button>
@@ -1726,7 +1726,7 @@ export default function OrderDetailModal({
                 {onShowInvoice && (
                   <button
                     onClick={() => onShowInvoice(relatedInvoice)}
-                    className="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition"
+                    className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition"
                   >
                     Preview Invoice
                   </button>
@@ -1876,7 +1876,7 @@ function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled }) {
       onClick={() => onOrderFromAC(order)}
       disabled={disabled}
       title="Create a draft AS Colour PO from this order's line items"
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-600 border border-teal-200 rounded-lg hover:bg-teal-50 transition disabled:opacity-50"
     >
       <Truck className="w-3.5 h-3.5" /> Create PO
     </button>

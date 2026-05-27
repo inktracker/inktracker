@@ -67,10 +67,10 @@ function getShopFloorArtwork(order) {
 const STEPS = O_STATUSES;
 
 const STEP_COLORS = {
-  "Art Approval": { bg: "bg-purple-500", light: "bg-purple-50 text-purple-700 border-purple-200" },
+  "Art Approval": { bg: "bg-teal-500", light: "bg-teal-50 text-teal-700 border-teal-200" },
   "Order Goods":  { bg: "bg-amber-500",  light: "bg-amber-50 text-amber-700 border-amber-200" },
   "Pre-Press":    { bg: "bg-blue-500",   light: "bg-blue-50 text-blue-700 border-blue-200" },
-  "Printing":     { bg: "bg-indigo-500", light: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  "Printing":     { bg: "bg-teal-500", light: "bg-teal-50 text-teal-700 border-teal-200" },
   "Completed":    { bg: "bg-slate-400",  light: "bg-slate-50 text-slate-600 border-slate-200" },
 };
 
@@ -118,20 +118,20 @@ function LoginScreen() {
   }
 
   return (
-    <div className="min-h-screen bg-indigo-600 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-teal-600 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
         <div className="text-center mb-6">
-          <Package className="w-12 h-12 text-indigo-600 mx-auto mb-3" />
+          <Package className="w-12 h-12 text-teal-600 mx-auto mb-3" />
           <h1 className="text-xl font-bold text-slate-900">Shop Floor</h1>
           <p className="text-sm text-slate-400 mt-1">Sign in to view your orders</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-3">
           <input type="email" value={email} onChange={e => setEmail(e.target.value)}
             placeholder="Email" autoFocus required
-            className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
           <input type="password" value={password} onChange={e => setPassword(e.target.value)}
             placeholder="Password" required
-            className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
           {error && <p className="text-sm text-red-500">{error}</p>}
           {resetSent && (
             <p className="text-sm text-emerald-600">
@@ -139,14 +139,14 @@ function LoginScreen() {
             </p>
           )}
           <button type="submit" disabled={loading}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50">
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50">
             {loading ? "Signing in..." : "Sign In"}
           </button>
           <button
             type="button"
             onClick={handleForgot}
             disabled={resetLoading}
-            className="w-full text-sm font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50 pt-1"
+            className="w-full text-sm font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-50 pt-1"
           >
             {resetLoading ? "Sending…" : "Forgot password?"}
           </button>
@@ -428,7 +428,7 @@ export default function ShopFloor() {
           <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
           <h2 className="font-bold text-slate-900 mb-2">Something went wrong</h2>
           <p className="text-sm text-slate-500 mb-4">{error}</p>
-          <button onClick={() => window.location.reload()} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">Reload</button>
+          <button onClick={() => window.location.reload()} className="bg-teal-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">Reload</button>
         </div>
       </div>
     );
@@ -439,7 +439,7 @@ export default function ShopFloor() {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto mb-3" />
+          <Loader2 className="w-8 h-8 animate-spin text-teal-500 mx-auto mb-3" />
           <p className="text-sm text-slate-400">Connecting...</p>
         </div>
       </div>
@@ -454,7 +454,7 @@ export default function ShopFloor() {
     return (
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto mb-3" />
+          <Loader2 className="w-8 h-8 animate-spin text-teal-500 mx-auto mb-3" />
           <p className="text-sm text-slate-400">Loading orders...</p>
         </div>
       </div>
@@ -474,19 +474,19 @@ export default function ShopFloor() {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
       {/* Header */}
-      <header className="bg-indigo-600 text-white px-5 py-4 flex items-center justify-between sticky top-0 z-20 shadow-lg">
+      <header className="bg-teal-600 text-white px-5 py-4 flex items-center justify-between sticky top-0 z-20 shadow-lg">
         <div className="flex items-center gap-3">
           <Package className="w-7 h-7" />
           <div>
             <h1 className="text-lg font-bold leading-tight">Shop Floor</h1>
-            <p className="text-indigo-200 text-xs">{user?.shop_name || displayFullName(user)}</p>
+            <p className="text-teal-200 text-xs">{user?.shop_name || displayFullName(user)}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={handleRefresh} className="p-2 hover:bg-indigo-500 rounded-lg transition">
+          <button onClick={handleRefresh} className="p-2 hover:bg-teal-500 rounded-lg transition">
             <RefreshCw className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} />
           </button>
-          <button onClick={handleLogout} className="p-2 hover:bg-indigo-500 rounded-lg transition">
+          <button onClick={handleLogout} className="p-2 hover:bg-teal-500 rounded-lg transition">
             <LogOut className="w-5 h-5" />
           </button>
         </div>
@@ -496,7 +496,7 @@ export default function ShopFloor() {
       <div className="bg-white border-b border-slate-200 px-5 py-2 flex gap-1">
         {["Active", "All", "Completed"].map(f => (
           <button key={f} onClick={() => { setFilter(f); setSelected(null); }}
-            className={`text-sm font-semibold px-5 py-2 rounded-lg transition ${filter === f ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
+            className={`text-sm font-semibold px-5 py-2 rounded-lg transition ${filter === f ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
             {f} {f === "Active" && `(${orders.filter(o => o.status !== "Completed" && o.status !== "Shipped").length})`}
           </button>
         ))}
@@ -514,7 +514,7 @@ export default function ShopFloor() {
             const colors = STEP_COLORS[order.status] || STEP_COLORS["Pre-Press"];
             return (
               <button key={order.id} onClick={() => setSelected(order)}
-                className={`w-full text-left px-5 py-4 border-b border-slate-100 transition ${active ? "bg-indigo-50 border-l-4 border-l-indigo-600" : "hover:bg-slate-50"} ${overdue ? "bg-red-50" : ""}`}>
+                className={`w-full text-left px-5 py-4 border-b border-slate-100 transition ${active ? "bg-teal-50 border-l-4 border-l-teal-600" : "hover:bg-slate-50"} ${overdue ? "bg-red-50" : ""}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-bold text-slate-800">{customers[order.customer_id]?.company || order.customer_name || "—"}</span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${colors.light}`}>
@@ -544,7 +544,7 @@ export default function ShopFloor() {
             </div>
           ) : (
             <div className="p-5 space-y-4 max-w-2xl mx-auto">
-              <button onClick={() => setSelected(null)} className="md:hidden text-sm text-indigo-600 font-semibold mb-2">
+              <button onClick={() => setSelected(null)} className="md:hidden text-sm text-teal-600 font-semibold mb-2">
                 &larr; Back to list
               </button>
 
@@ -601,7 +601,7 @@ export default function ShopFloor() {
                   <div className="flex-1" />
                   {nextStep && (
                     <button onClick={() => moveToNextStepWithGuard(selected, nextStep)} disabled={updating}
-                      className="flex items-center gap-1 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition disabled:opacity-50">
+                      className="flex items-center gap-1 text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 px-4 py-2 rounded-lg transition disabled:opacity-50">
                       {updating ? "..." : <>Move to {nextStep} <ChevronRight className="w-4 h-4" /></>}
                     </button>
                   )}
@@ -635,7 +635,7 @@ export default function ShopFloor() {
                   <div className="bg-white rounded-2xl border border-slate-200 p-5">
                     <div className="flex items-center justify-between mb-3">
                       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Checklist — {step}</h3>
-                      <span className="text-xs font-bold text-indigo-600">{doneCount}/{tasks.length}</span>
+                      <span className="text-xs font-bold text-teal-600">{doneCount}/{tasks.length}</span>
                     </div>
                     <div className="flex gap-1 mb-4">
                       {tasks.map((_, i) => (
@@ -706,7 +706,7 @@ export default function ShopFloor() {
                           type="button"
                           onClick={() => a.url && setPreviewArt(a)}
                           disabled={!a.url}
-                          className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-left hover:bg-indigo-50 hover:border-indigo-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-left hover:bg-teal-50 hover:border-teal-200 transition disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <div className="min-w-0 flex-1">
                             <div className="text-sm font-semibold text-slate-800 truncate">{a.name}</div>
@@ -715,7 +715,7 @@ export default function ShopFloor() {
                               {a.placements?.length ? a.placements.join(", ") : a.source}
                             </div>
                           </div>
-                          <span className="shrink-0 text-xs font-semibold text-indigo-600">Open</span>
+                          <span className="shrink-0 text-xs font-semibold text-teal-600">Open</span>
                         </button>
                       ))}
                     </div>
@@ -763,7 +763,7 @@ export default function ShopFloor() {
                               <div className="font-bold text-slate-800">
                                 {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
                               </div>
-                              <span className="text-lg font-bold text-indigo-600">{qty}</span>
+                              <span className="text-lg font-bold text-teal-600">{qty}</span>
                             </div>
 
                             {/* Imprint locations — lead with the imprint's
@@ -844,7 +844,7 @@ export default function ShopFloor() {
                                             ? "bg-emerald-100 border-emerald-400 text-emerald-700"
                                             : partial
                                               ? "bg-amber-50 border-amber-300 text-amber-700"
-                                              : "bg-white border-slate-200 text-slate-700 hover:border-indigo-300"
+                                              : "bg-white border-slate-200 text-slate-700 hover:border-teal-300"
                                         }`}>
                                         {size}: {count}
                                         {allDone && <span className="ml-1">✓</span>}
@@ -919,7 +919,7 @@ export default function ShopFloor() {
                       <div className="space-y-2 max-h-60 overflow-y-auto">
                         {allNotes.map((n, i) => (
                           <div key={i} className="flex gap-3 text-sm">
-                            <div className="w-2 h-2 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
+                            <div className="w-2 h-2 rounded-full bg-teal-400 mt-1.5 flex-shrink-0" />
                             <div>
                               <p className="text-slate-700">{n.text}</p>
                               <p className="text-xs text-slate-400">{n.by} · {n.step} · {n.at ? new Date(n.at).toLocaleString() : ""}</p>
@@ -939,9 +939,9 @@ export default function ShopFloor() {
                   <input value={note} onChange={e => setNote(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && sendNote(selected)}
                     placeholder="Add a note or update..."
-                    className="flex-1 text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                    className="flex-1 text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                   <button onClick={() => sendNote(selected)} disabled={sending || !note.trim()}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-xl transition disabled:opacity-50">
+                    className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-3 rounded-xl transition disabled:opacity-50">
                     <Send className="w-5 h-5" />
                   </button>
                 </div>

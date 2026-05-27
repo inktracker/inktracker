@@ -22,7 +22,7 @@ const STATUS_COLORS = {
   Declined: "bg-red-100 text-red-600",
 };
 
-function MetricCard({ label, value, sub, color = "text-indigo-600", onClick }) {
+function MetricCard({ label, value, sub, color = "text-teal-600", onClick }) {
   return (
     <button
       onClick={onClick}
@@ -125,12 +125,12 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
             <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{broker.display_name || broker.full_name || broker.email}</div>
             {broker.company_name && <span className="text-xs text-slate-400">{broker.company_name}</span>}
             {assignedShopNames.length > 0 && assignedShopNames.map((name, i) => (
-              <span key={i} className="text-xs bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded-full">{name}</span>
+              <span key={i} className="text-xs bg-teal-50 text-teal-700 font-semibold px-2 py-0.5 rounded-full">{name}</span>
             ))}
             {unreadMessageCount > 0 && (
               <span
                 title={`${unreadMessageCount} unread message${unreadMessageCount === 1 ? "" : "s"} from this broker`}
-                className="inline-flex items-center gap-1 text-xs bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-full"
+                className="inline-flex items-center gap-1 text-xs bg-teal-600 text-white font-bold px-2 py-0.5 rounded-full"
               >
                 <MessageSquare className="w-3 h-3" /> {unreadMessageCount}
               </span>
@@ -142,7 +142,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
         <div className="flex items-center gap-4 shrink-0 ml-4">
           <div className="text-right hidden sm:block">
             <div className="text-xs text-slate-400">Clients</div>
-            <div className="font-bold text-violet-700 text-sm">{loadingClients ? "…" : clients.length}</div>
+            <div className="font-bold text-green-700 text-sm">{loadingClients ? "…" : clients.length}</div>
           </div>
           <div className="text-right hidden sm:block">
             <div className="text-xs text-slate-400">Orders</div>
@@ -150,7 +150,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
           </div>
           <div className="text-right hidden sm:block">
             <div className="text-xs text-slate-400">Revenue</div>
-            <div className="font-bold text-indigo-700 text-sm">{fmtMoney(totalRevenue)}</div>
+            <div className="font-bold text-teal-700 text-sm">{fmtMoney(totalRevenue)}</div>
           </div>
           {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
         </div>
@@ -167,11 +167,11 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
               <button
                 key={id}
                 onClick={() => handleSubTab(id)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition ${subTab === id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-400 hover:text-slate-700"}`}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition ${subTab === id ? "border-teal-600 text-teal-700" : "border-transparent text-slate-400 hover:text-slate-700"}`}
               >
                 <Icon className="w-3.5 h-3.5" />{label}
                 {badge > 0 && (
-                  <span className="bg-indigo-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                  <span className="bg-teal-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
                     {badge}
                   </span>
                 )}
@@ -190,7 +190,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
                   </div>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-center">
                     <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Revenue</div>
-                    <div className="text-lg font-bold text-indigo-700">{fmtMoney(totalRevenue)}</div>
+                    <div className="text-lg font-bold text-teal-700">{fmtMoney(totalRevenue)}</div>
                   </div>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-center">
                     <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Avg. Order</div>
@@ -215,7 +215,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
                         <YAxis yAxisId="right" orientation="right" tickFormatter={v => `$${(v/1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
                         <Tooltip formatter={(val, name) => name === "Revenue" ? fmtMoney(val) : val} />
                         <Legend />
-                        <Bar yAxisId="left" dataKey="orders" name="Orders" fill="#6366f1" radius={[4,4,0,0]} />
+                        <Bar yAxisId="left" dataKey="orders" name="Orders" fill="#14b8a6" radius={[4,4,0,0]} />
                         <Bar yAxisId="right" dataKey="revenue" name="Revenue" fill="#10b981" radius={[4,4,0,0]} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -633,7 +633,7 @@ export default function Dashboard() {
             key={id}
             onClick={() => setTab(id)}
             className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition ${
-              tab === id ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-200"
+              tab === id ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-200"
             }`}
           >
             <NavIcon className="w-4 h-4" /> {label}
@@ -642,7 +642,7 @@ export default function Dashboard() {
               <span
                 key={i}
                 title={title}
-                className="inline-flex items-center gap-1 bg-indigo-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none"
+                className="inline-flex items-center gap-1 bg-teal-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full leading-none"
               >
                 <ChipIcon className="w-3 h-3" /> {count}
               </span>
@@ -682,7 +682,7 @@ export default function Dashboard() {
                   <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
                   <MetricCard label={invoicesLabel} value={invoicesValue} sub={invoicesSub} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
                   <MetricCard label={revenueLabel} value={revenueValue} sub={revenueSub} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
-                  <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-violet-600" onClick={() => navigate(createPageUrl("Performance"))} />
+                  <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-green-600" onClick={() => navigate(createPageUrl("Performance"))} />
                 </div>
                 {qbConnected && !qbMetrics && (
                   <p className="text-[11px] text-slate-400 -mt-3">
@@ -698,7 +698,7 @@ export default function Dashboard() {
                       type="button"
                       onClick={handleRefreshQb}
                       disabled={qbRefreshing}
-                      className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+                      className="inline-flex items-center gap-1 font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-50"
                       title="Refresh now — bypasses the 5-minute cache and re-queries QuickBooks"
                     >
                       <RefreshCw className={`w-3 h-3 ${qbRefreshing ? "animate-spin" : ""}`} />
@@ -757,7 +757,7 @@ export default function Dashboard() {
                         <button
                           key={o.id}
                           onClick={() => navigate(`/Orders?id=${o.id}`)}
-                          className="w-full text-left text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700 hover:bg-indigo-50 hover:border-indigo-200 transition"
+                          className="w-full text-left text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700 hover:bg-teal-50 hover:border-teal-200 transition"
                         >
                           <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
                           <div className="text-slate-500">{o.order_id}</div>
@@ -784,7 +784,7 @@ export default function Dashboard() {
                 <div className="py-12 text-center">
                   <FileText className="w-8 h-8 text-slate-200 mx-auto mb-2" />
                   <p className="text-sm text-slate-400 mb-3">No quotes yet</p>
-                  <button onClick={() => navigate(createPageUrl("Quotes"))} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 transition">
+                  <button onClick={() => navigate(createPageUrl("Quotes"))} className="text-xs font-semibold text-teal-600 hover:text-teal-700 transition">
                     Create your first quote &rarr;
                   </button>
                 </div>
@@ -813,7 +813,7 @@ export default function Dashboard() {
                         <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{getDisplayName(customers[q.customer_id] || q.customer_name) || "—"}</div>
                         <div className="text-xs text-slate-400 mt-0.5">
                           {q.quote_id}
-                          {q.broker_id && <span className="ml-2 text-indigo-500 font-semibold">via broker</span>}
+                          {q.broker_id && <span className="ml-2 text-teal-500 font-semibold">via broker</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
@@ -882,12 +882,12 @@ export default function Dashboard() {
             <div className="grid grid-cols-3 gap-3">
               <button
                 onClick={() => navigate(createPageUrl("Orders"))}
-                className="w-full text-left bg-indigo-50 border border-indigo-200 rounded-xl p-4 flex items-center gap-3 hover:bg-indigo-100 transition"
+                className="w-full text-left bg-teal-50 border border-teal-200 rounded-xl p-4 flex items-center gap-3 hover:bg-teal-100 transition"
               >
-                <Package className="w-7 h-7 text-indigo-400" />
+                <Package className="w-7 h-7 text-teal-400" />
                 <div>
-                  <div className="text-xs font-semibold text-indigo-500 uppercase tracking-widest">Total Broker Orders</div>
-                  <div className="text-2xl font-bold text-indigo-700">{orders.filter(o => o.broker_id).length}</div>
+                  <div className="text-xs font-semibold text-teal-500 uppercase tracking-widest">Total Broker Orders</div>
+                  <div className="text-2xl font-bold text-teal-700">{orders.filter(o => o.broker_id).length}</div>
                 </div>
               </button>
               <button
@@ -902,12 +902,12 @@ export default function Dashboard() {
               </button>
               <button
                 onClick={() => navigate(createPageUrl("AdminPanel"))}
-                className="w-full text-left bg-violet-50 border border-violet-200 rounded-xl p-4 flex items-center gap-3 hover:bg-violet-100 transition"
+                className="w-full text-left bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3 hover:bg-green-100 transition"
               >
-                <Users className="w-7 h-7 text-violet-400" />
+                <Users className="w-7 h-7 text-green-400" />
                 <div>
-                  <div className="text-xs font-semibold text-violet-500 uppercase tracking-widest">Active Brokers</div>
-                  <div className="text-2xl font-bold text-violet-700">{brokers.length}</div>
+                  <div className="text-xs font-semibold text-green-500 uppercase tracking-widest">Active Brokers</div>
+                  <div className="text-2xl font-bold text-green-700">{brokers.length}</div>
                 </div>
               </button>
             </div>

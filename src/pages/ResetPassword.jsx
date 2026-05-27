@@ -145,7 +145,7 @@ export default function ResetPassword() {
                   minLength={6}
                   autoComplete="new-password"
                   autoFocus
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-11"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 pr-11"
                   placeholder="••••••••"
                 />
                 <button
@@ -170,7 +170,7 @@ export default function ResetPassword() {
                 required
                 minLength={6}
                 autoComplete="new-password"
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                 placeholder="••••••••"
               />
             </div>
@@ -184,7 +184,7 @@ export default function ResetPassword() {
             <button
               type="submit"
               disabled={saving}
-              className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
+              className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
             >
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {saving ? "Updating…" : "Update Password"}
@@ -195,7 +195,7 @@ export default function ResetPassword() {
         {recoveryError && (
           <button
             onClick={() => navigate("/")}
-            className="block w-full text-center text-sm font-semibold text-indigo-600 hover:text-indigo-700"
+            className="block w-full text-center text-sm font-semibold text-teal-600 hover:text-teal-700"
           >
             Go back to sign in
           </button>

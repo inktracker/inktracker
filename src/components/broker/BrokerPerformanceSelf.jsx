@@ -69,12 +69,12 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
       {/* KPI cards. Completion Rate removed 2026-05-27. Units Sold
           added 2026-05-27 to mirror the shop-side Performance page. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+        <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Package className="w-4 h-4 text-indigo-500" />
-            <div className="text-xs font-semibold text-indigo-500 uppercase tracking-widest">Total Orders</div>
+            <Package className="w-4 h-4 text-teal-500" />
+            <div className="text-xs font-semibold text-teal-500 uppercase tracking-widest">Total Orders</div>
           </div>
-          <div className="text-2xl font-bold text-indigo-700">{allOrders.length}</div>
+          <div className="text-2xl font-bold text-teal-700">{allOrders.length}</div>
         </div>
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -83,12 +83,12 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
           </div>
           <div className="text-2xl font-bold text-emerald-700">{fmtMoney(totalRevenue)}</div>
         </div>
-        <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="w-4 h-4 text-violet-500" />
-            <div className="text-xs font-semibold text-violet-500 uppercase tracking-widest">Avg. Order Value</div>
+            <TrendingUp className="w-4 h-4 text-green-500" />
+            <div className="text-xs font-semibold text-green-500 uppercase tracking-widest">Avg. Order Value</div>
           </div>
-          <div className="text-2xl font-bold text-violet-700">{fmtMoney(avgOrderValue)}</div>
+          <div className="text-2xl font-bold text-green-700">{fmtMoney(avgOrderValue)}</div>
         </div>
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -164,7 +164,7 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
               <YAxis yAxisId="right" orientation="right" tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} tick={{ fontSize: 11 }} />
               <Tooltip formatter={(val, name) => name === "Revenue" ? fmtMoney(val) : val} />
               <Legend />
-              <Bar yAxisId="left" dataKey="orders" name="Orders" fill="#6366f1" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="orders" name="Orders" fill="#14b8a6" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="right" dataKey="revenue" name="Revenue" fill="#10b981" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -173,10 +173,10 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
 
       {/* Motivational nudge */}
       {allOrders.length === 0 && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-6 text-center">
-          <TrendingUp className="w-10 h-10 text-indigo-300 mx-auto mb-2" />
-          <div className="font-semibold text-indigo-800">Your performance dashboard is ready!</div>
-          <div className="text-sm text-indigo-600 mt-1">Submit your first order and watch your stats grow.</div>
+        <div className="bg-teal-50 border border-teal-200 rounded-2xl p-6 text-center">
+          <TrendingUp className="w-10 h-10 text-teal-300 mx-auto mb-2" />
+          <div className="font-semibold text-teal-800">Your performance dashboard is ready!</div>
+          <div className="text-sm text-teal-600 mt-1">Submit your first order and watch your stats grow.</div>
         </div>
       )}
     </div>

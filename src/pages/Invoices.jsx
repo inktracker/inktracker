@@ -201,7 +201,7 @@ export default function Invoices() {
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="flex gap-2">
           {["All","Paid","Unpaid"].map(f=>(
-            <button key={f} onClick={()=>setFilter(f)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter===f?"bg-indigo-600 text-white border-indigo-600":"bg-white border-slate-200 text-slate-500 hover:border-indigo-300"}`}>{f}</button>
+            <button key={f} onClick={()=>setFilter(f)} className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${filter===f?"bg-teal-600 text-white border-teal-600":"bg-white border-slate-200 text-slate-500 hover:border-teal-300"}`}>{f}</button>
           ))}
         </div>
         <div className="flex items-center gap-2 ml-auto">
@@ -219,10 +219,10 @@ export default function Invoices() {
               }`}>{p.label}</button>
           ))}
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300" />
           <span className="text-xs text-slate-400">to</span>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+            className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300" />
         </div>
       </div>
       <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />

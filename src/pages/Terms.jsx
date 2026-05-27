@@ -60,7 +60,7 @@ export default function Terms() {
             You retain ownership of all data you enter into InkTracker. We do not claim any
             ownership over your business data. Each shop's data is isolated and inaccessible to
             other users. See our{" "}
-            <a href="/privacy" className="text-indigo-600 underline">Privacy Policy</a>{" "}
+            <a href="/privacy" className="text-teal-600 underline">Privacy Policy</a>{" "}
             for details on how we handle your data.
           </p>
         </section>
@@ -88,7 +88,7 @@ export default function Terms() {
           <p className="text-sm text-slate-600 leading-relaxed">
             We reserve the right to suspend or terminate accounts that violate these terms. You may
             cancel your account at any time from the Account settings page or by contacting{" "}
-            <a href="mailto:support@inktracker.app" className="text-indigo-600 underline">
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
             </a>.
           </p>
@@ -106,7 +106,7 @@ export default function Terms() {
           <h2 className="text-lg font-semibold text-slate-800">11. Contact</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
             Questions about these terms? Contact us at{" "}
-            <a href="mailto:support@inktracker.app" className="text-indigo-600 underline">
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
             </a>.
           </p>

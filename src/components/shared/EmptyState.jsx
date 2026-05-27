@@ -78,7 +78,7 @@ export default function EmptyState({ type, onAction, className = "" }) {
       <div className="flex items-center justify-center gap-3 flex-wrap">
         <button
           onClick={handlePrimary}
-          className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
+          className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
         >
           {config.primaryAction.action === "new" ? <Plus className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
           {config.primaryAction.label}
@@ -93,9 +93,9 @@ export default function EmptyState({ type, onAction, className = "" }) {
         )}
       </div>
       {config.tip && (
-        <div className="mt-8 inline-flex items-start gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 max-w-md text-left">
-          <Wand2 className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
-          <p className="text-xs text-indigo-600 leading-relaxed">{config.tip}</p>
+        <div className="mt-8 inline-flex items-start gap-2 bg-teal-50 border border-teal-100 rounded-xl px-4 py-3 max-w-md text-left">
+          <Wand2 className="w-4 h-4 text-teal-400 mt-0.5 shrink-0" />
+          <p className="text-xs text-teal-600 leading-relaxed">{config.tip}</p>
         </div>
       )}
     </div>

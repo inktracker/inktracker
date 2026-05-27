@@ -13,12 +13,12 @@ const CANCELLED_STATUSES = new Set(["Cancelled", "Canceled", "Voided"]);
 
 function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
   const colors = {
-    indigo:  "bg-indigo-50 text-indigo-600",
+    indigo:  "bg-teal-50 text-teal-600",
     emerald: "bg-emerald-50 text-emerald-600",
     amber:   "bg-amber-50 text-amber-600",
     rose:    "bg-rose-50 text-rose-600",
     slate:   "bg-slate-50 text-slate-600",
-    violet:  "bg-violet-50 text-violet-600",
+    violet:  "bg-green-50 text-green-600",
   };
   return (
     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-5">
@@ -304,7 +304,7 @@ export default function Performance() {
                   type="button"
                   onClick={handleRefreshQb}
                   disabled={qbRefreshing}
-                  className="inline-flex items-center gap-1 font-semibold text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-50"
                   title="Refresh now — bypasses the 5-minute cache and re-queries QuickBooks"
                 >
                   <RefreshCw className={`w-3 h-3 ${qbRefreshing ? "animate-spin" : ""}`} />
@@ -320,7 +320,7 @@ export default function Performance() {
       {qbConnected && (
         <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-6 space-y-4">
           <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-600" />
+            <FileText className="w-5 h-5 text-teal-600" />
             <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">Detailed Reports (QuickBooks)</h3>
           </div>
           <p className="text-sm text-slate-500 -mt-2">
@@ -333,7 +333,7 @@ export default function Performance() {
                 href={qbReportUrl(r.key)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 hover:border-indigo-300 hover:bg-indigo-50 dark:hover:bg-slate-800 transition"
+                className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 hover:border-teal-300 hover:bg-teal-50 dark:hover:bg-slate-800 transition"
               >
                 <span className="truncate">{r.label}</span>
                 <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />

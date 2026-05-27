@@ -32,8 +32,8 @@ const ACTION_META = {
   shop_completed_order: {
     label: "completed your order",
     icon: Package,
-    color: "text-violet-600",
-    bg: "bg-violet-50",
+    color: "text-green-600",
+    bg: "bg-green-50",
   },
   shop_deleted_order: {
     // Fires when the shop deletes a broker-originated order. The source
@@ -134,14 +134,14 @@ export default function ShopActionFeed({ brokerId, onUnreadCountChange }) {
           <Bell className="w-4 h-4 text-slate-500" />
           <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">From Your Shop</span>
           {unread > 0 && (
-            <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unread} new</span>
+            <span className="bg-teal-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unread} new</span>
           )}
           {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
         </button>
         {unread > 0 && expanded && (
           <button
             onClick={markAllRead}
-            className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition"
+            className="flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-800 transition"
           >
             <CheckCheck className="w-3.5 h-3.5" />
             Mark All as Read
@@ -157,7 +157,7 @@ export default function ShopActionFeed({ brokerId, onUnreadCountChange }) {
             return (
               <div
                 key={n.id}
-                className={`flex items-start gap-3 px-5 py-4 transition cursor-pointer ${!n.read ? "bg-indigo-50/50 hover:bg-indigo-100/60" : "bg-white hover:bg-slate-50"}`}
+                className={`flex items-start gap-3 px-5 py-4 transition cursor-pointer ${!n.read ? "bg-teal-50/50 hover:bg-teal-100/60" : "bg-white hover:bg-slate-50"}`}
                 onClick={() => handleClick(n)}
               >
                 <div className={`shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-0.5 ${meta.bg}`}>
@@ -178,7 +178,7 @@ export default function ShopActionFeed({ brokerId, onUnreadCountChange }) {
                 </div>
 
                 <div className="shrink-0 flex items-center gap-1.5 mt-0.5">
-                  {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
+                  {!n.read && <div className="w-2 h-2 rounded-full bg-teal-500" />}
                   <button
                     onClick={e => { e.stopPropagation(); remove(n.id); }}
                     title="Remove"

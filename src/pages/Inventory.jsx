@@ -194,10 +194,10 @@ export default function Inventory() {
           <p className="text-sm text-slate-400 mt-0.5">{totalItems} items · {fmtMoney(totalValue)} total value</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setShowCatEditor(v=>!v)} className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-3 py-2 rounded-xl transition hover:border-indigo-300">
+          <button onClick={() => setShowCatEditor(v=>!v)} className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-3 py-2 rounded-xl transition hover:border-teal-300">
             {showCatEditor ? <X className="w-4 h-4" /> : "Categories"}
           </button>
-          <button onClick={() => setShowForm(v=>!v)} className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm">
+          <button onClick={() => setShowForm(v=>!v)} className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm">
             {showForm ? <X className="w-4 h-4" /> : <><Plus className="w-4 h-4" /> Add Item</>}
           </button>
           {ssCart.length > 0 && (
@@ -264,8 +264,8 @@ export default function Inventory() {
           </div>
           <div className="flex gap-2">
             <input value={newCat} onChange={e => setNewCat(e.target.value)} onKeyDown={e => e.key === "Enter" && addCategory()} placeholder="New category…"
-              className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 w-56" />
-            <button onClick={addCategory} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition">Add</button>
+              className="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 w-56" />
+            <button onClick={addCategory} className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition">Add</button>
           </div>
         </div>
       )}
@@ -283,13 +283,13 @@ export default function Inventory() {
               <div key={f.key}>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{f.label}</label>
                 <input value={form[f.key]} onChange={e => setForm({...form,[f.key]:e.target.value})} placeholder={f.placeholder}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
             ))}
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Category</label>
               <select value={form.category} onChange={e => setForm({...form,category:e.target.value})}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300">
                 {categories.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
@@ -297,7 +297,7 @@ export default function Inventory() {
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Supplier</label>
               <input value={form.supplier} onChange={e => setForm({...form,supplier:e.target.value})} placeholder="S&S Activewear"
                 list="inventory-supplier-suggestions"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300" />
             </div>
             {[
               { key:"qty", label:"Qty", type:"number" },
@@ -307,14 +307,14 @@ export default function Inventory() {
               <div key={f.key}>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{f.label}</label>
                 <input type={f.type} value={form[f.key]} onChange={e => setForm({...form,[f.key]:e.target.value})}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
             ))}
           </div>
           <button
             onClick={handleAdd}
             disabled={adding || !form.item.trim() || !form.sku.trim()}
-            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+            className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
           >
             {adding ? "Adding…" : "Add Item"}
           </button>
@@ -329,13 +329,13 @@ export default function Inventory() {
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search products, SKUs…"
-            className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
           />
         </div>
         <div className="flex gap-2 flex-wrap">
           {cats.map(c => (
             <button key={c} onClick={() => setFilter(c)}
-              className={`text-xs font-semibold px-3 py-2 rounded-xl border transition ${filter===c ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-500 hover:border-indigo-300"}`}>
+              className={`text-xs font-semibold px-3 py-2 rounded-xl border transition ${filter===c ? "bg-teal-600 text-white border-teal-600" : "bg-white border-slate-200 text-slate-500 hover:border-teal-300"}`}>
               {c}
             </button>
           ))}
@@ -436,7 +436,7 @@ export default function Inventory() {
                       <div className="col-span-2 flex justify-center">
                         <input type="number" min="0" defaultValue={item.qty}
                           onBlur={e => updateQty(item.id, e.target.value)}
-                          className="w-16 text-center font-bold text-slate-800 border border-slate-200 rounded-lg py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                          className="w-16 text-center font-bold text-slate-800 border border-slate-200 rounded-lg py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300" />
                       </div>
                       <div className="col-span-1 text-center text-xs text-slate-500">{item.reorder}</div>
                       <div className="col-span-1 text-right text-sm text-slate-600">{fmtMoney(item.cost)}</div>
@@ -510,13 +510,13 @@ export default function Inventory() {
                 <div key={f.key}>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{f.label}</label>
                   <input value={editing[f.key] || ""} onChange={e => setEditing({...editing,[f.key]:e.target.value})} placeholder={f.placeholder}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                 </div>
               ))}
               <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Category</label>
                 <select value={editing.category} onChange={e => setEditing({...editing,category:e.target.value})}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300">
                   {categories.map(c => <option key={c}>{c}</option>)}
                 </select>
               </div>
@@ -524,7 +524,7 @@ export default function Inventory() {
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Supplier</label>
                 <input value={editing.supplier || ""} onChange={e => setEditing({...editing,supplier:e.target.value})}
                   list="inventory-supplier-suggestions" placeholder="S&S Activewear"
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               {[
                 { key:"qty", label:"Qty" },
@@ -534,13 +534,13 @@ export default function Inventory() {
                 <div key={f.key}>
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{f.label}</label>
                   <input type="number" value={editing[f.key] || 0} onChange={e => setEditing({...editing,[f.key]:e.target.value})}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                 </div>
               ))}
             </div>
             <div className="flex gap-2 pt-2">
               <button onClick={handleEdit} disabled={saveStatus === "saving" || saveStatus === "saved"}
-                className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition ${saveStatus === "saved" ? "bg-emerald-600 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"} disabled:opacity-80`}>
+                className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition ${saveStatus === "saved" ? "bg-emerald-600 text-white" : "bg-teal-600 hover:bg-teal-700 text-white"} disabled:opacity-80`}>
                 {saveStatus === "saving" && <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>}
                 {saveStatus === "saved" && <><Check className="w-4 h-4" /> Saved</>}
                 {!saveStatus && "Save Changes"}
@@ -652,9 +652,9 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
               <input value={styleNumber} onChange={e => setStyleNumber(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && lookupStyle()}
                 placeholder="1717"
-                className="flex-1 min-w-0 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="flex-1 min-w-0 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               <button onClick={lookupStyle} disabled={ssLoading || !styleNumber.trim()}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition disabled:opacity-50 text-xs font-semibold">
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition disabled:opacity-50 text-xs font-semibold">
                 {ssLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Lookup"}
               </button>
             </div>
@@ -667,13 +667,13 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Color</label>
             {ssColors.length > 0 ? (
               <select value={ssColor} onChange={e => setSsColor(e.target.value)}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300">
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300">
                 <option value="">Select color…</option>
                 {ssColors.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             ) : (
               <input value={ssColor} onChange={e => setSsColor(e.target.value)} placeholder="Black"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
             )}
           </div>
 
@@ -690,7 +690,7 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
                     <div className="text-sm font-bold text-slate-800 mt-0.5">{item.qty || 0}</div>
                     <input type="number" min="0" value={t}
                       onChange={e => setTargets(prev => ({ ...prev, [item.id]: parseInt(e.target.value) || 0 }))}
-                      className="w-full text-center text-[11px] border border-slate-200 rounded py-0.5 mt-1 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                      className="w-full text-center text-[11px] border border-slate-200 rounded py-0.5 mt-1 bg-white focus:outline-none focus:ring-1 focus:ring-teal-300" />
                     {need > 0 && <div className="text-[10px] font-semibold text-orange-600 mt-0.5">+{need}</div>}
                     {need === 0 && <div className="text-[10px] text-emerald-500 mt-0.5">OK</div>}
                   </div>
@@ -705,7 +705,7 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
           <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
           <div className="flex gap-2">
             <button onClick={handleSave} disabled={saving || saved}
-              className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-80 ${saved ? "bg-emerald-600 text-white" : "bg-white border border-indigo-200 text-indigo-600 hover:bg-indigo-50"}`}>
+              className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-80 ${saved ? "bg-emerald-600 text-white" : "bg-white border border-teal-200 text-teal-600 hover:bg-teal-50"}`}>
               {saving && <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>}
               {saved && <><Check className="w-4 h-4" /> Saved</>}
               {!saving && !saved && "Save Settings"}
@@ -912,7 +912,7 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
             <div className="flex items-center gap-3">
               {cart.length > 0 && !orderResult && (
                 <button onClick={downloadCSV}
-                  className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
+                  className="text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition">
                   Download CSV
                 </button>
               )}

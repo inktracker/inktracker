@@ -102,7 +102,7 @@ export default function NotificationBell() {
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
-                className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition"
+                className="text-xs font-semibold text-teal-600 hover:text-teal-800 transition"
               >
                 Mark all read
               </button>
@@ -150,13 +150,13 @@ function NotificationItem({ notification, onMarkRead, onClose }) {
   }
 
   const inner = (
-    <div className={`px-4 py-3 border-b border-slate-50 dark:border-slate-800 last:border-b-0 ${isUnread ? "bg-indigo-50/40 dark:bg-indigo-900/10" : "bg-white dark:bg-slate-900"} hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer`}>
+    <div className={`px-4 py-3 border-b border-slate-50 dark:border-slate-800 last:border-b-0 ${isUnread ? "bg-teal-50/40 dark:bg-teal-900/10" : "bg-white dark:bg-slate-900"} hover:bg-slate-50 dark:hover:bg-slate-800 transition cursor-pointer`}>
       <div className="flex gap-3">
         <SeverityIcon className={`w-4 h-4 ${iconColor} flex-shrink-0 mt-0.5`} />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">{notification.title}</div>
-            {isUnread && <span className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0 mt-1.5" aria-label="unread" />}
+            {isUnread && <span className="w-2 h-2 rounded-full bg-teal-500 flex-shrink-0 mt-1.5" aria-label="unread" />}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-3">{notification.body}</div>
           <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">

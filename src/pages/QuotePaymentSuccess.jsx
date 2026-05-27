@@ -25,7 +25,7 @@ export default function QuotePaymentSuccess() {
 
         {status === "processing" && (
           <>
-            <Loader2 className="w-12 h-12 text-indigo-500 mx-auto mb-5 animate-spin" />
+            <Loader2 className="w-12 h-12 text-teal-500 mx-auto mb-5 animate-spin" />
             <h1 className="text-xl font-bold text-slate-900 mb-2">Confirming your payment…</h1>
             <p className="text-sm text-slate-500">Please wait a moment while we confirm your payment.</p>
           </>

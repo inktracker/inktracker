@@ -24,7 +24,7 @@ export default function AdvancedFilters({ filters, onFilterChange, filterOptions
                 <select
                   value={filters[option.key] || ""}
                   onChange={(e) => onFilterChange(option.key, e.target.value || null)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                 >
                   <option value="">All</option>
                   {option.values.map(v => (
@@ -37,7 +37,7 @@ export default function AdvancedFilters({ filters, onFilterChange, filterOptions
                   placeholder={`Search ${option.label.toLowerCase()}...`}
                   value={filters[option.key] || ""}
                   onChange={(e) => onFilterChange(option.key, e.target.value || null)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               ) : option.type === "checkbox" ? (
                 <label className="flex items-center gap-2">

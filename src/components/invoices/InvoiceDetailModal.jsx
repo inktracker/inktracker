@@ -358,7 +358,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
                           <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
                           <span className="text-slate-500">{imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}</span>
-                          {imp.pantones && <span className="text-indigo-600 font-medium">{imp.pantones}</span>}
+                          {imp.pantones && <span className="text-teal-600 font-medium">{imp.pantones}</span>}
                           {imp.details && <span className="text-slate-400 italic">{imp.details}</span>}
                         </div>
                         {(imp.width || imp.height) && (
@@ -450,13 +450,13 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           )}
           {invoice.status === "Draft" && onConvertToInvoice && (
             <button onClick={() => { onConvertToInvoice(invoice); onClose(); }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+              className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
               Convert to Invoice
             </button>
           )}
           {!invoice.paid && (
             <button onClick={() => setShowSendModal(true)}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
+              className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition">
               Send Invoice
             </button>
           )}
@@ -470,7 +470,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                 // deleted between mount and click. Silent no-op is fine.
               } catch (_) { /* swallow — same rationale as above */ }
             }}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
+              className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition">
               View Order
             </button>
           )}

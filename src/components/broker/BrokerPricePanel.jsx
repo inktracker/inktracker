@@ -203,7 +203,7 @@ export default function BrokerPricePanel({
       </div>
 
       <div className="p-4 border-b border-slate-800">
-        <div className="text-xs font-bold text-indigo-300 uppercase tracking-widest mb-2">
+        <div className="text-xs font-bold text-teal-300 uppercase tracking-widest mb-2">
           Display Header Preview
         </div>
         <div className="text-2xl font-bold text-white leading-tight">
@@ -324,8 +324,8 @@ export default function BrokerPricePanel({
           </div>
         </div>
 
-        <div className="mt-3 rounded-lg bg-indigo-950/70 p-3 border border-indigo-900">
-          <div className="text-[11px] font-bold text-indigo-300 uppercase tracking-widest mb-2">
+        <div className="mt-3 rounded-lg bg-teal-950/70 p-3 border border-teal-900">
+          <div className="text-[11px] font-bold text-teal-300 uppercase tracking-widest mb-2">
             Your Profit At Shop Rate
           </div>
           <div className="flex justify-between items-center text-sm">

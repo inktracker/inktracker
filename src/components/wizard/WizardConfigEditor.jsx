@@ -212,11 +212,11 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
             <input value={ssSearch} onChange={e => setSsSearch(e.target.value)}
               placeholder="Search by style # (e.g. 5000, 1717, IND4000)"
-              className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
               disabled={ssSearching} />
           </div>
           <button type="submit" disabled={ssSearching || !ssSearch.trim()}
-            className="text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 px-4 py-2 rounded-lg transition">
+            className="text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 px-4 py-2 rounded-lg transition">
             {ssSearching ? "Searching…" : "Search S&S"}
           </button>
         </form>
@@ -224,17 +224,17 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
         {ssError && <div className="text-xs text-red-500 mb-3">{ssError}</div>}
 
         {ssResults.length > 0 && (
-          <div className="border border-indigo-200 rounded-xl bg-indigo-50/50 p-3 mb-3 space-y-2">
-            <div className="text-xs font-semibold text-indigo-600 uppercase tracking-widest">Select a result to add</div>
+          <div className="border border-teal-200 rounded-xl bg-teal-50/50 p-3 mb-3 space-y-2">
+            <div className="text-xs font-semibold text-teal-600 uppercase tracking-widest">Select a result to add</div>
             {ssResults.map(m => (
               <button key={m.id} onClick={() => addFromSSResult(m)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-indigo-200 bg-white hover:border-indigo-400 hover:bg-indigo-50 transition text-left">
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-teal-200 bg-white hover:border-teal-400 hover:bg-teal-50 transition text-left">
                 {m.styleImage && <img src={m.styleImage} alt="" className="w-10 h-10 rounded-lg object-contain bg-slate-50 flex-shrink-0" />}
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-semibold text-slate-900">{m.brandName} {m.styleNumber}</div>
                   <div className="text-xs text-slate-500 truncate">{m.description}</div>
                 </div>
-                <Plus className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                <Plus className="w-4 h-4 text-teal-500 flex-shrink-0" />
               </button>
             ))}
           </div>
@@ -247,13 +247,13 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
               onDragOver={(e) => handleDragOver(e, idx)}
               onDragEnd={handleDragEnd}
               className={`border rounded-xl p-3 transition cursor-grab active:cursor-grabbing ${
-                dragOverIdx === idx && dragIdx !== idx ? "border-indigo-400 bg-indigo-50/50" : "border-slate-200 bg-slate-50/50"
+                dragOverIdx === idx && dragIdx !== idx ? "border-teal-400 bg-teal-50/50" : "border-slate-200 bg-slate-50/50"
               } ${dragIdx === idx ? "opacity-50" : ""}`}>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-slate-300 mr-1 cursor-grab">⠿</span>
                   <span className="text-sm font-bold text-slate-800">{s.brand ? `${s.brand} ${s.styleNumber}` : s.styleNumber || `Style ${idx + 1}`}</span>
-                  {s.tag && <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">{s.tag}</span>}
+                  {s.tag && <span className="text-[10px] font-semibold text-teal-600 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full">{s.tag}</span>}
                 </div>
                 <button onClick={() => removeStyle(idx)} title="Remove"
                   className="inline-flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg p-1.5">
@@ -264,20 +264,20 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                 <div>
                   <label className="text-[10px] font-semibold text-slate-400 uppercase">Category</label>
                   <select value={s.garment || "T-Shirts"} onChange={(e) => updateStyle(idx, { garment: e.target.value })}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5">
+                    className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5">
                     {CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-semibold text-slate-400 uppercase">Tag</label>
                   <input value={s.tag || ""} onChange={(e) => updateStyle(idx, { tag: e.target.value })}
-                    placeholder="Best Value, Shop Pick, etc." className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                    placeholder="Best Value, Shop Pick, etc." className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                 </div>
                 <div>
                   <label className="text-[10px] font-semibold text-slate-400 uppercase">Tagline (hover)</label>
                   <input value={s.hoverDescription || ""} onChange={(e) => updateStyle(idx, { hoverDescription: e.target.value })}
                     placeholder="100% cotton, great for screen printing"
-                    className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 mt-0.5" />
+                    className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                 </div>
               </div>
             </div>
@@ -297,7 +297,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
           </div>
           <button
             onClick={addSetup}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 border border-indigo-200 px-2.5 py-1.5 rounded-lg hover:bg-indigo-50"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-teal-600 border border-teal-200 px-2.5 py-1.5 rounded-lg hover:bg-teal-50"
           >
             <Plus className="w-3.5 h-3.5" /> Add Setup
           </button>
@@ -311,12 +311,12 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                   value={s.name || ""}
                   onChange={(e) => updateSetup(idx, { name: e.target.value })}
                   placeholder="Setup name"
-                  className="flex-1 min-w-40 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="flex-1 min-w-40 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
                 <select
                   value={s.icon || "front"}
                   onChange={(e) => updateSetup(idx, { icon: e.target.value })}
-                  className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                 >
                   {ICON_OPTIONS.map((i) => <option key={i} value={i}>{i}</option>)}
                 </select>
@@ -334,7 +334,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                     <select
                       value={imp.location}
                       onChange={(e) => updateSetupImprint(idx, j, { location: e.target.value })}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                     >
                       {LOCATION_OPTIONS.map((l) => <option key={l} value={l}>{l}</option>)}
                     </select>
@@ -344,13 +344,13 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                       max="8"
                       value={imp.colors || 1}
                       onChange={(e) => updateSetupImprint(idx, j, { colors: parseInt(e.target.value) || 1 })}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                       placeholder="# colors"
                     />
                     <select
                       value={imp.technique || "Screen Print"}
                       onChange={(e) => updateSetupImprint(idx, j, { technique: e.target.value })}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                     >
                       {TECHNIQUE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
@@ -366,7 +366,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                 ))}
                 <button
                   onClick={() => addSetupImprint(idx)}
-                  className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="text-[11px] font-semibold text-teal-600 hover:text-teal-700"
                 >
                   + Add location
                 </button>
@@ -385,7 +385,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
+            className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
           >
             {saving ? "Saving…" : "Save Changes"}
           </button>

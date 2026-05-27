@@ -28,7 +28,7 @@ export default function UpdateAvailableBanner() {
       <div className="flex flex-col gap-1 shrink-0">
         <button
           onClick={() => window.location.reload()}
-          className="px-3 py-1.5 text-xs font-bold bg-indigo-500 hover:bg-indigo-400 text-white rounded-lg transition"
+          className="px-3 py-1.5 text-xs font-bold bg-teal-500 hover:bg-teal-400 text-white rounded-lg transition"
         >
           Refresh
         </button>

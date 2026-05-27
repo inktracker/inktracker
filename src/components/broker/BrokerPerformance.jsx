@@ -11,7 +11,7 @@ import { getDateRangeValues } from "@/lib/dateRangeUtils";
 
 function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
   const colors = {
-    indigo: "bg-indigo-50 text-indigo-600",
+    indigo: "bg-teal-50 text-teal-600",
     emerald: "bg-emerald-50 text-emerald-600",
     amber: "bg-amber-50 text-amber-600",
     rose: "bg-rose-50 text-rose-600",
@@ -80,7 +80,7 @@ export default function BrokerPerformance({ orders = [] }) {
           <select
             value={dateRange}
             onChange={(e) => setDateRange(e.target.value)}
-            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+            className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
           >
             <option value="all">All Time</option>
             <option value="today">Today</option>

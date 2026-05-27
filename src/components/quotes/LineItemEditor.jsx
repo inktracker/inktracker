@@ -760,7 +760,7 @@ export default function LineItemEditor({
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
               Style #
               {ssLoading && (
-                <span className="ml-1 text-indigo-400 normal-case font-normal">
+                <span className="ml-1 text-teal-400 normal-case font-normal">
                   Looking up…
                 </span>
               )}
@@ -786,7 +786,7 @@ export default function LineItemEditor({
               onBlur={handleStyleBlur}
               onKeyDown={(e) => e.key === "Enter" && handleStyleBlur()}
               placeholder="e.g. 1717 or G500"
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
             />
             {ssError && <div className="text-xs text-red-500 mt-0.5">{ssError}</div>}
           </div>
@@ -798,7 +798,7 @@ export default function LineItemEditor({
             <select
               value={li.category || ""}
               onChange={(e) => onChange({ ...li, category: e.target.value })}
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
             >
               <option value="">Select…</option>
               {GARMENT_CATEGORIES.map((c) => (
@@ -815,7 +815,7 @@ export default function LineItemEditor({
               <select
                 value={selectedBrandOption && cleanText(selectedBrandOption.brandName).toLowerCase() === cleanText(li.brand).toLowerCase() ? selectedBrandOption.id : ""}
                 onChange={(e) => handleBrandSelection(e.target.value)}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
               >
                 {!li.brand && <option value="">Select brand…</option>}
                 {[...brandOptions].sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' })).map((option) => (
@@ -829,7 +829,7 @@ export default function LineItemEditor({
                 value={li.brand}
                 onChange={(e) => onChange({ ...li, brand: e.target.value })}
                 placeholder="e.g. Gildan"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
               />
             )}
           </div>
@@ -842,7 +842,7 @@ export default function LineItemEditor({
               <select
                 value={li.garmentColor}
                 onChange={(e) => handleColorChange(e.target.value)}
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
               >
                 {[...ssColors].sort((a, b) => (a.colorName || "").localeCompare(b.colorName || "", undefined, { sensitivity: 'base' })).map((c) => (
                   <option key={c.colorName} value={c.colorName}>
@@ -855,7 +855,7 @@ export default function LineItemEditor({
                 value={li.garmentColor}
                 onChange={(e) => onChange({ ...li, garmentColor: e.target.value })}
                 placeholder="e.g. Black"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
               />
             )}
           </div>
@@ -873,7 +873,7 @@ export default function LineItemEditor({
                 value={li.garmentCost}
                 onChange={(e) => onChange({ ...li, garmentCost: e.target.value })}
                 placeholder="0.00"
-                className="w-full text-sm border border-slate-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="w-full text-sm border border-slate-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
               />
             </div>
           </div>
@@ -883,7 +883,7 @@ export default function LineItemEditor({
           {onDuplicate && (
             <button
               onClick={onDuplicate}
-              className="text-xs text-indigo-500 hover:text-indigo-700 transition font-semibold flex-shrink-0"
+              className="text-xs text-teal-500 hover:text-teal-700 transition font-semibold flex-shrink-0"
             >
               ⧉ Duplicate
             </button>
@@ -902,8 +902,8 @@ export default function LineItemEditor({
       {!isCollapsed && (
         <div className="grid grid-cols-1 md:grid-cols-2 md:divide-x divide-slate-100">
           <div className="p-5 space-y-5">
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 mb-1">
+            <div className="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3">
+              <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400 mb-1">
                 Display Header Preview
               </div>
               <div className="text-sm font-bold text-slate-900">
@@ -952,7 +952,7 @@ export default function LineItemEditor({
                               })
                             }
                             placeholder="0"
-                            className={`w-full text-center text-xs border rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 ${
+                            className={`w-full text-center text-xs border rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300 ${
                               BIG_SIZES.includes(sz)
                                 ? "border-amber-200 bg-amber-50"
                                 : "border-slate-200"
@@ -965,7 +965,7 @@ export default function LineItemEditor({
 
                     {Object.keys(currentInventory).length > 0 && (
                       <tr>
-                        <td className="py-1 text-indigo-400 font-medium pr-2 text-xs">Avail</td>
+                        <td className="py-1 text-teal-400 font-medium pr-2 text-xs">Avail</td>
                         {SIZES.map((sz) => {
                           const avail = currentInventory[sz];
                           return (
@@ -1017,7 +1017,7 @@ export default function LineItemEditor({
                 <div className="flex items-center gap-2">
                   <button
                     onClick={addImprint}
-                    className="text-xs font-semibold text-indigo-600 border border-indigo-100 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition"
+                    className="text-xs font-semibold text-teal-600 border border-teal-100 px-2.5 py-1 rounded-lg hover:bg-teal-50 transition"
                   >
                     + Add Location
                   </button>
@@ -1041,7 +1041,7 @@ export default function LineItemEditor({
                               if (!preset) return;
                               updateImprint(idx, { ...preset });
                             }}
-                            className="text-xs border border-indigo-200 text-indigo-600 rounded-lg px-2 py-1 bg-white focus:outline-none"
+                            className="text-xs border border-teal-200 text-teal-600 rounded-lg px-2 py-1 bg-white focus:outline-none"
                           >
                             <option value="">Load saved…</option>
                             {savedImprints
@@ -1061,7 +1061,7 @@ export default function LineItemEditor({
                             value={imp.title || ""}
                             onChange={(e) => updateImprint(idx, { title: e.target.value })}
                             placeholder="e.g. Front Logo"
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
 
@@ -1085,7 +1085,7 @@ export default function LineItemEditor({
                             value={imp.width || ""}
                             onChange={(e) => updateImprint(idx, { width: e.target.value })}
                             placeholder='e.g. 4"'
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
 
@@ -1095,7 +1095,7 @@ export default function LineItemEditor({
                             value={imp.height || ""}
                             onChange={(e) => updateImprint(idx, { height: e.target.value })}
                             placeholder='e.g. 2"'
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
 
@@ -1104,7 +1104,7 @@ export default function LineItemEditor({
                           <select
                             value={imp.location}
                             onChange={(e) => updateImprint(idx, { location: e.target.value })}
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                           >
                             {LOCATIONS.map((l) => (
                               <option key={l}>{l}</option>
@@ -1119,7 +1119,7 @@ export default function LineItemEditor({
                               <select
                                 value={imp.colors || 1}
                                 onChange={(e) => updateImprint(idx, { colors: parseInt(e.target.value) || 1 })}
-                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                               >
                                 {(getShopPricingConfig()?.embroidery?.stitchTiers || ["Under 5K", "5K-10K", "10K-15K", "15K+"]).map((st, i) => (
                                   <option key={st} value={i + 1}>{st}</option>
@@ -1132,7 +1132,7 @@ export default function LineItemEditor({
                                 value={imp.pantones || ""}
                                 onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
                                 placeholder="e.g. Navy, White, Gold"
-                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                               />
                             </div>
                           </>
@@ -1164,7 +1164,7 @@ export default function LineItemEditor({
                                 value={imp.pantones || ""}
                                 onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
                                 placeholder="e.g. PMS 286 C, White"
-                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                               />
                             </div>
                           </>
@@ -1175,7 +1175,7 @@ export default function LineItemEditor({
                           <select
                             value={imp.technique}
                             onChange={(e) => updateImprint(idx, { technique: e.target.value })}
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                           >
                             {getEnabledTechniques().map((t) => (
                               <option key={t}>{t}</option>
@@ -1201,7 +1201,7 @@ export default function LineItemEditor({
                           value={imp.details || ""}
                           onChange={(e) => updateImprint(idx, { details: e.target.value })}
                           placeholder="Any special notes or instructions..."
-                          className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                          className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                         />
                       </div>
                     </div>

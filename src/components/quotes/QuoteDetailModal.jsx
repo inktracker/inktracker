@@ -525,15 +525,15 @@ export default function QuoteDetailModal({
             </div>
 
             {activeExtras.length > 0 && (
-              <div className="bg-indigo-50 rounded-xl border border-indigo-100 p-4">
-                <div className="text-xs font-semibold uppercase tracking-widest text-indigo-400 mb-2">
+              <div className="bg-teal-50 rounded-xl border border-teal-100 p-4">
+                <div className="text-xs font-semibold uppercase tracking-widest text-teal-400 mb-2">
                   Add-ons
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {activeExtras.map(([key]) => (
                     <span
                       key={key}
-                      className="text-xs font-semibold text-indigo-700 bg-white dark:bg-slate-900 border border-indigo-200 px-2.5 py-1 rounded-full"
+                      className="text-xs font-semibold text-teal-700 bg-white dark:bg-slate-900 border border-teal-200 px-2.5 py-1 rounded-full"
                     >
                       {key}
                     </span>
@@ -576,8 +576,8 @@ export default function QuoteDetailModal({
                           </div>
                           {pricing && qty > 0 && (
                             <div className="sm:mt-1.5 text-right space-y-0.5">
-                              <div className="text-base font-bold text-indigo-600">
-                                {fmtMoney(pricing.ppp)}<span className="text-xs font-medium text-indigo-400">/pc</span>
+                              <div className="text-base font-bold text-teal-600">
+                                {fmtMoney(pricing.ppp)}<span className="text-xs font-medium text-teal-400">/pc</span>
                               </div>
                             </div>
                           )}
@@ -629,7 +629,7 @@ export default function QuoteDetailModal({
                                             {imp.method && <span>Method: {imp.method}</span>}
                                             {imp.colors && <span>Colors: {imp.colors}</span>}
                                             {imp.pantones && (
-                                              <span className="font-medium text-indigo-600">
+                                              <span className="font-medium text-teal-600">
                                                 Pantones: {imp.pantones}
                                               </span>
                                             )}
@@ -649,8 +649,8 @@ export default function QuoteDetailModal({
                                         </div>
 
                                         {art && (
-                                          <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3">
-                                            <div className="text-[11px] font-bold uppercase tracking-widest text-indigo-400 mb-2">
+                                          <div className="bg-teal-50 border border-teal-100 rounded-xl px-4 py-3">
+                                            <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400 mb-2">
                                               Attached Artwork
                                             </div>
 
@@ -667,7 +667,7 @@ export default function QuoteDetailModal({
                                                 )}
 
                                                 {art.colors && (
-                                                  <div className="text-xs text-indigo-600 font-semibold mt-1">
+                                                  <div className="text-xs text-teal-600 font-semibold mt-1">
                                                     Artwork colors: {art.colors}
                                                   </div>
                                                 )}
@@ -678,7 +678,7 @@ export default function QuoteDetailModal({
                                                   href={art.url}
                                                   target="_blank"
                                                   rel="noopener noreferrer"
-                                                  className="shrink-0 text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
+                                                  className="shrink-0 text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
                                                 >
                                                   Open
                                                 </a>
@@ -696,7 +696,7 @@ export default function QuoteDetailModal({
 
                           <div className="space-y-3">
                             {pricing && (
-                              <div className="bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                              <div className="bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
                                 <div className="flex justify-between text-xs text-slate-600">
                                   <span>Line Subtotal</span>
                                   <span className="font-semibold text-slate-800 dark:text-slate-200">
@@ -759,7 +759,7 @@ export default function QuoteDetailModal({
                     );
                   })()}
 
-                  <div className="flex justify-between text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                  <div className="flex justify-between text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
                     <span className="font-semibold">Deposit Due</span>
                     <span className="font-bold">{fmtMoney(totals.deposit)}</span>
                   </div>
@@ -829,7 +829,7 @@ export default function QuoteDetailModal({
 
             <button
               onClick={() => setShowSendModal(true)}
-              className="px-4 py-2 text-sm font-semibold text-indigo-700 border border-indigo-200 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition"
+              className="px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-200 bg-teal-50 rounded-xl hover:bg-teal-100 transition"
             >
               Send Quote
             </button>
@@ -884,7 +884,7 @@ export default function QuoteDetailModal({
               <button
                 onClick={() => callAction(onConvert, quote)}
                 disabled={saving}
-                className="px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-50"
+                className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
               >
                 {saving ? "Converting…" : "Convert to Order"}
               </button>
@@ -974,7 +974,7 @@ export default function QuoteDetailModal({
                 <>
                   <div className="w-2.5 h-2.5 rounded-full bg-rose-400 shrink-0" />
                   <span className="text-sm font-semibold text-rose-700">Not connected</span>
-                  <a href="/account" className="ml-auto text-xs font-semibold text-indigo-600 hover:underline">Connect →</a>
+                  <a href="/account" className="ml-auto text-xs font-semibold text-teal-600 hover:underline">Connect →</a>
                 </>
               )}
             </div>
@@ -1006,7 +1006,7 @@ export default function QuoteDetailModal({
                     href={qbPaymentLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-indigo-600 underline flex-1 truncate"
+                    className="text-xs text-teal-600 underline flex-1 truncate"
                   >
                     {qbPaymentLink}
                   </a>
@@ -1029,7 +1029,7 @@ export default function QuoteDetailModal({
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
                 <div className="text-xs text-slate-400 mb-0.5">Amount</div>
-                <div className="font-bold text-indigo-700">{fmtMoney(getQuoteTotalsForDisplay(quote).total)}</div>
+                <div className="font-bold text-teal-700">{fmtMoney(getQuoteTotalsForDisplay(quote).total)}</div>
               </div>
             </div>
 
@@ -1064,7 +1064,7 @@ export default function QuoteDetailModal({
               {!qbConnected && !qbCheckingConn && (
                 <a
                   href="/account"
-                  className="flex-1 text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl text-sm transition"
+                  className="flex-1 text-center bg-teal-600 hover:bg-teal-700 text-white font-bold py-2.5 rounded-xl text-sm transition"
                 >
                   Connect QuickBooks
                 </a>
@@ -1074,7 +1074,7 @@ export default function QuoteDetailModal({
             {qbInvoiceId && (
               <button
                 onClick={() => { setShowQBPanel(false); setShowSendModal(true); }}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl text-sm transition"
+                className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3 rounded-xl text-sm transition"
               >
                 Send to Customer
               </button>

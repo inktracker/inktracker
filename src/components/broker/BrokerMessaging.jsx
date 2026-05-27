@@ -163,7 +163,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
     <div className="flex flex-col h-[520px] bg-white rounded-2xl border border-slate-200 overflow-hidden">
       {/* Header */}
       <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center gap-2">
-        <MessageSquare className="w-4 h-4 text-indigo-500" />
+        <MessageSquare className="w-4 h-4 text-teal-500" />
         <span className="font-semibold text-slate-800 text-sm">{otherName || otherEmail}</span>
       </div>
 
@@ -177,7 +177,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
           const isMine = m.from_email === currentUser.email;
           return (
             <div key={m.id} className={`flex ${isMine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${isMine ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-800"}`}>
+              <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-sm ${isMine ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-800"}`}>
                 {m.body && <div className="whitespace-pre-wrap">{m.body}</div>}
                 {m.attachment_url && (
                   <a
@@ -187,7 +187,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
                     download={m.attachment_name || true}
                     className={`mt-2 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${
                       isMine
-                        ? "bg-indigo-500/50 hover:bg-indigo-500/70 text-white border border-indigo-300/40"
+                        ? "bg-teal-500/50 hover:bg-teal-500/70 text-white border border-teal-300/40"
                         : "bg-white hover:bg-slate-50 text-slate-700 border border-slate-200"
                     }`}
                   >
@@ -196,7 +196,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
                     <Download className="w-3.5 h-3.5 shrink-0 opacity-70" />
                   </a>
                 )}
-                <div className={`text-xs mt-1 ${isMine ? "text-indigo-200" : "text-slate-400"}`}>
+                <div className={`text-xs mt-1 ${isMine ? "text-teal-200" : "text-slate-400"}`}>
                   {m.from_name || m.from_email} · {m.created_date ? new Date(m.created_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
                 </div>
               </div>
@@ -209,13 +209,13 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
       {/* Pending-attachment chip — visible while a file is staged but not
           yet sent. Click X to discard. */}
       {pendingFile && (
-        <div className="mx-4 mb-2 inline-flex items-center gap-2 self-start rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs text-indigo-700">
+        <div className="mx-4 mb-2 inline-flex items-center gap-2 self-start rounded-lg border border-teal-200 bg-teal-50 px-2.5 py-1.5 text-xs text-teal-700">
           <FileText className="w-3.5 h-3.5 shrink-0" />
           <span className="truncate max-w-[280px]">{pendingFile.name}</span>
           <button
             type="button"
             onClick={clearPendingFile}
-            className="text-indigo-400 hover:text-indigo-700"
+            className="text-teal-400 hover:text-teal-700"
             aria-label="Remove attachment"
           >
             <X className="w-3.5 h-3.5" />
@@ -247,12 +247,12 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
           placeholder={uploading ? "Uploading…" : "Type a message… (Enter to send)"}
           rows={2}
           disabled={uploading}
-          className="flex-1 resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-60"
+          className="flex-1 resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:opacity-60"
         />
         <button
           onClick={handleSend}
           disabled={sending || uploading || (!body.trim() && !pendingFile)}
-          className="flex items-center justify-center w-10 h-10 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 text-white rounded-xl transition shrink-0"
+          className="flex items-center justify-center w-10 h-10 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-200 text-white rounded-xl transition shrink-0"
         >
           <Send className="w-4 h-4" />
         </button>

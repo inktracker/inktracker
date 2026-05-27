@@ -169,7 +169,7 @@ function JobDetailDrawer({ job, onClose }) {
               <span>Your Broker Price</span>
               <span>{fmtMoney(brokerTotals)}</span>
             </div>
-            <div className="flex justify-between text-sm text-violet-600 font-semibold border-t border-slate-200 pt-2">
+            <div className="flex justify-between text-sm text-green-600 font-semibold border-t border-slate-200 pt-2">
               <span>Client Total</span>
               <span>{fmtMoney(clientTotals)}</span>
             </div>
@@ -334,12 +334,12 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+        <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <Package className="w-4 h-4 text-indigo-500" />
-            <div className="text-xs font-semibold text-indigo-500 uppercase tracking-widest">Total Jobs</div>
+            <Package className="w-4 h-4 text-teal-500" />
+            <div className="text-xs font-semibold text-teal-500 uppercase tracking-widest">Total Jobs</div>
           </div>
-          <div className="text-2xl font-bold text-indigo-700">{completedJobs.length}</div>
+          <div className="text-2xl font-bold text-teal-700">{completedJobs.length}</div>
         </div>
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -348,12 +348,12 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
           </div>
           <div className="text-2xl font-bold text-emerald-700">{fmtMoney(totalRevenue)}</div>
         </div>
-        <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="w-4 h-4 text-violet-500" />
-            <div className="text-xs font-semibold text-violet-500 uppercase tracking-widest">Avg. Job Value</div>
+            <TrendingUp className="w-4 h-4 text-green-500" />
+            <div className="text-xs font-semibold text-green-500 uppercase tracking-widest">Avg. Job Value</div>
           </div>
-          <div className="text-2xl font-bold text-violet-700">{fmtMoney(avgJobValue)}</div>
+          <div className="text-2xl font-bold text-green-700">{fmtMoney(avgJobValue)}</div>
         </div>
         <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -374,8 +374,8 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
             <AreaChart data={monthlyData} margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#14b8a6" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -386,7 +386,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
                 type="monotone"
                 dataKey="revenue"
                 name="Revenue"
-                stroke="#6366f1"
+                stroke="#14b8a6"
                 strokeWidth={2}
                 fill="url(#revenueGrad)"
               />
@@ -404,13 +404,13 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by client or job ID…"
-              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              className="w-full pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-300"
             />
           </div>
           <select
             value={dateFilter}
             onChange={(e) => setDateFilter(e.target.value)}
-            className="text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+            className="text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white"
           >
             <option value="all">All Time</option>
             <option value="30d">Last 30 Days</option>
@@ -420,7 +420,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+            className="text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white"
           >
             <option value="date_desc">Newest First</option>
             <option value="date_asc">Oldest First</option>

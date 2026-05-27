@@ -7,8 +7,8 @@ const ACTION_META = {
   submitted_quote: {
     label: "submitted a quote",
     icon: FileText,
-    color: "text-indigo-600",
-    bg: "bg-indigo-50",
+    color: "text-teal-600",
+    bg: "bg-teal-50",
     page: "Quotes",
   },
   added_client: {
@@ -28,8 +28,8 @@ const ACTION_META = {
   uploaded_file: {
     label: "uploaded a file",
     icon: Paperclip,
-    color: "text-violet-600",
-    bg: "bg-violet-50",
+    color: "text-green-600",
+    bg: "bg-green-50",
     page: "Dashboard",
   },
   client_approved_quote: {
@@ -118,14 +118,14 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
           <Bell className="w-4 h-4 text-slate-500" />
           <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">Broker Activity</span>
           {unread > 0 && (
-            <span className="bg-indigo-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unread} new</span>
+            <span className="bg-teal-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unread} new</span>
           )}
           {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
         </button>
         {unread > 0 && expanded && (
           <button
             onClick={markAllRead}
-            className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition"
+            className="flex items-center gap-1.5 text-xs font-semibold text-teal-600 hover:text-teal-800 transition"
           >
             <CheckCheck className="w-3.5 h-3.5" />
             Mark All as Read
@@ -149,7 +149,7 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
           return (
             <div
               key={n.id}
-              className={`flex items-start gap-3 px-5 py-4 transition cursor-pointer ${!n.read ? "bg-indigo-50/50 hover:bg-indigo-100/60" : "bg-white hover:bg-slate-50"}`}
+              className={`flex items-start gap-3 px-5 py-4 transition cursor-pointer ${!n.read ? "bg-teal-50/50 hover:bg-teal-100/60" : "bg-white hover:bg-slate-50"}`}
               onClick={() => handleClick(n)}
             >
               {/* Icon */}
@@ -176,7 +176,7 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
 
               {/* Right side */}
               <div className="shrink-0 flex items-center gap-1.5 mt-0.5">
-                {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500" />}
+                {!n.read && <div className="w-2 h-2 rounded-full bg-teal-500" />}
                 <button
                   onClick={e => { e.stopPropagation(); remove(n.id); }}
                   title="Remove"

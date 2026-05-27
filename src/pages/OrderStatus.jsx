@@ -30,7 +30,7 @@ export default function OrderStatus() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
       </div>
     );
   }
@@ -60,7 +60,7 @@ export default function OrderStatus() {
           {shop?.logo_url ? (
             <img src={shop.logo_url} alt="Logo" className="w-12 h-12 object-contain rounded-lg" />
           ) : (
-            <div className="w-12 h-12 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black text-xl">
+            <div className="w-12 h-12 bg-teal-600 rounded-lg flex items-center justify-center text-white font-black text-xl">
               {(shop?.shop_name || "S")[0]}
             </div>
           )}
@@ -90,7 +90,7 @@ export default function OrderStatus() {
               {order.due_date && (
                 <div>
                   <span className="text-slate-400">In-Hands: </span>
-                  <span className="font-semibold text-indigo-700">{fmtDate(order.due_date)}</span>
+                  <span className="font-semibold text-teal-700">{fmtDate(order.due_date)}</span>
                 </div>
               )}
             </div>
@@ -120,17 +120,17 @@ export default function OrderStatus() {
                       done
                         ? "bg-emerald-500 text-white"
                         : active
-                        ? "bg-indigo-600 text-white ring-4 ring-indigo-100"
+                        ? "bg-teal-600 text-white ring-4 ring-teal-100"
                         : "bg-slate-100 text-slate-400"
                     }`}>
                       {done ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                     </div>
                     <div className={`text-sm font-medium ${
-                      active ? "text-indigo-700 font-bold" : done ? "text-slate-500" : "text-slate-400"
+                      active ? "text-teal-700 font-bold" : done ? "text-slate-500" : "text-slate-400"
                     }`}>
                       {step}
                       {active && (
-                        <span className="ml-2 text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full">
+                        <span className="ml-2 text-xs bg-teal-100 text-teal-600 px-2 py-0.5 rounded-full">
                           Current
                         </span>
                       )}
@@ -150,7 +150,7 @@ export default function OrderStatus() {
               </div>
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                  className="h-full bg-teal-500 rounded-full transition-all duration-500"
                   style={{ width: `${(currentIdx / (O_STATUSES.length - 1)) * 100}%` }}
                 />
               </div>
@@ -189,9 +189,9 @@ export default function OrderStatus() {
         {(shop?.phone || shop?.email) && (
           <div className="bg-slate-100 rounded-2xl px-6 py-4 text-sm text-slate-600 text-center">
             Questions? Contact {shop?.shop_name || "the shop"}
-            {shop?.phone && <> at <a href={`tel:${shop.phone}`} className="text-indigo-600 font-semibold">{shop.phone}</a></>}
+            {shop?.phone && <> at <a href={`tel:${shop.phone}`} className="text-teal-600 font-semibold">{shop.phone}</a></>}
             {shop?.phone && shop?.email && " or "}
-            {shop?.email && <a href={`mailto:${shop.email}`} className="text-indigo-600 font-semibold">{shop.email}</a>}
+            {shop?.email && <a href={`mailto:${shop.email}`} className="text-teal-600 font-semibold">{shop.email}</a>}
           </div>
         )}
 

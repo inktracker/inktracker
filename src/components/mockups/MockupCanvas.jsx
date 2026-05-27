@@ -329,7 +329,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
               style={{ transform: transforms, filter: contrast !== 100 ? `contrast(${contrast}%)` : undefined }} />
             {/* Resize handle */}
             {!wandMode && (
-              <div className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-white border-2 border-indigo-500 rounded-sm cursor-nwse-resize" />
+              <div className="absolute -bottom-1.5 -right-1.5 w-4 h-4 bg-white border-2 border-teal-500 rounded-sm cursor-nwse-resize" />
             )}
             {/* Remove button */}
             {!wandMode && onArtworkChange && (
@@ -354,11 +354,11 @@ const MockupCanvas = forwardRef(function MockupCanvas({
               <Crosshair className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => setFlipH(v => !v)} title="Flip horizontal"
-              className={`p-1.5 rounded-lg border transition ${flipH ? "bg-indigo-100 border-indigo-300 text-indigo-600" : "border-slate-200 hover:bg-white text-slate-500"}`}>
+              className={`p-1.5 rounded-lg border transition ${flipH ? "bg-teal-100 border-teal-300 text-teal-600" : "border-slate-200 hover:bg-white text-slate-500"}`}>
               <FlipHorizontal className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => setFlipV(v => !v)} title="Flip vertical"
-              className={`p-1.5 rounded-lg border transition ${flipV ? "bg-indigo-100 border-indigo-300 text-indigo-600" : "border-slate-200 hover:bg-white text-slate-500"}`}>
+              className={`p-1.5 rounded-lg border transition ${flipV ? "bg-teal-100 border-teal-300 text-teal-600" : "border-slate-200 hover:bg-white text-slate-500"}`}>
               <FlipVertical className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => setRotation(r => (r + 90) % 360)} title="Rotate 90"
@@ -367,7 +367,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
             </button>
             <div className="w-px h-5 bg-slate-200 mx-1" />
             <button onClick={() => setWandMode(v => !v)} title="Remove background"
-              className={`p-1.5 rounded-lg border transition ${wandMode ? "bg-violet-100 border-violet-300 text-violet-600" : "border-slate-200 hover:bg-white text-slate-500"}`}>
+              className={`p-1.5 rounded-lg border transition ${wandMode ? "bg-green-100 border-green-300 text-green-600" : "border-slate-200 hover:bg-white text-slate-500"}`}>
               <Wand2 className="w-3.5 h-3.5" />
             </button>
             <button onClick={resetAll} title="Reset to original"
@@ -391,7 +391,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <button onClick={() => setOneColor(v => !v)}
-                className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition ${oneColor ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-200 text-slate-600 hover:bg-white"}`}>
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition ${oneColor ? "bg-teal-600 text-white border-teal-600" : "border-slate-200 text-slate-600 hover:bg-white"}`}>
                 {oneColor ? "One Color ON" : "Make One Color"}
               </button>
               {oneColor && (

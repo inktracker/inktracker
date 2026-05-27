@@ -184,17 +184,17 @@ export default function OnboardingWizard({ user, onComplete }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[300] bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 overflow-y-auto flex items-start justify-center p-4 sm:py-8">
+    <div className="fixed inset-0 z-[300] bg-gradient-to-br from-slate-900 via-teal-950 to-slate-900 overflow-y-auto flex items-start justify-center p-4 sm:py-8">
       <div className="w-full max-w-lg my-auto">
         {/* Progress bar */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-semibold text-indigo-300 uppercase tracking-widest">Setup</span>
+            <span className="text-xs font-semibold text-teal-300 uppercase tracking-widest">Setup</span>
             <span className="text-xs text-slate-400">{step + 1} of {totalSteps}</span>
           </div>
           <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
             <div
-              className="h-full bg-indigo-400 rounded-full transition-all duration-500"
+              className="h-full bg-teal-400 rounded-full transition-all duration-500"
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -203,7 +203,7 @@ export default function OnboardingWizard({ user, onComplete }) {
               <button
                 key={s.id}
                 onClick={() => { if (i < step) setStep(i); }}
-                className={`text-[10px] font-semibold transition ${i < step ? "text-indigo-300 hover:text-indigo-100 cursor-pointer" : i === step ? "text-indigo-300" : "text-slate-600 cursor-default"}`}
+                className={`text-[10px] font-semibold transition ${i < step ? "text-teal-300 hover:text-teal-100 cursor-pointer" : i === step ? "text-teal-300" : "text-slate-600 cursor-default"}`}
               >
                 {s.title.split(" ")[0]}
               </button>
@@ -240,7 +240,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                     type="checkbox"
                     checked={seedDemo}
                     onChange={(e) => setSeedDemo(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 accent-indigo-600 cursor-pointer"
+                    className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
                   />
                   <span className="text-sm text-slate-700">
                     <span className="font-semibold">Add sample data so I can explore</span>
@@ -260,20 +260,20 @@ export default function OnboardingWizard({ user, onComplete }) {
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Shop Name *</label>
                   <input type="text" value={shopName} onChange={e => setShopName(e.target.value)}
                     placeholder="" autoFocus
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Phone</label>
                     <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
                       placeholder=""
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Sales Tax %</label>
                     <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)}
                       placeholder="e.g. 8.25"
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
                     <p className="text-xs text-slate-400 mt-1">Enter the percentage (8.25 means 8.25%), not a decimal.</p>
                   </div>
                 </div>
@@ -281,23 +281,23 @@ export default function OnboardingWizard({ user, onComplete }) {
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Street Address</label>
                   <input type="text" value={address} onChange={e => setAddress(e.target.value)}
                     placeholder=""
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">City</label>
                     <input type="text" value={city} onChange={e => setCity(e.target.value)} placeholder=""
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">State</label>
                     <input type="text" value={stateVal} onChange={e => setStateVal(e.target.value)} placeholder="" maxLength={2}
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900 uppercase" />
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900 uppercase" />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">ZIP</label>
                     <input type="text" value={zip} onChange={e => setZip(e.target.value)} placeholder=""
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
                   </div>
                 </div>
 
@@ -306,7 +306,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                   <select
                     value={timezone}
                     onChange={(e) => setTimezone(e.target.value)}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900 bg-white"
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900 bg-white"
                   >
                     {SHOP_TIMEZONE_OPTIONS.map((opt) => (
                       <option key={opt.value || "__default__"} value={opt.value}>
@@ -326,7 +326,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                       type="checkbox"
                       checked={offersEmbroidery}
                       onChange={(e) => setOffersEmbroidery(e.target.checked)}
-                      className="mt-0.5 w-4 h-4 accent-indigo-600 cursor-pointer"
+                      className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
                     />
                     <span className="text-sm text-slate-700">
                       <span className="font-semibold">We also offer embroidery</span>
@@ -377,12 +377,12 @@ export default function OnboardingWizard({ user, onComplete }) {
             {/* ── Step 3: Email & Payments ─────────────────────────────────── */}
             {step === 3 && (
               <div className="flex-1 flex flex-col gap-4">
-                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-1">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-indigo-800">
+                <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 space-y-1">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-teal-800">
                     <Mail className="w-4 h-4" />
                     Email is ready to go
                   </div>
-                  <p className="text-xs text-indigo-700 leading-relaxed">
+                  <p className="text-xs text-teal-700 leading-relaxed">
                     Quote emails are sent automatically on behalf of <strong>{shopName || "your shop"}</strong>. No email server setup needed.
                   </p>
                 </div>
@@ -449,7 +449,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                     { Icon: Settings, label: "Account Settings" },
                   ].map(({ Icon: CardIcon, label }) => (
                     <div key={label} className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-center">
-                      <CardIcon className="w-5 h-5 text-indigo-600 mx-auto mb-1" />
+                      <CardIcon className="w-5 h-5 text-teal-600 mx-auto mb-1" />
                       <div className="text-xs font-semibold text-slate-600">{label}</div>
                     </div>
                   ))}
@@ -482,7 +482,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                 <button
                   onClick={next}
                   disabled={step === 1 && !shopName.trim()}
-                  className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-40 ml-auto"
+                  className="flex items-center gap-2 px-6 py-2.5 text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-40 ml-auto"
                 >
                   {step === 0 ? "Get Started" : "Continue"}
                   <ChevronRight className="w-4 h-4" />
@@ -499,7 +499,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                 <button
                   onClick={saveAndFinish}
                   disabled={saving}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
                 >
                   {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                   {saving ? "Saving…" : "Go to Dashboard"}

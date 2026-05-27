@@ -87,8 +87,8 @@ export function getTierLabel(tier) {
 
 export function getTierColor(tier) {
   const colors = {
-    trial: "bg-indigo-100 text-indigo-700",
-    shop: "bg-violet-100 text-violet-700",
+    trial: "bg-teal-100 text-teal-700",
+    shop: "bg-green-100 text-green-700",
     expired: "bg-red-100 text-red-700",
   };
   return colors[tier] || "bg-slate-100 text-slate-600";

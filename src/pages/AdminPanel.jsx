@@ -33,12 +33,12 @@ async function extractFnErrorMessage(fnError) {
 
 function roleBadge(role) {
   const map = {
-    admin:    { label: "Owner",    cls: "bg-violet-100 text-violet-700" },
-    shop:     { label: "Owner",    cls: "bg-violet-100 text-violet-700" },
+    admin:    { label: "Owner",    cls: "bg-green-100 text-green-700" },
+    shop:     { label: "Owner",    cls: "bg-green-100 text-green-700" },
     manager:  { label: "Manager",  cls: "bg-emerald-100 text-emerald-700" },
     user:     { label: "Pending",  cls: "bg-amber-100 text-amber-700" },
     broker:   { label: "Broker",   cls: "bg-sky-100 text-sky-700" },
-    employee: { label: "Employee", cls: "bg-indigo-100 text-indigo-700" },
+    employee: { label: "Employee", cls: "bg-teal-100 text-teal-700" },
   };
   const { label, cls } = map[role] ?? { label: role, cls: "bg-slate-100 text-slate-500" };
   return (
@@ -219,7 +219,7 @@ export default function AdminPanel() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <ShieldCheck className="w-6 h-6 text-indigo-600" />
+            <ShieldCheck className="w-6 h-6 text-teal-600" />
             Admin Panel
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">Manage user access and shop accounts</p>
@@ -227,7 +227,7 @@ export default function AdminPanel() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setShowInvite(true); setInviteError(""); setInviteSuccess(""); }}
-            className="flex items-center gap-1.5 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-3 py-1.5 transition"
+            className="flex items-center gap-1.5 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-3 py-1.5 transition"
           >
             <Mail className="w-4 h-4" />
             Invite User
@@ -277,7 +277,7 @@ export default function AdminPanel() {
         <div className="flex border-b border-slate-100">
           <button
             onClick={() => setTab("pending")}
-            className={`flex-1 py-3 text-sm font-semibold transition ${tab === "pending" ? "text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/40" : "text-slate-500 hover:text-slate-800"}`}
+            className={`flex-1 py-3 text-sm font-semibold transition ${tab === "pending" ? "text-teal-600 border-b-2 border-teal-600 bg-teal-50/40" : "text-slate-500 hover:text-slate-800"}`}
           >
             Pending Approval
             {pending.length > 0 && (
@@ -286,7 +286,7 @@ export default function AdminPanel() {
           </button>
           <button
             onClick={() => setTab("all")}
-            className={`flex-1 py-3 text-sm font-semibold transition ${tab === "all" ? "text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/40" : "text-slate-500 hover:text-slate-800"}`}
+            className={`flex-1 py-3 text-sm font-semibold transition ${tab === "all" ? "text-teal-600 border-b-2 border-teal-600 bg-teal-50/40" : "text-slate-500 hover:text-slate-800"}`}
           >
             All Users
           </button>
@@ -310,7 +310,7 @@ export default function AdminPanel() {
               return (
               <div key={key} className="flex items-center gap-4 px-5 py-4">
                 {/* Avatar */}
-                <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm shrink-0">
+                <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center text-teal-600 font-bold text-sm shrink-0">
                   {(u.email || u.shop_name || "?")[0].toUpperCase()}
                 </div>
 
@@ -359,7 +359,7 @@ export default function AdminPanel() {
                       <button
                         onClick={() => setRole(u.id, u.auth_id, "employee")}
                         disabled={actionLoading[key]}
-                        className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                        className="text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                       >
                         {actionLoading[key] ? "…" : "Employee"}
                       </button>
@@ -382,7 +382,7 @@ export default function AdminPanel() {
                     <button
                       onClick={() => resendInvite(u.email)}
                       disabled={actionLoading[`resend-${u.email}`]}
-                      className="text-xs font-semibold border border-indigo-200 text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                      className="text-xs font-semibold border border-teal-200 text-teal-600 hover:bg-teal-50 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                       title="Email the invite link again — useful if they lost it or it expired."
                     >
                       {actionLoading[`resend-${u.email}`] ? "…" : "Resend invite"}
@@ -452,8 +452,8 @@ export default function AdminPanel() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center">
-                  <Mail className="w-5 h-5 text-indigo-600" />
+                <div className="w-10 h-10 bg-teal-50 rounded-full flex items-center justify-center">
+                  <Mail className="w-5 h-5 text-teal-600" />
                 </div>
                 <div>
                   <div className="font-semibold text-slate-900">Invite User</div>
@@ -477,7 +477,7 @@ export default function AdminPanel() {
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="broker@example.com"
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
               <div>
@@ -486,7 +486,7 @@ export default function AdminPanel() {
                   value={inviteName}
                   onChange={(e) => setInviteName(e.target.value)}
                   placeholder="Jane Doe"
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
               <div>
@@ -498,7 +498,7 @@ export default function AdminPanel() {
                       rendered the selected role button unstyled. */}
                   {[
                     { value: "manager",  label: "Manager",  selected: "bg-emerald-600 text-white border-emerald-600" },
-                    { value: "employee", label: "Employee", selected: "bg-indigo-600 text-white border-indigo-600"   },
+                    { value: "employee", label: "Employee", selected: "bg-teal-600 text-white border-teal-600"   },
                     { value: "broker",   label: "Broker",   selected: "bg-sky-600 text-white border-sky-600"         },
                   ].map(r => (
                     <button key={r.value} type="button" onClick={() => setInviteRole(r.value)}
@@ -532,7 +532,7 @@ export default function AdminPanel() {
               <button
                 onClick={handleInviteBroker}
                 disabled={inviteSending || !inviteEmail.trim()}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-xl py-2 text-sm font-semibold transition"
+                className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 text-white rounded-xl py-2 text-sm font-semibold transition"
               >
                 {inviteSending ? "Sending…" : "Send Invite"}
               </button>

@@ -47,7 +47,7 @@ export default function EmbedSnippets() {
             <p className="text-xs text-slate-400 mt-0.5">Share this URL anywhere — email, social, bio link</p>
           </div>
           <button onClick={() => copy(WIZARD_URL, "link")}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${copied==="link" ? "border-emerald-300 text-emerald-600 bg-emerald-50" : "border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"}`}>
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${copied==="link" ? "border-emerald-300 text-emerald-600 bg-emerald-50" : "border-slate-200 text-slate-500 hover:border-teal-300 hover:text-teal-600"}`}>
             {copied === "link" ? "✓ Copied!" : "Copy Link"}
           </button>
         </div>
@@ -62,7 +62,7 @@ export default function EmbedSnippets() {
             <p className="text-xs text-slate-400 mt-0.5">Works on Wix, Squarespace, WordPress, and any custom site</p>
           </div>
           <button onClick={() => copy(iframeSnippet, "iframe")}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${copied==="iframe" ? "border-emerald-300 text-emerald-600 bg-emerald-50" : "border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600"}`}>
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${copied==="iframe" ? "border-emerald-300 text-emerald-600 bg-emerald-50" : "border-slate-200 text-slate-500 hover:border-teal-300 hover:text-teal-600"}`}>
             {copied === "iframe" ? "✓ Copied!" : "Copy Code"}
           </button>
         </div>
@@ -70,15 +70,15 @@ export default function EmbedSnippets() {
       </div>
 
       {/* How it works */}
-      <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5">
-        <h3 className="font-bold text-indigo-800 mb-3">How it works</h3>
-        <ol className="text-sm text-indigo-700 space-y-2 list-decimal list-inside">
+      <div className="bg-teal-50 border border-teal-100 rounded-2xl p-5">
+        <h3 className="font-bold text-teal-800 mb-3">How it works</h3>
+        <ol className="text-sm text-teal-700 space-y-2 list-decimal list-inside">
           <li>Customer fills out the wizard on your website</li>
           <li>They click "Submit Order Request"</li>
           <li>A new <strong>Pending</strong> quote instantly appears in your Quotes page</li>
           <li>You review, price-confirm, and approve it — all from this app</li>
         </ol>
-        <div className="mt-3 text-xs text-indigo-500">The wizard works without login — customers can submit directly from your website.</div>
+        <div className="mt-3 text-xs text-teal-500">The wizard works without login — customers can submit directly from your website.</div>
       </div>
     </div>
   );
