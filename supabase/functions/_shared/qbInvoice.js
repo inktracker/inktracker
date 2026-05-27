@@ -39,10 +39,32 @@ export function buildQBDisplayName(customer) {
   return name;
 }
 
+// ── Email format guard ──────────────────────────────────────────────────────
+// QB validates email per RFC 822 and returns 400 (ValidationFault) when
+// the value doesn't look like an email. The InkTracker customers table
+// allows free-text in the email column, and we've seen names like
+// "Danielle Walton" end up there from past imports or typos. Passing
+// that into PrimaryEmailAddr / BillEmail makes the entire QB sync
+// fail — better to omit the field than block the whole operation.
+//
+// Minimal check (something@something.something) — intentionally lax;
+// the goal is "definitely not an email" rejection, not full RFC 822
+// validation (QB does that). False positives like "a@b.c" still hit
+// QB which will accept or reject per its own rules.
+export function isLikelyEmail(value) {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return /^\S+@\S+\.\S+$/.test(trimmed);
+}
+
 // ── QB Customer body ────────────────────────────────────────────────────────
 // Only emits fields with real values — never sends empty strings or null
 // (QB returns 400 on some null fields). Tax-exempt customers get
 // Taxable=false + TaxExemptionReasonId=16 (Other) per QB's enum.
+//
+// Email is gated by isLikelyEmail so junk values (names, phone numbers,
+// stray text) don't crash QB customer creation with a ValidationFault.
 export function buildQBCustomerBody(customer, displayName) {
   const body = {
     DisplayName: displayName,
@@ -51,7 +73,7 @@ export function buildQBCustomerBody(customer, displayName) {
   if (customer?.company) body.CompanyName = customer.company;
   if (customer?.name)    body.GivenName   = customer.name;
   if (customer?.notes)   body.Notes       = customer.notes;
-  if (customer?.email)   body.PrimaryEmailAddr = { Address: customer.email };
+  if (isLikelyEmail(customer?.email)) body.PrimaryEmailAddr = { Address: customer.email.trim() };
   if (customer?.phone)   body.PrimaryPhone     = { FreeFormNumber: customer.phone };
   if (customer?.address) body.BillAddr         = { Line1: customer.address };
   if (customer?.tax_id)  body.ResaleNum        = customer.tax_id;

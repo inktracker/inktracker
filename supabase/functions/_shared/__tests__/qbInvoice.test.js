@@ -8,6 +8,7 @@ import {
   extractPaymentLink,
   buildQbSendInvoiceUrl,
   makeOrderId,
+  isLikelyEmail,
 } from "../qbInvoice";
 
 // ── nextAvailableDocNumber ──────────────────────────────────────────────────
@@ -491,5 +492,64 @@ describe("makeOrderId", () => {
   it("suffix is uppercase base36 of the timestamp's last 5 chars", () => {
     const id = makeOrderId(123456789);
     expect(id).toMatch(/^ORD-\d{4}-[0-9A-Z]{1,5}$/);
+  });
+});
+
+// ── isLikelyEmail ───────────────────────────────────────────────────────────
+// Defensive guard for the QB sync path. Real bug: QB rejected the whole
+// invoice creation with 400 ValidationFault because BillEmail was the
+// customer's NAME ("Danielle Walton") instead of an email. Helper lets
+// us omit the field instead of blocking the operation.
+
+describe("isLikelyEmail", () => {
+  it("E1 — accepts a basic email", () => {
+    expect(isLikelyEmail("dani@example.com")).toBe(true);
+  });
+
+  it("E2 — accepts plus addressing + subdomains", () => {
+    expect(isLikelyEmail("joe+filter@inktracker.app")).toBe(true);
+    expect(isLikelyEmail("a@b.co.uk")).toBe(true);
+  });
+
+  it("E3 — rejects a person's name (the original bug)", () => {
+    expect(isLikelyEmail("Danielle Walton")).toBe(false);
+  });
+
+  it("E4 — rejects empty / whitespace / non-string", () => {
+    expect(isLikelyEmail("")).toBe(false);
+    expect(isLikelyEmail("   ")).toBe(false);
+    expect(isLikelyEmail(null)).toBe(false);
+    expect(isLikelyEmail(undefined)).toBe(false);
+    expect(isLikelyEmail(42)).toBe(false);
+  });
+
+  it("E5 — rejects missing @ or missing TLD", () => {
+    expect(isLikelyEmail("hello.world")).toBe(false);
+    expect(isLikelyEmail("no-at-sign")).toBe(false);
+    expect(isLikelyEmail("missing-tld@local")).toBe(false);
+  });
+
+  it("E6 — rejects values containing whitespace around the @", () => {
+    expect(isLikelyEmail("joe @inktracker.app")).toBe(false);
+    expect(isLikelyEmail("joe@ ink.app")).toBe(false);
+  });
+});
+
+describe("buildQBCustomerBody — email gating", () => {
+  it("EM1 — drops a clearly invalid email so QB doesn't reject the customer create", () => {
+    const body = buildQBCustomerBody(
+      { name: "Danielle Walton", email: "Danielle Walton" },
+      "Danielle Walton",
+    );
+    expect(body).not.toHaveProperty("PrimaryEmailAddr");
+    expect(body.GivenName).toBe("Danielle Walton");
+  });
+
+  it("EM2 — keeps a valid email + trims whitespace", () => {
+    const body = buildQBCustomerBody(
+      { name: "Joe", email: "  joe@example.com  " },
+      "Joe",
+    );
+    expect(body.PrimaryEmailAddr).toEqual({ Address: "joe@example.com" });
   });
 });
