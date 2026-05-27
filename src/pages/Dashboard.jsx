@@ -540,8 +540,14 @@ export default function Dashboard() {
   // QB and synced back). The QB read path isn't wired here yet — local
   // order data is the source until we add a `getDashboardMetrics` action
   // to qbSync. Tracked in AUDIT_2026-05-26.md as a follow-up.
-  const totalQuotesCount = quotes.length;
-  const totalQuotesValue = sumTotals(quotes);
+  // Match the Quotes page filter (Quotes.jsx:96-99) — quotes that have
+  // been converted to orders aren't "active quotes" anymore, they live
+  // under Orders. Counting them on the dashboard made the chip claim
+  // e.g. "4 Quotes" then take you to an empty list. Both surfaces now
+  // exclude "Converted to Order".
+  const activeQuotes = quotes.filter((q) => q.status !== "Converted to Order");
+  const totalQuotesCount = activeQuotes.length;
+  const totalQuotesValue = sumTotals(activeQuotes);
 
   // Open orders excludes Completed AND Cancelled/Voided — all three are
   // terminal states. Cancelled jobs used to inflate the count + dollar
