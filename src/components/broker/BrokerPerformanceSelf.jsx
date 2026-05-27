@@ -60,12 +60,14 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
   const completed = allOrders.filter(o => classifyStatus(o.status) === "completed").length;
   const monthlyData = useMemo(() => getMonthlyData(allOrders), [allOrders]);
 
-  const completionRate = allOrders.length ? Math.round((completed / allOrders.length) * 100) : 0;
-
   return (
     <div className="space-y-5">
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* KPI cards. Completion Rate removed 2026-05-27 — too noisy on
+          low-volume brokers (one open job dragged the % below 100 and
+          read as failure even when nothing was actually behind). The
+          Order Status Breakdown below shows the same info more
+          honestly. */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
             <Package className="w-4 h-4 text-indigo-500" />
@@ -86,13 +88,6 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
             <div className="text-xs font-semibold text-violet-500 uppercase tracking-widest">Avg. Order Value</div>
           </div>
           <div className="text-2xl font-bold text-violet-700">{fmtMoney(avgOrderValue)}</div>
-        </div>
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-1">
-            <CheckCircle2 className="w-4 h-4 text-amber-500" />
-            <div className="text-xs font-semibold text-amber-500 uppercase tracking-widest">Completion Rate</div>
-          </div>
-          <div className="text-2xl font-bold text-amber-700">{completionRate}%</div>
         </div>
       </div>
 
