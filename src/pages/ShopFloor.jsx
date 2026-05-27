@@ -568,9 +568,18 @@ export default function ShopFloor() {
                 </div>
               </div>
 
-              {/* Status pipeline */}
+              {/* Status pipeline. Layout: header + current status chip on
+                  the same row (chip top-right) → colored progress bars →
+                  prev/next buttons below. Works the same on mobile and
+                  desktop; previously the chip + buttons all sat below
+                  the bars on one row, which wrapped awkwardly on phones. */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Production Status</h3>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Production Status</h3>
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border whitespace-nowrap ${STEP_COLORS[selected.status]?.light || "bg-slate-50"}`}>
+                    {selected.status || "Pre-Press"}
+                  </span>
+                </div>
                 <div className="flex gap-1 mb-4">
                   {STEPS.map((step) => {
                     const isCurrent = step === (selected.status || "Pre-Press");
@@ -582,29 +591,25 @@ export default function ShopFloor() {
                     );
                   })}
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className={`text-sm font-bold px-3 py-1.5 rounded-lg border ${STEP_COLORS[selected.status]?.light || "bg-slate-50"}`}>
-                    {selected.status || "Pre-Press"}
-                  </span>
-                  <div className="flex gap-2">
-                    {prevStep && (
-                      <button onClick={() => updateStatus(selected, prevStep)} disabled={updating}
-                        className="text-xs font-semibold text-slate-500 border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50 transition disabled:opacity-50">
-                        &larr; {prevStep}
-                      </button>
-                    )}
-                    {nextStep && (
-                      <button onClick={() => moveToNextStepWithGuard(selected, nextStep)} disabled={updating}
-                        className="flex items-center gap-1 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition disabled:opacity-50">
-                        {updating ? "..." : <>Move to {nextStep} <ChevronRight className="w-4 h-4" /></>}
-                      </button>
-                    )}
-                    {!nextStep && selected.status === "Completed" && (
-                      <span className="flex items-center gap-1 text-sm font-bold text-emerald-600">
-                        <CheckCircle2 className="w-5 h-5" /> Complete
-                      </span>
-                    )}
-                  </div>
+                <div className="flex items-center gap-2">
+                  {prevStep && (
+                    <button onClick={() => updateStatus(selected, prevStep)} disabled={updating}
+                      className="text-xs font-semibold text-slate-500 border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50 transition disabled:opacity-50">
+                      &larr; {prevStep}
+                    </button>
+                  )}
+                  <div className="flex-1" />
+                  {nextStep && (
+                    <button onClick={() => moveToNextStepWithGuard(selected, nextStep)} disabled={updating}
+                      className="flex items-center gap-1 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition disabled:opacity-50">
+                      {updating ? "..." : <>Move to {nextStep} <ChevronRight className="w-4 h-4" /></>}
+                    </button>
+                  )}
+                  {!nextStep && selected.status === "Completed" && (
+                    <span className="flex items-center gap-1 text-sm font-bold text-emerald-600">
+                      <CheckCircle2 className="w-5 h-5" /> Complete
+                    </span>
+                  )}
                 </div>
               </div>
 
