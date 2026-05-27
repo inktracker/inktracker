@@ -22,6 +22,8 @@ import {
   fmtDate,
   fmtMoney,
   getQty,
+  getShortfallQty,
+  getCompletedQty,
   BIG_SIZES,
   SIZES,
   getDisplayName,
@@ -259,6 +261,35 @@ export default function OrderDetailModal({
     checklist.goods_progress = bulkSetOrderGoodsStep(liveOrder, target, shopName || "Admin");
     const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
     setLiveOrder(prev => ({ ...prev, ...updated }));
+  }
+
+  // Per-size shortfall tracking. Capacity isn't deducted from line.sizes
+  // (that's the originally-quoted qty — Quote Snapshot Invariant); the
+  // misprinted/lost count goes into _shortfall: { S: 1, M: 2 } on the
+  // line item. getCompletedQty / getShortfallQty in pricing.jsx surface
+  // the derived numbers. Pricing / invoice totals untouched — billing
+  // adjustment for shortfall (credit / reorder) is a separate decision
+  // (Phase B).
+  async function saveShortfall(lineItemId, size, rawValue) {
+    const n = Math.max(0, parseInt(rawValue, 10) || 0);
+    const nextLineItems = (liveOrder.line_items || []).map((li) => {
+      if (li.id !== lineItemId) return li;
+      const nextShortfall = { ...(li._shortfall || {}) };
+      if (n === 0) {
+        delete nextShortfall[size];
+      } else {
+        nextShortfall[size] = n;
+      }
+      return { ...li, _shortfall: nextShortfall };
+    });
+    // Optimistic local update so the input doesn't visibly bounce.
+    setLiveOrder((prev) => ({ ...prev, line_items: nextLineItems }));
+    try {
+      const updated = await base44.entities.Order.update(liveOrder.id, { line_items: nextLineItems });
+      setLiveOrder((prev) => ({ ...prev, ...updated }));
+    } catch (err) {
+      console.error("[saveShortfall] update failed:", err);
+    }
   }
 
   // Soft-warn version of onAdvance. Override allowed for partial-ship.
@@ -793,12 +824,14 @@ export default function OrderDetailModal({
               )}
             </div>
 
-          {(order.line_items || []).length > 0 ? (
+          {(liveOrder.line_items || []).length > 0 ? (
             <>
-              {(order.line_items || []).map((li) => {
+              {(liveOrder.line_items || []).map((li) => {
                 const qty = getQty(li);
+                const shortfallQty = getShortfallQty(li);
+                const completedQty = getCompletedQty(li);
                 const markup = isBrokerOrder ? BROKER_MARKUP : undefined;
-                const linkedQtyMap = buildLinkedQtyMap(order.line_items || []);
+                const linkedQtyMap = buildLinkedQtyMap(liveOrder.line_items || []);
                 // Use saved pricing from "calculate once"; fall back to live calc for legacy
                 const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
                 const clientPppOverride = Number(li?.clientPpp);
@@ -881,6 +914,60 @@ export default function OrderDetailModal({
                                 ))}
                                 <td className="px-4 py-2 text-center text-xs font-bold text-slate-700">
                                   {fmtMoney(r.lineTotal)}
+                                </td>
+                              </tr>
+                            )}
+                            {/* Shortfall — misprints / lost pieces. Default 0
+                                across all sizes; non-zero values are stored
+                                on the line item under _shortfall and surface
+                                as the "X of Y completed" total. Pricing /
+                                billing is NOT adjusted here (Phase B will
+                                add the reorder + credit flow). */}
+                            <tr className="bg-amber-50/40">
+                              <td className="px-4 py-2 text-xs text-amber-700 font-semibold">
+                                Shortfall
+                              </td>
+                              {activeSizes.map((sz) => (
+                                <td key={sz} className="px-2 py-1.5 text-center">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={(li.sizes || {})[sz] || 0}
+                                    defaultValue={(li._shortfall || {})[sz] || 0}
+                                    onBlur={(e) => {
+                                      const v = e.target.value;
+                                      const cur = (li._shortfall || {})[sz] || 0;
+                                      if (String(cur) !== String(v)) {
+                                        saveShortfall(li.id, sz, v);
+                                      }
+                                    }}
+                                    className="w-12 text-center text-xs font-semibold text-amber-800 bg-white border border-amber-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                    title="Misprints or lost pieces for this size"
+                                  />
+                                </td>
+                              ))}
+                              <td className="px-4 py-2 text-center text-xs font-bold text-amber-800">
+                                {shortfallQty > 0
+                                  ? `−${shortfallQty}`
+                                  : <span className="text-slate-400 font-normal">—</span>}
+                              </td>
+                            </tr>
+                            {shortfallQty > 0 && (
+                              <tr className="bg-emerald-50/40 border-t border-emerald-100">
+                                <td className="px-4 py-2 text-xs text-emerald-700 font-semibold">
+                                  Completed
+                                </td>
+                                {activeSizes.map((sz) => {
+                                  const sizeQty = (li.sizes || {})[sz] || 0;
+                                  const sizeShort = (li._shortfall || {})[sz] || 0;
+                                  return (
+                                    <td key={sz} className="px-3 py-2 text-center text-xs font-semibold text-emerald-800">
+                                      {Math.max(0, sizeQty - sizeShort)}
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-4 py-2 text-center text-xs font-bold text-emerald-800">
+                                  {completedQty} of {qty}
                                 </td>
                               </tr>
                             )}

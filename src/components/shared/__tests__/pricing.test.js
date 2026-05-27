@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   getQty,
+  getShortfallQty,
+  getCompletedQty,
   getTier,
   getAdminMarkup,
   getBrokerMarkup,
@@ -99,6 +101,38 @@ describe("Helper Functions", () => {
 
     it("ignores non-numeric values", () => {
       expect(getQty({ sizes: { S: "abc", M: "10" } })).toBe(10);
+    });
+  });
+
+  // Shortfall tracking — added 2026-05-27 so the shop can record
+  // misprints / lost goods per size on each line item.
+  describe("getShortfallQty", () => {
+    it("SF1 — returns 0 when _shortfall is absent (default for older orders)", () => {
+      expect(getShortfallQty({ sizes: { S: 10 } })).toBe(0);
+      expect(getShortfallQty({})).toBe(0);
+      expect(getShortfallQty(null)).toBe(0);
+    });
+
+    it("SF2 — sums shortfall across sizes", () => {
+      expect(getShortfallQty({ _shortfall: { S: 2, M: 3, L: 1 } })).toBe(6);
+    });
+
+    it("SF3 — handles string and number values, ignores junk", () => {
+      expect(getShortfallQty({ _shortfall: { S: "2", M: 3, L: "abc" } })).toBe(5);
+    });
+  });
+
+  describe("getCompletedQty", () => {
+    it("CQ1 — equals total qty when no shortfall", () => {
+      expect(getCompletedQty({ sizes: { S: 10, M: 15 } })).toBe(25);
+    });
+
+    it("CQ2 — subtracts shortfall from total qty", () => {
+      expect(getCompletedQty({ sizes: { S: 10, M: 15 }, _shortfall: { S: 2, M: 3 } })).toBe(20);
+    });
+
+    it("CQ3 — clamps at 0 if shortfall somehow exceeds qty", () => {
+      expect(getCompletedQty({ sizes: { S: 10 }, _shortfall: { S: 999 } })).toBe(0);
     });
   });
 
