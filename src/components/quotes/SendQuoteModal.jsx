@@ -16,11 +16,8 @@ import {
   buildPostSendQuotePatch,
 } from "@/lib/quotes/sendOrchestration";
 import { effectiveQuoteTotals } from "@/lib/quotes/effectiveTotals";
+import { toCustomerFacingQuote, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { useBillingGate } from "@/lib/billing-gate";
-
-function isBrokerQuote(q) {
-  return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
-}
 
 // Saved totals win over live recompute — keeps the email's number
 // pinned to what the editor stamped on the row, so the customer
@@ -29,6 +26,16 @@ function isBrokerQuote(q) {
 // stays consistent end-to-end.
 function getQuoteTotalsForSend(q) {
   return effectiveQuoteTotals(q);
+}
+
+// Customer-facing totals. For broker quotes this reads the client-side
+// stamps (client_subtotal / client_tax / client_total) — what the
+// broker quoted to their END CLIENT — instead of the broker-side
+// numbers ($646 broker price vs $753 client price). The email body,
+// {{total}} interpolation, and payment-link target all need this.
+// Non-broker quotes are returned as-is. See lib/quotes/customerFacingQuote.
+function getCustomerFacingTotals(q) {
+  return effectiveQuoteTotals(toCustomerFacingQuote(q));
 }
 
 export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) {
@@ -40,7 +47,13 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const [sent, setSent] = useState(false);
 
   const [emailsInput, setEmailsInput] = useState(quote.customer_email || customer?.email || "");
+  // Broker-side totals — used for the post-send patch which writes back
+  // to the row (must stay broker-side or we'd corrupt the saved record).
   const totals = getQuoteTotalsForSend(quote);
+  // Client-side totals — what the customer sees in the email body,
+  // {{total}} interpolation, and on the /QuotePayment page. Equal to
+  // `totals` for non-broker quotes; reads client_* fields for broker.
+  const customerTotals = getCustomerFacingTotals(quote);
 
   const [shopTemplate, setShopTemplate] = useState(null);
 
@@ -216,7 +229,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       return tmpl
         .replace(/\{\{customer_name\}\}/g, quote.customer_name || "")
         .replace(/\{\{quote_id\}\}/g, quote.quote_id || "")
-        .replace(/\{\{total\}\}/g, fmtMoney(totals.total))
+        .replace(/\{\{total\}\}/g, fmtMoney(customerTotals.total))
         .replace(/\{\{shop_name\}\}/g, shop)
         .replace(/\{\{payment_link\}\}/g, quotePaymentUrl(quote.id, quote.public_token));
     }
@@ -231,10 +244,10 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       setBody(fillPlaceholders(shopTemplate.body));
     } else {
       setBody(
-        `Hi ${quote.customer_name}, your quote is ready for review. Total: ${fmtMoney(totals.total)}. Click below to view, approve, or pay online.`
+        `Hi ${quote.customer_name}, your quote is ready for review. Total: ${fmtMoney(customerTotals.total)}. Click below to view, approve, or pay online.`
       );
     }
-  }, [shopName, shopTemplate, quote.quote_id, quote.customer_name, totals.total]);
+  }, [shopName, shopTemplate, quote.quote_id, quote.customer_name, customerTotals.total]);
 
   async function handleSend() {
     setError("");
@@ -311,7 +324,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // sendQuoteEmail request body. Contract pinned by
       // buildSendQuoteEmailRequest tests E1–E5.
       const sendRequest = buildSendQuoteEmailRequest({
-        quote: { ...quote, total: totals.total },
+        // Email sees the customer total (client_total for broker quotes,
+        // standard total otherwise). The saved row's `total` field is
+        // unchanged — only the value passed to the email function is
+        // overridden here.
+        quote: { ...quote, total: customerTotals.total },
         recipients: recipientEmails,
         taggedSubject,
         body,
@@ -454,10 +471,17 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                 </p>
               </div>
 
+              {/* Modal preview — what the customer will see in the email
+                  and on the payment page. Uses customerTotals so broker
+                  quotes show client_* numbers (e.g. $753), not the
+                  broker-side wholesale ($646). Tax-rate label also reads
+                  the broker's client rate (broker_tax_rate) for broker
+                  quotes, since that's what the customer is actually being
+                  charged. */}
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
                 <div className="flex justify-between text-sm text-slate-500">
                   <span>Subtotal</span>
-                  <span>{fmtMoney(totals.sub)}</span>
+                  <span>{fmtMoney(customerTotals.sub)}</span>
                 </div>
 
                 {parseFloat(quote?.discount) > 0 && (() => {
@@ -466,19 +490,19 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   return (
                     <div className="flex justify-between text-sm text-emerald-600">
                       <span>Discount {isFlat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
-                      <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
+                      <span>−{fmtMoney(customerTotals.sub - customerTotals.afterDisc)}</span>
                     </div>
                   );
                 })()}
 
                 <div className="flex justify-between text-sm text-slate-500">
-                  <span>Tax ({isBrokerQuote(quote) ? 0 : quote?.tax_rate || 0}%)</span>
-                  <span>{fmtMoney(totals.tax)}</span>
+                  <span>Tax ({isBrokerQuote(quote) ? (quote?.broker_tax_rate || 0) : (quote?.tax_rate || 0)}%)</span>
+                  <span>{fmtMoney(customerTotals.tax)}</span>
                 </div>
 
                 <div className="flex justify-between font-bold text-slate-900 border-t border-slate-200 pt-2">
                   <span>Total</span>
-                  <span className="text-xl">{fmtMoney(totals.total)}</span>
+                  <span className="text-xl">{fmtMoney(customerTotals.total)}</span>
                 </div>
               </div>
 

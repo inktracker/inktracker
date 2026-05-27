@@ -19,6 +19,7 @@ import {
   sortSizeEntries,
 } from "../components/shared/pricing";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
+import { toCustomerFacingQuote } from "@/lib/quotes/customerFacingQuote";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -367,17 +368,25 @@ export default function QuotePayment() {
     );
   }
 
+  // For broker quotes, swap client_* fields onto the standard ones so
+  // every customer-facing read below picks up the client price the
+  // broker quoted (e.g. $753), not the broker-side wholesale ($646).
+  // toCustomerFacingQuote is a no-op for non-broker quotes. The saved
+  // quote row is not mutated — this is a derived view used only for
+  // display on this page.
+  const displayQuote = toCustomerFacingQuote(quote);
+
   // Use saved totals when available (calculate-once principle)
-  const totals = (quote.total != null && quote.subtotal != null)
+  const totals = (displayQuote.total != null && displayQuote.subtotal != null)
     ? {
-        sub: Number(quote.subtotal),
-        subtotal: Number(quote.subtotal),
+        sub: Number(displayQuote.subtotal),
+        subtotal: Number(displayQuote.subtotal),
         rushTotal: 0,
-        afterDisc: Number(quote.total) - Number(quote.tax || 0),
-        tax: Number(quote.tax || 0),
-        total: Number(quote.total),
+        afterDisc: Number(displayQuote.total) - Number(displayQuote.tax || 0),
+        tax: Number(displayQuote.tax || 0),
+        total: Number(displayQuote.total),
       }
-    : calcQuoteTotals(quote);
+    : calcQuoteTotals(displayQuote);
 
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4">
@@ -464,17 +473,17 @@ export default function QuotePayment() {
           </div>
         </div>
 
-        {(quote.line_items || []).length > 0 && (
+        {(displayQuote.line_items || []).length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 sm:px-8 py-6 space-y-5">
             <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3">
               Quote Details
             </h3>
 
-            {quote.line_items.map((li, idx) => {
+            {displayQuote.line_items.map((li, idx) => {
               const activeSizes = sortSizeEntries(Object.entries(li.sizes || {})).filter(
                 ([, v]) => parseInt(v, 10) > 0
               );
-              const { qty, lineTotal, perPiece } = getLineItemPricing(li, quote);
+              const { qty, lineTotal, perPiece } = getLineItemPricing(li, displayQuote);
               const displayHeader = getGarmentHeader(li);
 
               return (
@@ -631,13 +640,13 @@ export default function QuotePayment() {
 
             {(() => {
               const hasQb = quote.qb_total != null;
-              const taxLabel = hasQb ? "Tax" : `Est. Tax (${quote.tax_rate}%)`;
+              const taxLabel = hasQb ? "Tax" : `Est. Tax (${displayQuote.tax_rate}%)`;
               const totalLabel = hasQb ? "Total Due" : "Est. Total";
               const taxValue = hasQb ? Number(quote.qb_tax_amount || 0) : totals.tax;
               const totalValue = hasQb ? Number(quote.qb_total || 0) : totals.total;
               return (
                 <>
-                  {(hasQb ? taxValue > 0 : (parseFloat(quote.tax_rate) || 0) > 0) && (
+                  {(hasQb ? taxValue > 0 : (parseFloat(displayQuote.tax_rate) || 0) > 0) && (
                     <div className="flex justify-between text-sm">
                       <span className="text-slate-500">{taxLabel}</span>
                       <span className="font-semibold text-slate-800">{fmtMoney(taxValue)}</span>
