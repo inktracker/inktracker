@@ -19,6 +19,7 @@ import {
   findLinkedPrints,
   loadShopPricingConfig,
   getShopPricingConfig,
+  getEnabledTechniques,
   STANDARD_MARKUP,
   FIRST_PRINT,
   ADDL_PRINT,
@@ -319,5 +320,42 @@ describe("Shop pricing config — load/get cycle", () => {
     const cfg = { maxColors: 12, firstPrint: { 1: { 25: 10.0 } } };
     loadShopPricingConfig(cfg);
     expect(getShopPricingConfig()).toBe(cfg);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// getEnabledTechniques — gating for the LineItemEditor Technique dropdown
+// ─────────────────────────────────────────────────────────────────────
+
+describe("getEnabledTechniques — embroidery gating", () => {
+  it("ET1 — null config: only Screen Print", () => {
+    loadShopPricingConfig(null);
+    expect(getEnabledTechniques()).toEqual(["Screen Print"]);
+  });
+
+  it("ET2 — explicit enabled flag shows Embroidery", () => {
+    loadShopPricingConfig({ embroidery: { enabled: true } });
+    expect(getEnabledTechniques()).toEqual(["Screen Print", "Embroidery"]);
+  });
+
+  it("ET3 — pricing tiers filled in but enabled missing: still shows Embroidery", () => {
+    // Rescues users who entered pricing but didn't realize the
+    // enable flag was a separate save.
+    loadShopPricingConfig({
+      embroidery: {
+        pricing: { "Under 5K": { 12: 8.50 } },
+      },
+    });
+    expect(getEnabledTechniques()).toEqual(["Screen Print", "Embroidery"]);
+  });
+
+  it("ET4 — embroidery key exists but pricing is empty AND enabled false: hidden", () => {
+    loadShopPricingConfig({ embroidery: { enabled: false, pricing: {} } });
+    expect(getEnabledTechniques()).toEqual(["Screen Print"]);
+  });
+
+  it("ET5 — embroidery undefined entirely: hidden", () => {
+    loadShopPricingConfig({ maxColors: 8 });
+    expect(getEnabledTechniques()).toEqual(["Screen Print"]);
   });
 });

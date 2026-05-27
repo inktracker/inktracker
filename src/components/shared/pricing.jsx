@@ -42,10 +42,20 @@ export function sortSizeEntries(entries) {
 }
 export const LOCATIONS = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve", "Pocket", "Hood", "Other"];
 export const ALL_TECHNIQUES = ["Screen Print", "DTG", "Embroidery", "DTF", "Heat Transfer", "Sublimation"];
-// Returns only techniques the shop has enabled. Screen Print is always available.
+// Returns only techniques the shop has set up. Screen Print is always
+// available. Embroidery shows if the shop has either explicitly toggled
+// the enabled flag OR filled in any pricing tiers — the second check
+// rescues two real failure modes:
+//   1. User saved pricing tiers but didn't realize the "Enable" toggle
+//      was a separate save (config has pricing but enabled=false).
+//   2. Legacy configs from before the enabled flag existed.
+// If neither flag nor pricing exists, embroidery stays hidden so a
+// shop that doesn't do it doesn't accidentally pick it on a quote.
 export function getEnabledTechniques() {
   const enabled = ["Screen Print"];
-  if (_pc?.embroidery?.enabled) enabled.push("Embroidery");
+  const emb = _pc?.embroidery;
+  const hasPricing = emb?.pricing && Object.keys(emb.pricing).length > 0;
+  if (emb?.enabled || hasPricing) enabled.push("Embroidery");
   // Future: add DTG, DTF, etc. when those pricing tabs are built
   return enabled;
 }
