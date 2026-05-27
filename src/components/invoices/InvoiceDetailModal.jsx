@@ -130,7 +130,23 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           tax_id: customer?.tax_id || "",
         },
       });
-      if (invErr) throw new Error(invErr.message || "Failed to create");
+      if (invErr) {
+        // FunctionsHttpError on non-2xx wraps the real error in
+        // context.response.body. Without unwrapping the user sees
+        // "Edge Function returned a non-2xx status code" which is
+        // useless. Same pattern as PurchaseOrders.jsx for AS Colour
+        // edge errors.
+        const ctxRes = (invErr.context && typeof invErr.context.text === "function")
+          ? invErr.context
+          : invErr.context?.response;
+        if (ctxRes?.text) {
+          const body = await ctxRes.text().catch(() => "");
+          let parsed = null;
+          try { parsed = JSON.parse(body); } catch {}
+          throw new Error(parsed?.error || body || invErr.message);
+        }
+        throw new Error(invErr.message || "Failed to create");
+      }
       if (data?.error) throw new Error(data.error);
       setQbStatus({ type: "success", text: `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}` });
     } catch (err) {
