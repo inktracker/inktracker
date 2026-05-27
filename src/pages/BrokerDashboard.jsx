@@ -1337,6 +1337,8 @@ export default function BrokerDashboard({ initialTab } = {}) {
             orders={orders}
             quotes={quotes}
             brokerEmail={user.email}
+            broker={user}
+            shop={shop}
           />
         )}
 
