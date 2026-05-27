@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { Mail, Loader2, CheckCircle2, X, AlertCircle } from "lucide-react";
-import { fmtMoney } from "../shared/pricing";
+import { fmtMoney, buildQBInvoicePayload, getQty } from "../shared/pricing";
 import { exportInvoiceToPDF } from "../shared/pdfExport";
+import { isValidEmail } from "@/lib/email";
 import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { deriveQbSendState } from "@/lib/quotes/qbSendState";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
@@ -73,10 +74,108 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
     qbPaymentLink: usablePaymentLink,
   });
 
+  // Last-ditch attempt to mint a QB payment link when one is missing
+  // but a QB invoice already exists. Happens when the customer's saved
+  // email is invalid (a name, a phone number) — qbSync strips BillEmail
+  // to avoid 400 ValidationFault, but QB's /send endpoint then can't
+  // mint a share link without an email to send to.
+  //
+  // Fix: re-call createInvoice (which takes the UPDATE path since
+  // qb_invoice_id is set) with the recipient email overriding
+  // quote.customer_email. qbSync prefers quote.customer_email when
+  // valid, so this gives the share-link mint a usable email.
+  //
+  // Best-effort: any failure here is logged and swallowed so the
+  // send still goes out, just without a payment link.
+  async function tryMintMissingLink(recipientEmail) {
+    if (!invoice.qb_invoice_id) return null;       // not even in QB yet — Send button is for after Create
+    if (qbPaymentLink) return qbPaymentLink;       // already have one
+    if (!isValidEmail(recipientEmail)) return null; // need a real email to mint with
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return null;
+      const quoteShape = {
+        ...invoice,
+        quote_id: invoice.invoice_id,
+        customer_email: recipientEmail, // override the bad one
+      };
+      let invoicePayload = buildQBInvoicePayload(quoteShape);
+      if (!invoicePayload?.lines?.length) {
+        const lineItems = invoice.line_items || [];
+        const lines = lineItems.length > 0
+          ? lineItems.map((li) => {
+              const qty = getQty(li) || Number(li.qty) || 1;
+              const amount = Number(li.total) || Number(li.amount) || (invoice.subtotal || invoice.total || 0);
+              return {
+                description: [li.brand, li.style, li.garmentColor, li.description].filter(Boolean).join(" ") || "Service",
+                qty,
+                unitPrice: Number((amount / qty).toFixed(4)),
+                amount: Number(amount.toFixed(2)),
+                itemName: "Screen Print",
+              };
+            }).filter((l) => l.amount > 0)
+          : [{
+              description: "Invoice",
+              qty: 1,
+              unitPrice: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
+              amount: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
+              itemName: "Screen Print",
+            }];
+        invoicePayload = {
+          lines,
+          discountPercent: invoice.discount_type === "flat" ? 0 : (parseFloat(invoice.discount) || 0),
+          discountAmount:  invoice.discount_type === "flat" ? (parseFloat(invoice.discount) || 0) : 0,
+          discountType:    invoice.discount_type === "flat" ? "flat" : "percent",
+          taxPercent:      parseFloat(invoice.tax_rate) || 0,
+          depositAmount:   0,
+        };
+      }
+      const { data } = await supabase.functions.invoke("qbSync", {
+        body: {
+          action: "createInvoice",
+          accessToken: session.access_token,
+          quote: quoteShape,
+          invoicePayload,
+          customer: {
+            id: invoice.customer_id,
+            name: invoice.customer_name,
+            email: recipientEmail, // override — keeps QB customer in sync too
+            company: customer?.company || "",
+            phone: customer?.phone || "",
+            address: customer?.address || "",
+            qb_customer_id: customer?.qb_customer_id || "",
+            tax_exempt: customer?.tax_exempt || false,
+            tax_id: customer?.tax_id || "",
+          },
+        },
+      });
+      const fresh = data?.paymentLink || data?.qb_payment_link || null;
+      if (fresh) {
+        setQbPaymentLink(fresh);
+        return fresh;
+      }
+      return null;
+    } catch (err) {
+      console.warn("[SendInvoiceModal] payment link mint retry failed:", err?.message);
+      return null;
+    }
+  }
+
   async function handleSend() {
     setError("");
     setSending(true);
     try {
+      // If we're missing a payment link but the recipient email is
+      // valid, try one more mint with the entered email before sending.
+      // Resolves the common case where the customer record has an
+      // invalid email (caught by isValidEmail) but the operator typed
+      // a real one into the To field.
+      let effectiveLink = usablePaymentLink;
+      if (!effectiveLink && invoice.qb_invoice_id) {
+        const minted = await tryMintMissingLink(recipientEmails[0]);
+        if (minted) effectiveLink = minted;
+      }
+
       // Generate PDF (best-effort; not blocking the send)
       let pdfBase64 = null;
       try {
@@ -97,8 +196,8 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
           shopName:       shopName || "Your Shop",
           subject:        taggedSubject,
           body,
-          paymentLink:    usablePaymentLink,
-          approveLink:    usablePaymentLink,
+          paymentLink:    effectiveLink,
+          approveLink:    effectiveLink,
           buttonLabel:    "Pay Invoice",
           pdfBase64:      pdfBase64 || null,
           pdfFilename:    `Invoice-${invoice.invoice_id || "draft"}.pdf`,
