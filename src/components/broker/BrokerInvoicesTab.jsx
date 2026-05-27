@@ -215,7 +215,7 @@ function JobDetailDrawer({ job, onClose }) {
                       invoice_id: job.order_id || job._rawQuote.quote_id,
                       due_date: job._rawQuote.due_date || job.due_date,
                     };
-                    previewPdf(exportInvoiceToPDF(shopSide, null, { output: "blob" }));
+                    previewPdf(exportInvoiceToPDF(shopSide, null, { shop: shopHeader, output: "blob" }));
                   }}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
                 >
@@ -229,7 +229,11 @@ function JobDetailDrawer({ job, onClose }) {
                       invoice_id: job.order_id || job._rawQuote.quote_id,
                       due_date: clientView.due_date || job.due_date,
                     };
-                    previewPdf(exportInvoiceToPDF(clientSide, null, { output: "blob" }));
+                    // Client invoice = broker's own letterhead on top
+                    // (broker is the "from" since they're billing their
+                    // own end client). Shop letterhead stays on the
+                    // Shop Invoice next to it.
+                    previewPdf(exportInvoiceToPDF(clientSide, null, { shop: brokerHeader, output: "blob" }));
                   }}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
                 >
@@ -253,7 +257,36 @@ function JobDetailDrawer({ job, onClose }) {
   );
 }
 
-export default function BrokerInvoicesTab({ orders, quotes, brokerEmail }) {
+export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker, shop }) {
+  // Header info for the two invoice previews. Shop Invoice = the
+  // shop's actual invoice TO the broker → shop letterhead. Client
+  // Invoice = a template showing what the broker would invoice their
+  // END client → broker's own business letterhead (full_name /
+  // company_name / address / phone / email pulled from the broker's
+  // profile). Without these the preview defaulted to "InkTracker"
+  // (the platform name) which read as wrong.
+  const shopHeader = {
+    shop_name: shop?.shop_name || "",
+    address:   shop?.address   || "",
+    city:      shop?.city      || "",
+    state:     shop?.state     || "",
+    zip:       shop?.zip       || "",
+    phone:     shop?.phone     || "",
+    email:     shop?.email     || shop?.owner_email || "",
+    website:   shop?.website   || "",
+    logo_url:  shop?.logo_url  || "",
+  };
+  const brokerHeader = {
+    shop_name: broker?.company_name || broker?.full_name || broker?.display_name || "",
+    address:   broker?.broker_address || "",
+    city:      "",
+    state:     "",
+    zip:       "",
+    phone:     broker?.broker_phone || broker?.phone || "",
+    email:     broker?.email || "",
+    website:   "",
+    logo_url:  "",
+  };
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("date_desc");
   const [selectedJob, setSelectedJob] = useState(null);
