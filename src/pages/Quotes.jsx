@@ -435,7 +435,7 @@ export default function Quotes() {
           )}
           <button
             onClick={() => setShowNew(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
           >
             + New Quote
           </button>
@@ -452,7 +452,7 @@ export default function Quotes() {
               <textarea value={emailText} onChange={e => setEmailText(e.target.value)}
                 placeholder={"Paste the email here...\n\nExample:\nHey Joe,\nNeed 50 Gildan 5000 Black t-shirts\nFront print, 3 colors\nSizes: S:5 M:15 L:15 XL:10 2XL:5"}
                 rows={10}
-                className="w-full text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none" />
+                className="w-full text-sm border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none" />
             </div>
             <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
               <button onClick={() => { setShowEmailPaste(false); setEmailText(""); }}
@@ -480,7 +480,7 @@ export default function Quotes() {
                 } catch (err) { notify.error("Couldn't create quote from email", err); }
                 setParsing(false);
               }} disabled={parsing || !emailText.trim()}
-                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
+                className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
                 {parsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                 {parsing ? "Creating Quote..." : "Create Draft Quote"}
               </button>
@@ -497,8 +497,8 @@ export default function Quotes() {
               onClick={() => setFilter(s)}
               className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition ${
                 filter === s
-                  ? "bg-indigo-600 text-white border-indigo-600"
-                  : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"
+                  ? "bg-teal-600 text-white border-teal-600"
+                  : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-teal-300"
               }`}
             >
               {s}
@@ -596,11 +596,11 @@ export default function Quotes() {
                           return next;
                         });
                       }}
-                      className="rounded border-slate-300 accent-indigo-600" />
+                      className="rounded border-slate-300 accent-teal-600" />
                   </td>
                   <td className="px-5 py-3.5 font-mono text-xs text-slate-400">
                     {q.quote_id}
-                    {q.source === "email" && <span className="ml-1 text-indigo-500" title="From email">✉</span>}
+                    {q.source === "email" && <span className="ml-1 text-teal-500" title="From email">✉</span>}
                   </td>
 
                   {/* Customer column. For broker quotes the broker IS the
@@ -659,7 +659,7 @@ export default function Quotes() {
                     </div>
                   </td>
 
-                  <td className="px-5 py-3.5 text-right text-indigo-400 text-xs font-semibold">
+                  <td className="px-5 py-3.5 text-right text-teal-400 text-xs font-semibold">
                     View →
                   </td>
                 </tr>

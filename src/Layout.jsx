@@ -128,7 +128,7 @@ export default function Layout({ children, currentPageName }) {
       const Chevron = expanded ? ChevronDown : ChevronRight;
       return (
         <div key={n.page}>
-          <div className={`flex items-stretch rounded-xl overflow-hidden ${active ? "bg-indigo-600" : ""}`}>
+          <div className={`flex items-stretch rounded-xl overflow-hidden ${active ? "bg-teal-600" : ""}`}>
             <Link
               to={createPageUrl(n.page)}
               onClick={onLinkClick}
@@ -159,7 +159,7 @@ export default function Layout({ children, currentPageName }) {
         key={n.page}
         to={createPageUrl(n.page)}
         onClick={onLinkClick}
-        className={`flex items-center gap-3 ${indentCls} pr-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-indigo-600 text-white" : `${baseTextCls} ${hoverCls}`}`}
+        className={`flex items-center gap-3 ${indentCls} pr-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-teal-600 text-white" : `${baseTextCls} ${hoverCls}`}`}
       >
         <IconComponent className={`${iconSize} ${active ? "" : "text-slate-400"}`} />
         <span className="flex-1">{n.label}</span>
@@ -243,8 +243,8 @@ export default function Layout({ children, currentPageName }) {
           {NAV.map(n => renderNavItem(n))}
           {(user?.role === "admin" || user?.role === "shop") && (
             <Link to={createPageUrl("AdminPanel")}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-indigo-600 text-white" : "text-violet-600 hover:bg-violet-50"}`}>
-              <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-violet-500"}`} />
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-teal-600 text-white" : "text-green-600 hover:bg-green-50"}`}>
+              <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-green-500"}`} />
               Admin
             </Link>
           )}
@@ -297,8 +297,8 @@ export default function Layout({ children, currentPageName }) {
                 {NAV.map(n => renderNavItem(n, { mobile: true }))}
                 {(user?.role === "admin" || user?.role === "shop") && (
                   <Link to={createPageUrl("AdminPanel")} onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-indigo-600 text-white" : "text-violet-600 hover:bg-violet-50"}`}>
-                    <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-violet-500"}`} />
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-teal-600 text-white" : "text-green-600 hover:bg-green-50"}`}>
+                    <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-green-500"}`} />
                     Admin
                   </Link>
                 )}
@@ -322,8 +322,8 @@ export default function Layout({ children, currentPageName }) {
       {showUpgrade && (
         <ModalBackdrop onClose={() => setShowUpgrade(null)} z="z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
-            <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center mx-auto mb-4">
-              <Lock className="w-6 h-6 text-indigo-600" />
+            <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-6 h-6 text-teal-600" />
             </div>
             <h3 className="text-lg font-bold text-slate-900 mb-2">Upgrade to unlock</h3>
             <p className="text-sm text-slate-500 mb-5">
@@ -335,7 +335,7 @@ export default function Layout({ children, currentPageName }) {
                 Maybe later
               </button>
               <Link to={createPageUrl("Account") + "?billing=1"} onClick={() => setShowUpgrade(null)}
-                className="flex-1 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 py-2.5 rounded-xl transition text-center">
+                className="flex-1 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 py-2.5 rounded-xl transition text-center">
                 View Plans
               </Link>
             </div>

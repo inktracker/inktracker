@@ -333,12 +333,12 @@ export default function Customers() {
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Customers</h2>
         <div className="flex gap-2">
           <button onClick={() => setShowMerge(true)}
-            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-indigo-300">
+            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-teal-300">
             <GitMerge className="w-4 h-4" /> Merge Duplicates
           </button>
           <button
             onClick={() => setShowForm((v) => !v)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
           >
             {showForm ? "✕ Cancel" : "+ Add Customer"}
           </button>
@@ -352,8 +352,8 @@ export default function Customers() {
       />
 
       {showForm && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 space-y-3">
-          <div className="text-xs font-bold text-indigo-700 uppercase tracking-widest">
+        <div className="bg-teal-50 border border-teal-200 rounded-2xl p-5 space-y-3">
+          <div className="text-xs font-bold text-teal-700 uppercase tracking-widest">
             New Customer
           </div>
 
@@ -376,7 +376,7 @@ export default function Customers() {
                   value={form[f.key]}
                   onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
                   placeholder={f.placeholder}
-                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
             ))}
@@ -388,7 +388,7 @@ export default function Customers() {
               id="tax_exempt_new"
               checked={form.tax_exempt}
               onChange={(e) => setForm({ ...form, tax_exempt: e.target.checked })}
-              className="w-4 h-4 accent-indigo-600"
+              className="w-4 h-4 accent-teal-600"
             />
             <label htmlFor="tax_exempt_new" className="text-sm font-semibold text-slate-600">
               Tax Exempt
@@ -404,7 +404,7 @@ export default function Customers() {
                   name="payment_terms_new"
                   checked={Number(form.default_deposit_pct) === 0}
                   onChange={() => setForm({ ...form, default_deposit_pct: 0 })}
-                  className="accent-indigo-600"
+                  className="accent-teal-600"
                 />
                 Pay in full
               </label>
@@ -414,7 +414,7 @@ export default function Customers() {
                   name="payment_terms_new"
                   checked={Number(form.default_deposit_pct) > 0}
                   onChange={() => setForm({ ...form, default_deposit_pct: 50 })}
-                  className="accent-indigo-600"
+                  className="accent-teal-600"
                 />
                 Deposit
               </label>
@@ -437,14 +437,14 @@ export default function Customers() {
             </div>
           </div>
 
-          <div className="text-xs text-slate-500 bg-white dark:bg-slate-900/70 border border-indigo-100 rounded-xl px-3 py-2">
+          <div className="text-xs text-slate-500 bg-white dark:bg-slate-900/70 border border-teal-100 rounded-xl px-3 py-2">
             Add the customer first. Then open Edit Customer to upload artwork files that persist after reload.
           </div>
 
           <button
             onClick={handleAdd}
             disabled={addingCustomer || !form.name.trim()}
-            className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+            className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
           >
             {addingCustomer ? "Adding…" : "Add Customer"}
           </button>
@@ -470,7 +470,7 @@ export default function Customers() {
                 className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm p-5 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-center gap-3 mb-4">
-                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 font-bold text-sm flex items-center justify-center flex-shrink-0">
+                  <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-100 to-teal-200 text-teal-700 font-bold text-sm flex items-center justify-center flex-shrink-0">
                     {(c.company || c.name || "").split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("")}
                   </div>
                   <div>
@@ -514,11 +514,11 @@ export default function Customers() {
                 </div>
 
                 <div className="flex gap-3 border-t border-slate-100 dark:border-slate-700 pt-3 items-center">
-                  <div className={`text-center flex-1 ${orderCount > 0 ? "cursor-pointer hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-lg py-1 transition" : ""}`}
+                  <div className={`text-center flex-1 ${orderCount > 0 ? "cursor-pointer hover:bg-teal-50 dark:hover:bg-slate-800 rounded-lg py-1 transition" : ""}`}
                     onClick={() => {
                       if (orderCount > 0) navigate(`/Invoices?customer=${encodeURIComponent(c.company || c.name)}`);
                     }}>
-                    <div className={`text-lg font-bold ${orderCount > 0 ? "text-indigo-600" : "text-slate-800 dark:text-slate-200"}`}>{orderCount}</div>
+                    <div className={`text-lg font-bold ${orderCount > 0 ? "text-teal-600" : "text-slate-800 dark:text-slate-200"}`}>{orderCount}</div>
                     <div className="text-xs text-slate-400">invoices</div>
                   </div>
 
@@ -528,7 +528,7 @@ export default function Customers() {
                   </div>
 
                   {c.tax_exempt && (
-                    <span className="text-xs font-semibold text-purple-600 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-full">
+                    <span className="text-xs font-semibold text-teal-600 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">
                       Tax Exempt
                     </span>
                   )}
@@ -598,7 +598,7 @@ export default function Customers() {
                     value={editing[f.key] || ""}
                     onChange={(e) => setEditing({ ...editing, [f.key]: e.target.value })}
                     placeholder={f.placeholder}
-                    className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
                 </div>
               ))}
@@ -610,7 +610,7 @@ export default function Customers() {
                 id="tax_exempt_edit"
                 checked={!!editing.tax_exempt}
                 onChange={(e) => setEditing({ ...editing, tax_exempt: e.target.checked })}
-                className="w-4 h-4 accent-indigo-600"
+                className="w-4 h-4 accent-teal-600"
               />
               <label htmlFor="tax_exempt_edit" className="text-sm font-semibold text-slate-600">
                 Tax Exempt
@@ -626,7 +626,7 @@ export default function Customers() {
                     name="payment_terms_edit"
                     checked={Number(editing.default_deposit_pct || 0) === 0}
                     onChange={() => setEditing({ ...editing, default_deposit_pct: 0 })}
-                    className="accent-indigo-600"
+                    className="accent-teal-600"
                   />
                   Pay in full
                 </label>
@@ -636,7 +636,7 @@ export default function Customers() {
                     name="payment_terms_edit"
                     checked={Number(editing.default_deposit_pct || 0) > 0}
                     onChange={() => setEditing({ ...editing, default_deposit_pct: 50 })}
-                    className="accent-indigo-600"
+                    className="accent-teal-600"
                   />
                   Deposit
                 </label>
@@ -668,7 +668,7 @@ export default function Customers() {
                     ...editing,
                     saved_imprints: [...(editing.saved_imprints || []), { title: "", location: "Front", width: "", height: "", colors: 1, technique: "Screen Print", pantones: "" }]
                   })}
-                  className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition"
+                  className="text-xs font-semibold text-teal-600 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-50 transition"
                 >
                   + Add Imprint
                 </button>
@@ -693,7 +693,7 @@ export default function Customers() {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder="e.g. Front Logo"
-                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
                         <div className="w-28">
@@ -720,7 +720,7 @@ export default function Customers() {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder='4"'
-                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
                         <div className="w-16">
@@ -733,7 +733,7 @@ export default function Customers() {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder='2"'
-                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
                         <div className="w-16">
@@ -748,7 +748,7 @@ export default function Customers() {
                               updated[i] = { ...updated[i], colors: parseInt(e.target.value) || 1 };
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
-                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
                         <div className="w-28">
@@ -797,7 +797,7 @@ export default function Customers() {
                   value={artworkNote}
                   onChange={(e) => setArtworkNote(e.target.value)}
                   placeholder="Optional note (example: Front chest logo)"
-                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
 
                 <input
@@ -807,7 +807,7 @@ export default function Customers() {
                   value={artworkColorCount}
                   onChange={(e) => setArtworkColorCount(e.target.value)}
                   placeholder="Production color count (example: 3)"
-                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
 
                 <div className="text-xs text-slate-500">
@@ -818,7 +818,7 @@ export default function Customers() {
                   className={`flex items-center gap-2 cursor-pointer w-fit text-sm font-semibold px-4 py-2 rounded-xl border transition ${
                     uploadingArtwork
                       ? "bg-slate-100 text-slate-400 border-slate-200 dark:border-slate-700"
-                      : "bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700"
+                      : "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
                   }`}
                 >
                   {uploadingArtwork ? "Uploading…" : "Choose File & Upload Artwork"}
@@ -851,7 +851,7 @@ export default function Customers() {
                         )}
                         <div className="flex flex-wrap gap-2 mt-1">
                           {art.colors ? (
-                            <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
+                            <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">
                               {art.colors} color{String(art.colors) === "1" ? "" : "s"}
                             </span>
                           ) : (
@@ -872,7 +872,7 @@ export default function Customers() {
                           href={art.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
+                          className="text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
                         >
                           Open
                         </a>
@@ -914,7 +914,7 @@ export default function Customers() {
                 <button
                   onClick={handleSaveEdit}
                   disabled={editSaving}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+                  className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
                 >
                   {editSaving ? "Saving…" : "Save Changes"}
                 </button>
@@ -1104,7 +1104,7 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
         <div className="px-6 py-4 border-b border-slate-100">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-            <GitMerge className="w-5 h-5 text-indigo-600" /> Merge Duplicate Customers
+            <GitMerge className="w-5 h-5 text-teal-600" /> Merge Duplicate Customers
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
             {duplicateGroups.length} potential duplicate group{duplicateGroups.length !== 1 ? "s" : ""} found
@@ -1130,10 +1130,10 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
                 <div className="space-y-2">
                   {group.map((c, ci) => (
                     <label key={c.id}
-                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${selected[gi] === ci ? "border-indigo-400 bg-indigo-50" : "border-slate-100 hover:border-slate-200"}`}>
+                      className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition ${selected[gi] === ci ? "border-teal-400 bg-teal-50" : "border-slate-100 hover:border-slate-200"}`}>
                       <input type="radio" name={`group-${gi}`} checked={selected[gi] === ci}
                         onChange={() => setSelected(prev => ({ ...prev, [gi]: ci }))}
-                        className="accent-indigo-600" />
+                        className="accent-teal-600" />
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-sm text-slate-800">{c.name}</div>
                         <div className="text-xs text-slate-400">
@@ -1141,12 +1141,12 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
                           {c.qb_customer_id && <span className="ml-2 text-emerald-600 font-semibold">QB linked</span>}
                         </div>
                       </div>
-                      {selected[gi] === ci && <span className="text-xs font-semibold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">Keep</span>}
+                      {selected[gi] === ci && <span className="text-xs font-semibold text-teal-600 bg-teal-100 px-2 py-0.5 rounded-full">Keep</span>}
                     </label>
                   ))}
                 </div>
                 <button onClick={() => handleMerge(gi)} disabled={merging}
-                  className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">
+                  className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">
                   {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
                   Merge into selected
                 </button>

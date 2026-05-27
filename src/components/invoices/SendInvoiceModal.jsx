@@ -240,7 +240,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
     <ModalBackdrop onClose={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-200">
-          <Mail className="w-5 h-5 text-indigo-600" />
+          <Mail className="w-5 h-5 text-teal-600" />
           <h2 className="text-base font-semibold text-slate-900">Send Invoice</h2>
           <button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-600">
             <X className="w-5 h-5" />
@@ -272,12 +272,12 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                   onChange={(e) => setEmailsInput(e.target.value)}
                   disabled={sending}
                   placeholder="email@example.com"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-slate-50"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50"
                 />
                 {recipientEmails.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {recipientEmails.map((email, i) => (
-                      <span key={i} className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full">
+                      <span key={i} className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-full">
                         {email}
                       </span>
                     ))}
@@ -292,7 +292,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   disabled={sending}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-slate-50"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50"
                 />
               </div>
 
@@ -303,7 +303,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
                   disabled={sending}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-slate-50 resize-none font-mono"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50 resize-none font-mono"
                 />
               </div>
 
@@ -357,7 +357,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
               <button
                 onClick={handleSend}
                 disabled={sending || recipientEmails.length === 0}
-                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition disabled:opacity-50"
+                className="flex items-center gap-2 px-5 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
               >
                 {sending ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : <><Mail className="w-4 h-4" /> Send Invoice</>}
               </button>

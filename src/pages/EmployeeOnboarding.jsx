@@ -146,7 +146,7 @@ export default function EmployeeOnboarding() {
                     className="h-9 w-9 rounded-lg object-contain border border-slate-200 bg-white"
                   />
                 )}
-                <div className="text-xs font-semibold uppercase tracking-widest text-indigo-600">
+                <div className="text-xs font-semibold uppercase tracking-widest text-teal-600">
                   Welcome to {hostShop.shop_name}
                 </div>
               </div>
@@ -171,7 +171,7 @@ export default function EmployeeOnboarding() {
             <input
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
               autoFocus
             />
           </div>
@@ -200,7 +200,7 @@ export default function EmployeeOnboarding() {
                   onChange={(e) => setPassword(e.target.value)}
                   minLength={6}
                   autoComplete="new-password"
-                  className="w-full px-4 py-2.5 pr-11 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 pr-11 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                   placeholder="At least 6 characters"
                 />
                 <button
@@ -220,7 +220,7 @@ export default function EmployeeOnboarding() {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 minLength={6}
                 autoComplete="new-password"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 placeholder="Re-type to confirm"
               />
             </div>
@@ -241,7 +241,7 @@ export default function EmployeeOnboarding() {
         <button
           onClick={handleSave}
           disabled={saving || saved}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-semibold py-3 rounded-xl transition"
+          className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 text-white font-semibold py-3 rounded-xl transition"
         >
           {saving ? "Saving…" : saved ? "Saved" : "Save & Continue"}
         </button>

@@ -10,7 +10,7 @@ export default function Privacy() {
           <p className="text-sm text-slate-600 leading-relaxed">
             InkTracker is a print shop management platform. If you have questions about this policy,
             contact us at{" "}
-            <a href="mailto:support@inktracker.app" className="text-indigo-600 underline">
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
             </a>.
           </p>
@@ -73,7 +73,7 @@ export default function Privacy() {
             remains available in a read-only state until the end of your billing period, after which
             it is permanently deleted within 30 days unless you have requested an export. You may
             request deletion of your account and all associated data at any time by contacting{" "}
-            <a href="mailto:support@inktracker.app" className="text-indigo-600 underline">
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
             </a>.
           </p>
@@ -100,7 +100,7 @@ export default function Privacy() {
           <p className="text-sm text-slate-600 leading-relaxed">
             InkTracker is operated by Biota MFG, a screen print business based in Reno, Nevada, USA.
             For any privacy-related questions or requests, contact us at{" "}
-            <a href="mailto:support@inktracker.app" className="text-indigo-600 underline">
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
             </a>.
           </p>

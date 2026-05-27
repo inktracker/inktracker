@@ -174,11 +174,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         <div className="p-6 space-y-5">
           {/* Info banner for sign-up */}
           {mode === "signup" && (
-            <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4 flex gap-3">
-              <UserPlus className="w-5 h-5 text-indigo-600 mt-0.5 shrink-0" />
+            <div className="rounded-2xl border border-teal-200 bg-teal-50 px-4 py-4 flex gap-3">
+              <UserPlus className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
               <div>
-                <div className="text-sm font-semibold text-indigo-900">New users</div>
-                <p className="text-sm text-indigo-800 leading-6 mt-1">
+                <div className="text-sm font-semibold text-teal-900">New users</div>
+                <p className="text-sm text-teal-800 leading-6 mt-1">
                   After creating your account, access remains pending until it is approved. Use
                   the same email address each time.
                 </p>
@@ -271,7 +271,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   autoComplete="email"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   placeholder="you@example.com"
                 />
               </div>
@@ -279,7 +279,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 type="button"
                 onClick={handleResetPassword}
                 disabled={resetLoading}
-                className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
+                className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
               >
                 <Mail className="w-4 h-4" />
                 {resetLoading ? "Sending…" : "Send reset link"}
@@ -298,7 +298,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 autoComplete="email"
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                 placeholder="you@example.com"
               />
             </div>
@@ -312,7 +312,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                   <button
                     type="button"
                     onClick={() => switchMode("forgot")}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-700"
+                    className="text-xs font-semibold text-teal-600 hover:text-teal-700"
                   >
                     Forgot password?
                   </button>
@@ -326,7 +326,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                   required
                   minLength={6}
                   autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 pr-11"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 pr-11"
                   placeholder="••••••••"
                 />
                 <button
@@ -358,7 +358,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                   required
                   minLength={6}
                   autoComplete="new-password"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   placeholder="••••••••"
                 />
                 {confirmPassword.length > 0 && password !== confirmPassword && (
@@ -370,7 +370,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
+              className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading
                 ? "Please wait…"
@@ -394,7 +394,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 type="button"
                 onClick={handleMagicLink}
                 disabled={magicLoading}
-                className="w-full inline-flex items-center justify-center gap-2 border border-indigo-200 text-indigo-700 font-semibold py-3 rounded-xl transition hover:bg-indigo-50 disabled:opacity-60"
+                className="w-full inline-flex items-center justify-center gap-2 border border-teal-200 text-teal-700 font-semibold py-3 rounded-xl transition hover:bg-teal-50 disabled:opacity-60"
               >
                 <Mail className="w-4 h-4" />
                 {magicLoading ? "Sending…" : "Email me a sign-in link"}
@@ -412,7 +412,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 Don&apos;t have an account?{" "}
                 <button
                   onClick={() => switchMode("signup")}
-                  className="font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="font-semibold text-teal-600 hover:text-teal-700"
                 >
                   Create one
                 </button>
@@ -422,7 +422,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 Remembered it?{" "}
                 <button
                   onClick={() => switchMode("signin")}
-                  className="font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="font-semibold text-teal-600 hover:text-teal-700"
                 >
                   Back to sign in
                 </button>
@@ -432,7 +432,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 Already have an account?{" "}
                 <button
                   onClick={() => switchMode("signin")}
-                  className="font-semibold text-indigo-600 hover:text-indigo-700"
+                  className="font-semibold text-teal-600 hover:text-teal-700"
                 >
                   Sign in
                 </button>

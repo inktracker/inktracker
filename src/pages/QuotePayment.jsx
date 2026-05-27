@@ -349,7 +349,7 @@ export default function QuotePayment() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
       </div>
     );
   }
@@ -399,7 +399,7 @@ export default function QuotePayment() {
               className="w-12 h-12 object-contain rounded-lg"
             />
           ) : (
-            <div className="w-12 h-12 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black text-xl">
+            <div className="w-12 h-12 bg-teal-600 rounded-lg flex items-center justify-center text-white font-black text-xl">
               {(shop?.shop_name || "S")[0]}
             </div>
           )}
@@ -456,7 +456,7 @@ export default function QuotePayment() {
               {quote.due_date && (
                 <div>
                   <span className="text-slate-400">In-Hands: </span>
-                  <span className="font-semibold text-indigo-700">
+                  <span className="font-semibold text-teal-700">
                     {fmtDate(quote.due_date)}
                   </span>
                 </div>
@@ -503,7 +503,7 @@ export default function QuotePayment() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-bold text-indigo-700">
+                      <div className="font-bold text-teal-700">
                         {fmtMoney(lineTotal)}
                       </div>
                       {qty > 0 && (
@@ -562,7 +562,7 @@ export default function QuotePayment() {
                                   </td>
                                 );
                               })}
-                              <td className="text-center font-bold text-indigo-700 px-3 py-1">
+                              <td className="text-center font-bold text-teal-700 px-3 py-1">
                                 {fmtMoney(lineTotal)}
                               </td>
                             </tr>
@@ -578,7 +578,7 @@ export default function QuotePayment() {
                           key={imp.id || iIdx}
                           className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs border-t border-slate-50 pt-2 text-slate-500"
                         >
-                          <span className="flex items-center gap-1 text-indigo-600 font-semibold">
+                          <span className="flex items-center gap-1 text-teal-600 font-semibold">
                             <MapPin className="w-3 h-3" />
                             {imp.title
                               ? `${imp.title} · ${imp.location || "Location"}`
@@ -591,7 +591,7 @@ export default function QuotePayment() {
                           )}
                           {imp.technique && <span>· {imp.technique}</span>}
                           {imp.pantones && (
-                            <span className="text-purple-600">· {imp.pantones}</span>
+                            <span className="text-teal-600">· {imp.pantones}</span>
                           )}
                           {(imp.width || imp.height) && (
                             <span className="text-slate-400">
@@ -654,7 +654,7 @@ export default function QuotePayment() {
                   )}
                   <div className="flex justify-between pt-3 border-t border-slate-200">
                     <span className="font-bold text-slate-900 text-base">{totalLabel}</span>
-                    <span className="text-2xl font-black text-indigo-700">{fmtMoney(totalValue)}</span>
+                    <span className="text-2xl font-black text-teal-700">{fmtMoney(totalValue)}</span>
                   </div>
                   {!hasQb && (
                     <div className="text-[11px] text-slate-400 text-right -mt-1">
@@ -726,7 +726,7 @@ export default function QuotePayment() {
               <button
                 onClick={handleApprove}
                 disabled={approveLoading}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
+                className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
               >
                 {approveLoading ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> Approving…</>
@@ -780,7 +780,7 @@ export default function QuotePayment() {
                 <button
                   onClick={handleCheckout}
                   disabled={checkoutLoading || approveLoading}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
+                  className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
                 >
                   {checkoutLoading || approveLoading ? (
                     <>

@@ -38,7 +38,7 @@ function StepDateRow({ step, value, onSave, onDragStart }) {
 
   return (
     <div
-      className={`flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0 rounded-lg transition ${dragOver ? "bg-indigo-50 border-indigo-200" : ""}`}
+      className={`flex items-center gap-3 py-2.5 border-b border-slate-50 last:border-0 rounded-lg transition ${dragOver ? "bg-teal-50 border-teal-200" : ""}`}
       onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
@@ -63,7 +63,7 @@ function StepDateRow({ step, value, onSave, onDragStart }) {
               type="date"
               value={val}
               onChange={(e) => setVal(e.target.value)}
-              className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
               autoFocus
             />
             <button onClick={handleSave} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
@@ -79,7 +79,7 @@ function StepDateRow({ step, value, onSave, onDragStart }) {
             className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
               hasDate
                 ? STATUS_COLORS[step] || "bg-slate-100 border-slate-200 text-slate-600"
-                : "border-dashed border-slate-300 text-slate-400 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50"
+                : "border-dashed border-slate-300 text-slate-400 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50"
             }`}
           >
             {hasDate ? <><Pencil className="w-3 h-3" /> Edit</> : <><CalendarDays className="w-3 h-3" /> Set date</>}
@@ -131,7 +131,7 @@ function DueDateRow({ value, onSave }) {
               type="date"
               value={val}
               onChange={(e) => setVal(e.target.value)}
-              className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
               autoFocus
             />
             <button onClick={handleSave} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
@@ -185,7 +185,7 @@ export default function OrderScheduleRow({ order, companyName, onUpdateStepDate,
         </span>
 
         {order.due_date ? (
-          <div className={`text-center min-w-[44px] rounded-xl py-1 px-1.5 shrink-0 ${isToday ? "bg-indigo-600 text-white" : isPast ? "bg-red-50 border border-red-200 text-red-600" : "bg-slate-50 border border-slate-200 text-slate-700"}`}>
+          <div className={`text-center min-w-[44px] rounded-xl py-1 px-1.5 shrink-0 ${isToday ? "bg-teal-600 text-white" : isPast ? "bg-red-50 border border-red-200 text-red-600" : "bg-slate-50 border border-slate-200 text-slate-700"}`}>
             <div className="text-[9px] font-bold uppercase">{new Date(order.due_date + "T12:00:00").toLocaleString("en-US", { month: "short" })}</div>
             <div className="text-base font-bold leading-none">{new Date(order.due_date + "T12:00:00").getDate()}</div>
           </div>
@@ -213,7 +213,7 @@ export default function OrderScheduleRow({ order, companyName, onUpdateStepDate,
 
         <button
           onClick={(e) => { e.stopPropagation(); onView(order); }}
-          className="text-xs text-indigo-600 font-semibold hover:underline shrink-0"
+          className="text-xs text-teal-600 font-semibold hover:underline shrink-0"
         >
           View →
         </button>

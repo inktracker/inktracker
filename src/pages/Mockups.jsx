@@ -531,9 +531,9 @@ export default function Mockups() {
               <input value={styleQuery} onChange={e => setStyleQuery(e.target.value)}
                 onKeyDown={e => e.key === "Enter" && searchStyle()}
                 placeholder="Style # (e.g. 5001, 1717)"
-                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               <button onClick={searchStyle} disabled={searching}
-                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition disabled:opacity-50">
+                className="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition disabled:opacity-50">
                 {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               </button>
             </div>
@@ -547,7 +547,7 @@ export default function Mockups() {
                 <div className="text-xs text-slate-500">Multiple brands found — select one:</div>
                 {brandMatches.map((m, i) => (
                   <button key={i} onClick={() => pickMatch(m)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition text-left text-sm">
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg border border-slate-200 hover:border-teal-300 hover:bg-teal-50 transition text-left text-sm">
                     {(m.styleImage || m.colors?.[0]?.imageUrl) && (
                       <img src={m.styleImage || m.colors[0].imageUrl} alt="" className="w-8 h-8 rounded object-contain bg-slate-50" />
                     )}
@@ -568,7 +568,7 @@ export default function Mockups() {
               <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
                 {colors.map(c => (
                   <button key={c.colorName} onClick={() => selectColor(c)}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition ${selectedColor?.colorName === c.colorName ? "bg-indigo-600 text-white border-indigo-600" : "bg-white border-slate-200 text-slate-600 hover:border-indigo-300"}`}>
+                    className={`text-xs px-2.5 py-1 rounded-full border transition ${selectedColor?.colorName === c.colorName ? "bg-teal-600 text-white border-teal-600" : "bg-white border-slate-200 text-slate-600 hover:border-teal-300"}`}>
                     {c.colorName}
                   </button>
                 ))}
@@ -604,7 +604,7 @@ export default function Mockups() {
               <select
                 value={selectedTargetKey}
                 onChange={e => pickTargetToLink(e.target.value)}
-                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white"
               >
                 <option value="">— Standalone proof (no link) —</option>
                 {orders.length > 0 && (
@@ -634,27 +634,27 @@ export default function Mockups() {
               <div>
                 <label className="text-[10px] text-slate-400 block mb-0.5">Customer</label>
                 <input value={proofDetails.customerName} onChange={e => updateProof({ customerName: e.target.value })}
-                  placeholder="Customer name" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  placeholder="Customer name" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               <div>
                 <label className="text-[10px] text-slate-400 block mb-0.5">Quote / Order #</label>
                 <input value={proofDetails.quoteNumber} onChange={e => updateProof({ quoteNumber: e.target.value })}
-                  placeholder="Q-2026-XXX" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  placeholder="Q-2026-XXX" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               <div>
                 <label className="text-[10px] text-slate-400 block mb-0.5">Date</label>
                 <input type="date" value={proofDetails.dateOrdered} onChange={e => updateProof({ dateOrdered: e.target.value })}
-                  className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               <div>
                 <label className="text-[10px] text-slate-400 block mb-0.5">Due Date</label>
                 <input type="date" value={proofDetails.dueDate} onChange={e => updateProof({ dueDate: e.target.value })}
-                  className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               <div>
                 <label className="text-[10px] text-slate-400 block mb-0.5">Quantity</label>
                 <input value={proofDetails.quantity} onChange={e => updateProof({ quantity: e.target.value })}
-                  placeholder="100" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  placeholder="100" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
             </div>
 
@@ -664,10 +664,10 @@ export default function Mockups() {
                 <label className="text-[10px] text-slate-400 block mb-1">Front Print Size (inches)</label>
                 <div className="flex gap-2">
                   <input value={proofDetails.frontPrintW} onChange={e => updateProof({ frontPrintW: e.target.value })}
-                    placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                    placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                   <span className="text-xs text-slate-400 self-center">x</span>
                   <input value={proofDetails.frontPrintH} onChange={e => updateProof({ frontPrintH: e.target.value })}
-                    placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                    placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                 </div>
               </div>
               {backArtwork && (
@@ -675,10 +675,10 @@ export default function Mockups() {
                   <label className="text-[10px] text-slate-400 block mb-1">Back Print Size (inches)</label>
                   <div className="flex gap-2">
                     <input value={proofDetails.backPrintW} onChange={e => updateProof({ backPrintW: e.target.value })}
-                      placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                      placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                     <span className="text-xs text-slate-400 self-center">x</span>
                     <input value={proofDetails.backPrintH} onChange={e => updateProof({ backPrintH: e.target.value })}
-                      placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                      placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                   </div>
                 </div>
               )}
@@ -690,7 +690,7 @@ export default function Mockups() {
                 <label className="text-[10px] text-slate-400 block mb-1">Front Colors</label>
                 {proofDetails.frontColors.slice(0, 4).map((c, i) => (
                   <input key={i} value={c} onChange={e => updateFrontColor(i, e.target.value)}
-                    placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                    placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                 ))}
               </div>
               {backArtwork && (
@@ -698,7 +698,7 @@ export default function Mockups() {
                   <label className="text-[10px] text-slate-400 block mb-1">Back Colors</label>
                   {proofDetails.backColors.slice(0, 4).map((c, i) => (
                     <input key={i} value={c} onChange={e => updateBackColor(i, e.target.value)}
-                      placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                      placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                   ))}
                 </div>
               )}
@@ -715,7 +715,7 @@ export default function Mockups() {
               ].map(([key, label]) => (
                 <label key={key} className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
                   <input type="checkbox" checked={proofDetails[key]} onChange={e => updateProof({ [key]: e.target.checked })}
-                    className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600" />
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600" />
                   {label}
                 </label>
               ))}
@@ -726,7 +726,7 @@ export default function Mockups() {
               <label className="text-[10px] text-slate-400 block mb-0.5">Notes</label>
               <textarea value={proofDetails.notes} onChange={e => updateProof({ notes: e.target.value })}
                 rows={2} placeholder="Special instructions..."
-                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
             </div>
           </div>
 
@@ -751,7 +751,7 @@ export default function Mockups() {
               onClick={saveAndLinkProof}
               disabled={!garmentImg || !selectedTargetKey || generatingProof || linking}
               title={!selectedTargetKey ? "Pick an order or quote above to enable linking" : "Generate proof PDF and attach it to the linked record"}
-              className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
               {linking ? "Linking..." : "Save & Link"}
@@ -768,7 +768,7 @@ export default function Mockups() {
                   const hasArt = v === "Back" ? !!backArtwork : !!frontArtwork;
                   return (
                     <button key={v} onClick={() => setView(v)}
-                      className={`text-xs font-semibold px-4 py-1.5 rounded-lg transition ${view === v ? "bg-indigo-600 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                      className={`text-xs font-semibold px-4 py-1.5 rounded-lg transition ${view === v ? "bg-teal-600 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                       {v} {hasArt && <span className="ml-1 text-emerald-400">*</span>}
                     </button>
                   );

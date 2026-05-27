@@ -399,7 +399,7 @@ export default function BrokerQuoteEditor({
                         selected_artwork: [],
                       });
                     }}
-                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                   >
                     <option value="">Select client…</option>
                     {[...customers].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })).map((c) => (
@@ -414,8 +414,8 @@ export default function BrokerQuoteEditor({
                     onClick={() => setShowNewClient((v) => !v)}
                     className={`flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-lg border transition ${
                       showNewClient
-                        ? "bg-indigo-600 text-white border-indigo-600"
-                        : "border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                        ? "bg-teal-600 text-white border-teal-600"
+                        : "border-teal-200 text-teal-600 hover:bg-teal-50"
                     }`}
                   >
                     {showNewClient ? "✕ Cancel" : "+ New Client"}
@@ -431,7 +431,7 @@ export default function BrokerQuoteEditor({
                   type="date"
                   value={q.date}
                   onChange={(e) => setQ({ ...q, date: e.target.value })}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
 
@@ -458,7 +458,7 @@ export default function BrokerQuoteEditor({
                       rush_rate: isRush ? 0.2 : q.rush_rate,
                     });
                   }}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
                 {q.due_date &&
                   q.date &&
@@ -474,8 +474,8 @@ export default function BrokerQuoteEditor({
             </div>
 
             {showNewClient && (
-              <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 space-y-3">
-                <div className="text-xs font-bold text-indigo-700 uppercase tracking-widest">
+              <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 space-y-3">
+                <div className="text-xs font-bold text-teal-700 uppercase tracking-widest">
                   New Client
                 </div>
 
@@ -521,7 +521,7 @@ export default function BrokerQuoteEditor({
                           setNc({ ...nc, [f.key]: e.target.value })
                         }
                         placeholder={f.placeholder}
-                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                       />
                     </div>
                   ))}
@@ -530,14 +530,14 @@ export default function BrokerQuoteEditor({
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input type="checkbox" checked={nc.tax_exempt || false}
                     onChange={e => setNc({ ...nc, tax_exempt: e.target.checked })}
-                    className="w-4 h-4 rounded border-slate-300 accent-indigo-600" />
+                    className="w-4 h-4 rounded border-slate-300 accent-teal-600" />
                   <span className="text-sm text-slate-600">Tax Exempt</span>
                 </label>
 
                 <button
                   onClick={handleAddClient}
                   disabled={isAddingClient}
-                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+                  className="bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
                 >
                   {isAddingClient ? "Adding Client..." : "Add Client & Select"}
                 </button>
@@ -562,14 +562,14 @@ export default function BrokerQuoteEditor({
                     onClick={() => setQ({ ...q, rush_rate: opt.val })}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
                       q.rush_rate === opt.val
-                        ? "border-indigo-600 bg-indigo-50"
+                        ? "border-teal-600 bg-teal-50"
                         : "border-slate-200 hover:border-slate-300 bg-white"
                     }`}
                   >
                     <div
                       className={`text-sm font-bold ${
                         q.rush_rate === opt.val
-                          ? "text-indigo-700"
+                          ? "text-teal-700"
                           : "text-slate-700"
                       }`}
                     >
@@ -599,13 +599,13 @@ export default function BrokerQuoteEditor({
                       }
                       className={`rounded-xl border-2 px-3 py-2 text-left transition ${
                         isOn
-                          ? "border-indigo-600 bg-indigo-50"
+                          ? "border-teal-600 bg-teal-50"
                           : "border-slate-200 hover:border-slate-300 bg-white"
                       }`}
                     >
                       <div
                         className={`text-xs font-bold ${
-                          isOn ? "text-indigo-700" : "text-slate-700"
+                          isOn ? "text-teal-700" : "text-slate-700"
                         }`}
                       >
                         {label}
@@ -625,7 +625,7 @@ export default function BrokerQuoteEditor({
               </h3>
               <button
                 onClick={addLineItem}
-                className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
+                className="text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
               >
                 + Add Garment Group
               </button>
@@ -657,7 +657,7 @@ export default function BrokerQuoteEditor({
                 value={q.notes}
                 onChange={(e) => setQ({ ...q, notes: e.target.value })}
                 placeholder="Rush instructions, art notes, client communication…"
-                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none"
               />
             </div>
 
@@ -682,7 +682,7 @@ export default function BrokerQuoteEditor({
                     max="100"
                     value={q.discount}
                     onChange={(e) => setQ({ ...q, discount: e.target.value })}
-                    className="w-14 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="w-14 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
                   <span className="text-slate-400 text-xs">%</span>
                 </div>
@@ -732,7 +732,7 @@ export default function BrokerQuoteEditor({
                 </span>
               </div>
 
-              <div className="flex justify-between items-center gap-2 bg-indigo-50 rounded-xl px-3 py-2 border border-indigo-100">
+              <div className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
                     <input
@@ -744,9 +744,9 @@ export default function BrokerQuoteEditor({
                           deposit_pct: e.target.checked ? 50 : 0,
                         })
                       }
-                      className="accent-indigo-600"
+                      className="accent-teal-600"
                     />
-                    <span className="text-indigo-700 font-semibold text-xs">Deposit</span>
+                    <span className="text-teal-700 font-semibold text-xs">Deposit</span>
                   </label>
                   {Number(q.deposit_pct) > 0 && (
                     <>
@@ -759,14 +759,14 @@ export default function BrokerQuoteEditor({
                           const v = parseInt(e.target.value, 10);
                           setQ({ ...q, deposit_pct: Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 50 });
                         }}
-                        className="w-10 text-xs text-center border border-indigo-200 rounded px-1 py-0.5 bg-white focus:outline-none"
+                        className="w-10 text-xs text-center border border-teal-200 rounded px-1 py-0.5 bg-white focus:outline-none"
                       />
-                      <span className="text-indigo-400 text-xs">%</span>
+                      <span className="text-teal-400 text-xs">%</span>
                     </>
                   )}
                 </div>
                 {Number(q.deposit_pct) > 0 && (
-                  <span className="font-bold text-indigo-800">
+                  <span className="font-bold text-teal-800">
                     {fmtMoney(totals.deposit)}
                   </span>
                 )}
@@ -832,7 +832,7 @@ export default function BrokerQuoteEditor({
                               broker_tax_rate: Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0,
                             });
                           }}
-                          className="w-12 text-xs text-center border border-slate-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-indigo-300"
+                          className="w-12 text-xs text-center border border-slate-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-teal-300"
                           title="Tax rate you charge your client (the shop never charges you tax)"
                         />
                         <span className="text-slate-400">%</span>
@@ -865,10 +865,10 @@ export default function BrokerQuoteEditor({
                 </div>
 
                 <div className="flex justify-between items-center border-t border-slate-200 pt-2 mt-2">
-                  <span className="text-xs font-bold text-violet-700">
+                  <span className="text-xs font-bold text-green-700">
                     Total Broker Profit
                   </span>
-                  <span className="text-base font-bold text-violet-700">
+                  <span className="text-base font-bold text-green-700">
                     {fmtMoney(brokerProfit)}
                   </span>
                 </div>
@@ -890,7 +890,7 @@ export default function BrokerQuoteEditor({
           <button
             onClick={handleSaveDraft}
             disabled={saving}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-sm font-semibold py-2.5 rounded-xl transition"
+            className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 text-white text-sm font-semibold py-2.5 rounded-xl transition"
             title="Save as a draft. Next: open the draft to send it to your client."
           >
             {saving ? "Saving…" : "Save Draft"}

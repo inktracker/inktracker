@@ -330,7 +330,7 @@ export default function BrokerManager() {
         className="flex items-center justify-between w-full text-left"
       >
         <div className="flex items-center gap-2">
-          <Users className="w-5 h-5 text-indigo-600" />
+          <Users className="w-5 h-5 text-teal-600" />
           <h3 className="text-lg font-semibold text-slate-900">Broker Management</h3>
         </div>
         {expanded ? (
@@ -367,7 +367,7 @@ export default function BrokerManager() {
 
               <button
                 onClick={openCreateBroker}
-                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition"
+                className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition"
               >
                 <Plus className="w-4 h-4" />
                 Add Broker
@@ -381,7 +381,7 @@ export default function BrokerManager() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search brokers, companies, emails, or assigned shops..."
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
             </div>
           </div>
@@ -441,7 +441,7 @@ export default function BrokerManager() {
                                 return (
                                   <span
                                     key={shopEmail}
-                                    className="inline-flex items-center gap-1 bg-indigo-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full"
+                                    className="inline-flex items-center gap-1 bg-teal-600 text-white text-xs font-semibold px-3 py-1.5 rounded-full"
                                   >
                                     <CheckCircle2 className="w-3.5 h-3.5" />
                                     {shop?.shop_name || shopEmail}
@@ -583,8 +583,8 @@ export default function BrokerManager() {
                                       disabled={savingBrokerId === broker.id}
                                       className={`text-sm font-semibold px-3 py-2 rounded-full border transition ${
                                         assigned
-                                          ? "bg-indigo-600 text-white border-indigo-600"
-                                          : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                                          ? "bg-teal-600 text-white border-teal-600"
+                                          : "bg-white text-slate-600 border-slate-200 hover:border-teal-300"
                                       }`}
                                     >
                                       {assigned ? "✓ " : ""}
@@ -718,7 +718,7 @@ export default function BrokerManager() {
                           <input
                             value={draft.full_name || ""}
                             onChange={(e) => updateDraft("full_name", e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                           />
                         </div>
 
@@ -729,7 +729,7 @@ export default function BrokerManager() {
                           <input
                             value={draft.email || ""}
                             onChange={(e) => updateDraft("email", e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                             placeholder="broker@email.com"
                           />
                         </div>
@@ -741,7 +741,7 @@ export default function BrokerManager() {
                           <input
                             value={draft.broker_phone || ""}
                             onChange={(e) => updateDraft("broker_phone", e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                           />
                         </div>
 
@@ -752,7 +752,7 @@ export default function BrokerManager() {
                           <input
                             value={draft.company_name || ""}
                             onChange={(e) => updateDraft("company_name", e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                           />
                         </div>
 
@@ -763,7 +763,7 @@ export default function BrokerManager() {
                           <input
                             value={draft.broker_address || ""}
                             onChange={(e) => updateDraft("broker_address", e.target.value)}
-                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                           />
                         </div>
 
@@ -775,7 +775,7 @@ export default function BrokerManager() {
                             value={draft.broker_notes || ""}
                             onChange={(e) => updateDraft("broker_notes", e.target.value)}
                             rows={4}
-                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                           />
                         </div>
                       </div>
@@ -806,8 +806,8 @@ export default function BrokerManager() {
                                 }
                                 className={`text-sm font-semibold px-3 py-2 rounded-full border transition ${
                                   active
-                                    ? "bg-indigo-600 text-white border-indigo-600"
-                                    : "bg-white text-slate-600 border-slate-200 hover:border-indigo-300"
+                                    ? "bg-teal-600 text-white border-teal-600"
+                                    : "bg-white text-slate-600 border-slate-200 hover:border-teal-300"
                                 }`}
                               >
                                 {active ? "✓ " : ""}
@@ -861,7 +861,7 @@ export default function BrokerManager() {
                                 onChange={(e) =>
                                   updateCredential(cred.type, "status", e.target.value)
                                 }
-                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
                               >
                                 <option value="missing">Missing</option>
                                 <option value="pending">Pending</option>
@@ -882,7 +882,7 @@ export default function BrokerManager() {
                                     updateCredential(cred.type, "file", e.target.value)
                                   }
                                   placeholder="file name or uploaded doc url"
-                                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                                 />
                               </div>
                             </div>
@@ -896,7 +896,7 @@ export default function BrokerManager() {
                                 onChange={(e) =>
                                   updateCredential(cred.type, "number", e.target.value)
                                 }
-                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                               />
                             </div>
 
@@ -909,7 +909,7 @@ export default function BrokerManager() {
                                 onChange={(e) =>
                                   updateCredential(cred.type, "state", e.target.value)
                                 }
-                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                               />
                             </div>
 
@@ -923,7 +923,7 @@ export default function BrokerManager() {
                                 onChange={(e) =>
                                   updateCredential(cred.type, "expiration", e.target.value)
                                 }
-                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                               />
                             </div>
 
@@ -937,7 +937,7 @@ export default function BrokerManager() {
                                 onChange={(e) =>
                                   updateCredential(cred.type, "verified_at", e.target.value)
                                 }
-                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                               />
                             </div>
                           </div>
@@ -957,7 +957,7 @@ export default function BrokerManager() {
                   <button
                     onClick={handleSaveBroker}
                     disabled={editorSaving}
-                    className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold px-4 py-2.5 rounded-xl transition"
+                    className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-semibold px-4 py-2.5 rounded-xl transition"
                   >
                     <Save className="w-4 h-4" />
                     {editorSaving ? "Saving..." : draft.id ? "Save Broker" : "Create Broker"}

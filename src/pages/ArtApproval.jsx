@@ -132,7 +132,7 @@ export default function ArtApproval() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
       </div>
     );
   }
@@ -161,7 +161,7 @@ export default function ArtApproval() {
           {shop?.logo_url ? (
             <img src={shop.logo_url} alt="Logo" className="w-12 h-12 object-contain rounded-lg" />
           ) : (
-            <div className="w-12 h-12 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-black text-xl">
+            <div className="w-12 h-12 bg-teal-600 rounded-lg flex items-center justify-center text-white font-black text-xl">
               {(shop?.shop_name || "S")[0]}
             </div>
           )}
@@ -182,7 +182,7 @@ export default function ArtApproval() {
               {order.due_date && (
                 <div>
                   <span className="text-slate-400">In-Hands: </span>
-                  <span className="font-semibold text-indigo-700">{fmtDate(order.due_date)}</span>
+                  <span className="font-semibold text-teal-700">{fmtDate(order.due_date)}</span>
                 </div>
               )}
               <div>
@@ -223,7 +223,7 @@ export default function ArtApproval() {
                         href={art.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-3 bg-slate-50 px-5 py-5 text-indigo-600 font-semibold text-sm hover:bg-indigo-50 transition"
+                        className="flex items-center gap-3 bg-slate-50 px-5 py-5 text-teal-600 font-semibold text-sm hover:bg-teal-50 transition"
                       >
                         <ImageIcon className="w-5 h-5 opacity-60" />
                         {art.name || "View File"}
@@ -252,7 +252,7 @@ export default function ArtApproval() {
                               <div className="text-xs text-slate-400 mb-1">{imp.garmentLabel}</div>
                             )}
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                              <span className="font-semibold text-sm text-indigo-700 flex items-center gap-1">
+                              <span className="font-semibold text-sm text-teal-700 flex items-center gap-1">
                                 <MapPin className="w-3.5 h-3.5 shrink-0" />
                                 {imp.title ? `${imp.title} — ${imp.location || ""}` : imp.location || "Location"}
                               </span>
@@ -273,7 +273,7 @@ export default function ArtApproval() {
                               )}
                             </div>
                             {imp.pantones && (
-                              <div className="mt-1 text-xs text-purple-700 font-medium">
+                              <div className="mt-1 text-xs text-teal-700 font-medium">
                                 Pantones: {imp.pantones}
                               </div>
                             )}
@@ -320,7 +320,7 @@ export default function ArtApproval() {
                   type="checkbox"
                   checked={checkedAll}
                   onChange={(e) => setCheckedAll(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 rounded accent-indigo-600"
+                  className="mt-0.5 w-4 h-4 rounded accent-teal-600"
                 />
                 <span className="text-sm text-slate-700">
                   I have reviewed all artwork files and confirm they are correct and ready for printing.
@@ -336,7 +336,7 @@ export default function ArtApproval() {
                   value={approverName}
                   onChange={(e) => setApproverName(e.target.value)}
                   placeholder="Full name"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </div>
 
@@ -350,7 +350,7 @@ export default function ArtApproval() {
               <button
                 onClick={handleApprove}
                 disabled={approving}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2"
+                className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-3.5 rounded-xl transition flex items-center justify-center gap-2"
               >
                 {approving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-5 h-5" />}
                 {approving ? "Submitting…" : "Approve Artwork & Begin Production"}

@@ -72,8 +72,8 @@ export default function GettingStartedChecklist({ quotes, orders, customers, inv
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700">
         <button onClick={() => setCollapsed(v => !v)} className="flex items-center gap-3 flex-1 text-left">
-          <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
-            <Sparkles className="w-4 h-4 text-indigo-600" />
+          <div className="w-8 h-8 rounded-xl bg-teal-100 flex items-center justify-center shrink-0">
+            <Sparkles className="w-4 h-4 text-teal-600" />
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
@@ -88,11 +88,11 @@ export default function GettingStartedChecklist({ quotes, orders, customers, inv
           {/* Progress bar */}
           <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden hidden sm:block">
             <div
-              className="h-full bg-indigo-600 rounded-full transition-all duration-500"
+              className="h-full bg-teal-600 rounded-full transition-all duration-500"
               style={{ width: `${progress}%` }}
             />
           </div>
-          <span className="text-xs font-bold text-indigo-600">{progress}%</span>
+          <span className="text-xs font-bold text-teal-600">{progress}%</span>
           <button onClick={() => setCollapsed(v => !v)} className="p-1 text-slate-300 hover:text-slate-500">
             {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
           </button>
@@ -126,7 +126,7 @@ export default function GettingStartedChecklist({ quotes, orders, customers, inv
                   )}
                 </div>
                 {!done && (
-                  <span className="text-xs font-semibold text-indigo-600 shrink-0">Go &rarr;</span>
+                  <span className="text-xs font-semibold text-teal-600 shrink-0">Go &rarr;</span>
                 )}
               </button>
             );

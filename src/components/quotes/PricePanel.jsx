@@ -35,7 +35,7 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
         <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">
           Live Pricing
         </span>
-        <span className="text-xs font-bold bg-indigo-600 text-white px-2.5 py-1 rounded-full">
+        <span className="text-xs font-bold bg-teal-600 text-white px-2.5 py-1 rounded-full">
           {qty} pcs
         </span>
       </div>
@@ -135,7 +135,7 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
                 onChange({ ...li, clientPpp: n });
               }}
               placeholder={(qty > 0 ? suggestedPpp : 0).toFixed(2)}
-              className="w-24 text-xs bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              className="w-24 text-xs bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white focus:outline-none focus:ring-1 focus:ring-teal-400"
             />
             <span className="text-xs text-slate-400">/pc</span>
             {!hasOverride && (
@@ -145,12 +145,12 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
         </div>
       )}
 
-      <div className="bg-indigo-600 px-4 py-4 flex justify-between items-center">
+      <div className="bg-teal-600 px-4 py-4 flex justify-between items-center">
         <div>
-          <div className="text-xs font-bold text-indigo-100 uppercase tracking-widest mb-0.5">
+          <div className="text-xs font-bold text-teal-100 uppercase tracking-widest mb-0.5">
             Line Total
           </div>
-          <div className="text-indigo-100 text-xs">{fmtMoney(avgPpp)}/pc avg</div>
+          <div className="text-teal-100 text-xs">{fmtMoney(avgPpp)}/pc avg</div>
         </div>
         <div className="text-2xl font-bold text-white">{fmtMoney(displayTotal)}</div>
       </div>

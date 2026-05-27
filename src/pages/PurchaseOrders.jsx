@@ -309,8 +309,8 @@ export default function PurchaseOrders() {
               }}
               className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition border ${
                 mergeMode
-                  ? "bg-indigo-50 border-indigo-300 text-indigo-700"
-                  : "bg-white border-slate-200 text-slate-600 hover:border-indigo-300"
+                  ? "bg-teal-50 border-teal-300 text-teal-700"
+                  : "bg-white border-slate-200 text-slate-600 hover:border-teal-300"
               }`}
             >
               <GitMerge className="w-4 h-4" /> {mergeMode ? "Exit merge mode" : "Merge POs"}
@@ -319,7 +319,7 @@ export default function PurchaseOrders() {
           <button
             onClick={createDraft}
             disabled={creating}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm disabled:opacity-60"
+            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm disabled:opacity-60"
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             New PO
@@ -337,7 +337,7 @@ export default function PurchaseOrders() {
               onClick={() => setSupplierFilter(s)}
               className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
                 supplierFilter === s
-                  ? "bg-indigo-600 border-indigo-600 text-white"
+                  ? "bg-teal-600 border-teal-600 text-white"
                   : "bg-white border-slate-200 text-slate-500 hover:border-slate-400"
               }`}
             >
@@ -355,7 +355,7 @@ export default function PurchaseOrders() {
             onClick={() => { setTab(t); setSelectedId(null); }}
             className={`px-4 py-2 text-sm font-semibold transition ${
               tab === t
-                ? "text-indigo-600 border-b-2 border-indigo-600 -mb-px"
+                ? "text-teal-600 border-b-2 border-teal-600 -mb-px"
                 : "text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -387,9 +387,9 @@ export default function PurchaseOrders() {
                 onClick={handleClick}
                 className={`w-full text-left bg-white border rounded-xl p-3 transition ${
                   mergeMode && isChecked
-                    ? "border-indigo-500 ring-2 ring-indigo-200"
+                    ? "border-teal-500 ring-2 ring-teal-200"
                     : isSel
-                      ? "border-indigo-400 ring-2 ring-indigo-100"
+                      ? "border-teal-400 ring-2 ring-teal-100"
                       : "border-slate-100 hover:border-slate-300"
                 }`}
               >
@@ -398,7 +398,7 @@ export default function PurchaseOrders() {
                     {mergeMode && (
                       <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
                         isChecked
-                          ? "bg-indigo-600 border-indigo-600"
+                          ? "bg-teal-600 border-teal-600"
                           : "border-slate-300 bg-white"
                       }`}>
                         {isChecked && <Check className="w-3 h-3 text-white" />}
@@ -421,7 +421,7 @@ export default function PurchaseOrders() {
                   <div className="mt-2">
                     <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className={`h-full transition-all ${fp.qualifies ? "bg-emerald-500" : "bg-indigo-500"}`}
+                        className={`h-full transition-all ${fp.qualifies ? "bg-emerald-500" : "bg-teal-500"}`}
                         style={{ width: `${fp.percentage}%` }}
                       />
                     </div>
@@ -493,7 +493,7 @@ export default function PurchaseOrders() {
           <button
             onClick={mergeMultipleSelected}
             disabled={mergeSelection.size < 2 || merging}
-            className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-700 disabled:text-slate-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 disabled:text-slate-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
           >
             {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
             Merge {mergeSelection.size >= 2 ? mergeSelection.size : ""}
@@ -535,7 +535,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
             onChange={(e) => onPatch({ reference: e.target.value })}
             disabled={isLocked}
             maxLength={!isLocked && po.supplier === "AS Colour" ? AC_REFERENCE_MAX : undefined}
-            className={`text-lg font-bold bg-transparent border-b border-transparent hover:border-slate-200 focus:border-indigo-400 focus:outline-none w-full disabled:text-slate-500 ${
+            className={`text-lg font-bold bg-transparent border-b border-transparent hover:border-slate-200 focus:border-teal-400 focus:outline-none w-full disabled:text-slate-500 ${
               (po.reference || "").length > AC_REFERENCE_MAX && po.supplier === "AS Colour" && !isLocked
                 ? "text-red-600"
                 : "text-slate-800"
@@ -557,7 +557,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                 <button
                   onClick={onMergeOpen}
                   title="Combine this draft into another draft to hit free freight"
-                  className="text-slate-400 hover:text-indigo-600 p-1.5 rounded-lg hover:bg-indigo-50"
+                  className="text-slate-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50"
                 >
                   <GitMerge className="w-4 h-4" />
                 </button>
@@ -590,7 +590,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
           </div>
           <div className="h-2 bg-white rounded-full overflow-hidden">
             <div
-              className={`h-full transition-all ${fp.qualifies ? "bg-emerald-500" : "bg-indigo-500"}`}
+              className={`h-full transition-all ${fp.qualifies ? "bg-emerald-500" : "bg-teal-500"}`}
               style={{ width: `${fp.percentage}%` }}
             />
           </div>
@@ -637,7 +637,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                         <input
                           value={it.sku || ""}
                           onChange={(e) => onItemSku(i, e.target.value)}
-                          className="w-full font-mono text-xs text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                          className="w-full font-mono text-xs text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                           placeholder="e.g. 5102-WHI_M-H-M"
                         />
                       )}
@@ -804,7 +804,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
           <button
             onClick={onSubmit}
             disabled={submitting}
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-60"
+            className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-60"
           >
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
             Submit to {po.supplier}

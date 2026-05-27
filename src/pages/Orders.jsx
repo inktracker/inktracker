@@ -299,7 +299,7 @@ export default function Orders() {
           <button
             key={s}
             onClick={() => setFilter(s)}
-            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition ${filter === s ? "bg-indigo-600 text-white border-indigo-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-indigo-300"}`}
+            className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition ${filter === s ? "bg-teal-600 text-white border-teal-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-teal-300"}`}
           >
             {s}
           </button>
@@ -375,7 +375,7 @@ export default function Orders() {
                     </td>
                     <td className="px-5 py-3.5">
                       {artworkCount > 0 ? (
-                        <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full whitespace-nowrap">
+                        <span className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-full whitespace-nowrap">
                           {artworkCount} file{artworkCount === 1 ? "" : "s"}
                         </span>
                       ) : (
@@ -385,7 +385,7 @@ export default function Orders() {
                     <td className="px-5 py-3.5 text-slate-500">{o.due_date ? fmtDate(o.due_date) : "—"}</td>
                     <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</td>
                     <td className="px-5 py-3.5"><Badge s={o.status} /></td>
-                    <td className="px-5 py-3.5 text-right text-indigo-400 text-xs font-semibold">View →</td>
+                    <td className="px-5 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
                   </tr>
                 );
               })}
@@ -418,7 +418,7 @@ export default function Orders() {
                 </div>
                 {artworkCount > 0 && (
                   <div className="mt-2">
-                    <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-1 rounded-full">
+                    <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2 py-1 rounded-full">
                       {artworkCount} artwork file{artworkCount === 1 ? "" : "s"}
                     </span>
                   </div>

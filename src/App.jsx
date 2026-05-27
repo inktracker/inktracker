@@ -80,7 +80,7 @@ const FEATURE_CARDS = [
   {
     title: "Quotes & Orders",
     desc: "Build quotes with live garment pricing from S&S and AS Colour. Convert to orders with one click.",
-    color: "from-indigo-500/20 to-indigo-500/5",
+    color: "from-teal-500/20 to-teal-500/5",
     // 23.5-second animated demo: a quote being built from scratch through
     // customer select, garment style autofill, size breakdown, print
     // location, live pricing count-up, and save → new row in the list.
@@ -90,7 +90,7 @@ const FEATURE_CARDS = [
   {
     title: "Production Tracking",
     desc: "Visual pipeline from art approval to shipping. Your team updates progress from any device.",
-    color: "from-violet-500/20 to-violet-500/5",
+    color: "from-green-500/20 to-green-500/5",
     // 25-second animated demo of the production kanban — cards moving
     // from art-approval through pre-press, printing, finishing, QC,
     // ready-to-ship, and completed. Built from the design handoff at
@@ -142,7 +142,7 @@ const FEATURE_CARDS = [
   {
     title: "Artwork Proofs",
     desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.",
-    color: "from-purple-500/20 to-purple-500/5",
+    color: "from-teal-500/20 to-teal-500/5",
     media: { type: "iframe", src: "/landing/artwork-proofs-demo/index.html" },
   },
 ];
@@ -285,16 +285,16 @@ function TypewriterHeadline({ onRevealReady }) {
         {shown1}
         {!cursorOnLine2 && (
           <span
-            className={`inline-block w-[3px] md:w-[4px] h-[0.85em] align-[-0.1em] ml-1 bg-indigo-400 rounded-sm ${blink ? "opacity-100" : "opacity-0"}`}
+            className={`inline-block w-[3px] md:w-[4px] h-[0.85em] align-[-0.1em] ml-1 bg-teal-400 rounded-sm ${blink ? "opacity-100" : "opacity-0"}`}
             aria-hidden="true"
           />
         )}
       </h1>
-      <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-indigo-400 to-violet-400 bg-clip-text text-transparent min-h-[1.1em]">
+      <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold leading-tight tracking-tight bg-gradient-to-r from-teal-400 to-green-400 bg-clip-text text-transparent min-h-[1.1em]">
         {shown2}
         {cursorOnLine2 && (
           <span
-            className={`inline-block w-[3px] md:w-[4px] h-[0.85em] align-[-0.1em] ml-1 bg-indigo-400 rounded-sm ${blink ? "opacity-100" : "opacity-0"}`}
+            className={`inline-block w-[3px] md:w-[4px] h-[0.85em] align-[-0.1em] ml-1 bg-teal-400 rounded-sm ${blink ? "opacity-100" : "opacity-0"}`}
             aria-hidden="true"
           />
         )}
@@ -321,7 +321,7 @@ function PublicLandingPage() {
 
   return (
     <>
-      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-indigo-950 text-white">
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-teal-950 text-white">
         {/* Nav */}
         <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-lg border-b border-white/5">
           <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
@@ -338,7 +338,7 @@ function PublicLandingPage() {
                 Log In
               </button>
               <button onClick={openSignup}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 sm:px-5 py-2.5 rounded-xl transition">
+                className="bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold px-4 sm:px-5 py-2.5 rounded-xl transition">
                 Start Free Trial
               </button>
               <button
@@ -420,7 +420,7 @@ function PublicLandingPage() {
               <div className="flex items-center justify-center gap-4 mb-8">
                 <span className="relative inline-flex w-16 h-16 items-center justify-center">
                   <span
-                    className="absolute inset-0 rounded-full border border-indigo-400/60 hero-ring-ripple"
+                    className="absolute inset-0 rounded-full border border-teal-400/60 hero-ring-ripple"
                     aria-hidden="true"
                   />
                   <img
@@ -446,7 +446,7 @@ function PublicLandingPage() {
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-5">
                 <button onClick={openSignup}
-                  className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50 w-full sm:w-auto">
+                  className="bg-teal-600 hover:bg-teal-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-teal-900/50 w-full sm:w-auto">
                   Start Free Trial
                 </button>
                 <a href="#features"
@@ -512,12 +512,12 @@ function PublicLandingPage() {
                   key={f.title}
                   type="button"
                   onClick={() => setPreviewFeature(f)}
-                  className={`group relative text-left bg-gradient-to-b ${f.color} border border-white/10 rounded-2xl p-6 hover:border-white/30 hover:-translate-y-0.5 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400`}
+                  className={`group relative text-left bg-gradient-to-b ${f.color} border border-white/10 rounded-2xl p-6 hover:border-white/30 hover:-translate-y-0.5 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400`}
                   aria-label={`Preview ${f.title}`}
                 >
                   <h3 className="text-base font-bold text-white mb-2 pr-8">{f.title}</h3>
                   <p className="text-sm text-slate-400 leading-relaxed mb-3">{f.desc}</p>
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-300 group-hover:text-indigo-200 transition">
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-teal-300 group-hover:text-teal-200 transition">
                     Preview <span aria-hidden="true">→</span>
                   </span>
                 </button>
@@ -540,7 +540,7 @@ function PublicLandingPage() {
                 { step: "4", title: "Track production", desc: "Move orders through your pipeline. Your team updates from tablets or phones." },
               ].map(s => (
                 <div key={s.step} className="text-center">
-                  <div className="w-10 h-10 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center mx-auto mb-3 text-sm">{s.step}</div>
+                  <div className="w-10 h-10 rounded-full bg-teal-600 text-white font-bold flex items-center justify-center mx-auto mb-3 text-sm">{s.step}</div>
                   <h3 className="text-sm font-bold text-white mb-1">{s.title}</h3>
                   <p className="text-xs text-slate-400 leading-relaxed">{s.desc}</p>
                 </div>
@@ -564,7 +564,7 @@ function PublicLandingPage() {
               </div>
 
               <div className="order-1 md:order-2">
-                <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-3">
+                <p className="text-xs font-semibold text-teal-400 uppercase tracking-widest mb-3">
                   Why InkTracker exists
                 </p>
                 <h2 className="text-3xl font-extrabold mb-5 leading-tight">
@@ -588,16 +588,16 @@ function PublicLandingPage() {
               <h2 className="text-3xl font-extrabold">Simple pricing</h2>
               <p className="text-slate-400 mt-3">One plan. Everything included. No surprises.</p>
             </div>
-            <div className="bg-gradient-to-b from-indigo-600 to-indigo-700 border-2 border-indigo-400 rounded-2xl p-8 shadow-2xl shadow-indigo-900/40">
+            <div className="bg-gradient-to-b from-teal-600 to-teal-700 border-2 border-teal-400 rounded-2xl p-8 shadow-2xl shadow-teal-900/40">
               <div className="text-center mb-6">
                 <div className="mb-3">
                   <span className="text-5xl font-extrabold text-white">$99</span>
-                  <span className="text-base text-indigo-200">/mo</span>
+                  <span className="text-base text-teal-200">/mo</span>
                 </div>
-                <p className="text-sm text-indigo-100/90 mb-3 max-w-md mx-auto leading-relaxed">
+                <p className="text-sm text-teal-100/90 mb-3 max-w-md mx-auto leading-relaxed">
                   One plan, every feature included. Or save $189 with annual billing at $999/year.
                 </p>
-                <p className="text-sm text-indigo-200">14-day free trial · No credit card required</p>
+                <p className="text-sm text-teal-200">14-day free trial · No credit card required</p>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mb-6 px-2">
                 {[
@@ -613,20 +613,20 @@ function PublicLandingPage() {
                   "Broker portal",
                   "Performance reports",
                 ].map(f => (
-                  <div key={f} className="flex items-center gap-2.5 text-sm text-indigo-100">
+                  <div key={f} className="flex items-center gap-2.5 text-sm text-teal-100">
                     <span className="text-emerald-400 text-xs">&#10003;</span> {f}
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-indigo-100/80 text-center mb-6 max-w-md mx-auto leading-relaxed">
+              <p className="text-xs text-teal-100/80 text-center mb-6 max-w-md mx-auto leading-relaxed">
                 Typical shops save 5–10 hours per week on order tracking, payment follow-up, and quote-to-production handoff. Pays for itself in the first week.
               </p>
               <div className="text-center">
                 <button onClick={openSignup}
-                  className="bg-white text-indigo-700 hover:bg-indigo-50 font-bold px-10 py-3.5 rounded-xl text-base transition shadow-lg">
+                  className="bg-white text-teal-700 hover:bg-teal-50 font-bold px-10 py-3.5 rounded-xl text-base transition shadow-lg">
                   Start 14-Day Free Trial
                 </button>
-                <p className="text-xs text-indigo-200 mt-3">
+                <p className="text-xs text-teal-200 mt-3">
                   Have a question?{" "}
                   <a href="mailto:joe@biotamfg.co" className="underline underline-offset-4 hover:text-white transition">
                     Email joe@biotamfg.co
@@ -745,7 +745,7 @@ function PublicLandingPage() {
             <h2 className="text-3xl font-extrabold mb-4">Your shop, organized.</h2>
             <p className="text-slate-400 mb-8">Try InkTracker free for 14 days. No credit card required.</p>
             <button onClick={openSignup}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-4 rounded-2xl text-base transition shadow-lg shadow-indigo-900/50">
+              className="bg-teal-600 hover:bg-teal-500 text-white font-bold px-8 py-4 rounded-2xl text-base transition shadow-lg shadow-teal-900/50">
               Start Your Free Trial
             </button>
           </div>
@@ -953,7 +953,7 @@ function PostConfirmSpinner() {
           {errorRetryable && (
             <button
               onClick={() => { setAttempt(0); setPhase("activating"); setErrorMessage(""); }}
-              className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg"
+              className="px-4 py-2 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-lg"
             >
               Try again
             </button>

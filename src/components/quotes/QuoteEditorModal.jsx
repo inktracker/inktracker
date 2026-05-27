@@ -510,7 +510,7 @@ export default function QuoteEditorModal({
                         deposit_pct: c ? Number(c.default_deposit_pct ?? 0) : q.deposit_pct,
                       });
                     }}
-                    className="flex-1 min-w-0 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300 truncate"
+                    className="flex-1 min-w-0 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300 truncate"
                   >
                     <option value="">Select customer…</option>
                     {[...customers].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })).map((c) => (
@@ -525,8 +525,8 @@ export default function QuoteEditorModal({
                     onClick={() => setShowNewClient((v) => !v)}
                     className={`flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-lg border transition ${
                       showNewClient
-                        ? "bg-indigo-600 text-white border-indigo-600"
-                        : "border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                        ? "bg-teal-600 text-white border-teal-600"
+                        : "border-teal-200 text-teal-600 hover:bg-teal-50"
                     }`}
                   >
                     {showNewClient ? "✕ Cancel" : "+ New Customer"}
@@ -543,7 +543,7 @@ export default function QuoteEditorModal({
                   value={q.job_title || ""}
                   onChange={(e) => setQ({ ...q, job_title: e.target.value })}
                   placeholder="Business Cards, Event Shirts, etc."
-                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
             </div>
@@ -557,7 +557,7 @@ export default function QuoteEditorModal({
                   type="date"
                   value={q.date}
                   onChange={(e) => setQ({ ...q, date: e.target.value })}
-                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
 
@@ -585,7 +585,7 @@ export default function QuoteEditorModal({
                       rush_rate: isRush ? 0.2 : q.rush_rate,
                     });
                   }}
-                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
                 {q.due_date &&
                   q.date &&
@@ -607,7 +607,7 @@ export default function QuoteEditorModal({
                   type="date"
                   value={q.expires_date || ""}
                   onChange={(e) => setQ({ ...q, expires_date: e.target.value })}
-                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
                 {q.expires_date && new Date(q.expires_date) < new Date() && (
                   <div className="text-xs text-rose-500 font-semibold mt-1">
@@ -618,8 +618,8 @@ export default function QuoteEditorModal({
             </div>
 
             {showNewClient && (
-              <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 space-y-3">
-                <div className="text-xs font-bold text-indigo-700 uppercase tracking-widest">
+              <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 space-y-3">
+                <div className="text-xs font-bold text-teal-700 uppercase tracking-widest">
                   New Client
                 </div>
 
@@ -663,7 +663,7 @@ export default function QuoteEditorModal({
                         value={nc[f.key]}
                         onChange={(e) => setNc({ ...nc, [f.key]: e.target.value })}
                         placeholder={f.placeholder}
-                        className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
                       />
                     </div>
                   ))}
@@ -677,7 +677,7 @@ export default function QuoteEditorModal({
                       onChange={(e) => setNc({ ...nc, notes: e.target.value })}
                       placeholder="Terms, preferences…"
                       rows={2}
-                      className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                      className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none"
                     />
                   </div>
                 </div>
@@ -689,16 +689,16 @@ export default function QuoteEditorModal({
                     onChange={(e) =>
                       setNc({ ...nc, tax_exempt: e.target.checked })
                     }
-                    className="w-4 h-4 rounded border-slate-300 accent-indigo-600"
+                    className="w-4 h-4 rounded border-slate-300 accent-teal-600"
                   />
-                  <span className="text-sm font-semibold text-indigo-700">
+                  <span className="text-sm font-semibold text-teal-700">
                     Tax Exempt
                   </span>
                 </label>
 
                 <button
                   onClick={handleAddClient}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition w-full"
+                  className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition w-full"
                 >
                   Add Client &amp; Select
                 </button>
@@ -723,14 +723,14 @@ export default function QuoteEditorModal({
                     onClick={() => setQ({ ...q, rush_rate: opt.val })}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
                       q.rush_rate === opt.val
-                        ? "border-indigo-600 bg-indigo-50"
+                        ? "border-teal-600 bg-teal-50"
                         : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-white dark:bg-slate-900"
                     }`}
                   >
                     <div
                       className={`text-sm font-bold ${
                         q.rush_rate === opt.val
-                          ? "text-indigo-700"
+                          ? "text-teal-700"
                           : "text-slate-700"
                       }`}
                     >
@@ -760,11 +760,11 @@ export default function QuoteEditorModal({
                       }
                       className={`rounded-xl border-2 px-3 py-2 text-left transition ${
                         isOn
-                          ? "border-indigo-600 bg-indigo-50"
+                          ? "border-teal-600 bg-teal-50"
                           : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-white dark:bg-slate-900"
                       }`}
                     >
-                      <div className={`text-xs font-bold ${isOn ? "text-indigo-700" : "text-slate-700"}`}>
+                      <div className={`text-xs font-bold ${isOn ? "text-teal-700" : "text-slate-700"}`}>
                         {label}
                       </div>
                       <div className="text-xs text-slate-400">+${(parseFloat(rate) || 0).toFixed(2)}/pc</div>
@@ -790,7 +790,7 @@ export default function QuoteEditorModal({
                 </button>
                 <button
                   onClick={addLineItem}
-                  className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition"
+                  className="text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
                 >
                   + Add Garment Group
                 </button>
@@ -858,7 +858,7 @@ export default function QuoteEditorModal({
                 value={q.notes}
                 onChange={(e) => setQ({ ...q, notes: e.target.value })}
                 placeholder="Rush instructions, art notes, client communication…"
-                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none"
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none"
               />
             </div>
 
@@ -880,12 +880,12 @@ export default function QuoteEditorModal({
                     max={q.discount_type === "flat" ? undefined : 100}
                     value={q.discount}
                     onChange={(e) => setQ({ ...q, discount: e.target.value })}
-                    className="w-16 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="w-16 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
                   {q.discount_type !== "flat" && <span className="text-slate-400 text-xs">%</span>}
                   <button
                     onClick={() => setQ({ ...q, discount_type: q.discount_type === "flat" ? "percent" : "flat", discount: 0 })}
-                    className="text-[10px] font-semibold text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded hover:bg-indigo-50 ml-1"
+                    className="text-[10px] font-semibold text-teal-600 border border-teal-200 px-1.5 py-0.5 rounded hover:bg-teal-50 ml-1"
                   >
                     {q.discount_type === "flat" ? "%" : "$"}
                   </button>
@@ -904,10 +904,10 @@ export default function QuoteEditorModal({
               {(() => {
                 const c = customers.find((x) => x.id === q.customer_id);
                 return c?.tax_exempt ? (
-                  <div className="flex items-center gap-2 text-xs text-purple-600 font-semibold bg-purple-50 border border-purple-100 rounded-lg px-3 py-1.5">
+                  <div className="flex items-center gap-2 text-xs text-teal-600 font-semibold bg-teal-50 border border-teal-100 rounded-lg px-3 py-1.5">
                     <span>✓ Tax Exempt Customer</span>
                     {c.tax_id && (
-                      <span className="text-purple-400">· {c.tax_id}</span>
+                      <span className="text-teal-400">· {c.tax_id}</span>
                     )}
                   </div>
                 ) : null;
@@ -921,7 +921,7 @@ export default function QuoteEditorModal({
                     step="0.001"
                     value={q.tax_rate}
                     onChange={(e) => setQ({ ...q, tax_rate: e.target.value })}
-                    className="w-20 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="w-20 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
                   <span className="text-slate-400 text-xs">%</span>
                 </div>
@@ -960,7 +960,7 @@ export default function QuoteEditorModal({
                               if (e.target.checked) ids.delete(fee.id); else ids.add(fee.id);
                               setQ({ ...q, setup_skipped_fee_ids: Array.from(ids) });
                             }}
-                            className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600"
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600"
                           />
                           <span className={`flex-1 ${skipped ? "line-through" : ""}`}>
                             {fee.label} <span className="text-slate-400">({autoScreenCount} × {fmtMoney(rate)})</span>
@@ -986,14 +986,14 @@ export default function QuoteEditorModal({
                           setQ({ ...q, setup_screens_override: v === "" ? null : Math.max(0, parseInt(v, 10) || 0) });
                         }}
                         title="Number of screens to bill — defaults to auto-counted color count. Lower it to pair screens across designs."
-                        className="w-14 text-right border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                        className="w-14 text-right border border-slate-200 dark:border-slate-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                       />
                       <span>screens (applies to all fees)</span>
                       {Number.isInteger(q.setup_screens_override) && (
                         <button
                           type="button"
                           onClick={() => setQ({ ...q, setup_screens_override: null })}
-                          className="text-[10px] text-indigo-600 font-semibold hover:text-indigo-800"
+                          className="text-[10px] text-teal-600 font-semibold hover:text-teal-800"
                           title="Reset to auto-counted screen count"
                         >
                           reset
@@ -1005,7 +1005,7 @@ export default function QuoteEditorModal({
                         type="checkbox"
                         checked={!!q.is_reorder}
                         onChange={(e) => setQ({ ...q, is_reorder: e.target.checked })}
-                        className="w-3.5 h-3.5 rounded border-slate-300 text-indigo-600"
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600"
                       />
                       Reorder — use reduced per-screen rates (screens already exist)
                     </label>
@@ -1027,7 +1027,7 @@ export default function QuoteEditorModal({
                 </span>
               </div>
 
-              <div className="flex justify-between items-center gap-2 bg-indigo-50 rounded-xl px-3 py-2 border border-indigo-100">
+              <div className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
                     <input
@@ -1039,9 +1039,9 @@ export default function QuoteEditorModal({
                           deposit_pct: e.target.checked ? 50 : 0,
                         })
                       }
-                      className="accent-indigo-600"
+                      className="accent-teal-600"
                     />
-                    <span className="text-indigo-700 font-semibold text-xs">Deposit</span>
+                    <span className="text-teal-700 font-semibold text-xs">Deposit</span>
                   </label>
                   {Number(q.deposit_pct) > 0 && (
                     <>
@@ -1054,14 +1054,14 @@ export default function QuoteEditorModal({
                           const v = parseInt(e.target.value, 10);
                           setQ({ ...q, deposit_pct: Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 50 });
                         }}
-                        className="w-10 text-xs text-center border border-indigo-200 rounded px-1 py-0.5 bg-white dark:bg-slate-900 focus:outline-none"
+                        className="w-10 text-xs text-center border border-teal-200 rounded px-1 py-0.5 bg-white dark:bg-slate-900 focus:outline-none"
                       />
-                      <span className="text-indigo-400 text-xs">%</span>
+                      <span className="text-teal-400 text-xs">%</span>
                     </>
                   )}
                 </div>
                 {Number(q.deposit_pct) > 0 && (
-                  <span className="font-bold text-indigo-800">
+                  <span className="font-bold text-teal-800">
                     {fmtMoney(Math.round(totalWithSetup * (Number(q.deposit_pct) / 100) * 100) / 100)}
                   </span>
                 )}
@@ -1079,7 +1079,7 @@ export default function QuoteEditorModal({
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 rounded-xl transition"
+            className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 rounded-xl transition"
           >
             {saving ? "Saving…" : "Save Quote"}
           </button>

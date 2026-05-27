@@ -103,7 +103,7 @@ function ManualColorInput({ onPick }) {
       <input
         value={hex}
         onChange={(e) => { const v = e.target.value; if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setHex(v); }}
-        className="w-20 text-xs border border-slate-200 rounded-lg px-2 py-1.5 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-300"
+        className="w-20 text-xs border border-slate-200 rounded-lg px-2 py-1.5 font-mono focus:outline-none focus:ring-2 focus:ring-teal-300"
         placeholder="#000000"
       />
       {pms && (
@@ -114,7 +114,7 @@ function ManualColorInput({ onPick }) {
       )}
       <button
         onClick={addColor}
-        className="text-[11px] font-semibold text-indigo-600 border border-indigo-200 px-2 py-1 rounded-lg hover:bg-indigo-50"
+        className="text-[11px] font-semibold text-teal-600 border border-teal-200 px-2 py-1 rounded-lg hover:bg-teal-50"
       >
         + Add
       </button>
@@ -171,7 +171,7 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
               ];
               onApplyCount(Math.min(8, totalColors), allPantones.join(", "));
             }}
-            className="text-[11px] font-semibold text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-lg hover:bg-indigo-50"
+            className="text-[11px] font-semibold text-teal-600 border border-teal-200 px-2 py-0.5 rounded-lg hover:bg-teal-50"
           >
             Use {Math.min(8, totalColors)} color{totalColors !== 1 ? "s" : ""}
           </button>
@@ -179,7 +179,7 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
         {result.isPhoto && onApplyCount && (
           <button
             onClick={() => onApplyCount(4, "")}
-            className="text-[11px] font-semibold text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-lg hover:bg-indigo-50"
+            className="text-[11px] font-semibold text-teal-600 border border-teal-200 px-2 py-0.5 rounded-lg hover:bg-teal-50"
           >
             Use 4-color process
           </button>
@@ -258,7 +258,7 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
           {imageUrl && (
             <button
               onClick={() => setShowEyedropper(!showEyedropper)}
-              className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition ${showEyedropper ? "bg-indigo-50 border-indigo-300 text-indigo-700" : "border-slate-200 text-slate-600 hover:bg-slate-100"}`}
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition ${showEyedropper ? "bg-teal-50 border-teal-300 text-teal-700" : "border-slate-200 text-slate-600 hover:bg-slate-100"}`}
             >
               {showEyedropper ? "Hide eyedropper" : "Pick from image"}
             </button>

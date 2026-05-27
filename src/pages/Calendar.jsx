@@ -20,7 +20,7 @@ import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletio
 // calendar view inside the Production page renders the same chips).
 const STATUS_COLORS = {
   // Quote lifecycle (before the order exists)
-  "Quote Sent":     "bg-violet-50 border-violet-300 text-violet-700",
+  "Quote Sent":     "bg-green-50 border-green-300 text-green-700",
   "Quote Approved": "bg-green-50 border-green-300 text-green-700",
   // Production pipeline
   "Art Approval": "bg-slate-100 border-slate-300 text-slate-700",
@@ -458,7 +458,7 @@ export default function Calendar() {
           <button onClick={prevMonth} className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 transition">
             <ChevronLeft className="w-4 h-4 text-slate-600" />
           </button>
-          <button onClick={goToday} className="text-sm font-semibold text-indigo-600 hover:underline">Today</button>
+          <button onClick={goToday} className="text-sm font-semibold text-teal-600 hover:underline">Today</button>
           <button onClick={nextMonth} className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 transition">
             <ChevronRight className="w-4 h-4 text-slate-600" />
           </button>
@@ -535,7 +535,7 @@ export default function Calendar() {
                 return (
                   <div
                     key={d}
-                    className={`py-2 text-center text-xs font-semibold uppercase tracking-widest ${isTodayCol ? "text-indigo-600 bg-indigo-50" : "text-slate-400"}`}
+                    className={`py-2 text-center text-xs font-semibold uppercase tracking-widest ${isTodayCol ? "text-teal-600 bg-teal-50" : "text-slate-400"}`}
                   >
                     {d}
                   </div>
@@ -560,14 +560,14 @@ export default function Calendar() {
                         return (
                          <div
                            key={dateStr}
-                           className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${isDragOver ? "bg-indigo-50 ring-2 ring-inset ring-indigo-400" : selectedDate === dateStr ? "bg-indigo-50/60" : "hover:bg-slate-50"}`}
+                           className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${isDragOver ? "bg-teal-50 ring-2 ring-inset ring-teal-400" : selectedDate === dateStr ? "bg-teal-50/60" : "hover:bg-slate-50"}`}
                            onClick={() => setSelectedDate(dateStr)}
                            onDrop={(e) => handleDrop(e, dateStr)}
                            onDragOver={(e) => handleDragOver(e, dateStr)}
                            onDragLeave={() => setDragOverDate(null)}
                            title="Click to see the day's agenda"
                          >
-                           <div className={`text-xs font-bold mb-2 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-indigo-600 text-white" : "text-slate-400"}`}>
+                           <div className={`text-xs font-bold mb-2 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-teal-600 text-white" : "text-slate-400"}`}>
                              {day}
                            </div>
                            <div className="flex flex-col gap-1 flex-1 overflow-y-auto">
@@ -769,7 +769,7 @@ export default function Calendar() {
                             <div className="mt-1.5 flex flex-wrap items-center gap-1">
                               <Badge s={o.status} />
                               {isStartDay && (
-                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-indigo-50 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded">
+                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded">
                                   Created today
                                 </span>
                               )}

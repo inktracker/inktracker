@@ -74,8 +74,8 @@ export default function BrokerProfile({ user, onUpdate }) {
       <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
         {/* Read-only account info */}
         <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-          <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center">
-            <User className="w-6 h-6 text-indigo-600" />
+          <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center">
+            <User className="w-6 h-6 text-teal-600" />
           </div>
           <div>
             <div className="font-bold text-slate-900">{user.display_name || user.full_name || "Broker"}</div>
@@ -95,7 +95,7 @@ export default function BrokerProfile({ user, onUpdate }) {
                 value={form[f.key]}
                 onChange={e => set(f.key, e.target.value)}
                 placeholder={f.placeholder}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
               />
             </div>
           ))}
@@ -111,7 +111,7 @@ export default function BrokerProfile({ user, onUpdate }) {
             onChange={e => set("notes", e.target.value)}
             placeholder="Anything else you'd like the shop to know about you…"
             rows={3}
-            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
+            className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent resize-none"
           />
         </div>
 
@@ -120,7 +120,7 @@ export default function BrokerProfile({ user, onUpdate }) {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
+            className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
           >
             <Save className="w-4 h-4" />
             {saving ? "Saving…" : "Save Changes"}

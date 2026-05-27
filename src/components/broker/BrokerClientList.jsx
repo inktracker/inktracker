@@ -146,7 +146,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search clients…"
-              className="pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-300 w-56"
+              className="pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-300 w-56"
             />
           </div>
 
@@ -160,7 +160,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                   taxExempt: e.target.checked || undefined,
                 }))
               }
-              className="w-4 h-4 accent-indigo-600"
+              className="w-4 h-4 accent-teal-600"
             />
             Tax Exempt Only
           </label>
@@ -171,15 +171,15 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
             setShowForm((v) => !v);
             setForm(EMPTY);
           }}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+          className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
         >
           {showForm ? "✕ Cancel" : "+ Add Client"}
         </button>
       </div>
 
       {showForm && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 space-y-3">
-          <div className="text-xs font-bold text-indigo-700 uppercase tracking-widest">
+        <div className="bg-teal-50 border border-teal-200 rounded-2xl p-5 space-y-3">
+          <div className="text-xs font-bold text-teal-700 uppercase tracking-widest">
             New Client
           </div>
 
@@ -196,7 +196,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                     setForm({ ...form, [f.key]: e.target.value })
                   }
                   placeholder={f.placeholder}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
             ))}
@@ -210,7 +210,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
               onChange={(e) =>
                 setForm({ ...form, tax_exempt: e.target.checked })
               }
-              className="w-4 h-4 accent-indigo-600"
+              className="w-4 h-4 accent-teal-600"
             />
             <label
               htmlFor="new_tax_exempt"
@@ -222,7 +222,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
 
           <button
             onClick={handleAdd}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
           >
             Add Client
           </button>
@@ -246,7 +246,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
               className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition-shadow"
             >
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-100 to-indigo-200 text-indigo-700 font-bold text-sm flex items-center justify-center flex-shrink-0">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-teal-100 to-teal-200 text-teal-700 font-bold text-sm flex items-center justify-center flex-shrink-0">
                   {c.name.split(" ").map((w) => w[0]).slice(0, 2).join("")}
                 </div>
                 <div>
@@ -276,7 +276,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
 
               <div className="flex gap-3 border-t border-slate-100 pt-3 items-center">
                 {c.tax_exempt && (
-                  <span className="text-xs font-semibold text-purple-600 bg-purple-50 border border-purple-100 px-2 py-0.5 rounded-full">
+                  <span className="text-xs font-semibold text-teal-600 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">
                     Tax Exempt
                   </span>
                 )}
@@ -333,7 +333,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                       setEditing({ ...editing, [f.key]: e.target.value })
                     }
                     placeholder={f.placeholder}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
                 </div>
               ))}
@@ -347,7 +347,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                 onChange={(e) =>
                   setEditing({ ...editing, tax_exempt: e.target.checked })
                 }
-                className="w-4 h-4 accent-indigo-600"
+                className="w-4 h-4 accent-teal-600"
               />
               <label
                 htmlFor="edit_tax_exempt"
@@ -366,7 +366,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                     ...editing,
                     saved_imprints: [...(editing.saved_imprints || []), { title: "", location: "Front", width: "", height: "", colors: 1, technique: "Screen Print", pantones: "" }]
                   })}
-                  className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50 transition"
+                  className="text-xs font-semibold text-teal-600 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-50 transition"
                 >
                   + Add Imprint
                 </button>
@@ -391,7 +391,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder="e.g. Front Logo"
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
                         <div className="w-28">
@@ -418,7 +418,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder='4"'
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
                         <div className="w-16">
@@ -431,7 +431,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
                             placeholder='2"'
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
                         <div className="w-16">
@@ -446,7 +446,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                               updated[i] = { ...updated[i], colors: parseInt(e.target.value) || 1 };
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
-                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                            className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                           />
                         </div>
                         <div className="w-28">
@@ -495,14 +495,14 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                   value={artNote}
                   onChange={(e) => setArtNote(e.target.value)}
                   placeholder="Optional note (e.g. Front chest logo, vector source, etc.)"
-                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  className="w-full text-sm border border-slate-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
 
                 <label
                   className={`inline-flex items-center gap-2 cursor-pointer text-sm font-semibold px-4 py-2 rounded-xl border transition ${
                     uploadingArtwork
                       ? "bg-slate-100 text-slate-400 border-slate-200"
-                      : "bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700"
+                      : "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
                   }`}
                 >
                   <Upload className="w-4 h-4" />
@@ -546,7 +546,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                           href={art.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition"
+                          className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
                           title="Open artwork"
                         >
                           <ExternalLink className="w-4 h-4" />
@@ -590,7 +590,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={handleSaveEdit}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+                  className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
                 >
                   Save Changes
                 </button>

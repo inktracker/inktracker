@@ -390,7 +390,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
             on short screens lost the top — user couldn't dismiss or
             see the title without scrolling to top. */}
         <div className="sticky top-0 z-10 bg-white flex items-center gap-3 px-6 py-4 border-b border-slate-200">
-          <Mail className="w-5 h-5 text-indigo-600" />
+          <Mail className="w-5 h-5 text-teal-600" />
           <h2 className="text-base font-semibold text-slate-900">Send Quote Email</h2>
           <button
             onClick={onClose}
@@ -429,12 +429,12 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                    onChange={(e) => setEmailsInput(e.target.value)}
                    disabled={sending}
                    placeholder="email@example.com, another@example.com"
-                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-slate-50"
+                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50"
                  />
                  {recipientEmails.length > 0 && (
                    <div className="mt-2 flex flex-wrap gap-1.5">
                      {recipientEmails.map((email, i) => (
-                       <span key={i} className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-full">
+                       <span key={i} className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-full">
                          {email}
                        </span>
                      ))}
@@ -451,7 +451,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   disabled={sending}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-slate-50"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50"
                 />
               </div>
 
@@ -464,7 +464,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   onChange={(e) => setBody(e.target.value)}
                   disabled={sending}
                   rows={3}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-slate-50 resize-none"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50 resize-none"
                 />
                 <p className="text-xs text-slate-400 mt-1">
                   Full quote details plus review, approval, and payment actions will be included automatically.
@@ -618,7 +618,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   // out-of-band. Per qbSendState.js the gate is just
                   // informational now.
                 }
-                className="flex-1 px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50"
+                className="flex-1 px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {sending ? (
                   <>
@@ -667,7 +667,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   setConfirming(false);
                 }}
                 disabled={sending}
-                className="flex-1 px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50"
+                className="flex-1 px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {sending ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : "Yes, Send"}
               </button>

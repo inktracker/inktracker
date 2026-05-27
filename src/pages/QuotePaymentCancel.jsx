@@ -23,7 +23,7 @@ export default function QuotePaymentCancel() {
         {returnHref && (
           <a
             href={returnHref}
-            className="block w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 rounded-xl transition text-sm mb-3"
+            className="block w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition text-sm mb-3"
           >
             Return to Quote
           </a>

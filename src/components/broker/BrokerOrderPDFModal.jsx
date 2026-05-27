@@ -41,7 +41,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${order.status === "Completed" ? "bg-emerald-100 text-emerald-700" : "bg-indigo-100 text-indigo-700"}`}>
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${order.status === "Completed" ? "bg-emerald-100 text-emerald-700" : "bg-teal-100 text-teal-700"}`}>
               {order.status}
             </span>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
@@ -70,7 +70,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
                     <span className="font-bold text-slate-800 text-sm">{li.style || "Garment"}</span>
                     {li.garmentColor && <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>}
                   </div>
-                  {r && <span className="font-bold text-indigo-700 text-sm">{fmtMoney(r.lineTotal)}</span>}
+                  {r && <span className="font-bold text-teal-700 text-sm">{fmtMoney(r.lineTotal)}</span>}
                 </div>
 
                 {activeSizes.length > 0 && (
@@ -97,12 +97,12 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
                 <div className="p-4 space-y-2">
                   {(li.imprints || []).filter(imp => imp.colors > 0).map((imp, j) => (
                     <div key={j} className="text-xs flex flex-wrap gap-x-2 gap-y-1">
-                      <span className="font-bold text-indigo-700">{imp.location}</span>
+                      <span className="font-bold text-teal-700">{imp.location}</span>
                       <span className="text-slate-400">·</span>
                       <span className="text-slate-600">{imp.colors} color{imp.colors !== 1 ? "s" : ""}</span>
                       <span className="text-slate-400">·</span>
                       <span className="text-slate-600">{imp.technique}</span>
-                      {imp.pantones && <><span className="text-slate-400">·</span><span className="text-purple-600 font-medium">{imp.pantones}</span></>}
+                      {imp.pantones && <><span className="text-slate-400">·</span><span className="text-teal-600 font-medium">{imp.pantones}</span></>}
                     </div>
                   ))}
                 </div>
@@ -130,7 +130,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
               <div className="flex justify-between text-sm text-slate-500"><span>Tax ({order.tax_rate}%)</span><span>{fmtMoney(totals.tax)}</span></div>
               <div className="flex justify-between items-baseline border-t border-slate-200 pt-2">
                 <span className="text-base font-bold text-slate-900">Total</span>
-                <span className="text-2xl font-black text-indigo-700">{fmtMoney(totals.total)}</span>
+                <span className="text-2xl font-black text-teal-700">{fmtMoney(totals.total)}</span>
               </div>
             </div>
           )}
@@ -140,7 +140,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
         <div className="flex gap-2 px-6 py-4 border-t border-slate-200 bg-slate-50 rounded-b-2xl">
           <button
             onClick={() => exportOrderToPDF(order, "", "")}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition"
           >
             <Download className="w-4 h-4" /> Download PDF
           </button>

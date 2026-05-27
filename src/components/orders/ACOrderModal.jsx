@@ -194,7 +194,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
           <Link
             to={createPageUrl("PurchaseOrders")}
             onClick={onClose}
-            className="mt-6 inline-flex items-center justify-center gap-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-xl transition"
+            className="mt-6 inline-flex items-center justify-center gap-2 w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2.5 rounded-xl transition"
           >
             <ExternalLink className="w-4 h-4" /> Open Purchase Orders
           </Link>
@@ -235,7 +235,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
                 <input
                   value={reference}
                   onChange={(e) => setReference(e.target.value)}
-                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
               </div>
 
@@ -283,7 +283,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
                       <input
                         value={getSku(line, i)}
                         onChange={(e) => setSku(i, line.size, e.target.value)}
-                        className="w-full font-mono text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                        className="w-full font-mono text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300"
                         placeholder={resolveLoading ? "Resolving…" : "e.g. 5102-WHI_M-H-M"}
                       />
                     </div>
@@ -313,7 +313,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
           <button
             onClick={handleCreate}
             disabled={acLineItems.length === 0 || creating}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-2"
+            className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-sm font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-2"
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
             {creating ? "Creating…" : "Create draft PO"}

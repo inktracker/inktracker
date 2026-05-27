@@ -110,7 +110,7 @@ export default function BrokerLayout({
                 onClick={() => goToSection(id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
                   active
-                    ? "bg-indigo-600 text-white"
+                    ? "bg-teal-600 text-white"
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                 }`}
               >
@@ -119,7 +119,7 @@ export default function BrokerLayout({
                 {badge > 0 && (
                   <span className={`text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-full ${
                     active
-                      ? "bg-white text-indigo-600"
+                      ? "bg-white text-teal-600"
                       : "bg-rose-500 text-white"
                   }`}>
                     {badge > 99 ? "99+" : badge}
@@ -175,7 +175,7 @@ export default function BrokerLayout({
                       onClick={() => { goToSection(id); setMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
                         active
-                          ? "bg-indigo-600 text-white"
+                          ? "bg-teal-600 text-white"
                           : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                       }`}
                     >
@@ -184,7 +184,7 @@ export default function BrokerLayout({
                       {badge > 0 && (
                         <span className={`text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-full ${
                           active
-                            ? "bg-white text-indigo-600"
+                            ? "bg-white text-teal-600"
                             : "bg-rose-500 text-white"
                         }`}>
                           {badge > 99 ? "99+" : badge}

@@ -18,7 +18,7 @@ function Section({ icon: IconComp, title, defaultOpen = false, children }) {
     <div className="border-t border-slate-100 dark:border-slate-700 pt-4">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between py-2 group">
         <div className="flex items-center gap-2">
-          {IconComp && <IconComp className="w-5 h-5 text-indigo-600" />}
+          {IconComp && <IconComp className="w-5 h-5 text-teal-600" />}
           <h3 className="text-sm sm:text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
         </div>
         <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
@@ -482,7 +482,7 @@ export default function Account() {
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
                   placeholder="Joe"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </div>
               <div>
@@ -492,7 +492,7 @@ export default function Account() {
                   value={lastName}
                   onChange={(e) => setLastName(e.target.value)}
                   placeholder="Smith"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
               </div>
             </div>
@@ -505,7 +505,7 @@ export default function Account() {
                 type="text"
                 value={shopName}
                 onChange={(e) => setShopName(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
             </div>
 
@@ -513,12 +513,12 @@ export default function Account() {
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Phone</label>
                 <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(555) 123-4567"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Default Tax Rate %</label>
                 <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)} placeholder="8.265"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
                 <p className="text-xs text-slate-400 mt-1">Enter the percentage (8.265 means 8.265%), not a decimal.</p>
               </div>
               <div>
@@ -526,7 +526,7 @@ export default function Account() {
                 <select
                   value={timezone}
                   onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
                 >
                   {SHOP_TIMEZONE_OPTIONS.map((opt) => (
                     <option key={opt.value || "__default__"} value={opt.value}>
@@ -541,24 +541,24 @@ export default function Account() {
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Address</label>
               <input type="text" value={address} onChange={e => setAddress(e.target.value)} placeholder="123 Main St"
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
             </div>
 
             <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-3">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">City</label>
                 <input type="text" value={city} onChange={e => setCity(e.target.value)} placeholder="Reno"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">State</label>
                 <input type="text" value={stateVal} onChange={e => setStateVal(e.target.value)} placeholder="NV" maxLength={2}
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase" />
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500 uppercase" />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">ZIP</label>
                 <input type="text" value={zip} onChange={e => setZip(e.target.value)} placeholder="89502"
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
               </div>
             </div>
 
@@ -583,7 +583,7 @@ export default function Account() {
                 </div>
               )}
 
-              <label className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-indigo-400 cursor-pointer transition bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50">
+              <label className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-teal-400 cursor-pointer transition bg-slate-50 dark:bg-slate-800 hover:bg-teal-50">
                 <Upload className="w-4 h-4 text-slate-500" />
                 <span className="text-sm font-semibold text-slate-600">
                   {uploading ? "Uploading..." : logoUrl ? "Change Logo" : "Upload Logo"}
@@ -613,7 +613,7 @@ export default function Account() {
             <button
               onClick={handleSave}
               disabled={saving || uploading}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold px-4 py-2.5 rounded-xl transition"
+              className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-semibold px-4 py-2.5 rounded-xl transition"
             >
               {saving ? "Saving..." : "Save Changes"}
             </button>
@@ -668,16 +668,16 @@ export default function Account() {
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Subject</label>
               <input type="text" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)}
                 placeholder="Your Quote from {{shop_name}} - Quote #{{quote_id}}"
-                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Message Body</label>
               <textarea rows={5} value={emailBody} onChange={(e) => setEmailBody(e.target.value)}
                 placeholder={"Hi {{customer_name}},\n\nYour quote is ready. Total: {{total}}.\n\nClick below to view, approve, or pay:\n{{payment_link}}"}
-                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300 resize-none font-mono" />
+                className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none font-mono" />
             </div>
             <button onClick={handleSaveTemplate} disabled={savingTemplate}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold px-4 py-2 rounded-xl text-sm transition">
+              className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white font-semibold px-4 py-2 rounded-xl text-sm transition">
               {savingTemplate ? "Saving..." : "Save Template"}
             </button>
           </div>
@@ -950,7 +950,7 @@ function BillingSection({ user }) {
         </div>
         {hasPaidPlan && (
           <button onClick={handlePortal}
-            className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg hover:bg-indigo-50 transition">
+            className="text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition">
             Manage Billing
           </button>
         )}
@@ -984,7 +984,7 @@ function BillingSection({ user }) {
               ))}
             </div>
             <button onClick={() => handleCheckout(plan.billing)} disabled={!!checkoutLoading}
-              className="w-full text-xs font-bold py-2.5 rounded-lg transition disabled:opacity-50 text-white bg-indigo-600 hover:bg-indigo-700">
+              className="w-full text-xs font-bold py-2.5 rounded-lg transition disabled:opacity-50 text-white bg-teal-600 hover:bg-teal-700">
               {checkoutLoading === plan.billing ? "Loading..." : `Subscribe ${plan.name.toLowerCase()}`}
             </button>
           </div>
@@ -1102,7 +1102,7 @@ function GmailScannerSection({ user }) {
           </div>
 
           <button onClick={scanNow} disabled={scanning}
-            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-50">
+            className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-50">
             {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
             {scanning ? "Scanning Inbox..." : "Scan Inbox (Quote Requests + Replies)"}
           </button>
@@ -1121,7 +1121,7 @@ function GmailScannerSection({ user }) {
                 <div className="mt-2 space-y-1">
                   {results.results.map((r, i) => (
                     <div key={i} className="text-xs text-slate-500">
-                      {r.from}: {r.subject} → <span className="font-semibold text-indigo-600">{r.quoteId}</span>
+                      {r.from}: {r.subject} → <span className="font-semibold text-teal-600">{r.quoteId}</span>
                     </div>
                   ))}
                 </div>
@@ -1131,7 +1131,7 @@ function GmailScannerSection({ user }) {
         </div>
       ) : (
         <button onClick={connectGmail} disabled={connecting}
-          className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-indigo-300 disabled:opacity-50">
+          className="flex items-center gap-2 bg-white border border-slate-200 text-slate-700 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-teal-300 disabled:opacity-50">
           <Mail className="w-4 h-4" />
           {connecting ? "Connecting..." : "Connect Gmail"}
         </button>
@@ -1279,7 +1279,7 @@ function ProductionTasksSection({ user }) {
             <button
               type="button"
               onClick={() => resetStage(stage)}
-              className="text-[10px] font-semibold text-slate-400 hover:text-indigo-600 transition"
+              className="text-[10px] font-semibold text-slate-400 hover:text-teal-600 transition"
               title={`Reset ${stage} tasks to InkTracker defaults`}
             >
               Reset to defaults
@@ -1301,7 +1301,7 @@ function ProductionTasksSection({ user }) {
                     value={task}
                     onChange={e => updateTask(stage, idx, e.target.value)}
                     placeholder="Task description"
-                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                    className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
                   <button
                     type="button"
@@ -1318,7 +1318,7 @@ function ProductionTasksSection({ user }) {
           <button
             type="button"
             onClick={() => addTask(stage)}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 mt-1 transition"
+            className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-1 transition"
           >
             + Add task
           </button>
@@ -1330,7 +1330,7 @@ function ProductionTasksSection({ user }) {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
+          className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           {saving ? "Saving…" : saved ? "Saved" : "Save Production Tasks"}
@@ -1559,7 +1559,7 @@ function ExportDataSection({ user }) {
             className="flex items-center justify-between px-3 py-2 text-sm font-semibold rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             <span className="flex items-center gap-2">
-              <DownloadCloud className="w-4 h-4 text-indigo-500" />
+              <DownloadCloud className="w-4 h-4 text-teal-500" />
               {item.label} (CSV)
             </span>
             {busy === item.key && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
@@ -1570,7 +1570,7 @@ function ExportDataSection({ user }) {
         type="button"
         onClick={exportFullBackup}
         disabled={busy !== null}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60 disabled:cursor-not-allowed transition"
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-60 disabled:cursor-not-allowed transition"
       >
         {busy === "backup" ? <Loader2 className="w-4 h-4 animate-spin" /> : <DownloadCloud className="w-4 h-4" />}
         {busy === "backup" ? "Building backup…" : "Download Full Backup (JSON)"}
@@ -1664,7 +1664,7 @@ function PressesSection({ user }) {
                   value={press}
                   onChange={e => updatePress(idx, e.target.value)}
                   placeholder="Press name"
-                  className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
                 <button
                   type="button"
@@ -1681,7 +1681,7 @@ function PressesSection({ user }) {
         <button
           type="button"
           onClick={addPress}
-          className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 mt-1 transition"
+          className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-1 transition"
         >
           + Add press
         </button>
@@ -1691,7 +1691,7 @@ function PressesSection({ user }) {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
+          className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
           {saving ? "Saving…" : saved ? "Saved" : "Save Presses"}
@@ -1877,7 +1877,7 @@ function SupplierKeysSection({ user }) {
     }
   }
 
-  const inputCls = "w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-300";
+  const inputCls = "w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300";
 
   return (
     <div className="space-y-5">
@@ -1895,7 +1895,7 @@ function SupplierKeysSection({ user }) {
           {ssHasKey && !ssEditing && (
             <div className="flex items-center gap-3">
               <button onClick={() => { setSsEditing(true); setSsAccount(""); setSsKey(""); }}
-                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Edit</button>
+                className="text-xs font-semibold text-teal-600 hover:text-teal-700">Edit</button>
               <button onClick={() => handleDisconnect("ss")}
                 className="text-xs font-semibold text-slate-400 hover:text-red-500">Disconnect</button>
             </div>
@@ -1934,7 +1934,7 @@ function SupplierKeysSection({ user }) {
           {acHasKey && !acEditing && (
             <div className="flex items-center gap-3">
               <button onClick={() => { setAcEditing(true); setAcSubKey(""); setAcEmail(""); setAcPassword(""); }}
-                className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Edit</button>
+                className="text-xs font-semibold text-teal-600 hover:text-teal-700">Edit</button>
               <button onClick={() => handleDisconnect("ac")}
                 className="text-xs font-semibold text-slate-400 hover:text-red-500">Disconnect</button>
             </div>
@@ -2040,7 +2040,7 @@ function SupplierKeysSection({ user }) {
       </div>
 
       <button onClick={handleSave} disabled={saving}
-        className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
+        className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
         {saving ? "Saving..." : saved ? "Saved" : "Save API Keys"}
       </button>
     </div>
@@ -2312,7 +2312,7 @@ function PricingConfigSection({ user }) {
   const maxColors = config.maxColors || DEFAULT_COLORS;
   const colorRows = Array.from({ length: maxColors }, (_, i) => i + 1);
   const emb = config.embroidery || DEFAULTS.embroidery;
-  const inputCls = "w-full text-xs text-center border border-slate-200 rounded px-1 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300";
+  const inputCls = "w-full text-xs text-center border border-slate-200 rounded px-1 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300";
 
   function renderPrintTable(tableKey, title) {
     return (
@@ -2327,12 +2327,12 @@ function PricingConfigSection({ user }) {
                   <th key={t} className="text-center py-1">
                     <input type="number" value={t}
                       onChange={e => updateTierValue(t, e.target.value)}
-                      className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-300 bg-transparent text-slate-400 font-semibold" />
+                      className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-400 font-semibold" />
                     <span className="text-slate-300">+</span>
                   </th>
                 ))}
                 <th className="py-1 px-1">
-                  <button onClick={addTier} className="text-indigo-500 hover:text-indigo-700 text-xs font-bold" title="Add tier">+</button>
+                  <button onClick={addTier} className="text-teal-500 hover:text-teal-700 text-xs font-bold" title="Add tier">+</button>
                 </th>
               </tr>
             </thead>
@@ -2417,11 +2417,11 @@ function PricingConfigSection({ user }) {
       {/* Decoration type tabs */}
       <div className="flex gap-1 border-b border-slate-200 pb-0">
         <button onClick={() => setPricingTab("screen_print")}
-          className={`text-xs font-semibold px-4 py-2 rounded-t-lg transition ${pricingTab === "screen_print" ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+          className={`text-xs font-semibold px-4 py-2 rounded-t-lg transition ${pricingTab === "screen_print" ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
           Screen Print
         </button>
         <button onClick={() => { setPricingTab("embroidery"); if (!emb.enabled) setConfig(prev => ({ ...prev, embroidery: { ...prev.embroidery, enabled: true } })); }}
-          className={`text-xs font-semibold px-4 py-2 rounded-t-lg transition ${pricingTab === "embroidery" ? "bg-indigo-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+          className={`text-xs font-semibold px-4 py-2 rounded-t-lg transition ${pricingTab === "embroidery" ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
           Embroidery {emb.enabled && <span className="ml-1 text-emerald-400">*</span>}
         </button>
       </div>
@@ -2462,12 +2462,12 @@ function PricingConfigSection({ user }) {
                 onClick={() => setConfig(prev => ({ ...prev, firstPrintOrdering: opt.value }))}
                 className={`text-left border rounded-lg p-3 transition ${
                   selected
-                    ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-300"
+                    ? "border-teal-500 bg-teal-50 ring-1 ring-teal-300"
                     : "border-slate-200 hover:border-slate-300"
                 }`}
               >
                 <div className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <span className={`inline-block w-3 h-3 rounded-full border ${selected ? "bg-indigo-500 border-indigo-500" : "border-slate-300"}`} />
+                  <span className={`inline-block w-3 h-3 rounded-full border ${selected ? "bg-teal-500 border-teal-500" : "border-slate-300"}`} />
                   {opt.label}
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1 ml-4">{opt.hint}</p>
@@ -2489,7 +2489,7 @@ function PricingConfigSection({ user }) {
             <div key={key} className="flex items-center gap-2">
               <input type="text" value={config.extraLabels?.[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()}
                 onChange={e => setConfig(prev => ({ ...prev, extraLabels: { ...(prev.extraLabels || {}), [key]: e.target.value } }))}
-                className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300" />
+                className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300" />
               <div className="relative w-24 shrink-0">
                 <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
                 <NumericInput
@@ -2498,7 +2498,7 @@ function PricingConfigSection({ user }) {
                   min={0}
                   max={10000}
                   label={`Extras → ${key}`}
-                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                 />
               </div>
               <button onClick={() => setConfig(prev => {
@@ -2517,7 +2517,7 @@ function PricingConfigSection({ user }) {
             extras: { ...(prev.extras || {}), [id]: 0 },
             extraLabels: { ...(prev.extraLabels || {}), [id]: "New Fee" },
           }));
-        }} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 mt-2 transition">
+        }} className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-2 transition">
           + Add fee
         </button>
       </div>
@@ -2534,7 +2534,7 @@ function PricingConfigSection({ user }) {
               max={100}
               integer
               label="Rush fee %"
-              className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+              className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
             />
             <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>
           </div>
@@ -2558,7 +2558,7 @@ function PricingConfigSection({ user }) {
                 ...prev,
                 setupFees: { ...(prev.setupFees || {}), enabled: e.target.checked },
               }))}
-              className="w-4 h-4 rounded border-slate-300 text-indigo-600"
+              className="w-4 h-4 rounded border-slate-300 text-teal-600"
             />
             Enabled
           </label>
@@ -2584,7 +2584,7 @@ function PricingConfigSection({ user }) {
                   return { ...prev, setupFees: { ...(prev.setupFees || {}), items } };
                 })}
                 placeholder="e.g. Screens"
-                className="text-xs border border-slate-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                className="text-xs border border-slate-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
               />
               <div className="relative">
                 <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
@@ -2597,7 +2597,7 @@ function PricingConfigSection({ user }) {
                   })}
                   min={0}
                   label={`${fee.label} per-screen rate`}
-                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                 />
               </div>
               <div className="relative">
@@ -2611,7 +2611,7 @@ function PricingConfigSection({ user }) {
                   })}
                   min={0}
                   label={`${fee.label} reorder rate`}
-                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                 />
               </div>
               <button
@@ -2639,7 +2639,7 @@ function PricingConfigSection({ user }) {
               items.push({ id, label: "New Fee", rate: 0, reorderRate: 0 });
               return { ...prev, setupFees: { ...(prev.setupFees || {}), items } };
             })}
-            className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 mt-1 transition"
+            className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-1 transition"
           >
             + Add fee
           </button>
@@ -2660,7 +2660,7 @@ function PricingConfigSection({ user }) {
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={emb.enabled}
                 onChange={e => setConfig(prev => ({ ...prev, embroidery: { ...prev.embroidery, enabled: e.target.checked } }))}
-                className="w-4 h-4 rounded border-slate-300 text-indigo-600" />
+                className="w-4 h-4 rounded border-slate-300 text-teal-600" />
               <span className="text-xs font-semibold text-slate-600">Enable Embroidery</span>
             </label>
           </div>
@@ -2678,7 +2678,7 @@ function PricingConfigSection({ user }) {
                     min={0}
                     max={10000}
                     label="Digitizing fee"
-                    className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                    className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                   />
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">One-time fee per new design</p>
@@ -2701,7 +2701,7 @@ function PricingConfigSection({ user }) {
                     )}
                   </div>
                 ))}
-                <button onClick={addEmbTier} className="text-xs font-semibold text-indigo-600 border border-indigo-200 px-2.5 py-1 rounded-lg hover:bg-indigo-50">+ Add Tier</button>
+                <button onClick={addEmbTier} className="text-xs font-semibold text-teal-600 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-50">+ Add Tier</button>
               </div>
             </div>
 
@@ -2758,7 +2758,7 @@ function PricingConfigSection({ user }) {
                         min={0}
                         max={10000}
                         label={`Embroidery extra → ${key}`}
-                        className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300"
+                        className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                       />
                     </div>
                   </div>
@@ -2771,7 +2771,7 @@ function PricingConfigSection({ user }) {
 
       <div className="flex items-center gap-3">
         <button onClick={handleSave} disabled={saving}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
+          className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
           {saving ? "Saving..." : saved ? "Saved" : "Save Pricing"}
         </button>
         <button
