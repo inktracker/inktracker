@@ -14,6 +14,7 @@ import {
   buildQBDisplayName,
   buildQBCustomerBody as sharedBuildQBCustomerBody,
   escapeQbStringLiteral,
+  isLikelyEmail,
   buildInvoiceLinesFromPayload as sharedBuildInvoiceLinesFromPayload,
   extractPaymentLink as sharedExtractPaymentLink,
   buildQbSendInvoiceUrl,
@@ -326,10 +327,14 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
   // Search QB for existing customer by email or name
   let qbCustomerId: string | null = null;
 
-  if (customer.email) {
+  // Only search by email when it actually looks like an email. Junk
+  // values (names, phone numbers) in the customers.email column would
+  // otherwise blow the query syntax or just return zero results
+  // anyway. Name-based lookup below still runs as a fallback.
+  if (isLikelyEmail(customer.email)) {
     try {
       const res = await qbQuery(token, realmId,
-        `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${escapeQbStringLiteral(customer.email)}'`
+        `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${escapeQbStringLiteral(customer.email.trim())}'`
       );
       const rows = res?.QueryResponse?.Customer ?? [];
       if (rows.length > 0) qbCustomerId = rows[0].Id;
@@ -478,8 +483,17 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const lines = buildInvoiceLinesFromPayload(invoicePayload, itemIdMap, DEFAULT_ITEM_NAME, isTaxExempt);
   if (lines.length === 0) throw new Error("Invoice payload has no valid lines");
 
-  // 5. Create the invoice
-  const billEmail = quote.customer_email || customer?.email;
+  // 5. Create the invoice.
+  // Email gating: QB rejects the whole invoice with 400 ValidationFault
+  // if BillEmail isn't RFC 822-shaped (e.g. a customer name accidentally
+  // saved in the email column). Pick the first source that looks like
+  // an email; if neither does, omit BillEmail entirely so QB just
+  // creates the invoice without an email on file.
+  const candidateEmails = [quote.customer_email, customer?.email];
+  const billEmail = candidateEmails.find((e) => isLikelyEmail(e))?.trim() || null;
+  if ((quote.customer_email || customer?.email) && !billEmail) {
+    console.error(`[createInvoice] Dropping invalid email "${quote.customer_email || customer?.email}" — not RFC 822 shaped`);
+  }
   const billAddress = customer?.address;
 
   const baseDocNumber = String(quote.quote_id || "");
