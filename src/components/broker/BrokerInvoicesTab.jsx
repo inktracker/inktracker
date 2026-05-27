@@ -22,7 +22,8 @@ import {
   Package,
   Clock,
 } from "lucide-react";
-import { exportQuoteToPDF } from "../shared/pdfExport";
+import { exportQuoteToPDF, exportInvoiceToPDF } from "../shared/pdfExport";
+import { toCustomerFacingQuote } from "@/lib/quotes/customerFacingQuote";
 import ModalBackdrop from "../shared/ModalBackdrop";
 
 // Open the generated PDF in a new tab instead of triggering a download.
@@ -196,6 +197,43 @@ function JobDetailDrawer({ job, onClose }) {
                   className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
                 >
                   <Eye className="w-3.5 h-3.5" /> Client Form
+                </button>
+              </div>
+              {/* Invoice previews — same shop/client split as Forms above.
+                  Shop Invoice = QB-style invoice with broker-side totals
+                  (matches the actual shop→broker invoice). Client Invoice
+                  = same layout but with client_* totals swapped in via
+                  toCustomerFacingQuote, useful as a template the broker
+                  can show their end client. Synthesizes an invoice-like
+                  object from the quote since this tab doesn't load
+                  invoice rows. */}
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={() => {
+                    const shopSide = {
+                      ...job._rawQuote,
+                      invoice_id: job.order_id || job._rawQuote.quote_id,
+                      due_date: job._rawQuote.due_date || job.due_date,
+                    };
+                    previewPdf(exportInvoiceToPDF(shopSide, null, { output: "blob" }));
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
+                >
+                  <Eye className="w-3.5 h-3.5" /> Shop Invoice
+                </button>
+                <button
+                  onClick={() => {
+                    const clientView = toCustomerFacingQuote(job._rawQuote);
+                    const clientSide = {
+                      ...clientView,
+                      invoice_id: job.order_id || job._rawQuote.quote_id,
+                      due_date: clientView.due_date || job.due_date,
+                    };
+                    previewPdf(exportInvoiceToPDF(clientSide, null, { output: "blob" }));
+                  }}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
+                >
+                  <Eye className="w-3.5 h-3.5" /> Client Invoice
                 </button>
               </div>
             </div>
