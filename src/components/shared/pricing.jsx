@@ -344,12 +344,18 @@ function resolveFeeItems(config) {
 // Returns { enabled, screens, items: [{ id, label, rate, total }], total }
 // so the UI can render the line-by-line breakdown.
 export function calcSetupFees({ lineItems, override, isReorder, skippedFeeIds, config } = {}) {
-  const enabled = !!config?.enabled;
+  // Mirrors the embroidery gate fix (PR #268): treat as enabled if
+  // either the explicit flag is set OR fee items are configured.
+  // Rescues shops who entered fee items but never separately toggled
+  // the enable flag in the pricing UI. A shop with no fees configured
+  // at all still gets {enabled: false}, so quotes aren't padded with
+  // phantom setup fees.
+  const allItems = resolveFeeItems(config);
+  const enabled = !!config?.enabled || allItems.length > 0;
   if (!enabled) return { enabled: false, screens: 0, items: [], total: 0 };
   const auto = calcSetupScreenCount(lineItems);
   const screens = Number.isInteger(override) && override >= 0 ? override : auto;
   const skip = new Set(Array.isArray(skippedFeeIds) ? skippedFeeIds : []);
-  const allItems = resolveFeeItems(config);
   const active = allItems
     .filter((f) => !skip.has(f.id))
     .map((f) => {
