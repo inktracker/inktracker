@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
 import {
   Users,
@@ -569,6 +571,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
 // initialTab="quotes" so the section opens directly. Falls back to
 // ?tab= and finally to "overview" when no signal is provided.
 export default function BrokerDashboard({ initialTab } = {}) {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState(() => {
@@ -1003,7 +1006,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
 
             {needsAttentionCount > 0 && (
               <button
-                onClick={() => setTab("quotes")}
+                onClick={() => navigate(createPageUrl("Quotes"))}
                 className="w-full bg-white border border-indigo-200 rounded-2xl px-5 py-4 flex items-center justify-between hover:bg-indigo-50 transition text-left group"
               >
                 <div>
