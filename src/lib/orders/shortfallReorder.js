@@ -20,8 +20,16 @@
 // source_order_id links the PO back to the originating order so the
 // PurchaseOrders page can surface "reorder for ORD-2026-XYZ" and
 // future reporting can attribute waste to specific jobs.
+//
+// Why we don't import SUPPLIERS from @/api/suppliers: that file's
+// first line is `import { supabase } from "@/api/supabaseClient"`,
+// which calls createClient at module load time. In CI (no
+// VITE_SUPABASE_URL) that throws and the whole test file fails to
+// load. Inlining the literal keeps the helper pure and importable
+// from tests. The shop-side supplier dropdown still uses SUPPLIERS
+// directly, so the string remains the source of truth there.
 
-import { SUPPLIERS } from "@/api/suppliers";
+const DEFAULT_SUPPLIER = "AS Colour";
 
 export function buildShortfallReorderPayload(order, user) {
   if (!order || !user?.email) return null;
@@ -47,7 +55,7 @@ export function buildShortfallReorderPayload(order, user) {
 
   return {
     shop_owner: user.email,
-    supplier: SUPPLIERS.AC,
+    supplier: DEFAULT_SUPPLIER,
     status: "draft",
     reference: `Reorder — ${order.order_id || "order"}`,
     ship_to: "",
