@@ -267,4 +267,26 @@ describe("buildShopUpsertPayload", () => {
     expect(Object.keys(p.pricing_config)).toEqual(["embroidery"]);
     expect(Object.keys(p.pricing_config.embroidery)).toEqual(["enabled"]);
   });
+
+  // Timezone — added in the onboarding wizard so calendar/date helpers
+  // pick up the user's choice immediately. Empty stays empty (column
+  // null = fall through to BROWSER_TZ at runtime).
+  it("sets timezone when the user picked one", () => {
+    const p = buildShopUpsertPayload({ user: NEW_USER, timezone: "America/Denver" });
+    expect(p.timezone).toBe("America/Denver");
+  });
+
+  it("trims whitespace around timezone", () => {
+    const p = buildShopUpsertPayload({ user: NEW_USER, timezone: "  America/Denver  " });
+    expect(p.timezone).toBe("America/Denver");
+  });
+
+  it("omits timezone entirely when blank ('' means 'use browser default')", () => {
+    const a = buildShopUpsertPayload({ user: NEW_USER });
+    const b = buildShopUpsertPayload({ user: NEW_USER, timezone: "" });
+    const c = buildShopUpsertPayload({ user: NEW_USER, timezone: "   " });
+    expect(a).not.toHaveProperty("timezone");
+    expect(b).not.toHaveProperty("timezone");
+    expect(c).not.toHaveProperty("timezone");
+  });
 });

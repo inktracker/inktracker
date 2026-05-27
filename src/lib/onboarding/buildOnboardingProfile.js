@@ -74,12 +74,18 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
  * engine's defaults until the user customizes it in Account → Pricing.
  */
 export function buildShopUpsertPayload(input) {
-  const { user = {}, shopName = "", logoUrl = "", offersEmbroidery = false } = input || {};
+  const { user = {}, shopName = "", logoUrl = "", offersEmbroidery = false, timezone = "" } = input || {};
   const base = {
     owner_email: user.email || "",
     shop_name:   trimStr(shopName) || user.email || "",
     logo_url:    logoUrl || "",
   };
+  // Only set timezone when the user picked one. Empty string means
+  // "use browser default at runtime" — keep the column null so the
+  // shopTimezone helpers fall through to BROWSER_TZ instead of forcing
+  // a specific zone.
+  const tz = trimStr(timezone);
+  if (tz) base.timezone = tz;
   if (offersEmbroidery) {
     base.pricing_config = { embroidery: { enabled: true } };
   }

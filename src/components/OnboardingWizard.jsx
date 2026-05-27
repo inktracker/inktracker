@@ -6,6 +6,7 @@ import {
   buildOnboardingProfile,
   buildShopUpsertPayload,
 } from "@/lib/onboarding/buildOnboardingProfile";
+import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import {
   Store, Image, Mail, CheckCircle2, ChevronRight,
   Loader2, Upload, X, FileText, Package, Users, Settings
@@ -35,6 +36,19 @@ export default function OnboardingWizard({ user, onComplete }) {
   const [stateVal, setStateVal] = useState(user?.state || "");
   const [zip, setZip] = useState(user?.zip || "");
   const [taxRate, setTaxRate] = useState(user?.default_tax_rate || "");
+  // Pre-select the user's browser timezone if it's one of our curated
+  // options — saves 95% of US shops a click. Falls back to "" (browser
+  // default at runtime via getShopTimezone) for anything we don't have
+  // an explicit option for.
+  const [timezone, setTimezone] = useState(() => {
+    try {
+      const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const match = SHOP_TIMEZONE_OPTIONS.find((opt) => opt.value === browserTz);
+      return match ? match.value : "";
+    } catch {
+      return "";
+    }
+  });
   const [offersEmbroidery, setOffersEmbroidery] = useState(false);
   const [logoUrl, setLogoUrl] = useState(user?.logo_url || "");
   const [uploading, setUploading] = useState(false);
@@ -115,7 +129,7 @@ export default function OnboardingWizard({ user, onComplete }) {
   async function saveAndFinish() {
     setSaving(true);
     try {
-      const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, taxRate, offersEmbroidery };
+      const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, taxRate, timezone, offersEmbroidery };
       const profileData = buildOnboardingProfile(wizardInput);
       await base44.auth.updateMe(profileData);
 
@@ -131,6 +145,11 @@ export default function OnboardingWizard({ user, onComplete }) {
       } catch (shopErr) {
         console.warn("Shop upsert failed (non-blocking):", shopErr);
       }
+
+      // Refresh the in-memory timezone singleton so calendar / date
+      // helpers pick up the user's choice without a hard reload. Mirrors
+      // the loadShopPricingConfig pattern called on Save in Account.
+      loadShopTimezone(timezone || null);
 
       // Seed demo data if the user opted in. Non-blocking on failure —
       // we'd rather drop them into the app than fail the whole flow.
@@ -280,6 +299,24 @@ export default function OnboardingWizard({ user, onComplete }) {
                     <input type="text" value={zip} onChange={e => setZip(e.target.value)} placeholder=""
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900" />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Shop Timezone</label>
+                  <select
+                    value={timezone}
+                    onChange={(e) => setTimezone(e.target.value)}
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-900 bg-white"
+                  >
+                    {SHOP_TIMEZONE_OPTIONS.map((opt) => (
+                      <option key={opt.value || "__default__"} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Used by the calendar so employees logging in from another state still see your shop's "today." You can change this later in Account.
+                  </p>
                 </div>
 
                 <div className="pt-3 mt-1 border-t border-slate-100">
