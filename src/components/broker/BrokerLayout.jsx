@@ -1,5 +1,6 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useState } from "react";
+import { createPageUrl } from "@/utils";
 import {
   BarChart2, Users, Package, TrendingUp, MessageSquare,
   FileText, UserCircle, Menu, X, LogOut, FilePen,
@@ -29,6 +30,17 @@ const NAV = [
   { id: "profile", label: "Profile", icon: UserCircle },
 ];
 
+// Sections with their own top-level routes — clicking them in the
+// sidebar pushes a real URL instead of calling setTab. Lets brokers
+// share routes with the shop side (/Quotes works for both). As each
+// new section gets a dispatcher in pages.config.js, add it here.
+// Sections NOT in this map keep using setTab + ?tab= within
+// /BrokerDashboard (cleanest until they're each lifted out in their
+// own follow-up PR).
+const SECTION_ROUTES = {
+  quotes: "Quotes",
+};
+
 export default function BrokerLayout({
   user,
   tab,
@@ -40,6 +52,28 @@ export default function BrokerLayout({
   badges = {},
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navigate = useNavigate();
+
+  // Section-aware click handler. When the section has a real route,
+  // navigate to it (so the browser URL reflects what's shown and
+  // back/forward works naturally). Otherwise fall through to setTab
+  // for the legacy ?tab= driven sections still living inside
+  // /BrokerDashboard.
+  //
+  // Overview ("overview") explicitly routes back to /BrokerDashboard
+  // with no ?tab=, so the user returns to a clean URL after visiting
+  // a section route.
+  function goToSection(id) {
+    if (SECTION_ROUTES[id]) {
+      navigate(createPageUrl(SECTION_ROUTES[id]));
+      return;
+    }
+    if (id === "overview") {
+      navigate(createPageUrl("BrokerDashboard"));
+      return;
+    }
+    setTab(id);
+  }
 
   const displayName = user?.display_name || user?.full_name || "Broker";
   const companyName = user?.company_name || "";
@@ -64,7 +98,7 @@ export default function BrokerLayout({
             return (
               <button
                 key={id}
-                onClick={() => setTab(id)}
+                onClick={() => goToSection(id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
                   active
                     ? "bg-indigo-600 text-white"
@@ -129,7 +163,7 @@ export default function BrokerLayout({
                   return (
                     <button
                       key={id}
-                      onClick={() => { setTab(id); setMobileMenuOpen(false); }}
+                      onClick={() => { goToSection(id); setMobileMenuOpen(false); }}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
                         active
                           ? "bg-indigo-600 text-white"

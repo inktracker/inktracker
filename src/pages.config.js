@@ -19,6 +19,7 @@ import ArtApproval from './pages/ArtApproval';
 import OrderStatus from './pages/OrderStatus';
 import BrokerOnboarding from './pages/BrokerOnboarding';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
+import QuotesRoute from './pages/QuotesRoute';
 import Mockups from './pages/Mockups';
 import Production from './pages/Production';
 import PurchaseOrders from './pages/PurchaseOrders';
@@ -38,7 +39,9 @@ export const PAGES = {
     "QuotePaymentCancel": QuotePaymentCancel,
     "QuotePaymentSuccess": QuotePaymentSuccess,
     "QuoteRequest": QuoteRequest,
-    "Quotes": Quotes,
+    // /Quotes is a shared route — QuotesRoute dispatches to the broker
+    // dashboard or the shop Quotes page based on user.role.
+    "Quotes": QuotesRoute,
     "ResetPassword": ResetPassword,
     "Wizard": Wizard,
     "Performance": Performance,

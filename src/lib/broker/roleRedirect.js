@@ -9,12 +9,24 @@
 // effect-buried `if` chain and into something we can unit-test for
 // every role × page matrix.
 
+// Pages a broker is allowed to view directly. Brokers landing anywhere
+// else get bounced back to BrokerDashboard. The shop-side routes in
+// this list (Quotes, Orders, Customers, Invoices, Messages,
+// Performance) have role-dispatch wrappers in pages.config.js so they
+// render the broker's version when role === "broker". Added 2026-05-27
+// for the broker-portal mirrors-shop-layout refactor; expanded one
+// route at a time as each section's dispatcher is wired up.
+const BROKER_ALLOWED_PAGES = [
+  "BrokerDashboard",
+  "Quotes",
+];
+
 export function resolveRoleRedirect(user, currentPageName) {
   if (!user) return null;
   const role = user.role;
 
   if (role === "broker") {
-    return currentPageName === "BrokerDashboard" ? null : "BrokerDashboard";
+    return BROKER_ALLOWED_PAGES.includes(currentPageName) ? null : "BrokerDashboard";
   }
   if (role === "employee") {
     return currentPageName === "ShopFloor" ? null : "ShopFloor";
