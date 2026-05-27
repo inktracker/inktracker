@@ -41,22 +41,30 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
       </div>
 
       <div className="p-4 space-y-2">
-        {(r.printBreakdown || []).map((print, idx) => (
-          <div key={print.id || idx} className="flex justify-between text-xs border-b border-slate-800 pb-2">
-            <div>
-              <div className="text-slate-300 font-semibold">
-                {print.isFirst ? "1st Print" : `+Print ${idx + 1}`} — {print.location} ({print.colors}c)
+        {(r.printBreakdown || []).map((print, idx) => {
+          // Per-technique labels — see pricing.jsx for the engine reason.
+          // First-in-group renders bare ("Embroidery — Front (1c)"),
+          // additional within the same technique gets a "+TechniqueName N"
+          // prefix that reflects the additional-decoration discount tier.
+          const tech = print.technique || "Screen Print";
+          const label = print.isFirst
+            ? `${tech} — ${print.location} (${print.colors}c)`
+            : `+${tech} ${(print.groupIndex || 0) + 1} — ${print.location} (${print.colors}c)`;
+          return (
+            <div key={print.id || idx} className="flex justify-between text-xs border-b border-slate-800 pb-2">
+              <div>
+                <div className="text-slate-300 font-semibold">{label}</div>
+                <div className="text-slate-500">
+                  Tier: {print.tier}+ from {print.tierQty} pcs{print.linked ? " · linked" : ""}
+                </div>
               </div>
-              <div className="text-slate-500">
-                Tier: {print.tier}+ from {print.tierQty} pcs{print.linked ? " · linked" : ""}
+              <div className="text-right">
+                <div className="text-white font-semibold">{fmtMoney(print.lineCost)}</div>
+                <div className="text-slate-500">{fmtMoney(print.rate)}/pc</div>
               </div>
             </div>
-            <div className="text-right">
-              <div className="text-white font-semibold">{fmtMoney(print.lineCost)}</div>
-              <div className="text-slate-500">{fmtMoney(print.rate)}/pc</div>
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         <div className="flex justify-between text-xs border-b border-slate-800 pb-2">
           <div>

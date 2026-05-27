@@ -401,9 +401,98 @@ describe("calcLinkedLinePrice", () => {
         const rA = calcLinkedLinePrice(uniform, 0, {}, undefined, {});
         loadShopPricingConfig({ firstPrintOrdering: "most" });
         const rB = calcLinkedLinePrice(uniform, 0, {}, undefined, {});
-        expect(rA.printCost).toBeCloseTo(rB.printCost, 2);
+        expect(rB.printCost).toBeCloseTo(rA.printCost, 2);
       });
     });
+  });
+
+  describe("mixed-technique per-imprint pricing (engine fix follow-up)", () => {
+    // Was a real bug pre-fix: setting imprint 2 to "Screen Print" on a
+    // line whose imprint 1 was Embroidery silently still charged
+    // embroidery × 0.7. Now each imprint is priced by its OWN technique
+    // with group-local first/additional logic.
+
+    beforeEach(() => loadShopPricingConfig(null));
+
+    function makeMixedLine() {
+      // 28 pcs (matches the reported user case)
+      return makeLineItem({
+        sizes: { S: 7, M: 7, L: 7, XL: 7 },
+        imprints: [
+          makeImprint({ id: "emb",  colors: 1, technique: "Embroidery",  location: "Front" }),
+          makeImprint({ id: "scrn", colors: 1, technique: "Screen Print", location: "Front" }),
+        ],
+      });
+    }
+
+    it("MT1 — each imprint priced under its own technique table", () => {
+      const r = calcLinkedLinePrice(makeMixedLine(), 0, {}, undefined, {});
+      const embRow  = r.printBreakdown.find((p) => p.technique === "Embroidery");
+      const scrnRow = r.printBreakdown.find((p) => p.technique === "Screen Print");
+      expect(embRow).toBeDefined();
+      expect(scrnRow).toBeDefined();
+      // Embroidery should NOT equal screen print × 0.7 — they're independent now.
+      expect(scrnRow.rate).not.toBeCloseTo(embRow.rate * 0.7, 2);
+      // Screen print should match the FIRST_PRINT 1-color cell at tier 25,
+      // not embroidery × 0.7 (which was the pre-fix bug).
+      expect(scrnRow.rate).toBeCloseTo(FIRST_PRINT[1][25], 2);
+    });
+
+    it("MT2 — both imprints are 'first within their group'", () => {
+      const r = calcLinkedLinePrice(makeMixedLine(), 0, {}, undefined, {});
+      const embRow  = r.printBreakdown.find((p) => p.technique === "Embroidery");
+      const scrnRow = r.printBreakdown.find((p) => p.technique === "Screen Print");
+      expect(embRow.isFirst).toBe(true);
+      expect(embRow.groupIndex).toBe(0);
+      expect(scrnRow.isFirst).toBe(true);
+      expect(scrnRow.groupIndex).toBe(0);
+    });
+
+    it("MT3 — two embroideries: second gets 30% additional-decoration discount", () => {
+      const r = calcLinkedLinePrice(makeLineItem({
+        sizes: { S: 7, M: 7, L: 7, XL: 7 },
+        imprints: [
+          makeImprint({ id: "e1", colors: 1, technique: "Embroidery", location: "Front" }),
+          makeImprint({ id: "e2", colors: 1, technique: "Embroidery", location: "Back"  }),
+        ],
+      }), 0, {}, undefined, {});
+      const [first, second] = r.printBreakdown;
+      expect(second.isFirst).toBe(false);
+      expect(second.groupIndex).toBe(1);
+      expect(second.rate).toBeCloseTo(first.rate * 0.7, 2);
+    });
+
+    it("MT4 — two screen prints: second uses ADDL_PRINT table (unchanged behavior)", () => {
+      const r = calcLinkedLinePrice(makeLineItem({
+        sizes: { S: 7, M: 7, L: 7, XL: 7 },
+        imprints: [
+          makeImprint({ id: "s1", colors: 1, technique: "Screen Print", location: "Front" }),
+          makeImprint({ id: "s2", colors: 1, technique: "Screen Print", location: "Back"  }),
+        ],
+      }), 0, {}, undefined, {});
+      const [first, second] = r.printBreakdown;
+      expect(first.rate).toBeCloseTo(FIRST_PRINT[1][25], 2);
+      expect(second.rate).toBeCloseTo(ADDL_PRINT[1][25], 2);
+      expect(first.groupIndex).toBe(0);
+      expect(second.groupIndex).toBe(1);
+    });
+
+    it("MT5 — single-technique line still produces same numbers as pre-fix", () => {
+      // Regression guard: the 99% case must be byte-for-byte identical.
+      const li = makeLineItem({
+        sizes: { S: 7, M: 7, L: 7, XL: 7 },
+        imprints: [
+          makeImprint({ id: "a", colors: 1, location: "Front" }),
+          makeImprint({ id: "b", colors: 4, location: "Back"  }),
+        ],
+      });
+      loadShopPricingConfig({ firstPrintOrdering: "fewest" });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      // 1c sorted first → FIRST_PRINT[1][25]; 4c second → ADDL_PRINT[4][25]
+      const expected = (FIRST_PRINT[1][25] + ADDL_PRINT[4][25]) * 28;
+      expect(r.printCost).toBeCloseTo(expected, 2);
+    });
+
   });
 
   describe("garment cost and markup", () => {
