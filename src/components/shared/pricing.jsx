@@ -98,6 +98,25 @@ export function getQty(li) {
   return Object.values(li?.sizes || {}).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
 }
 
+// Shortfall tracking — the shop can record per-size misprints / losses
+// against a line item. Shape mirrors `sizes`: { S: 1, M: 2, ... }
+// stored on the line item as `_shortfall`. Defaults to {} so older
+// orders without the field report 0 shortfall.
+//
+// Added 2026-05-27. Used by OrderDetailModal's Shortfall section and
+// the per-line "X of Y completed" display. Does NOT affect pricing —
+// quote/invoice totals stay anchored to the originally-quoted qty
+// (Quote Snapshot Invariant). Billing adjustments for shortfall are
+// a separate decision (credit memo / reorder) handled outside the
+// pricing engine.
+export function getShortfallQty(li) {
+  return Object.values(li?._shortfall || {}).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
+}
+
+export function getCompletedQty(li) {
+  return Math.max(0, getQty(li) - getShortfallQty(li));
+}
+
 export function getAdminMarkup(garmentCost) {
   const cost = parseFloat(garmentCost) || 0;
   const tiers = _pc?.garmentMarkup;
