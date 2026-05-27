@@ -1,8 +1,8 @@
 import { useMemo, useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
-import { fmtMoney } from "../shared/pricing";
+import { fmtMoney, getOrderUnits } from "../shared/pricing";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Package, DollarSign, TrendingUp, CheckCircle2, Clock, Layers } from "lucide-react";
+import { Package, DollarSign, TrendingUp, CheckCircle2, Clock, Layers, Box } from "lucide-react";
 
 // Bucket the 5-stage O_STATUSES pipeline (Art Approval → Order Goods
 // → Pre-Press → Printing → Completed) into three analytics buckets.
@@ -58,16 +58,17 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
   const pending = orders.filter(o => classifyStatus(o.status) === "pending").length;
   const production = orders.filter(o => classifyStatus(o.status) === "production").length;
   const completed = allOrders.filter(o => classifyStatus(o.status) === "completed").length;
+  // Units sold across the broker's orders. Persisted historical
+  // records (BrokerPerformance) don't carry line_items so they
+  // contribute 0 — the live `orders` slice supplies the units.
+  const totalUnits = allOrders.reduce((s, o) => s + getOrderUnits(o), 0);
   const monthlyData = useMemo(() => getMonthlyData(allOrders), [allOrders]);
 
   return (
     <div className="space-y-5">
-      {/* KPI cards. Completion Rate removed 2026-05-27 — too noisy on
-          low-volume brokers (one open job dragged the % below 100 and
-          read as failure even when nothing was actually behind). The
-          Order Status Breakdown below shows the same info more
-          honestly. */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      {/* KPI cards. Completion Rate removed 2026-05-27. Units Sold
+          added 2026-05-27 to mirror the shop-side Performance page. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-1">
             <Package className="w-4 h-4 text-indigo-500" />
@@ -88,6 +89,13 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
             <div className="text-xs font-semibold text-violet-500 uppercase tracking-widest">Avg. Order Value</div>
           </div>
           <div className="text-2xl font-bold text-violet-700">{fmtMoney(avgOrderValue)}</div>
+        </div>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Box className="w-4 h-4 text-amber-500" />
+            <div className="text-xs font-semibold text-amber-500 uppercase tracking-widest">Units Sold</div>
+          </div>
+          <div className="text-2xl font-bold text-amber-700">{totalUnits.toLocaleString()}</div>
         </div>
       </div>
 

@@ -117,6 +117,14 @@ export function getCompletedQty(li) {
   return Math.max(0, getQty(li) - getShortfallQty(li));
 }
 
+// Sum of all garment units across an order's line items. Used on
+// dashboards (Dashboard, Performance, BrokerPerformanceSelf) to show
+// total pieces produced — defaults to 0 for orders without line_items.
+export function getOrderUnits(order) {
+  if (!order) return 0;
+  return (order.line_items || []).reduce((sum, li) => sum + getQty(li), 0);
+}
+
 export function getAdminMarkup(garmentCost) {
   const cost = parseFloat(garmentCost) || 0;
   const tiers = _pc?.garmentMarkup;
