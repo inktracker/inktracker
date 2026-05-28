@@ -23,10 +23,18 @@ export default function EmbedSnippets() {
   const shopParam = encodeURIComponent(userEmail);
   const WIZARD_URL = `${CUSTOMER_PUBLIC_URL}/QuoteRequest?shop=${shopParam}`;
 
+  // height:100vh (not min-height) so the iframe has its own scroll
+  // container. Without this, the iframe expands to its content height
+  // and the host page scrolls — which means the price bar's sticky
+  // positioning slides under the storefront's own header as the user
+  // scrolls. With internal scroll, the price bar pins to the top of
+  // the iframe (below the storefront nav) and stays visible
+  // throughout. Existing embeds with min-height still work, just
+  // without the always-visible price bar.
   const iframeSnippet = `<!-- InkTracker Quote Request Widget -->
 <iframe
   src="${WIZARD_URL}"
-  style="width:100%; min-height:1000px; border:none;"
+  style="width:100%; height:100vh; border:none;"
   allow="clipboard-write"
   title="Request a Quote">
 </iframe>`;
