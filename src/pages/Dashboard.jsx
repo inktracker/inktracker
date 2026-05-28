@@ -632,7 +632,7 @@ export default function Dashboard() {
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition ${
+            className={`flex items-center gap-2 px-5 py-3 text-[12px] font-bold uppercase tracking-[0.16em] border-b-2 -mb-px transition ${
               tab === id ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-800 dark:text-slate-200"
             }`}
           >
@@ -759,8 +759,8 @@ export default function Dashboard() {
                           onClick={() => navigate(`/Orders?id=${o.id}`)}
                           className="w-full text-left text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700 hover:bg-teal-50 hover:border-teal-200 transition"
                         >
-                          <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
-                          <div className="text-slate-500">{o.order_id}</div>
+                          <div className="font-display uppercase tracking-[0.04em] text-slate-900 dark:text-slate-100 text-sm truncate leading-tight">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
+                          <div className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-400 mt-0.5">{o.order_id}</div>
                         </button>
                       ))}
                     </div>
@@ -810,14 +810,14 @@ export default function Dashboard() {
                       className="w-full text-left px-5 py-3 flex items-center justify-between hover:bg-slate-50 dark:bg-slate-800 transition"
                     >
                       <div>
-                        <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{getDisplayName(customers[q.customer_id] || q.customer_name) || "—"}</div>
-                        <div className="text-xs text-slate-400 mt-0.5">
+                        <div className="font-display uppercase tracking-[0.04em] text-slate-900 dark:text-slate-100 text-base leading-tight">{getDisplayName(customers[q.customer_id] || q.customer_name) || "—"}</div>
+                        <div className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-400 mt-1">
                           {q.quote_id}
-                          {q.broker_id && <span className="ml-2 text-teal-500 font-semibold">via broker</span>}
+                          {q.broker_id && <span className="ml-2 text-teal-500">via broker</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
-                        {q.date && <span className="text-xs text-slate-400">{fmtDate(q.date)}</span>}
+                        {q.date && <span className="font-display uppercase tracking-[0.1em] text-[10px] text-slate-400">{fmtDate(q.date)}</span>}
                         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[q.status] || "bg-slate-100 text-slate-600"}`}>
                           {q.status}
                         </span>
@@ -846,9 +846,9 @@ export default function Dashboard() {
                       onClick={() => navigate(createPageUrl("Inventory"))}
                       className="w-full text-left px-5 py-3 hover:bg-slate-50 dark:bg-slate-800 transition"
                     >
-                      <div className="flex justify-between items-start mb-1">
-                        <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{item.item}</div>
-                        <span className="text-xs text-slate-500">{item.sku}</span>
+                      <div className="flex justify-between items-start mb-1 gap-3">
+                        <div className="font-display uppercase tracking-[0.04em] text-slate-900 dark:text-slate-100 text-base leading-tight">{item.item}</div>
+                        <span className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-400 shrink-0 mt-0.5">{item.sku}</span>
                       </div>
                       <div className="flex justify-between text-xs text-slate-500">
                         <span>Stock: {item.qty} {item.unit}</span>

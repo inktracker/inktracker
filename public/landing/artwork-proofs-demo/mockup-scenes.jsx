@@ -11,22 +11,22 @@ const MK = {
   text2: '#475569',
   text3: '#94A3B8',
   text4: '#CBD5E1',
-  accent: '#4F46E5',
-  accentHover: '#4338CA',
-  accentText: '#4338CA',
-  accentSoft: '#EEF2FF',
-  accentBorder: '#C7D2FE',
+  accent: '#2C5840',
+  accentHover: '#1A3A28',
+  accentText: '#1A3A28',
+  accentSoft: '#E8F0EA',
+  accentBorder: '#B8D0C0',
   green: '#16A34A',
   greenSoft: '#DCFCE7',
-  greenBorder: '#86EFAC',
-  magic: '#7C3AED',
-  magicSoft: '#F5F3FF',
+  greenBorder: '#86A89A',
+  magic: '#2C5840',
+  magicSoft: '#F3F7F4',
   navy: '#0F172A',
 };
 const MF = '"Inter", system-ui, -apple-system, sans-serif';
-const MM = '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace';
+const MM = '"Inter", system-ui, -apple-system, sans-serif';
 
-const MDARK = '#0B0B0E';
+const MDARK = '#1a3a28';
 const MDARK1 = '#F4F4F5';
 const MDARK2 = 'rgba(244,244,245,0.62)';
 const MDARK3 = 'rgba(244,244,245,0.40)';
@@ -104,7 +104,7 @@ function MSidebar() {
             <div key={it.label} style={{
               display: 'flex', alignItems: 'center', gap: 12,
               padding: '9px 12px', margin: '2px 0',
-              borderRadius: 8,
+              borderRadius: 0,
               background: a ? MK.accent : 'transparent',
               color: a ? '#fff' : MK.text2,
               fontFamily: MF, fontSize: 14, fontWeight: a ? 600 : 500,
@@ -119,11 +119,11 @@ function MSidebar() {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '9px 12px', margin: '2px 0',
-          borderRadius: 8,
-          color: '#7C3AED',
+          borderRadius: 0,
+          color: '#2C5840',
           fontFamily: MF, fontSize: 14, fontWeight: 700,
         }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2C5840" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/></svg>
           Admin
         </div>
       </div>
@@ -133,7 +133,7 @@ function MSidebar() {
           padding: '10px 12px',
           background: MK.surface,
           border: `1px solid ${MK.border}`,
-          borderRadius: 10,
+          borderRadius: 0,
           fontFamily: MF, fontSize: 13.5, color: MK.text3,
         }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={MK.text3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -160,10 +160,10 @@ function MCursor({ x, y, label }) {
         <div style={{
           marginTop: 4, marginLeft: 14,
           background: MK.accent, color: '#fff',
-          padding: '4px 9px', borderRadius: 6,
+          padding: '4px 9px', borderRadius: 0,
           fontFamily: MF, fontSize: 11.5, fontWeight: 600,
           whiteSpace: 'nowrap',
-          boxShadow: '0 4px 12px rgba(79,70,229,0.4)',
+          boxShadow: '0 4px 12px rgba(44,88,64,0.4)',
         }}>{label}</div>
       )}
     </div>
@@ -312,7 +312,7 @@ function MInput({ value, placeholder, typing, label, small, focused, prefix, suf
         padding: small ? '8px 12px' : '10px 14px',
         background: MK.surface,
         border: `1.5px solid ${(typing || focused) ? MK.accent : MK.border}`,
-        borderRadius: 8,
+        borderRadius: 0,
         fontFamily: MF, fontSize: small ? 13 : 14, fontWeight: 500,
         color: value ? MK.text1 : MK.text3,
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -355,11 +355,11 @@ function ColorChip({ name, selected, dot }) {
       background: selected ? MK.accent : MK.surface,
       color: selected ? '#fff' : MK.text2,
       border: selected ? 'none' : `1px solid ${MK.border}`,
-      borderRadius: 999,
+      borderRadius: 0,
       fontFamily: MF, fontSize: 12.5, fontWeight: selected ? 600 : 500,
       whiteSpace: 'nowrap',
     }}>
-      {dot && <span style={{ width: 10, height: 10, borderRadius: 5, background: dot, border: selected ? '1px solid rgba(255,255,255,0.35)' : `1px solid ${MK.border}` }} />}
+      {dot && <span style={{ width: 10, height: 10, borderRadius: 0, background: dot, border: selected ? '1px solid rgba(255,255,255,0.35)' : `1px solid ${MK.border}` }} />}
       {name}
     </span>
   );
@@ -419,9 +419,9 @@ function MockupPage({
               <button style={{
                 padding: '10px 16px',
                 background: MK.accent, color: '#fff',
-                border: 'none', borderRadius: 8,
+                border: 'none', borderRadius: 0,
                 boxShadow: highlightSearchBtn > 0
-                  ? `0 0 0 ${4 + highlightSearchBtn * 6}px rgba(79,70,229,${highlightSearchBtn * 0.18}), 0 4px 12px rgba(79,70,229,0.3)`
+                  ? `0 0 0 ${4 + highlightSearchBtn * 6}px rgba(44,88,64,${highlightSearchBtn * 0.18}), 0 4px 12px rgba(44,88,64,0.3)`
                   : 'none',
                 transform: `scale(${1 + highlightSearchBtn * 0.03})`,
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -457,14 +457,14 @@ function MockupPage({
             <div style={{
               padding: '20px 14px',
               border: `2px dashed ${highlightUploadBtn > 0 ? MK.accent : MK.borderStrong}`,
-              borderRadius: 10,
+              borderRadius: 0,
               background: highlightUploadBtn > 0 ? MK.accentSoft : MK.surface2,
               textAlign: 'center',
               fontFamily: MF, fontSize: 14, fontWeight: 600,
               color: highlightUploadBtn > 0 ? MK.accent : MK.text2,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
               boxShadow: highlightUploadBtn > 0
-                ? `0 0 0 ${4 + highlightUploadBtn * 6}px rgba(79,70,229,${highlightUploadBtn * 0.16})`
+                ? `0 0 0 ${4 + highlightUploadBtn * 6}px rgba(44,88,64,${highlightUploadBtn * 0.16})`
                 : 'none',
               transform: `scale(${1 + highlightUploadBtn * 0.01})`,
             }}>
@@ -513,7 +513,7 @@ function MockupPage({
           <button style={{
             padding: '14px 22px',
             background: MK.navy, color: '#fff',
-            border: 'none', borderRadius: 10,
+            border: 'none', borderRadius: 0,
             fontFamily: MF, fontSize: 15, fontWeight: 700,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 10,
             boxShadow: pdfBtnHi > 0
@@ -531,7 +531,7 @@ function MockupPage({
         <div style={{
           background: MK.surface,
           border: `1px solid ${MK.border}`,
-          borderRadius: 14,
+          borderRadius: 0,
           padding: 24,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start',
           minHeight: 0,
@@ -540,10 +540,10 @@ function MockupPage({
           {garmentLoaded > 0 && (
             <div style={{
               display: 'flex', gap: 6,
-              background: MK.surface3, padding: 4, borderRadius: 10,
+              background: MK.surface3, padding: 4, borderRadius: 0,
               marginBottom: 18, opacity: garmentLoaded,
             }}>
-              <span style={{ padding: '6px 18px', background: MK.accent, color: '#fff', borderRadius: 7, fontFamily: MF, fontSize: 13, fontWeight: 600 }}>Front <sup style={{ marginLeft: 2 }}>•</sup></span>
+              <span style={{ padding: '6px 18px', background: MK.accent, color: '#fff', borderRadius: 0, fontFamily: MF, fontSize: 13, fontWeight: 600 }}>Front <sup style={{ marginLeft: 2 }}>•</sup></span>
               <span style={{ padding: '6px 18px', color: MK.text2, fontFamily: MF, fontSize: 13, fontWeight: 500 }}>Back</span>
             </div>
           )}
@@ -579,7 +579,7 @@ function MockupPage({
               width: '100%',
               background: MK.surface2,
               border: `1px solid ${MK.border}`,
-              borderRadius: 12,
+              borderRadius: 0,
               padding: '12px 16px',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -599,7 +599,7 @@ function MockupPage({
                   padding: '6px 14px',
                   background: highlightMakeOneColorBtn > 0 ? MK.magic : MK.surface,
                   color: highlightMakeOneColorBtn > 0 ? '#fff' : MK.text1,
-                  border: `1px solid ${highlightMakeOneColorBtn > 0 ? MK.magic : MK.border}`, borderRadius: 8,
+                  border: `1px solid ${highlightMakeOneColorBtn > 0 ? MK.magic : MK.border}`, borderRadius: 0,
                   fontFamily: MF, fontSize: 12.5, fontWeight: 600,
                   boxShadow: highlightMakeOneColorBtn > 0
                     ? `0 0 0 ${4 + highlightMakeOneColorBtn * 6}px rgba(124,58,237,${highlightMakeOneColorBtn * 0.18}), 0 4px 12px rgba(124,58,237,0.3)`
@@ -627,7 +627,7 @@ function Card({ children, opacity = 1 }) {
     <div style={{
       background: MK.surface,
       border: `1px solid ${MK.border}`,
-      borderRadius: 14,
+      borderRadius: 0,
       padding: 18,
       opacity,
     }}>{children}</div>
@@ -635,7 +635,7 @@ function Card({ children, opacity = 1 }) {
 }
 
 function ToolBtn({ icon, active }) {
-  const sw = { width: 32, height: 32, borderRadius: 7,
+  const sw = { width: 32, height: 32, borderRadius: 0,
     background: active ? MK.magicSoft : 'transparent',
     border: active ? `1px solid #DDD6FE` : `1px solid transparent`,
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
@@ -659,16 +659,16 @@ function Slider({ label, value, max, unit, active }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
       <span style={{ fontFamily: MF, fontSize: 12, color: MK.text2, width: 70, flexShrink: 0 }}>{label}</span>
-      <div style={{ flex: 1, height: 6, background: MK.surface3, borderRadius: 3, position: 'relative' }}>
+      <div style={{ flex: 1, height: 6, background: MK.surface3, borderRadius: 0, position: 'relative' }}>
         <div style={{
           position: 'absolute', left: 0, top: 0, bottom: 0,
           width: `${pct * 100}%`,
           background: active ? MK.accent : MK.text2,
-          borderRadius: 3,
+          borderRadius: 0,
         }} />
         <div style={{
           position: 'absolute', left: `calc(${pct * 100}% - 8px)`, top: -5,
-          width: 16, height: 16, borderRadius: 8,
+          width: 16, height: 16, borderRadius: 0,
           background: active ? MK.accent : MK.text2,
           boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
         }} />
@@ -696,11 +696,10 @@ function MSceneHook() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: MDARK, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
-        <MLogo size={40} />
-        <div style={{ fontFamily: MF, fontSize: 22, fontWeight: 700, color: MDARK1, letterSpacing: '-0.015em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: MF, fontSize: 96, fontWeight: 800, color: MDARK1, letterSpacing: '-0.045em', lineHeight: 1, textAlign: 'center' }}>Art proofs,</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: MF, fontSize: 96, fontWeight: 800, color: '#A5B4FC', letterSpacing: '-0.045em', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>made easy.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: MDARK1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Art proofs,</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>made easy.</div>
       <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: MF, fontSize: 20, color: MDARK2, marginTop: 36, textAlign: 'center' }}>Garment, artwork, and a signature-ready PDF — in one screen.</div>
       <div style={{ opacity: trailT, marginTop: 56, display: 'flex', alignItems: 'center', gap: 18, fontFamily: MF, fontSize: 13, fontWeight: 700, color: MDARK3, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
         <span>Garment</span>
@@ -942,7 +941,7 @@ function MScenePDF() {
           width: 880,
           height: 1140,
           background: '#FAFAF7',
-          borderRadius: 8,
+          borderRadius: 0,
           boxShadow: '0 50px 120px rgba(15,23,42,0.5), 0 0 0 1px rgba(15,23,42,0.08)',
           overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
@@ -1244,7 +1243,7 @@ function MSceneMid() {
             transform: `translate(-50%, -50%) translateY(${(1 - modalT) * 60}px) scale(${0.92 + 0.08 * modalT})`,
             opacity: modalT,
             width: 880, height: 1140,
-            background: '#FAFAF7', borderRadius: 8,
+            background: '#FAFAF7', borderRadius: 0,
             boxShadow: '0 50px 120px rgba(15,23,42,0.5), 0 0 0 1px rgba(15,23,42,0.08)',
             overflow: 'hidden', display: 'flex', flexDirection: 'column',
           }}>
@@ -1275,14 +1274,14 @@ function MSceneOutro() {
     }}>
       <div style={{
         position: 'absolute', inset: 0,
-        background: 'radial-gradient(ellipse at center, rgba(79,70,229,0.22), transparent 60%)',
+        background: 'radial-gradient(ellipse at center, rgba(44,88,64,0.22), transparent 60%)',
         opacity: inT,
       }} />
 
       <div style={{
         opacity: checkT,
         transform: `scale(${0.7 + 0.3 * Easing.easeOutCubic(checkT)})`,
-        width: 96, height: 96, borderRadius: 48,
+        width: 96, height: 96, borderRadius: 0,
         background: '#16A34A',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         boxShadow: '0 14px 36px rgba(22,163,74,0.4)',
@@ -1300,7 +1299,7 @@ function MSceneOutro() {
         color: '#fff', letterSpacing: '-0.03em',
         textAlign: 'center',
       }}>
-        Signed off, <span style={{ color: '#A5B4FC' }}>first try.</span>
+        Signed off, <span style={{ color: '#86A89A' }}>first try.</span>
       </div>
 
       <div style={{
@@ -1309,8 +1308,7 @@ function MSceneOutro() {
         opacity: wordT,
         transform: `translateY(${(1 - wordT) * 10}px)`,
       }}>
-        <MLogo size={36} />
-        <span style={{ fontFamily: MF, fontSize: 24, fontWeight: 700, color: '#fff', letterSpacing: '-0.02em' }}>InkTracker</span>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
     </div>
   );

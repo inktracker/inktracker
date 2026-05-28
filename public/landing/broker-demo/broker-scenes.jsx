@@ -2,7 +2,7 @@
 // Demo brokers, shops, and clients only.
 
 const BR = {
-  darkBg: '#0B0B0E',
+  darkBg: '#1a3a28',
   darkText1: '#F4F4F5',
   darkText2: 'rgba(244,244,245,0.62)',
   darkText3: 'rgba(244,244,245,0.40)',
@@ -16,24 +16,24 @@ const BR = {
   text3: '#94A3B8',
   text4: '#CBD5E1',
   // InkTracker brand (used on shop-side chrome)
-  indigo: '#4F46E5',
-  indigoSoft: '#EEF2FF',
-  indigoBorder: '#C7D2FE',
+  indigo: '#2C5840',
+  indigoSoft: '#E8F0EA',
+  indigoBorder: '#B8D0C0',
   // Broker accent (teal — distinguishes broker portal from shop portal)
   teal: '#0D9488',
   tealSoft: '#CCFBF1',
-  tealBorder: '#5EEAD4',
+  tealBorder: '#86A89A',
   tealDarker: '#0F766E',
   green: '#16A34A',
   greenSoft: '#DCFCE7',
-  greenBorder: '#86EFAC',
+  greenBorder: '#86A89A',
   amber: '#D97706',
   amberSoft: '#FEF3C7',
   slate: '#64748B',
   slateSoft: '#F1F5F9',
 };
 const BRF = '"Inter", system-ui, -apple-system, sans-serif';
-const BRM = '"JetBrains Mono", ui-monospace, monospace';
+const BRM = '"Inter", system-ui, -apple-system, sans-serif';
 
 function brclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function breaseOut(t) { return 1 - Math.pow(1 - t, 3); }
@@ -117,7 +117,7 @@ function BrokerSidebar() {
         <div>
           <div style={{ fontFamily: BRF, fontSize: 15, fontWeight: 800, color: '#F4F4F5', letterSpacing: '-0.015em' }}>Marcus Chen</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-            <div style={{ padding: '2px 7px', background: BR.tealSoft, color: BR.tealDarker, fontFamily: BRF, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', borderRadius: 4, textTransform: 'uppercase' }}>Broker</div>
+            <div style={{ padding: '2px 7px', background: BR.tealSoft, color: BR.tealDarker, fontFamily: BRF, fontSize: 10, fontWeight: 800, letterSpacing: '0.05em', borderRadius: 0, textTransform: 'uppercase' }}>Broker</div>
             <div style={{ fontFamily: BRF, fontSize: 10.5, color: 'rgba(244,244,245,0.55)' }}>3 shops</div>
           </div>
         </div>
@@ -128,7 +128,7 @@ function BrokerSidebar() {
           return (
             <div key={it.label} style={{
               display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 14px', borderRadius: 8, marginBottom: 2,
+              padding: '11px 14px', borderRadius: 0, marginBottom: 2,
               background: a ? BR.teal : 'transparent',
             }}>
               <NavIcon kind={it.icon} color={a ? '#fff' : 'rgba(244,244,245,0.55)'} />
@@ -161,7 +161,7 @@ function ShopSidebar() {
           return (
             <div key={it.label} style={{
               display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 14px', borderRadius: 8, marginBottom: 2,
+              padding: '11px 14px', borderRadius: 0, marginBottom: 2,
               background: a ? BR.indigo : 'transparent',
             }}>
               <NavIcon kind={it.icon} color={a ? '#fff' : BR.text3} />
@@ -201,7 +201,7 @@ function StatusPill({ status }) {
   const map = {
     sent:  { label: 'Sent',  bg: BR.indigoSoft, fg: BR.indigo, br: BR.indigoBorder },
     paid:  { label: 'Paid',  bg: BR.greenSoft,  fg: BR.green,  br: BR.greenBorder  },
-    open:  { label: 'Open',  bg: BR.amberSoft,  fg: BR.amber,  br: '#FCD34D'       },
+    open:  { label: 'Open',  bg: BR.amberSoft,  fg: BR.amber,  br: '#86A89A'       },
     draft: { label: 'Draft', bg: BR.slateSoft,  fg: BR.slate,  br: BR.border       },
     new:   { label: 'New from broker', bg: BR.tealSoft, fg: BR.tealDarker, br: BR.tealBorder },
   };
@@ -210,7 +210,7 @@ function StatusPill({ status }) {
     <div style={{
       padding: '4px 10px', background: s.bg, color: s.fg,
       border: `1px solid ${s.br}`,
-      borderRadius: 999, fontFamily: BRF, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.02em',
+      borderRadius: 0, fontFamily: BRF, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.02em',
       whiteSpace: 'nowrap',
     }}>{s.label}</div>
   );
@@ -228,7 +228,7 @@ function BRCaption({ text, time, duration, delay = 0.3, fade = 0.4 }) {
         opacity: op,
         background: 'rgba(11,11,14,0.92)', color: '#F4F4F5',
         fontFamily: BRF, fontSize: 17, fontWeight: 500, letterSpacing: '-0.005em',
-        padding: '12px 22px', borderRadius: 999,
+        padding: '12px 22px', borderRadius: 0,
         boxShadow: '0 12px 32px rgba(0,0,0,0.25)', whiteSpace: 'nowrap',
       }}>{text}</div>
     </div>
@@ -248,11 +248,10 @@ function SceneBRHook() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: BR.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
-        <BRLogo size={40} />
-        <div style={{ fontFamily: BRF, fontSize: 22, fontWeight: 700, color: BR.darkText1, letterSpacing: '-0.015em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: BRF, fontSize: 96, fontWeight: 800, color: BR.darkText1, letterSpacing: '-0.045em', lineHeight: 1, textAlign: 'center' }}>Your sales team.</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: BRF, fontSize: 96, fontWeight: 800, color: '#5EEAD4', letterSpacing: '-0.045em', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Their own portal.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: BR.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Your sales team.</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Their own portal.</div>
       <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: BRF, fontSize: 20, color: BR.darkText2, marginTop: 36, textAlign: 'center' }}>Brokers submit. Shops fulfill. Commissions tracked automatically.</div>
     </div>
   );
@@ -282,7 +281,7 @@ function SceneBRDashboard() {
             <div style={{ fontFamily: BRF, fontSize: 14, color: BR.text3, marginTop: 4 }}>Broker portal · May 2026</div>
           </div>
           <div style={{ marginLeft: 'auto' }}>
-            <button style={{ padding: '11px 22px', background: BR.teal, color: '#fff', border: 'none', borderRadius: 9, fontFamily: BRF, fontSize: 14.5, fontWeight: 700, boxShadow: '0 6px 16px rgba(13,148,136,0.32)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button style={{ padding: '11px 22px', background: BR.teal, color: '#fff', border: 'none', borderRadius: 0, fontFamily: BRF, fontSize: 14.5, fontWeight: 700, boxShadow: '0 6px 16px rgba(13,148,136,0.32)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
               Submit a Quote
             </button>
@@ -300,7 +299,7 @@ function SceneBRDashboard() {
       {/* Two columns: assigned shops + recent quotes */}
       <div style={{ padding: '20px 56px 28px', display: 'grid', gridTemplateColumns: '340px 1fr', gap: 20 }}>
         {/* My shops */}
-        <div style={{ background: BR.surface, border: `1px solid ${BR.border}`, borderRadius: 14, padding: '18px 20px', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}>
+        <div style={{ background: BR.surface, border: `1px solid ${BR.border}`, borderRadius: 0, padding: '18px 20px', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}>
           <div style={{ fontFamily: BRF, fontSize: 12, fontWeight: 700, color: BR.text3, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 14 }}>My Shops</div>
           {BROKER_SHOPS.map((s, i) => {
             const startT = 0.85 + i * 0.12;
@@ -308,7 +307,7 @@ function SceneBRDashboard() {
             const e = breaseOut(k);
             return (
               <div key={s.name} style={{ opacity: e, transform: `translateY(${(1-e)*8}px)`, display: 'flex', alignItems: 'center', gap: 12, padding: '11px 0', borderBottom: i < BROKER_SHOPS.length - 1 ? `1px solid ${BR.border}` : 'none' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 9, background: s.color, display: 'grid', placeItems: 'center', fontFamily: BRF, fontSize: 12, fontWeight: 800, color: BR.text1 }}>{s.initials}</div>
+                <div style={{ width: 36, height: 36, borderRadius: 0, background: s.color, display: 'grid', placeItems: 'center', fontFamily: BRF, fontSize: 12, fontWeight: 800, color: BR.text1 }}>{s.initials}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: BRF, fontSize: 14, fontWeight: 700, color: BR.text1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</div>
                   <div style={{ fontFamily: BRF, fontSize: 11.5, color: BR.text3, marginTop: 2 }}>{s.open} open · {s.mtd} MTD</div>
@@ -319,7 +318,7 @@ function SceneBRDashboard() {
         </div>
 
         {/* Recent quotes */}
-        <div style={{ background: BR.surface, border: `1px solid ${BR.border}`, borderRadius: 14, padding: '18px 20px', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}>
+        <div style={{ background: BR.surface, border: `1px solid ${BR.border}`, borderRadius: 0, padding: '18px 20px', boxShadow: '0 1px 2px rgba(15,23,42,0.04)' }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
             <div style={{ fontFamily: BRF, fontSize: 12, fontWeight: 700, color: BR.text3, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Recent Quotes</div>
             <div style={{ marginLeft: 'auto', fontFamily: BRF, fontSize: 12, fontWeight: 600, color: BR.teal }}>View all →</div>
@@ -331,7 +330,7 @@ function SceneBRDashboard() {
             return (
               <div key={q.id} style={{ opacity: e, transform: `translateY(${(1-e)*8}px)`, display: 'grid', gridTemplateColumns: '90px 36px 1fr 140px 110px 80px', gap: 14, alignItems: 'center', padding: '10px 0', borderBottom: i < BROKER_QUOTES.length - 1 ? `1px solid ${BR.border}` : 'none' }}>
                 <div style={{ fontFamily: BRM, fontSize: 12, color: BR.text2, fontWeight: 600 }}>{q.id}</div>
-                <div style={{ width: 28, height: 28, borderRadius: 7, background: q.color, display: 'grid', placeItems: 'center', fontFamily: BRF, fontSize: 10.5, fontWeight: 800, color: BR.text1 }}>{q.initials}</div>
+                <div style={{ width: 28, height: 28, borderRadius: 0, background: q.color, display: 'grid', placeItems: 'center', fontFamily: BRF, fontSize: 10.5, fontWeight: 800, color: BR.text1 }}>{q.initials}</div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: BRF, fontSize: 13, fontWeight: 700, color: BR.text1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{q.client}</div>
                   <div style={{ fontFamily: BRF, fontSize: 11.5, color: BR.text3, marginTop: 1 }}>{q.shop} · {q.days}</div>
@@ -354,7 +353,7 @@ function StatCard({ label, value, trend, color }) {
   return (
     <div style={{
       background: BR.surface, border: `1px solid ${BR.border}`,
-      borderRadius: 12, padding: '16px 20px',
+      borderRadius: 0, padding: '16px 20px',
       boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
       display: 'flex', flexDirection: 'column', gap: 6,
     }}>
@@ -442,7 +441,7 @@ function SceneBRSubmit() {
         opacity: modalE,
         width: 1340,
         background: BR.surface, border: `1px solid ${BR.border}`,
-        borderRadius: 18, boxShadow: '0 32px 96px rgba(15,23,42,0.32)',
+        borderRadius: 0, boxShadow: '0 32px 96px rgba(15,23,42,0.32)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Header (matches BrokerQuoteEditor: tiny QUOTE label + big title) */}
@@ -452,7 +451,7 @@ function SceneBRSubmit() {
             <div style={{ fontFamily: BRF, fontSize: 22, fontWeight: 800, color: BR.text1, letterSpacing: '-0.02em', marginTop: 2 }}>Quote Builder</div>
           </div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontFamily: BRF, fontSize: 11.5, color: BR.text3 }}>
-            <div style={{ width: 8, height: 8, borderRadius: 999, background: BR.green }} />
+            <div style={{ width: 8, height: 8, borderRadius: 0, background: BR.green }} />
             Auto-saving
           </div>
         </div>
@@ -467,11 +466,11 @@ function SceneBRSubmit() {
         {/* Line Items header */}
         <div style={{ padding: '16px 28px 8px', display: 'flex', alignItems: 'center' }}>
           <div style={{ fontFamily: BRF, fontSize: 11.5, fontWeight: 800, color: BR.text3, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Line Items</div>
-          <div style={{ marginLeft: 'auto', padding: '5px 11px', border: `1px solid ${BR.indigoBorder}`, color: BR.indigo, borderRadius: 8, fontFamily: BRF, fontSize: 11.5, fontWeight: 700 }}>+ Add Garment Group</div>
+          <div style={{ marginLeft: 'auto', padding: '5px 11px', border: `1px solid ${BR.indigoBorder}`, color: BR.indigo, borderRadius: 0, fontFamily: BRF, fontSize: 11.5, fontWeight: 700 }}>+ Add Garment Group</div>
         </div>
 
         {/* Line item card — mirrors BrokerLineItemEditor */}
-        <div style={{ margin: '0 28px', border: `1px solid ${BR.border}`, borderRadius: 14, overflow: 'hidden', background: BR.surface }}>
+        <div style={{ margin: '0 28px', border: `1px solid ${BR.border}`, borderRadius: 0, overflow: 'hidden', background: BR.surface }}>
           {/* Top strip: style/category/brand/color/cost */}
           <div style={{ background: BR.surface2, padding: '14px 18px', borderBottom: `1px solid ${BR.border}` }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr 1fr 0.9fr', gap: 12, alignItems: 'end' }}>
@@ -484,7 +483,7 @@ function SceneBRSubmit() {
                     padding: '8px 11px',
                     background: '#fff',
                     border: `1.5px solid ${lookupResolved ? BR.greenBorder : BR.border}`,
-                    borderRadius: 8,
+                    borderRadius: 0,
                     fontFamily: BRM, fontSize: 13, color: BR.text1, fontWeight: 600,
                     transition: 'border-color 0.3s',
                   }}>
@@ -513,7 +512,7 @@ function SceneBRSubmit() {
             </div>
             {lookupResolved && (
               <div style={{ marginTop: 10, fontFamily: BRF, fontSize: 11.5, color: BR.text2, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ padding: '2px 8px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontFamily: BRF, fontSize: 10.5, fontWeight: 700, borderRadius: 5, letterSpacing: '0.02em' }}>S&S Activewear</div>
+                <div style={{ padding: '2px 8px', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE', fontFamily: BRF, fontSize: 10.5, fontWeight: 700, borderRadius: 0, letterSpacing: '0.02em' }}>S&S Activewear</div>
                 Gildan 5000 — Heavy Cotton T-Shirt · 5.3 oz · Black · live pricing from S&S API
               </div>
             )}
@@ -547,8 +546,8 @@ function SceneBRSubmit() {
                           <div style={{
                             padding: '5px 0',
                             background: filled ? (big ? '#FFFBEB' : '#fff') : '#fff',
-                            border: `1px solid ${big ? '#FCD34D' : BR.border}`,
-                            borderRadius: 6,
+                            border: `1px solid ${big ? '#86A89A' : BR.border}`,
+                            borderRadius: 0,
                             fontFamily: BRM, fontSize: 12.5, color: BR.text1, fontWeight: 700,
                             textAlign: 'center',
                             transition: 'background 0.2s',
@@ -580,7 +579,7 @@ function SceneBRSubmit() {
                 <BLESmall label="Garment Cost"   value={lookupResolved ? '$2.34' : '—'} mono />
                 <BLESmall label="Print Cost"     value={lookupResolved ? '$4.16' : '—'} mono />
               </div>
-              <div style={{ marginTop: 14, padding: '12px 14px', background: BR.indigoSoft, border: `1px solid ${BR.indigoBorder}`, borderRadius: 10, display: 'flex', alignItems: 'center' }}>
+              <div style={{ marginTop: 14, padding: '12px 14px', background: BR.indigoSoft, border: `1px solid ${BR.indigoBorder}`, borderRadius: 0, display: 'flex', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontFamily: BRF, fontSize: 11, fontWeight: 800, color: BR.indigo, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Per piece</div>
                   <div style={{ fontFamily: BRM, fontSize: 11, color: BR.text3, marginTop: 1 }}>cost $6.50 + markup</div>
@@ -601,7 +600,7 @@ function SceneBRSubmit() {
             <div style={{ fontFamily: BRF, fontSize: 11.5, fontWeight: 800, color: BR.text3, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Job Notes</div>
             <div style={{
               padding: '14px 16px', height: 188,
-              border: `1px solid ${BR.border}`, borderRadius: 12, background: BR.surface,
+              border: `1px solid ${BR.border}`, borderRadius: 0, background: BR.surface,
               fontFamily: BRF, fontSize: 13, color: BR.text2, lineHeight: 1.55,
             }}>
               Spring training tees. Two screens, navy / white ink. Pack by size, drop-ship to facility. In-hands May 27.
@@ -609,7 +608,7 @@ function SceneBRSubmit() {
           </div>
 
           {/* The signature two-column pricing pane */}
-          <div style={{ background: BR.surface2, border: `1px solid ${BR.border}`, borderRadius: 14, padding: '16px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
+          <div style={{ background: BR.surface2, border: `1px solid ${BR.border}`, borderRadius: 0, padding: '16px 18px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
             {/* Left: Your Broker Price */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ fontFamily: BRF, fontSize: 10.5, fontWeight: 800, color: BR.text3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Your Broker Price</div>
@@ -621,7 +620,7 @@ function SceneBRSubmit() {
                 <span style={{ fontFamily: BRF, fontSize: 13, fontWeight: 800, color: BR.text1 }}>Your Price</span>
                 <span style={{ fontFamily: BRF, fontSize: 26, fontWeight: 800, color: BR.text1, letterSpacing: '-0.02em' }}>{fmt(brokerTotal)}</span>
               </div>
-              <div style={{ marginTop: 6, padding: '8px 11px', background: BR.indigoSoft, border: `1px solid ${BR.indigoBorder}`, borderRadius: 8, display: 'flex', alignItems: 'center' }}>
+              <div style={{ marginTop: 6, padding: '8px 11px', background: BR.indigoSoft, border: `1px solid ${BR.indigoBorder}`, borderRadius: 0, display: 'flex', alignItems: 'center' }}>
                 <span style={{ fontFamily: BRF, fontSize: 11, fontWeight: 800, color: BR.indigo, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Deposit · 50%</span>
                 <span style={{ marginLeft: 'auto', fontFamily: BRF, fontSize: 13.5, fontWeight: 800, color: BR.indigo }}>{fmt(brokerTotal * 0.5)}</span>
               </div>
@@ -642,7 +641,7 @@ function SceneBRSubmit() {
               <div style={{
                 display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
                 marginTop: 6, padding: '8px 11px',
-                background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 8,
+                background: '#F3F7F4', border: '1px solid #DDD6FE', borderRadius: 0,
                 transform: `scale(${profitScale})`, transformOrigin: 'center',
                 transition: 'transform 0.2s',
               }}>
@@ -658,11 +657,11 @@ function SceneBRSubmit() {
           <button style={{
             flex: 1, padding: '10px 14px',
             background: BR.indigo, color: '#fff', border: 'none',
-            borderRadius: 9, fontFamily: BRF, fontSize: 13.5, fontWeight: 700,
+            borderRadius: 0, fontFamily: BRF, fontSize: 13.5, fontWeight: 700,
             opacity: 0.9,
           }}>Save Draft</button>
           {submitted && (
-            <div style={{ opacity: submittedT, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: BR.greenSoft, color: BR.green, border: `1px solid ${BR.greenBorder}`, borderRadius: 8, fontFamily: BRF, fontSize: 12.5, fontWeight: 700 }}>
+            <div style={{ opacity: submittedT, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: BR.greenSoft, color: BR.green, border: `1px solid ${BR.greenBorder}`, borderRadius: 0, fontFamily: BRF, fontSize: 12.5, fontWeight: 700 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={BR.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
               Routed to Pinegrove Apparel
             </div>
@@ -672,7 +671,7 @@ function SceneBRSubmit() {
             background: submitted ? BR.greenSoft : BR.teal,
             color: submitted ? BR.green : '#fff',
             border: submitted ? `1px solid ${BR.greenBorder}` : 'none',
-            borderRadius: 9,
+            borderRadius: 0,
             fontFamily: BRF, fontSize: 14, fontWeight: 700,
             display: 'flex', alignItems: 'center', gap: 8,
             boxShadow: submitted ? 'none' : '0 6px 16px rgba(13,148,136,0.32)',
@@ -698,7 +697,7 @@ function SmallField({ label, value }) {
       <div style={{ fontFamily: BRF, fontSize: 10.5, fontWeight: 800, color: BR.text3, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{label}</div>
       <div style={{
         padding: '8px 11px',
-        background: '#fff', border: `1px solid ${BR.border}`, borderRadius: 8,
+        background: '#fff', border: `1px solid ${BR.border}`, borderRadius: 0,
         fontFamily: BRF, fontSize: 13, color: BR.text1, fontWeight: 600,
         whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>{value}</div>
@@ -721,7 +720,7 @@ function BLESmall({ label, value, mono }) {
       <div style={{ fontFamily: BRF, fontSize: 10, fontWeight: 800, color: BR.text3, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>{label}</div>
       <div style={{
         padding: '7px 10px', background: '#fff',
-        border: `1px solid ${BR.border}`, borderRadius: 7,
+        border: `1px solid ${BR.border}`, borderRadius: 0,
         fontFamily: mono ? BRM : BRF, fontSize: 12.5, color: BR.text1, fontWeight: 600,
       }}>{value}</div>
     </div>
@@ -732,11 +731,11 @@ function ChipValue({ text, swatch, mono }) {
   return (
     <div style={{
       padding: '8px 11px', background: '#fff',
-      border: `1px solid ${BR.border}`, borderRadius: 8,
+      border: `1px solid ${BR.border}`, borderRadius: 0,
       fontFamily: mono ? BRM : BRF, fontSize: 13, color: BR.text1, fontWeight: 600,
       display: 'flex', alignItems: 'center', gap: 8,
     }}>
-      {swatch && <div style={{ width: 14, height: 14, borderRadius: 4, background: swatch, border: `1px solid ${BR.border}`, flexShrink: 0 }} />}
+      {swatch && <div style={{ width: 14, height: 14, borderRadius: 0, background: swatch, border: `1px solid ${BR.border}`, flexShrink: 0 }} />}
       {text}
     </div>
   );
@@ -773,7 +772,7 @@ function SceneBRShop() {
   const flashRemain = brclamp(1 - (t - 0.9 - 0.3) / 1.5, 0, 1);
 
   const otherQuotes = [
-    { id: 'Q-2026-186', client: 'Aldenwood Bookstore',     initials: 'AB', color: '#EEF2FF', amount: '$540.00',   status: 'paid' },
+    { id: 'Q-2026-186', client: 'Aldenwood Bookstore',     initials: 'AB', color: '#E8F0EA', amount: '$540.00',   status: 'paid' },
     { id: 'Q-2026-185', client: 'Foxtail Brewing',         initials: 'FB', color: '#FFE4E6', amount: '$920.00',   status: 'sent' },
     { id: 'Q-2026-184', client: 'Driftwood Theatre Co.',   initials: 'DT', color: '#FCE7F3', amount: '$780.00',   status: 'paid' },
     { id: 'Q-2026-183', client: 'Harborview Yacht Club',   initials: 'HV', color: '#CFFAFE', amount: '$1,440.00', status: 'open' },
@@ -786,7 +785,7 @@ function SceneBRShop() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ fontFamily: BRF, fontSize: 38, fontWeight: 800, color: BR.text1, letterSpacing: '-0.03em' }}>Quotes</div>
           <div style={{ marginLeft: 'auto' }}>
-            <button style={{ padding: '10px 18px', background: BR.indigo, color: '#fff', border: 'none', borderRadius: 8, fontFamily: BRF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(79,70,229,0.32)' }}>+ New Quote</button>
+            <button style={{ padding: '10px 18px', background: BR.indigo, color: '#fff', border: 'none', borderRadius: 0, fontFamily: BRF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(44,88,64,0.32)' }}>+ New Quote</button>
           </div>
         </div>
       </div>
@@ -806,13 +805,13 @@ function SceneBRShop() {
           transform: `translateY(${(1 - newRowE) * -16}px)`,
           background: flashRemain > 0 ? BR.tealSoft : BR.surface,
           border: `2px solid ${flashRemain > 0.6 ? BR.teal : BR.tealBorder}`,
-          borderRadius: 12, padding: '14px 18px',
+          borderRadius: 0, padding: '14px 18px',
           boxShadow: '0 14px 32px rgba(13,148,136,0.18)',
           transition: 'background 0.6s, border-color 0.6s',
         }}>
           <div style={{ display: 'grid', gridTemplateColumns: '110px 36px 1fr 130px 110px', gap: 16, alignItems: 'center' }}>
             <div style={{ fontFamily: BRM, fontSize: 13, fontWeight: 600, color: BR.text2 }}>Q-2026-187</div>
-            <div style={{ width: 28, height: 28, borderRadius: 7, background: '#E0E7FF', display: 'grid', placeItems: 'center', fontFamily: BRF, fontSize: 10.5, fontWeight: 800, color: BR.text1 }}>GA</div>
+            <div style={{ width: 28, height: 28, borderRadius: 0, background: '#E0E7FF', display: 'grid', placeItems: 'center', fontFamily: BRF, fontSize: 10.5, fontWeight: 800, color: BR.text1 }}>GA</div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontFamily: BRF, fontSize: 14, fontWeight: 700, color: BR.text1, letterSpacing: '-0.01em' }}>Greenbriar Athletics</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
@@ -829,13 +828,13 @@ function SceneBRShop() {
         {otherQuotes.map((q, i) => (
           <div key={q.id} style={{
             background: BR.surface, border: `1px solid ${BR.border}`,
-            borderRadius: 12, padding: '14px 18px',
+            borderRadius: 0, padding: '14px 18px',
             boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
             opacity: 0.85,
             display: 'grid', gridTemplateColumns: '110px 36px 1fr 130px 110px', gap: 16, alignItems: 'center',
           }}>
             <div style={{ fontFamily: BRM, fontSize: 13, fontWeight: 600, color: BR.text2 }}>{q.id}</div>
-            <div style={{ width: 28, height: 28, borderRadius: 7, background: q.color, display: 'grid', placeItems: 'center', fontFamily: BRF, fontSize: 10.5, fontWeight: 800, color: BR.text1 }}>{q.initials}</div>
+            <div style={{ width: 28, height: 28, borderRadius: 0, background: q.color, display: 'grid', placeItems: 'center', fontFamily: BRF, fontSize: 10.5, fontWeight: 800, color: BR.text1 }}>{q.initials}</div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontFamily: BRF, fontSize: 14, fontWeight: 700, color: BR.text1, letterSpacing: '-0.01em' }}>{q.client}</div>
             </div>
@@ -852,13 +851,13 @@ function SceneBRShop() {
         opacity: toastT,
         background: BR.surface,
         border: `1px solid ${BR.tealBorder}`,
-        borderRadius: 12,
+        borderRadius: 0,
         padding: '14px 18px',
         display: 'flex', alignItems: 'center', gap: 14,
         boxShadow: '0 18px 48px rgba(13,148,136,0.18)',
         minWidth: 360,
       }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: BR.tealSoft, display: 'grid', placeItems: 'center' }}>
+        <div style={{ width: 38, height: 38, borderRadius: 0, background: BR.tealSoft, display: 'grid', placeItems: 'center' }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={BR.tealDarker} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3"/><path d="M6 20c0-3 3-5 6-5s6 2 6 5"/></svg>
         </div>
         <div>
@@ -883,8 +882,7 @@ function SceneBRLockup() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: BR.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <BRLogo size={56} />
-        <div style={{ fontFamily: BRF, fontSize: 36, fontWeight: 800, color: BR.darkText1, letterSpacing: '-0.025em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
       <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: BRF, fontSize: 26, color: BR.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Brokers built in. Commissions tracked.</div>
     </div>

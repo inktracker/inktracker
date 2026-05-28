@@ -2,7 +2,7 @@
 // Same visual system as the other demos. Demo SKUs and stock levels only.
 
 const IN = {
-  darkBg: '#0B0B0E',
+  darkBg: '#1a3a28',
   darkText1: '#F4F4F5',
   darkText2: 'rgba(244,244,245,0.62)',
   darkText3: 'rgba(244,244,245,0.40)',
@@ -15,15 +15,15 @@ const IN = {
   text2: '#475569',
   text3: '#94A3B8',
   text4: '#CBD5E1',
-  accent: '#4F46E5',
-  accentSoft: '#EEF2FF',
-  accentBorder: '#C7D2FE',
+  accent: '#2C5840',
+  accentSoft: '#E8F0EA',
+  accentBorder: '#B8D0C0',
   green: '#16A34A',
   greenSoft: '#DCFCE7',
-  greenBorder: '#86EFAC',
+  greenBorder: '#86A89A',
   amber: '#D97706',
   amberSoft: '#FEF3C7',
-  amberBorder: '#FCD34D',
+  amberBorder: '#86A89A',
   rose: '#E11D48',
   roseSoft: '#FFE4E6',
   roseBorder: '#FBCFE8',
@@ -33,7 +33,7 @@ const IN = {
   shopifyGreenSoft: '#EBF5DD',
 };
 const INF = '"Inter", system-ui, -apple-system, sans-serif';
-const INM = '"JetBrains Mono", ui-monospace, monospace';
+const INM = '"Inter", system-ui, -apple-system, sans-serif';
 
 function inclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function ineaseOut(t) { return 1 - Math.pow(1 - t, 3); }
@@ -118,7 +118,7 @@ function INSidebar() {
           return (
             <div key={it.label} style={{
               display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 14px', borderRadius: 8, marginBottom: 2,
+              padding: '11px 14px', borderRadius: 0, marginBottom: 2,
               background: a ? IN.accent : 'transparent',
             }}>
               <INNavIcon kind={it.icon} color={a ? '#fff' : IN.text3} />
@@ -128,7 +128,7 @@ function INSidebar() {
         })}
       </div>
       <div style={{ padding: '14px 16px', borderTop: `1px solid ${IN.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1, height: 34, background: IN.surface2, border: `1px solid ${IN.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8 }}>
+        <div style={{ flex: 1, height: 34, background: IN.surface2, border: `1px solid ${IN.border}`, borderRadius: 0, display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={IN.text3} strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
           <span style={{ fontFamily: INF, fontSize: 12, color: IN.text3 }}>Search…</span>
         </div>
@@ -160,7 +160,7 @@ function StockBadge({ status }) {
     <div style={{
       padding: '3px 9px', background: s.bg, color: s.fg,
       border: `1px solid ${s.br}`,
-      borderRadius: 999, fontFamily: INF, fontSize: 11, fontWeight: 700, letterSpacing: '0.02em',
+      borderRadius: 0, fontFamily: INF, fontSize: 11, fontWeight: 700, letterSpacing: '0.02em',
       whiteSpace: 'nowrap',
     }}>{s.label}</div>
   );
@@ -176,13 +176,13 @@ function StockBar({ stock, par, status, animProgress = 1 }) {
         position: 'relative',
         width: 140, height: 8,
         background: IN.slateSoft,
-        borderRadius: 999, overflow: 'hidden',
+        borderRadius: 0, overflow: 'hidden',
       }}>
         <div style={{
           position: 'absolute', inset: 0,
           width: `${frac * 100}%`,
           background: color,
-          borderRadius: 999,
+          borderRadius: 0,
           transition: 'width 0.4s',
         }} />
       </div>
@@ -198,7 +198,7 @@ function InvSwatch({ item }) {
   if (item.swatch != null) {
     return (
       <div style={{
-        width: 28, height: 28, borderRadius: 8,
+        width: 28, height: 28, borderRadius: 0,
         background: item.swatch, border: `1px solid ${IN.border}`,
       }} />
     );
@@ -213,7 +213,7 @@ function InvSwatch({ item }) {
   }
   return (
     <div style={{
-      width: 28, height: 28, borderRadius: 8,
+      width: 28, height: 28, borderRadius: 0,
       background: IN.surface2, border: `1px solid ${IN.border}`,
       display: 'grid', placeItems: 'center',
     }}>{icon}</div>
@@ -226,7 +226,7 @@ function InvRow({ item, animProgress = 1, dim, flashEmerald, ghost }) {
     <div style={{
       background: flashEmerald ? IN.greenSoft : IN.surface,
       border: `1px solid ${IN.border}`,
-      borderRadius: 12, padding: '14px 18px',
+      borderRadius: 0, padding: '14px 18px',
       boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
       opacity: dim ? 0.42 : 1,
       transition: 'background 0.4s',
@@ -251,8 +251,8 @@ function InvRow({ item, animProgress = 1, dim, flashEmerald, ghost }) {
             background: item.status === 'out' ? IN.accent : '#fff',
             color: item.status === 'out' ? '#fff' : IN.text2,
             border: item.status === 'out' ? 'none' : `1px solid ${IN.border}`,
-            borderRadius: 8, fontFamily: INF, fontSize: 12.5, fontWeight: 700,
-            boxShadow: item.status === 'out' ? '0 4px 10px rgba(79,70,229,0.28)' : 'none',
+            borderRadius: 0, fontFamily: INF, fontSize: 12.5, fontWeight: 700,
+            boxShadow: item.status === 'out' ? '0 4px 10px rgba(44,88,64,0.28)' : 'none',
           }}>
             Restock
           </button>
@@ -274,7 +274,7 @@ function CategoryChip({ category }) {
     <div style={{
       padding: '3px 9px', background: s.bg, color: s.fg,
       border: `1px solid ${s.br}`,
-      borderRadius: 6, fontFamily: INF, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
+      borderRadius: 0, fontFamily: INF, fontSize: 11, fontWeight: 700, letterSpacing: '0.04em',
       textTransform: 'uppercase', textAlign: 'center', width: 'fit-content',
     }}>{category}</div>
   );
@@ -292,7 +292,7 @@ function VendorChip({ vendor }) {
     <div style={{
       padding: '3px 9px', background: s.bg, color: s.fg,
       border: `1px solid ${s.br}`,
-      borderRadius: 6, fontFamily: INF, fontSize: 11, fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap',
+      borderRadius: 0, fontFamily: INF, fontSize: 11, fontWeight: 700, letterSpacing: '0.01em', whiteSpace: 'nowrap',
     }}>{vendor}</div>
   );
 }
@@ -309,7 +309,7 @@ function INCaption({ text, time, duration, delay = 0.3, fade = 0.4 }) {
         opacity: op,
         background: 'rgba(11,11,14,0.92)', color: '#F4F4F5',
         fontFamily: INF, fontSize: 17, fontWeight: 500, letterSpacing: '-0.005em',
-        padding: '12px 22px', borderRadius: 999,
+        padding: '12px 22px', borderRadius: 0,
         boxShadow: '0 12px 32px rgba(0,0,0,0.25)', whiteSpace: 'nowrap',
       }}>{text}</div>
     </div>
@@ -329,11 +329,10 @@ function SceneINHook() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: IN.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
-        <INLogo size={40} />
-        <div style={{ fontFamily: INF, fontSize: 22, fontWeight: 700, color: IN.darkText1, letterSpacing: '-0.015em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: INF, fontSize: 96, fontWeight: 800, color: IN.darkText1, letterSpacing: '-0.045em', lineHeight: 1, textAlign: 'center' }}>Never run out.</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: INF, fontSize: 96, fontWeight: 800, color: '#FCD34D', letterSpacing: '-0.045em', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Restock in seconds.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: IN.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Never run out.</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Restock in seconds.</div>
       <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: INF, fontSize: 20, color: IN.darkText2, marginTop: 36, textAlign: 'center' }}>Blanks, inks, supplies — live pricing and Shopify sync built in.</div>
     </div>
   );
@@ -355,11 +354,11 @@ function SceneINGrid() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ fontFamily: INF, fontSize: 38, fontWeight: 800, color: IN.text1, letterSpacing: '-0.03em' }}>Inventory</div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IN.shopifyGreenSoft, border: `1px solid #D7E8C0`, borderRadius: 999 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IN.shopifyGreenSoft, border: `1px solid #D7E8C0`, borderRadius: 0 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill={IN.shopifyGreen}><path d="M19.4 8.4c-.4-.2-3-1.4-3-1.4S14.6 5 14.4 5c-.2-.1-.6-.1-1 0L11 7c-.2.1-.7.2-1 .4-.3.2-3.4 1-3.6 1-.2 0-.5.2-.6.4-.1.2-1.4 11.4-1.4 11.4l9.5 1.8 6.4-1.4-1.3-11.2z"/></svg>
               <div style={{ fontFamily: INF, fontSize: 12.5, color: IN.shopifyGreen, fontWeight: 700, letterSpacing: '0.01em' }}>Shopify · synced 3m ago</div>
             </div>
-            <button style={{ padding: '10px 18px', background: IN.accent, color: '#fff', border: 'none', borderRadius: 8, fontFamily: INF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(79,70,229,0.32)' }}>+ Add Item</button>
+            <button style={{ padding: '10px 18px', background: IN.accent, color: '#fff', border: 'none', borderRadius: 0, fontFamily: INF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(44,88,64,0.32)' }}>+ Add Item</button>
           </div>
         </div>
       </div>
@@ -380,7 +379,7 @@ function SceneINGrid() {
               background: active ? IN.text1 : '#fff',
               color: active ? '#fff' : IN.text2,
               border: `1px solid ${active ? IN.text1 : IN.border}`,
-              borderRadius: 999,
+              borderRadius: 0,
               fontFamily: INF, fontSize: 13, fontWeight: 700, letterSpacing: '-0.005em',
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
@@ -429,7 +428,7 @@ function StatCard({ label, value, trend, color, alert }) {
     <div style={{
       background: IN.surface,
       border: `1px solid ${alert ? (color === IN.rose ? IN.roseBorder : IN.amberBorder) : IN.border}`,
-      borderRadius: 12, padding: '16px 20px',
+      borderRadius: 0, padding: '16px 20px',
       boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
       display: 'flex', flexDirection: 'column', gap: 6,
     }}>
@@ -488,12 +487,12 @@ function SceneINRestock() {
         opacity: modalE,
         width: 940,
         background: IN.surface, border: `1px solid ${IN.border}`,
-        borderRadius: 18, boxShadow: '0 32px 96px rgba(15,23,42,0.32)',
+        borderRadius: 0, boxShadow: '0 32px 96px rgba(15,23,42,0.32)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Modal header */}
         <div style={{ padding: '22px 32px', borderBottom: `1px solid ${IN.border}`, display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ width: 46, height: 46, borderRadius: 10, background: '#0F172A' }} />
+          <div style={{ width: 46, height: 46, borderRadius: 0, background: '#0F172A' }} />
           <div>
             <div style={{ fontFamily: INF, fontSize: 20, fontWeight: 800, color: IN.text1, letterSpacing: '-0.02em' }}>AS Colour 5050 — Black</div>
             <div style={{ fontFamily: INM, fontSize: 12, color: IN.text3, marginTop: 2 }}>ASC-5050 · Heavy Hood · live price from AS Colour API</div>
@@ -512,7 +511,7 @@ function SceneINRestock() {
                 <div key={s.label} style={{
                   background: active ? IN.accentSoft : IN.surface2,
                   border: `1px solid ${active ? IN.accentBorder : IN.border}`,
-                  borderRadius: 10, padding: '12px 14px',
+                  borderRadius: 0, padding: '12px 14px',
                   display: 'flex', flexDirection: 'column', gap: 6,
                   transition: 'background 0.25s, border-color 0.25s',
                 }}>
@@ -543,7 +542,7 @@ function SceneINRestock() {
           <div style={{ fontFamily: INF, fontSize: 12.5, color: IN.text3 }}>Estimated delivery <span style={{ color: IN.text1, fontWeight: 700 }}>2–3 business days</span></div>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             {placed && (
-              <div style={{ opacity: placedT, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IN.greenSoft, color: IN.green, border: `1px solid ${IN.greenBorder}`, borderRadius: 8, fontFamily: INF, fontSize: 13, fontWeight: 700 }}>
+              <div style={{ opacity: placedT, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IN.greenSoft, color: IN.green, border: `1px solid ${IN.greenBorder}`, borderRadius: 0, fontFamily: INF, fontSize: 13, fontWeight: 700 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={IN.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
                 PO #AS-2026-0182
               </div>
@@ -553,10 +552,10 @@ function SceneINRestock() {
               background: placed ? IN.greenSoft : IN.accent,
               color: placed ? IN.green : '#fff',
               border: placed ? `1px solid ${IN.greenBorder}` : 'none',
-              borderRadius: 9,
+              borderRadius: 0,
               fontFamily: INF, fontSize: 14.5, fontWeight: 700,
               display: 'flex', alignItems: 'center', gap: 10,
-              boxShadow: placed ? 'none' : '0 6px 16px rgba(79,70,229,0.32)',
+              boxShadow: placed ? 'none' : '0 6px 16px rgba(44,88,64,0.32)',
               transition: 'all 0.25s',
             }}>
               {placing && (
@@ -618,11 +617,11 @@ function SceneINUpdated() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ fontFamily: INF, fontSize: 38, fontWeight: 800, color: IN.text1, letterSpacing: '-0.03em' }}>Inventory</div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IN.shopifyGreenSoft, border: `1px solid #D7E8C0`, borderRadius: 999 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IN.shopifyGreenSoft, border: `1px solid #D7E8C0`, borderRadius: 0 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill={IN.shopifyGreen}><path d="M19.4 8.4c-.4-.2-3-1.4-3-1.4S14.6 5 14.4 5c-.2-.1-.6-.1-1 0L11 7c-.2.1-.7.2-1 .4-.3.2-3.4 1-3.6 1-.2 0-.5.2-.6.4-.1.2-1.4 11.4-1.4 11.4l9.5 1.8 6.4-1.4-1.3-11.2z"/></svg>
               <div style={{ fontFamily: INF, fontSize: 12.5, color: IN.shopifyGreen, fontWeight: 700, letterSpacing: '0.01em' }}>Shopify · synced just now</div>
             </div>
-            <button style={{ padding: '10px 18px', background: IN.accent, color: '#fff', border: 'none', borderRadius: 8, fontFamily: INF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(79,70,229,0.32)' }}>+ Add Item</button>
+            <button style={{ padding: '10px 18px', background: IN.accent, color: '#fff', border: 'none', borderRadius: 0, fontFamily: INF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(44,88,64,0.32)' }}>+ Add Item</button>
           </div>
         </div>
       </div>
@@ -643,7 +642,7 @@ function SceneINUpdated() {
               background: active ? IN.text1 : '#fff',
               color: active ? '#fff' : IN.text2,
               border: `1px solid ${active ? IN.text1 : IN.border}`,
-              borderRadius: 999,
+              borderRadius: 0,
               fontFamily: INF, fontSize: 13, fontWeight: 700, letterSpacing: '-0.005em',
               display: 'flex', alignItems: 'center', gap: 8,
             }}>
@@ -681,13 +680,13 @@ function SceneINUpdated() {
         opacity: toastT,
         background: IN.surface,
         border: `1px solid ${IN.greenBorder}`,
-        borderRadius: 12,
+        borderRadius: 0,
         padding: '14px 18px',
         display: 'flex', alignItems: 'center', gap: 14,
         boxShadow: '0 18px 48px rgba(22,163,74,0.18)',
         minWidth: 360,
       }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: IN.greenSoft, display: 'grid', placeItems: 'center' }}>
+        <div style={{ width: 38, height: 38, borderRadius: 0, background: IN.greenSoft, display: 'grid', placeItems: 'center' }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={IN.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
         </div>
         <div>
@@ -712,8 +711,7 @@ function SceneINLockup() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: IN.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <INLogo size={56} />
-        <div style={{ fontFamily: INF, fontSize: 36, fontWeight: 800, color: IN.darkText1, letterSpacing: '-0.025em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
       <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: INF, fontSize: 26, color: IN.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Inventory you can trust.</div>
     </div>

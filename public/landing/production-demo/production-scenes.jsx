@@ -4,7 +4,7 @@
 
 const PC = {
   // Dark hook / lockup
-  darkBg: '#0B0B0E',
+  darkBg: '#1a3a28',
   darkText1: '#F4F4F5',
   darkText2: 'rgba(244,244,245,0.62)',
   darkText3: 'rgba(244,244,245,0.40)',
@@ -22,13 +22,13 @@ const PC = {
   text4: '#CBD5E1',
 
   // Brand indigo
-  accent: '#4F46E5',
-  accentSoft: '#EEF2FF',
-  accentSofter: '#F5F3FF',
-  accentText: '#4338CA',
+  accent: '#2C5840',
+  accentSoft: '#E8F0EA',
+  accentSofter: '#F3F7F4',
+  accentText: '#1A3A28',
 
   // Stage colours from screenshots
-  artBg:   '#F5F3FF', artFg:   '#6D28D9',                // Art Approval — light purple
+  artBg:   '#F3F7F4', artFg:   '#6D28D9',                // Art Approval — light purple
   orderBg: '#FEF3C7', orderFg: '#92400E',                // Order Goods — amber
   prepBg:  '#EFF6FF', prepFg:  '#1D4ED8',                // Pre-Press — light blue
   printBg: '#FEE2E2', printFg: '#B91C1C',                // Printing — red
@@ -39,15 +39,15 @@ const PC = {
 
   // Calendar pill tones
   calRed:    { bg: '#FEE2E2', br: '#FCA5A5', fg: '#B91C1C' }, // Due
-  calAmber:  { bg: '#FEF3C7', br: '#FCD34D', fg: '#92400E' }, // Order Goods
-  calPurple: { bg: '#F5F3FF', br: '#C4B5FD', fg: '#6D28D9' }, // Art Approval
+  calAmber:  { bg: '#FEF3C7', br: '#86A89A', fg: '#92400E' }, // Order Goods
+  calPurple: { bg: '#F3F7F4', br: '#C4B5FD', fg: '#6D28D9' }, // Art Approval
   calBlue:   { bg: '#EFF6FF', br: '#93C5FD', fg: '#1D4ED8' }, // Pre-Press
-  calOrange: { bg: '#FFF7ED', br: '#FDBA74', fg: '#9A3412' }, // Finishing
-  calGreen:  { bg: '#DCFCE7', br: '#86EFAC', fg: '#166534' }, // Completed
+  calOrange: { bg: '#FFF7ED', br: '#86A89A', fg: '#9A3412' }, // Finishing
+  calGreen:  { bg: '#DCFCE7', br: '#86A89A', fg: '#166534' }, // Completed
 };
 
 const PFONT = '"Inter", system-ui, -apple-system, sans-serif';
-const PMONO = '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace';
+const PMONO = '"Inter", system-ui, -apple-system, sans-serif';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Fake client roster (used across calendar + table + floor list)
@@ -190,9 +190,9 @@ function PSidebar() {
               display: 'flex', alignItems: 'center', gap: 11,
               padding: '9px 10px',
               margin: '1px 0',
-              borderRadius: 8,
+              borderRadius: 0,
               background: isActive ? PC.accent : 'transparent',
-              color: isActive ? '#fff' : (isSpecial ? '#7C3AED' : PC.text2),
+              color: isActive ? '#fff' : (isSpecial ? '#2C5840' : PC.text2),
               fontFamily: PFONT, fontSize: 13.5, fontWeight: isActive ? 600 : (isSpecial ? 600 : 500),
             }}>
               <PNavIcon kind={it.icon} active={isActive} />
@@ -208,7 +208,7 @@ function PSidebar() {
           padding: '8px 10px',
           background: PC.surface2,
           border: `1px solid ${PC.border}`,
-          borderRadius: 8,
+          borderRadius: 0,
           fontFamily: PFONT, fontSize: 13, color: PC.text3,
         }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={PC.text3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -235,7 +235,7 @@ function PAppWindow({ width, height, x, y, title = 'InkTracker', children, opaci
       transform, opacity,
       background: PC.surface,
       border: `1px solid ${PC.border}`,
-      borderRadius: 14,
+      borderRadius: 0,
       overflow: 'hidden',
       boxShadow: '0 24px 60px rgba(15,23,42,0.18), 0 4px 12px rgba(15,23,42,0.06)',
     }}>
@@ -246,9 +246,9 @@ function PAppWindow({ width, height, x, y, title = 'InkTracker', children, opaci
         background: PC.surface2,
       }}>
         <div style={{ display: 'flex', gap: 6 }}>
-          <div style={{ width: 11, height: 11, borderRadius: 6, background: '#FF6058' }} />
-          <div style={{ width: 11, height: 11, borderRadius: 6, background: '#FFBE2F' }} />
-          <div style={{ width: 11, height: 11, borderRadius: 6, background: '#28C940' }} />
+          <div style={{ width: 11, height: 11, borderRadius: 0, background: '#FF6058' }} />
+          <div style={{ width: 11, height: 11, borderRadius: 0, background: '#FFBE2F' }} />
+          <div style={{ width: 11, height: 11, borderRadius: 0, background: '#28C940' }} />
         </div>
         <div style={{ fontFamily: PFONT, fontSize: 12, color: PC.text3 }}>{title}</div>
       </div>
@@ -274,13 +274,13 @@ function PViewToggle({ active = 'calendar' }) {
           <div key={it.id} style={{
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '10px 16px',
-            borderRadius: 10,
+            borderRadius: 0,
             background: on ? PC.accent : PC.surface,
             color: on ? '#fff' : PC.text2,
             border: `1px solid ${on ? PC.accent : PC.border}`,
             fontFamily: PFONT, fontSize: 14, fontWeight: 600,
             whiteSpace: 'nowrap',
-            boxShadow: on ? '0 4px 14px rgba(79,70,229,0.30)' : 'none',
+            boxShadow: on ? '0 4px 14px rgba(44,88,64,0.30)' : 'none',
           }}>
             <ViewIcon kind={it.icon} active={on} />
             {it.label}
@@ -325,23 +325,16 @@ function PageHeader({ view = 'calendar' }) {
 // SCENE 1 — HOOK (0:00–0:03)
 // ────────────────────────────────────────────────────────────────────────────
 
+// Intro now matches the other demos: brand mark fades in, then the two
+// Anton-uppercase headline lines cross-fade with a small translate. No
+// typewriter, no blinking cursor — same cadence as Scene IV/CM/IN/etc.
 function ScenePHook() {
   const { localTime } = useSprite();
-  const head1 = 'Every job.';
-  const head2 = 'Every stage.';
-
-  const t1Start = 0.4, t1End = 1.5;
-  const t2Start = 1.6, t2End = 2.4;
-  const t1 = clamp((localTime - t1Start) / (t1End - t1Start), 0, 1);
-  const t2 = clamp((localTime - t2Start) / (t2End - t2Start), 0, 1);
-  const visible1 = head1.slice(0, Math.floor(t1 * head1.length));
-  const visible2 = head2.slice(0, Math.floor(t2 * head2.length));
-
-  const blink = (localTime % 0.9) < 0.5;
-  const cursorOnLine2 = localTime >= t1End - 0.05;
-  const showCursor = localTime < t2End ? true : blink;
-
-  const brand = clamp((localTime - 0.15) / 0.5, 0, 1);
+  const t = localTime;
+  const logoT = clamp(t / 0.6, 0, 1);
+  const h1T = clamp((t - 0.5) / 0.5, 0, 1);
+  const h2T = clamp((t - 0.95) / 0.5, 0, 1);
+  const subT = clamp((t - 1.6) / 0.5, 0, 1);
 
   return (
     <div style={{
@@ -350,52 +343,35 @@ function ScenePHook() {
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
     }}>
-      <PBgGrid dark />
-
       <div style={{
-        opacity: brand,
-        transform: `translateY(${(1 - brand) * 6}px)`,
-        display: 'flex', alignItems: 'center', gap: 10,
-        marginBottom: 36,
+        opacity: logoT,
+        transform: `translateY(${(1 - logoT) * 8}px)`,
+        display: 'flex', alignItems: 'center', gap: 14,
+        marginBottom: 38,
       }}>
-        <PFlameMark size={26} animate time={localTime} />
-        <span style={{
-          fontFamily: PFONT, fontSize: 16, fontWeight: 600,
-          color: PC.darkText1, letterSpacing: '-0.01em',
-        }}>InkTracker</span>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
 
       <div style={{
-        fontFamily: PFONT, fontSize: 96, fontWeight: 700,
-        letterSpacing: '-0.04em',
-        lineHeight: 1.08,
-        textAlign: 'center',
-      }}>
-        <div style={{ color: PC.darkText1, whiteSpace: 'nowrap' }}>
-          <span>{visible1}</span>
-          {!cursorOnLine2 && (
-            <span style={{
-              display: 'inline-block', width: 6, height: 84,
-              marginLeft: 8, background: PC.accent,
-              opacity: showCursor ? 1 : 0,
-              transform: 'translateY(10px)',
-              borderRadius: 1, verticalAlign: 'baseline',
-            }} />
-          )}
-        </div>
-        <div style={{ color: PC.accent, whiteSpace: 'nowrap', marginTop: 6 }}>
-          <span>{visible2}</span>
-          {cursorOnLine2 && (
-            <span style={{
-              display: 'inline-block', width: 6, height: 84,
-              marginLeft: 8, background: PC.accent,
-              opacity: showCursor ? 1 : 0,
-              transform: 'translateY(10px)',
-              borderRadius: 1, verticalAlign: 'baseline',
-            }} />
-          )}
-        </div>
-      </div>
+        opacity: h1T,
+        transform: `translateY(${(1 - h1T) * 10}px)`,
+        fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132,
+        color: PC.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase',
+        lineHeight: 1, textAlign: 'center',
+      }}>Every job.</div>
+      <div style={{
+        opacity: h2T,
+        transform: `translateY(${(1 - h2T) * 10}px)`,
+        fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132,
+        color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase',
+        lineHeight: 1.02, textAlign: 'center', marginTop: 10,
+      }}>Every stage.</div>
+      <div style={{
+        opacity: subT,
+        transform: `translateY(${(1 - subT) * 8}px)`,
+        fontFamily: PFONT, fontSize: 20,
+        color: PC.darkText2, marginTop: 36, textAlign: 'center',
+      }}>From the calendar to the floor — every job, every stage, on one board.</div>
     </div>
   );
 }
@@ -496,7 +472,7 @@ function SceneCalendar() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <ArrowBtn dir="left" />
               <div style={{
-                padding: '8px 16px', borderRadius: 10,
+                padding: '8px 16px', borderRadius: 0,
                 background: PC.surface, border: `1px solid ${PC.border}`,
                 fontFamily: PFONT, fontSize: 13.5, fontWeight: 600, color: PC.accent,
               }}>Today</div>
@@ -514,7 +490,7 @@ function SceneCalendar() {
             left: 44, right: 44, top: 200, bottom: 32,
             background: PC.surface,
             border: `1px solid ${PC.border}`,
-            borderRadius: 12,
+            borderRadius: 0,
             overflow: 'hidden',
             display: 'flex', flexDirection: 'column',
           }}>
@@ -559,7 +535,7 @@ function SceneCalendar() {
                         <div style={{
                           width: isToday ? 22 : 'auto',
                           height: isToday ? 22 : 'auto',
-                          borderRadius: 11,
+                          borderRadius: 0,
                           background: isToday ? PC.accent : 'transparent',
                           color: isToday ? '#fff' : PC.text2,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -583,7 +559,7 @@ function SceneCalendar() {
                             background: tone.bg,
                             border: `1px solid ${tone.br}`,
                             color: tone.fg,
-                            borderRadius: 5,
+                            borderRadius: 0,
                             padding: '3px 7px',
                             fontFamily: PFONT, fontSize: 10.5, fontWeight: 600,
                             letterSpacing: '-0.005em',
@@ -609,7 +585,7 @@ function SceneCalendar() {
 function ArrowBtn({ dir }) {
   return (
     <div style={{
-      width: 34, height: 34, borderRadius: 8,
+      width: 34, height: 34, borderRadius: 0,
       background: PC.surface, border: `1px solid ${PC.border}`,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
     }}>
@@ -693,13 +669,13 @@ function SceneTable() {
               return (
                 <div key={label} style={{
                   padding: '8px 14px',
-                  borderRadius: 999,
+                  borderRadius: 0,
                   background: on ? PC.text1 : PC.surface,
                   border: `1px solid ${on ? PC.text1 : PC.border}`,
                   color: on ? '#fff' : PC.text2,
                   fontFamily: PFONT, fontSize: 13, fontWeight: 600,
                   whiteSpace: 'nowrap',
-                  boxShadow: pulse > 0 ? `0 0 0 ${4 * pulse}px rgba(79,70,229,0.18)` : 'none',
+                  boxShadow: pulse > 0 ? `0 0 0 ${4 * pulse}px rgba(44,88,64,0.18)` : 'none',
                   position: 'relative',
                   transition: 'background 200ms, color 200ms, border-color 200ms',
                 }}>
@@ -727,7 +703,7 @@ function SceneTable() {
             {['All','Internal','Broker'].map((l, i) => (
               <div key={l} style={{
                 padding: '7px 14px',
-                borderRadius: 999,
+                borderRadius: 0,
                 background: i === 0 ? PC.text1 : PC.surface,
                 color: i === 0 ? '#fff' : PC.text2,
                 border: `1px solid ${i === 0 ? PC.text1 : PC.border}`,
@@ -743,7 +719,7 @@ function SceneTable() {
             left: 44, right: 44, top: 280, bottom: 32,
             background: PC.surface,
             border: `1px solid ${PC.border}`,
-            borderRadius: 12,
+            borderRadius: 0,
             overflow: 'hidden',
           }}>
             {/* Header */}
@@ -785,7 +761,7 @@ function SceneTable() {
                 }}>
                   <div>
                     <div style={{
-                      width: 18, height: 18, borderRadius: 4,
+                      width: 18, height: 18, borderRadius: 0,
                       border: `1.5px solid ${PC.borderStrong}`,
                       background: PC.surface,
                     }} />
@@ -807,7 +783,7 @@ function SceneTable() {
                     <span style={{
                       display: 'inline-flex', alignItems: 'center',
                       padding: '4px 12px',
-                      borderRadius: 999,
+                      borderRadius: 0,
                       background: stage.bg, color: stage.fg,
                       fontFamily: PFONT, fontSize: 12, fontWeight: 600,
                     }}>{stage.label}</span>
@@ -879,17 +855,17 @@ function SceneFloor() {
             display: 'flex', gap: 8,
           }}>
             <div style={{
-              padding: '8px 16px', borderRadius: 999,
+              padding: '8px 16px', borderRadius: 0,
               background: PC.surface, border: `1px solid ${PC.border}`,
               fontFamily: PFONT, fontSize: 13.5, color: PC.text2, fontWeight: 600,
             }}>Active (8)</div>
             <div style={{
-              padding: '8px 16px', borderRadius: 999,
+              padding: '8px 16px', borderRadius: 0,
               background: PC.accent, color: '#fff',
               fontFamily: PFONT, fontSize: 13.5, fontWeight: 600,
             }}>All</div>
             <div style={{
-              padding: '8px 16px', borderRadius: 999,
+              padding: '8px 16px', borderRadius: 0,
               background: PC.surface, border: `1px solid ${PC.border}`,
               fontFamily: PFONT, fontSize: 13.5, color: PC.text2, fontWeight: 600,
             }}>Completed</div>
@@ -901,7 +877,7 @@ function SceneFloor() {
             left: 44, right: 44, top: 250, bottom: 32,
             background: PC.surface,
             border: `1px solid ${PC.border}`,
-            borderRadius: 12,
+            borderRadius: 0,
             display: 'grid',
             gridTemplateColumns: '420px 1fr',
             overflow: 'hidden',
@@ -942,7 +918,7 @@ function SceneFloor() {
                       }}>{r.name}</div>
                       <span style={{
                         flexShrink: 0,
-                        padding: '3px 10px', borderRadius: 999,
+                        padding: '3px 10px', borderRadius: 0,
                         background: stage.bg, color: stage.fg,
                         fontFamily: PFONT, fontSize: 11.5, fontWeight: 600,
                       }}>{stage.label}</span>
@@ -1036,7 +1012,7 @@ function GarmentCard({ idx, cardStart, dotStart, localTime, title, color, decos,
     <div style={{
       background: PC.surface,
       border: `1px solid ${PC.border}`,
-      borderRadius: 12,
+      borderRadius: 0,
       padding: '18px 20px',
       marginBottom: 14,
       opacity: cardT,
@@ -1063,7 +1039,7 @@ function GarmentCard({ idx, cardStart, dotStart, localTime, title, color, decos,
             padding: '5px 12px',
             border: `1px solid ${PC.border}`,
             background: PC.surface2,
-            borderRadius: 999,
+            borderRadius: 0,
             fontFamily: PFONT, fontSize: 12, color: PC.text2, fontWeight: 500,
             whiteSpace: 'nowrap',
           }}>{d}</div>
@@ -1082,8 +1058,8 @@ function GarmentCard({ idx, cardStart, dotStart, localTime, title, color, decos,
               <div style={{
                 minWidth: 72, padding: '8px 14px',
                 background: done ? '#DCFCE7' : '#FEF3C7',
-                border: `1.5px solid ${done ? '#86EFAC' : '#FDE68A'}`,
-                borderRadius: 10,
+                border: `1.5px solid ${done ? '#86A89A' : '#FDE68A'}`,
+                borderRadius: 0,
                 fontFamily: PFONT, fontSize: 15, fontWeight: 700,
                 color: done ? '#166534' : '#92400E',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1103,7 +1079,7 @@ function GarmentCard({ idx, cardStart, dotStart, localTime, title, color, decos,
                   const on = k < Math.max(0, filled);
                   return (
                     <div key={k} style={{
-                      width: 9, height: 9, borderRadius: 5,
+                      width: 9, height: 9, borderRadius: 0,
                       background: on ? '#22C55E' : '#E5E7EB',
                       transition: 'background 200ms',
                     }} />
@@ -1145,7 +1121,7 @@ function ScenePLockup() {
         left: '50%', top: '42%',
         width: 1300, height: 700,
         transform: `translate(-50%, -50%) scale(${0.6 + 0.4 * logoE})`,
-        background: 'radial-gradient(ellipse at center, rgba(79,70,229,0.30), transparent 60%)',
+        background: 'radial-gradient(ellipse at center, rgba(44,88,64,0.30), transparent 60%)',
         opacity: logoE,
         filter: 'blur(20px)',
         pointerEvents: 'none',
@@ -1158,12 +1134,12 @@ function ScenePLockup() {
         padding: '7px 14px',
         background: 'rgba(34,197,94,0.10)',
         border: '1px solid rgba(34,197,94,0.25)',
-        borderRadius: 999,
+        borderRadius: 0,
         display: 'flex', alignItems: 'center', gap: 8,
-        fontFamily: PFONT, fontSize: 13.5, fontWeight: 500, color: '#86EFAC',
+        fontFamily: PFONT, fontSize: 13.5, fontWeight: 500, color: '#86A89A',
         whiteSpace: 'nowrap',
       }}>
-        <span style={{ width: 7, height: 7, borderRadius: 4, background: '#22C55E' }} />
+        <span style={{ width: 7, height: 7, borderRadius: 0, background: '#22C55E' }} />
         14-day free trial · No credit card required
       </div>
 
@@ -1174,11 +1150,7 @@ function ScenePLockup() {
         display: 'flex', alignItems: 'center', gap: 18,
         marginBottom: 28,
       }}>
-        <PFlameMark size={88} animate time={localTime} ripple />
-        <span style={{
-          fontFamily: PFONT, fontSize: 80, fontWeight: 700,
-          color: PC.darkText1, letterSpacing: '-0.04em',
-        }}>InkTracker</span>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
 
       {/* Tagline */}
@@ -1251,7 +1223,7 @@ function SceneCaption({ text, time, duration, delay = 0.5 }) {
       <div style={{
         padding: '10px 22px',
         background: 'rgba(15,23,42,0.92)',
-        borderRadius: 999,
+        borderRadius: 0,
         color: '#fff',
         fontFamily: PFONT, fontSize: 15, fontWeight: 500,
         letterSpacing: '-0.005em',

@@ -2,7 +2,7 @@
 // Uses the same visual system as the other demos. Demo clients only.
 
 const CM = {
-  darkBg: '#0B0B0E',
+  darkBg: '#1a3a28',
   darkText1: '#F4F4F5',
   darkText2: 'rgba(244,244,245,0.62)',
   darkText3: 'rgba(244,244,245,0.40)',
@@ -15,9 +15,9 @@ const CM = {
   text2: '#475569',
   text3: '#94A3B8',
   text4: '#CBD5E1',
-  accent: '#4F46E5',
-  accentSoft: '#EEF2FF',
-  accentBorder: '#C7D2FE',
+  accent: '#2C5840',
+  accentSoft: '#E8F0EA',
+  accentBorder: '#B8D0C0',
   green: '#16A34A',
   greenSoft: '#DCFCE7',
   amber: '#D97706',
@@ -27,7 +27,7 @@ const CM = {
   tagPurpleText: '#5B21B6',
 };
 const CMF = '"Inter", system-ui, -apple-system, sans-serif';
-const CMM = '"JetBrains Mono", ui-monospace, monospace';
+const CMM = '"Inter", system-ui, -apple-system, sans-serif';
 
 function cmclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function cmeaseOut(t) { return 1 - Math.pow(1 - t, 3); }
@@ -38,7 +38,7 @@ function CMLogo({ size = 32 }) {
 
 // ─── Demo customer roster (12 fictional) ───────────────────────────────────
 const DEMO_CUSTOMERS = [
-  { initials: 'AB', name: 'Aldenwood Bookstore',     contact: '',                       email: 'orders@aldenwood.example',     invoices: 4,  collected: '$2,840.00', tax: false, color: '#EEF2FF' },
+  { initials: 'AB', name: 'Aldenwood Bookstore',     contact: '',                       email: 'orders@aldenwood.example',     invoices: 4,  collected: '$2,840.00', tax: false, color: '#E8F0EA' },
   { initials: 'BC', name: 'Bayside Coffee Roasters', contact: 'Jonas Vega',             email: 'jonas@baysideroasters.example', invoices: 12, collected: '$9,402.50', tax: false, color: '#FEF3C7' },
   { initials: 'CR', name: 'Cypress Ridge HS',        contact: 'Erin Holloway',          email: 'eholloway@cypressridge.example.edu', invoices: 18, collected: '$24,108.75', tax: true,  color: '#DBEAFE' },
   { initials: 'DT', name: 'Driftwood Theatre Co.',   contact: 'Sasha Pham',             email: 'sasha@driftwoodtheatre.example', invoices: 6,  collected: '$3,915.00', tax: true,  color: '#FCE7F3' },
@@ -103,7 +103,7 @@ function CMSidebar() {
           return (
             <div key={it.label} style={{
               display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 14px', borderRadius: 8, marginBottom: 2,
+              padding: '11px 14px', borderRadius: 0, marginBottom: 2,
               background: a ? CM.accent : 'transparent',
             }}>
               <CMNavIcon kind={it.icon} color={a ? '#fff' : CM.text3} />
@@ -113,7 +113,7 @@ function CMSidebar() {
         })}
       </div>
       <div style={{ padding: '14px 16px', borderTop: `1px solid ${CM.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1, height: 34, background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8 }}>
+        <div style={{ flex: 1, height: 34, background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 0, display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={CM.text3} strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
           <span style={{ fontFamily: CMF, fontSize: 12, color: CM.text3 }}>Search…</span>
         </div>
@@ -139,15 +139,15 @@ function CustCard({ c, highlight, dim }) {
   return (
     <div style={{
       background: CM.surface, border: highlight ? `2px solid ${CM.accent}` : `1px solid ${CM.border}`,
-      borderRadius: 14, padding: '20px 22px',
-      boxShadow: highlight ? '0 14px 32px rgba(79,70,229,0.18)' : '0 1px 2px rgba(15,23,42,0.04)',
+      borderRadius: 0, padding: '20px 22px',
+      boxShadow: highlight ? '0 14px 32px rgba(44,88,64,0.18)' : '0 1px 2px rgba(15,23,42,0.04)',
       opacity: dim ? 0.42 : 1,
       transition: 'all 0.25s',
       display: 'flex', flexDirection: 'column', gap: 14,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <div style={{
-          width: 48, height: 48, borderRadius: 12, background: c.color,
+          width: 48, height: 48, borderRadius: 0, background: c.color,
           display: 'grid', placeItems: 'center',
           fontFamily: CMF, fontSize: 15, fontWeight: 800, color: CM.text1, letterSpacing: '0.02em',
         }}>{c.initials}</div>
@@ -156,7 +156,7 @@ function CustCard({ c, highlight, dim }) {
           {c.contact && <div style={{ fontFamily: CMF, fontSize: 12.5, color: CM.text3, marginTop: 1 }}>{c.contact}</div>}
         </div>
       </div>
-      <div style={{ background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 8, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 0, padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={CM.text3} strokeWidth="1.8"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 8l9 6 9-6"/></svg>
         <div style={{ fontFamily: CMF, fontSize: 12.5, color: CM.text2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.email}</div>
       </div>
@@ -170,11 +170,11 @@ function CustCard({ c, highlight, dim }) {
           <div style={{ fontFamily: CMF, fontSize: 11, color: CM.text3, fontWeight: 500 }}>collected</div>
         </div>
         {c.tax && (
-          <div style={{ padding: '5px 10px', background: CM.tagPurple, color: CM.tagPurpleText, borderRadius: 999, fontFamily: CMF, fontSize: 11, fontWeight: 700, letterSpacing: '0.02em' }}>Tax Exempt</div>
+          <div style={{ padding: '5px 10px', background: CM.tagPurple, color: CM.tagPurpleText, borderRadius: 0, fontFamily: CMF, fontSize: 11, fontWeight: 700, letterSpacing: '0.02em' }}>Tax Exempt</div>
         )}
         <button style={{
           padding: '6px 14px', border: `1px solid ${CM.border}`, background: '#fff',
-          borderRadius: 8, fontFamily: CMF, fontSize: 12.5, fontWeight: 600, color: CM.text2,
+          borderRadius: 0, fontFamily: CMF, fontSize: 12.5, fontWeight: 600, color: CM.text2,
         }}>Edit</button>
       </div>
     </div>
@@ -193,7 +193,7 @@ function CMCaption({ text, time, duration, delay = 0.3, fade = 0.4 }) {
         opacity: op,
         background: 'rgba(11,11,14,0.92)', color: '#F4F4F5',
         fontFamily: CMF, fontSize: 17, fontWeight: 500, letterSpacing: '-0.005em',
-        padding: '12px 22px', borderRadius: 999,
+        padding: '12px 22px', borderRadius: 0,
         boxShadow: '0 12px 32px rgba(0,0,0,0.25)', whiteSpace: 'nowrap',
       }}>{text}</div>
     </div>
@@ -213,11 +213,10 @@ function SceneCMHook() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: CM.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
-        <CMLogo size={40} />
-        <div style={{ fontFamily: CMF, fontSize: 22, fontWeight: 700, color: CM.darkText1, letterSpacing: '-0.015em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: CMF, fontSize: 96, fontWeight: 800, color: CM.darkText1, letterSpacing: '-0.045em', lineHeight: 1, textAlign: 'center' }}>Every customer.</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: CMF, fontSize: 96, fontWeight: 800, color: '#A5B4FC', letterSpacing: '-0.045em', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>One source of truth.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: CM.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Every customer.</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>One source of truth.</div>
       <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: CMF, fontSize: 20, color: CM.darkText2, marginTop: 36, textAlign: 'center' }}>Contacts, history, artwork — all in one place.</div>
     </div>
   );
@@ -238,11 +237,11 @@ function SceneCMGrid() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ fontFamily: CMF, fontSize: 38, fontWeight: 800, color: CM.text1, letterSpacing: '-0.03em' }}>Customers</div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button style={{ padding: '10px 18px', background: '#fff', border: `1px solid ${CM.border}`, borderRadius: 8, fontFamily: CMF, fontSize: 14, fontWeight: 600, color: CM.text2, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button style={{ padding: '10px 18px', background: '#fff', border: `1px solid ${CM.border}`, borderRadius: 0, fontFamily: CMF, fontSize: 14, fontWeight: 600, color: CM.text2, display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={CM.text2} strokeWidth="1.8"><path d="M9 12h6M3 8l6 4-6 4M21 8l-6 4 6 4"/></svg>
               Merge Duplicates
             </button>
-            <button style={{ padding: '10px 18px', background: CM.accent, color: '#fff', border: 'none', borderRadius: 8, fontFamily: CMF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(79,70,229,0.32)' }}>+ Add Customer</button>
+            <button style={{ padding: '10px 18px', background: CM.accent, color: '#fff', border: 'none', borderRadius: 0, fontFamily: CMF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(44,88,64,0.32)' }}>+ Add Customer</button>
           </div>
         </div>
         <div style={{ opacity: filtersT, marginTop: 22, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -317,14 +316,14 @@ function SceneCMAdd() {
       <div style={{
         position: 'absolute', left: 56, right: 56, top: 100,
         background: '#fff', border: `1px solid ${CM.accentBorder}`,
-        borderRadius: 16,
+        borderRadius: 0,
         opacity: panelE, transform: `translateY(${(1-panelE)*-16}px)`,
-        boxShadow: '0 24px 60px rgba(79,70,229,0.18), 0 4px 12px rgba(15,23,42,0.05)',
+        boxShadow: '0 24px 60px rgba(44,88,64,0.18), 0 4px 12px rgba(15,23,42,0.05)',
         padding: '28px 32px',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 22 }}>
           <div style={{ fontFamily: CMF, fontSize: 12, fontWeight: 800, letterSpacing: '0.14em', color: CM.accent }}>NEW CUSTOMER</div>
-          <button style={{ marginLeft: 'auto', padding: '8px 14px', background: CM.accent, color: '#fff', border: 'none', borderRadius: 8, fontFamily: CMF, fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>✕ Cancel</button>
+          <button style={{ marginLeft: 'auto', padding: '8px 14px', background: CM.accent, color: '#fff', border: 'none', borderRadius: 0, fontFamily: CMF, fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>✕ Cancel</button>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 22, columnGap: 28, rowGap: 22 }}>
@@ -339,7 +338,7 @@ function SceneCMAdd() {
         <div style={{ marginTop: 22, display: 'flex', alignItems: 'center', gap: 28 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
-              width: 18, height: 18, borderRadius: 4,
+              width: 18, height: 18, borderRadius: 0,
               border: `1.5px solid ${taxT > 0.5 ? CM.accent : CM.borderStrong}`,
               background: taxT > 0.5 ? CM.accent : '#fff',
               display: 'grid', placeItems: 'center',
@@ -351,14 +350,14 @@ function SceneCMAdd() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
             <div style={{ fontFamily: CMF, fontSize: 11, fontWeight: 800, letterSpacing: '0.12em', color: CM.text3 }}>DEFAULT PAYMENT TERMS</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 16, height: 16, borderRadius: 8, border: `1.5px solid ${depT < 0.5 ? CM.accent : CM.borderStrong}`, display: 'grid', placeItems: 'center' }}>
-                {depT < 0.5 && <div style={{ width: 8, height: 8, borderRadius: 4, background: CM.accent }} />}
+              <div style={{ width: 16, height: 16, borderRadius: 0, border: `1.5px solid ${depT < 0.5 ? CM.accent : CM.borderStrong}`, display: 'grid', placeItems: 'center' }}>
+                {depT < 0.5 && <div style={{ width: 8, height: 8, borderRadius: 0, background: CM.accent }} />}
               </div>
               <div style={{ fontFamily: CMF, fontSize: 13.5, fontWeight: 600, color: CM.text1 }}>Pay in full</div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{ width: 16, height: 16, borderRadius: 8, border: `1.5px solid ${depT > 0.5 ? CM.accent : CM.borderStrong}`, display: 'grid', placeItems: 'center' }}>
-                {depT > 0.5 && <div style={{ width: 8, height: 8, borderRadius: 4, background: CM.accent }} />}
+              <div style={{ width: 16, height: 16, borderRadius: 0, border: `1.5px solid ${depT > 0.5 ? CM.accent : CM.borderStrong}`, display: 'grid', placeItems: 'center' }}>
+                {depT > 0.5 && <div style={{ width: 8, height: 8, borderRadius: 0, background: CM.accent }} />}
               </div>
               <div style={{ fontFamily: CMF, fontSize: 13.5, fontWeight: 600, color: CM.text1 }}>Deposit</div>
             </div>
@@ -369,9 +368,9 @@ function SceneCMAdd() {
           marginTop: 22, padding: '14px 26px',
           background: saveT > 0.5 ? CM.accent : '#E2E8F0',
           color: saveT > 0.5 ? '#fff' : CM.text3,
-          border: 'none', borderRadius: 8,
+          border: 'none', borderRadius: 0,
           fontFamily: CMF, fontSize: 15, fontWeight: 700,
-          boxShadow: saveT > 0.5 ? `0 8px 22px rgba(79,70,229,${0.28 + 0.18*saveGlow})` : 'none',
+          boxShadow: saveT > 0.5 ? `0 8px 22px rgba(44,88,64,${0.28 + 0.18*saveGlow})` : 'none',
           transition: 'all 0.2s',
           display: 'flex', alignItems: 'center', gap: 8,
         }}>Add Customer</button>
@@ -389,7 +388,7 @@ function CMField({ label, value, active, caretOn }) {
       <div style={{
         height: 48, border: `1px solid ${active ? CM.accentBorder : CM.borderStrong}`,
         background: active ? CM.accentSoft : '#fff',
-        borderRadius: 8, padding: '0 14px',
+        borderRadius: 0, padding: '0 14px',
         display: 'flex', alignItems: 'center',
         fontFamily: CMF, fontSize: 15, color: CM.text1, fontWeight: 500,
       }}>
@@ -431,14 +430,14 @@ function SceneCMEdit() {
         position: 'absolute', left: '50%', top: 60, bottom: 60,
         width: 980, transform: `translateX(-50%) translateY(${(1-modalE)*20}px) scale(${0.97 + 0.03*modalE})`,
         opacity: modalE,
-        background: '#fff', borderRadius: 16,
+        background: '#fff', borderRadius: 0,
         boxShadow: '0 32px 80px rgba(15,23,42,0.35), 0 8px 24px rgba(15,23,42,0.12)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Header */}
         <div style={{ padding: '24px 32px 18px', display: 'flex', alignItems: 'center', borderBottom: `1px solid ${CM.border}` }}>
           <div style={{ fontFamily: CMF, fontSize: 24, fontWeight: 800, color: CM.text1, letterSpacing: '-0.02em' }}>Edit Customer</div>
-          <div style={{ marginLeft: 'auto', width: 32, height: 32, borderRadius: 16, background: CM.surface2, display: 'grid', placeItems: 'center', color: CM.text3 }}>✕</div>
+          <div style={{ marginLeft: 'auto', width: 32, height: 32, borderRadius: 0, background: CM.surface2, display: 'grid', placeItems: 'center', color: CM.text3 }}>✕</div>
         </div>
 
         {/* Body */}
@@ -456,11 +455,11 @@ function SceneCMEdit() {
           {/* Saved imprints */}
           <div style={{
             opacity: imprintT, transform: `translateY(${(1-imprintT)*8}px)`,
-            border: `1px solid ${CM.border}`, borderRadius: 12, padding: '18px 20px',
+            border: `1px solid ${CM.border}`, borderRadius: 0, padding: '18px 20px',
           }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
               <div style={{ fontFamily: CMF, fontSize: 11, fontWeight: 800, letterSpacing: '0.14em', color: CM.text3 }}>SAVED IMPRINTS</div>
-              <button style={{ marginLeft: 'auto', padding: '6px 12px', border: `1.5px dashed ${CM.accentBorder}`, background: 'transparent', color: CM.accent, borderRadius: 8, fontFamily: CMF, fontSize: 12.5, fontWeight: 700 }}>+ Add Imprint</button>
+              <button style={{ marginLeft: 'auto', padding: '6px 12px', border: `1.5px dashed ${CM.accentBorder}`, background: 'transparent', color: CM.accent, borderRadius: 0, fontFamily: CMF, fontSize: 12.5, fontWeight: 700 }}>+ Add Imprint</button>
             </div>
             <div style={{ marginTop: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, opacity: imprintCardT, transform: `translateY(${(1-imprintCardT)*8}px)` }}>
               {[
@@ -471,10 +470,10 @@ function SceneCMEdit() {
                 return (
                   <div key={im.name} style={{
                     opacity: ct, transform: `translateY(${(1-ct)*8}px)`,
-                    border: `1px solid ${CM.border}`, background: CM.surface2, borderRadius: 10,
+                    border: `1px solid ${CM.border}`, background: CM.surface2, borderRadius: 0,
                     padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12,
                   }}>
-                    <div style={{ width: 38, height: 38, borderRadius: 8, background: '#fff', border: `1px solid ${CM.border}`, display: 'grid', placeItems: 'center' }}>
+                    <div style={{ width: 38, height: 38, borderRadius: 0, background: '#fff', border: `1px solid ${CM.border}`, display: 'grid', placeItems: 'center' }}>
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={CM.text3} strokeWidth="1.6"><path d="M6 4h12l2 4v10a2 2 0 01-2 2H6a2 2 0 01-2-2V8z"/><path d="M9 4v4h6V4"/></svg>
                     </div>
                     <div style={{ flex: 1 }}>
@@ -490,22 +489,22 @@ function SceneCMEdit() {
           {/* Artwork library */}
           <div style={{
             opacity: artT, transform: `translateY(${(1-artT)*8}px)`,
-            border: `1px solid ${CM.border}`, borderRadius: 12, padding: '18px 20px',
+            border: `1px solid ${CM.border}`, borderRadius: 0, padding: '18px 20px',
           }}>
             <div style={{ fontFamily: CMF, fontSize: 11, fontWeight: 800, letterSpacing: '0.14em', color: CM.text3 }}>CUSTOMER ARTWORK LIBRARY</div>
             <div style={{ fontFamily: CMF, fontSize: 12.5, color: CM.text2, marginTop: 4 }}>Files survive page reloads — pulled into new quotes automatically.</div>
 
-            <div style={{ marginTop: 14, padding: '14px 16px', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 10 }}>
-              <div style={{ height: 38, border: `1px solid ${CM.borderStrong}`, borderRadius: 8, background: '#fff', display: 'flex', alignItems: 'center', padding: '0 12px', fontFamily: CMF, fontSize: 13, color: fileSelectT > 0.5 ? CM.text1 : CM.text3 }}>
+            <div style={{ marginTop: 14, padding: '14px 16px', background: CM.surface2, border: `1px solid ${CM.border}`, borderRadius: 0 }}>
+              <div style={{ height: 38, border: `1px solid ${CM.borderStrong}`, borderRadius: 0, background: '#fff', display: 'flex', alignItems: 'center', padding: '0 12px', fontFamily: CMF, fontSize: 13, color: fileSelectT > 0.5 ? CM.text1 : CM.text3 }}>
                 {fileSelectT > 0.5 ? 'Front Chest Logo (3c version)' : 'Optional note (example: Front chest logo)'}
               </div>
-              <div style={{ marginTop: 10, height: 38, border: `1px solid ${CM.borderStrong}`, borderRadius: 8, background: '#fff', display: 'flex', alignItems: 'center', padding: '0 12px', fontFamily: CMF, fontSize: 13, color: fileSelectT > 0.5 ? CM.text1 : CM.text3 }}>
+              <div style={{ marginTop: 10, height: 38, border: `1px solid ${CM.borderStrong}`, borderRadius: 0, background: '#fff', display: 'flex', alignItems: 'center', padding: '0 12px', fontFamily: CMF, fontSize: 13, color: fileSelectT > 0.5 ? CM.text1 : CM.text3 }}>
                 {fileSelectT > 0.5 ? '3' : 'Production color count (example: 3)'}
               </div>
 
               <button style={{
                 marginTop: 12, padding: '10px 18px',
-                background: CM.accent, color: '#fff', border: 'none', borderRadius: 8,
+                background: CM.accent, color: '#fff', border: 'none', borderRadius: 0,
                 fontFamily: CMF, fontSize: 13, fontWeight: 700,
                 display: 'flex', alignItems: 'center', gap: 8,
               }}>
@@ -521,9 +520,9 @@ function SceneCMEdit() {
                       opacity: artTileT, transform: `scale(${0.94 + 0.06 * artTileT})`,
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '10px 14px', border: `1px solid ${CM.greenSoft}`,
-                      background: '#F0FDF4', borderRadius: 10,
+                      background: '#F0FDF4', borderRadius: 0,
                     }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 6, background: '#fff', border: `1px solid ${CM.border}`, display: 'grid', placeItems: 'center' }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 0, background: '#fff', border: `1px solid ${CM.border}`, display: 'grid', placeItems: 'center' }}>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={CM.accent} strokeWidth="1.6"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/></svg>
                       </div>
                       <div>
@@ -534,8 +533,8 @@ function SceneCMEdit() {
                   ) : (
                     <div style={{ flex: 1 }}>
                       <div style={{ fontFamily: CMF, fontSize: 12, color: CM.text2, marginBottom: 6 }}>Uploading greenbriar-chest-3c.ai…</div>
-                      <div style={{ height: 6, background: CM.border, borderRadius: 3, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${uploadProgT * 100}%`, background: CM.accent, borderRadius: 3 }} />
+                      <div style={{ height: 6, background: CM.border, borderRadius: 0, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${uploadProgT * 100}%`, background: CM.accent, borderRadius: 0 }} />
                       </div>
                     </div>
                   )}
@@ -547,15 +546,15 @@ function SceneCMEdit() {
 
         {/* Footer */}
         <div style={{ padding: '16px 32px', borderTop: `1px solid ${CM.border}`, display: 'flex', alignItems: 'center' }}>
-          <button style={{ padding: '10px 18px', background: '#fff', border: `1px solid #FCA5A5`, borderRadius: 8, color: '#DC2626', fontFamily: CMF, fontSize: 13, fontWeight: 700 }}>Delete</button>
+          <button style={{ padding: '10px 18px', background: '#fff', border: `1px solid #FCA5A5`, borderRadius: 0, color: '#DC2626', fontFamily: CMF, fontSize: 13, fontWeight: 700 }}>Delete</button>
           <button style={{
             marginLeft: 'auto',
             padding: '12px 22px',
             background: saveT > 0.5 ? CM.accent : '#E2E8F0',
             color: saveT > 0.5 ? '#fff' : CM.text3,
-            border: 'none', borderRadius: 8,
+            border: 'none', borderRadius: 0,
             fontFamily: CMF, fontSize: 14, fontWeight: 700,
-            boxShadow: saveT > 0.5 ? `0 8px 22px rgba(79,70,229,${0.3 + 0.15*saveGlow})` : 'none',
+            boxShadow: saveT > 0.5 ? `0 8px 22px rgba(44,88,64,${0.3 + 0.15*saveGlow})` : 'none',
           }}>Save Changes</button>
         </div>
       </div>
@@ -577,8 +576,7 @@ function SceneCMLockup() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: CM.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoE, transform: `translateY(${(1-logoE)*10}px) scale(${0.95 + 0.05*logoE})`, display: 'flex', alignItems: 'center', gap: 18, marginBottom: 28 }}>
-        <CMLogo size={72} />
-        <div style={{ fontFamily: CMF, fontSize: 56, fontWeight: 800, color: CM.darkText1, letterSpacing: '-0.03em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
       <div style={{ opacity: footT, marginTop: 8, fontFamily: CMF, fontSize: 14, color: CM.darkText3, letterSpacing: '0.01em' }}>$99/mo after trial · Cancel anytime</div>
     </div>

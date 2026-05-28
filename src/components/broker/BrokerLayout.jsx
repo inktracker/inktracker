@@ -92,11 +92,11 @@ export default function BrokerLayout({
       {/* Sidebar — desktop only */}
       <aside className="hidden md:flex w-56 bg-white border-r border-slate-100 flex-col fixed h-full z-20">
         <div className="px-5 py-5 border-b border-slate-100">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-8 h-8 object-contain" />
-            <div className="text-base font-bold text-slate-900">Broker Portal</div>
+            <div className="font-display uppercase text-lg text-slate-900 leading-none">Broker Portal</div>
           </div>
-          <div className="text-xs text-slate-400 mt-0.5 truncate">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400 mt-2 font-bold truncate">
             {displayName}{companyName ? ` · ${companyName}` : ""}
           </div>
         </div>
@@ -108,7 +108,7 @@ export default function BrokerLayout({
               <button
                 key={id}
                 onClick={() => goToSection(id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition ${
                   active
                     ? "bg-teal-600 text-white"
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
@@ -147,7 +147,7 @@ export default function BrokerLayout({
             <Menu className="w-6 h-6" />
           </button>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold text-slate-900 truncate">Broker Portal</div>
+            <div className="font-display uppercase text-base text-slate-900 truncate leading-none">Broker Portal</div>
           </div>
         </div>
 
@@ -157,9 +157,9 @@ export default function BrokerLayout({
             <div className="absolute inset-0 bg-slate-900/50" onClick={() => setMobileMenuOpen(false)} />
             <div className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl flex flex-col">
               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-8 h-8 object-contain" />
-                  <div className="text-sm font-bold text-slate-900">Broker Portal</div>
+                  <div className="font-display uppercase text-base text-slate-900 truncate leading-none">Broker Portal</div>
                 </div>
                 <button onClick={() => setMobileMenuOpen(false)} className="p-1 text-slate-400 hover:text-slate-600">
                   <X className="w-5 h-5" />
@@ -173,7 +173,7 @@ export default function BrokerLayout({
                     <button
                       key={id}
                       onClick={() => { goToSection(id); setMobileMenuOpen(false); }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition ${
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition ${
                         active
                           ? "bg-teal-600 text-white"
                           : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"

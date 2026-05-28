@@ -111,7 +111,7 @@ export default function Layout({ children, currentPageName }) {
         <button
           key={n.page}
           onClick={() => { if (mobile) setMobileMenuOpen(false); setShowUpgrade(n.feature); }}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition w-full text-left ${mobile ? "text-slate-300" : "text-slate-300 dark:text-slate-600 hover:text-slate-400"}`}
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition w-full text-left ${mobile ? "text-slate-300" : "text-slate-300 dark:text-slate-600 hover:text-slate-400"}`}
         >
           <IconComponent className="w-5 h-5 text-slate-300" />
           {n.label}
@@ -132,7 +132,7 @@ export default function Layout({ children, currentPageName }) {
             <Link
               to={createPageUrl(n.page)}
               onClick={onLinkClick}
-              className={`flex items-center gap-3 ${indentCls} py-2.5 text-sm font-semibold transition flex-1 min-w-0 ${active ? "text-white" : `${baseTextCls} ${hoverCls}`}`}
+              className={`flex items-center gap-3 ${indentCls} py-2.5 text-[11px] font-bold uppercase tracking-[0.16em] transition flex-1 min-w-0 ${active ? "text-white" : `${baseTextCls} ${hoverCls}`}`}
             >
               <IconComponent className={`${iconSize} ${active ? "" : "text-slate-400"}`} />
               <span className="flex-1 truncate">{n.label}</span>
@@ -159,7 +159,7 @@ export default function Layout({ children, currentPageName }) {
         key={n.page}
         to={createPageUrl(n.page)}
         onClick={onLinkClick}
-        className={`flex items-center gap-3 ${indentCls} pr-3 py-2.5 rounded-xl text-sm font-semibold transition ${active ? "bg-teal-600 text-white" : `${baseTextCls} ${hoverCls}`}`}
+        className={`flex items-center gap-3 ${indentCls} pr-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition ${active ? "bg-teal-600 text-white" : `${baseTextCls} ${hoverCls}`}`}
       >
         <IconComponent className={`${iconSize} ${active ? "" : "text-slate-400"}`} />
         <span className="flex-1">{n.label}</span>
@@ -229,21 +229,21 @@ export default function Layout({ children, currentPageName }) {
       {/* Sidebar — desktop only */}
       <aside data-tour="sidebar" className="hidden md:flex w-56 bg-white dark:bg-slate-900 border-r border-slate-100 dark:border-slate-800 flex-col fixed h-full z-20">
         <div className="px-5 py-5 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             {logoUrl ? (
               <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain" />
             ) : (
               <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png" alt="InkTracker" className="w-8 h-8 object-contain" />
             )}
-            <div className="text-base font-bold text-slate-900 dark:text-slate-100">{shopName}</div>
+            <div className="font-display uppercase text-lg text-slate-900 dark:text-slate-100 truncate leading-none">{shopName}</div>
           </div>
-          <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Shop Manager</div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500 mt-2 font-bold">Shop Manager</div>
         </div>
         <nav className="flex-1 py-4 space-y-0.5 px-2">
           {NAV.map(n => renderNavItem(n))}
           {(user?.role === "admin" || user?.role === "shop") && (
             <Link to={createPageUrl("AdminPanel")}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-teal-600 text-white" : "text-green-600 hover:bg-green-50"}`}>
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-teal-600 text-white" : "text-green-600 hover:bg-green-50"}`}>
               <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-green-500"}`} />
               Admin
             </Link>
@@ -269,7 +269,7 @@ export default function Layout({ children, currentPageName }) {
             <Menu className="w-6 h-6" />
           </button>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-bold text-slate-900 truncate">{shopName}</div>
+            <div className="font-display uppercase text-base text-slate-900 truncate leading-none">{shopName}</div>
           </div>
           <NotificationBell />
           <GlobalSearch />
@@ -281,13 +281,13 @@ export default function Layout({ children, currentPageName }) {
             <div className="absolute inset-0 bg-slate-900/50" onClick={() => setMobileMenuOpen(false)} />
             <div className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl flex flex-col">
               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
                   {logoUrl ? (
                     <img src={logoUrl} alt="Logo" className="w-8 h-8 object-contain" />
                   ) : (
                     <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png" alt="InkTracker" className="w-8 h-8 object-contain" />
                   )}
-                  <div className="text-sm font-bold text-slate-900">{shopName}</div>
+                  <div className="font-display uppercase text-base text-slate-900 truncate leading-none">{shopName}</div>
                 </div>
                 <button onClick={() => setMobileMenuOpen(false)} className="p-1 text-slate-400 hover:text-slate-600">
                   <X className="w-5 h-5" />
@@ -297,7 +297,7 @@ export default function Layout({ children, currentPageName }) {
                 {NAV.map(n => renderNavItem(n, { mobile: true }))}
                 {(user?.role === "admin" || user?.role === "shop") && (
                   <Link to={createPageUrl("AdminPanel")} onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-teal-600 text-white" : "text-green-600 hover:bg-green-50"}`}>
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-teal-600 text-white" : "text-green-600 hover:bg-green-50"}`}>
                     <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-green-500"}`} />
                     Admin
                   </Link>

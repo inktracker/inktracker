@@ -1,37 +1,43 @@
 // quote-scenes.jsx — InkTracker "Writing a Quote" demo (≈22s)
 // Recreates the actual Quote Builder flow from screenshots.
 
+// Theme aligned with the new landing — Anton display caps + Inter body,
+// forest-green accent in place of indigo, neutral hairlines, square corners.
 const Q = {
-  appBg: '#F5F5F8',
+  appBg: '#FFFFFF',
   surface: '#FFFFFF',
-  surface2: '#FAFAFC',
-  surface3: '#F1F1F4',
-  border: '#E5E7EB',
-  borderStrong: '#CBD5E1',
-  text1: '#0F172A',
-  text2: '#475569',
-  text3: '#94A3B8',
-  text4: '#CBD5E1',
-  accent: '#4F46E5',
-  accentHover: '#4338CA',
-  accentText: '#4338CA',
-  accentSoft: '#EEF2FF',
-  accentSofter: '#F5F3FF',
-  accentBorder: '#C7D2FE',
-  green: '#16A34A',
-  greenSoft: '#DCFCE7',
-  greenBorder: '#86EFAC',
+  surface2: '#FAFAFA',
+  surface3: '#F4F4F4',
+  border: '#E5E5E5',
+  borderStrong: '#1A1A1A',
+  text1: '#0E0E0E',
+  text2: '#5A5A5A',
+  text3: '#8A8A8A',
+  text4: '#BDBDBD',
+  accent: '#2C5840',
+  accentHover: '#1A3A28',
+  accentText: '#2C5840',
+  accentSoft: '#E8F0EA',
+  accentSofter: '#F3F7F4',
+  accentBorder: '#B8D0C0',
+  green: '#2C5840',
+  greenSoft: '#E8F0EA',
+  greenBorder: '#B8D0C0',
   yellow: '#FEF3C7',
   yellowText: '#92400E',
-  yellowBorder: '#FCD34D',
-  amber: '#F59E0B',
-  navy: '#0F172A',
+  yellowBorder: '#86A89A',
+  amber: '#B8540F',
+  navy: '#0E0E0E',
 };
 const F = '"Inter", system-ui, -apple-system, sans-serif';
-const M = '"JetBrains Mono", ui-monospace, SFMono-Regular, monospace';
+// Display font — Anton uppercase for page titles, section headers, badges.
+const D = '"Anton", "Oswald", "Arial Narrow", sans-serif';
+// "M" alias kept for compatibility with inline mono usages — routed through
+// Inter so the strict two-font system (Anton + Inter) stays intact.
+const M = '"Inter", system-ui, -apple-system, sans-serif';
 
 // Hook scene constants
-const QDARK = '#0B0B0E';
+const QDARK = '#000000';
 const QDARK1 = '#F4F4F5';
 const QDARK2 = 'rgba(244,244,245,0.62)';
 const QDARK3 = 'rgba(244,244,245,0.40)';
@@ -47,15 +53,15 @@ function SceneHook() {
   const subT = qclamp((t - 1.6) / 0.5, 0, 1);
   const trailT = qclamp((t - 2.1) / 0.6, 0, 1);
   return (
-    <div style={{ position: 'absolute', inset: 0, background: QDARK, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
-        <Logo size={40} />
-        <div style={{ fontFamily: F, fontSize: 22, fontWeight: 700, color: QDARK1, letterSpacing: '-0.015em' }}>InkTracker</div>
+    <div style={{ position: 'absolute', inset: 0, background: '#1a3a28', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'baseline', marginBottom: 44 }}>
+        <div style={{ fontFamily: D, fontSize: 32, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block' }}>INK</div>
+        <div style={{ fontFamily: D, fontSize: 32, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block' }}>TRACKER</div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: F, fontSize: 96, fontWeight: 800, color: QDARK1, letterSpacing: '-0.045em', lineHeight: 1, textAlign: 'center' }}>Quotes in minutes,</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: F, fontSize: 96, fontWeight: 800, color: '#A5B4FC', letterSpacing: '-0.045em', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>out the door.</div>
-      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: F, fontSize: 20, color: QDARK2, marginTop: 36, textAlign: 'center' }}>Build, price, and email a quote — without leaving the dashboard.</div>
-      <div style={{ opacity: trailT, marginTop: 56, display: 'flex', alignItems: 'center', gap: 18, fontFamily: F, fontSize: 13, fontWeight: 700, color: QDARK3, letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: D, fontSize: 140, color: '#FFFFFF', letterSpacing: '0.01em', lineHeight: 0.92, textAlign: 'center', textTransform: 'uppercase' }}>Quotes in minutes,</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: D, fontSize: 140, color: '#86A89A', letterSpacing: '0.01em', lineHeight: 0.96, textAlign: 'center', marginTop: 4, textTransform: 'uppercase' }}>out the door.</div>
+      <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: F, fontSize: 20, color: QDARK2, marginTop: 40, textAlign: 'center' }}>Build, price, and email a quote — without leaving the dashboard.</div>
+      <div style={{ opacity: trailT, marginTop: 56, display: 'flex', alignItems: 'center', gap: 18, fontFamily: F, fontSize: 13, fontWeight: 700, color: QDARK3, letterSpacing: '0.24em', textTransform: 'uppercase' }}>
         <span>Build</span>
         <span style={{ color: 'rgba(244,244,245,0.25)' }}>→</span>
         <span>Price</span>
@@ -124,8 +130,8 @@ function Sidebar({ active = 'Quotes' }) {
       }}>
         <Logo size={36} />
         <div>
-          <div style={{ fontFamily: F, fontSize: 16, fontWeight: 800, color: Q.text1, letterSpacing: '-0.015em' }}>Biota Mfg</div>
-          <div style={{ fontFamily: F, fontSize: 11.5, color: Q.text3, letterSpacing: '0.01em', marginTop: 1 }}>Shop Manager</div>
+          <div style={{ fontFamily: D, fontSize: 20, color: Q.text1, letterSpacing: '0.04em', textTransform: 'uppercase', lineHeight: 1 }}>Biota Mfg</div>
+          <div style={{ fontFamily: F, fontSize: 10, color: Q.text3, letterSpacing: '0.22em', textTransform: 'uppercase', fontWeight: 700, marginTop: 6 }}>Shop Manager</div>
         </div>
       </div>
 
@@ -136,7 +142,7 @@ function Sidebar({ active = 'Quotes' }) {
             <div key={it.label} style={{
               display: 'flex', alignItems: 'center', gap: 12,
               padding: '9px 12px', margin: '2px 0',
-              borderRadius: 8,
+              borderRadius: 0,
               background: a ? Q.accent : 'transparent',
               color: a ? '#fff' : Q.text2,
               fontFamily: F, fontSize: 14, fontWeight: a ? 600 : 500,
@@ -152,11 +158,11 @@ function Sidebar({ active = 'Quotes' }) {
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '9px 12px', margin: '2px 0',
-          borderRadius: 8,
-          color: '#7C3AED',
+          borderRadius: 0,
+          color: '#2C5840',
           fontFamily: F, fontSize: 14, fontWeight: 700,
         }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/></svg>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2C5840" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z"/></svg>
           Admin
         </div>
       </div>
@@ -167,7 +173,7 @@ function Sidebar({ active = 'Quotes' }) {
           padding: '10px 12px',
           background: Q.surface,
           border: `1px solid ${Q.border}`,
-          borderRadius: 10,
+          borderRadius: 0,
           fontFamily: F, fontSize: 13.5, color: Q.text3,
         }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={Q.text3} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
@@ -206,17 +212,17 @@ function QuotesList({ highlightNewBtn = 0, newRowT = 0 }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
         <h1 style={{
-          fontFamily: F, fontSize: 32, fontWeight: 800, color: Q.text1,
-          letterSpacing: '-0.025em', margin: 0,
+          fontFamily: D, fontSize: 56, color: Q.text1,
+          letterSpacing: '0.02em', margin: 0, textTransform: 'uppercase', lineHeight: 1,
         }}>Quotes</h1>
         <button style={{
-          padding: '12px 22px',
+          padding: '14px 24px',
           background: Q.accent,
-          color: '#fff', border: 'none', borderRadius: 10,
-          fontFamily: F, fontSize: 14.5, fontWeight: 600,
+          color: '#fff', border: 'none', borderRadius: 0,
+          fontFamily: F, fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.16em',
           boxShadow: highlightNewBtn > 0
-            ? `0 0 0 ${4 + highlightNewBtn * 6}px rgba(79,70,229,${highlightNewBtn * 0.18}), 0 4px 12px rgba(79,70,229,0.3)`
-            : '0 1px 2px rgba(15,23,42,0.06)',
+            ? `0 0 0 ${4 + highlightNewBtn * 6}px rgba(44,88,64,${highlightNewBtn * 0.18}), 0 4px 12px rgba(44,88,64,0.3)`
+            : 'none',
           transform: `scale(${1 + highlightNewBtn * 0.02})`,
         }}>+ New Quote</button>
       </div>
@@ -229,7 +235,7 @@ function QuotesList({ highlightNewBtn = 0, newRowT = 0 }) {
             background: i === 0 ? Q.accent : Q.surface,
             color: i === 0 ? '#fff' : Q.text2,
             border: i === 0 ? 'none' : `1px solid ${Q.border}`,
-            borderRadius: 999,
+            borderRadius: 0,
             fontFamily: F, fontSize: 13, fontWeight: 500,
             whiteSpace: 'nowrap',
           }}>{f}</span>
@@ -242,13 +248,13 @@ function QuotesList({ highlightNewBtn = 0, newRowT = 0 }) {
             background: i === 0 ? Q.accent : Q.surface,
             color: i === 0 ? '#fff' : Q.text2,
             border: i === 0 ? 'none' : `1px solid ${Q.border}`,
-            borderRadius: 999,
+            borderRadius: 0,
             fontFamily: F, fontSize: 13, fontWeight: 500,
             whiteSpace: 'nowrap',
           }}>{f}</span>
         ))}
         <span style={{
-          width: 18, height: 18, borderRadius: 10, border: `1.5px solid ${Q.text3}`,
+          width: 18, height: 18, borderRadius: 0, border: `1.5px solid ${Q.text3}`,
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           color: Q.text3, fontFamily: F, fontSize: 11, fontWeight: 700,
         }}>?</span>
@@ -272,7 +278,7 @@ function QuotesList({ highlightNewBtn = 0, newRowT = 0 }) {
       <div style={{
         background: Q.surface,
         border: `1px solid ${Q.border}`,
-        borderRadius: 14,
+        borderRadius: 0,
         overflow: 'hidden',
       }}>
         {/* Header */}
@@ -305,7 +311,7 @@ function QuotesList({ highlightNewBtn = 0, newRowT = 0 }) {
             alignItems: 'center',
             fontFamily: F, fontSize: 13.5, color: Q.text1,
             borderBottom: `1px solid ${Q.border}`,
-            background: `rgba(238,242,255,${newRowT * 0.6})`,
+            background: `rgba(232,240,234,${newRowT * 0.6})`,
             opacity: newRowT,
             transform: `translateX(${(1 - newRowT) * -12}px)`,
           }}>
@@ -353,7 +359,7 @@ function Tier({ label }) {
       display: 'inline-block', padding: '3px 11px',
       background: Q.greenSoft, color: Q.green,
       border: `1px solid ${Q.greenBorder}`,
-      borderRadius: 999,
+      borderRadius: 0,
       fontFamily: F, fontSize: 11.5, fontWeight: 600,
     }}>{label}</span>
   );
@@ -368,7 +374,7 @@ function StatusPill({ label, tone = 'green' }) {
       display: 'inline-block', padding: '3px 11px',
       background: styles.bg, color: styles.fg,
       border: `1px solid ${styles.br}`,
-      borderRadius: 999,
+      borderRadius: 0,
       fontFamily: F, fontSize: 11.5, fontWeight: 600,
     }}>{label}</span>
   );
@@ -490,7 +496,7 @@ function QuoteBuilderModal({ t, modalT }) {
         transform: `translate(-50%, -50%) translateY(${(1 - flyT) * 60}px) scale(${0.94 + 0.06 * flyT})`,
         opacity: flyT,
         background: Q.appBg,
-        borderRadius: 16,
+        borderRadius: 0,
         boxShadow: '0 50px 120px rgba(15,23,42,0.4), 0 8px 24px rgba(15,23,42,0.2)',
         overflow: 'hidden',
         border: `1px solid ${Q.border}`,
@@ -511,7 +517,7 @@ function QuoteBuilderModal({ t, modalT }) {
             <div style={{
               padding: '8px 28px 8px 14px',
               background: Q.surface, border: `1px solid ${Q.border}`,
-              borderRadius: 8,
+              borderRadius: 0,
               fontFamily: F, fontSize: 13.5, color: Q.text2,
               position: 'relative',
             }}>
@@ -521,11 +527,11 @@ function QuoteBuilderModal({ t, modalT }) {
             <button style={{
               padding: '10px 22px',
               background: Q.accent, color: '#fff',
-              border: 'none', borderRadius: 9,
+              border: 'none', borderRadius: 0,
               fontFamily: F, fontSize: 13.5, fontWeight: 700,
               boxShadow: saveT > 0
-                ? `0 0 0 ${4 + saveT * 5}px rgba(79,70,229,${saveT * 0.18}), 0 6px 16px rgba(79,70,229,0.35)`
-                : '0 4px 12px rgba(79,70,229,0.25)',
+                ? `0 0 0 ${4 + saveT * 5}px rgba(44,88,64,${saveT * 0.18}), 0 6px 16px rgba(44,88,64,0.35)`
+                : '0 4px 12px rgba(44,88,64,0.25)',
               transform: `scale(${1 + saveT * 0.03})`,
               whiteSpace: 'nowrap',
             }}>Save Quote →</button>
@@ -545,7 +551,7 @@ function QuoteBuilderModal({ t, modalT }) {
                   padding: '10px 14px',
                   background: Q.surface,
                   border: `1.5px solid ${custOpen || custSel ? Q.accent : Q.border}`,
-                  borderRadius: 9,
+                  borderRadius: 0,
                   fontFamily: F, fontSize: 14, fontWeight: custSel ? 600 : 500,
                   color: custSel ? Q.text1 : Q.text3,
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -559,27 +565,27 @@ function QuoteBuilderModal({ t, modalT }) {
                       position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
                       background: Q.surface,
                       border: `1px solid ${Q.border}`,
-                      borderRadius: 9,
+                      borderRadius: 0,
                       padding: 6,
                       boxShadow: '0 8px 24px rgba(15,23,42,0.15)',
                       zIndex: 10,
                       opacity: clamp((t - 0.85) / 0.15, 0, 1),
                     }}>
-                      <div style={{ padding: '8px 12px', borderRadius: 6, color: Q.text2, fontWeight: 500 }}>Harbor Print Co.</div>
-                      <div style={{ padding: '8px 12px', borderRadius: 6, color: Q.text2, fontWeight: 500 }}>Northwind Bakery</div>
+                      <div style={{ padding: '8px 12px', borderRadius: 0, color: Q.text2, fontWeight: 500 }}>Harbor Print Co.</div>
+                      <div style={{ padding: '8px 12px', borderRadius: 0, color: Q.text2, fontWeight: 500 }}>Northwind Bakery</div>
                       <div style={{
-                        padding: '8px 12px', borderRadius: 6,
+                        padding: '8px 12px', borderRadius: 0,
                         background: t > 1.2 ? Q.accentSoft : 'transparent',
                         color: t > 1.2 ? Q.accentText : Q.text2, fontWeight: 600,
                       }}>Riverside Surf Club</div>
-                      <div style={{ padding: '8px 12px', borderRadius: 6, color: Q.text2, fontWeight: 500 }}>Tinsel Goods</div>
+                      <div style={{ padding: '8px 12px', borderRadius: 0, color: Q.text2, fontWeight: 500 }}>Tinsel Goods</div>
                     </div>
                   )}
                 </div>
                 <button style={{
                   padding: '10px 16px',
                   background: Q.surface, color: Q.accentText,
-                  border: `1px solid ${Q.accent}`, borderRadius: 9,
+                  border: `1px solid ${Q.accent}`, borderRadius: 0,
                   fontFamily: F, fontSize: 13.5, fontWeight: 600,
                   whiteSpace: 'nowrap',
                 }}>+ New Customer</button>
@@ -591,7 +597,7 @@ function QuoteBuilderModal({ t, modalT }) {
                 padding: '10px 14px',
                 background: Q.surface,
                 border: `1.5px solid ${jobP > 0 && jobP < 1 ? Q.accent : Q.border}`,
-                borderRadius: 9,
+                borderRadius: 0,
                 fontFamily: F, fontSize: 14, fontWeight: 500,
                 color: jobTitle ? Q.text1 : Q.text3,
                 display: 'flex', alignItems: 'center',
@@ -636,14 +642,14 @@ function QuoteBuilderModal({ t, modalT }) {
               <button style={{
                 padding: '7px 13px',
                 background: Q.surface, color: Q.green,
-                border: `1px solid ${Q.greenBorder}`, borderRadius: 8,
+                border: `1px solid ${Q.greenBorder}`, borderRadius: 0,
                 fontFamily: F, fontSize: 12.5, fontWeight: 600,
                 whiteSpace: 'nowrap',
               }}>📋 Paste Order</button>
               <button style={{
                 padding: '7px 13px',
                 background: Q.surface, color: Q.accentText,
-                border: `1px solid ${Q.accent}`, borderRadius: 8,
+                border: `1px solid ${Q.accent}`, borderRadius: 0,
                 fontFamily: F, fontSize: 12.5, fontWeight: 600,
                 whiteSpace: 'nowrap',
               }}>+ Add Garment Group</button>
@@ -654,7 +660,7 @@ function QuoteBuilderModal({ t, modalT }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 18, flex: 1, minHeight: 0 }}>
             {/* Garment card */}
             <div style={{
-              background: Q.surface, border: `1px solid ${Q.border}`, borderRadius: 12,
+              background: Q.surface, border: `1px solid ${Q.border}`, borderRadius: 0,
               padding: '14px 18px',
               overflow: 'hidden',
             }}>
@@ -693,7 +699,7 @@ function QuoteBuilderModal({ t, modalT }) {
                 padding: '10px 14px',
                 background: Q.accentSofter,
                 border: `1px solid ${Q.accentBorder}`,
-                borderRadius: 10,
+                borderRadius: 0,
                 marginBottom: 12,
                 opacity: autofill,
               }}>
@@ -724,7 +730,7 @@ function QuoteBuilderModal({ t, modalT }) {
                   padding: '8px 12px',
                   background: Q.yellow,
                   border: `1px solid ${Q.yellowBorder}`,
-                  borderRadius: 8,
+                  borderRadius: 0,
                   fontFamily: F, fontSize: 12.5, color: Q.yellowText, fontWeight: 500,
                   opacity: clamp((t - 6.4) / 0.3, 0, 1),
                 }}>
@@ -741,7 +747,7 @@ function QuoteBuilderModal({ t, modalT }) {
                 <div style={{
                   background: Q.surface2,
                   border: `1px solid ${Q.border}`,
-                  borderRadius: 10,
+                  borderRadius: 0,
                   padding: '12px 14px',
                   display: 'grid',
                   gridTemplateColumns: '1fr auto 70px 70px',
@@ -757,7 +763,7 @@ function QuoteBuilderModal({ t, modalT }) {
                       background: linkedActive ? Q.greenSoft : Q.surface,
                       color: linkedActive ? Q.green : Q.text2,
                       border: `1px solid ${linkedActive ? Q.greenBorder : Q.border}`,
-                      borderRadius: 7,
+                      borderRadius: 0,
                       fontFamily: F, fontSize: 12.5, fontWeight: 600,
                       whiteSpace: 'nowrap', textAlign: 'center',
                     }}>{linkedActive ? '✓ Linked' : 'Link'}</div>
@@ -781,7 +787,7 @@ function QuoteBuilderModal({ t, modalT }) {
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '4px 8px',
                       background: Q.surface, border: `1px solid ${Q.border}`,
-                      borderRadius: 7,
+                      borderRadius: 0,
                     }}>
                       <span style={{ fontFamily: F, fontSize: 14, color: Q.text2 }}>−</span>
                       <span style={{ fontFamily: F, fontSize: 14, fontWeight: 600, color: Q.text1 }}>1</span>
@@ -799,7 +805,7 @@ function QuoteBuilderModal({ t, modalT }) {
             <div style={{
               background: Q.surface2,
               border: `1px solid ${Q.border}`,
-              borderRadius: 14,
+              borderRadius: 0,
               padding: 14,
               display: 'flex', flexDirection: 'column', gap: 12,
               opacity: priceCardT,
@@ -807,7 +813,7 @@ function QuoteBuilderModal({ t, modalT }) {
             }}>
               <div style={{
                 background: Q.navy,
-                borderRadius: 12,
+                borderRadius: 0,
                 padding: 16,
                 color: '#fff',
               }}>
@@ -821,7 +827,7 @@ function QuoteBuilderModal({ t, modalT }) {
                     color: 'rgba(255,255,255,0.55)',
                   }}>Live Pricing</span>
                   <span style={{
-                    background: Q.accent, padding: '3px 10px', borderRadius: 999,
+                    background: Q.accent, padding: '3px 10px', borderRadius: 0,
                     fontFamily: F, fontSize: 11.5, fontWeight: 700,
                   }}>{total} pcs</span>
                 </div>
@@ -862,11 +868,11 @@ function QuoteBuilderModal({ t, modalT }) {
               {/* Line total */}
               <div style={{
                 background: Q.accent,
-                borderRadius: 12,
+                borderRadius: 0,
                 padding: '18px 20px',
                 color: '#fff',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                boxShadow: '0 12px 28px rgba(79,70,229,0.35)',
+                boxShadow: '0 12px 28px rgba(44,88,64,0.35)',
               }}>
                 <div>
                   <div style={{
@@ -911,7 +917,7 @@ function DateField({ label, value }) {
       <FieldLabel>{label}</FieldLabel>
       <div style={{
         padding: '10px 14px',
-        background: Q.surface, border: `1px solid ${Q.border}`, borderRadius: 9,
+        background: Q.surface, border: `1px solid ${Q.border}`, borderRadius: 0,
         fontFamily: F, fontSize: 14, fontWeight: 500, color: Q.text1,
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
@@ -928,7 +934,7 @@ function TurnaroundCard({ label, sub, active }) {
       padding: '12px 14px',
       background: active ? Q.accentSoft : Q.surface,
       border: `1.5px solid ${active ? Q.accent : Q.border}`,
-      borderRadius: 10,
+      borderRadius: 0,
     }}>
       <div style={{ fontFamily: F, fontSize: 14, fontWeight: 700, color: active ? Q.accentText : Q.text1 }}>{label}</div>
       <div style={{ fontFamily: F, fontSize: 11.5, color: Q.text3, marginTop: 2 }}>{sub}</div>
@@ -940,7 +946,7 @@ function AddonCard({ label, price }) {
   return (
     <div style={{
       padding: '10px 14px',
-      background: Q.surface, border: `1px solid ${Q.border}`, borderRadius: 10,
+      background: Q.surface, border: `1px solid ${Q.border}`, borderRadius: 0,
     }}>
       <div style={{ fontFamily: F, fontSize: 13, fontWeight: 600, color: Q.text1 }}>{label}</div>
       <div style={{ fontFamily: F, fontSize: 11.5, color: Q.text3, marginTop: 1 }}>{price}</div>
@@ -974,7 +980,7 @@ function Inp({ value, placeholder, prefix, select, typing, fade = 1, small }) {
     <div style={{
       padding: small ? '7px 10px' : '8px 12px',
       background: Q.surface, border: `1px solid ${typing ? Q.accent : Q.border}`,
-      borderRadius: 7,
+      borderRadius: 0,
       fontFamily: F, fontSize: small ? 12.5 : 13.5, fontWeight: 500,
       color: value ? Q.text1 : Q.text3,
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1049,12 +1055,12 @@ function SizeRow({ values, head, highlights = [], activeIdx = -1, total }) {
             padding: '5px 4px',
             background: isHi ? '#FEF9C3' : Q.surface,
             border: `1px solid ${isActive ? Q.accent : (isHi ? Q.yellowBorder : Q.border)}`,
-            borderRadius: 6,
+            borderRadius: 0,
             textAlign: 'center',
             fontFamily: M, fontSize: 12.5, fontWeight: 500,
             color: v === 0 ? Q.text3 : Q.text1,
             fontVariantNumeric: 'tabular-nums',
-            boxShadow: isActive ? `0 0 0 3px rgba(79,70,229,0.18)` : 'none',
+            boxShadow: isActive ? `0 0 0 3px rgba(44,88,64,0.18)` : 'none',
             transition: 'box-shadow 200ms',
           }}>{v}</div>
         );
@@ -1095,10 +1101,10 @@ function Cursor({ x, y, label }) {
         <div style={{
           marginTop: 4, marginLeft: 14,
           background: Q.accent, color: '#fff',
-          padding: '4px 9px', borderRadius: 6,
+          padding: '4px 9px', borderRadius: 0,
           fontFamily: F, fontSize: 11.5, fontWeight: 600,
           whiteSpace: 'nowrap',
-          boxShadow: '0 4px 12px rgba(79,70,229,0.4)',
+          boxShadow: '0 4px 12px rgba(44,88,64,0.4)',
         }}>{label}</div>
       )}
     </div>
@@ -1132,8 +1138,8 @@ function SceneList() {
         <div style={{
           position: 'absolute',
           right: 28, top: 70,
-          width: 220, height: 56, borderRadius: 12,
-          background: `rgba(79,70,229,${clickFlash * 0.25})`,
+          width: 220, height: 56, borderRadius: 0,
+          background: `rgba(44,88,64,${clickFlash * 0.25})`,
           pointerEvents: 'none',
         }} />
       )}
@@ -1200,7 +1206,7 @@ function SceneBuilder() {
         pointerEvents: 'none',
       }}>
         <div style={{
-          fontFamily: F, fontSize: 11.5, color: '#A5B4FC', fontWeight: 800,
+          fontFamily: F, fontSize: 11.5, color: '#86A89A', fontWeight: 800,
           textTransform: 'uppercase', letterSpacing: '0.16em', marginBottom: 8,
         }}>{captionStep}</div>
         <div style={{
@@ -1223,20 +1229,20 @@ function SceneOutro() {
   return (
     <div style={{
       position: 'absolute', inset: 0,
-      background: '#0B0B0E',
+      background: '#000000',
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
     }}>
       <div style={{
         position: 'absolute', inset: 0,
-        background: 'radial-gradient(ellipse at center, rgba(79,70,229,0.22), transparent 60%)',
+        background: 'radial-gradient(ellipse at center, rgba(44,88,64,0.22), transparent 60%)',
         opacity: inT,
       }} />
 
       <div style={{
         opacity: checkT,
         transform: `scale(${0.7 + 0.3 * Easing.easeOutCubic(checkT)})`,
-        width: 96, height: 96, borderRadius: 48,
+        width: 96, height: 96, borderRadius: 0,
         background: '#16A34A',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         boxShadow: '0 14px 36px rgba(22,163,74,0.4)',
@@ -1254,7 +1260,7 @@ function SceneOutro() {
         color: '#fff', letterSpacing: '-0.03em',
         textAlign: 'center',
       }}>
-        Quotes sent in <span style={{ color: '#A5B4FC' }}>minutes.</span>
+        Quotes sent in <span style={{ color: '#86A89A' }}>minutes.</span>
       </div>
 
       <div style={{
@@ -1274,7 +1280,7 @@ function Stat({ n, l }) {
   return (
     <div style={{ textAlign: 'center' }}>
       <div style={{
-        fontFamily: F, fontSize: 36, fontWeight: 800, color: '#A5B4FC',
+        fontFamily: F, fontSize: 36, fontWeight: 800, color: '#86A89A',
         letterSpacing: '-0.02em', marginBottom: 4,
       }}>{n}</div>
       <div style={{
@@ -1331,7 +1337,7 @@ function SceneEmail() {
         transform: `translate(-50%, -50%) translateY(${(1 - modalT) * 60}px) scale(${0.94 + 0.06 * modalT})`,
         opacity: modalT,
         background: Q.surface,
-        borderRadius: 18,
+        borderRadius: 0,
         boxShadow: '0 50px 120px rgba(15,23,42,0.4), 0 8px 24px rgba(15,23,42,0.2)',
         border: `1px solid ${Q.border}`,
         overflow: 'hidden',
@@ -1343,7 +1349,7 @@ function SceneEmail() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{
-              width: 32, height: 32, borderRadius: 8,
+              width: 32, height: 32, borderRadius: 0,
               background: Q.accentSoft,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
@@ -1365,7 +1371,7 @@ function SceneEmail() {
             <div style={{
               padding: '12px 14px',
               background: Q.surface, border: `1.5px solid ${emailTyping ? Q.accent : Q.border}`,
-              borderRadius: 9,
+              borderRadius: 0,
               fontFamily: F, fontSize: 14, fontWeight: 500,
               color: emailVal ? Q.text1 : Q.text3,
               display: 'flex', alignItems: 'center',
@@ -1383,7 +1389,7 @@ function SceneEmail() {
             <div style={{
               padding: '12px 14px',
               background: Q.surface, border: `1px solid ${Q.border}`,
-              borderRadius: 9,
+              borderRadius: 0,
               fontFamily: F, fontSize: 14, fontWeight: 500, color: Q.text1,
             }}>
               Your Quote from Biota Mfg — Quote #Q-2026-JX7B
@@ -1398,7 +1404,7 @@ function SceneEmail() {
             <div style={{
               padding: '12px 14px',
               background: Q.surface, border: `1px solid ${Q.border}`,
-              borderRadius: 9,
+              borderRadius: 0,
               fontFamily: F, fontSize: 14, fontWeight: 500, color: Q.text1,
               lineHeight: 1.45, minHeight: 96,
             }}>
@@ -1413,7 +1419,7 @@ function SceneEmail() {
           <div style={{
             background: Q.surface2,
             border: `1px solid ${Q.border}`,
-            borderRadius: 10,
+            borderRadius: 0,
             padding: '14px 16px',
             display: 'flex', flexDirection: 'column', gap: 6,
           }}>
@@ -1432,18 +1438,18 @@ function SceneEmail() {
           <button style={{
             flex: 1, padding: '12px 22px',
             background: '#F1F1F4', color: Q.text1,
-            border: 'none', borderRadius: 10,
+            border: 'none', borderRadius: 0,
             fontFamily: F, fontSize: 14, fontWeight: 600,
           }}>Cancel</button>
           <button style={{
             flex: 1, padding: '12px 22px',
             background: Q.accent, color: '#fff',
-            border: 'none', borderRadius: 10,
+            border: 'none', borderRadius: 0,
             fontFamily: F, fontSize: 14, fontWeight: 700,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             boxShadow: sendT > 0
-              ? `0 0 0 ${4 + sendT * 6}px rgba(79,70,229,${sendT * 0.20}), 0 6px 16px rgba(79,70,229,0.35)`
-              : '0 4px 12px rgba(79,70,229,0.25)',
+              ? `0 0 0 ${4 + sendT * 6}px rgba(44,88,64,${sendT * 0.20}), 0 6px 16px rgba(44,88,64,0.35)`
+              : '0 4px 12px rgba(44,88,64,0.25)',
             transform: `scale(${1 + sendT * 0.03})`,
           }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1467,7 +1473,7 @@ function SceneEmail() {
           background: '#16A34A',
           color: '#fff',
           padding: '14px 22px',
-          borderRadius: 12,
+          borderRadius: 0,
           boxShadow: '0 14px 32px rgba(22,163,74,0.35)',
           display: 'inline-flex', alignItems: 'center', gap: 12,
           fontFamily: F, fontSize: 15, fontWeight: 600,
@@ -1488,7 +1494,7 @@ function SceneEmail() {
         pointerEvents: 'none',
       }}>
         <div style={{
-          fontFamily: F, fontSize: 11.5, color: '#A5B4FC', fontWeight: 800,
+          fontFamily: F, fontSize: 11.5, color: '#86A89A', fontWeight: 800,
           textTransform: 'uppercase', letterSpacing: '0.16em', marginBottom: 8,
         }}>Step 07</div>
         <div style={{

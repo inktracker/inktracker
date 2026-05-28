@@ -172,7 +172,7 @@ function FeaturePreviewModal({ feature, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-label={`${feature.title} preview`}
-        className="bg-slate-900 border border-white/10 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="bg-black border border-white/10 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
@@ -189,7 +189,7 @@ function FeaturePreviewModal({ feature, onClose }) {
           </button>
         </div>
 
-        <div className="bg-slate-800/60 flex items-center justify-center" style={{ aspectRatio: "16 / 9" }}>
+        <div className="bg-black flex items-center justify-center" style={{ aspectRatio: "16 / 9" }}>
           {media?.type === "image" && (
             <img src={media.src} alt={media.alt || `${feature.title} screenshot`} className="w-full h-full object-cover" />
           )}
@@ -303,470 +303,659 @@ function TypewriterHeadline({ onRevealReady }) {
   );
 }
 
+// Landing page — modeled on biotamfg.com: white surface, Anton condensed
+// display caps, Inter body, a single forest-green accent, photo-led full-bleed
+// moments, generous whitespace, hairline rules. No textures, no halftones,
+// no decorative stamps — restraint is the look.
 function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
   const [previewFeature, setPreviewFeature] = useState(null);
-  // false until the typewriter starts its fade-out — then the badge,
-  // brand lockup, subtext, and CTA buttons cross-fade in.
-  const [heroRevealed, setHeroRevealed] = useState(false);
-  // Mobile section-anchor menu — closed by default, hamburger toggles it.
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   function openSignup() { setLoginMode("signup"); setShowLogin(true); }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
   function jumpToAnchor(hash) { setMobileMenuOpen(false); window.location.hash = hash; }
 
-  const revealCls = `transition-opacity duration-700 ${heroRevealed ? "opacity-100" : "opacity-0 pointer-events-none"}`;
+  const INK = "#0e0e0e";
+  const MUTED = "#6b6b6b";
+  const HAIRLINE = "#e5e5e5";
+  const FOREST = "#2c5840";
+  const FOREST_DARK = "#1a3a28";
+
+  const H_FONT = '"Anton", "Oswald", "Arial Narrow", sans-serif';
+  const B_FONT = '"Inter", -apple-system, BlinkMacSystemFont, sans-serif';
+
+  const eyebrow = "text-[11px] font-semibold tracking-[0.28em] uppercase";
+  const navLink = "text-[12px] font-semibold tracking-[0.22em] uppercase transition";
+  const btnPrimary = "inline-block text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 transition";
+  const btnOutlineLight = "inline-block text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 border transition";
+
+  const FAQ_ITEMS = [
+    { q: "Can I import data from Printavo, Shopworks, or another shop tool?", a: "Not via a self-serve CSV upload yet — but email support@inktracker.app with an export from your old platform and we'll port your customers, quotes, or orders over manually. Self-serve import is on the roadmap." },
+    { q: "Does this work for embroidery shops, or only screen printing?", a: "Both. Quote-to-invoice, customer management, production tracking, and QuickBooks sync work the same for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap." },
+    { q: "What happens to my data if I cancel?", a: "Yours, always. Export everything — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation." },
+    { q: "Is there a long-term contract?", a: "No. Month-to-month, cancel anytime. Founding-rate plans aren't transferable after cancellation; re-signups pay the standard $99/mo (or $999/year)." },
+    { q: "How do I know InkTracker won't disappear in six months?", a: "Biota Mfg has been printing in Reno for thirteen years and we run the shop on InkTracker daily. If it stops being maintained, our own production stops. The financial structure also funds long-horizon land-conservation work — both keep this project on a multi-year commitment." },
+    { q: "How does the conservation contribution actually work?", a: "A piece of every subscription is allocated to a long-term land-conservation fund operated by Biota Mfg. The full five-year plan — how funds are set aside, deployed, and reported — lives at biotamfg.com/pages/wildways." },
+  ];
+
+  // Editorial three-up — numbered cards instead of icons so the section
+  // doesn't read as a port of the Biota home page's bolt/tag/sprout strip.
+  // Same palette + typography family, different visual spine.
+  const VALUE_PROPS = [
+    {
+      num: "01",
+      title: "Run your shop",
+      body: "Quote → production → invoice → paid. The whole job, one app — built around how a real shop runs.",
+      cta: "See features",
+      href: "#tour",
+    },
+    {
+      num: "02",
+      title: "Pricing that works",
+      body: "Live garment costs from S&S and AS Colour, per-imprint setups, shortfalls, broker margins — handled.",
+      cta: "How it works",
+      href: "#how-pricing",
+    },
+    {
+      num: "03",
+      title: "Built for a mission",
+      body: "Every subscription helps fund the land-conservation work we do through Biota's Wildways program.",
+      cta: "Learn more",
+      href: "#wildways",
+    },
+  ];
+
+  const PRICING_INCLUDES = [
+    "Quotes & orders", "Production tracking",
+    "Invoicing & payments", "QuickBooks Online sync",
+    "Live garment pricing", "Unlimited employees",
+    "Embeddable quote wizard", "Broker portal",
+    "Artwork proofs", "Performance reports",
+  ];
 
   return (
     <>
-      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-teal-950 text-white">
-        {/* Nav */}
-        <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-lg border-b border-white/5">
-          <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-8 h-8 rounded-lg" />
-              <span className="text-lg font-bold">InkTracker</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <a href="#features" className="text-sm text-slate-400 hover:text-white transition hidden md:block">Features</a>
-              <a href="#pricing" className="text-sm text-slate-400 hover:text-white transition hidden md:block">Pricing</a>
-              <a href="#conservation" className="text-sm text-slate-400 hover:text-white transition hidden md:block">Mission</a>
-              <button onClick={openLogin}
-                className="text-sm font-semibold text-slate-300 hover:text-white transition hidden sm:block">
-                Log In
-              </button>
-              <button onClick={openSignup}
-                className="bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold px-4 sm:px-5 py-2.5 rounded-xl transition">
-                Start Free Trial
-              </button>
-              <button
-                onClick={() => setMobileMenuOpen((v) => !v)}
-                className="md:hidden p-2 -mr-2 text-slate-300 hover:text-white transition"
-                aria-label="Toggle navigation menu"
-                aria-expanded={mobileMenuOpen}
+      <div id="top" className="min-h-screen bg-white" style={{ color: INK, fontFamily: B_FONT }}>
+        {/* NAV — Juxtapoz layout: hamburger left, stacked wordmark + tagline
+            centered, utility right. Sticky to the top. Bold black hairline
+            rule beneath. Logo uses Anton with a skewX to fake the heavy
+            italic cut of the Juxtapoz mark. */}
+        <header className="sticky top-0 z-50 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/90 border-b-2" style={{ borderColor: INK }}>
+          <div className="relative max-w-7xl mx-auto px-5 sm:px-6 h-[78px] md:h-[92px] flex items-center justify-between">
+            {/* LEFT — hamburger (always visible) */}
+            <button
+              onClick={() => setMobileMenuOpen(v => !v)}
+              className="p-2 -ml-2 hover:opacity-70 transition"
+              aria-label="Toggle navigation menu"
+              aria-expanded={mobileMenuOpen}
+              style={{ color: INK }}
+            >
+              {mobileMenuOpen ? (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              ) : (
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              )}
+            </button>
+
+            {/* CENTER — stacked wordmark, absolute so the flanking sides don't squeeze it */}
+            <a href="#top" className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto" aria-label="InkTracker home">
+              <span
+                className="leading-none"
+                style={{
+                  fontFamily: H_FONT,
+                  fontSize: 'clamp(1.5rem, 3.5vw, 2.25rem)',
+                  letterSpacing: '0.02em',
+                  transform: 'skewX(-8deg)',
+                  display: 'inline-block',
+                }}
               >
-                {mobileMenuOpen ? (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                ) : (
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-                )}
+                <span style={{ color: INK }}>INK</span><span style={{ color: FOREST }}>TRACKER</span>
+              </span>
+              <span
+                className="mt-1 text-[8px] sm:text-[9px] tracking-[0.2em] uppercase"
+                style={{ fontFamily: B_FONT, color: MUTED, fontWeight: 400 }}
+              >
+                Print Shop Software
+              </span>
+            </a>
+
+            {/* RIGHT — utility. Sign in collapses on mobile; trial button always shows. */}
+            <div className="flex items-center gap-3 md:gap-4">
+              <button
+                onClick={openLogin}
+                className={`hidden sm:inline-block ${navLink}`}
+                style={{ color: INK }}
+              >
+                Sign in
+              </button>
+              <button onClick={openSignup} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
+                Start trial
               </button>
             </div>
           </div>
 
-          {/* Mobile dropdown — section anchors + Log In, slides below the nav */}
+          {/* Dropdown panel — opens for all viewports when hamburger is tapped */}
           {mobileMenuOpen && (
-            <div className="md:hidden border-t border-white/5 bg-slate-950/95 backdrop-blur-lg">
-              <div className="max-w-6xl mx-auto px-6 py-3 flex flex-col">
-                <button onClick={() => jumpToAnchor("#features")}
-                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 border-b border-white/5">
-                  Features
-                </button>
-                <button onClick={() => jumpToAnchor("#pricing")}
-                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 border-b border-white/5">
-                  Pricing
-                </button>
-                <button onClick={() => jumpToAnchor("#conservation")}
-                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 border-b border-white/5">
-                  Mission
-                </button>
-                <button onClick={() => jumpToAnchor("#faq")}
-                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 border-b border-white/5">
-                  FAQ
-                </button>
-                <button onClick={() => { setMobileMenuOpen(false); openLogin(); }}
-                  className="text-left text-sm font-semibold text-slate-300 hover:text-white transition py-3 sm:hidden">
-                  Log In
+            <div className="border-t bg-white" style={{ borderColor: INK }}>
+              <div className="max-w-7xl mx-auto px-6 py-2 flex flex-col">
+                {[
+                  ["#letter", "Letter"],
+                  ["#tour", "Tour"],
+                  ["#wildways", "Wildways"],
+                  ["#pricing", "Pricing"],
+                  ["#faq", "FAQ"],
+                ].map(([h, label]) => (
+                  <button key={h} onClick={() => jumpToAnchor(h)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE }}>
+                    {label}
+                  </button>
+                ))}
+                <button onClick={() => { setMobileMenuOpen(false); openLogin(); }} className={`text-left py-4 sm:hidden ${navLink}`} style={{ color: INK }}>
+                  Sign in
                 </button>
               </div>
             </div>
           )}
-        </nav>
+        </header>
 
-        {/* Hero — single centered column. No product visual for now; that
-            slot returns when we have a real screenshot worth showing. */}
-        <section className="pt-32 md:pt-40 pb-16 md:pb-24 px-6">
-          <div className="max-w-3xl mx-auto text-center">
-            {/* Top group fades in as the typewriter fades out. Wrapped
-                in a div so the hero's vertical layout stays stable while
-                the typewriter is the only visible element. */}
-            <div className={revealCls}>
-              <div className="inline-flex items-center gap-2 bg-white/5 border border-white/10 rounded-full px-4 py-1.5 mb-8">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-xs font-semibold text-slate-300">14-day free trial · No credit card required</span>
-              </div>
+        {/* HERO — full-bleed dark moment with big condensed caps headline.
+            Background video plays print-shop production shots in a loop;
+            the dark forest overlay sits on top so the headline + CTAs
+            still have enough contrast to read. If the MP4 doesn't load
+            (file missing, mobile data-saver, etc.) the gradient + section
+            color fall back automatically so it always looks intentional.
 
-              {/* Brand lockup — same treatment the demo banner used.
-                  The `flame-key` color-matrix filter drops the navy
-                  square from the logo PNG (α = 1R + 3G − 2B keeps the
-                  orange flame and green base, zeros the dark backdrop).
-                  A thin circle outline ripples outward to give the drop
-                  a subtle heartbeat. */}
-              <svg width="0" height="0" aria-hidden="true" className="absolute">
-                <defs>
-                  <filter id="hero-flame-key" colorInterpolationFilters="sRGB">
-                    <feColorMatrix
-                      type="matrix"
-                      values="1 0 0 0 0
-                              0 1 0 0 0
-                              0 0 1 0 0
-                              1 3 -2 0 0"
-                    />
-                  </filter>
-                </defs>
-              </svg>
-              <div className="flex items-center justify-center gap-4 mb-8">
-                <span className="relative inline-flex w-16 h-16 items-center justify-center">
-                  <span
-                    className="absolute inset-0 rounded-full border border-teal-400/60 hero-ring-ripple"
-                    aria-hidden="true"
-                  />
-                  <img
-                    src={INKTRACKER_LOGO}
-                    alt="InkTracker"
-                    crossOrigin="anonymous"
-                    className="relative w-14 h-14 object-contain"
-                    style={{ filter: 'url(#hero-flame-key)' }}
-                  />
-                </span>
-                <span className="text-4xl md:text-5xl font-extrabold tracking-tight">
-                  InkTracker
-                </span>
-              </div>
-            </div>
-
-            <TypewriterHeadline onRevealReady={() => setHeroRevealed(true)} />
-
-            <div className={revealCls}>
-              <p className="text-sm md:text-base text-slate-400 mb-10 max-w-xl mx-auto leading-relaxed">
-                Developed in a print shop. Built to protect land.
+            ▸ TO REPLACE THE VIDEO: drop your shop-production clip at
+              /public/landing/hero.mp4 (encoded as h.264, ideally under
+              10 MB, ~15–25 seconds, looped seamlessly). A still frame
+              at /public/landing/hero-poster.jpg gives mobile + slow
+              connections something to render before the video kicks in. */}
+        <section className="relative overflow-hidden" style={{ background: FOREST_DARK }}>
+          <div className="relative h-[68vh] min-h-[520px] md:min-h-[640px] flex items-center justify-center text-center px-6">
+            {/* Fallback gradient — shows through if the video never loads */}
+            <div
+              aria-hidden="true"
+              className="absolute inset-0"
+              style={{ background: `radial-gradient(ellipse at center, ${FOREST} 0%, ${FOREST_DARK} 75%, #0b1c12 100%)` }}
+            />
+            {/* Background video. autoPlay + muted + playsInline are
+                required for autoplay on iOS Safari. Tabindex/aria hidden
+                so it doesn't steal keyboard focus. */}
+            <video
+              autoPlay
+              muted
+              loop
+              playsInline
+              preload="metadata"
+              poster="/landing/hero-poster.jpg"
+              aria-hidden="true"
+              tabIndex={-1}
+              className="absolute inset-0 w-full h-full object-cover"
+            >
+              <source src="/landing/hero.mp4" type="video/mp4" />
+              <source src="/landing/hero.webm" type="video/webm" />
+            </video>
+            {/* Forest tint overlay — keeps the headline contrast high
+                without muddying the video. Vertical so the bottom (where
+                the body copy + CTAs sit) is darker than the top. */}
+            <div
+              aria-hidden="true"
+              className="absolute inset-0"
+              style={{
+                background: `linear-gradient(180deg, rgba(26, 58, 40, 0.5) 0%, rgba(26, 58, 40, 0.65) 40%, rgba(11, 28, 18, 0.85) 100%)`,
+              }}
+            />
+            <div className="relative max-w-5xl">
+              <p className={eyebrow} style={{ color: 'rgba(255,255,255,0.7)' }}>Print-shop management software</p>
+              <h1
+                className="text-white mt-7 uppercase leading-[0.92] tracking-[0.01em]"
+                style={{ fontFamily: H_FONT, fontSize: 'clamp(2.5rem, 6.5vw, 5.5rem)' }}
+              >
+                Software for print shops,
+                <br />
+                developed in one.
+              </h1>
+              <p className="text-white/85 mt-8 text-base md:text-lg leading-[1.65] max-w-xl mx-auto">
+                Quotes, production, invoicing, QuickBooks — built in a Reno shop
+                after thirteen years of using tools that didn't quite fit.
               </p>
-
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-5">
-                <button onClick={openSignup}
-                  className="bg-teal-600 hover:bg-teal-500 text-white font-bold px-7 py-4 rounded-2xl text-base transition shadow-lg shadow-teal-900/50 w-full sm:w-auto">
-                  Start Free Trial
+              <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+                <button onClick={openSignup} className={btnPrimary} style={{ background: '#fff', color: INK }}>
+                  Start 14-day trial
                 </button>
-                <a href="#features"
-                  className="text-slate-300 font-semibold px-5 py-4 rounded-2xl hover:bg-white/5 transition text-base">
-                  See Features →
+                <a href="#tour" className={btnOutlineLight} style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.55)' }}>
+                  Take a tour
                 </a>
               </div>
-
-              <p className="text-xs text-slate-500">
-                14-day free trial · Cancel anytime
-              </p>
+              <p className="text-white/55 text-xs mt-6 tracking-wide">No credit card · cancel anytime</p>
             </div>
           </div>
         </section>
 
-        {/* Stats */}
-        <section className="py-10 border-y border-white/5">
-          <div className="max-w-4xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
-            {[
-              { num: "All-in-one", sub: "one plan, every feature" },
-              { num: "2 min", sub: "setup time" },
-              { num: "Live", sub: "QuickBooks sync" },
-              { num: "14 days", sub: "free trial" },
-            ].map(s => (
-              <div key={s.sub}>
-                <div className="text-xl md:text-2xl font-extrabold text-white">{s.num}</div>
-                <div className="text-xs text-slate-500 mt-1">{s.sub}</div>
+        {/* THREE-UP — editorial numbered cards, left-aligned. Same palette
+            and type family as Biota, but a different visual spine: numerals
+            + hairline rule instead of the bolt/tag/sprout icon set, and an
+            underlined arrow link in place of a solid green button. */}
+        <section className="bg-white py-24 md:py-32 px-6">
+          <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-x-10 gap-y-14">
+            {VALUE_PROPS.map(v => (
+              <div key={v.title} className="text-left">
+                <div className="flex items-baseline gap-4 mb-5">
+                  <span
+                    className="leading-none"
+                    style={{ fontFamily: H_FONT, fontSize: 'clamp(2.25rem, 4vw, 3rem)', color: FOREST, letterSpacing: '0.02em' }}
+                  >
+                    {v.num}
+                  </span>
+                  <span className="flex-1 h-px" style={{ background: INK }} />
+                </div>
+                <h3 className="uppercase tracking-[0.04em] text-xl md:text-2xl leading-tight mb-3" style={{ fontFamily: H_FONT, color: INK }}>
+                  {v.title}
+                </h3>
+                <p className="text-[15px] leading-[1.7] mb-6 max-w-sm" style={{ color: MUTED }}>
+                  {v.body}
+                </p>
+                <a
+                  href={v.href}
+                  className="inline-flex items-baseline gap-2 text-[11px] font-bold tracking-[0.22em] uppercase pb-1 border-b transition hover:gap-3"
+                  style={{ color: FOREST, borderColor: FOREST }}
+                >
+                  {v.cta} <span aria-hidden="true">→</span>
+                </a>
               </div>
             ))}
           </div>
         </section>
 
-        {/* Integrations */}
-        <section className="py-12 px-6">
-          <div className="max-w-3xl mx-auto text-center">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Integrates with the tools you already use</p>
-            <p className="text-sm text-slate-300 mb-6 leading-relaxed">
-              Live garment pricing from S&amp;S Activewear and AS Colour. Two-way sync with QuickBooks Online, including customer payment links.
-            </p>
-            <div className="flex items-center justify-center gap-8 flex-wrap">
-              {[
-                { name: "QuickBooks Online", color: "#2CA01C" },
-                { name: "S&S Activewear", color: "#E53935" },
-                { name: "AS Colour", color: "#94a3b8" },
-              ].map(i => (
-                <span key={i.name} className="text-sm font-bold" style={{ color: i.color }}>{i.name}</span>
-              ))}
+        {/* TOUR — featured modules grid. Big clean tiles, hairline borders,
+            hover lifts to a soft shadow. Tile opens existing iframe modal. */}
+        <section id="tour" className="bg-[#fafaf8] py-24 md:py-32 px-6 border-y" style={{ borderColor: HAIRLINE }}>
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-16 md:mb-20">
+              <p className={eyebrow} style={{ color: MUTED }}>Inside the app</p>
+              <h2 className="uppercase tracking-[0.02em] mt-4 leading-[0.95]" style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 4.5vw, 3.75rem)', color: INK }}>
+                Featured modules
+              </h2>
+              <p className="mt-6 text-base md:text-lg max-w-xl mx-auto leading-[1.65]" style={{ color: MUTED }}>
+                Each module is a real piece of the shop. Tap any tile to watch it move.
+              </p>
             </div>
-          </div>
-        </section>
 
-        {/* Features */}
-        <section id="features" className="py-24 px-6">
-          <div className="max-w-5xl mx-auto">
-            <div className="text-center mb-14">
-              <h2 className="text-3xl font-extrabold">Everything your shop needs</h2>
-              <p className="text-slate-400 mt-3 max-w-lg mx-auto">No tiers, no feature locks. Every tool included from day one.</p>
-            </div>
-            <p className="text-center text-xs text-slate-500 mb-8">Click any feature to preview it.</p>
-            <div className="grid md:grid-cols-3 gap-5">
-              {FEATURE_CARDS.map(f => (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-7 gap-y-12">
+              {FEATURE_CARDS.map((f, i) => (
                 <button
                   key={f.title}
                   type="button"
                   onClick={() => setPreviewFeature(f)}
-                  className={`group relative text-left bg-gradient-to-b ${f.color} border border-white/10 rounded-2xl p-6 hover:border-white/30 hover:-translate-y-0.5 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400`}
+                  className="text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
+                  style={{ '--tw-ring-color': FOREST, '--tw-ring-offset-color': '#fafaf8' }}
                   aria-label={`Preview ${f.title}`}
                 >
-                  <h3 className="text-base font-bold text-white mb-2 pr-8">{f.title}</h3>
-                  <p className="text-sm text-slate-400 leading-relaxed mb-3">{f.desc}</p>
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-teal-300 group-hover:text-teal-200 transition">
-                    Preview <span aria-hidden="true">→</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* How it works */}
-        <section className="py-20 px-6 border-t border-white/5">
-          <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-14">
-              <h2 className="text-3xl font-extrabold">Up and running in minutes</h2>
-            </div>
-            <div className="grid md:grid-cols-4 gap-8">
-              {[
-                { step: "1", title: "Sign up", desc: "Create your account and set up your shop. Takes under two minutes." },
-                { step: "2", title: "Connect QuickBooks Online", desc: "Link your QBO account with one click. Invoices and expenses sync automatically." },
-                { step: "3", title: "Send your first quote", desc: "Build a quote with live garment pricing. Send it. Customer approves and pays online." },
-                { step: "4", title: "Track production", desc: "Move orders through your pipeline. Your team updates from tablets or phones." },
-              ].map(s => (
-                <div key={s.step} className="text-center">
-                  <div className="w-10 h-10 rounded-full bg-teal-600 text-white font-bold flex items-center justify-center mx-auto mb-3 text-sm">{s.step}</div>
-                  <h3 className="text-sm font-bold text-white mb-1">{s.title}</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed">{s.desc}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Founder / origin story */}
-        <section className="py-24 px-6 border-t border-white/5">
-          <div className="max-w-5xl mx-auto">
-            <div className="grid md:grid-cols-2 gap-12 items-center">
-              <div className="order-2 md:order-1">
-                <img
-                  src="/landing/joe.jpg"
-                  alt="Joe Grennan, founder of InkTracker, at the Biota Mfg screen print shop in Reno, Nevada."
-                  className="w-full max-w-md mx-auto rounded-2xl shadow-2xl shadow-black/40 object-cover"
-                  style={{ aspectRatio: "4 / 5" }}
-                  loading="lazy"
-                />
-              </div>
-
-              <div className="order-1 md:order-2">
-                <p className="text-xs font-semibold text-teal-400 uppercase tracking-widest mb-3">
-                  Why InkTracker exists
-                </p>
-                <h2 className="text-3xl font-extrabold mb-5 leading-tight">
-                  From one print maker<br/>to another.
-                </h2>
-                <p className="text-slate-300 leading-relaxed mb-5">
-                  I run Biota Mfg, a screen print shop in Reno, Nevada. After 13 years on the press, every shop-management tool I tried left me asking, "Has anyone who designed this even worked in a shop before?" One would try to do everything and miss the basics; the next would nail one thing but miss the rest of the workflow. So I built the shop-management software I actually needed: focused on the quote-to-invoice path, integrated with QuickBooks for accounting, and built around how a real shop runs. It's also another avenue for me to help fund the land-conservation work I'm doing through Biota — a conservation contribution is baked into every InkTracker subscription. — Joe
-                </p>
-                <p className="text-xs text-slate-500">
-                  Joe Grennan · Founder
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Pricing */}
-        <section id="pricing" className="py-24 px-6 border-t border-white/5">
-          <div className="max-w-xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-extrabold">Simple pricing</h2>
-              <p className="text-slate-400 mt-3">One plan. Everything included. No surprises.</p>
-            </div>
-            <div className="bg-gradient-to-b from-teal-600 to-teal-700 border-2 border-teal-400 rounded-2xl p-8 shadow-2xl shadow-teal-900/40">
-              <div className="text-center mb-6">
-                <div className="mb-3">
-                  <span className="text-5xl font-extrabold text-white">$99</span>
-                  <span className="text-base text-teal-200">/mo</span>
-                </div>
-                <p className="text-sm text-teal-100/90 mb-3 max-w-md mx-auto leading-relaxed">
-                  One plan, every feature included. Or save $189 with annual billing at $999/year.
-                </p>
-                <p className="text-sm text-teal-200">14-day free trial · No credit card required</p>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5 mb-6 px-2">
-                {[
-                  "Quotes & orders",
-                  "Production tracking",
-                  "Invoicing & payments",
-                  "Customer management",
-                  "QuickBooks sync",
-                  "Unlimited employees",
-                  "S&S & AS Colour restock",
-                  "Embeddable quote wizard",
-                  "Artwork proofs",
-                  "Broker portal",
-                  "Performance reports",
-                ].map(f => (
-                  <div key={f} className="flex items-center gap-2.5 text-sm text-teal-100">
-                    <span className="text-emerald-400 text-xs">&#10003;</span> {f}
+                  <div
+                    className="relative overflow-hidden border bg-black transition-shadow group-hover:shadow-[0_18px_50px_-12px_rgba(0,0,0,0.18)]"
+                    style={{ borderColor: HAIRLINE, aspectRatio: '16 / 9' }}
+                  >
+                    {/* Embedded demo as a still thumbnail. ?paused=1
+                        keeps Stage's animation loop off; ?t=2.5 seeks to
+                        ~2.5s so the intro headline is fully visible. Net
+                        result: each tile shows a real frame from its
+                        demo without 9 animations running at once. Click
+                        opens the full modal which loads the demo without
+                        the paused params, so it plays normally there.
+                        pointer-events-none lets the wrapper button catch
+                        the click; sandbox + aria-hidden + tabIndex=-1
+                        keep the embed isolated and out of focus order. */}
+                    {f.media?.type === 'iframe' && f.media?.src ? (
+                      <iframe
+                        src={`${f.media.src}?paused=1&t=2.5`}
+                        title=""
+                        aria-hidden="true"
+                        tabIndex={-1}
+                        loading="lazy"
+                        sandbox="allow-scripts allow-same-origin"
+                        className="absolute inset-0 w-full h-full border-0 pointer-events-none"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center" style={{ background: '#f1f0ec' }}>
+                        <span
+                          className="leading-none"
+                          style={{ fontFamily: H_FONT, fontSize: 'clamp(4.5rem, 9vw, 7rem)', color: FOREST, letterSpacing: '0.02em' }}
+                        >
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                      </div>
+                    )}
+                    <span
+                      className="absolute bottom-3 right-3 text-[10px] font-bold tracking-[0.22em] uppercase px-2.5 py-1.5"
+                      style={{ background: INK, color: '#fff' }}
+                    >
+                      Play ▸
+                    </span>
                   </div>
-                ))}
-              </div>
-              <p className="text-xs text-teal-100/80 text-center mb-6 max-w-md mx-auto leading-relaxed">
-                Typical shops save 5–10 hours per week on order tracking, payment follow-up, and quote-to-production handoff. Pays for itself in the first week.
-              </p>
-              <div className="text-center">
-                <button onClick={openSignup}
-                  className="bg-white text-teal-700 hover:bg-teal-50 font-bold px-10 py-3.5 rounded-xl text-base transition shadow-lg">
-                  Start 14-Day Free Trial
+                  <h3 className="mt-5 uppercase tracking-[0.03em] text-lg md:text-xl leading-tight" style={{ fontFamily: H_FONT, color: INK }}>
+                    {f.title}
+                  </h3>
+                  <p className="mt-2 text-[14px] leading-[1.65]" style={{ color: MUTED }}>
+                    {f.desc}
+                  </p>
                 </button>
-                <p className="text-xs text-teal-200 mt-3">
-                  Have a question?{" "}
-                  <a href="mailto:support@inktracker.app" className="underline underline-offset-4 hover:text-white transition">
-                    Email support@inktracker.app
-                  </a>
-                </p>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* HOW PRICING WORKS — explains the pricing engine itself (live blank
+            costs, color tiers, per-imprint setups, broker margins). This is
+            NOT the $99/mo cost section — that lives further down at #pricing. */}
+        <section id="how-pricing" className="bg-white py-24 md:py-32 px-6 border-t" style={{ borderColor: HAIRLINE }}>
+          <div className="max-w-6xl mx-auto">
+            <div className="md:grid md:grid-cols-[5fr_7fr] md:gap-x-16 mb-14 md:mb-20 items-end">
+              <div>
+                <p className={eyebrow} style={{ color: MUTED }}>How it works</p>
+                <h2 className="uppercase tracking-[0.02em] mt-4 leading-[0.95]" style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 4.5vw, 3.75rem)', color: INK }}>
+                  Pricing that knows your shop.
+                </h2>
               </div>
+              <p className="mt-8 md:mt-0 text-base md:text-lg leading-[1.7]" style={{ color: MUTED }}>
+                Most shop-management tools make you punch in every cost by hand.
+                InkTracker pulls real numbers from your suppliers, applies your
+                shop's tiered logic, and writes the math down so the quote a
+                customer sees is the invoice they get.
+              </p>
             </div>
 
-            {/* Conservation anchor — scrolls to the Conservation Mission section below. */}
-            <div className="text-center mt-6">
-              <a href="#conservation" className="text-sm font-semibold text-emerald-400 hover:text-emerald-300 transition">
-                Every subscription funds land conservation. →
+            <div className="grid sm:grid-cols-2 gap-x-10 gap-y-10 md:gap-y-12 border-t" style={{ borderColor: INK }}>
+              {[
+                {
+                  label: "Blanks",
+                  title: "Live garment costs",
+                  body: "Pricing pulled straight from S&S Activewear and AS Colour, scoped to your shop's accounts. Cost basis updates without you copying a spreadsheet.",
+                },
+                {
+                  label: "Imprints",
+                  title: "Color tiers + setup fees",
+                  body: "Screen-print pricing climbs by ink count using your shop's tier table. Setups apply per imprint location, not per shirt. Embroidery stitch counts price the same way.",
+                },
+                {
+                  label: "Brokers",
+                  title: "Markup share, calculated",
+                  body: "Resellers submit through their own portal. Your wholesale price and their markup share land on every quote automatically — and the customer-facing version hides the math.",
+                },
+                {
+                  label: "Snapshots",
+                  title: "What you quote is what you bill",
+                  body: "Every saved quote freezes its pricing. Reopen it six months later, send the invoice, and the numbers match — even if your tiers have shifted since.",
+                },
+              ].map((row, i) => (
+                <div key={row.title} className={`pt-8 ${i % 2 === 0 ? "" : ""}`}>
+                  <p className="text-[10px] font-bold tracking-[0.28em] uppercase mb-3" style={{ color: FOREST }}>
+                    {row.label}
+                  </p>
+                  <h3 className="uppercase tracking-[0.02em] text-lg md:text-xl leading-tight mb-3" style={{ fontFamily: H_FONT, color: INK }}>
+                    {row.title}
+                  </h3>
+                  <p className="text-[15px] leading-[1.7]" style={{ color: MUTED }}>
+                    {row.body}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-14 text-[13px] leading-[1.7] max-w-2xl" style={{ color: MUTED }}>
+              Want to see the engine on a real quote?{' '}
+              <a href="#tour" className="underline underline-offset-2" style={{ color: INK }}>Tap the Quotes &amp; Orders module in the tour</a>{' '}
+              — the demo walks through a 23-second quote build with live pricing count-up.
+            </p>
+          </div>
+        </section>
+
+        {/* LETTER — clean editorial founder block. */}
+        <section id="letter" className="bg-white py-24 md:py-32 px-6">
+          <div className="max-w-6xl mx-auto grid md:grid-cols-[5fr_7fr] gap-12 md:gap-20 items-center">
+            <div className="overflow-hidden bg-[#f1f0ec]" style={{ aspectRatio: '4 / 5' }}>
+              <img
+                src="/landing/joe.jpg"
+                alt="Joe Grennan, founder of InkTracker, at Biota Mfg in Reno, Nevada."
+                className="w-full h-full object-cover"
+                loading="lazy"
+              />
+            </div>
+            <div>
+              <p className={eyebrow} style={{ color: MUTED }}>A note from the shop</p>
+              <h2 className="uppercase tracking-[0.02em] mt-4 leading-[0.95]" style={{ fontFamily: H_FONT, fontSize: 'clamp(1.875rem, 4vw, 3.25rem)', color: INK }}>
+                Built in a shop, for a shop.
+              </h2>
+              <div className="mt-8 space-y-5 text-[16px] md:text-[17px] leading-[1.7]" style={{ color: '#2a2a2a' }}>
+                <p>
+                  I've been printing tees out of <strong>Biota Mfg</strong> in
+                  Reno for thirteen years. We started in a garage. We're still small.
+                </p>
+                <p>
+                  The shop-management tools I tried always missed something
+                  obvious — the kind of thing only a printer would catch.
+                  Pricing engines that couldn't handle a per-imprint setup.
+                  Production boards that didn't know what a misprint was.
+                </p>
+                <p>
+                  So I built InkTracker. We run our shop on it every day — if it
+                  stops working, our orders stop shipping. And a piece of every
+                  subscription funds the land-conservation work we do through
+                  Biota's Wildways program.
+                </p>
+              </div>
+              <p className="mt-8 text-[11px] font-bold tracking-[0.25em] uppercase" style={{ color: MUTED }}>
+                — Joe Grennan, Biota Mfg
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* WILDWAYS — two-column "conservation mission" block on a dark
+            forest backdrop. Left column: eyebrow chip, headline, body,
+            link out to the Biota Mfg roadmap. Right column: numbered
+            5-year plan (square forest tiles, sage numerals, white year
+            titles, muted body). Theme tokens — Anton for the headline,
+            Inter for body, sage accent on the chip + numerals + link
+            arrow, square corners on everything to match the rest of
+            the landing surface. */}
+        <section id="wildways" className="relative overflow-hidden py-24 md:py-32 px-6" style={{ background: '#0e1a13' }}>
+          <div className="max-w-6xl mx-auto grid md:grid-cols-2 gap-12 md:gap-20">
+            {/* LEFT — mission statement */}
+            <div>
+              <div
+                className="inline-flex items-center gap-2 border px-3 py-1.5"
+                style={{ borderColor: 'rgba(134, 168, 154, 0.4)', background: 'rgba(44, 88, 64, 0.18)' }}
+              >
+                <span className="w-1.5 h-1.5" style={{ background: '#86A89A' }} />
+                <span className="text-[10px] font-bold tracking-[0.22em] uppercase" style={{ color: '#86A89A', fontFamily: B_FONT }}>
+                  Conservation Mission
+                </span>
+              </div>
+
+              <h2
+                className="text-white uppercase mt-7 leading-[0.95] tracking-[0.02em]"
+                style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 4.5vw, 3.5rem)' }}
+              >
+                Built by printers.
+                <br />
+                Driven by conservation.
+              </h2>
+
+              <div className="mt-7 space-y-5 text-base md:text-lg leading-[1.7]" style={{ color: 'rgba(255,255,255,0.75)', fontFamily: B_FONT }}>
+                <p>
+                  InkTracker is built by <strong style={{ color: '#fff' }}>Biota Mfg</strong>,
+                  a mission-driven print shop in Reno, NV. A portion of all
+                  revenue goes toward protecting natural landscapes for the
+                  long term.
+                </p>
+                <p>
+                  Every InkTracker subscription directly contributes to this
+                  mission. When your shop grows, conservation funding grows
+                  with it.
+                </p>
+              </div>
+
+              <a
+                href="https://biotamfg.com/pages/wildways"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-baseline gap-2 mt-10 text-[12px] font-bold tracking-[0.22em] uppercase border-b pb-1 transition hover:gap-3"
+                style={{ color: '#86A89A', borderColor: '#86A89A', fontFamily: B_FONT }}
+              >
+                Read our conservation roadmap <span aria-hidden="true">→</span>
               </a>
             </div>
+
+            {/* RIGHT — 5-year plan */}
+            <div className="space-y-6 md:space-y-7 md:mt-2">
+              {[
+                { year: 'Year 1', title: 'Foundation',          desc: 'Setting aside revenue and defining clear conservation goals with transparent operations.' },
+                { year: 'Year 2', title: 'Partnerships',        desc: 'Consulting with land trusts and environmental organizations to identify opportunities.' },
+                { year: 'Year 3', title: 'First Action',        desc: 'Funds begin supporting conservation through strategic partnerships or land acquisition.' },
+                { year: 'Year 4', title: 'Stewardship',         desc: 'Caring for protected land and expanding impact responsibly.' },
+                { year: 'Year 5', title: 'Lasting Protection',  desc: 'Conservation easements, partnerships, and permanent protections.' },
+              ].map((step, idx) => (
+                <div key={step.title} className="flex gap-5 items-start">
+                  <div
+                    className="shrink-0 w-12 h-12 flex items-center justify-center border"
+                    style={{ borderColor: 'rgba(134, 168, 154, 0.5)', background: 'rgba(44, 88, 64, 0.25)' }}
+                  >
+                    <span className="text-xl leading-none" style={{ fontFamily: H_FONT, color: '#86A89A' }}>
+                      {idx + 1}
+                    </span>
+                  </div>
+                  <div className="flex-1 pt-1.5">
+                    <div className="text-base md:text-[17px] uppercase tracking-[0.03em] leading-tight text-white" style={{ fontFamily: H_FONT }}>
+                      {step.year} — {step.title}
+                    </div>
+                    <p className="mt-2 text-sm md:text-[15px] leading-[1.65]" style={{ color: 'rgba(255,255,255,0.6)', fontFamily: B_FONT }}>
+                      {step.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
-        {/* Conservation */}
-        <section id="conservation" className="py-24 px-6 border-t border-white/5">
+        {/* PRICING — clean white card with a single big number and a green CTA. */}
+        <section id="pricing" className="bg-white py-24 md:py-32 px-6">
           <div className="max-w-4xl mx-auto">
-            <div className="grid md:grid-cols-2 gap-12 items-center">
-              <div>
-                <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-4 py-1.5 mb-6">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span className="text-xs font-semibold text-emerald-400">Conservation Mission</span>
-                </div>
-                <h2 className="text-3xl font-extrabold mb-4">Built by printers.<br/>Driven by conservation.</h2>
-                <p className="text-slate-400 leading-relaxed mb-4">
-                  InkTracker is built by Biota Mfg, a mission-driven print shop in Reno, NV. A portion of all revenue goes toward protecting natural landscapes for the long term.
-                </p>
-                <p className="text-slate-400 leading-relaxed mb-6">
-                  Every InkTracker subscription directly contributes to this mission. When your shop grows, conservation funding grows with it.
-                </p>
-                <a href="https://biotamfg.com/pages/wildways" target="_blank" rel="noopener noreferrer"
-                  className="text-sm font-semibold text-emerald-400 hover:text-emerald-300 transition">
-                  Read our conservation roadmap &rarr;
-                </a>
+            <div className="text-center mb-14">
+              <p className={eyebrow} style={{ color: MUTED }}>One plan · no tiers</p>
+              <h2 className="uppercase tracking-[0.02em] mt-4 leading-[0.95]" style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 4.5vw, 3.75rem)', color: INK }}>
+                Pricing
+              </h2>
+            </div>
+
+            <div className="border p-10 md:p-16 text-center" style={{ borderColor: HAIRLINE }}>
+              <div className="mb-4 flex items-baseline justify-center">
+                <span className="leading-none" style={{ fontFamily: H_FONT, fontSize: 'clamp(4rem, 9vw, 6.5rem)', color: INK, letterSpacing: '0.01em' }}>
+                  $99
+                </span>
+                <span className="text-xl md:text-2xl ml-3" style={{ color: MUTED }}>/mo</span>
               </div>
-              <div className="space-y-4">
-                {[
-                  { year: "Year 1", title: "Foundation", desc: "Setting aside revenue and defining clear conservation goals with transparent operations." },
-                  { year: "Year 2", title: "Partnerships", desc: "Consulting with land trusts and environmental organizations to identify opportunities." },
-                  { year: "Year 3", title: "First Action", desc: "Funds begin supporting conservation through strategic partnerships or land acquisition." },
-                  { year: "Year 4", title: "Stewardship", desc: "Caring for protected land and expanding impact responsibly." },
-                  { year: "Year 5", title: "Lasting Protection", desc: "Conservation easements, partnerships, and permanent protections." },
-                ].map((y, i) => (
-                  <div key={i} className="flex gap-4 items-start">
-                    <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-emerald-400">{i + 1}</span>
-                    </div>
-                    <div>
-                      <div className="text-sm font-bold text-white">{y.year} — {y.title}</div>
-                      <p className="text-xs text-slate-500 leading-relaxed mt-0.5">{y.desc}</p>
-                    </div>
+              <p className="text-[15px] md:text-base" style={{ color: MUTED }}>
+                Or <strong style={{ color: INK }}>$999/year</strong> — saves $189.
+                14-day free trial, no credit card.
+              </p>
+
+              <div className="my-10 mx-auto max-w-2xl grid sm:grid-cols-2 gap-x-8 gap-y-3 text-left">
+                {PRICING_INCLUDES.map(f => (
+                  <div key={f} className="text-[14px] md:text-[15px] flex items-baseline gap-3" style={{ color: '#2a2a2a' }}>
+                    <span aria-hidden="true" className="text-base" style={{ color: FOREST }}>—</span>
+                    {f}
                   </div>
                 ))}
               </div>
+
+              <button onClick={openSignup} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
+                Start free trial
+              </button>
+
+              <p className="mt-6 text-xs" style={{ color: MUTED }}>
+                Cancel anytime · export your data anytime · questions →{' '}
+                <a href="mailto:support@inktracker.app" className="underline underline-offset-2" style={{ color: INK }}>support@inktracker.app</a>
+              </p>
             </div>
           </div>
         </section>
 
-        {/* FAQ */}
-        <section id="faq" className="py-24 px-6 border-t border-white/5">
-          <div className="max-w-3xl mx-auto">
-            <div className="text-center mb-12">
-              <h2 className="text-3xl font-extrabold">Frequently asked questions</h2>
-            </div>
-            <div className="space-y-3">
-              {[
-                {
-                  q: "Can I import data from Printavo, Shopworks, or another shop management tool?",
-                  a: "Not via a self-serve CSV upload yet — but if you're switching from another platform, email support@inktracker.app with an export of your customers, quotes, or orders and we'll help port the data over manually. Self-serve import is on the roadmap.",
-                },
-                {
-                  q: "Does InkTracker work for embroidery shops too, or only screen printing?",
-                  a: "Both. The quote-to-invoice workflow, customer management, production tracking, and QuickBooks integration work the same way for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap.",
-                },
-                {
-                  q: "What happens to my data if I cancel?",
-                  a: "You can export all your data — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation. Your data is yours.",
-                },
-                {
-                  q: "Is there a long-term contract?",
-                  a: "No. InkTracker is month-to-month — cancel anytime, export all your data on the way out. Founding members who cancel will lose their $50/month rate; re-signups pay the $99/month standard rate (or $999/year).",
-                },
-                {
-                  q: "How do I know InkTracker won't disappear in six months?",
-                  a: "InkTracker is built and maintained by Biota Mfg, a 13-year-old screen print business based in Reno, Nevada. The shop dogfoods the software daily — if it stops being maintained, our own production stops. The financial structure also funds land conservation, which gives the project a long-horizon commitment the team takes seriously.",
-                },
-                {
-                  q: "How much does InkTracker cost?",
-                  a: "$99/month, or save $189 with annual billing at $999/year. One plan with every feature included — quotes, orders, production tracking, invoicing, QuickBooks sync, broker portal, all of it. Free for the first 14 days, no card required.",
-                },
-                {
-                  q: "How does the conservation contribution actually work?",
-                  a: "A conservation contribution is baked into every InkTracker subscription and allocated to a long-term land conservation fund operated by Biota Mfg. The full five-year plan — including how funds are set aside, deployed, and reported — is published at biotamfg.com/pages/wildways.",
-                },
-              ].map((item) => (
-                <details key={item.q} className="group bg-white/[0.02] border border-white/10 rounded-2xl hover:border-white/20 transition">
-                  <summary className="cursor-pointer list-none px-6 py-4 flex items-center justify-between gap-4">
-                    <span className="text-sm md:text-base font-semibold text-white text-left">{item.q}</span>
-                    <span className="text-slate-400 text-xl font-light shrink-0 transition-transform group-open:rotate-45">+</span>
+        {/* FAQ — massive title, full-width accordion rows with hairline rules. */}
+        <section id="faq" className="bg-white py-24 md:py-32 px-6 border-t" style={{ borderColor: HAIRLINE }}>
+          <div className="max-w-4xl mx-auto">
+            <h2 className="uppercase tracking-[0.02em] text-center mb-14 leading-[0.95]" style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 4.5vw, 3.75rem)', color: INK }}>
+              Frequently asked questions
+            </h2>
+            <div className="border-t" style={{ borderColor: HAIRLINE }}>
+              {FAQ_ITEMS.map((item) => (
+                <details key={item.q} className="group border-b" style={{ borderColor: HAIRLINE }}>
+                  <summary className="cursor-pointer list-none flex items-center justify-between gap-6 py-6 md:py-7">
+                    <span className="uppercase tracking-[0.04em] leading-tight" style={{ fontFamily: H_FONT, color: INK, fontSize: 'clamp(1rem, 1.6vw, 1.25rem)' }}>
+                      {item.q}
+                    </span>
+                    <span className="text-2xl leading-none shrink-0 transition-transform group-open:rotate-45" style={{ color: MUTED }}>+</span>
                   </summary>
-                  <div className="px-6 pb-5 -mt-1">
-                    <p className="text-sm text-slate-400 leading-relaxed">{item.a}</p>
-                  </div>
+                  <p className="pb-7 pr-10 text-[15px] md:text-base leading-[1.7]" style={{ color: MUTED }}>{item.a}</p>
                 </details>
               ))}
             </div>
           </div>
         </section>
 
-        {/* CTA */}
-        <section className="py-24 px-6 border-t border-white/5">
-          <div className="max-w-2xl mx-auto text-center">
-            <h2 className="text-3xl font-extrabold mb-4">Your shop, organized.</h2>
-            <p className="text-slate-400 mb-8">Try InkTracker free for 14 days. No credit card required.</p>
-            <button onClick={openSignup}
-              className="bg-teal-600 hover:bg-teal-500 text-white font-bold px-8 py-4 rounded-2xl text-base transition shadow-lg shadow-teal-900/50">
-              Start Your Free Trial
-            </button>
+        {/* FINAL CTA */}
+        <section className="bg-white py-24 md:py-32 px-6 text-center border-t" style={{ borderColor: HAIRLINE }}>
+          <div className="max-w-3xl mx-auto">
+            <h2 className="uppercase tracking-[0.02em] leading-[0.95]" style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 5vw, 4.25rem)', color: INK }}>
+              Run your shop
+              <br />
+              like you mean it.
+            </h2>
+            <div className="mt-10">
+              <button onClick={openSignup} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
+                Start 14-day trial
+              </button>
+            </div>
+            <p className="mt-6 text-xs tracking-wide" style={{ color: MUTED }}>
+              No credit card · 90-second signup
+            </p>
           </div>
         </section>
 
-        {/* Footer */}
-        <footer className="py-10 px-6 border-t border-white/5">
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-6 h-6 rounded" />
-              <span className="text-sm font-semibold text-slate-500">InkTracker</span>
-              <span className="text-xs text-slate-600 ml-2">Built by screen printers in Reno, NV</span>
+        {/* FOOTER — minimal, hairline top border. */}
+        <footer className="bg-white border-t py-12 md:py-14 px-6" style={{ borderColor: HAIRLINE }}>
+          <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center md:items-start justify-between gap-8 text-center md:text-left">
+            <div className="max-w-sm">
+              <p className="uppercase tracking-[0.04em] text-lg leading-none mb-3" style={{ fontFamily: H_FONT, color: INK }}>
+                Ink<span style={{ color: FOREST }}>Tracker</span>
+              </p>
+              <p className="text-[13px] leading-[1.65]" style={{ color: MUTED }}>
+                Made by{' '}
+                <a href="https://biotamfg.com" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2" style={{ color: INK }}>Biota Mfg</a>
+                {' '}in Reno, Nevada. Every subscription funds land conservation through{' '}
+                <a href="https://biotamfg.com/pages/wildways" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2" style={{ color: FOREST }}>Wildways</a>.
+              </p>
             </div>
-            <div className="flex gap-6 text-xs text-slate-600">
-              <a href="/changelog" className="hover:text-slate-400">Changelog</a>
-              <a href="/security" className="hover:text-slate-400">Security</a>
-              <a href="/privacy" className="hover:text-slate-400">Privacy</a>
-              <a href="/terms" className="hover:text-slate-400">Terms</a>
-              <a href="mailto:support@inktracker.app" className="hover:text-slate-400">Support</a>
+            <div className="flex flex-wrap items-center justify-center md:justify-end gap-x-7 gap-y-3">
+              {[
+                ["#tour", "Tour"],
+                ["#wildways", "Wildways"],
+                ["#pricing", "Pricing"],
+                ["#faq", "FAQ"],
+                ["mailto:support@inktracker.app", "Support"],
+                ["/privacy", "Privacy"],
+                ["/terms", "Terms"],
+              ].map(([href, label]) => (
+                <a key={label} href={href} className={navLink} style={{ color: MUTED }}>
+                  {label}
+                </a>
+              ))}
             </div>
           </div>
+          <p className="mt-10 pt-6 border-t text-[11px] tracking-[0.22em] uppercase text-center" style={{ borderColor: HAIRLINE, color: MUTED, fontFamily: H_FONT }}>
+            © 2026 Biota Mfg · Reno NV
+          </p>
         </footer>
       </div>
 

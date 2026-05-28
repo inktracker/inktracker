@@ -14,7 +14,7 @@ const BADGE_STYLES = {
 
 export default function Badge({ s }) {
   return (
-    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border whitespace-nowrap ${BADGE_STYLES[s] || "bg-gray-100 text-gray-500 border-gray-200"}`}>
+    <span className={`font-display text-[11px] tracking-[0.1em] px-2.5 py-1 rounded-full border whitespace-nowrap uppercase ${BADGE_STYLES[s] || "bg-gray-100 text-gray-500 border-gray-200"}`}>
       {s}
     </span>
   );
