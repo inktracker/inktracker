@@ -122,8 +122,8 @@ function LoginScreen() {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
         <div className="text-center mb-6">
           <Package className="w-12 h-12 text-teal-600 mx-auto mb-3" />
-          <h1 className="text-xl font-bold text-slate-900">Shop Floor</h1>
-          <p className="text-sm text-slate-400 mt-1">Sign in to view your orders</p>
+          <h1 className="font-display uppercase text-2xl text-slate-900 leading-none">Shop Floor</h1>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400 mt-2 font-bold">Sign in to view your orders</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-3">
           <input type="email" value={email} onChange={e => setEmail(e.target.value)}

@@ -34,7 +34,10 @@
     --chart-3: 197 37% 24%;
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
-    --radius: 0.5rem;
+    /* Squared theme — every shadcn surface (Dialog, Card, Button, Input,
+       Popover, etc.) reads its radius from this variable. Setting it to 0
+       matches the landing page's hard-edged treatment in one place. */
+    --radius: 0;
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
     --sidebar-primary: 240 5.9% 10%;
@@ -90,8 +93,214 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     overflow-x: hidden;
   }
+
+  /* Strict two-font system — Anton for display (headings, labels, chips,
+     buttons, badges) and Inter for everything else. Browsers sometimes
+     substitute system fonts on form controls, so we set Inter explicitly
+     here. Without this, a select dropdown can render in the browser's
+     UA-default sans-serif which doesn't match Inter. */
+  input, textarea, select, optgroup, option {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+}
+
+/* Lock out monospace — the user wants exactly Anton + Inter, no third
+   typeface. Tailwind's `font-mono` utility, plus the HTML elements that
+   default to monospace (code, pre, kbd, samp, tt), all get Inter instead.
+   Quote codes / order IDs / SKUs read fine in Inter at uppercase tracked. */
+.font-mono, [class*="font-mono"], code, pre, kbd, samp, tt {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+
+/* Display utility — heavy condensed caps for brand wordmarks, sidebar
+   shop names, page titles. Same family used on the marketing landing
+   so the in-app chrome feels of a piece. */
+.font-display {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* App-wide square corners — sweeps every Tailwind `rounded-*` utility
+   (rounded, rounded-sm/md/lg/xl/2xl/3xl plus the per-corner / per-side
+   variants) so buttons, cards, inputs, modals, nav highlights, and pills
+   all sit on hard edges. The :not([class*="rounded-full"]) guard keeps
+   avatars + circular badges intact. Border-radius is purely visual — it
+   never changes element size, so no risk of new wrapping or overflow. */
+[class*="rounded"]:not([class*="rounded-full"]) {
+  border-radius: 0 !important;
+}
+
+/* Heading typography theme — every heading across the app picks up the
+   landing page's Anton-uppercase treatment in one place. Inline styles
+   on the landing (style={{ fontFamily: ... }}) still win specificity-
+   wise, so the marketing surface keeps its bespoke treatment while the
+   dashboards inherit. Anton is more condensed than the default sans —
+   the change shrinks character widths, never grows them, so layouts
+   can't start wrapping where they used to fit. font-weight is pinned
+   to 400 because Anton ships at a single weight; without the pin, a
+   `font-bold` utility would trigger ugly browser synthetic boldening. */
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.03em !important;
+}
+
+/* Section eyebrow + stat-tile label pattern — divs that already opt
+   into uppercase + wide tracking (the convention across Dashboard,
+   Performance, Production, etc.) get switched to font-display for
+   typographic consistency with the page titles above. Bumps the
+   tracking a touch wider so Anton's tighter glyphs read clearly at
+   small sizes. */
+div[class*="uppercase"][class*="tracking-wid"],
+span[class*="uppercase"][class*="tracking-wid"],
+p[class*="uppercase"][class*="tracking-wid"] {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif;
+  font-weight: 400 !important;
+  letter-spacing: 0.1em !important;
+}
+
+/* Cream accent — for selective use in bubbles, callout sections, and
+   highlight cards. Pulled from the Biota site's "Our Commitment to You"
+   backdrop so the in-app accent stays in-family with the marketing
+   surfaces. Apply `bg-cream` to the surface, `border-cream` to its
+   border, and `text-cream-foreground` for body copy that needs to sit
+   on top with proper contrast. */
+.bg-cream { background-color: #ede4cf; }
+.text-cream-foreground { color: #3a2e1a; }
+.border-cream { border-color: #d8cba9; }
+
+/* Inline status pills — the common chip pattern across the app is a
+   span with rounded-full + a soft tint background + text-xs. Catch those
+   so order-status / payment-status / quote-status chips inherit the same
+   Anton-uppercase treatment as the dedicated Badge component, even when
+   they're rendered inline without going through the shared component.
+   text-[10px] / text-[11px] are deliberately excluded to spare tiny
+   numeric counter badges (broker count, notification dot) from being
+   transformed into uppercase letterforms that look weird at that scale. */
+span[class*="rounded-full"][class*="bg-"][class*="text-xs"] {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* APP-WIDE ROW TITLE PATTERN — div/span/button/a/td combinations of
+   font-semibold/font-bold with text-slate-700/800/900 and any of
+   text-sm/text-base/text-lg/text-xl. This is the de-facto "list row
+   title" + "section header" + "card label" treatment across every page
+   of the app (Dashboard, Quotes, Orders, Customers, Invoices, Inventory,
+   Account accordion sections, Performance, modals, broker portal, etc.).
+   Catching it here gives all of them the Anton uppercase treatment
+   without per-component edits. Excludes <p>, <label>, inputs/textareas,
+   and the size guard skips tiny meta text. */
+:is(div, span, button, a, td, h3, h4, h5, h6)[class*="font-semibold"][class*="text-slate-"]:is([class*="text-sm"], [class*="text-base"], [class*="text-lg"], [class*="text-xl"]):not([class*="font-display"]),
+:is(div, span, button, a, td, h3, h4, h5, h6)[class*="font-bold"][class*="text-slate-"]:is([class*="text-sm"], [class*="text-base"], [class*="text-lg"], [class*="text-xl"]):not([class*="font-display"]) {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+/* BIG NUMERIC VALUES — stat tile numbers, count chips, dashboard KPIs.
+   text-xl / text-2xl / text-3xl divs with font-bold and a slate body
+   color. Apply the display font but no uppercase (no-op on digits). The
+   slate-color guard excludes colored stat numbers (text-emerald-700,
+   text-red-600, text-teal-700, etc.) which already carry color-led
+   typographic weight and would look heavier than intended in Anton. */
+div[class*="text-xl"][class*="font-bold"][class*="text-slate-9"]:not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-teal"]),
+div[class*="text-2xl"][class*="font-bold"][class*="text-slate-9"]:not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-teal"]),
+div[class*="text-3xl"][class*="font-bold"][class*="text-slate-9"]:not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-teal"]) {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.02em;
+}
+
+/* RIGHT-SIDE META COUNTERS — small "X total" / "X flagged" labels that
+   live next to a section header. Pattern: span with text-xs +
+   font-semibold + text-slate-400/500. Distinct enough that it shouldn't
+   collide with body copy spans (those tend to be text-sm and font-normal). */
+span[class*="text-xs"][class*="font-semibold"][class*="text-slate-4"],
+span[class*="text-xs"][class*="font-semibold"][class*="text-slate-5"] {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+/* FILTER PILLS + LEGEND CHIPS — text-sm sized rounded-full pills used
+   for filter strips (Quotes: All/Draft/Sent/Pending/Approved; Internal/
+   Broker/Wizard), production-calendar legend chips (Quote Sent /
+   Pre-Press / Printing / Due / Completed), and tag-style toggles
+   across the app. Sits alongside the existing text-xs status-pill rule. */
+span[class*="rounded-full"][class*="text-sm"][class*="border"],
+span[class*="rounded-full"][class*="text-sm"][class*="bg-"],
+button[class*="rounded-full"][class*="text-sm"][class*="border"],
+button[class*="rounded-full"][class*="text-sm"][class*="bg-"],
+button[class*="rounded-full"][class*="text-xs"][class*="border"],
+button[class*="rounded-full"][class*="text-xs"][class*="bg-"] {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* TABLE CELL TITLES — <td> with font-semibold/font-bold. The Quotes,
+   Orders, Customers, Invoices, Inventory, PurchaseOrders pages all use
+   tabular row layouts where customer names and IDs live inside <td>s.
+   The earlier row-title rule was scoped to <div> only, so table-based
+   lists slipped through. Excludes tiny meta-text (text-[10px]/[11px])
+   so any compact spec columns stay readable. */
+td[class*="font-semibold"]:not([class*="text-[10px]"]):not([class*="text-[11px]"]),
+td[class*="font-bold"]:not([class*="text-[10px]"]):not([class*="text-[11px]"]) {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* CALENDAR EVENT PILLS — small bordered event chips inside calendar
+   cells (Production page). They render as divs with a colored border,
+   text-xs, and px/py utilities; not rounded-full so the chip rules
+   above miss them. Catch via [border-l-X] or [border] + text-xs +
+   px- combo. */
+div[class*="text-xs"][class*="border-l-"][class*="px-"][class*="py-"],
+div[class*="text-xs"][class*="border"][class*="bg-"][class*="px-"][class*="py-"]:not([class*="rounded-full"]) {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ACTION BUTTONS — every <button> in the app that opts into bold or
+   semibold text picks up the theme treatment automatically. Hits
+   primary CTAs (+ Add Customer, + New Quote, Save, Send Invoice),
+   secondary outlined buttons (Merge Duplicates, Cancel, Export),
+   compact in-card actions (Edit, View, Delete), and expanders
+   ("Advanced Filters" with a chevron). Landing-page buttons stay
+   untouched because they set fontFamily via inline style, which wins
+   over CSS specificity. Excludes tiny pill counters and icon-only
+   buttons that use text-[10px]/text-[11px]. */
+button[class*="font-semibold"]:not([class*="text-[10px]"]):not([class*="text-[11px]"]):not([class*="font-display"]),
+button[class*="font-bold"]:not([class*="text-[10px]"]):not([class*="text-[11px]"]):not([class*="font-display"]) {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* SAME FOR ANCHOR-STYLED BUTTONS — <a> tags that look like buttons
+   ("View →", "Read more", "+ New", quick links inside cards). Same
+   pattern as the action buttons above. */
+a[class*="font-semibold"][class*="px-"]:not([class*="text-[10px]"]):not([class*="text-[11px]"]):not([class*="font-display"]),
+a[class*="font-bold"][class*="px-"]:not([class*="text-[10px]"]):not([class*="text-[11px]"]):not([class*="font-display"]) {
+  font-family: "Anton", "Oswald", "Arial Narrow", sans-serif !important;
+  font-weight: 400 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 @keyframes hero-ring-ripple {

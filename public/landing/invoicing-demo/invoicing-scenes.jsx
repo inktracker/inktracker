@@ -2,7 +2,7 @@
 // Same visual system as the other demos. Demo clients only.
 
 const IV = {
-  darkBg: '#0B0B0E',
+  darkBg: '#1a3a28',
   darkText1: '#F4F4F5',
   darkText2: 'rgba(244,244,245,0.62)',
   darkText3: 'rgba(244,244,245,0.40)',
@@ -15,12 +15,12 @@ const IV = {
   text2: '#475569',
   text3: '#94A3B8',
   text4: '#CBD5E1',
-  accent: '#4F46E5',
-  accentSoft: '#EEF2FF',
-  accentBorder: '#C7D2FE',
+  accent: '#2C5840',
+  accentSoft: '#E8F0EA',
+  accentBorder: '#B8D0C0',
   green: '#16A34A',
   greenSoft: '#DCFCE7',
-  greenBorder: '#86EFAC',
+  greenBorder: '#86A89A',
   rose: '#E11D48',
   roseSoft: '#FFE4E6',
   roseBorder: '#FBCFE8',
@@ -31,7 +31,7 @@ const IV = {
   qbGreen: '#2CA01C',
 };
 const IVF = '"Inter", system-ui, -apple-system, sans-serif';
-const IVM = '"JetBrains Mono", ui-monospace, monospace';
+const IVM = '"Inter", system-ui, -apple-system, sans-serif';
 
 function ivclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function iveaseOut(t) { return 1 - Math.pow(1 - t, 3); }
@@ -49,7 +49,7 @@ const DEMO_INVOICES = [
   { id: 'INV-2026-011', client: 'Bayside Coffee Roasters',  initials: 'BC', color: '#FEF3C7', date: 'May 08', due: 'May 22', amount: '$1,260.00', status: 'paid'    },
   { id: 'INV-2026-010', client: 'Lakeshore Film Festival',  initials: 'LF', color: '#DBEAFE', date: 'May 06', due: 'May 20', amount: '$4,560.00', status: 'sent'    },
   { id: 'INV-2026-009', client: 'Driftwood Theatre Co.',    initials: 'DT', color: '#FCE7F3', date: 'May 05', due: 'May 19', amount: '$780.00',   status: 'paid'    },
-  { id: 'INV-2026-008', client: 'Aldenwood Bookstore',      initials: 'AB', color: '#EEF2FF', date: 'May 03', due: 'May 17', amount: '$540.00',   status: 'draft'   },
+  { id: 'INV-2026-008', client: 'Aldenwood Bookstore',      initials: 'AB', color: '#E8F0EA', date: 'May 03', due: 'May 17', amount: '$540.00',   status: 'draft'   },
 ];
 
 // Sidebar nav (Invoices active)
@@ -105,7 +105,7 @@ function IVSidebar() {
           return (
             <div key={it.label} style={{
               display: 'flex', alignItems: 'center', gap: 12,
-              padding: '11px 14px', borderRadius: 8, marginBottom: 2,
+              padding: '11px 14px', borderRadius: 0, marginBottom: 2,
               background: a ? IV.accent : 'transparent',
             }}>
               <IVNavIcon kind={it.icon} color={a ? '#fff' : IV.text3} />
@@ -115,7 +115,7 @@ function IVSidebar() {
         })}
       </div>
       <div style={{ padding: '14px 16px', borderTop: `1px solid ${IV.border}`, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1, height: 34, background: IV.surface2, border: `1px solid ${IV.border}`, borderRadius: 8, display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8 }}>
+        <div style={{ flex: 1, height: 34, background: IV.surface2, border: `1px solid ${IV.border}`, borderRadius: 0, display: 'flex', alignItems: 'center', padding: '0 10px', gap: 8 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={IV.text3} strokeWidth="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
           <span style={{ fontFamily: IVF, fontSize: 12, color: IV.text3 }}>Search…</span>
         </div>
@@ -148,7 +148,7 @@ function StatusPill({ status }) {
     <div style={{
       padding: '4px 10px', background: s.bg, color: s.fg,
       border: `1px solid ${s.br}`,
-      borderRadius: 999, fontFamily: IVF, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.02em',
+      borderRadius: 0, fontFamily: IVF, fontSize: 11.5, fontWeight: 700, letterSpacing: '0.02em',
       whiteSpace: 'nowrap',
     }}>{s.label}</div>
   );
@@ -161,8 +161,8 @@ function InvoiceRow({ inv, highlight, dim, statusOverride, flashEmerald }) {
     <div style={{
       background: flashEmerald ? IV.greenSoft : IV.surface,
       border: highlight ? `2px solid ${IV.accent}` : `1px solid ${IV.border}`,
-      borderRadius: 12, padding: '14px 18px',
-      boxShadow: highlight ? '0 14px 32px rgba(79,70,229,0.18)' : '0 1px 2px rgba(15,23,42,0.04)',
+      borderRadius: 0, padding: '14px 18px',
+      boxShadow: highlight ? '0 14px 32px rgba(44,88,64,0.18)' : '0 1px 2px rgba(15,23,42,0.04)',
       opacity: dim ? 0.42 : 1,
       transition: 'background 0.4s',
       display: 'grid',
@@ -170,7 +170,7 @@ function InvoiceRow({ inv, highlight, dim, statusOverride, flashEmerald }) {
       alignItems: 'center', gap: 16,
     }}>
       <div style={{
-        width: 40, height: 40, borderRadius: 10, background: inv.color,
+        width: 40, height: 40, borderRadius: 0, background: inv.color,
         display: 'grid', placeItems: 'center',
         fontFamily: IVF, fontSize: 13, fontWeight: 800, color: IV.text1, letterSpacing: '0.02em',
       }}>{inv.initials}</div>
@@ -196,7 +196,7 @@ function IVCaption({ text, time, duration, delay = 0.3, fade = 0.4 }) {
         opacity: op,
         background: 'rgba(11,11,14,0.92)', color: '#F4F4F5',
         fontFamily: IVF, fontSize: 17, fontWeight: 500, letterSpacing: '-0.005em',
-        padding: '12px 22px', borderRadius: 999,
+        padding: '12px 22px', borderRadius: 0,
         boxShadow: '0 12px 32px rgba(0,0,0,0.25)', whiteSpace: 'nowrap',
       }}>{text}</div>
     </div>
@@ -216,11 +216,10 @@ function SceneIVHook() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: IV.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
-        <IVLogo size={40} />
-        <div style={{ fontFamily: IVF, fontSize: 22, fontWeight: 700, color: IV.darkText1, letterSpacing: '-0.015em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: IVF, fontSize: 96, fontWeight: 800, color: IV.darkText1, letterSpacing: '-0.045em', lineHeight: 1, textAlign: 'center' }}>Send. Track.</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: IVF, fontSize: 96, fontWeight: 800, color: '#86EFAC', letterSpacing: '-0.045em', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Get paid.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: IV.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Send. Track.</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Get paid.</div>
       <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: IVF, fontSize: 20, color: IV.darkText2, marginTop: 36, textAlign: 'center' }}>Invoices, QuickBooks sync, and one-click payment links.</div>
     </div>
   );
@@ -242,11 +241,11 @@ function SceneIVList() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ fontFamily: IVF, fontSize: 38, fontWeight: 800, color: IV.text1, letterSpacing: '-0.03em' }}>Invoices</div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button style={{ padding: '10px 18px', background: '#fff', border: `1px solid ${IV.border}`, borderRadius: 8, fontFamily: IVF, fontSize: 14, fontWeight: 600, color: IV.text2, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button style={{ padding: '10px 18px', background: '#fff', border: `1px solid ${IV.border}`, borderRadius: 0, fontFamily: IVF, fontSize: 14, fontWeight: 600, color: IV.text2, display: 'flex', alignItems: 'center', gap: 8 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={IV.text2} strokeWidth="1.8"><path d="M12 5v14M5 12h14"/></svg>
               Export to QuickBooks
             </button>
-            <button style={{ padding: '10px 18px', background: IV.accent, color: '#fff', border: 'none', borderRadius: 8, fontFamily: IVF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(79,70,229,0.32)' }}>+ New Invoice</button>
+            <button style={{ padding: '10px 18px', background: IV.accent, color: '#fff', border: 'none', borderRadius: 0, fontFamily: IVF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(44,88,64,0.32)' }}>+ New Invoice</button>
           </div>
         </div>
       </div>
@@ -289,7 +288,7 @@ function StatCard({ label, value, trend, color, alert }) {
   return (
     <div style={{
       background: IV.surface, border: `1px solid ${alert ? IV.roseBorder : IV.border}`,
-      borderRadius: 12, padding: '18px 22px',
+      borderRadius: 0, padding: '18px 22px',
       boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
       display: 'flex', flexDirection: 'column', gap: 8,
     }}>
@@ -339,13 +338,13 @@ function SceneIVSend() {
         opacity: modalE,
         width: 940, maxHeight: 920,
         background: IV.surface, border: `1px solid ${IV.border}`,
-        borderRadius: 18, boxShadow: '0 32px 96px rgba(15,23,42,0.32)',
+        borderRadius: 0, boxShadow: '0 32px 96px rgba(15,23,42,0.32)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
         {/* Modal header */}
         <div style={{ padding: '24px 32px', borderBottom: `1px solid ${IV.border}`, display: 'flex', alignItems: 'center', gap: 16 }}>
           <div style={{
-            width: 46, height: 46, borderRadius: 10, background: '#DBEAFE',
+            width: 46, height: 46, borderRadius: 0, background: '#DBEAFE',
             display: 'grid', placeItems: 'center',
             fontFamily: IVF, fontSize: 15, fontWeight: 800, color: IV.text1,
           }}>CR</div>
@@ -405,12 +404,12 @@ function SceneIVSend() {
             padding: '10px 14px',
             background: qbChecked ? IV.greenSoft : '#fff',
             border: `1px solid ${qbChecked ? IV.greenBorder : IV.border}`,
-            borderRadius: 8,
+            borderRadius: 0,
             transform: `scale(${1 + qbPulse * (1 - qbPulse) * 0.4})`,
             transition: 'background 0.2s, border-color 0.2s',
           }}>
             <div style={{
-              width: 18, height: 18, borderRadius: 4,
+              width: 18, height: 18, borderRadius: 0,
               background: qbChecked ? IV.qbGreen : '#fff',
               border: `1.5px solid ${qbChecked ? IV.qbGreen : IV.borderStrong}`,
               display: 'grid', placeItems: 'center',
@@ -424,7 +423,7 @@ function SceneIVSend() {
 
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
             {sent && (
-              <div style={{ opacity: sentT, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IV.greenSoft, color: IV.green, border: `1px solid ${IV.greenBorder}`, borderRadius: 8, fontFamily: IVF, fontSize: 13, fontWeight: 700 }}>
+              <div style={{ opacity: sentT, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', background: IV.greenSoft, color: IV.green, border: `1px solid ${IV.greenBorder}`, borderRadius: 0, fontFamily: IVF, fontSize: 13, fontWeight: 700 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={IV.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
                 Sent to billing@cypressridge.example.edu
               </div>
@@ -434,10 +433,10 @@ function SceneIVSend() {
               background: sent ? IV.greenSoft : IV.accent,
               color: sent ? IV.green : '#fff',
               border: sent ? `1px solid ${IV.greenBorder}` : 'none',
-              borderRadius: 9,
+              borderRadius: 0,
               fontFamily: IVF, fontSize: 14.5, fontWeight: 700,
               display: 'flex', alignItems: 'center', gap: 10,
-              boxShadow: sent ? 'none' : '0 6px 16px rgba(79,70,229,0.32)',
+              boxShadow: sent ? 'none' : '0 6px 16px rgba(44,88,64,0.32)',
               transition: 'all 0.25s',
             }}>
               {sending && (
@@ -487,8 +486,8 @@ function SceneIVReceived() {
         <div style={{ display: 'flex', alignItems: 'center' }}>
           <div style={{ fontFamily: IVF, fontSize: 38, fontWeight: 800, color: IV.text1, letterSpacing: '-0.03em' }}>Invoices</div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button style={{ padding: '10px 18px', background: '#fff', border: `1px solid ${IV.border}`, borderRadius: 8, fontFamily: IVF, fontSize: 14, fontWeight: 600, color: IV.text2 }}>Export to QuickBooks</button>
-            <button style={{ padding: '10px 18px', background: IV.accent, color: '#fff', border: 'none', borderRadius: 8, fontFamily: IVF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(79,70,229,0.32)' }}>+ New Invoice</button>
+            <button style={{ padding: '10px 18px', background: '#fff', border: `1px solid ${IV.border}`, borderRadius: 0, fontFamily: IVF, fontSize: 14, fontWeight: 600, color: IV.text2 }}>Export to QuickBooks</button>
+            <button style={{ padding: '10px 18px', background: IV.accent, color: '#fff', border: 'none', borderRadius: 0, fontFamily: IVF, fontSize: 14, fontWeight: 700, boxShadow: '0 6px 16px rgba(44,88,64,0.32)' }}>+ New Invoice</button>
           </div>
         </div>
       </div>
@@ -532,13 +531,13 @@ function SceneIVReceived() {
         opacity: toastT,
         background: IV.surface,
         border: `1px solid ${IV.greenBorder}`,
-        borderRadius: 12,
+        borderRadius: 0,
         padding: '14px 18px',
         display: 'flex', alignItems: 'center', gap: 14,
         boxShadow: '0 18px 48px rgba(22,163,74,0.18)',
         minWidth: 360,
       }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: IV.greenSoft, display: 'grid', placeItems: 'center' }}>
+        <div style={{ width: 38, height: 38, borderRadius: 0, background: IV.greenSoft, display: 'grid', placeItems: 'center' }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={IV.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
         </div>
         <div>
@@ -563,8 +562,7 @@ function SceneIVLockup() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: IV.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <IVLogo size={56} />
-        <div style={{ fontFamily: IVF, fontSize: 36, fontWeight: 800, color: IV.darkText1, letterSpacing: '-0.025em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
       <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: IVF, fontSize: 26, color: IV.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>Invoicing built into the workflow.</div>
     </div>

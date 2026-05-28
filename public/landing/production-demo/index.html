@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     html, body { margin: 0; padding: 0; height: 100%; background: #0a0a0a; overflow: hidden; }
     #root { position: absolute; inset: 0; }
@@ -20,7 +20,7 @@
     // Embedded preview: always start at t=0. Stage persists the playhead
     // to localStorage so design-tool scrubbing survives reloads, which
     // means the demo would otherwise resume mid-scene on every modal-open.
-    try { localStorage.removeItem('inktracker-prod-demo:t'); } catch (_) {}
+    try { const u = new URLSearchParams(location.search); const t = u.get("t"); if (t !== null) localStorage.setItem("inktracker-prod-demo:t", t); else localStorage.removeItem("inktracker-prod-demo:t"); } catch (_) {}
   </script>
 
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>

@@ -5,7 +5,7 @@
 // shop's desktop Production view to show the real-time sync.
 
 const SF = {
-  darkBg: '#0B0B0E',
+  darkBg: '#1a3a28',
   darkText1: '#F4F4F5',
   darkText2: 'rgba(244,244,245,0.62)',
   darkText3: 'rgba(244,244,245,0.40)',
@@ -18,25 +18,25 @@ const SF = {
   text2: '#475569',
   text3: '#94A3B8',
   text4: '#CBD5E1',
-  indigo: '#4F46E5',
-  indigoSoft: '#EEF2FF',
-  indigoBorder: '#C7D2FE',
+  indigo: '#2C5840',
+  indigoSoft: '#E8F0EA',
+  indigoBorder: '#B8D0C0',
   // Production stage colors — match ShopFloor.jsx STEP_COLORS
   purple:    '#A855F7', purpleSoft:    '#FAF5FF', purpleBorder:    '#E9D5FF', // Art Approval
   amber:     '#F59E0B', amberSoft:     '#FFFBEB', amberBorder:     '#FDE68A', // Order Goods
   blue:      '#3B82F6', blueSoft:      '#EFF6FF', blueBorder:      '#BFDBFE', // Pre-Press
-  indigoSt:  '#4F46E5', indigoStSoft:  '#EEF2FF', indigoStBorder:  '#C7D2FE', // Printing
+  indigoSt:  '#2C5840', indigoStSoft:  '#E8F0EA', indigoStBorder:  '#B8D0C0', // Printing
   slate:     '#64748B', slateSoft:     '#F1F5F9', slateBorder:     '#CBD5E1', // Completed
   green:     '#16A34A',
   greenSoft: '#DCFCE7',
-  greenBorder: '#86EFAC',
+  greenBorder: '#86A89A',
   // Demo accent
   orange:     '#F97316',
   orangeSoft: '#FFF7ED',
   orangeBorder: '#FED7AA',
 };
 const SFF = '"Inter", system-ui, -apple-system, sans-serif';
-const SFM = '"JetBrains Mono", ui-monospace, monospace';
+const SFM = '"Inter", system-ui, -apple-system, sans-serif';
 
 function sfclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function sfeaseOut(t) { return 1 - Math.pow(1 - t, 3); }
@@ -91,7 +91,7 @@ function SFCaption({ text, time, duration, delay = 0.3, fade = 0.4 }) {
         opacity: op,
         background: 'rgba(11,11,14,0.92)', color: '#F4F4F5',
         fontFamily: SFF, fontSize: 17, fontWeight: 500, letterSpacing: '-0.005em',
-        padding: '12px 22px', borderRadius: 999,
+        padding: '12px 22px', borderRadius: 0,
         boxShadow: '0 12px 32px rgba(0,0,0,0.25)', whiteSpace: 'nowrap',
       }}>{text}</div>
     </div>
@@ -110,18 +110,18 @@ function TabletFrame({ children, entryProgress = 1 }) {
         transform: `translateY(${(1-e) * 20}px) scale(${0.95 + 0.05 * e})`,
         width: 1340, height: 980,
         background: '#111315',
-        borderRadius: 44,
+        borderRadius: 0,
         padding: 28,
         boxShadow: '0 40px 100px rgba(0,0,0,0.45), inset 0 0 0 2px rgba(255,255,255,0.04)',
         position: 'relative',
       }}>
         {/* Camera dot */}
-        <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', width: 8, height: 8, borderRadius: 999, background: '#2A2D31' }} />
+        <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', width: 8, height: 8, borderRadius: 0, background: '#2A2D31' }} />
         {/* Inner screen */}
         <div style={{
           width: '100%', height: '100%',
           background: SF.appBg,
-          borderRadius: 18, overflow: 'hidden',
+          borderRadius: 0, overflow: 'hidden',
           position: 'relative',
         }}>
           {children}
@@ -147,8 +147,8 @@ function ShopFloorHeader({ employeeName = 'Aiden Vega' }) {
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ padding: '7px 13px', background: 'rgba(255,255,255,0.12)', borderRadius: 999, fontFamily: SFF, fontSize: 12.5, fontWeight: 700 }}>4 active</div>
-        <div style={{ width: 38, height: 38, borderRadius: 999, background: 'rgba(255,255,255,0.18)', display: 'grid', placeItems: 'center' }}>
+        <div style={{ padding: '7px 13px', background: 'rgba(255,255,255,0.12)', borderRadius: 0, fontFamily: SFF, fontSize: 12.5, fontWeight: 700 }}>4 active</div>
+        <div style={{ width: 38, height: 38, borderRadius: 0, background: 'rgba(255,255,255,0.18)', display: 'grid', placeItems: 'center' }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15A9 9 0 1 1 19 6.5L23 10"/></svg>
         </div>
       </div>
@@ -164,10 +164,10 @@ function StepBadge({ step, large }) {
       display: 'inline-flex', alignItems: 'center', gap: 6,
       padding: large ? '6px 14px' : '4px 10px',
       background: c.soft, color: c.bg.replace(/[0-9A-Fa-f]{6}/, () => c.bg.slice(1)),
-      border: `1px solid ${c.br}`, borderRadius: 999,
+      border: `1px solid ${c.br}`, borderRadius: 0,
       fontFamily: SFF, fontSize: large ? 13 : 11.5, fontWeight: 700, letterSpacing: '0.02em',
     }}>
-      <span style={{ width: 6, height: 6, borderRadius: 999, background: c.bg }} />
+      <span style={{ width: 6, height: 6, borderRadius: 0, background: c.bg }} />
       <span style={{ color: '#0F172A' }}>{step}</span>
     </div>
   );
@@ -179,19 +179,19 @@ function JobCard({ job, selected, dim }) {
     <div style={{
       background: selected ? SF.indigoSoft : SF.surface,
       border: `${selected ? 2 : 1}px solid ${selected ? SF.indigo : SF.border}`,
-      borderRadius: 14,
+      borderRadius: 0,
       padding: '16px 18px',
-      boxShadow: selected ? '0 10px 28px rgba(79,70,229,0.18)' : '0 1px 2px rgba(15,23,42,0.04)',
+      boxShadow: selected ? '0 10px 28px rgba(44,88,64,0.18)' : '0 1px 2px rgba(15,23,42,0.04)',
       display: 'flex', alignItems: 'center', gap: 14,
       opacity: dim ? 0.5 : 1,
       transition: 'all 0.25s',
     }}>
-      <div style={{ width: 48, height: 48, borderRadius: 12, background: job.color, display: 'grid', placeItems: 'center', fontFamily: SFF, fontSize: 14, fontWeight: 800, color: SF.text1 }}>{job.initials}</div>
+      <div style={{ width: 48, height: 48, borderRadius: 0, background: job.color, display: 'grid', placeItems: 'center', fontFamily: SFF, fontSize: 14, fontWeight: 800, color: SF.text1 }}>{job.initials}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ fontFamily: SFF, fontSize: 16, fontWeight: 800, color: SF.text1, letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{job.client}</div>
           {job.rush && (
-            <div style={{ padding: '2px 8px', background: '#FEE2E2', color: '#B91C1C', border: '1px solid #FECACA', borderRadius: 5, fontFamily: SFF, fontSize: 10.5, fontWeight: 800, letterSpacing: '0.04em' }}>RUSH</div>
+            <div style={{ padding: '2px 8px', background: '#FEE2E2', color: '#B91C1C', border: '1px solid #FECACA', borderRadius: 0, fontFamily: SFF, fontSize: 10.5, fontWeight: 800, letterSpacing: '0.04em' }}>RUSH</div>
           )}
         </div>
         <div style={{ fontFamily: SFM, fontSize: 12, color: SF.text3, marginTop: 3 }}>{job.id} · {job.qty} pcs · due {job.due}</div>
@@ -217,11 +217,10 @@ function SceneSFHook() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: SF.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 14, marginBottom: 38 }}>
-        <SFLogo size={40} />
-        <div style={{ fontFamily: SFF, fontSize: 22, fontWeight: 700, color: SF.darkText1, letterSpacing: '-0.015em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
-      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: SFF, fontSize: 96, fontWeight: 800, color: SF.darkText1, letterSpacing: '-0.045em', lineHeight: 1, textAlign: 'center' }}>Built for the floor.</div>
-      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: SFF, fontSize: 96, fontWeight: 800, color: '#FDBA74', letterSpacing: '-0.045em', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Real-time updates.</div>
+      <div style={{ opacity: h1T, transform: `translateY(${(1-h1T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: SF.darkText1, letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1, textAlign: 'center' }}>Built for the floor.</div>
+      <div style={{ opacity: h2T, transform: `translateY(${(1-h2T)*10}px)`, fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 132, color: '#86A89A', letterSpacing: '0.01em', textTransform: 'uppercase', lineHeight: 1.02, textAlign: 'center', marginTop: 10 }}>Real-time updates.</div>
       <div style={{ opacity: subT, transform: `translateY(${(1-subT)*8}px)`, fontFamily: SFF, fontSize: 20, color: SF.darkText2, marginTop: 36, textAlign: 'center' }}>Tablet-ready. Touch-friendly. Synced to the office in seconds.</div>
     </div>
   );
@@ -258,7 +257,7 @@ function SceneSFQueue() {
             background: f.active ? SF.indigo : '#fff',
             color: f.active ? '#fff' : SF.text2,
             border: `1px solid ${f.active ? SF.indigo : SF.border}`,
-            borderRadius: 999,
+            borderRadius: 0,
             fontFamily: SFF, fontSize: 13.5, fontWeight: 700,
             display: 'flex', alignItems: 'center', gap: 7,
           }}>
@@ -320,7 +319,7 @@ function SceneSFTicket() {
 
       <div style={{ padding: '20px 28px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
         <button style={{
-          width: 44, height: 44, borderRadius: 11, background: SF.surface, border: `1px solid ${SF.border}`,
+          width: 44, height: 44, borderRadius: 0, background: SF.surface, border: `1px solid ${SF.border}`,
           display: 'grid', placeItems: 'center', boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
         }}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={SF.text2} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -328,7 +327,7 @@ function SceneSFTicket() {
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ fontFamily: SFF, fontSize: 22, fontWeight: 800, color: SF.text1, letterSpacing: '-0.02em' }}>Greenbriar Athletics</div>
-            <div style={{ width: 36, height: 36, borderRadius: 9, background: '#E0E7FF', display: 'grid', placeItems: 'center', fontFamily: SFF, fontSize: 12, fontWeight: 800, color: SF.text1 }}>GA</div>
+            <div style={{ width: 36, height: 36, borderRadius: 0, background: '#E0E7FF', display: 'grid', placeItems: 'center', fontFamily: SFF, fontSize: 12, fontWeight: 800, color: SF.text1 }}>GA</div>
           </div>
           <div style={{ fontFamily: SFM, fontSize: 12.5, color: SF.text3, marginTop: 2 }}>ORD-2026-122 · 150 pcs · due May 27</div>
         </div>
@@ -338,7 +337,7 @@ function SceneSFTicket() {
       {/* Order details + progress bar */}
       <div style={{ padding: '16px 28px 0' }}>
         <div style={{
-          background: SF.surface, border: `1px solid ${SF.border}`, borderRadius: 14,
+          background: SF.surface, border: `1px solid ${SF.border}`, borderRadius: 0,
           padding: '14px 18px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 18,
         }}>
           <Stat label="Garment"   value="Bella+Canvas 3001 · Black · 150" />
@@ -354,11 +353,11 @@ function SceneSFTicket() {
           <div style={{ fontFamily: SFF, fontSize: 11.5, fontWeight: 800, color: SF.text3, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Printing checklist · {completeCount} / {PRINTING_TASKS.length}</div>
           <div style={{ fontFamily: SFM, fontSize: 13, fontWeight: 700, color: SF.indigo }}>{Math.round(progressPct)}%</div>
         </div>
-        <div style={{ position: 'relative', height: 10, background: SF.slateSoft, borderRadius: 999, overflow: 'hidden' }}>
+        <div style={{ position: 'relative', height: 10, background: SF.slateSoft, borderRadius: 0, overflow: 'hidden' }}>
           <div style={{
             position: 'absolute', inset: 0,
             width: `${progressPct}%`,
-            background: SF.indigo, borderRadius: 999,
+            background: SF.indigo, borderRadius: 0,
             transition: 'width 0.4s',
           }} />
         </div>
@@ -377,13 +376,13 @@ function SceneSFTicket() {
               padding: '14px 16px',
               background: completed ? SF.greenSoft : SF.surface,
               border: `1.5px solid ${completed ? SF.greenBorder : SF.border}`,
-              borderRadius: 11,
+              borderRadius: 0,
               display: 'flex', alignItems: 'center', gap: 12,
               transform: `scale(${1 + pulseE * 0.04})`,
               transition: 'background 0.25s, border-color 0.25s',
             }}>
               <div style={{
-                width: 26, height: 26, borderRadius: 6,
+                width: 26, height: 26, borderRadius: 0,
                 background: completed ? SF.green : '#fff',
                 border: `2px solid ${completed ? SF.green : SF.borderStrong}`,
                 display: 'grid', placeItems: 'center',
@@ -411,7 +410,7 @@ function SceneSFTicket() {
         <button style={{
           padding: '13px 20px',
           background: '#fff', color: SF.text2,
-          border: `1px solid ${SF.border}`, borderRadius: 12,
+          border: `1px solid ${SF.border}`, borderRadius: 0,
           fontFamily: SFF, fontSize: 14, fontWeight: 700,
           display: 'flex', alignItems: 'center', gap: 8,
         }}>
@@ -424,10 +423,10 @@ function SceneSFTicket() {
           background: advanced ? SF.greenSoft : SF.indigo,
           color: advanced ? SF.green : '#fff',
           border: advanced ? `1px solid ${SF.greenBorder}` : 'none',
-          borderRadius: 12,
+          borderRadius: 0,
           fontFamily: SFF, fontSize: 15, fontWeight: 800, letterSpacing: '-0.005em',
           display: 'flex', alignItems: 'center', gap: 10,
-          boxShadow: advanced ? 'none' : '0 8px 20px rgba(79,70,229,0.32)',
+          boxShadow: advanced ? 'none' : '0 8px 20px rgba(44,88,64,0.32)',
           transition: 'all 0.25s',
         }}>
           {advancing && (
@@ -483,16 +482,16 @@ function SceneSFDesktop() {
       {/* Desktop browser chrome */}
       <div style={{
         position: 'absolute', top: 48, left: 96, right: 96, bottom: 48,
-        background: SF.surface, borderRadius: 14, overflow: 'hidden',
+        background: SF.surface, borderRadius: 0, overflow: 'hidden',
         boxShadow: '0 32px 96px rgba(0,0,0,0.35)',
         display: 'flex', flexDirection: 'column',
       }}>
         {/* Tab strip */}
         <div style={{ height: 38, background: '#E8EAEC', display: 'flex', alignItems: 'center', padding: '0 14px', borderBottom: `1px solid ${SF.border}`, gap: 8 }}>
-          <div style={{ width: 11, height: 11, borderRadius: 999, background: '#FF5F57' }} />
-          <div style={{ width: 11, height: 11, borderRadius: 999, background: '#FEBC2E' }} />
-          <div style={{ width: 11, height: 11, borderRadius: 999, background: '#28C840' }} />
-          <div style={{ marginLeft: 12, padding: '5px 14px', background: '#fff', borderRadius: 6, fontFamily: SFF, fontSize: 11.5, color: SF.text3, fontWeight: 600 }}>inktracker.app / production</div>
+          <div style={{ width: 11, height: 11, borderRadius: 0, background: '#FF5F57' }} />
+          <div style={{ width: 11, height: 11, borderRadius: 0, background: '#FEBC2E' }} />
+          <div style={{ width: 11, height: 11, borderRadius: 0, background: '#28C840' }} />
+          <div style={{ marginLeft: 12, padding: '5px 14px', background: '#fff', borderRadius: 0, fontFamily: SFF, fontSize: 11.5, color: SF.text3, fontWeight: 600 }}>inktracker.app / production</div>
         </div>
 
         <div style={{ flex: 1, background: SF.appBg, display: 'flex', overflow: 'hidden' }}>
@@ -519,7 +518,7 @@ function SceneSFDesktop() {
               { label: 'Account' },
             ].map((it) => (
               <div key={it.label} style={{
-                padding: '8px 12px', borderRadius: 7,
+                padding: '8px 12px', borderRadius: 0,
                 background: it.active ? SF.indigo : 'transparent',
                 color: it.active ? '#fff' : SF.text2,
                 fontFamily: SFF, fontSize: 12.5, fontWeight: it.active ? 700 : 500,
@@ -532,7 +531,7 @@ function SceneSFDesktop() {
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: 18 }}>
               <div style={{ fontFamily: SFF, fontSize: 30, fontWeight: 800, color: SF.text1, letterSpacing: '-0.025em' }}>Production</div>
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, fontFamily: SFF, fontSize: 12, color: SF.text3 }}>
-                <div style={{ width: 8, height: 8, borderRadius: 999, background: SF.green }} />
+                <div style={{ width: 8, height: 8, borderRadius: 0, background: SF.green }} />
                 Live · synced with Shop Floor
               </div>
             </div>
@@ -555,10 +554,10 @@ function SceneSFDesktop() {
                   id: 'ORD-2026-122', client: 'Greenbriar Athletics', initials: 'GA', color: '#E0E7FF', qty: 150,
                   enter: moveE, flash: flashRemain,
                 },
-                { id: 'ORD-2026-114', client: 'Aldenwood Bookstore', initials: 'AB', color: '#EEF2FF', qty: 36 },
+                { id: 'ORD-2026-114', client: 'Aldenwood Bookstore', initials: 'AB', color: '#E8F0EA', qty: 36 },
                 { id: 'ORD-2026-113', client: 'Bayside Coffee Roasters', initials: 'BC', color: '#FEF3C7', qty: 72 },
               ] : [
-                { id: 'ORD-2026-114', client: 'Aldenwood Bookstore', initials: 'AB', color: '#EEF2FF', qty: 36 },
+                { id: 'ORD-2026-114', client: 'Aldenwood Bookstore', initials: 'AB', color: '#E8F0EA', qty: 36 },
                 { id: 'ORD-2026-113', client: 'Bayside Coffee Roasters', initials: 'BC', color: '#FEF3C7', qty: 72 },
               ]} accent={SF.slate} />
             </div>
@@ -573,13 +572,13 @@ function SceneSFDesktop() {
         opacity: toastT,
         background: SF.surface,
         border: `1px solid ${SF.greenBorder}`,
-        borderRadius: 12,
+        borderRadius: 0,
         padding: '14px 18px',
         display: 'flex', alignItems: 'center', gap: 14,
         boxShadow: '0 18px 48px rgba(22,163,74,0.18)',
         minWidth: 380,
       }}>
-        <div style={{ width: 38, height: 38, borderRadius: 10, background: SF.greenSoft, display: 'grid', placeItems: 'center' }}>
+        <div style={{ width: 38, height: 38, borderRadius: 0, background: SF.greenSoft, display: 'grid', placeItems: 'center' }}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={SF.green} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12l5 5 9-11"/></svg>
         </div>
         <div>
@@ -597,20 +596,20 @@ function KanbanCol({ title, cards, accent, ghost }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 4px 10px', borderBottom: `2px solid ${accent}` }}>
-        <span style={{ width: 7, height: 7, borderRadius: 999, background: accent }} />
+        <span style={{ width: 7, height: 7, borderRadius: 0, background: accent }} />
         <div style={{ fontFamily: SFF, fontSize: 11.5, fontWeight: 800, color: SF.text2, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{title}</div>
         <div style={{ marginLeft: 'auto', fontFamily: SFM, fontSize: 11, color: SF.text3, fontWeight: 600 }}>{cards.length}</div>
       </div>
       <div style={{ padding: '10px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
         {ghost && (
           <div style={{
-            border: `1.5px dashed ${SF.borderStrong}`, borderRadius: 10,
+            border: `1.5px dashed ${SF.borderStrong}`, borderRadius: 0,
             padding: '10px 12px',
             opacity: 0.45,
             background: 'rgba(15,23,42,0.02)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 22, height: 22, borderRadius: 6, background: ghost.color, display: 'grid', placeItems: 'center', fontFamily: SFF, fontSize: 9.5, fontWeight: 800, color: SF.text1 }}>{ghost.initials}</div>
+              <div style={{ width: 22, height: 22, borderRadius: 0, background: ghost.color, display: 'grid', placeItems: 'center', fontFamily: SFF, fontSize: 9.5, fontWeight: 800, color: SF.text1 }}>{ghost.initials}</div>
               <div style={{ fontFamily: SFF, fontSize: 11.5, color: SF.text3, fontWeight: 600 }}>{ghost.client}</div>
             </div>
           </div>
@@ -619,20 +618,20 @@ function KanbanCol({ title, cards, accent, ghost }) {
           <div key={c.id} style={{
             background: c.flash > 0 ? SF.greenSoft : SF.surface,
             border: `${c.flash > 0.5 ? 2 : 1}px solid ${c.flash > 0.5 ? SF.green : SF.border}`,
-            borderRadius: 10, padding: '10px 12px',
+            borderRadius: 0, padding: '10px 12px',
             boxShadow: c.flash > 0 ? '0 10px 24px rgba(22,163,74,0.18)' : '0 1px 2px rgba(15,23,42,0.04)',
             opacity: c.enter != null ? c.enter : 1,
             transform: c.enter != null ? `translateX(${(1 - c.enter) * -40}px)` : 'none',
             transition: 'background 0.4s, border-color 0.4s',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 24, height: 24, borderRadius: 6, background: c.color, display: 'grid', placeItems: 'center', fontFamily: SFF, fontSize: 10, fontWeight: 800, color: SF.text1 }}>{c.initials}</div>
+              <div style={{ width: 24, height: 24, borderRadius: 0, background: c.color, display: 'grid', placeItems: 'center', fontFamily: SFF, fontSize: 10, fontWeight: 800, color: SF.text1 }}>{c.initials}</div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontFamily: SFF, fontSize: 12, fontWeight: 800, color: SF.text1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.client}</div>
                 <div style={{ fontFamily: SFM, fontSize: 10, color: SF.text3, marginTop: 1 }}>{c.id} · {c.qty} pcs</div>
               </div>
               {c.rush && (
-                <div style={{ padding: '1px 5px', background: '#FEE2E2', color: '#B91C1C', border: '1px solid #FECACA', borderRadius: 3, fontFamily: SFF, fontSize: 8.5, fontWeight: 800, letterSpacing: '0.06em' }}>RUSH</div>
+                <div style={{ padding: '1px 5px', background: '#FEE2E2', color: '#B91C1C', border: '1px solid #FECACA', borderRadius: 0, fontFamily: SFF, fontSize: 8.5, fontWeight: 800, letterSpacing: '0.06em' }}>RUSH</div>
               )}
             </div>
           </div>
@@ -653,8 +652,7 @@ function SceneSFLockup() {
   return (
     <div style={{ position: 'absolute', inset: 0, background: SF.darkBg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: logoT, transform: `translateY(${(1-logoT)*8}px)`, display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 }}>
-        <SFLogo size={56} />
-        <div style={{ fontFamily: SFF, fontSize: 36, fontWeight: 800, color: SF.darkText1, letterSpacing: '-0.025em' }}>InkTracker</div>
+        <div style={{display: 'flex', alignItems: 'baseline'}}><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#FFFFFF', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>INK</span><span style={{fontFamily: '"Anton", "Oswald", sans-serif', fontSize: 36, color: '#86A89A', letterSpacing: '0.02em', transform: 'skewX(-8deg)', display: 'inline-block', textTransform: 'uppercase'}}>TRACKER</span></div>
       </div>
       <div style={{ opacity: textT, transform: `translateY(${(1-textT)*8}px)`, fontFamily: SFF, fontSize: 26, color: SF.darkText2, marginTop: 8, textAlign: 'center', letterSpacing: '-0.01em' }}>From the press to the office.</div>
     </div>

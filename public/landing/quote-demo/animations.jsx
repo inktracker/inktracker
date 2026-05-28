@@ -337,7 +337,7 @@ function Stage({
       return isFinite(v) ? clamp(v, 0, duration) : 0;
     } catch { return 0; }
   });
-  const [playing, setPlaying] = React.useState(autoplay);
+  const [playing, setPlaying] = React.useState(() => { try { if (new URLSearchParams(location.search).get("paused") === "1") return false; } catch(_) {} return autoplay; });
   const [hoverTime, setHoverTime] = React.useState(null);
   const [scale, setScale] = React.useState(1);
 
