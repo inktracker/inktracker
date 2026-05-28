@@ -782,28 +782,44 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
         })}
       </div>
 
-      {/* Live pricing bar — sticks to top on scroll */}
+      {/* Live pricing bar — fixed to viewport so it stays visible
+          through the whole wizard. Was `sticky top-0` but sticky
+          breaks when the wizard is iframe-embedded on the shop's
+          storefront (the iframe's scroll context isn't the user's
+          viewport, so sticky releases as soon as the parent block
+          ends). Fixed pins reliably in both the direct URL and the
+          iframe case.
+          A 16-unit spacer below reserves room so the first piece of
+          content doesn't hide under the bar.
+          Centered + clamped to the wizard's max-w-4xl so it doesn't
+          stretch across full-bleed storefronts. */}
       {liveTotals && garments.some(gg => gg.style) && (
-        <div className="bg-slate-900 rounded-2xl sticky top-0 z-10 shadow-lg">
-          <div className="px-4 py-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="text-xs text-slate-400 hidden sm:block">
-                {garments.filter(gg => gg.style).map(gg => {
-                  const gQty = Object.values(gg.sizes).reduce((a,v) => a + (parseInt(v) || 0), 0);
-                  return `${gg.style.name}${gg.color ? ` · ${gg.color}` : ""} (${gQty > 0 ? gQty : "50 est."})`;
-                }).join(" | ")}
+        <>
+          <div className="fixed top-2 left-1/2 -translate-x-1/2 w-[calc(100%-1rem)] max-w-4xl z-50 bg-slate-900 rounded-2xl shadow-2xl">
+            <div className="px-4 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="text-xs text-slate-400 hidden sm:block truncate">
+                  {garments.filter(gg => gg.style).map(gg => {
+                    const gQty = Object.values(gg.sizes).reduce((a,v) => a + (parseInt(v) || 0), 0);
+                    return `${gg.style.name}${gg.color ? ` · ${gg.color}` : ""} (${gQty > 0 ? gQty : "50 est."})`;
+                  }).join(" | ")}
+                </div>
+                <div className="text-xs text-slate-400 sm:hidden">
+                  {totalAllQty > 0 ? `${totalAllQty} pcs` : "50 pcs (est.)"}
+                  {rush && <span className="text-orange-400 ml-2">Rush</span>}
+                </div>
               </div>
-              <div className="text-xs text-slate-400 sm:hidden">
-                {totalAllQty > 0 ? `${totalAllQty} pcs` : "50 pcs (est.)"}
-                {rush && <span className="text-orange-400 ml-2">Rush</span>}
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <span className="text-xs text-slate-400">{fmtMoney(livePpp)}/pc</span>
+                <span className="text-lg font-bold text-white">{fmtMoney(liveTotals.total)}</span>
               </div>
-            </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <span className="text-xs text-slate-400">{fmtMoney(livePpp)}/pc</span>
-              <span className="text-lg font-bold text-white">{fmtMoney(liveTotals.total)}</span>
             </div>
           </div>
-        </div>
+          {/* Spacer — keeps subsequent content from sliding under the
+              fixed bar. Matches roughly the bar's rendered height plus
+              its top offset. */}
+          <div aria-hidden className="h-14" />
+        </>
       )}
 
       {/* STEP 1: Configure — style + color + sizes + prints all on one page */}
