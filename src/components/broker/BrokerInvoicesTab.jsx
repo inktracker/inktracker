@@ -187,13 +187,22 @@ function JobDetailDrawer({ job, onClose }) {
               <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Preview</div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => previewPdf(exportQuoteToPDF(job._rawQuote, { mode: "shop", output: "blob" }))}
+                  onClick={() => previewPdf(exportQuoteToPDF(job._rawQuote, {
+                    mode: "shop",
+                    logoUrl: shop?.logo_url || "",
+                    output: "blob",
+                  }))}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
                 >
                   <Eye className="w-3.5 h-3.5" /> Shop Form
                 </button>
                 <button
-                  onClick={() => previewPdf(exportQuoteToPDF(job._rawQuote, { mode: "client", output: "blob" }))}
+                  onClick={() => previewPdf(exportQuoteToPDF(job._rawQuote, {
+                    mode: "client",
+                    // Broker → client preview: broker brands the PDF.
+                    logoUrl: broker?.logo_url || shop?.logo_url || "",
+                    output: "blob",
+                  }))}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"
                 >
                   <Eye className="w-3.5 h-3.5" /> Client Form

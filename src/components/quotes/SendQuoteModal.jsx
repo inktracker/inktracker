@@ -40,6 +40,7 @@ function getCustomerFacingTotals(q) {
 
 export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) {
   const [shopName, setShopName] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
@@ -124,6 +125,13 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         }
       }).catch(() => {});
     }
+
+    // Resolve the shop owner's logo from their profile. The PDF
+    // header defaults to the InkTracker logo when this is empty —
+    // shops never want that on a quote to their customer.
+    base44.auth.me()
+      .then((u) => { if (active && u?.logo_url) setLogoUrl(u.logo_url); })
+      .catch(() => {});
 
     // If email not on quote, try to look it up from the Customer entity
     if (!quote.customer_email && !customer?.email && quote.customer_id) {
@@ -313,6 +321,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         pdfBase64 = await exportQuoteToPDF(quoteForPdf, {
           mode: "client",
           shopName: shopName || "Your Shop",
+          logoUrl,
           customerCompany: customer?.company || "",
           customerEmail: quote.customer_email || customer?.email || "",
           customerPhone: customer?.phone || "",

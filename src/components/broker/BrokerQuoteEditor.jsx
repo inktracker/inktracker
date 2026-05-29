@@ -929,6 +929,10 @@ export default function BrokerQuoteEditor({
             onClick={() => previewPdf(exportQuoteToPDF(q, {
               mode: "client",
               shopName: broker?.company_name || broker?.display_name || broker?.full_name || broker?.email || "",
+              // Broker → client: broker brands the PDF, not the shop.
+              // Falls back to the shop logo only if the broker hasn't
+              // uploaded one yet (still better than InkTracker's logo).
+              logoUrl: broker?.logo_url || shop?.logo_url || "",
               output: "blob",
             }))}
             className="inline-flex items-center gap-1.5 px-4 border border-slate-300 text-slate-600 text-sm font-semibold py-2.5 rounded-xl hover:bg-slate-100 transition"
