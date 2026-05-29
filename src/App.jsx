@@ -336,7 +336,7 @@ function PublicLandingPage() {
     { q: "Does this work for embroidery shops, or only screen printing?", a: "Both. Quote-to-invoice, customer management, production tracking, and QuickBooks sync work the same for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap." },
     { q: "What happens to my data if I cancel?", a: "Yours, always. Export everything — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation." },
     { q: "Is there a long-term contract?", a: "No. Month-to-month, cancel anytime. Founding-rate plans aren't transferable after cancellation; re-signups pay the standard $99/mo (or $999/year)." },
-    { q: "How do I know InkTracker won't disappear in six months?", a: "Biota Mfg has been printing in Reno for thirteen years and we run the shop on InkTracker daily. If it stops being maintained, our own production stops. The financial structure also funds long-horizon land-conservation work — both keep this project on a multi-year commitment." },
+    { q: "How do I know InkTracker won't disappear in six months?", a: "Biota Mfg has been printing in Reno for ten years and we run the shop on InkTracker daily. If it stops being maintained, our own production stops. The financial structure also funds long-horizon land-conservation work — both keep this project on a multi-year commitment." },
     { q: "How does the conservation contribution actually work?", a: "A piece of every subscription is allocated to a long-term land-conservation fund operated by Biota Mfg. The full five-year plan — how funds are set aside, deployed, and reported — lives at biotamfg.com/pages/wildways." },
   ];
 
@@ -533,7 +533,7 @@ function PublicLandingPage() {
               </h1>
               <p className="text-white/85 mt-8 text-base md:text-lg leading-[1.65] max-w-xl mx-auto">
                 Quotes, production, invoicing — built in a Reno shop after
-                thirteen years of using tools that didn't quite fit.
+                17 years of using tools that didn't quite fit.
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                 <button onClick={openSignup} className={btnPrimary} style={{ background: '#fff', color: INK }}>
