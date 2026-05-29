@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { resolveArtworkPath } from "../artworkPath";
-import { validateUploadCandidate, ALLOWED_UPLOAD_EXTS, MAX_UPLOAD_BYTES } from "../uploadFile";
+// Import from the pure validation module — NOT from uploadFile.js,
+// which transitively loads supabaseClient and fails in CI without
+// VITE_SUPABASE_URL set. uploadFile.js re-exports these for runtime
+// callers, but tests should always go to the pure source.
+import { validateUploadCandidate, ALLOWED_UPLOAD_EXTS, MAX_UPLOAD_BYTES } from "../uploadValidation";
 
 function fakeFile(name, size = 1000) {
   return { name, size };
