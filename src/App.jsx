@@ -807,8 +807,9 @@ function PublicLandingPage() {
               </h2>
               <div className="mt-8 space-y-5 text-[16px] md:text-[17px] leading-[1.7]" style={{ color: '#2a2a2a' }}>
                 <p>
-                  I've been printing tees out of <strong>Biota Mfg</strong> in
-                  Reno for thirteen years. We started in a garage. We're still small.
+                  I've been screen printing for 17 years. The last 10 in my own
+                  shop — <strong>Biota Mfg</strong>, here in Reno. We started
+                  in a garage. We're still small.
                 </p>
                 <p>
                   The shop-management tools I tried always missed something
