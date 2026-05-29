@@ -7,7 +7,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
-import { buildShortfallReorderPayload, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
+import { buildShortfallReorderPayloads, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { notify } from "@/lib/notify";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
@@ -281,24 +281,34 @@ export default function OrderDetailModal({
     const total = totalOrderShortfall(liveOrder);
     if (total === 0) return;
     if (reorderCreating) return;
-    if (!window.confirm(
-      `Create a draft purchase order for ${total} replacement piece${total === 1 ? "" : "s"}?\n\n` +
-      `You'll review and send it from the Purchase Orders page. Default supplier is AS Colour — change in the editor if needed.`,
-    )) return;
+    // Build per-supplier payloads up front so the confirm message
+    // tells the operator exactly how many drafts they're about to
+    // create. A mixed S&S + AC order will produce two POs — the
+    // confirm copy needs to make that obvious before they click OK.
+    const payloads = buildShortfallReorderPayloads(liveOrder, { email: liveOrder.shop_owner });
+    if (payloads.length === 0) {
+      notify.error("Nothing to reorder", "No shortfall recorded on this order.");
+      return;
+    }
+    const supplierList = payloads.map((p) => p.supplier).join(" + ");
+    const msg = payloads.length === 1
+      ? `Create a draft purchase order for ${total} replacement piece${total === 1 ? "" : "s"}?\n\n` +
+        `Supplier: ${supplierList}. You'll review and send it from the Purchase Orders page.`
+      : `Create ${payloads.length} draft purchase orders for ${total} replacement pieces?\n\n` +
+        `One PO per supplier: ${supplierList}. You'll review and send each from the Purchase Orders page.`;
+    if (!window.confirm(msg)) return;
     setReorderCreating(true);
     try {
-      const payload = buildShortfallReorderPayload(liveOrder, { email: liveOrder.shop_owner });
-      if (!payload) {
-        notify.error("Nothing to reorder", "No shortfall recorded on this order.");
-        return;
-      }
-      const created = await base44.entities.PurchaseOrder.create(payload);
+      const created = await Promise.all(
+        payloads.map((p) => base44.entities.PurchaseOrder.create(p)),
+      );
+      const refs = created.map((c) => c.reference).join(", ");
       notify.success(
-        "Draft PO created",
-        `Reorder for ${total} pcs is in Purchase Orders → ${created.reference}.`,
+        created.length === 1 ? "Draft PO created" : `${created.length} draft POs created`,
+        `In Purchase Orders → ${refs}.`,
       );
     } catch (err) {
-      notify.error("Couldn't create reorder PO", err);
+      notify.error("Couldn't create reorder PO(s)", err);
     } finally {
       setReorderCreating(false);
     }

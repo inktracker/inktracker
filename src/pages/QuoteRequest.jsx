@@ -39,6 +39,18 @@ export default function QuoteRequest() {
           setShop(s);
           if (s.wizard_styles?.length) setWizardStyles(s.wizard_styles);
           if (s.wizard_setups?.length) setWizardSetups(s.wizard_setups);
+          // Hydrate the shared pricing module with the shop's per-shop
+          // config so getEnabledTechniques() returns ALL methods the
+          // shop offers (Screen Print + Embroidery + DTF + …), not just
+          // the screen-print default. Without this hydration step the
+          // module-level `_pc` stays null for anonymous wizard visitors
+          // (AuthContext only fires for logged-in users), and the
+          // Technique dropdown on every print location shows just
+          // "Screen Print" even when the shop has embroidery enabled.
+          if (s.pricing_config) {
+            const { loadShopPricingConfig } = await import("@/components/shared/pricing");
+            loadShopPricingConfig(s.pricing_config);
+          }
         }
       } catch {}
     }
@@ -95,7 +107,7 @@ export default function QuoteRequest() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-4xl mx-auto px-4 py-10">
+      <div className="max-w-6xl mx-auto px-4 py-10">
         <OrderWizard
           onSubmit={handleSubmit}
           styles={wizardStyles}

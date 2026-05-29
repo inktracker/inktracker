@@ -322,6 +322,67 @@ describe("Helper Functions", () => {
       const map = buildLinkedQtyMap([li1, li2]);
       expect(Object.keys(map)).toHaveLength(2);
     });
+
+    it("dedupe doesn't affect line items whose imprints have distinct keys", () => {
+      // Sanity check — make sure the dedupe ONLY collapses same-key
+      // collisions. Two imprints on one line item with different keys
+      // each contribute their qty to their own bucket (they're not
+      // duplicates, they're different prints).
+      const logoA = makeImprint({ linked: true, title: "Logo A" });
+      const logoB = makeImprint({ linked: true, title: "Logo B" });
+      const li = makeLineItem({ id: "li-1", sizes: { M: "40" }, imprints: [logoA, logoB] });
+      const map = buildLinkedQtyMap([li]);
+      expect(map[getPrintKey(logoA)]).toBe(40);
+      expect(map[getPrintKey(logoB)]).toBe(40);
+    });
+
+    it("dedupes per-line-item across mixed linked + unlinked imprints", () => {
+      // Only linked imprints make it into findLinkedPrints, so an
+      // unlinked imprint sharing the same key shouldn't show up at
+      // all — but if it did, the dedupe must still cap each line item
+      // at one contribution.
+      const linkedFront   = makeImprint({ linked: true,  title: "", location: "Front" });
+      const unlinkedBack  = makeImprint({ linked: false, title: "", location: "Back" });
+      const linkedSleeve  = makeImprint({ linked: true,  title: "", location: "Left Sleeve" });
+      const li = makeLineItem({ id: "li-1", sizes: { M: "60" }, imprints: [linkedFront, unlinkedBack, linkedSleeve] });
+      const map = buildLinkedQtyMap([li]);
+      expect(map[getPrintKey(linkedFront)]).toBe(60);
+    });
+
+    it("three line items each with multiple same-key imprints sum once each", () => {
+      // Production scenario: three garments in one wizard run, each
+      // with Front + Back + Left Sleeve all on the default key. Map
+      // should reflect 3 garment totals, not 9.
+      const f = makeImprint({ linked: true, title: "", location: "Front" });
+      const b = makeImprint({ linked: true, title: "", location: "Back" });
+      const s = makeImprint({ linked: true, title: "", location: "Left Sleeve" });
+      const li1 = makeLineItem({ id: "li-1", sizes: { S: "25" }, imprints: [f, b, s] });
+      const li2 = makeLineItem({ id: "li-2", sizes: { M: "50" }, imprints: [f, b, s] });
+      const li3 = makeLineItem({ id: "li-3", sizes: { L: "30" }, imprints: [f, b, s] });
+      const map = buildLinkedQtyMap([li1, li2, li3]);
+      expect(map[getPrintKey(f)]).toBe(105); // 25 + 50 + 30, not 315
+    });
+
+    it("does NOT multiply a line item's qty by its imprint count when imprints share a print key", () => {
+      // This is the wizard scenario: a single garment has Front + Back +
+      // Left Sleeve, all defaulted to Screen Print, all without
+      // title/width/height. getPrintKey collapses them to one key.
+      // Before the dedupe fix, a 50-piece garment with 3 such imprints
+      // contributed 150 to the linked qty, pushing tier breaks into
+      // the wrong bucket and freezing per-piece pricing.
+      const front      = makeImprint({ linked: true, title: "", location: "Front" });
+      const back       = makeImprint({ linked: true, title: "", location: "Back" });
+      const leftSleeve = makeImprint({ linked: true, title: "", location: "Left Sleeve" });
+      // sanity: confirm the key collision the wizard actually produces
+      expect(getPrintKey(front)).toBe(getPrintKey(back));
+      expect(getPrintKey(front)).toBe(getPrintKey(leftSleeve));
+      const li1 = makeLineItem({ id: "li-1", sizes: { S: "49" }, imprints: [front, back, leftSleeve] });
+      const li2 = makeLineItem({ id: "li-2", sizes: { S: "50" }, imprints: [front, back, leftSleeve] });
+      const map = buildLinkedQtyMap([li1, li2]);
+      // 49 + 50 = 99 — each line item contributes its qty ONCE, not
+      // once per imprint. Without dedupe this would be 3*49 + 3*50 = 297.
+      expect(map[getPrintKey(front)]).toBe(99);
+    });
   });
 });
 

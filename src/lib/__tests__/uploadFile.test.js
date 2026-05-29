@@ -1,5 +1,60 @@
 import { describe, it, expect } from "vitest";
 import { resolveArtworkPath } from "../artworkPath";
+import { validateUploadCandidate, ALLOWED_UPLOAD_EXTS, MAX_UPLOAD_BYTES } from "../uploadFile";
+
+function fakeFile(name, size = 1000) {
+  return { name, size };
+}
+
+describe("validateUploadCandidate", () => {
+  it("accepts every whitelisted extension", () => {
+    for (const ext of ALLOWED_UPLOAD_EXTS) {
+      expect(validateUploadCandidate(fakeFile(`logo.${ext}`))).toBe(ext);
+    }
+  });
+
+  it("accepts uppercase extensions (case-insensitive)", () => {
+    expect(validateUploadCandidate(fakeFile("LOGO.PNG"))).toBe("png");
+  });
+
+  it("rejects executables and unknown types", () => {
+    expect(() => validateUploadCandidate(fakeFile("payload.exe"))).toThrow(/isn't allowed/);
+    expect(() => validateUploadCandidate(fakeFile("script.js"))).toThrow(/isn't allowed/);
+    expect(() => validateUploadCandidate(fakeFile("notes.txt"))).toThrow(/isn't allowed/);
+    expect(() => validateUploadCandidate(fakeFile("a.html"))).toThrow(/isn't allowed/);
+  });
+
+  it("rejects files with no extension", () => {
+    expect(() => validateUploadCandidate(fakeFile("noext"))).toThrow(/isn't allowed/);
+  });
+
+  it("rejects null / undefined", () => {
+    expect(() => validateUploadCandidate(null)).toThrow(/No file/);
+    expect(() => validateUploadCandidate(undefined)).toThrow(/No file/);
+  });
+
+  it("rejects files larger than the cap with a helpful MB number", () => {
+    const huge = fakeFile("big.png", MAX_UPLOAD_BYTES + 1);
+    expect(() => validateUploadCandidate(huge)).toThrow(/25 MB/);
+  });
+
+  it("accepts files at exactly the cap", () => {
+    const rightAtCap = fakeFile("ok.png", MAX_UPLOAD_BYTES);
+    expect(() => validateUploadCandidate(rightAtCap)).not.toThrow();
+  });
+
+  it("ignores the size check when file.size is unset (some uploaders)", () => {
+    expect(() => validateUploadCandidate({ name: "ok.png" })).not.toThrow();
+  });
+
+  it("rejects double-extension tricks (last extension wins)", () => {
+    // A file named "logo.png.exe" has extension `exe` after split, so
+    // it gets rejected — the attacker can't hide an executable behind
+    // a fake png prefix.
+    expect(() => validateUploadCandidate(fakeFile("logo.png.exe"))).toThrow(/isn't allowed/);
+    expect(validateUploadCandidate(fakeFile("logo.exe.png"))).toBe("png");
+  });
+});
 
 describe("resolveArtworkPath", () => {
   it("returns null for empty / falsy input", () => {

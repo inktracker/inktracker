@@ -17,7 +17,8 @@ import {
   applyPOItemsToGoodsProgress,
 } from "@/lib/purchaseOrders";
 import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
-import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check } from "lucide-react";
+import { buildPOCsv, buildPOCsvFilename } from "@/lib/orders/poCsv";
+import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download } from "lucide-react";
 import { notify } from "@/lib/notify";
 
 const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", cancelled: "Cancelled" };
@@ -810,6 +811,39 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
             Submit to {po.supplier}
           </button>
         </div>
+      )}
+
+      {/* Download CSV — works for both draft and submitted POs.
+          Operators paste/upload the file into AS Colour's Order
+          Assistant (or any supplier tool that accepts CSV). Lives
+          outside the lock branch so a shop can re-download the
+          file later — useful for audit trail or for re-submitting
+          after a partial failure. */}
+      {po.items?.length > 0 && (
+        <button
+          onClick={() => {
+            const csv = buildPOCsv(po);
+            if (!csv) return;
+            const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = buildPOCsvFilename(po);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }}
+          className="w-full mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 px-4 py-2 rounded-xl transition"
+          title={
+            po.supplier === "AS Colour"
+              ? "Download CSV to paste into AS Colour's Order Assistant"
+              : "Download CSV (Style, Color, Size, Quantity, SKU) for supplier paste / email"
+          }
+        >
+          <Download className="w-4 h-4" />
+          Download CSV for Order Assistant
+        </button>
       )}
     </div>
   );

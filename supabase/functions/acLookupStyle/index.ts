@@ -17,13 +17,28 @@ import {
   type AcCreds,
 } from "../_shared/ascolour.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { loadShopProfileForUser } from "../_shared/profileSecrets.ts";
+import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
 
-// Returns the AcCreds bundle to use for this request. Tries the authenticated
-// user's per-shop credentials first; falls back to platform env credentials
-// for anonymous callers (the public wizard at /quoterequest still has to be
-// able to look up garments). For brokers, resolves the assigned shop's creds.
-async function resolveAcCredentials(accessToken?: string): Promise<AcCreds | null> {
+// Returns the AcCreds bundle to use for this request.
+//
+// Three paths, in priority order:
+//   1. shopOwner email   — anonymous public wizard at <shop>.com/quote-wizard.
+//                          Service role lookup by email; no user session.
+//   2. authenticated user — in-app calls. Resolves broker → assigned shop too.
+//   3. platform env       — last-ditch fallback.
+async function resolveAcCredentials(accessToken?: string, shopOwner?: string): Promise<AcCreds | null> {
+  // Path 1 — shopOwner email lookup.
+  if (shopOwner && typeof shopOwner === "string") {
+    try {
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const profile = await loadProfileWithSecrets(admin, { email: shopOwner });
+      const perShop = credsFromProfile(profile);
+      if (perShop) return perShop;
+    } catch (err) {
+      console.error("[acLookupStyle] shopOwner lookup failed:", (err as Error).message);
+    }
+  }
+  // Path 2 — authenticated user.
   if (accessToken) {
     try {
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -40,6 +55,7 @@ async function resolveAcCredentials(accessToken?: string): Promise<AcCreds | nul
       console.error("[acLookupStyle] per-shop auth failed, falling back to env:", (err as Error).message);
     }
   }
+  // Path 3 — env defaults.
   return credsFromProfile(null);
 }
 
@@ -48,10 +64,39 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { styleCode, includeInventory = true, debug = false, accessToken } = body;
+    const { styleCode, includeInventory = true, debug = false, accessToken, shopOwner } = body;
 
     const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
-    const creds = await resolveAcCredentials(accessToken || authHeader);
+    const hasShopOwner = typeof shopOwner === "string" && shopOwner.trim().length > 0;
+
+    // Per-shop hourly rate limit on the anonymous (public-wizard) path.
+    // Authenticated calls (the shop's own config editor + broker / quote
+    // editors) hit this function via Authorization header and are
+    // exempt — they already require a logged-in shop user.
+    if (hasShopOwner && !authHeader) {
+      const rateAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      );
+      const { data: allowed, error: rateErr } = await rateAdmin.rpc(
+        "check_supplier_lookup_rate",
+        { p_shop_owner: shopOwner },
+      );
+      if (rateErr) {
+        // Fail-open on RPC error — better to occasionally serve over-limit
+        // than to take the public wizard offline if the rate table is
+        // unreachable.
+        console.warn("[acLookupStyle] rate check failed:", rateErr.message);
+      } else if (allowed === false) {
+        return Response.json(
+          { error: "Too many requests — please try again shortly." },
+          { status: 429, headers: CORS },
+        );
+      }
+    }
+
+    const creds = await resolveAcCredentials(accessToken || authHeader, shopOwner);
     if (!creds) {
       return Response.json({ error: "AS Colour credentials not configured" }, { status: 500, headers: CORS });
     }

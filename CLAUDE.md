@@ -73,7 +73,26 @@ All edge functions have `verify_jwt = false` in `supabase/config.toml` (auth han
 - Module-level `_pc` variable loaded on auth from `shops.pricing_config` JSONB
 - Supports screen print (color-count tiers) and embroidery (stitch-count tiers)
 - `loadShopPricingConfig()` called in AuthContext after login
+- **Also called in `QuoteRequest.jsx`** for the anonymous public wizard — without this hydration step, the wizard runs on platform defaults and the shop's embroidery / DTF / per-color pricing won't appear.
 - When changing pricing logic, update ALL locations that display/calculate prices
+
+## Public Wizard — Required Pre-Deploy Gates
+
+The "wizard total missing the blank cost" bug class has shipped twice. Three gates now guard against it. Any change to the files below MUST pass all three before `npm run deploy` (which is gated by `predeploy`):
+
+**Trigger files** — `OrderWizard.jsx`, `WizardConfigEditor.jsx`, `src/lib/wizard/*`, `src/components/shared/pricing.jsx`, `QuoteRequest.jsx`, `ssLookupStyle`, `acLookupStyle`, anything reading/writing `wizard_styles[]`.
+
+1. **`npm test`** — unit + contract tests. Covers data-shape (`isStyleEnriched`), function behavior (`getEffectiveCost` imported directly, not inlined), and the round-trip via `calcQuoteTotalsWithLinking`.
+2. **Render-path tests** (run by `npm test`) — `src/lib/wizard/__tests__/wizardRenderPath.test.js` walks the actual call graph the public wizard uses. Catches "function reads data correctly but downstream math drops it."
+3. **`npm run audit:wizard`** — connects to prod via service-role key, flags any shop's `wizard_styles[]` row missing `garmentCost` / `priceMap`. Requires `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` env vars. Exits non-zero on stale data.
+
+`npm run predeploy` runs both `test` and `audit:wizard`. `npm run deploy` chains `deploy:functions` → `smoke:functions` → `vercel --prod --yes` and is the canonical deploy path. Do not deploy with `npx vercel --prod` directly when touching wizard/pricing code — that bypasses the audit AND the edge-function deploy / smoke gates.
+
+**Edge functions are a SEPARATE deploy target.** Vercel ships the frontend; Supabase ships the edge functions. `npm run deploy:functions` re-deploys ssLookupStyle, acLookupStyle, and createQuoteFromPayload with `--no-verify-jwt` (required so the anonymous public wizard can call them). `npm run smoke:functions` pings each one with the exact payload the wizard sends and refuses to proceed if either returns a JWT/auth rejection. This pair caught the "frontend shipped on stale edge functions" pattern that bit us twice. Never short-circuit it.
+
+When you change ANY file under `supabase/functions/*`, the change is invisible to production until `npx supabase functions deploy <name>` runs. Tests don't catch this — they exercise local code. The smoke script does.
+
+**When writing new wizard/pricing tests:** always import the real function (e.g. `import { getEffectiveCost } from "@/lib/wizard/getEffectiveCost"`). Never inline a copy — they drift silently and let bugs through. The first contract test inlined `getEffectiveCost` and the real function shipped a string-coercion bug the test couldn't see.
 
 ## User Roles
 
