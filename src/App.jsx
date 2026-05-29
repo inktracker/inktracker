@@ -532,8 +532,8 @@ function PublicLandingPage() {
                 By printers,{'\n'}for printers.
               </h1>
               <p className="text-white/85 mt-8 text-base md:text-lg leading-[1.65] max-w-xl mx-auto">
-                Quotes, production, invoicing — built in a Reno/Tahoe shop after
-                17 years of using tools that didn't quite fit.
+                Quotes, production, invoicing — built after years of using
+                software that never quite fit.
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
                 <button onClick={openSignup} className={btnPrimary} style={{ background: '#fff', color: INK }}>
