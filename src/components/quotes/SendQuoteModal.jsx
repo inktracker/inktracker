@@ -166,14 +166,24 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Not signed in.");
-      const customerPayload = customer ?? {
-        name: quote.customer_name || "",
-        email: quote.customer_email || "",
-        phone: "",
-        company: "",
-      };
+      // If the saved quote / customer record doesn't carry an email but
+      // the user has typed one in the recipient field, prefer that —
+      // QB needs an email on the BillEmail field to mint a payment
+      // link, and we're about to send to this address anyway. Matches
+      // the Send path's override (line below where send fires).
+      const recipientFallbackEmail = recipientEmails[0] || "";
+      const resolvedEmail = quote.customer_email || customer?.email || recipientFallbackEmail;
+      const customerPayload = customer
+        ? { ...customer, email: customer.email || recipientFallbackEmail }
+        : {
+            name: quote.customer_name || "",
+            email: resolvedEmail,
+            phone: "",
+            company: "",
+          };
+      const quoteForQb = { ...quote, customer_email: resolvedEmail };
       const invoicePayload = buildQBInvoicePayload(
-        quote,
+        quoteForQb,
         isBrokerQuote(quote) ? BROKER_MARKUP : undefined,
       );
       // base44.functions.invoke (not raw fetch) so the Supabase
@@ -184,7 +194,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
         action: "createInvoice",
         accessToken: session.access_token,
-        quote,
+        quote: quoteForQb,
         customer: customerPayload,
         invoicePayload,
       });
