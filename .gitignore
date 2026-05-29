@@ -39,3 +39,14 @@ __pycache__/
 # Claude Code local config + worktrees (per-machine state)
 .claude/
 knowledge/.claude/
+
+# Supabase CLI version cache + other transient state
+supabase/.temp/
+
+# Personal docs / sensitive paperwork dropped at the repo root
+# (credit apps, signed agreements, etc). Keep them on disk but never
+# commit them.
+/*.pdf
+
+# Local scratch notes
+CONTEXT.md
