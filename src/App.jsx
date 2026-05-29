@@ -336,7 +336,7 @@ function PublicLandingPage() {
     { q: "Does this work for embroidery shops, or only screen printing?", a: "Both. Quote-to-invoice, customer management, production tracking, and QuickBooks sync work the same for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap." },
     { q: "What happens to my data if I cancel?", a: "Yours, always. Export everything — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation." },
     { q: "Is there a long-term contract?", a: "No. Month-to-month, cancel anytime. Founding-rate plans aren't transferable after cancellation; re-signups pay the standard $99/mo (or $999/year)." },
-    { q: "How do I know InkTracker won't disappear in six months?", a: "Biota Mfg has been printing in Reno for ten years and we run the shop on InkTracker daily. If it stops being maintained, our own production stops. The financial structure also funds long-horizon land-conservation work — both keep this project on a multi-year commitment." },
+    { q: "How do I know InkTracker won't disappear in six months?", a: "Biota Mfg has been printing in the Reno/Tahoe area for ten years and we run the shop on InkTracker daily. If it stops being maintained, our own production stops. The financial structure also funds long-horizon land-conservation work — both keep this project on a multi-year commitment." },
     { q: "How does the conservation contribution actually work?", a: "A piece of every subscription is allocated to a long-term land-conservation fund operated by Biota Mfg. The full five-year plan — how funds are set aside, deployed, and reported — lives at biotamfg.com/pages/wildways." },
   ];
 
@@ -532,7 +532,7 @@ function PublicLandingPage() {
                 By printers,{'\n'}for printers.
               </h1>
               <p className="text-white/85 mt-8 text-base md:text-lg leading-[1.65] max-w-xl mx-auto">
-                Quotes, production, invoicing — built in a Reno shop after
+                Quotes, production, invoicing — built in a Reno/Tahoe shop after
                 17 years of using tools that didn't quite fit.
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
@@ -795,7 +795,7 @@ function PublicLandingPage() {
             <div className="overflow-hidden bg-[#f1f0ec]" style={{ aspectRatio: '4 / 5' }}>
               <img
                 src="/landing/joe.jpg"
-                alt="Joe Grennan, founder of InkTracker, at Biota Mfg in Reno, Nevada."
+                alt="Joe Grennan, founder of InkTracker, at Biota Mfg in the Reno/Tahoe area."
                 className="w-full h-full object-cover"
                 loading="lazy"
               />
@@ -808,7 +808,8 @@ function PublicLandingPage() {
               <div className="mt-8 space-y-5 text-[16px] md:text-[17px] leading-[1.7]" style={{ color: '#2a2a2a' }}>
                 <p>
                   I've been screen printing for 17 years. The last 10 in my own
-                  shop — <strong>Biota Mfg</strong>, here in Reno. We started
+                  shop — <strong>Biota Mfg</strong>, here in the Reno/Tahoe area.
+                  We started
                   in a garage. We're still small.
                 </p>
                 <p>
@@ -863,7 +864,7 @@ function PublicLandingPage() {
               <div className="mt-7 space-y-5 text-base md:text-lg leading-[1.7]" style={{ color: 'rgba(255,255,255,0.75)', fontFamily: B_FONT }}>
                 <p>
                   InkTracker is built by <strong style={{ color: '#fff' }}>Biota Mfg</strong>,
-                  a mission-driven print shop in Reno, NV. A portion of all
+                  a mission-driven print shop in the Reno/Tahoe area. A portion of all
                   revenue goes toward protecting natural landscapes for the
                   long term.
                 </p>
@@ -1011,7 +1012,7 @@ function PublicLandingPage() {
               <p className="text-[13px] leading-[1.65]" style={{ color: MUTED }}>
                 Made by{' '}
                 <a href="https://biotamfg.com" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2" style={{ color: INK }}>Biota Mfg</a>
-                {' '}in Reno, Nevada. Every subscription funds land conservation through{' '}
+                {' '}in the Reno/Tahoe area. Every subscription funds land conservation through{' '}
                 <a href="https://biotamfg.com/pages/wildways" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2" style={{ color: FOREST }}>Wildways</a>.
               </p>
             </div>
@@ -1032,7 +1033,7 @@ function PublicLandingPage() {
             </div>
           </div>
           <p className="mt-10 pt-6 border-t text-[11px] tracking-[0.22em] uppercase text-center" style={{ borderColor: HAIRLINE, color: MUTED, fontFamily: H_FONT }}>
-            © 2026 Biota Mfg · Reno NV
+            © 2026 Biota Mfg · Reno/Tahoe
           </p>
         </footer>
       </div>
