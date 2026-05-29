@@ -46,6 +46,13 @@ export function buildWizardQuotePayload(quote, shopOwner) {
     sent_date: _sdt,
     status: _sts,    // forced to Pending below
     source: _src,    // forced to wizard below
+    // Anti-bot signals — surfaced as top-level payload fields so the
+    // SECURITY DEFINER RPC can read them as payload->>'_bot_honeypot'
+    // and (payload->>'_bot_dwell_ms')::int without descending into
+    // nested object keys. The RPC enforces; the JS-side default just
+    // makes sure the field exists.
+    _bot_honeypot: botHoneypot,
+    _bot_dwell_ms: botDwellMs,
     ...safe
   } = quote || {};
   // Suppress unused-var lint by referencing once.
@@ -56,6 +63,8 @@ export function buildWizardQuotePayload(quote, shopOwner) {
     shop_owner: shopOwner.trim(),
     status: "Pending",
     source: "wizard",
+    _bot_honeypot: typeof botHoneypot === "string" ? botHoneypot : "",
+    _bot_dwell_ms: Number.isFinite(Number(botDwellMs)) ? Number(botDwellMs) : 0,
   };
 }
 

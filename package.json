@@ -13,7 +13,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --coverage.provider=v8 --coverage.reporter=text --coverage.reporter=text-summary",
-    "test:coverage:critical": "vitest run --coverage --coverage.provider=v8 --coverage.reporter=text --coverage.include='src/lib/quotes/**' --coverage.include='src/lib/orders/**' --coverage.include='src/lib/broker/**' --coverage.include='src/components/shared/pricing.jsx' --coverage.include='supabase/functions/_shared/qbInvoice.js' --coverage.include='supabase/functions/_shared/qbWriteContracts.js' --coverage.include='supabase/functions/_shared/billingLogic.js'"
+    "test:coverage:critical": "vitest run --coverage --coverage.provider=v8 --coverage.reporter=text --coverage.include='src/lib/quotes/**' --coverage.include='src/lib/orders/**' --coverage.include='src/lib/broker/**' --coverage.include='src/components/shared/pricing.jsx' --coverage.include='supabase/functions/_shared/qbInvoice.js' --coverage.include='supabase/functions/_shared/qbWriteContracts.js' --coverage.include='supabase/functions/_shared/billingLogic.js'",
+    "audit:wizard": "node scripts/audit-wizard-styles.mjs",
+    "smoke:functions": "node scripts/smoke-public-wizard-functions.mjs",
+    "deploy:functions": "npx supabase functions deploy ssLookupStyle --no-verify-jwt && npx supabase functions deploy acLookupStyle --no-verify-jwt && npx supabase functions deploy createQuoteFromPayload --no-verify-jwt",
+    "predeploy": "npm run test && npm run audit:wizard",
+    "deploy": "npm run deploy:functions && npm run smoke:functions && vercel --prod --yes"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.3",

@@ -171,9 +171,15 @@ export default function Quotes() {
       return false;
     }
 
+    // Defense-in-depth — wizard quotes are quarantined to the Wizard tab
+    // so they can never appear in the default "All" or "Internal" lists.
+    // The shop owner explicitly opts in to reviewing them by clicking
+    // the Wizard tab. Prevents a malicious wizard payload from being
+    // mistaken for a vetted shop-side quote at a glance.
     if (brokerFilter === "Broker" && !q.broker_id) return false;
     if (brokerFilter === "Internal" && (q.broker_id || q.source === "wizard")) return false;
     if (brokerFilter === "Wizard" && q.source !== "wizard") return false;
+    if (brokerFilter === "All" && q.source === "wizard") return false;
 
     return true;
   });
@@ -507,20 +513,39 @@ export default function Quotes() {
         </div>
 
         <div className="flex gap-2 flex-wrap items-center">
-          {["All", "Internal", "Broker", "Wizard"].map((b) => (
-            <button
-              key={b}
-              onClick={() => setBrokerFilter(b)}
-              className={`text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
-                brokerFilter === b
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300"
-              }`}
-            >
-              {b}
-            </button>
-          ))}
-          <HintTip text="Internal = created by your shop. Broker = submitted by a sales rep. Wizard = from your website's quote form." side="bottom" />
+          {["All", "Internal", "Broker", "Wizard"].map((b) => {
+            // Count of unactioned wizard submissions — anything still
+            // in Pending status that came in via the public wizard.
+            // Shown as a red badge on the Wizard tab so the shop owner
+            // sees new submissions without polling the page. Auto-
+            // decreases when they move a quote off Pending (Sent,
+            // Approved, Declined, Converted).
+            const newWizardCount = b === "Wizard"
+              ? quotes.filter(q => q.source === "wizard" && q.status === "Pending").length
+              : 0;
+            return (
+              <button
+                key={b}
+                onClick={() => setBrokerFilter(b)}
+                className={`relative text-xs font-semibold px-3 py-1.5 rounded-full border transition ${
+                  brokerFilter === b
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300"
+                }`}
+              >
+                {b}
+                {newWizardCount > 0 && (
+                  <span
+                    className="ml-1.5 inline-flex items-center justify-center text-[10px] font-bold text-white bg-rose-500 px-1.5 min-w-[18px] h-[18px] rounded-full leading-none"
+                    title={`${newWizardCount} new wizard submission${newWizardCount === 1 ? "" : "s"} awaiting review`}
+                  >
+                    {newWizardCount > 99 ? "99+" : newWizardCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          <HintTip text="All / Internal / Broker show shop-side quotes. Wizard is quarantined to its own tab so public-form submissions never mix with vetted quotes. The badge counts new submissions awaiting your review." side="bottom" />
         </div>
 
         <AdvancedFilters

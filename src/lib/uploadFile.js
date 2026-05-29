@@ -1,7 +1,22 @@
 import { supabase } from "@/api/supabaseClient";
 import { resolveArtworkPath } from "./artworkPath";
+import {
+  validateUploadCandidate,
+  rejectDangerousSvg,
+  ALLOWED_UPLOAD_EXTS,
+  MAX_UPLOAD_BYTES,
+} from "./uploadValidation";
 
 export { resolveArtworkPath };
+// Re-export so existing call sites keep working without churn — the
+// validation helpers moved to a separate file so tests can import them
+// without transitively loading supabaseClient (which createClient()s at
+// init and throws in CI).
+export {
+  validateUploadCandidate,
+  ALLOWED_UPLOAD_EXTS,
+  MAX_UPLOAD_BYTES,
+};
 
 const BUCKET = "artwork";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -11,7 +26,8 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const DEFAULT_SIGNED_TTL = 60 * 60;
 
 export async function uploadFile(file) {
-  const ext = file.name?.split(".").pop() || "bin";
+  const ext = validateUploadCandidate(file);
+  await rejectDangerousSvg(file, ext);
   const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 
   const { error } = await supabase.storage

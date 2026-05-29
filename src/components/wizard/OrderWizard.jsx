@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques } from "../shared/pricing";
+import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, buildLinkedQtyMap, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques } from "../shared/pricing";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
+import { getEffectiveCost } from "@/lib/wizard/getEffectiveCost";
 import { analyzeColors } from "@/lib/colorAnalyzer";
 import ColorAnalysisResult from "../shared/ColorAnalysisResult";
 import { notify } from "@/lib/notify";
@@ -85,6 +86,74 @@ export const DEFAULT_WIZARD_SETUPS = [
 const STEPS = ["Configure","Details","Review"];
 const LOCATIONS = ["Front","Back","Left Chest","Right Chest","Left Sleeve","Right Sleeve","Pocket","Hood"];
 const COLOR_COUNTS = [1,2,3,4,5,6,7,8];
+
+// Short helper descriptions for the category-picker grid. Used to give
+// each card a one-liner so the customer can pick the right family
+// without scanning a flat list of garment-type strings. Keys match
+// CATEGORIES in WizardConfigEditor; anything not in the map gets no
+// subtitle (still renders, just bare label).
+const CATEGORY_BLURBS = {
+  "T-Shirts":    "Classic short-sleeve tees & basics.",
+  "Long Sleeve": "Long-sleeve tees & layering.",
+  "Hoodies":     "Pullover & zip hoodies.",
+  "Crewnecks":   "Crewneck sweatshirts.",
+  "Tank Tops":   "Tanks & sleeveless.",
+  "Polos":       "Polos & button-down sport shirts.",
+  "Hats":        "Hats, caps, beanies — print, embroidery, or patches.",
+  "Other":       "Bags, totes & accessories.",
+};
+
+// Small reusable section-header badge — numbered circle + uppercase
+// title + optional one-line subtitle. Used on every micro-step inside
+// the active garment card so each block reads as "1. CATEGORY → 2.
+// STYLE → 3. COLOR → 4. SIZES → 5. PRINT" the way the reference does.
+function StepBadge({ n, title, subtitle }) {
+  return (
+    <div className="flex items-start gap-3 mb-3">
+      <span
+        className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
+        style={{ background: "#2c5840" }}
+      >
+        {n}
+      </span>
+      <div>
+        <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide leading-tight">{title}</h4>
+        {subtitle && <p className="text-xs text-slate-500 mt-0.5 leading-snug">{subtitle}</p>}
+      </div>
+    </div>
+  );
+}
+
+// Compact, human-readable summary of an imprint for the side panel
+// preview. Examples:
+//   { location: "Front", colors: 2, technique: "Screen Print" } → "2-color front"
+//   { location: "Back",  colors: 1, technique: "Screen Print" } → "1-color back"
+//   { location: "Left Chest", technique: "Embroidery" }         → "embroidered left chest"
+//   { location: "Front", technique: "DTG" }                     → "DTG front"
+function summarizeImprint(imp) {
+  if (!imp) return "";
+  const location = (imp.location || "").trim().toLowerCase();
+  if (!location) return "";
+  const tech = (imp.technique || "Screen Print").trim();
+  const colors = parseInt(imp.colors, 10) || 1;
+  if (tech === "Embroidery") return `embroidered ${location}`;
+  if (tech === "Screen Print" || tech === "DTF" || tech === "Heat Transfer") {
+    return `${colors}-color ${location}`;
+  }
+  // DTG, Sublimation, etc — full-color, no count.
+  return `${tech.toLowerCase()} ${location}`;
+}
+
+// Join an array of imprints into a single comma-separated phrase suitable
+// for the side panel preview. Filters out blanks so a garment with only
+// one configured imprint reads cleanly.
+function summarizeImprints(imprints) {
+  if (!Array.isArray(imprints)) return "";
+  return imprints
+    .map(summarizeImprint)
+    .filter(Boolean)
+    .join(", ");
+}
 
 const COLOR_HEX_MAP = {
   // Neutrals
@@ -235,25 +304,30 @@ function TintedImage({ baseImg, colorName, className }) {
   return <img src={dataUrl} alt={colorName} className={`${className} rounded-lg object-contain bg-white`} />;
 }
 
-export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setupsProp, shopOwner }) {
+export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _setupsProp, shopOwner }) {
   const POPULAR_STYLES = Array.isArray(stylesProp) && stylesProp.length > 0 ? stylesProp : DEFAULT_WIZARD_STYLES;
-  const POPULAR_SETUPS = Array.isArray(setupsProp) && setupsProp.length > 0 ? setupsProp : DEFAULT_WIZARD_SETUPS;
+  // setupsProp is plumbed through for future use (e.g. per-shop default
+  // imprint setups). Not consumed today, but kept on the props contract.
   const [step, setStep] = useState(1);
   const blankGarment = () => ({
     id: uid(), style: null, color: "", sizes: {},
-    imprints: [{id:uid(),location:"Front",colors:1,pantones:"",technique:"Screen Print",details:""}],
-    artFiles: {}, colorResults: {},
   });
   const [garments, setGarments] = useState([blankGarment()]);
   const [activeIdx, setActiveIdx] = useState(0);
+  // Run-level imprint / artwork / color-analysis state. Every garment in
+  // the run is printed the same way, so the prints + artwork live here
+  // (not on each garment). Customers who want different prints submit
+  // separate quote requests — see the inline microcopy near Add Garment.
+  const [imprints, setImprints] = useState([
+    { id: uid(), location: "Front", colors: 1, pantones: "", technique: "Screen Print", details: "" },
+  ]);
+  const [artFiles, setArtFiles] = useState({});
+  const [colorResults, setColorResults] = useState({});
   // Convenience aliases for the active garment
   const g = garments[activeIdx] || blankGarment();
   const style = g.style;
   const color = g.color;
   const sizes = g.sizes;
-  const imprints = g.imprints;
-  const artFiles = g.artFiles;
-  const colorResults = g.colorResults;
   // Setters that update the active garment in the array
   function setG(patch) {
     setGarments(prev => prev.map((gg, i) => i === activeIdx ? { ...gg, ...patch } : gg));
@@ -267,26 +341,38 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
   }
   function setColor(v) { setG({ color: v }); }
   function setSizes(fn) { setGarments(prev => prev.map((gg, i) => i === activeIdx ? { ...gg, sizes: typeof fn === "function" ? fn(gg.sizes) : fn } : gg)); }
-  function setImprints(fn) { setGarments(prev => prev.map((gg, i) => i === activeIdx ? { ...gg, imprints: typeof fn === "function" ? fn(gg.imprints) : fn } : gg)); }
-  function setArtFiles(fn) { setGarments(prev => prev.map((gg, i) => i === activeIdx ? { ...gg, artFiles: typeof fn === "function" ? fn(gg.artFiles) : fn } : gg)); }
-  function setColorResults(fn) { setGarments(prev => prev.map((gg, i) => i === activeIdx ? { ...gg, colorResults: typeof fn === "function" ? fn(gg.colorResults) : fn } : gg)); }
 
-  const [setup, setSetup] = useState(null);
+  // setSetup is referenced by resetWizard + applySetup; the getter
+  // itself isn't consumed yet (saved-setup picker not built), so prefix
+  // with _ to silence the unused-vars lint while keeping the setter live.
+  const [_setup, setSetup] = useState(null);
   const [rush, setRush] = useState(false);
-  const [samePrint, setSamePrint] = useState(false);
   const [contact, setContact] = useState({ name:"", email:"", phone:"", company:"", notes:"", dueDate:"", taxExempt:false, taxId:"" });
   const [submitted, setSubmitted] = useState(false);
-  const mockupRefs = useRef({});
   const sizesRef = useRef(null);
   const [uploading, setUploading] = useState({});
-  const [openSection, setOpenSection] = useState("style"); // style | color | sizes | print | turnaround
   const [ssLookupInput, setSsLookupInput] = useState("");
   const [ssLookupLoading, setSsLookupLoading] = useState(false);
   const [ssLookupError, setSsLookupError] = useState("");
   const [ssMatches, setSsMatches] = useState([]);
   const selectedGarment = g.selectedGarment || "";
   function setSelectedGarment(v) { setG({ selectedGarment: v }); }
-  const [previewStyle, setPreviewStyle] = useState(null);
+  // setPreviewStyle is referenced by resetWizard + clear-on-garment-change
+  // handlers; getter not consumed (in-card preview not implemented yet).
+  const [_previewStyle, setPreviewStyle] = useState(null);
+  // ── Anti-bot tripwires ────────────────────────────────────────────────
+  // (1) Honeypot — a hidden text input that's invisible to a real user
+  //     but will be filled by any naïve scraping bot that auto-completes
+  //     every form field on a page. Server rejects the submission if
+  //     this value is non-empty.
+  // (2) Form-open timestamp — a captcha-lite signal. Real humans take
+  //     at least a few seconds to read the page, pick a style, type
+  //     contact details, etc. Bots typically submit within a fraction
+  //     of a second. Server rejects submissions under ~3 seconds.
+  // Both signals travel into the SECURITY DEFINER RPC and are enforced
+  // there; the client-side hint in handleSubmit is for UX only.
+  const [_botHoneypot, setBotHoneypot] = useState("");
+  const wizardOpenedAtRef = useRef(Date.now());
   const [enrichingStyle, setEnrichingStyle] = useState(false);
   const [enrichedPreviews, setEnrichedPreviews] = useState({
     // Pre-cached AS Colour previews so style cards render instantly
@@ -323,8 +409,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     const results = await Promise.allSettled(
       toEnrich.map(async (s) => {
         const [ssRes, acRes] = await Promise.allSettled([
-          supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: s.styleNumber } }),
-          supabase.functions.invoke("acLookupStyle", { body: { styleCode: s.styleNumber } }),
+          supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: s.styleNumber, shopOwner } }),
+          supabase.functions.invoke("acLookupStyle", { body: { styleCode: s.styleNumber, shopOwner } }),
         ]);
         const allMatches = [
           ...(ssRes.status === "fulfilled" ? ssRes.value?.data?.matches || [] : []),
@@ -333,15 +419,20 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
         const match = (s.brand
           ? allMatches.find(m => m.brandName?.toLowerCase().includes(s.brand.toLowerCase()))
           : null) || allMatches[0];
-        const blackColor = match?.colors?.find(c => c.colorName?.toLowerCase() === "black");
         // Grab a few color swatches for preview
         const swatches = (match?.colors || [])
           .filter(c => c.imageUrl)
           .slice(0, 5)
           .map(c => ({ name: c.colorName, img: c.imageUrl }));
+        // Use whatever the supplier ships as the primary styleImage —
+        // AS Colour returns "Atlantic", S&S returns the first-listed
+        // color, etc. Previously this preferred the Black color variant
+        // which flattened the whole category grid to a wall of black
+        // tees. Black is now only a last-resort fallback.
+        const blackColor = match?.colors?.find(c => c.colorName?.toLowerCase() === "black");
         return {
           id: s.id,
-          styleImage: blackColor?.imageUrl || match?.styleImage || match?.colors?.[0]?.imageUrl || "",
+          styleImage: match?.styleImage || match?.colors?.[0]?.imageUrl || blackColor?.imageUrl || "",
           swatches,
           name: match ? `${match.brandName} ${match.styleNumber || match.resolvedStyleNumber || ""}`.trim() : "",
           description: match?.resolvedTitle || match?.description || "",
@@ -360,12 +451,52 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     }
   }
 
+  // Silent live-inventory refresh. Inventory shifts hourly — we
+  // deliberately DON'T persist it on saved `wizard_styles[]` (a
+  // 3-week-old "200 avail" would mislead customers). Instead, when a
+  // customer picks a style, we kick off a non-blocking fetch that
+  // pulls fresh per-color size counts and merges them into the
+  // active garment's `inventoryMap`. The size inputs then start
+  // showing "X avail / out" annotations within ~1-2s.
+  //
+  // Failures are silent on purpose: the wizard remains fully usable
+  // without inventory hints (the customer just won't see stock
+  // colors). Better than a noisy error for a progressive enhancement.
+  async function refreshLiveInventory(s) {
+    const nameMatch = s.name?.match?.(/(\d{3,})/);
+    const styleNum = s.styleNumber || (nameMatch ? nameMatch[1] : null);
+    if (!styleNum) return;
+    try {
+      const [ssRes, acRes] = await Promise.allSettled([
+        supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: styleNum, shopOwner } }),
+        supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNum, shopOwner } }),
+      ]);
+      const matches = [
+        ...(ssRes.status === "fulfilled" ? ssRes.value?.data?.matches || [] : []),
+        ...(acRes.status === "fulfilled" ? acRes.value?.data?.matches || [] : []),
+      ];
+      const match = (s.brand
+        ? matches.find(m => m.brandName?.toLowerCase().includes(s.brand.toLowerCase()))
+        : null) || matches[0];
+      if (match?.inventoryMap && Object.keys(match.inventoryMap).length > 0) {
+        setStyle(prev => ({ ...prev, inventoryMap: match.inventoryMap }));
+      }
+    } catch {
+      // Non-fatal — sizes still render, just without "X avail" hints.
+    }
+  }
+
   // When selecting a curated style, auto-fetch from S&S to get real per-color images
   async function selectAndEnrichStyle(s) {
     setStyle(s);
     setColor("");
-    // If already has colorImages (from S&S search), skip
-    if (s.colorImages && Object.keys(s.colorImages).length > 0) return;
+    // Fast path: saved style already has visuals. Render instantly,
+    // then refresh live inventory in the background so size inputs
+    // pick up "X avail" hints without making the customer wait.
+    if (s.colorImages && Object.keys(s.colorImages).length > 0) {
+      refreshLiveInventory(s);
+      return;
+    }
     // Try to extract a style number from the name (e.g. "Gildan 5000" → "5000")
     const nameMatch = s.name?.match?.(/(\d{3,})/);
     const styleNum = s.styleNumber || (nameMatch ? nameMatch[1] : null);
@@ -373,8 +504,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     setEnrichingStyle(true);
     try {
       const [ssRes, acRes] = await Promise.allSettled([
-        supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: styleNum } }),
-        supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNum } }),
+        supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: styleNum, shopOwner } }),
+        supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNum, shopOwner } }),
       ]);
       const matches = [
         ...(ssRes.status === "fulfilled" ? ssRes.value?.data?.matches || [] : []),
@@ -406,7 +537,9 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
           allImages: match.images || [],
           priceMap,
           inventoryMap: match.inventoryMap || {},
-          styleImage: colorImages["Black"] || match.styleImage || prev.styleImage || prev.image,
+          // Match the category-grid behavior — supplier's primary
+          // styleImage wins (varied colors), Black is only a fallback.
+          styleImage: match.styleImage || colorImages["Black"] || prev.styleImage || prev.image,
           colors: enrichedColors.length > 0 ? enrichedColors : prev.colors,
           garmentCost: minPrice < 999 ? minPrice : prev.garmentCost,
           brand: prev.brand || match.brandName || "",
@@ -430,8 +563,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     try {
       // Query both S&S and AS Colour in parallel
       const [ssRes, acRes] = await Promise.allSettled([
-        supabase.functions.invoke("ssLookupStyle", { body: { styleNumber } }),
-        supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNumber } }),
+        supabase.functions.invoke("ssLookupStyle", { body: { styleNumber, shopOwner } }),
+        supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNumber, shopOwner } }),
       ]);
       const grabMatches = (r) => {
         if (r.status !== "fulfilled") return [];
@@ -502,11 +635,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     setSsMatches([]);
   }
 
-  // Resolve per-color garment cost from priceMap, falling back to base cost
-  function getEffectiveCost(gg) {
-    const pm = gg.style?.priceMap?.[gg.color];
-    return pm?.piecePrice || gg.style?.garmentCost || 0;
-  }
+  // `getEffectiveCost` is imported from the shared module. Same
+  // function the contract test exercises — no inlined replica drift.
 
   const effectiveCost = style ? getEffectiveCost(g) : 0;
   const qty = Object.values(sizes).reduce((s,v)=>s+(parseInt(v)||0),0);
@@ -515,17 +645,18 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     rush ? 0.20 : 0, {}, undefined, {}
   ) : null;
   const total = price ? price.lineTotal : 0;
-  const ppp = qty > 0 ? total / qty : 0;
 
-  // Live pricing — all garments
+  // Live pricing — all garments share the same run-level imprints,
+  // marked linked:true so the volume-break engine combines quantities
+  // across every garment and the customer hits the tier they earned.
   const allLiveItems = garments.filter(gg => gg.style).map(gg => {
     const gQty = Object.values(gg.sizes).reduce((a,v)=>a+(parseInt(v)||0),0);
-    const liveImprints = (gg.imprints.length > 0 ? gg.imprints : [{ id: "p1", location: "Front", colors: 1, technique: "Screen Print" }])
-      .map(imp => ({ ...imp, linked: samePrint ? true : (imp.linked || false) }));
+    const liveImprints = (imprints.length > 0 ? imprints : [{ id: "p1", location: "Front", colors: 1, technique: "Screen Print" }])
+      .map(imp => ({ ...imp, linked: true }));
     return {
       id: gg.id,
       garmentCost: getEffectiveCost(gg),
-      sizes: gQty > 0 ? gg.sizes : { M: 50 },
+      sizes: gQty > 0 ? gg.sizes : { M: 25 },
       imprints: liveImprints,
     };
   });
@@ -536,9 +667,23 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
   } : null;
   const totalAllQty = garments.reduce((s,gg) => s + Object.values(gg.sizes).reduce((a,v)=>a+(parseInt(v)||0),0), 0);
   const liveTotals = liveQuote ? calcQuoteTotalsWithLinking(liveQuote) : null;
-  const liveQty = totalAllQty > 0 ? totalAllQty : 50;
+  const liveQty = totalAllQty > 0 ? totalAllQty : 25;
   const livePpp = liveTotals ? liveTotals.total / liveQty : 0;
-  const liveIsEstimate = totalAllQty === 0;
+
+  // Per-garment ppp for the side panel breakdown. Uses the same
+  // linkedQtyMap calcQuoteTotalsWithLinking uses, so each garment's
+  // ppp reflects the combined-tier qty (linked imprints share a
+  // single volume break across the whole run). Without this the
+  // breakdown would show artificial per-garment tier prices that
+  // disagree with the run total above them.
+  const liveLinkedQtyMap = liveQuote ? buildLinkedQtyMap(liveQuote.line_items || []) : null;
+  const livePerGarmentPpp = {};
+  if (liveQuote && liveLinkedQtyMap) {
+    for (const item of liveQuote.line_items) {
+      const r = calcLinkedLinePrice(item, liveQuote.rush_rate, liveQuote.extras, undefined, liveLinkedQtyMap);
+      if (r && r.qty > 0) livePerGarmentPpp[item.id] = r.lineTotal / r.qty;
+    }
+  }
 
   function addGarment() {
     const newG = blankGarment();
@@ -553,25 +698,12 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     setActiveIdx(0);
   }
 
-  function applySetup(s) {
-    setSetup(s);
-    const newImprints = s.imprints.map(i => ({ ...i, id: uid() }));
-    if (samePrint) {
-      setGarments(prev => prev.map(gg => ({ ...gg, imprints: newImprints.map(i => ({ ...i, id: uid() })) })));
-    } else {
-      setImprints(newImprints);
-    }
+  function updateImprint(idx, patch) {
+    setImprints(prev => prev.map((im, i) => i === idx ? { ...im, ...patch } : im));
   }
 
-  function updateImprint(idx, patch) {
-    if (samePrint) {
-      setGarments(prev => prev.map(gg => ({
-        ...gg,
-        imprints: gg.imprints.map((im, i) => i === idx ? { ...im, ...patch } : im),
-      })));
-    } else {
-      setImprints(prev => prev.map((im, i) => i === idx ? { ...im, ...patch } : im));
-    }
+  function removeImprint(idx) {
+    setImprints(prev => prev.filter((_, i) => i !== idx));
   }
 
   async function handleArtUpload(idx, file) {
@@ -625,26 +757,30 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     setSubmittedGarments(validG);
 
     const allArtwork = [];
+    // Run-level imprints + artwork apply to every garment in the run.
+    // linked:true tells calcLinkedLinePrice to combine quantities across
+    // all garments when picking the volume break.
+    const sharedImprints = imprints.map((imp, idx) => {
+      const art = artFiles?.[idx];
+      if (art?.url) {
+        allArtwork.push({ id: art.url, name: art.name, url: art.url });
+      }
+      return {
+        ...imp,
+        linked: true,
+        artwork_url: art?.url || "",
+        artwork_name: art?.name || "",
+        artwork_id: art?.url || "",
+        mockup_url: "",
+      };
+    });
     const line_items = validG.map(g => ({
       id: uid(),
       style: g.style.name || `${g.style.brand || ""} ${g.style.styleNumber || ""}`.trim(),
       garmentCost: getEffectiveCost(g),
       garmentColor: g.color,
       sizes: g.sizes,
-      imprints: g.imprints.map((imp, idx) => {
-        const art = g.artFiles?.[idx];
-        if (art?.url) {
-          allArtwork.push({ id: art.url, name: art.name, url: art.url });
-        }
-        return {
-          ...imp,
-          linked: samePrint ? true : (imp.linked || false),
-          artwork_url: art?.url || "",
-          artwork_name: art?.name || "",
-          artwork_id: art?.url || "",
-          mockup_url: "",
-        };
-      }),
+      imprints: sharedImprints.map(imp => ({ ...imp })),
       category: g.style.garment || "",
     }));
     const q = {
@@ -669,7 +805,30 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
       // The previous random-3-digit-number scheme had only 900 combinations
       // per year — collisions guaranteed at any volume.
       quote_id: `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`,
+      // Anti-bot signals — server enforces. Underscored to mark them
+      // as private/internal metadata, not user-set quote fields.
+      _bot_honeypot: _botHoneypot,
+      _bot_dwell_ms: Date.now() - (wizardOpenedAtRef.current || Date.now()),
     };
+    // Client-side hint — bots that bypass JS still get caught by the
+    // RPC, but rejecting locally avoids an unnecessary round trip.
+    if (_botHoneypot) {
+      // Honeypot was filled — almost certainly a bot. Silently succeed
+      // (don't tell the bot why we rejected) so it doesn't iterate
+      // around the gate. Set submitted=true so the UI behaves as if
+      // sent, but skip the actual network call.
+      setSubmitted(true);
+      setSubmitting(false);
+      return;
+    }
+    if ((Date.now() - wizardOpenedAtRef.current) < 3000) {
+      // Less than 3 seconds between page-open and submit. Real user
+      // can't realistically configure a garment + contact info in
+      // under 3 seconds. Same silent-success pattern.
+      setSubmitted(true);
+      setSubmitting(false);
+      return;
+    }
     try {
       await onSubmit(q);
       setSubmitted(true);
@@ -684,6 +843,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
   function resetWizard() {
     setSubmitted(false); setStep(1); setSetup(null); setRush(false);
     setGarments([blankGarment()]); setActiveIdx(0);
+    setImprints([{ id: uid(), location: "Front", colors: 1, pantones: "", technique: "Screen Print", details: "" }]);
+    setArtFiles({}); setColorResults({});
     setContact({name:"",email:"",phone:"",company:"",notes:"",dueDate:"",taxExempt:false,taxId:""});
     setSsLookupInput(""); setSsLookupError(""); setSsMatches([]);
     setSelectedGarment(""); setPreviewStyle(null);
@@ -724,10 +885,10 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
               <div key={gg.id} className={idx > 0 ? "border-t border-slate-200 pt-3" : ""}>
                 <div className="flex justify-between"><span className="text-slate-400">Garment{showGarments.length > 1 ? ` ${idx+1}` : ""}</span><span className="font-semibold">{gg.style.name || `${gg.style.brand || ""} ${gg.style.styleNumber || ""}`.trim() || "Item"} · {gg.color}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Quantity</span><span className="font-semibold">{gQty} pcs</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Print</span><span className="font-semibold">{gg.imprints.map(i => `${i.location} (${i.colors}c)`).join(", ")}</span></div>
               </div>
             );
           })}
+          <div className="flex justify-between"><span className="text-slate-400">Print</span><span className="font-semibold">{imprints.map(i => `${i.location} (${i.colors}c)`).join(", ")}</span></div>
           <div className="flex justify-between"><span className="text-slate-400">Turnaround</span><span className="font-semibold">{rush ? "Rush — 7 days" : "Standard — 14 days"}</span></div>
           <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-base"><span>Estimated Total</span><span className="text-teal-600">{fmtMoney(liveTotals?.total || total)}</span></div>
         </div>
@@ -738,8 +899,48 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
     );
   }
 
+  // Render-time helper for the live pricing summary. The same data set
+  // feeds both the desktop side panel and the mobile bottom bar so the
+  // numbers can't drift between the two surfaces.
+  //
+  // While `enrichingStyle` is true the active garment is still resolving
+  // its supplier data (colors, color images, garmentCost, priceMap).
+  // Showing Per piece / Run Total during that window would either flash
+  // $0 (no priceMap loaded yet) or flash an incomplete subtotal that
+  // only includes imprint costs — both confuse customers. Treat
+  // enriching as "not ready to price yet" and fall back to the empty
+  // state ("Add quantities to see pricing") until enrichment finishes.
+  const showPriceSummary = liveTotals && garments.some(gg => gg.style) && !enrichingStyle;
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-6">
+      {/* Honeypot — invisible to real users (off-screen + aria-hidden +
+          tabIndex -1 so keyboard navigation skips it). Naïve bots that
+          auto-fill every input on the page will tick this box; server
+          rejects the submission. Hidden via CSS, not display:none, so
+          the input is still in the DOM and scrapers find it. The field
+          name "company_website" is deliberately plausible — bots use
+          field names as fill hints. */}
+      <label
+        aria-hidden="true"
+        tabIndex={-1}
+        style={{ position: "absolute", left: "-9999px", top: "auto", width: "1px", height: "1px", overflow: "hidden" }}
+      >
+        Company website (leave blank)
+        <input
+          type="text"
+          name="company_website"
+          autoComplete="off"
+          tabIndex={-1}
+          value={_botHoneypot}
+          onChange={(e) => setBotHoneypot(e.target.value)}
+        />
+      </label>
+
+      {/* LEFT COLUMN — the entire scrollable wizard. Bottom padding on
+          mobile so the fixed pricing bar at the viewport bottom doesn't
+          cover the last input. */}
+      <div className="space-y-6 min-w-0 pb-24 md:pb-0">
       {/* Intro — show before any garment is configured */}
       {step === 1 && !garments.some(gg => gg.style) && (
         <div className="space-y-5">
@@ -782,41 +983,9 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
         })}
       </div>
 
-      {/* Live pricing bar — sticky to the top of the scroll container.
-          Works correctly in two contexts:
-          1. Direct URL (/QuoteRequest on inktracker.app) — sticks to
-             top of browser viewport as user scrolls the wizard.
-          2. Iframe embed with internal scroll (height: 100vh or fixed
-             pixel height) — sticks to top of iframe viewport, which
-             sits below the storefront's nav.
-          DOES NOT work in iframe embeds that use min-height
-          (iframe expands to content height with no internal scroll —
-          host page scrolls the iframe element itself). The embed
-          snippet in EmbedSnippets.jsx defaults to height:100vh so
-          new embeds work; older embeds need a one-line snippet
-          update on the storefront. */}
-      {liveTotals && garments.some(gg => gg.style) && (
-        <div className="bg-slate-900 rounded-2xl sticky top-0 z-20 shadow-lg">
-          <div className="px-4 py-2.5 flex items-center justify-between">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="text-xs text-slate-400 hidden sm:block truncate">
-                {garments.filter(gg => gg.style).map(gg => {
-                  const gQty = Object.values(gg.sizes).reduce((a,v) => a + (parseInt(v) || 0), 0);
-                  return `${gg.style.name}${gg.color ? ` · ${gg.color}` : ""} (${gQty > 0 ? gQty : "50 est."})`;
-                }).join(" | ")}
-              </div>
-              <div className="text-xs text-slate-400 sm:hidden">
-                {totalAllQty > 0 ? `${totalAllQty} pcs` : "50 pcs (est.)"}
-                {rush && <span className="text-orange-400 ml-2">Rush</span>}
-              </div>
-            </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              <span className="text-xs text-slate-400">{fmtMoney(livePpp)}/pc</span>
-              <span className="text-lg font-bold text-white">{fmtMoney(liveTotals.total)}</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* (Live pricing bar moved out of flow — see the desktop side
+          panel + mobile bottom bar below. Single source of truth so
+          the numbers stay in lockstep across surfaces.) */}
 
       {/* STEP 1: Configure — style + color + sizes + prints all on one page */}
       {step === 1 && (() => {
@@ -852,7 +1021,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                         {hasStyle ? `${gg.style.name}${gg.color ? ` · ${gg.color}` : ""}` : "New garment"}
                       </div>
                       <div className="text-xs text-slate-400">
-                        {gQty > 0 ? `${gQty} pcs` : "no sizes"} · {gg.imprints.map(i=>`${i.location} (${i.colors}c)`).join(", ")}
+                        {gQty > 0 ? `${gQty} pcs` : "no sizes"}
                       </div>
                     </div>
                   </div>
@@ -903,37 +1072,92 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                 {!isCollapsed && <div className="p-5 space-y-5">
 
           {/* ── Style ── */}
-          <div className="space-y-3">
-            <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Style</div>
+          <div className="space-y-4">
+
             {!style ? (<>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Garment type</label>
-                  <select value={selectedGarment} onChange={(e) => {
-                    setSelectedGarment(e.target.value); setPreviewStyle(null);
-                    if (e.target.value) enrichStylePreviews(POPULAR_STYLES.filter(s => s.garment === e.target.value));
-                  }}
-                    className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
-                    <option value="">Select…</option>
-                    {garmentTypes.map(gt => <option key={gt} value={gt}>{gt}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Or search by style #</label>
-                  <form onSubmit={handleSSLookup} className="flex gap-1.5">
-                    <input value={ssLookupInput} onChange={(e) => setSsLookupInput(e.target.value)} placeholder="e.g. 5001"
-                      className="flex-1 text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" disabled={ssLookupLoading} />
+              {/* Category picker — 3-column card grid at lg+ (was 2). Now that
+                  QuoteRequest.jsx wraps the wizard in max-w-6xl, the left
+                  column has room for a 3-up layout, which kills the
+                  negative space the 2-up grid left empty on the right. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {garmentTypes.map(gt => {
+                  const active = selectedGarment === gt;
+                  return (
+                    <button
+                      key={gt}
+                      type="button"
+                      onClick={() => {
+                        setSelectedGarment(gt);
+                        setPreviewStyle(null);
+                        enrichStylePreviews(POPULAR_STYLES.filter(s => s.garment === gt));
+                      }}
+                      className={`text-left px-4 py-3 border-2 rounded-xl transition ${
+                        active
+                          ? "text-white border-transparent shadow-sm"
+                          : "bg-white border-slate-200 hover:border-teal-300 text-slate-800"
+                      }`}
+                      style={active ? { background: "#2c5840", borderColor: "#1a3a28" } : undefined}
+                    >
+                      <div className={`font-bold text-sm uppercase tracking-wide ${active ? "text-white" : "text-teal-700"}`}>
+                        {gt}
+                      </div>
+                      {CATEGORY_BLURBS[gt] && (
+                        <div className={`text-xs leading-snug mt-1 ${active ? "text-white/85" : "text-slate-500"}`}>
+                          {CATEGORY_BLURBS[gt]}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Style # search — moved below the category grid so it
+                  reads as a secondary path ("can't find it? search by
+                  style number"). Same width as the grid. */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Or search by style #</label>
+                <form onSubmit={handleSSLookup} className="flex gap-1.5">
+                  <input value={ssLookupInput} onChange={(e) => setSsLookupInput(e.target.value)} placeholder="e.g. 5001"
+                    className="flex-1 text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" disabled={ssLookupLoading} />
                     <button type="submit" disabled={ssLookupLoading||!ssLookupInput.trim()}
                       className="text-sm font-semibold text-teal-600 border border-teal-200 px-3 py-2 rounded-xl hover:bg-teal-50 disabled:opacity-50">
                       {ssLookupLoading ? "…" : "Go"}</button>
                   </form>
-                  {ssLookupError && <div className="text-xs text-red-500 mt-1">{ssLookupError}</div>}
-                </div>
+                {ssLookupError && <div className="text-xs text-red-500 mt-1">{ssLookupError}</div>}
               </div>
+              {styleOptions.length > 0 && (
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 mb-1">
+                  These are just our top picks. For more options, browse{' '}
+                  <a
+                    href="https://www.ascolour.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-teal-600 hover:text-teal-700 underline underline-offset-2"
+                  >
+                    ascolour.com
+                  </a>
+                  {' '}or{' '}
+                  <a
+                    href="https://www.ssactivewear.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-teal-600 hover:text-teal-700 underline underline-offset-2"
+                  >
+                    ssactivewear.com
+                  </a>
+                  .
+                </p>
+              )}
               {styleOptions.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {styleOptions.map(s => {
                   const ep = enrichedPreviews[s.id];
-                  const previewImg = (typeof ep === "object" ? ep.styleImage : ep) || s.styleImage || s.image;
+                  // Prefer the saved-config image (whatever color the
+                  // shop owner picked / the supplier ships as primary)
+                  // so the public wizard mirrors the variety they see
+                  // in the editor — green, gray, white, black, etc.
+                  // Runtime enrichment defaults to the "Black" variant
+                  // and was flattening every tile to the same color.
+                  const previewImg = s.styleImage || (typeof ep === "object" ? ep.styleImage : ep) || s.image;
                   const displayName = s.name || (typeof ep === "object" ? ep.name : "") || s.styleNumber || "Style";
                   const displayDesc = s.description || (typeof ep === "object" ? ep.description : "");
                   const displayWeight = s.weight || (typeof ep === "object" ? ep.weight : "");
@@ -987,7 +1211,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
           {/* ── Color ── */}
           {style && (
             <div className="border-t border-slate-100 dark:border-slate-700 pt-5">
-              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Color {color && <span className="normal-case font-normal text-slate-400">· {color}</span>}</div>
+              <StepBadge
+                n={1}
+                title="Pick a color"
+                subtitle={color ? `Selected: ${color}` : "Tap a swatch to choose; tap again to preview the full photo."}
+              />
               {enrichingStyle && <div className="text-center text-sm text-slate-400 py-4">Loading colors…</div>}
               {!enrichingStyle && style.colors?.length > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
@@ -1030,78 +1258,18 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
             </div>
           )}
 
-          {/* ── Print (Artwork) ── */}
-          {style && (!samePrint || idx === activeIdx || garments.filter(gg => gg.style).length <= 1) && (
-            <div className="border-t border-slate-100 dark:border-slate-700 pt-5 space-y-3">
-              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                Print {samePrint && garments.filter(gg => gg.style).length > 1 && <span className="normal-case font-normal text-teal-500 ml-1">(applies to all garments)</span>}
-              </div>
-              {imprints.map((imp, idx) => (
-                <div key={imp.id} className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-600">Print {idx+1}</span>
-                    {imprints.length > 1 && <button onClick={()=>setImprints(prev=>prev.filter((_,i)=>i!==idx))} className="text-xs text-red-400 hover:text-red-600">Remove</button>}
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div><label className="block text-[11px] text-slate-400 mb-1">Placement</label>
-                      <select value={imp.location} onChange={e=>updateImprint(idx,{location:e.target.value})}
-                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
-                        {LOCATIONS.map(l=><option key={l} value={l}>{l}</option>)}</select></div>
-                    <div><label className="block text-[11px] text-slate-400 mb-1">Technique</label>
-                      <select value={imp.technique} onChange={e=>updateImprint(idx,{technique:e.target.value})}
-                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
-                        {getEnabledTechniques().map(t=><option key={t}>{t}</option>)}</select></div>
-                  </div>
-                  <div><label className="block text-[11px] text-slate-400 mb-1.5">Colors</label>
-                    <div className="flex gap-1.5">{COLOR_COUNTS.map(n=>(
-                      <button key={n} onClick={()=>updateImprint(idx,{colors:n})}
-                        className={`w-9 h-9 rounded-lg text-sm font-bold transition ${imp.colors===n?"bg-teal-600 text-white":"bg-white border border-slate-200 text-slate-600 hover:border-teal-300"}`}>{n}</button>
-                    ))}</div></div>
-                  <div><label className="block text-[11px] text-slate-400 mb-1">Artwork <span className="text-slate-300">(optional)</span></label>
-                    {artFiles[idx] ? (
-                      <div>
-                        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs">
-                          <span className="text-emerald-600 font-semibold truncate flex-1">✓ {artFiles[idx].name}</span>
-                          <button onClick={()=>{setArtFiles(prev=>{const n={...prev};delete n[idx];return n;}); setColorResults(prev=>{const n={...prev};delete n[idx];return n;});}} className="text-slate-400 hover:text-red-500 text-xs">Remove</button>
-                        </div>
-                        <ColorAnalysisResult result={colorResults[idx]} imageUrl={artFiles[idx]?.url}
-                          onApplyCount={(count, pantones) => updateImprint(idx, { colors: Math.min(8, Math.max(1, count)), ...(pantones ? { pantones } : {}) })} />
-                      </div>
-                    ) : (
-                      <label className={`flex items-center gap-2 border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer transition text-xs ${uploading[idx]?"border-teal-300 bg-teal-50":"border-slate-200 hover:border-teal-300 hover:bg-slate-50"}`}>
-                        <input type="file" accept=".ai,.eps,.pdf,.png,.jpg,.jpeg,.svg,.psd" className="hidden"
-                          onChange={e=>e.target.files[0]&&handleArtUpload(idx,e.target.files[0])} />
-                        {uploading[idx] ? <span className="text-teal-500">Uploading…</span> : <span className="text-slate-400">Upload artwork</span>}
-                      </label>
-                    )}</div>
-                </div>
-              ))}
-              <button onClick={() => {
-                const newImp = {id:uid(),location:"Back",colors:1,pantones:"",technique:"Screen Print",details:""};
-                if (samePrint) {
-                  setGarments(prev => prev.map(gg => ({ ...gg, imprints: [...gg.imprints, { ...newImp, id: uid() }] })));
-                } else {
-                  setImprints(prev => [...prev, newImp]);
-                }
-              }}
-                className="w-full text-sm font-semibold text-teal-600 border border-teal-200 rounded-xl py-2.5 hover:bg-teal-50 transition">+ Add Print Location</button>
-            </div>
-          )}
-
-          {style && samePrint && idx !== activeIdx && garments.filter(gg => gg.style).length > 1 && (
-            <div className="border-t border-slate-100 pt-4">
-              <div className="text-xs text-teal-500 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
-                Same print as other garments — {imprints.map(i => `${i.location} (${i.colors}c)`).join(", ")}
-              </div>
-            </div>
-          )}
-
-
+          {/* Print / Stitch Locations + Turnaround live below the
+              garments list — they apply to the whole run, not to any one
+              garment. See the run-level block after garments.map(). */}
 
           {/* ── Sizes ── */}
           {style && (
             <div ref={sizesRef} className="border-t border-slate-100 dark:border-slate-700 pt-5">
-              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Sizes</div>
+              <StepBadge
+                n={2}
+                title="Sizes & Quantity"
+                subtitle="Enter how many of each size. Volume breaks unlock at 12, 25, 50, 100, and 250 pieces."
+              />
               {(() => {
                 const rawInv = color ? (style.inventoryMap?.[color] || {}) : {};
                 // Normalize OS aliases
@@ -1144,10 +1312,98 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
             </div>
           )}
 
-          {/* ── Turnaround ── */}
-          {style && (
-            <div className="border-t border-slate-100 dark:border-slate-700 pt-5">
-              <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Turnaround</div>
+                </div>}
+              </div>
+            );
+          })}
+
+          {/* Add Garment + hint — invites a second garment OR redirects
+              folks who actually want different prints to a separate
+              request. Keeping the hint on the same row keeps the
+              redirect option visible at the moment of decision. */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <button
+              onClick={addGarment}
+              className="font-semibold px-5 py-2.5 rounded-xl transition text-sm border-2 border-teal-200 text-teal-600 hover:bg-teal-50 self-start"
+            >
+              + Add Another Garment
+            </button>
+            <p className="text-xs text-slate-500 sm:text-right">
+              Different prints? <span className="text-slate-600 font-medium">Submit a separate quote for each.</span>
+            </p>
+          </div>
+
+          {/* ── Run-level: Print / Stitch Locations ── Shared across
+              every garment above. Linked imprints combine quantities so
+              the customer hits the right volume break. */}
+          {garments.some(gg => gg.style) && (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-teal-300 dark:border-teal-700 shadow-sm p-5 space-y-3">
+              <StepBadge
+                n={3}
+                title="Print / Stitch Locations"
+                subtitle="All garments in this run will be printed the same way. Each location can use a different decoration method (e.g. screen back + embroidered front)."
+              />
+              {imprints.map((imp, idx) => (
+                <div key={imp.id} className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-600">Print {idx+1}</span>
+                    {imprints.length > 1 && <button onClick={() => removeImprint(idx)} className="text-xs text-red-400 hover:text-red-600">Remove</button>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="block text-[11px] text-slate-400 mb-1">Placement</label>
+                      <select value={imp.location} onChange={e=>updateImprint(idx,{location:e.target.value})}
+                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
+                        {LOCATIONS.map(l=><option key={l} value={l}>{l}</option>)}</select></div>
+                    <div><label className="block text-[11px] text-slate-400 mb-1">Technique</label>
+                      <select value={imp.technique} onChange={e=>updateImprint(idx,{technique:e.target.value})}
+                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
+                        {getEnabledTechniques().map(t=><option key={t}>{t}</option>)}</select></div>
+                  </div>
+                  <div><label className="block text-[11px] text-slate-400 mb-1.5">Colors</label>
+                    <div className="flex gap-1.5">{COLOR_COUNTS.map(n=>(
+                      <button key={n} onClick={()=>updateImprint(idx,{colors:n})}
+                        className={`w-9 h-9 rounded-lg text-sm font-bold transition ${imp.colors===n?"bg-teal-600 text-white":"bg-white border border-slate-200 text-slate-600 hover:border-teal-300"}`}>{n}</button>
+                    ))}</div></div>
+                  <div><label className="block text-[11px] text-slate-400 mb-1">Artwork <span className="text-slate-300">(optional)</span></label>
+                    {artFiles[idx] ? (
+                      <div>
+                        <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs">
+                          <span className="text-emerald-600 font-semibold truncate flex-1">✓ {artFiles[idx].name}</span>
+                          <button onClick={()=>{setArtFiles(prev=>{const n={...prev};delete n[idx];return n;}); setColorResults(prev=>{const n={...prev};delete n[idx];return n;});}} className="text-slate-400 hover:text-red-500 text-xs">Remove</button>
+                        </div>
+                        <ColorAnalysisResult result={colorResults[idx]} imageUrl={artFiles[idx]?.url}
+                          onApplyCount={(count, pantones) => updateImprint(idx, { colors: Math.min(8, Math.max(1, count)), ...(pantones ? { pantones } : {}) })} />
+                      </div>
+                    ) : (
+                      <label className={`flex items-center gap-2 border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer transition text-xs ${uploading[idx]?"border-teal-300 bg-teal-50":"border-slate-200 hover:border-teal-300 hover:bg-slate-50"}`}>
+                        <input type="file" accept=".ai,.eps,.pdf,.png,.jpg,.jpeg,.svg,.psd" className="hidden"
+                          onChange={e=>e.target.files[0]&&handleArtUpload(idx,e.target.files[0])} />
+                        {uploading[idx] ? <span className="text-teal-500">Uploading…</span> : <span className="text-slate-400">Upload artwork</span>}
+                      </label>
+                    )}</div>
+                </div>
+              ))}
+              <button onClick={() => {
+                // Inherit the technique from the previous location so
+                // customers building "front print + back print" runs
+                // don't have to re-pick the method every row. Each new
+                // row's dropdown can still override.
+                const seedMethod = imprints[imprints.length - 1]?.technique || "Screen Print";
+                setImprints(prev => [...prev, {id:uid(),location:"Back",colors:1,pantones:"",technique:seedMethod,details:""}]);
+              }}
+                className="w-full text-sm font-semibold text-teal-600 border border-teal-200 rounded-xl py-2.5 hover:bg-teal-50 transition">+ Add Print Location</button>
+            </div>
+          )}
+
+          {/* ── Run-level: Turnaround ── Global rush flag; rendered once
+              so it doesn't duplicate inside every garment card. */}
+          {garments.some(gg => gg.style) && (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-teal-300 dark:border-teal-700 shadow-sm p-5">
+              <StepBadge
+                n={4}
+                title="Turnaround"
+                subtitle="Standard ships in ~14 business days. Rush ships in ~7 business days for a 20% surcharge."
+              />
               <div className="flex gap-3">
                 {[{val:false,label:"Standard",sub:"14 business days"},{val:true,label:"Rush",sub:"7 business days",badge:"+20%"}].map(opt=>(
                   <button key={String(opt.val)} onClick={()=>setRush(opt.val)}
@@ -1162,42 +1418,13 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
             </div>
           )}
 
-                </div>}
-              </div>
-            );
-          })}
-
           <div className="space-y-3">
-            {garments.length > 1 && garments.filter(gg => gg.style).length > 1 && (
-              <label className="flex items-center gap-3 bg-teal-50 border border-teal-200 rounded-xl px-4 py-3 cursor-pointer hover:bg-teal-100 transition">
-                <input type="checkbox" checked={samePrint} onChange={e => {
-                  setSamePrint(e.target.checked);
-                  if (e.target.checked) {
-                    const sourceImprints = garments[activeIdx]?.imprints || garments[0]?.imprints;
-                    if (sourceImprints) {
-                      setGarments(prev => prev.map(gg => ({ ...gg, imprints: sourceImprints.map(i => ({ ...i, id: uid() })) })));
-                    }
-                  }
-                }}
-                  className="w-4 h-4 rounded border-teal-300 text-teal-600 focus:ring-teal-500" />
-                <div>
-                  <div className="text-sm font-semibold text-teal-800">Same print on all garments</div>
-                  <div className="text-xs text-teal-600">Combine quantities for better pricing tier</div>
-                </div>
-              </label>
-            )}
             {getValidationIssues().length > 0 && (
               <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2">
                 {getValidationIssues()[0]}
               </div>
             )}
-            <div className="flex justify-between items-center gap-3">
-              <button
-                onClick={addGarment}
-                className="font-semibold px-5 py-2.5 rounded-xl transition text-sm border-2 border-teal-200 text-teal-600 hover:bg-teal-50"
-              >
-                + Add Another Garment
-              </button>
+            <div className="flex justify-end">
               <button onClick={() => { if (getValidationIssues().length === 0) setStep(2); }}
                 disabled={getValidationIssues().length > 0}
                 className={`font-semibold px-6 py-2.5 rounded-xl transition ${getValidationIssues().length === 0 ? "bg-teal-600 hover:bg-teal-700 text-white" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
@@ -1290,21 +1517,6 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                     </div>
                     <div className="flex justify-between text-sm"><span className="text-slate-400">Style</span><span className="font-semibold">{gg.style.name}</span></div>
                     <div className="flex justify-between text-sm"><span className="text-slate-400">Color</span><span className="font-semibold">{gg.color}</span></div>
-                    <div className="flex justify-between text-sm"><span className="text-slate-400">Print</span>
-                      <span className="font-semibold text-right">{gg.imprints.map(i => `${i.location} (${i.colors}c ${i.technique})`).join(", ")}</span>
-                    </div>
-                    {Object.keys(gg.artFiles || {}).length > 0 && (
-                      <div className="border-t border-slate-100 pt-2">
-                        <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Artwork</div>
-                        {Object.entries(gg.artFiles).map(([idx, f]) => (
-                          <div key={idx} className="flex items-center gap-1.5 text-xs text-slate-600">
-                            <span className="text-emerald-500">✓</span>
-                            <span className="text-slate-400">{gg.imprints[idx]?.location}:</span>
-                            <span className="font-medium truncate">{f.name}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                     <div className="border-t border-slate-100 pt-2">
                       <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Sizes</div>
                       <div className="flex flex-wrap gap-1.5">
@@ -1319,6 +1531,28 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                   </div>
                 );
               })}
+
+              {/* Shared run-level prints + artwork — one block, applies
+                  to every garment above. */}
+              <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-3">
+                <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-2">Prints (whole run)</div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-400">Locations</span>
+                  <span className="font-semibold text-right">{imprints.map(i => `${i.location} (${i.colors}c ${i.technique})`).join(", ")}</span>
+                </div>
+                {Object.keys(artFiles || {}).length > 0 && (
+                  <div className="border-t border-slate-100 pt-2">
+                    <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Artwork</div>
+                    {Object.entries(artFiles).map(([idx, f]) => (
+                      <div key={idx} className="flex items-center gap-1.5 text-xs text-slate-600">
+                        <span className="text-emerald-500">✓</span>
+                        <span className="text-slate-400">{imprints[idx]?.location}:</span>
+                        <span className="font-medium truncate">{f.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               <div className="flex justify-between text-sm bg-white rounded-2xl border border-slate-100 p-5">
                 <span className="text-slate-400">Turnaround</span>
@@ -1342,7 +1576,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                 <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Pricing Summary</div>
               </div>
               <div className="p-5 space-y-0">
-                {validGarments.map((gg, gIdx) => {
+                {validGarments.map((gg) => {
                   const gQty = Object.values(gg.sizes).reduce((a,v) => a + (parseInt(v) || 0), 0);
                   return (
                     <div key={gg.id} className="flex justify-between py-2 border-b border-slate-800 text-xs">
@@ -1350,7 +1584,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
                       <span className="text-white font-semibold">
                         {(() => {
                           const gPrice = calcLinkedLinePrice(
-                            { garmentCost: gg.style.garmentCost, sizes: gg.sizes, imprints: gg.imprints.length ? gg.imprints : [{colors:1}] },
+                            { garmentCost: gg.style.garmentCost, sizes: gg.sizes, imprints: imprints.length ? imprints : [{colors:1}] },
                             rush ? 0.20 : 0, {}, undefined, {}
                           );
                           return gPrice ? fmtMoney(gPrice.lineTotal) : "—";
@@ -1369,7 +1603,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
               <div className="bg-emerald-800 px-5 py-5 flex justify-between items-center">
                 <div>
                   <div className="text-xs font-bold text-emerald-300 uppercase tracking-widest mb-0.5">Estimated Total</div>
-                  <div className="text-emerald-200 text-xs">{totalQtyAll > 0 ? `${totalQtyAll} pcs` : "50 pcs (est.)"} · {fmtMoney(livePpp)}/pc</div>
+                  <div className="text-emerald-200 text-xs">{totalQtyAll > 0 ? `${totalQtyAll} pcs` : "25 pcs (est.)"} · {fmtMoney(livePpp)}/pc</div>
                   <div className="text-emerald-300 text-xs mt-1">*Final quote confirmed after art review</div>
                 </div>
                 <div className="text-4xl font-bold text-white">{fmtMoney(liveTotals?.total || total)}</div>
@@ -1391,6 +1625,157 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: setu
           </div>
         </div>
       )}
+      </div>
+
+      {/* RIGHT COLUMN — desktop pricing side panel. Uses position:sticky
+          so the panel stays in its own grid column and never leaves the
+          wizard's bounding box. Previously this was position:fixed
+          anchored to the viewport's right edge — that worked for the
+          standalone embed but overlapped the main content on the
+          authenticated /Wizard page (which sits inside an app shell
+          with a left sidebar). Sticky positioning is layout-relative:
+          it works correctly whether the wizard is embedded in an
+          iframe, rendered standalone, or rendered inside the app
+          shell, no math required. Hidden on mobile (md:block) — the
+          fixed bottom bar further down takes over for narrow screens. */}
+      <aside className="hidden md:block">
+        <div className="md:sticky md:top-4 w-full space-y-4 z-30">
+          {/* Pricing panel proper. */}
+          <div
+            className="relative p-5 space-y-4 border"
+            style={{ background: "#1a3a28", borderColor: "#0f2818", color: "#fff" }}
+          >
+            <h3 className="text-2xl font-bold leading-tight">
+              {showPriceSummary ? "Building your run" : "Start building"}
+            </h3>
+
+              {/* Stats row — visible always (zeros until configured). */}
+              <div className="pt-3 space-y-2 text-sm border-t" style={{ borderColor: "rgba(255,255,255,0.2)" }}>
+                <div className="flex justify-between">
+                  <span style={{ color: "rgba(255,255,255,0.75)" }}>Garments</span>
+                  <span className="font-semibold">
+                    {(() => {
+                      const n = garments.filter(gg => gg.style).length;
+                      return n === 1 ? "1 style" : `${n} styles`;
+                    })()}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: "rgba(255,255,255,0.75)" }}>Locations</span>
+                  <span className="font-semibold">
+                    {garments.some(gg => gg.style) ? imprints.length : 0}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{ color: "rgba(255,255,255,0.75)" }}>Total quantity</span>
+                  <span className="font-semibold">{totalAllQty}</span>
+                </div>
+              </div>
+
+              {/* Per-garment breakdown only after a style is selected. */}
+              {showPriceSummary ? (
+                <>
+                  {garments.filter(gg => gg.style).length > 0 && (
+                    <div className="pt-3 space-y-2.5 border-t" style={{ borderColor: "rgba(255,255,255,0.2)" }}>
+                      {garments.filter(gg => gg.style).map(gg => {
+                        const gQty = Object.values(gg.sizes).reduce((a, v) => a + (parseInt(v) || 0), 0);
+                        const ppp = livePerGarmentPpp[gg.id] || 0;
+                        return (
+                          <div key={gg.id} className="text-sm">
+                            <div className="flex justify-between gap-2">
+                              <span className="truncate" style={{ color: "rgba(255,255,255,0.9)" }}>
+                                {gg.style.name}{gg.color ? ` · ${gg.color}` : ""}
+                              </span>
+                              <span className="shrink-0">{gQty > 0 ? gQty : "25 est."}</span>
+                            </div>
+                            {gQty > 0 && ppp > 0 && (
+                              <div className="flex justify-between text-[11px] mt-0.5" style={{ color: "rgba(255,255,255,0.55)" }}>
+                                <span>Per piece</span>
+                                <span>{fmtMoney(ppp)}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {(() => {
+                        const printSummary = summarizeImprints(imprints);
+                        return printSummary ? (
+                          <div className="text-[11px] leading-snug pt-1" style={{ color: "rgba(255,255,255,0.55)" }}>
+                            Prints: {printSummary}
+                          </div>
+                        ) : null;
+                      })()}
+                    </div>
+                  )}
+                  {rush && (
+                    <div className="flex justify-between text-sm">
+                      <span style={{ color: "rgba(255,255,255,0.75)" }}>Turnaround</span>
+                      <span style={{ color: "#FDBA74" }}>Rush · +20%</span>
+                    </div>
+                  )}
+                  <div className="pt-3 border-t flex items-baseline justify-between" style={{ borderColor: "rgba(255,255,255,0.2)" }}>
+                    <p
+                      className="text-[10px] font-bold tracking-[0.22em] uppercase"
+                      style={{ color: "#86A89A" }}
+                    >
+                      Run Total
+                    </p>
+                    <p className="text-3xl font-bold leading-none">
+                      {fmtMoney(liveTotals.total)}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm leading-relaxed pt-2" style={{ color: "rgba(255,255,255,0.6)" }}>
+                  {enrichingStyle
+                    ? "Loading garment details…"
+                    : "Add quantities to see pricing."}
+                </p>
+              )}
+          </div>
+
+          {/* Benefits checklist — small white card below the panel. */}
+          <div className="mt-3 bg-white p-4 border" style={{ borderColor: "#e5e5e5" }}>
+            <ul className="space-y-2 text-sm" style={{ color: "#2a2a2a" }}>
+              {[
+                "Free art mockup before production",
+                "Combine garments in one run for volume pricing",
+                "No commitment — submit a request, then review the quote before you pay.",
+              ].map(text => (
+                <li key={text} className="flex items-start gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2c5840" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="mt-1 shrink-0" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                  <span className="leading-snug">{text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </aside>
+
+      {/* MOBILE — fixed bottom pricing bar. Replaces the side panel on
+          narrow viewports where there's no room for a column. Uses fixed
+          positioning so it survives iframe embeds with min-height or
+          height:100vh equally well. */}
+      {showPriceSummary && (
+        <div
+          className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t shadow-lg"
+          style={{ background: "#1a3a28", borderColor: "#0f2818", color: "#fff" }}
+        >
+          <div className="px-4 py-3 flex items-center justify-between gap-3">
+            <div className="text-xs min-w-0 truncate" style={{ color: "rgba(255,255,255,0.7)" }}>
+              {totalAllQty > 0 ? `${totalAllQty} pcs` : "25 pcs (est.)"}
+              {rush && <span className="ml-2" style={{ color: "#FDBA74" }}>Rush</span>}
+            </div>
+            <div className="flex items-baseline gap-3 shrink-0">
+              <span className="text-xs" style={{ color: "rgba(255,255,255,0.7)" }}>{fmtMoney(livePpp)}/pc</span>
+              <span className="text-lg font-bold">{fmtMoney(liveTotals.total)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Color photo preview modal */}
       {colorPreview && (() => {
         const imgs = colorPreview.images || [];

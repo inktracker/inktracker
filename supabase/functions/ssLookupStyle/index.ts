@@ -16,8 +16,30 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Resolve per-shop or global S&S credentials
-async function resolveSSAuth(accessToken?: string): Promise<string> {
+// Resolve per-shop or global S&S credentials.
+//
+// Three paths, in priority order:
+//   1. shopOwner email   — used by the anonymous public quote wizard so
+//                          the embed at <shop>.com/quote-wizard uses
+//                          THAT shop's credentials. Service role lookup
+//                          by email. No user session needed.
+//   2. authenticated user — in-app calls from a logged-in shop. Resolve
+//                          the user's own profile and use their creds.
+//   3. global env         — last-ditch fallback for platform admin tools.
+async function resolveSSAuth(accessToken?: string, shopOwner?: string): Promise<string> {
+  // Path 1 — shopOwner email lookup. Anonymous public wizard.
+  if (shopOwner && typeof shopOwner === "string") {
+    try {
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const profile = await loadProfileWithSecrets(admin, { email: shopOwner });
+      if (profile?.ss_account_number && profile?.ss_api_key) {
+        return btoa(`${profile.ss_account_number}:${profile.ss_api_key}`);
+      }
+    } catch (err) {
+      console.error("[ssLookupStyle] shopOwner lookup failed:", (err as Error).message);
+    }
+  }
+  // Path 2 — authenticated user.
   if (accessToken) {
     try {
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -32,9 +54,10 @@ async function resolveSSAuth(accessToken?: string): Promise<string> {
         }
       }
     } catch (err) {
-      console.error("[ssLookupStyle] per-shop auth failed, using global:", err.message);
+      console.error("[ssLookupStyle] per-shop auth failed, using global:", (err as Error).message);
     }
   }
+  // Path 3 — global env fallback.
   return btoa(`${GLOBAL_SS_ACCOUNT}:${GLOBAL_SS_KEY}`);
 }
 
@@ -192,17 +215,20 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { styleNumber, action, color, debug = false, accessToken } = body;
+    const { styleNumber, action, color, debug = false, accessToken, shopOwner } = body;
 
-    // Auth required — without this any caller can drain the platform's
-    // S&S API quota using the global credentials. Mirrors the gate in
-    // ssSearchCatalog. accessToken can come from the body or the
-    // Authorization header; verify it resolves to a real Supabase user.
+    // Auth gate — must be EITHER a real Supabase user OR a known
+    // shopOwner email (the latter for the anonymous public quote
+    // wizard embedded on shop storefronts). Without either, refuse to
+    // burn API quota for arbitrary callers.
     const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || accessToken || "";
-    if (!authHeader) {
+    const hasShopOwner = typeof shopOwner === "string" && shopOwner.trim().length > 0;
+    if (!authHeader && !hasShopOwner) {
       return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
     }
-    {
+    if (!hasShopOwner) {
+      // Existing path — require an actual Supabase user when shopOwner
+      // isn't provided. Public-wizard callers skip this branch.
       const supabase = createClient(
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -212,10 +238,37 @@ Deno.serve(async (req) => {
       if (!user) {
         return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
       }
+    } else {
+      // Anonymous (public wizard) path — apply the per-shop hourly rate
+      // limit. Without this, anyone with the anon key + a known shop
+      // owner email could burn through the shop's S&S API quota.
+      // Authenticated calls skip this — the WizardConfigEditor's "Sync
+      // from suppliers" flow + broker / quote editors all run via the
+      // Authorization-header branch above.
+      const rateAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      );
+      const { data: allowed, error: rateErr } = await rateAdmin.rpc(
+        "check_supplier_lookup_rate",
+        { p_shop_owner: shopOwner },
+      );
+      if (rateErr) {
+        // Fail-open on RPC error — better to occasionally serve over-limit
+        // than to take the public wizard offline if the rate table is
+        // unreachable. Log so we can see if this fires often.
+        console.warn("[ssLookupStyle] rate check failed:", rateErr.message);
+      } else if (allowed === false) {
+        return Response.json(
+          { error: "Too many requests — please try again shortly." },
+          { status: 429, headers: CORS },
+        );
+      }
     }
 
     // Resolve per-shop or global S&S credentials
-    const requestAuth = await resolveSSAuth(accessToken || authHeader);
+    const requestAuth = await resolveSSAuth(accessToken || authHeader, shopOwner);
 
     // Raw SKU lookup: returns per-size SKUs for a style+color
     if (action === "rawSkus") {

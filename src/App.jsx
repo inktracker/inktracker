@@ -135,7 +135,7 @@ const FEATURE_CARDS = [
   },
   {
     title: "Shop Floor",
-    desc: "Tablet-ready view for employees. Job tickets, checklists, and real-time production updates.",
+    desc: "Mobile-ready view for employees. Job tickets, checklists, and real-time production updates.",
     color: "from-orange-500/20 to-orange-500/5",
     media: { type: "iframe", src: "/landing/shopfloor-demo/index.html" },
   },
@@ -399,13 +399,16 @@ function PublicLandingPage() {
               )}
             </button>
 
-            {/* CENTER — stacked wordmark, absolute so the flanking sides don't squeeze it */}
+            {/* CENTER — stacked wordmark, absolute so the flanking sides don't
+                squeeze it. Width-capped on mobile (max-w-[58%]) so that even
+                with the absolute positioning, the wordmark stays inside the
+                lane between hamburger and Start-trial button. */}
             <a href="#top" className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto" aria-label="InkTracker home">
               <span
-                className="leading-none"
+                className="leading-none whitespace-nowrap"
                 style={{
                   fontFamily: H_FONT,
-                  fontSize: 'clamp(1.5rem, 3.5vw, 2.25rem)',
+                  fontSize: 'clamp(1.625rem, 5.5vw, 2.5rem)',
                   letterSpacing: '0.02em',
                   transform: 'skewX(-8deg)',
                   display: 'inline-block',
@@ -414,14 +417,17 @@ function PublicLandingPage() {
                 <span style={{ color: INK }}>INK</span><span style={{ color: FOREST }}>TRACKER</span>
               </span>
               <span
-                className="mt-1 text-[8px] sm:text-[9px] tracking-[0.2em] uppercase"
+                className="mt-1.5 text-[9px] sm:text-[10px] tracking-[0.2em] uppercase whitespace-nowrap"
                 style={{ fontFamily: B_FONT, color: MUTED, fontWeight: 400 }}
               >
                 Print Shop Software
               </span>
             </a>
 
-            {/* RIGHT — utility. Sign in collapses on mobile; trial button always shows. */}
+            {/* RIGHT — utility. Sign in collapses on mobile; trial button
+                always shows. The mobile-only padding override (px-3 → px-7
+                at sm+) trims the button width on phones so it doesn't crash
+                into the centered wordmark. */}
             <div className="flex items-center gap-3 md:gap-4">
               <button
                 onClick={openLogin}
@@ -430,7 +436,11 @@ function PublicLandingPage() {
               >
                 Sign in
               </button>
-              <button onClick={openSignup} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
+              <button
+                onClick={openSignup}
+                className="hidden sm:inline-block text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 transition whitespace-nowrap"
+                style={{ background: FOREST, color: '#fff' }}
+              >
                 Start trial
               </button>
             </div>
@@ -453,6 +463,13 @@ function PublicLandingPage() {
                 ))}
                 <button onClick={() => { setMobileMenuOpen(false); openLogin(); }} className={`text-left py-4 sm:hidden ${navLink}`} style={{ color: INK }}>
                   Sign in
+                </button>
+                <button
+                  onClick={() => { setMobileMenuOpen(false); openSignup(); }}
+                  className="mt-2 mb-3 text-center text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 transition sm:hidden"
+                  style={{ background: FOREST, color: '#fff' }}
+                >
+                  Start trial
                 </button>
               </div>
             </div>
@@ -509,12 +526,10 @@ function PublicLandingPage() {
             <div className="relative max-w-5xl">
               <p className={eyebrow} style={{ color: 'rgba(255,255,255,0.7)' }}>Print-shop management software</p>
               <h1
-                className="text-white mt-7 uppercase leading-[0.92] tracking-[0.01em]"
-                style={{ fontFamily: H_FONT, fontSize: 'clamp(2.5rem, 6.5vw, 5.5rem)' }}
+                className="text-white mt-7 uppercase tracking-[0.01em] whitespace-pre-line"
+                style={{ fontFamily: H_FONT, fontSize: 'clamp(3.75rem, 13vw, 8rem)', lineHeight: 1.0 }}
               >
-                Software for print shops,
-                <br />
-                developed in one.
+                By printers,{'\n'}for printers.
               </h1>
               <p className="text-white/85 mt-8 text-base md:text-lg leading-[1.65] max-w-xl mx-auto">
                 Quotes, production, invoicing, QuickBooks — built in a Reno shop
@@ -582,7 +597,81 @@ function PublicLandingPage() {
               </p>
             </div>
 
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-x-7 gap-y-12">
+            {/* MOBILE — timeline accordion. Each module shows its number
+                in a circle (Y1/Y2-style from Biota's Wildways page) with
+                the title beneath. Tap to expand: description + PREVIEW
+                button that opens the same FeaturePreviewModal as the
+                desktop grid. Connecting vertical line drawn behind via a
+                centered pseudo-stripe. */}
+            <div className="md:hidden relative">
+              {/* Vertical connecting rail */}
+              <span
+                aria-hidden="true"
+                className="absolute left-1/2 -translate-x-1/2 top-6 bottom-6 w-px"
+                style={{ background: HAIRLINE }}
+              />
+              <div className="relative flex flex-col items-stretch gap-1">
+                {FEATURE_CARDS.map((f, i) => (
+                  <details key={f.title} className="group">
+                    <summary className="list-none cursor-pointer flex flex-col items-center py-4 outline-none focus-visible:[&_div]:ring-2 focus-visible:[&_div]:ring-offset-2">
+                      <div
+                        className="relative w-14 h-14 rounded-full flex items-center justify-center transition-colors group-open:bg-[--open-bg]"
+                        style={{
+                          background: '#fff',
+                          border: `2px solid ${FOREST}`,
+                          '--open-bg': FOREST,
+                        }}
+                      >
+                        <span
+                          className="text-lg leading-none transition-colors group-open:text-white"
+                          style={{ fontFamily: H_FONT, color: FOREST, letterSpacing: '0.04em' }}
+                        >
+                          {String(i + 1).padStart(2, '0')}
+                        </span>
+                      </div>
+                      <span
+                        className="mt-3 text-[11px] font-bold tracking-[0.2em] uppercase text-center"
+                        style={{ color: INK, fontFamily: B_FONT }}
+                      >
+                        {f.title}
+                      </span>
+                    </summary>
+                    <div
+                      className="mx-3 mt-3 mb-6 p-5 border-l-4 bg-white"
+                      style={{ borderColor: FOREST, borderTop: `1px solid ${HAIRLINE}`, borderRight: `1px solid ${HAIRLINE}`, borderBottom: `1px solid ${HAIRLINE}` }}
+                    >
+                      <p
+                        className="text-[10px] font-bold tracking-[0.22em] uppercase mb-3"
+                        style={{ color: FOREST, fontFamily: B_FONT }}
+                      >
+                        Module {String(i + 1).padStart(2, '0')}
+                      </p>
+                      <h3
+                        className="uppercase tracking-[0.03em] text-lg leading-tight mb-3"
+                        style={{ fontFamily: H_FONT, color: INK }}
+                      >
+                        {f.title}
+                      </h3>
+                      <p className="text-sm leading-[1.65] mb-5" style={{ color: MUTED }}>
+                        {f.desc}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewFeature(f)}
+                        className="inline-flex items-center gap-2 text-[11px] font-bold tracking-[0.22em] uppercase px-5 py-3 transition"
+                        style={{ background: FOREST, color: '#fff' }}
+                      >
+                        Preview <span aria-hidden="true">▸</span>
+                      </button>
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+
+            {/* DESKTOP — grid of paused-iframe thumbnails. Hidden on
+                mobile so the touch-target experience is the accordion above. */}
+            <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-x-7 gap-y-12">
               {FEATURE_CARDS.map((f, i) => (
                 <button
                   key={f.title}
@@ -596,16 +685,6 @@ function PublicLandingPage() {
                     className="relative overflow-hidden border bg-black transition-shadow group-hover:shadow-[0_18px_50px_-12px_rgba(0,0,0,0.18)]"
                     style={{ borderColor: HAIRLINE, aspectRatio: '16 / 9' }}
                   >
-                    {/* Embedded demo as a still thumbnail. ?paused=1
-                        keeps Stage's animation loop off; ?t=2.5 seeks to
-                        ~2.5s so the intro headline is fully visible. Net
-                        result: each tile shows a real frame from its
-                        demo without 9 animations running at once. Click
-                        opens the full modal which loads the demo without
-                        the paused params, so it plays normally there.
-                        pointer-events-none lets the wrapper button catch
-                        the click; sandbox + aria-hidden + tabIndex=-1
-                        keep the embed isolated and out of focus order. */}
                     {f.media?.type === 'iframe' && f.media?.src ? (
                       <iframe
                         src={`${f.media.src}?paused=1&t=2.5`}
@@ -777,8 +856,6 @@ function PublicLandingPage() {
                 className="text-white uppercase mt-7 leading-[0.95] tracking-[0.02em]"
                 style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 4.5vw, 3.5rem)' }}
               >
-                Built by printers.
-                <br />
                 Driven by conservation.
               </h2>
 
@@ -803,7 +880,7 @@ function PublicLandingPage() {
                 className="inline-flex items-baseline gap-2 mt-10 text-[12px] font-bold tracking-[0.22em] uppercase border-b pb-1 transition hover:gap-3"
                 style={{ color: '#86A89A', borderColor: '#86A89A', fontFamily: B_FONT }}
               >
-                Read our conservation roadmap <span aria-hidden="true">→</span>
+                Read our roadmap <span aria-hidden="true">→</span>
               </a>
             </div>
 

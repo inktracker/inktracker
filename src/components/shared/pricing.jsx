@@ -295,8 +295,21 @@ export function buildLinkedQtyMap(lineItems) {
   const printMap = findLinkedPrints(lineItems);
   const qtyMap = {};
 
+  // Dedupe by line-item index. The linked-qty tier reflects "how
+  // many pieces of this print exist across line items," NOT "how
+  // many imprints reference this print." A single line item with
+  // Front + Back + Left Sleeve all using the wizard's default empty
+  // title/width/height collapses to a single getPrintKey — without
+  // this dedupe, the qty gets counted once per imprint and the volume
+  // tier inflates by Nx. Caught when the wizard's "100-pc break" stopped
+  // moving the per-piece price between 99 and 100.
   Object.entries(printMap).forEach(([key, items]) => {
-    qtyMap[key] = items.reduce((sum, item) => sum + getQty(item.li), 0);
+    const seen = new Set();
+    qtyMap[key] = items.reduce((sum, item) => {
+      if (seen.has(item.liIdx)) return sum;
+      seen.add(item.liIdx);
+      return sum + getQty(item.li);
+    }, 0);
   });
 
   return qtyMap;
