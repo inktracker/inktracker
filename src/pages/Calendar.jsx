@@ -18,15 +18,20 @@ import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletio
 // pre-order quote lifecycle chips (Quote Sent, Quote Approved). Keep this
 // list in sync with the identical map in src/pages/Production.jsx (the
 // calendar view inside the Production page renders the same chips).
+//
+// Each step gets a visually distinct hue so the calendar reads as a
+// progress map at a glance. Previously Quote Sent + Quote Approved
+// shared green, so the operator couldn't tell at a glance whether a
+// quote was awaiting approval or already approved.
 const STATUS_COLORS = {
   // Quote lifecycle (before the order exists)
-  "Quote Sent":     "bg-green-50 border-green-300 text-green-700",
-  "Quote Approved": "bg-green-50 border-green-300 text-green-700",
+  "Quote Sent":     "bg-sky-50 border-sky-300 text-sky-700",
+  "Quote Approved": "bg-teal-50 border-teal-300 text-teal-700",
   // Production pipeline
-  "Art Approval": "bg-slate-100 border-slate-300 text-slate-700",
+  "Art Approval": "bg-violet-50 border-violet-300 text-violet-700",
   "Order Goods":  "bg-orange-50 border-orange-300 text-orange-800",
-  "Pre-Press":    "bg-yellow-50 border-yellow-300 text-yellow-800",
-  "Printing":     "bg-blue-50 border-blue-300 text-blue-800",
+  "Pre-Press":    "bg-amber-50 border-amber-300 text-amber-800",
+  "Printing":     "bg-indigo-50 border-indigo-300 text-indigo-700",
   "Completed":    "bg-emerald-100 border-emerald-400 text-emerald-800 font-semibold",
 };
 
