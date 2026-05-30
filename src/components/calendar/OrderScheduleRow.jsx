@@ -3,20 +3,23 @@ import { ChevronDown, ChevronRight, Pencil, Check, X, CalendarDays } from "lucid
 import Badge from "../shared/Badge";
 import { O_STATUSES } from "../shared/pricing";
 
+// Mirrors STATUS_COLORS in src/pages/Calendar.jsx + src/pages/Production.jsx.
+// Each step gets a visually distinct hue so the schedule row reads as a
+// progress map at a glance. Keep all three lists in sync.
 const STATUS_COLORS = {
   "Order Goods":      "bg-orange-50 border-orange-300 text-orange-800",
-  "Artwork":          "bg-slate-100 border-slate-300 text-slate-700",
-  "Pre-Press":        "bg-yellow-50 border-yellow-300 text-yellow-800",
-  "Printing":         "bg-blue-50 border-blue-300 text-blue-800",
-  "Completed":        "bg-teal-50 border-teal-300 text-teal-700",
+  "Artwork":          "bg-violet-50 border-violet-300 text-violet-700",
+  "Pre-Press":        "bg-amber-50 border-amber-300 text-amber-800",
+  "Printing":         "bg-indigo-50 border-indigo-300 text-indigo-700",
+  "Completed":        "bg-emerald-100 border-emerald-400 text-emerald-800 font-semibold",
 };
 
 const DOT_COLORS = {
   "Order Goods":      "bg-orange-400",
-  "Artwork":          "bg-slate-400",
-  "Pre-Press":        "bg-yellow-400",
-  "Printing":         "bg-blue-500",
-  "Completed":        "bg-teal-500",
+  "Artwork":          "bg-violet-400",
+  "Pre-Press":        "bg-amber-400",
+  "Printing":         "bg-indigo-500",
+  "Completed":        "bg-emerald-500",
 };
 
 // ── Generic single-date step row ────────────────────────────────────────────
