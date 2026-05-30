@@ -811,6 +811,7 @@ export default function QuoteDetailModal({
               replyContext={{
                 customerEmail: quote.customer_email || customer?.email || "",
                 shopName,
+                shopLogoUrl: logoUrl,
                 refId: quote.quote_id,
                 defaultSubject: `Quote ${quote.quote_id}`,
               }}

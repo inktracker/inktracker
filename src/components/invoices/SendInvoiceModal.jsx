@@ -194,6 +194,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
           quoteId:        invoice.invoice_id,
           quoteTotal:     invoice.total ?? null,
           shopName:       shopName || "Your Shop",
+          shopLogoUrl:    logoUrl || "",
           subject:        taggedSubject,
           body,
           paymentLink:    effectiveLink,
