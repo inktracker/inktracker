@@ -767,12 +767,15 @@ export default function Production() {
                                   const subjectName = isQuoteEvent
                                     ? getCompanyName(ev.quote, customers)
                                     : companyName(ev.order);
-                                  const isCompleted = !isQuoteEvent && ev.order?.status === "Completed";
-                                  const chipClass = isCompleted
-                                    ? STATUS_COLORS["Completed"]
-                                    : ev.isDue
-                                      ? "bg-rose-50 border-rose-300 text-rose-700"
-                                      : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 dark:border-slate-700 text-slate-600";
+                                  // Each chip keeps its own step color even
+                                  // on completed orders — mirrors the fix
+                                  // in src/pages/Calendar.jsx. Previously
+                                  // an "Order Goods" chip on a completed
+                                  // order recolored to emerald, which read
+                                  // as a step-color bug.
+                                  const chipClass = ev.isDue
+                                    ? "bg-rose-50 border-rose-300 text-rose-700"
+                                    : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 dark:border-slate-700 text-slate-600";
                                   return (
                                     <div
                                       key={`${subject.id}-${ev.step}-${idx}`}
