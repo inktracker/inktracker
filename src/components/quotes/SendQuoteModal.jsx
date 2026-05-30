@@ -220,6 +220,18 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           "This quote already has a paid QuickBooks invoice. No new invoice was created."
         );
       }
+      // Deposit-against-invoice payment record failed in QB. The invoice
+      // itself was created OK, but the QB invoice will show the FULL
+      // balance instead of remaining-after-deposit. A shop notification
+      // was already pushed; the inline warning here makes sure the
+      // operator can't miss it during a send flow.
+      if (data.depositRecordFailed) {
+        setQbError(
+          "Warning: QB invoice created, but couldn't record the deposit payment against it. " +
+          "The QuickBooks invoice will show the full balance instead of the remaining-after-deposit. " +
+          "Open QuickBooks → Receive Payment for this invoice and apply the deposit manually."
+        );
+      }
       // Translate the structured failure reason from the edge function
       // into a human-readable error. Without a payment link the modal
       // falls through to `send_failed`/`needs_create`; this string
