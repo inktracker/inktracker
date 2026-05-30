@@ -961,41 +961,12 @@ export default function OrderDetailModal({
                                 </td>
                               </tr>
                             )}
-                            {/* Shortfall — misprints / lost pieces. Default 0
-                                across all sizes; non-zero values are stored
-                                on the line item under _shortfall and surface
-                                as the "X of Y completed" total. Pricing /
-                                billing is NOT adjusted here (Phase B will
-                                add the reorder + credit flow). */}
-                            <tr className="bg-amber-50/40">
-                              <td className="px-4 py-2 text-xs text-amber-700 font-semibold">
-                                Shortfall
-                              </td>
-                              {activeSizes.map((sz) => (
-                                <td key={sz} className="px-2 py-1.5 text-center">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max={(li.sizes || {})[sz] || 0}
-                                    defaultValue={(li._shortfall || {})[sz] || 0}
-                                    onBlur={(e) => {
-                                      const v = e.target.value;
-                                      const cur = (li._shortfall || {})[sz] || 0;
-                                      if (String(cur) !== String(v)) {
-                                        saveShortfall(li.id, sz, v);
-                                      }
-                                    }}
-                                    className="w-12 text-center text-xs font-semibold text-amber-800 bg-white border border-amber-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                    title="Misprints or lost pieces for this size"
-                                  />
-                                </td>
-                              ))}
-                              <td className="px-4 py-2 text-center text-xs font-bold text-amber-800">
-                                {shortfallQty > 0
-                                  ? `−${shortfallQty}`
-                                  : <span className="text-slate-400 font-normal">—</span>}
-                              </td>
-                            </tr>
+                            {/* Shortfall entry moved to Floor Mode (Printing
+                                step) — misprints are logged by the shop floor
+                                worker, not by whoever opens the order detail.
+                                The read-only "Completed" total row below still
+                                renders here when shortfall > 0 so the pricing
+                                table reflects the adjusted net qty. */}
                             {shortfallQty > 0 && (
                               <tr className="bg-emerald-50/40 border-t border-emerald-100">
                                 <td className="px-4 py-2 text-xs text-emerald-700 font-semibold">
@@ -1368,6 +1339,41 @@ export default function OrderDetailModal({
                                 );
                               })}
                             </div>
+
+                            {/* Misprints (shortfall) entry — only relevant
+                                during Printing, only fires for sizes that
+                                have a positive qty. Capped at the original
+                                qty per size so an operator can't log more
+                                misprints than were printed. Stored on the
+                                line item under _shortfall so the pricing
+                                table's "Completed" line picks it up. */}
+                            {step === "Printing" && (
+                              <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                                <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-700 mr-1">Misprints</span>
+                                {sortSizeEntries(Object.entries(li.sizes || {}))
+                                  .filter(([, v]) => parseInt(v) > 0)
+                                  .map(([size]) => (
+                                    <label key={size} className="inline-flex items-center gap-1.5">
+                                      <span className="text-xs text-slate-500 font-semibold">{size}</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max={(li.sizes || {})[size] || 0}
+                                        defaultValue={(li._shortfall || {})[size] || 0}
+                                        onBlur={(e) => {
+                                          const v = e.target.value;
+                                          const cur = (li._shortfall || {})[size] || 0;
+                                          if (String(cur) !== String(v)) {
+                                            saveShortfall(li.id, size, v);
+                                          }
+                                        }}
+                                        className="w-12 text-center text-xs font-semibold text-amber-800 bg-white border border-amber-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                        title={`Misprints for ${size}`}
+                                      />
+                                    </label>
+                                  ))}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
