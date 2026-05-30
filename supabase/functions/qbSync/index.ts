@@ -130,17 +130,68 @@ function qbHeaders(token: string) {
   return { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json" };
 }
 
+// 5xx + transient-network retry policy shared by qbQuery / qbCreate /
+// qbUpdate. Mirrors what qbSendInvoice already does for /send: three
+// attempts with 0 / 500ms / 1.5s backoff. 4xx responses are NOT retried —
+// they're caller-side problems (auth, validation) that won't get better.
+// Before this lived here every QB call surfaced a single transient blip
+// directly to the operator as "QB rejected the invoice"; with retries we
+// silently soak short outages and only fail on persistent issues.
+const QB_RETRY_DELAYS_MS = [0, 500, 1500];
+
+async function qbFetchWithRetry(
+  url: string,
+  init: RequestInit,
+  label: string,
+): Promise<{ res: Response; data: any }> {
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < QB_RETRY_DELAYS_MS.length; attempt++) {
+    if (QB_RETRY_DELAYS_MS[attempt] > 0) {
+      await new Promise((r) => setTimeout(r, QB_RETRY_DELAYS_MS[attempt]));
+    }
+    try {
+      const res = await fetch(url, init);
+      // Always read the body so callers can inspect QB error payloads.
+      let data: any = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (res.ok) return { res, data };
+      if (res.status >= 500) {
+        // Transient — retry
+        lastErr = new Error(`QB ${label} ${res.status}: ${JSON.stringify(data)}`);
+        console.warn(`[qb] ${label} attempt ${attempt + 1} got ${res.status}, will retry`);
+        continue;
+      }
+      // 4xx — don't retry, hand back to the caller so they can branch on
+      // the body (e.g. "Duplicate Document Number").
+      return { res, data };
+    } catch (err) {
+      // Network-layer failures (DNS, TLS, fetch threw). Always retry.
+      lastErr = err;
+      console.warn(`[qb] ${label} attempt ${attempt + 1} network error, will retry:`, (err as Error)?.message);
+      continue;
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(`QB ${label} failed after retries`);
+}
+
 async function qbQuery(token: string, realmId: string, query: string) {
   const url = `${QB_BASE}/${realmId}/query?query=${encodeURIComponent(query)}&minorversion=65`;
-  const res = await fetch(url, { headers: qbHeaders(token) });
-  if (!res.ok) throw new Error(`QB query failed: ${res.status} ${await res.text()}`);
-  return res.json();
+  const { res, data } = await qbFetchWithRetry(url, { headers: qbHeaders(token) }, `query`);
+  if (!res.ok) {
+    // Re-read body as text for the error message — data may have parsed
+    // as JSON above but we want the raw if QB returned a non-JSON 4xx.
+    throw new Error(`QB query failed: ${res.status} ${data != null ? JSON.stringify(data) : ""}`);
+  }
+  return data;
 }
 
 async function qbCreate(token: string, realmId: string, entity: string, body: object) {
   const url = `${QB_BASE}/${realmId}/${entity}?minorversion=65`;
-  const res = await fetch(url, { method: "POST", headers: qbHeaders(token), body: JSON.stringify(body) });
-  const data = await res.json();
+  const { res, data } = await qbFetchWithRetry(
+    url,
+    { method: "POST", headers: qbHeaders(token), body: JSON.stringify(body) },
+    `create ${entity}`,
+  );
   if (!res.ok) throw new Error(`QB create ${entity} failed: ${res.status} ${JSON.stringify(data)}`);
   return data;
 }
@@ -153,8 +204,11 @@ const nextAvailableDocNumber = sharedNextAvailableDocNumber;
 
 async function qbUpdate(token: string, realmId: string, entity: string, body: object) {
   const url = `${QB_BASE}/${realmId}/${entity}?minorversion=65`;
-  const res = await fetch(url, { method: "POST", headers: qbHeaders(token), body: JSON.stringify(body) });
-  const data = await res.json();
+  const { res, data } = await qbFetchWithRetry(
+    url,
+    { method: "POST", headers: qbHeaders(token), body: JSON.stringify(body) },
+    `update ${entity}`,
+  );
   if (!res.ok) throw new Error(`QB update ${entity} failed: ${res.status} ${JSON.stringify(data)}`);
   return data;
 }
@@ -326,32 +380,33 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
 
   const displayName = buildQBDisplayName(customer);
 
-  // Search QB for existing customer by email or name
+  // Search QB for existing customer by email or name.
+  // Errors from these searches MUST propagate. The previous behavior
+  // swallowed everything (including 401 token-expired / 429 rate-limit
+  // / 500 transient) and silently fell through to the CREATE path —
+  // which then minted a DUPLICATE QB customer record because the search
+  // never actually ran. qbQuery already retries 5xx; if it still throws
+  // after retries, it's a real problem and the caller should hear it.
   let qbCustomerId: string | null = null;
 
   // Only search by email when it actually looks like an email. Junk
   // values (names, phone numbers) in the customers.email column would
-  // otherwise blow the query syntax or just return zero results
-  // anyway. Name-based lookup below still runs as a fallback.
+  // otherwise blow the query syntax or just return zero results.
   if (isLikelyEmail(customer.email)) {
-    try {
-      const res = await qbQuery(token, realmId,
-        `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${escapeQbStringLiteral(customer.email.trim())}'`
-      );
-      const rows = res?.QueryResponse?.Customer ?? [];
-      if (rows.length > 0) qbCustomerId = rows[0].Id;
-    } catch {}
+    const res = await qbQuery(token, realmId,
+      `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${escapeQbStringLiteral(customer.email.trim())}'`
+    );
+    const rows = res?.QueryResponse?.Customer ?? [];
+    if (rows.length > 0) qbCustomerId = rows[0].Id;
   }
 
   if (!qbCustomerId) {
-    try {
-      const safeName = escapeQbStringLiteral(displayName);
-      const res = await qbQuery(token, realmId,
-        `SELECT Id FROM Customer WHERE DisplayName = '${safeName}'`
-      );
-      const rows = res?.QueryResponse?.Customer ?? [];
-      if (rows.length > 0) qbCustomerId = rows[0].Id;
-    } catch {}
+    const safeName = escapeQbStringLiteral(displayName);
+    const res = await qbQuery(token, realmId,
+      `SELECT Id FROM Customer WHERE DisplayName = '${safeName}'`
+    );
+    const rows = res?.QueryResponse?.Customer ?? [];
+    if (rows.length > 0) qbCustomerId = rows[0].Id;
   }
 
   // Create customer if not found
@@ -771,7 +826,15 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const linkFailureReason = linkResult.reason;
   const invoiceForLink = linkResult.finalInvoice;
 
-  // 4b. If the quote's deposit was already paid, record the payment against this invoice
+  // 4b. If the quote's deposit was already paid, record the payment against this invoice.
+  // A failure here is REAL money drift: the deposit shows as paid in
+  // InkTracker but the QB invoice still has the full balance outstanding,
+  // so a customer who pays the QB-side balance ends up double-billed.
+  // Surface a structured warning to the frontend AND a shop notification
+  // so the operator can manually record the payment in QB. The invoice
+  // itself was created successfully, so we still finish the rest of the
+  // sync — but the response will carry depositRecordFailed: true.
+  let depositRecordFailed = false;
   const depositAmount = Number(invoicePayload?.depositAmount) || 0;
   if (quote.deposit_paid && depositAmount > 0) {
     try {
@@ -785,8 +848,31 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         }],
       });
     } catch (err) {
-      console.error("[createInvoice] deposit payment record failed:", err);
-      // Don't fail the whole sync — invoice is still created
+      depositRecordFailed = true;
+      console.error("[createInvoice] CRITICAL: deposit payment record failed — operator must record manually:", err);
+      try {
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        await recordShopNotification(adminClient, {
+          shopOwner: quote.shop_owner,
+          eventType: "qb_deposit_record_failed",
+          severity:  "warning",
+          title:     `Couldn't record $${depositAmount.toFixed(2)} deposit on QB invoice`,
+          body:      `The QuickBooks invoice for quote ${quote.quote_id} was created, but recording the deposit payment against it failed. The customer's QB invoice will show the FULL balance instead of remaining balance. Open QuickBooks → Receive Payment for this invoice and apply $${depositAmount.toFixed(2)} to fix it.`,
+          relatedEntity: "quote",
+          relatedId:     String(quote.id ?? ""),
+          metadata: {
+            quote_id: quote.quote_id,
+            qb_invoice_id: qbInvoiceId,
+            deposit_amount: depositAmount,
+            error: (err as Error)?.message ?? String(err),
+          },
+        });
+      } catch (notifErr) {
+        console.error("[createInvoice] failed to push deposit-failed notification:", notifErr);
+      }
     }
   }
 
@@ -828,6 +914,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     //                          cause is QB Payments isn't activated on the
     //                          shop's QuickBooks account.
     linkFailureReason,
+    // True when the deposit-against-invoice payment record failed in QB.
+    // The invoice was created successfully; the operator needs to record
+    // the deposit manually in QuickBooks → Receive Payment. A shop
+    // notification was also written.
+    depositRecordFailed,
     qbSubtotal,
     qbTaxAmount,
     qbTotal,
@@ -838,10 +929,15 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 // ── Action: pullCustomers (QB → InkTracker) ────────────────────────────────
 
 async function handlePullCustomers(token: string, realmId: string, supabase: any, shopOwner: string) {
-  // Paginated fetch of all QB customers
+  // Paginated fetch of all QB customers. Hard cap at 10K rows so a
+  // misconfigured shop can't hang the function forever — but flag
+  // truncation in the response so the operator knows to investigate
+  // (or so we know to raise the cap).
   const pageSize = 1000;
+  const hardCap = 10000;
   const all: any[] = [];
   let start = 1;
+  let truncatedAtCap = false;
   while (true) {
     const res = await qbQuery(token, realmId,
       `SELECT * FROM Customer STARTPOSITION ${start} MAXRESULTS ${pageSize}`
@@ -850,10 +946,17 @@ async function handlePullCustomers(token: string, realmId: string, supabase: any
     all.push(...batch);
     if (batch.length < pageSize) break;
     start += pageSize;
-    if (start > 10000) break;
+    if (start > hardCap) {
+      console.error(
+        `[pullCustomers] hit ${hardCap}-row cap for ${shopOwner} — additional QB customers were NOT pulled. ` +
+        `Raise hardCap or paginate UI-side if shops legitimately have more.`,
+      );
+      truncatedAtCap = true;
+      break;
+    }
   }
 
-  if (all.length === 0) return { imported: 0, skipped: 0, updated: 0, total: 0 };
+  if (all.length === 0) return { imported: 0, skipped: 0, updated: 0, total: 0, truncatedAtCap };
 
   // Fetch existing InkTracker customers for this shop
   const { data: existing } = await supabase
@@ -904,7 +1007,13 @@ async function handlePullCustomers(token: string, realmId: string, supabase: any
     const match = existingByQb || existingByMail;
 
     if (match) {
-      // Update existing — overwrite with QB data when QB has values
+      // Update existing — pull QB data into fields the shop doesn't
+      // typically own (contact + billing). NOTES are intentionally
+      // SKIPPED on update: the shop's notes column is editorial (their
+      // own scratchpad / production notes for the customer) and
+      // blasting it from QB Notes on every pull is silent data loss.
+      // Initial INSERT below still seeds the notes from QB so newly-
+      // imported customers aren't blank — just don't clobber edits.
       const updates: any = {};
       if (!match.qb_customer_id) updates.qb_customer_id = qbId;
       if (company) updates.company = company;
@@ -913,7 +1022,6 @@ async function handlePullCustomers(token: string, realmId: string, supabase: any
       if (addressParts.length > 0) updates.address = payload.address;
       if (taxId) updates.tax_id = taxId;
       if (name) updates.name = name;
-      if (notes) updates.notes = notes;
       updates.tax_exempt = taxExempt;
       if (Object.keys(updates).length > 0) {
         await supabase.from("customers").update(updates).eq("id", match.id);
@@ -933,16 +1041,20 @@ async function handlePullCustomers(token: string, realmId: string, supabase: any
     }
   }
 
-  return { imported, skipped, updated, total: all.length };
+  return { imported, skipped, updated, total: all.length, truncatedAtCap };
 }
 
 // ── Action: pullInvoices (QB → InkTracker) ─────────────────────────────────
 
 async function handlePullInvoices(token: string, realmId: string, supabase: any, shopOwner: string) {
-  // Paginated fetch of all QB invoices
+  // Paginated fetch of all QB invoices. Hard cap at 10K rows so a
+  // misconfigured shop can't hang the function forever — but surface
+  // truncation so a growing shop knows to raise the cap.
   const pageSize = 1000;
+  const hardCap = 10000;
   const all: any[] = [];
   let start = 1;
+  let truncatedAtCap = false;
   while (true) {
     const res = await qbQuery(token, realmId,
       `SELECT * FROM Invoice STARTPOSITION ${start} MAXRESULTS ${pageSize}`
@@ -951,10 +1063,16 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     all.push(...batch);
     if (batch.length < pageSize) break;
     start += pageSize;
-    if (start > 10000) break;
+    if (start > hardCap) {
+      console.error(
+        `[pullInvoices] hit ${hardCap}-row cap for ${shopOwner} — additional QB invoices were NOT pulled.`,
+      );
+      truncatedAtCap = true;
+      break;
+    }
   }
 
-  if (all.length === 0) return { imported: 0, skipped: 0, updated: 0, total: 0 };
+  if (all.length === 0) return { imported: 0, skipped: 0, updated: 0, total: 0, truncatedAtCap };
 
   // Build customer lookup: qb_customer_id → InkTracker customer
   const { data: customers } = await supabase
@@ -1072,7 +1190,7 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     }
   }
 
-  return { imported, skipped, updated, total: all.length };
+  return { imported, skipped, updated, total: all.length, truncatedAtCap };
 }
 
 // ── Action: getCustomerStats (live from QB) ────────────────────────────────
