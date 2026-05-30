@@ -9,6 +9,9 @@ import {
   buildQbSendInvoiceUrl,
   makeOrderId,
   isLikelyEmail,
+  stripDocNumberRevision,
+  isRevisionDocNumber,
+  isQbInvoicePaid,
 } from "../qbInvoice";
 
 // ── nextAvailableDocNumber ──────────────────────────────────────────────────
@@ -551,5 +554,97 @@ describe("buildQBCustomerBody — email gating", () => {
       "Joe",
     );
     expect(body.PrimaryEmailAddr).toEqual({ Address: "joe@example.com" });
+  });
+});
+
+// ── stripDocNumberRevision / isRevisionDocNumber ────────────────────────────
+// These power the pullInvoices dedup fix that consolidates Q-2026-115 and
+// Q-2026-115-r2 onto a single InkTracker invoice row. Regression-net for
+// the "Shana Krochmal showed up twice" bug.
+
+describe("stripDocNumberRevision", () => {
+  it("returns the docNumber unchanged when there's no revision suffix", () => {
+    expect(stripDocNumberRevision("Q-2026-115")).toBe("Q-2026-115");
+    expect(stripDocNumberRevision("INV-001")).toBe("INV-001");
+  });
+
+  it("strips a single trailing -r<digits> suffix", () => {
+    expect(stripDocNumberRevision("Q-2026-115-r2")).toBe("Q-2026-115");
+    expect(stripDocNumberRevision("Q-2026-115-r99")).toBe("Q-2026-115");
+  });
+
+  it("only strips the FINAL -r<digits> — preserves any inner -rN parts", () => {
+    // A DocNumber that itself contains "-r2-" should keep the inner text;
+    // only the very last -rN suffix is the revision marker.
+    expect(stripDocNumberRevision("Q-r2-2026-r3")).toBe("Q-r2-2026");
+  });
+
+  it("is case-insensitive on the r", () => {
+    expect(stripDocNumberRevision("Q-2026-115-R2")).toBe("Q-2026-115");
+  });
+
+  it("does not strip non-revision -r tokens (no digits)", () => {
+    expect(stripDocNumberRevision("Q-2026-115-rA")).toBe("Q-2026-115-rA");
+    expect(stripDocNumberRevision("Q-2026-115-r")).toBe("Q-2026-115-r");
+  });
+
+  it("handles null / undefined / number inputs", () => {
+    expect(stripDocNumberRevision(null)).toBe("");
+    expect(stripDocNumberRevision(undefined)).toBe("");
+    expect(stripDocNumberRevision(115)).toBe("115");
+  });
+});
+
+describe("isRevisionDocNumber", () => {
+  it("true when -r<digits> suffix is present", () => {
+    expect(isRevisionDocNumber("Q-2026-115-r2")).toBe(true);
+    expect(isRevisionDocNumber("Q-2026-115-R7")).toBe(true);
+  });
+
+  it("false on bare DocNumbers", () => {
+    expect(isRevisionDocNumber("Q-2026-115")).toBe(false);
+    expect(isRevisionDocNumber("")).toBe(false);
+    expect(isRevisionDocNumber(null)).toBe(false);
+  });
+
+  it("false on near-misses (no digits, wrong separator)", () => {
+    expect(isRevisionDocNumber("Q-2026-115-rA")).toBe(false);
+    expect(isRevisionDocNumber("Q-2026-115r2")).toBe(false);
+  });
+});
+
+// ── isQbInvoicePaid ─────────────────────────────────────────────────────────
+// Power the "refuse to silently create a -r2 when the original is already
+// paid" guard in qbSync. The wrong answer (false positive) creates the
+// orphaned-row bug that started this. The wrong answer the other way (false
+// negative) blocks legitimate resyncs.
+
+describe("isQbInvoicePaid", () => {
+  it("paid invoice: Balance=0 and TotalAmt>0", () => {
+    expect(isQbInvoicePaid({ TotalAmt: 350, Balance: 0 })).toBe(true);
+  });
+
+  it("unpaid invoice: Balance = TotalAmt", () => {
+    expect(isQbInvoicePaid({ TotalAmt: 350, Balance: 350 })).toBe(false);
+  });
+
+  it("partial payment is NOT paid (Balance > 0)", () => {
+    expect(isQbInvoicePaid({ TotalAmt: 350, Balance: 100 })).toBe(false);
+  });
+
+  it("$0 invoice is never paid (drafts / blank invoices)", () => {
+    expect(isQbInvoicePaid({ TotalAmt: 0, Balance: 0 })).toBe(false);
+  });
+
+  it("missing fields default to unpaid", () => {
+    expect(isQbInvoicePaid({})).toBe(false);
+    expect(isQbInvoicePaid(null)).toBe(false);
+    expect(isQbInvoicePaid(undefined)).toBe(false);
+  });
+
+  it("string fields coerce numerically", () => {
+    // QBO sometimes returns these as strings depending on the API surface.
+    expect(isQbInvoicePaid({ TotalAmt: "350.00", Balance: "0" })).toBe(true);
+    expect(isQbInvoicePaid({ TotalAmt: "350.00", Balance: "100" })).toBe(false);
   });
 });

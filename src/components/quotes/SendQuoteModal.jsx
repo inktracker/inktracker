@@ -210,6 +210,16 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       if (data?.error) throw new Error(data.error);
       setQbInvoiceId(data.qbInvoiceId);
       setQbPaymentLink(data.paymentLink || null);
+      // Paid-state guard from the edge function. The customer already
+      // paid via the existing QB invoice, so we refused to create a
+      // -rN duplicate. Surface that so the operator knows to refresh
+      // / mark the quote paid rather than retrying.
+      if (data.alreadyPaid) {
+        setQbError(
+          data.alreadyPaidMessage ||
+          "This quote already has a paid QuickBooks invoice. No new invoice was created."
+        );
+      }
       // Translate the structured failure reason from the edge function
       // into a human-readable error. Without a payment link the modal
       // falls through to `send_failed`/`needs_create`; this string

@@ -91,6 +91,46 @@ export function escapeQbStringLiteral(value) {
   return String(value ?? "").replace(/'/g, "''");
 }
 
+// ── Revision suffix helpers ────────────────────────────────────────────────
+// Re-syncs produce DocNumbers like "Q-2026-115-r2", "Q-2026-115-r3" so QB
+// doesn't reject a duplicate. When we later pull invoices back into
+// InkTracker, we want all revisions of a single quote to land on ONE
+// invoice row instead of multiplying. Pure helpers — keeps the qbSync
+// edge function uncluttered and lets us unit-test the regex.
+
+/**
+ * Returns the base DocNumber with any trailing -r<digits> suffix removed.
+ * "Q-2026-115-r2" → "Q-2026-115"; "Q-2026-115" → "Q-2026-115" (unchanged).
+ * Treats null/undefined as "".
+ */
+export function stripDocNumberRevision(docNumber) {
+  return String(docNumber ?? "").replace(/-r\d+$/i, "");
+}
+
+/**
+ * True when a DocNumber carries an -r<digits> revision suffix.
+ */
+export function isRevisionDocNumber(docNumber) {
+  return /-r\d+$/i.test(String(docNumber ?? ""));
+}
+
+// ── Invoice paid-state predicate ───────────────────────────────────────────
+// "Paid" in QBO = TotalAmt > 0 AND Balance === 0. Centralized so the
+// createInvoice resync path, pullInvoices, and any future caller use the
+// same definition. A $0 invoice should never read as "paid" — those are
+// drafts with no line items.
+
+/**
+ * Returns true when the QB Invoice object represents a fully-paid
+ * invoice. Accepts the raw Invoice payload (TotalAmt + Balance fields).
+ */
+export function isQbInvoicePaid(invoice) {
+  if (!invoice) return false;
+  const total = Number(invoice.TotalAmt ?? 0);
+  const balance = Number(invoice.Balance ?? 0);
+  return total > 0 && balance === 0;
+}
+
 // ── Translate our invoicePayload to QBO Line[] ──────────────────────────────
 // Inputs:
 //   payload          — { lines, discountPercent, discountAmount, discountType }

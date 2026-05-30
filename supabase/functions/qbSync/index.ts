@@ -18,6 +18,8 @@ import {
   buildInvoiceLinesFromPayload as sharedBuildInvoiceLinesFromPayload,
   extractPaymentLink as sharedExtractPaymentLink,
   buildQbSendInvoiceUrl,
+  stripDocNumberRevision,
+  isQbInvoicePaid,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -517,40 +519,86 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // If the quote already has a QB invoice ID, UPDATE the existing invoice
   // instead of creating a duplicate. This is the "resync" path.
   if (qbInvoiceId) {
-    console.error(`[createInvoice] Updating existing QB invoice ${qbInvoiceId}`);
+    console.error(`[createInvoice] Resyncing existing QB invoice ${qbInvoiceId}`);
+
+    // Fetch the existing invoice ONCE up front so we can:
+    //   (a) inspect TotalAmt + Balance for the paid-state guard below,
+    //   (b) hand the SyncToken to a subsequent update.
+    let existingInv: any = null;
     try {
-      // Fetch existing invoice to get its SyncToken (required for QB updates)
       const existing = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
-      const existingInv = existing?.QueryResponse?.Invoice?.[0];
-      if (!existingInv) throw new Error(`QB invoice ${qbInvoiceId} not found — will create new`);
+      existingInv = existing?.QueryResponse?.Invoice?.[0] ?? null;
+    } catch (e) {
+      console.error(`[createInvoice] Could not fetch existing QB invoice ${qbInvoiceId}:`, (e as Error)?.message);
+    }
 
-      const updateBody: any = {
-        Id: qbInvoiceId,
-        SyncToken: existingInv.SyncToken,
-        sparse: true,
-        CustomerRef: { value: qbCustomerId },
-        AllowOnlineCreditCardPayment: true,
-        AllowOnlineACHPayment: true,
-        Line: lines,
-        CustomerMemo: { value: quote.notes || "" },
-        PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`,
-      };
-      if (billEmail) {
-        updateBody.BillEmail = { Address: billEmail };
-      }
-      if (billAddress) {
-        updateBody.BillAddr = { Line1: billAddress };
-        updateBody.ShipAddr = { Line1: billAddress };
-      }
+    if (existingInv && isQbInvoicePaid(existingInv)) {
+      // Paid-state guard. The previous behavior here was to attempt an
+      // UPDATE, and if QB refused (locked record / stale SyncToken /
+      // policy block on paid invoices), silently fall through to CREATE
+      // a -r2 duplicate. That orphan landed a customer payment on one
+      // invoice in QB while the visible invoice in InkTracker showed
+      // unpaid — root cause of the "Shana Krochmal" double-row bug.
+      // When the existing invoice is paid, the right move is to refuse
+      // to mutate it AND refuse to create a duplicate. Return the
+      // current state so the caller can surface "already paid" copy.
+      console.error(
+        `[createInvoice] Existing QB invoice ${qbInvoiceId} is fully paid ` +
+        `(Balance=0 of $${Number(existingInv.TotalAmt ?? 0)}). ` +
+        `Refusing to resync — would create a duplicate -rN.`,
+      );
+      const paymentLink = sharedExtractPaymentLink(existingInv);
+      return Response.json({
+        qbInvoiceId,
+        paymentLink: paymentLink ?? null,
+        linkFailureReason: null,
+        alreadyPaid: true,
+        alreadyPaidMessage:
+          `This quote already has a paid QuickBooks invoice (#${existingInv.DocNumber ?? qbInvoiceId}). ` +
+          `No new invoice was created.`,
+      }, { headers: CORS });
+    }
 
-      const updated = await qbUpdate(token, realmId, "invoice", updateBody);
-      created = updated;
-      qbInvoiceFinal = updated?.Invoice ?? updated;
-      qbInvoiceId = String(qbInvoiceFinal?.Id || qbInvoiceId);
-    } catch (updateErr: any) {
-      console.error(`[createInvoice] Update failed, creating new invoice:`, updateErr?.message);
-      // Fall through to create path below
+    if (!existingInv) {
+      // Stored qb_invoice_id no longer resolves — invoice was deleted in
+      // QB or our ID is stale. Safe to fall through and create a fresh
+      // one; nothing to mutate.
+      console.error(`[createInvoice] Stored qb_invoice_id ${qbInvoiceId} not found in QB. Will create new.`);
       qbInvoiceId = "";
+    } else {
+      try {
+        const updateBody: any = {
+          Id: qbInvoiceId,
+          SyncToken: existingInv.SyncToken,
+          sparse: true,
+          CustomerRef: { value: qbCustomerId },
+          AllowOnlineCreditCardPayment: true,
+          AllowOnlineACHPayment: true,
+          Line: lines,
+          CustomerMemo: { value: quote.notes || "" },
+          PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`,
+        };
+        if (billEmail) {
+          updateBody.BillEmail = { Address: billEmail };
+        }
+        if (billAddress) {
+          updateBody.BillAddr = { Line1: billAddress };
+          updateBody.ShipAddr = { Line1: billAddress };
+        }
+
+        const updated = await qbUpdate(token, realmId, "invoice", updateBody);
+        created = updated;
+        qbInvoiceFinal = updated?.Invoice ?? updated;
+        qbInvoiceId = String(qbInvoiceFinal?.Id || qbInvoiceId);
+      } catch (updateErr: any) {
+        // The existing invoice is NOT paid (paid-state guard above would
+        // have returned) but QB still refused the update — could be a
+        // locked record, voided invoice, or transient API error.
+        // Falling through to CREATE is safe at this point because we've
+        // already proven the original carries no customer payment.
+        console.error(`[createInvoice] Update failed, creating new invoice:`, updateErr?.message);
+        qbInvoiceId = "";
+      }
     }
   }
 
@@ -918,12 +966,23 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     if (c.qb_customer_id) custByQbId.set(String(c.qb_customer_id), c);
   }
 
-  // Check existing invoices to deduplicate (by invoice_id)
+  // Check existing invoices to deduplicate. Indexed by BOTH:
+  //   - exact invoice_id (DocNumber), and
+  //   - the qb_invoice_id from prior pulls (covers DocNumber renames).
+  // We also build a base-DocNumber index so a -rN revision pulled from
+  // QB lands on the row that holds the base DocNumber instead of
+  // spawning a sibling row. Closes the "two rows for one quote" bug
+  // surfaced by the Shana Krochmal invoice.
   const { data: existingInvoices } = await supabase
     .from("invoices")
-    .select("id, invoice_id")
+    .select("id, invoice_id, qb_invoice_id")
     .eq("shop_owner", shopOwner);
-  const existingMap = new Map((existingInvoices ?? []).map((i: any) => [i.invoice_id, i.id]));
+  const existingByDoc = new Map<string, string>();
+  const existingByQbId = new Map<string, string>();
+  for (const row of existingInvoices ?? []) {
+    if (row.invoice_id) existingByDoc.set(String(row.invoice_id), row.id);
+    if (row.qb_invoice_id) existingByQbId.set(String(row.qb_invoice_id), row.id);
+  }
 
   let imported = 0;
   let skipped = 0;
@@ -932,8 +991,22 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   for (const qbInv of all) {
     const docNumber = qbInv.DocNumber || `QB-${qbInv.Id}`;
 
-    // Update if already exists, insert if new
-    const existingId = existingMap.get(docNumber);
+    // Find an existing InkTracker row to update, in priority order:
+    //   1. qb_invoice_id match — most authoritative, survives DocNumber
+    //      renames (when QB rejects the original number).
+    //   2. exact DocNumber match — the common case for unchanged sync.
+    //   3. base DocNumber match — when QB now has a -rN revision but
+    //      InkTracker still holds the row keyed to the base. Avoids
+    //      spawning a sibling row.
+    // Falls through to INSERT only when none match.
+    const qbId = String(qbInv.Id);
+    let existingId = existingByQbId.get(qbId) || existingByDoc.get(docNumber);
+    if (!existingId) {
+      const base = stripDocNumberRevision(docNumber);
+      if (base && base !== docNumber) {
+        existingId = existingByDoc.get(base);
+      }
+    }
 
     const qbCustId = qbInv.CustomerRef?.value;
     const custMatch = qbCustId ? custByQbId.get(String(qbCustId)) : null;
