@@ -513,12 +513,23 @@ export default function QuoteEditorModal({
                     className="flex-1 min-w-0 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300 truncate"
                   >
                     <option value="">Select customer…</option>
-                    {[...customers].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                        {c.company ? ` — ${c.company}` : ""}
-                      </option>
-                    ))}
+                    {[...customers]
+                      .sort((a, b) => {
+                        // Sort by company first, fall back to contact
+                        // name. Mirrors the display order below so the
+                        // visible alphabetical run lines up with the
+                        // key the user is scanning for.
+                        const aKey = (a.company || a.name || "").trim();
+                        const bKey = (b.company || b.name || "").trim();
+                        return aKey.localeCompare(bKey, undefined, { sensitivity: "base" });
+                      })
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.company
+                            ? `${c.company}${c.name ? ` — ${c.name}` : ""}`
+                            : c.name}
+                        </option>
+                      ))}
                   </select>
 
                   <button

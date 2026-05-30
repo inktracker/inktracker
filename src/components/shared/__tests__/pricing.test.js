@@ -1459,10 +1459,22 @@ describe("calcSetupFees", () => {
     expect(r).toEqual({ enabled: false, screens: 0, items: [], total: 0 });
   });
 
-  it("rescue clause: items configured but enabled=false → treated as enabled", () => {
-    // Mirrors the embroidery gate fix. Shop entered fees in the pricing UI
-    // but didn't separately toggle the enable flag — fees still apply.
+  it("respects explicit enabled=false EVEN when items are configured", () => {
+    // The earlier "forgiving gate" rescued legacy shops who had fee items
+    // pre-populated but never toggled the flag. It also overrode operators
+    // who EXPLICITLY unchecked the enable box — they kept seeing phantom
+    // fees on their quotes despite the toggle being off. Flag=false now
+    // wins over items.length>0.
     const r = calcSetupFees({ lineItems, config: { enabled: false, items } });
+    expect(r.enabled).toBe(false);
+    expect(r.total).toBe(0);
+    expect(r.items).toEqual([]);
+  });
+
+  it("rescue clause survives: items configured with the flag UNDEFINED is treated as enabled", () => {
+    // Legacy shops who never touched the flag (config.enabled undefined)
+    // still get fees they configured. Only an explicit `false` blocks.
+    const r = calcSetupFees({ lineItems, config: { items } });
     expect(r.enabled).toBe(true);
     expect(r.screens).toBe(4);
     expect(r.total).toBe(140);
