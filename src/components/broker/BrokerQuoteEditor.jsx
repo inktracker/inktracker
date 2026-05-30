@@ -402,12 +402,20 @@ export default function BrokerQuoteEditor({
                     className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                   >
                     <option value="">Select client…</option>
-                    {[...customers].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })).map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                        {c.company ? ` — ${c.company}` : ""}
-                      </option>
-                    ))}
+                    {[...customers]
+                      .sort((a, b) => {
+                        // Sort by company first, fall back to contact name.
+                        const aKey = (a.company || a.name || "").trim();
+                        const bKey = (b.company || b.name || "").trim();
+                        return aKey.localeCompare(bKey, undefined, { sensitivity: "base" });
+                      })
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.company
+                            ? `${c.company}${c.name ? ` — ${c.name}` : ""}`
+                            : c.name}
+                        </option>
+                      ))}
                   </select>
 
                   <button
