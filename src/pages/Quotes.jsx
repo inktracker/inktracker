@@ -299,7 +299,19 @@ export default function Quotes() {
   }
 
   async function handleApprove(id) {
-    const updated = await base44.entities.Quote.update(id, { status: "Approved" });
+    // Stamp the approval date so the quote shows up on the calendar /
+    // production board on the day it was approved. The field is shared
+    // with the customer + broker approval paths (only Calendar.jsx and
+    // Production.jsx read it). Don't overwrite an existing timestamp —
+    // a customer who already approved via the public flow has the real
+    // approval date, and shop-side approval clicked later shouldn't
+    // backdate it.
+    const existing = quotes.find((q) => q.id === id);
+    const patch = { status: "Approved" };
+    if (!existing?.client_approved_at) {
+      patch.client_approved_at = new Date().toISOString();
+    }
+    const updated = await base44.entities.Quote.update(id, patch);
     setQuotes((prev) => prev.map((q) => (q.id === id ? updated : q)));
     // Keep the modal open with the freshly-updated quote so the user
     // sees their action took effect (status badge flips, Convert to
