@@ -580,20 +580,23 @@ export default function Calendar() {
                                // Quote-kind events click through to /Quotes
                                // (a quote may not have an order yet). Order
                                // events open the OrderDetailModal inline.
-                               // Order chips for a Completed order render
-                               // emerald (label preserved); quote chips
-                               // keep their own color.
+                               // Each chip carries its OWN step color —
+                               // the Completed-status override that used
+                               // to recolor every historical stage chip
+                               // green was misleading (an "Order Goods"
+                               // chip rendered as green on a completed
+                               // order). Now Order Goods always reads as
+                               // orange even on completed orders; only
+                               // the actual Completed event chip is
+                               // green.
                                const isQuoteEvent = ev.kind === "quote";
                                const subject = isQuoteEvent ? ev.quote : ev.order;
                                const subjectName = isQuoteEvent
                                  ? getCompanyName(ev.quote, customers)
                                  : companyName(ev.order);
-                               const isCompleted = !isQuoteEvent && ev.order?.status === "Completed";
-                               const chipClass = isCompleted
-                                 ? STATUS_COLORS["Completed"]
-                                 : ev.isDue
-                                   ? "bg-rose-50 border-rose-300 text-rose-700"
-                                   : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 text-slate-600";
+                               const chipClass = ev.isDue
+                                 ? "bg-rose-50 border-rose-300 text-rose-700"
+                                 : STATUS_COLORS[ev.step] || "bg-slate-100 border-slate-200 text-slate-600";
                                // Field this chip represents — drives where
                                // a drop will write. Due chip → due_date.
                                // Order Goods chip → order.date (legacy slot).
@@ -678,29 +681,30 @@ export default function Calendar() {
       )}
 
       {/* Agenda side panel — opens when a day cell is clicked. Shows
-          every job in the works on that date: any order whose creation
-          date (o.date) is on or before the date AND whose due date
-          (o.due_date) is on or after the date. Completed orders are
-          bounded by completed_date instead of due_date — a job
-          completed yesterday still belongs on the days it was actively
-          being worked on, but drops off after it shipped. Sorted by
-          creation date ascending — the oldest in-progress jobs first.
+          only the jobs/quotes that have a chip on the day cell, so the
+          agenda matches the calendar visually. Previously this used a
+          looser "in the works on that date" filter (start ≤ date ≤
+          due/completed) which surfaced 7+ jobs on days where only one
+          chip was visible — confusing. If a shop wants the broader
+          in-progress view they have the Production board.
           An empty day still opens the panel so a click never feels
           broken. */}
       {selectedDate && (() => {
-        const inWorks = orders.filter((o) => {
-          if (!o.date) return false;
-          const start = String(o.date).slice(0, 10);
-          const end =
-            o.status === "Completed" && o.completed_date
-              ? String(o.completed_date).slice(0, 10)
-              : o.due_date
-                ? String(o.due_date).slice(0, 10)
-                : null;
-          if (start > selectedDate) return false;
-          if (end && end < selectedDate) return false;
-          return true;
-        }).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const dayEvents = eventsByDate[selectedDate] || [];
+        // Dedupe orders by id — an order may have multiple chips on a
+        // day (e.g. Order Goods + Due). Quotes intentionally skipped:
+        // clicking a quote chip on the calendar already jumps to
+        // /Quotes inline, and the agenda body is order-shaped (reads
+        // order_id, due_date, etc.).
+        const seen = new Set();
+        const inWorks = [];
+        for (const ev of dayEvents) {
+          if (ev.kind === "quote") continue;
+          const subject = ev.order;
+          if (!subject?.id || seen.has(subject.id)) continue;
+          seen.add(subject.id);
+          inWorks.push(subject);
+        }
 
         const fmtDateLong = (s) => {
           const [yr, mo, dy] = String(s).split("-").map(Number);
@@ -723,7 +727,7 @@ export default function Calendar() {
                   <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">Agenda</div>
                   <h3 className="text-lg font-bold text-slate-900 mt-0.5">{fmtDateLong(selectedDate)}</h3>
                   <div className="text-xs text-slate-400 mt-0.5">
-                    {inWorks.length === 0 ? "No jobs in the works." : `${inWorks.length} ${inWorks.length === 1 ? "job" : "jobs"} in the works`}
+                    {inWorks.length === 0 ? "Nothing scheduled." : `${inWorks.length} ${inWorks.length === 1 ? "job" : "jobs"} scheduled`}
                   </div>
                 </div>
                 <button
@@ -739,7 +743,7 @@ export default function Calendar() {
               <div className="p-5">
                 {inWorks.length === 0 ? (
                   <div className="text-sm text-slate-400 italic text-center py-10">
-                    No active or completed jobs on this date.
+                    Nothing scheduled for this day.
                   </div>
                 ) : (
                   <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
