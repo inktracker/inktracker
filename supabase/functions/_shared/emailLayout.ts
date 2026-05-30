@@ -22,10 +22,13 @@ export const EMAIL_FOREST      = "#2c5840";
 export const EMAIL_FOREST_DARK = "#1a3a28";
 export const EMAIL_BG_SOFT     = "#f5f5f3";
 
-// 1024×1024 drop logo, served from inktracker.app. Email clients block
-// inline base64 images above ~1 KB on many providers, so we link to a
-// public asset instead. Gmail / Apple Mail / Outlook all load it fine.
-export const EMAIL_LOGO_URL = "https://inktracker.app/icon-512.png";
+// 1024×1024 drop logo, served from www.inktracker.app. Email clients
+// block inline base64 images above ~1 KB on many providers, so we link
+// to a public asset instead. The canonical host is www. — the bare
+// inktracker.app does a 307 redirect, and many mail clients (including
+// Apple Mail's preview, Supabase's template preview, and several
+// webmails) refuse to follow image redirects, rendering a broken icon.
+export const EMAIL_LOGO_URL = "https://www.inktracker.app/icon-512.png";
 
 const BODY_FONT =
   "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
