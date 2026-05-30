@@ -4,6 +4,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
 import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
 import Badge from "../components/shared/Badge";
+import { addDaysISO, relativeDueLabel, getOrderActionHint } from "@/lib/calendar/agendaHints";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import ACOrderModal from "../components/orders/ACOrderModal";
@@ -838,29 +839,44 @@ export default function Production() {
       )}
 
 
-      {/* Agenda side panel — opens when a day cell is clicked. Shows only
-          the orders that have a chip on the day cell, so the agenda matches
-          the calendar visually. Previously this used a looser "in the works
-          on that date" filter (start ≤ date ≤ due/completed) which listed
-          7+ jobs on days where only one chip was visible — confusing.
-          The same fix shipped to src/pages/Calendar.jsx in PR #318; this
-          is the missed Production sibling.
-          Empty day still opens the panel so a click never feels broken. */}
+      {/* Agenda side panel — planning view, not a literal mirror of the
+          day cell. Two sections:
+            (1) SCHEDULED — orders whose chip lands on this day
+            (2) DUE SOON  — orders due within the next 14 days (so an
+                operator clicking "today" sees what needs to happen this
+                week, not just what's already scheduled)
+          Each item carries a next-action hint derived from order state
+          so the agenda answers "what should I be doing on this day".
+          Mirrors src/pages/Calendar.jsx — keep both in sync. */}
       {selectedDate && (() => {
+        const DUE_SOON_DAYS = 14;
+        const dueSoonEnd = addDaysISO(selectedDate, DUE_SOON_DAYS);
+
+        // SCHEDULED — orders with a chip on the selected day.
         const dayEvents = pointEvents[selectedDate] || [];
-        // Dedupe orders by id — an order may have multiple chips on a day
-        // (e.g. Order Goods + Due). Quotes intentionally skipped: clicking
-        // a quote chip already jumps to /Quotes inline, and the agenda
-        // body is order-shaped.
         const seen = new Set();
-        const inWorks = [];
+        const scheduled = [];
         for (const ev of dayEvents) {
           if (ev.kind === "quote") continue;
           const subject = ev.order;
           if (!subject?.id || seen.has(subject.id)) continue;
           seen.add(subject.id);
-          inWorks.push(subject);
+          scheduled.push(subject);
         }
+
+        // DUE SOON — orders due after the selected day, within the
+        // 14-day window, not completed, and not already in scheduled.
+        const dueSoon = orders
+          .filter((o) => {
+            if (seen.has(o.id)) return false;
+            if (o.status === "Completed") return false;
+            if (!o.due_date) return false;
+            const due = String(o.due_date).slice(0, 10);
+            return due > selectedDate && due <= dueSoonEnd;
+          })
+          .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+
+        const inWorks = [...scheduled, ...dueSoon];
 
         const fmtDateLong = (s) => {
           const [yr, mo, dy] = String(s).split("-").map(Number);
@@ -883,7 +899,15 @@ export default function Production() {
                   <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">Agenda</div>
                   <h3 className="text-lg font-bold text-slate-900 mt-0.5">{fmtDateLong(selectedDate)}</h3>
                   <div className="text-xs text-slate-400 mt-0.5">
-                    {inWorks.length === 0 ? "Nothing scheduled." : `${inWorks.length} ${inWorks.length === 1 ? "job" : "jobs"} scheduled`}
+                    {scheduled.length === 0 && dueSoon.length === 0
+                      ? "Nothing scheduled or due in the next 14 days."
+                      : (
+                        <>
+                          {scheduled.length > 0 && `${scheduled.length} scheduled`}
+                          {scheduled.length > 0 && dueSoon.length > 0 && " · "}
+                          {dueSoon.length > 0 && `${dueSoon.length} due in the next 14 days`}
+                        </>
+                      )}
                   </div>
                 </div>
                 <button
@@ -896,66 +920,83 @@ export default function Production() {
                 </button>
               </div>
 
-              <div className="p-5">
-                {inWorks.length === 0 ? (
+              <div className="p-5 space-y-5">
+                {inWorks.length === 0 && (
                   <div className="text-sm text-slate-400 italic text-center py-10">
-                    Nothing scheduled for this day.
-                  </div>
-                ) : (
-                  <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
-                    {inWorks.map((o) => {
-                      const start = String(o.date || "").slice(0, 10);
-                      const end = o.due_date ? String(o.due_date).slice(0, 10) : null;
-                      const isStartDay = start === selectedDate;
-                      const isDueDay = end === selectedDate;
-                      const isCompletedDay =
-                        o.status === "Completed" &&
-                        o.completed_date &&
-                        String(o.completed_date).slice(0, 10) === selectedDate;
-                      return (
-                        <button
-                          key={o.id}
-                          type="button"
-                          onClick={() => {
-                            setViewing(o);
-                            setSelectedDate(null);
-                          }}
-                          className="w-full text-left px-4 py-3 hover:bg-slate-50 transition flex items-start justify-between gap-3"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-semibold text-slate-800 text-sm truncate">
-                              {companyName(o)}
-                            </div>
-                            <div className="text-xs text-slate-400 mt-0.5 truncate">
-                              {o.order_id}
-                              {start && <span className="ml-2">· Started {start}</span>}
-                              {end && <span className="ml-2">· Due {end}</span>}
-                            </div>
-                            <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                              <Badge s={o.status} />
-                              {isStartDay && (
-                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded">
-                                  Created today
-                                </span>
-                              )}
-                              {isDueDay && o.status !== "Completed" && (
-                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded">
-                                  Due today
-                                </span>
-                              )}
-                              {isCompletedDay && (
-                                <span className="text-[10px] font-semibold uppercase tracking-widest bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
-                                  Completed today
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          <ChevronRight className="w-4 h-4 text-slate-300 shrink-0 mt-1" />
-                        </button>
-                      );
-                    })}
+                    Nothing scheduled and nothing due in the next 14 days.
                   </div>
                 )}
+
+                {[
+                  { key: "scheduled", title: "Scheduled today", rows: scheduled },
+                  { key: "dueSoon",   title: "Due soon",        rows: dueSoon   },
+                ].map(({ key, title, rows }) => rows.length === 0 ? null : (
+                  <div key={key}>
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">
+                      {title} <span className="text-slate-300 ml-1">{rows.length}</span>
+                    </div>
+                    <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
+                      {rows.map((o) => {
+                        const start = String(o.date || "").slice(0, 10);
+                        const end = o.due_date ? String(o.due_date).slice(0, 10) : null;
+                        const isStartDay = start === selectedDate;
+                        const isDueDay = end === selectedDate;
+                        const isCompletedDay =
+                          o.status === "Completed" &&
+                          o.completed_date &&
+                          String(o.completed_date).slice(0, 10) === selectedDate;
+                        const dueRel = key === "dueSoon" && end ? relativeDueLabel(end, selectedDate) : "";
+                        const actionHint = getOrderActionHint(o);
+                        return (
+                          <button
+                            key={o.id}
+                            type="button"
+                            onClick={() => {
+                              setViewing(o);
+                              setSelectedDate(null);
+                            }}
+                            className="w-full text-left px-4 py-3 hover:bg-slate-50 transition flex items-start justify-between gap-3"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-semibold text-slate-800 text-sm truncate">
+                                {companyName(o)}
+                              </div>
+                              <div className="text-xs text-slate-400 mt-0.5 truncate">
+                                {o.order_id}
+                                {dueRel && <span className="ml-2">· {dueRel}</span>}
+                                {!dueRel && end && <span className="ml-2">· Due {end}</span>}
+                              </div>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                <Badge s={o.status} />
+                                {actionHint && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-widest bg-orange-50 text-orange-700 border border-orange-200 px-1.5 py-0.5 rounded">
+                                    {actionHint}
+                                  </span>
+                                )}
+                                {isStartDay && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-widest bg-teal-50 text-teal-700 border border-teal-200 px-1.5 py-0.5 rounded">
+                                    Created today
+                                  </span>
+                                )}
+                                {isDueDay && o.status !== "Completed" && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-widest bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded">
+                                    Due today
+                                  </span>
+                                )}
+                                {isCompletedDay && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-widest bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded">
+                                    Completed today
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <ChevronRight className="w-4 h-4 text-slate-300 shrink-0 mt-1" />
+                        </button>
+                      );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
