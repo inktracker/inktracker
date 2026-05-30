@@ -9,7 +9,28 @@ import { setSentryUser, clearSentryUser } from "@/lib/sentry";
 const AuthContext = createContext();
 
 async function fetchUserWithProfile() {
-  const { data: { user }, error } = await supabase.auth.getUser();
+  // detectSessionInUrl runs asynchronously when the page loads with
+  // #access_token=... or ?code=... (email confirmation, magic link,
+  // password reset). On slower devices (mobile) this can race against
+  // the initial AuthContext check — getUser() fires BEFORE the URL
+  // token is processed, returns null, and we incorrectly mark the
+  // user as logged out. Desktop is usually fast enough to dodge this.
+  //
+  // If we see auth-token signals in the URL but getUser() didn't find
+  // a user yet, wait briefly for getSession() (which awaits the
+  // in-flight URL-recovery promise) and retry once. Fixes the mobile
+  // "click confirmation link → still on landing page" bug.
+  const urlHasAuthTokens =
+    typeof window !== "undefined" && (
+      window.location.hash?.includes("access_token") ||
+      window.location.search?.includes("code=")
+    );
+  let { data: { user }, error } = await supabase.auth.getUser();
+  if ((!user || error) && urlHasAuthTokens) {
+    // Block on the initial URL-session resolution.
+    await supabase.auth.getSession();
+    ({ data: { user }, error } = await supabase.auth.getUser());
+  }
   if (error || !user) return null;
 
   const { data: profile } = await supabase

@@ -76,7 +76,18 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
           setLoading(false);
           return;
         }
-        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+        // Pin the confirmation-email redirect to whatever origin the
+        // signup happened on. Without this, Supabase falls back to the
+        // dashboard's "Site URL" — if that's set to a preview deploy,
+        // an old domain, or just plain wrong, the email link lands the
+        // user somewhere that doesn't establish a session and they
+        // appear "signed up but not signed in". Mirrors the redirect
+        // the magic-link path already uses below.
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/` },
+        });
         if (signUpError) throw signUpError;
         // If email confirmation is disabled, user is immediately signed in
         if (data?.session) {
