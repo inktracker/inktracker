@@ -4,6 +4,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { buildOAuthTokenFields } from "../_shared/connectionLogic.js";
+import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -72,6 +73,19 @@ Deno.serve(async (req) => {
     }
 
     const tokens = await tokenRes.json();
+    // Validate the response shape BEFORE we trust it. Mirrors the same
+    // guard qbSync.refreshToken applies. Without this, a malformed 200
+    // OK from Intuit (occasionally observed under API stress) would
+    // persist `undefined` access_token / refresh_token to
+    // profile_secrets and lock the shop out of every future QB request
+    // — the "QuickBooks not connected" gate would short-circuit
+    // everything. Refusing here keeps the existing connection (if any)
+    // intact and surfaces a clear error to the operator.
+    const check = validateQbTokenResponse(tokens);
+    if (!check.ok) {
+      console.error(`[qbOAuthCallback] Initial token exchange returned malformed body (${check.reason}):`, tokens);
+      return Response.redirect(`${appBaseUrl}/Account?qb_error=malformed_token_response`);
+    }
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
 
     // Use service role to find profile by qb_oauth_state and store tokens

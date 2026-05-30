@@ -371,18 +371,18 @@ describe("extractInvoiceIdsFromPayment", () => {
 // ════════════════════════════════════════════════════════════════════════════
 
 describe("isInvoiceFullyPaid", () => {
-  it("returns true when Balance is exactly 0", () => {
-    expect(isInvoiceFullyPaid({ Balance: 0 })).toBe(true);
+  it("returns true when TotalAmt > 0 AND Balance is exactly 0", () => {
+    expect(isInvoiceFullyPaid({ TotalAmt: 100, Balance: 0 })).toBe(true);
   });
 
   it("returns true when Balance is the string '0' (QB sometimes serializes as string)", () => {
-    expect(isInvoiceFullyPaid({ Balance: "0" })).toBe(true);
-    expect(isInvoiceFullyPaid({ Balance: "0.00" })).toBe(true);
+    expect(isInvoiceFullyPaid({ TotalAmt: 100, Balance: "0" })).toBe(true);
+    expect(isInvoiceFullyPaid({ TotalAmt: "100", Balance: "0.00" })).toBe(true);
   });
 
   it("returns false when Balance > 0 (still owes)", () => {
-    expect(isInvoiceFullyPaid({ Balance: 1 })).toBe(false);
-    expect(isInvoiceFullyPaid({ Balance: "108.75" })).toBe(false);
+    expect(isInvoiceFullyPaid({ TotalAmt: 100, Balance: 1 })).toBe(false);
+    expect(isInvoiceFullyPaid({ TotalAmt: 200, Balance: "108.75" })).toBe(false);
   });
 
   it("returns false when Balance is missing — conservative default", () => {
@@ -399,6 +399,13 @@ describe("isInvoiceFullyPaid", () => {
   it("returns false when Balance is non-numeric (refuses to silently treat as paid)", () => {
     expect(isInvoiceFullyPaid({ Balance: "abc" })).toBe(false);
     expect(isInvoiceFullyPaid({ Balance: NaN })).toBe(false);
+  });
+
+  it("returns false when TotalAmt is 0 (draft invoice with no lines) even if Balance is 0", () => {
+    // Stray Update webhooks on a blank draft would otherwise trigger
+    // conversion. Same guard isQbInvoicePaid applies on the write side.
+    expect(isInvoiceFullyPaid({ TotalAmt: 0, Balance: 0 })).toBe(false);
+    expect(isInvoiceFullyPaid({ Balance: 0 })).toBe(false); // missing TotalAmt → not paid
   });
 
   it("treats negative Balance (overpayment / credit) as NOT fully paid", () => {

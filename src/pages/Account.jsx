@@ -751,11 +751,18 @@ export default function Account() {
                   )}
                 </button>
                 {qbMigrateResult && !qbMigrateResult.error && (
-                  <div className="mt-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                    Added <strong>{qbMigrateResult.created}</strong> new customer{qbMigrateResult.created !== 1 ? "s" : ""},
-                    updated <strong>{qbMigrateResult.updated}</strong>,
-                    skipped <strong>{qbMigrateResult.skipped}</strong> already in sync.
-                  </div>
+                  <>
+                    <div className="mt-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                      Added <strong>{qbMigrateResult.imported}</strong> new customer{qbMigrateResult.imported !== 1 ? "s" : ""},
+                      updated <strong>{qbMigrateResult.updated}</strong>,
+                      skipped <strong>{qbMigrateResult.skipped}</strong> already in sync.
+                    </div>
+                    {qbMigrateResult.truncatedAtCap && (
+                      <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        <strong>Warning:</strong> sync stopped at 10,000 customers. Your QuickBooks has more than that; not all were synced. Contact support to raise the cap.
+                      </div>
+                    )}
+                  </>
                 )}
                 {qbMigrateResult?.error && (
                   <div className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -780,10 +787,18 @@ export default function Account() {
                   )}
                 </button>
                 {qbMigrateInvResult && !qbMigrateInvResult.error && (
-                  <div className="mt-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                    Added <strong>{qbMigrateInvResult.imported}</strong> invoice{qbMigrateInvResult.imported !== 1 ? "s" : ""},
-                    skipped <strong>{qbMigrateInvResult.skipped}</strong> already in sync.
-                  </div>
+                  <>
+                    <div className="mt-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                      Added <strong>{qbMigrateInvResult.imported}</strong> invoice{qbMigrateInvResult.imported !== 1 ? "s" : ""},
+                      updated <strong>{qbMigrateInvResult.updated}</strong>,
+                      skipped <strong>{qbMigrateInvResult.skipped}</strong> already in sync.
+                    </div>
+                    {qbMigrateInvResult.truncatedAtCap && (
+                      <div className="mt-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        <strong>Warning:</strong> sync stopped at 10,000 invoices. Your QuickBooks has more than that; not all were synced. Contact support to raise the cap.
+                      </div>
+                    )}
+                  </>
                 )}
                 {qbMigrateInvResult?.error && (
                   <div className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
