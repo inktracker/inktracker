@@ -167,7 +167,7 @@ function MessageList({ messages, loading, currentUserEmail }) {
 }
 
 function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
-  const { customerEmail, shopName, refId, defaultSubject } = replyContext;
+  const { customerEmail, shopName, shopLogoUrl, refId, defaultSubject } = replyContext;
   const [body, setBody] = useState("");
   const [internal, setInternal] = useState(false);
   const [sending, setSending] = useState(false);
@@ -211,6 +211,7 @@ function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
         subject,
         body: body.trim(),
         shopName: shopName || "InkTracker",
+        shopLogoUrl: shopLogoUrl || "",
         shopOwnerEmail: currentUserEmail,
       });
       if (invErr) throw new Error(invErr.message || "Send failed");

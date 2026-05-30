@@ -29,11 +29,12 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function bodyToHtml(body: string, shopName?: string): string {
+function bodyToHtml(body: string, shopName?: string, shopLogoUrl?: string): string {
   const safe = escapeHtml(body).replace(/\n/g, "<br>");
   return renderEmailLayout({
     shopName: shopName || "InkTracker",
     contentHtml: `<div style="color:${EMAIL_INK};font-size:15px;line-height:1.7;">${safe}</div>`,
+    logoUrl: shopLogoUrl,
   });
 }
 
@@ -68,6 +69,7 @@ Deno.serve(async (req) => {
       subject,             // already include any [Ref: ...] tag
       body,                // plain text the user typed
       shopName,            // display name in From header
+      shopLogoUrl,         // shop logo for the header bar (falls back to InkTracker drop)
       shopOwnerEmail,      // becomes Reply-To
     } = await req.json();
 
@@ -112,7 +114,7 @@ Deno.serve(async (req) => {
     const escapeQuotes = (s: string) => String(s || "").replace(/"/g, "");
     const fromHeader = `${escapeQuotes(shopName || "InkTracker")} <${SEND_FROM}>`;
 
-    const html = bodyToHtml(body, shopName);
+    const html = bodyToHtml(body, shopName, shopLogoUrl);
 
     const results = await Promise.all(
       toList.map(async (recipient: string) => {

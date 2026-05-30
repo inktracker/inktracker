@@ -127,11 +127,30 @@ async function recordQbPayment(
   return res.json();
 }
 
+// Look up a shop's logo by their owner email. The webhook has no
+// authenticated client, so we use the service-role client we already
+// hold. Returns null when the shop has no logo or the lookup errors —
+// callers fall through to the InkTracker drop logo.
+async function lookupShopLogoUrl(supabase: any, shopOwnerEmail: string): Promise<string | null> {
+  if (!shopOwnerEmail) return null;
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("logo_url")
+      .eq("email", shopOwnerEmail)
+      .maybeSingle();
+    return data?.logo_url || null;
+  } catch {
+    return null;
+  }
+}
+
 async function sendOwnerNotification(quote: any, amountPaid: number, isDeposit: boolean) {
   if (!RESEND_API_KEY || !quote?.shop_owner) return;
 
   const subject = `Payment Received — Quote #${quote.quote_id}`;
   const paymentType = isDeposit ? "Deposit" : "Full Payment";
+  const shopLogoUrl = await lookupShopLogoUrl(serviceClient(), quote.shop_owner);
 
   const rowStyle = `padding:10px 0;border-bottom:1px solid ${EMAIL_HAIRLINE};font-size:14px;`;
   const labelStyle = `color:${EMAIL_MUTED};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;`;
@@ -156,6 +175,7 @@ async function sendOwnerNotification(quote: any, amountPaid: number, isDeposit: 
     shopName: "Payment Confirmed",
     subhead: "Stripe-verified",
     contentHtml: bodyHtml,
+    logoUrl: shopLogoUrl,
   });
 
   await fetch("https://api.resend.com/emails", {
@@ -172,6 +192,8 @@ async function sendCustomerConfirmation(quote: any, amountPaid: number, isDeposi
   const subject = isDeposit
     ? `Deposit Received — ${shopName} Order #${quote.quote_id}`
     : `Payment Confirmed — ${shopName} Order #${quote.quote_id}`;
+
+  const shopLogoUrl = await lookupShopLogoUrl(serviceClient(), quote.shop_owner);
 
   const rowStyle = `padding:10px 0;border-bottom:1px solid ${EMAIL_HAIRLINE};font-size:14px;`;
   const labelStyle = `color:${EMAIL_MUTED};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;`;
@@ -201,6 +223,7 @@ async function sendCustomerConfirmation(quote: any, amountPaid: number, isDeposi
     subhead: isDeposit ? "Deposit Received" : "Payment Confirmed",
     contentHtml: bodyHtml,
     footerHtml: `Sent on behalf of ${shopName}.`,
+    logoUrl: shopLogoUrl,
   });
 
   await fetch("https://api.resend.com/emails", {

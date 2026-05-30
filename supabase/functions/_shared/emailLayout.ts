@@ -41,11 +41,22 @@ export interface EmailLayoutOptions {
   subhead?: string;       // optional smaller text under the shop name
   contentHtml: string;    // the body — caller-built HTML
   footerHtml?: string;    // optional extra footer text above the powered-by line
+  logoUrl?: string;       // override the header logo (shop emails pass the
+                          // shop's logo_url; defaults to the InkTracker drop)
 }
+
+// Google-Fonts import so Anton + Inter render where supported (Apple
+// Mail, iOS Mail, most webmails). Outlook desktop / some Gmail contexts
+// strip <style>; for those, the inline `font-family` chains below fall
+// through to Impact/Arial Narrow (display) and -apple-system/Helvetica
+// (body) — closest web-safe approximations of the brand fonts.
+const FONT_IMPORT_BLOCK = `<style type="text/css">
+  @import url('https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap');
+</style>`;
 
 /**
  * Render the full email body HTML. Caller provides the inner content;
- * this function adds the header (drop logo + shop name), surrounding
+ * this function adds the header (logo + shop name), surrounding
  * white card with hairline border, and the powered-by footer.
  */
 export function renderEmailLayout({
@@ -53,24 +64,27 @@ export function renderEmailLayout({
   subhead,
   contentHtml,
   footerHtml,
+  logoUrl,
 }: EmailLayoutOptions): string {
   const safeShop = (shopName || "InkTracker").replace(/[<>]/g, "");
   const safeSubhead = subhead ? subhead.replace(/[<>]/g, "") : "";
+  const headerLogo = logoUrl && /^https?:\/\//.test(logoUrl) ? logoUrl : EMAIL_LOGO_URL;
 
   return `
+${FONT_IMPORT_BLOCK}
 <div style="background-color:${EMAIL_BG_SOFT};padding:24px 16px;margin:0;font-family:${BODY_FONT};">
   <div style="max-width:560px;margin:0 auto;background-color:#ffffff;border:1px solid ${EMAIL_HAIRLINE};">
 
-    <!-- Header — forest green bar with the drop logo and the shop name. -->
+    <!-- Header — forest green bar with the logo and the shop name. -->
     <div style="background-color:${EMAIL_FOREST_DARK};padding:24px 28px;text-align:left;">
       <table role="presentation" style="border-collapse:collapse;width:100%;">
         <tr>
-          <td style="vertical-align:middle;width:44px;padding-right:14px;">
-            <img src="${EMAIL_LOGO_URL}" alt="" width="36" height="36" style="display:block;border:0;outline:none;text-decoration:none;" />
+          <td style="vertical-align:middle;width:52px;padding-right:14px;">
+            <img src="${headerLogo}" alt="" width="44" height="44" style="display:block;border:0;outline:none;text-decoration:none;max-width:44px;max-height:44px;object-fit:contain;" />
           </td>
           <td style="vertical-align:middle;">
             <div style="color:#ffffff;font-family:${DISPLAY_FONT};font-size:22px;line-height:1.1;letter-spacing:0.04em;text-transform:uppercase;font-weight:700;">${safeShop}</div>
-            ${safeSubhead ? `<div style="color:rgba(255,255,255,0.7);font-size:12px;line-height:1.4;margin-top:4px;letter-spacing:0.04em;text-transform:uppercase;">${safeSubhead}</div>` : ""}
+            ${safeSubhead ? `<div style="color:rgba(255,255,255,0.7);font-size:12px;line-height:1.4;margin-top:4px;letter-spacing:0.04em;text-transform:uppercase;font-family:${BODY_FONT};">${safeSubhead}</div>` : ""}
           </td>
         </tr>
       </table>

@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
       paymentLink,
       approveLink,
       shopName,
+      shopLogoUrl,
       subject,
       body,
       brokerName,
@@ -114,13 +115,21 @@ Deno.serve(async (req) => {
           { status: 403, headers: CORS },
         );
       }
-      // Force shopName from the DB so one shop can't impersonate another.
+      // Force shopName + logo from the DB so one shop can't impersonate
+      // another. The wizard never sets shopLogoUrl; an attacker who did
+      // would get the DB value here anyway.
       const { data: shop } = await admin
         .from("shops")
         .select("shop_name")
         .eq("owner_email", quote.shop_owner)
         .maybeSingle();
       shopName = shop?.shop_name || "InkTracker";
+      const { data: ownerProfile } = await admin
+        .from("profiles")
+        .select("logo_url")
+        .eq("email", quote.shop_owner)
+        .maybeSingle();
+      shopLogoUrl = ownerProfile?.logo_url || null;
       // Force Reply-To / Bcc target to the legitimate shop owner.
       shopOwnerEmail = quote.shop_owner;
     }
@@ -151,6 +160,7 @@ Deno.serve(async (req) => {
       subhead: quoteId ? `Quote #${quoteId}` : "",
       contentHtml: bodyHtml,
       footerHtml: "Sales tax shown reflects jurisdictions where we are registered to collect. Buyer is responsible for any use tax owed to their home jurisdiction.",
+      logoUrl: shopLogoUrl,
     });
 
     if (!RESEND_API_KEY) {

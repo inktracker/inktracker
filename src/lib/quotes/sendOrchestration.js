@@ -163,6 +163,7 @@ export function nextStatusOnSend(currentStatus) {
  * @param {string} args.body
  * @param {string} args.paymentLink
  * @param {string} args.shopName
+ * @param {string} [args.shopLogoUrl] — shop's logo for the email header
  * @param {string | null} args.pdfBase64 — null if PDF gen failed
  */
 export function buildSendQuoteEmailRequest({
@@ -172,6 +173,7 @@ export function buildSendQuoteEmailRequest({
   body,
   paymentLink,
   shopName,
+  shopLogoUrl,
   pdfBase64,
 }) {
   return {
@@ -182,6 +184,7 @@ export function buildSendQuoteEmailRequest({
     paymentLink,
     approveLink: paymentLink,
     shopName: shopName || "Your Shop",
+    shopLogoUrl: shopLogoUrl || "",
     subject: taggedSubject,
     body,
     brokerName: quote?.broker_name ?? "",

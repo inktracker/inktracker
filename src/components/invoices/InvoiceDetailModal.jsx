@@ -434,6 +434,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             replyContext={{
               customerEmail: invoice.customer_email || customer?.email || "",
               shopName,
+              shopLogoUrl: logoUrl,
               refId: invoice.invoice_id,
               defaultSubject: `Invoice ${invoice.invoice_id}`,
             }}

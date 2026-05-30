@@ -353,6 +353,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         body,
         paymentLink,
         shopName,
+        shopLogoUrl: logoUrl,
         pdfBase64,
       });
       const { data: res, error: invokeErr } = await supabase.functions.invoke("sendQuoteEmail", {
