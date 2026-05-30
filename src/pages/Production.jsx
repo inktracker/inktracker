@@ -838,33 +838,29 @@ export default function Production() {
       )}
 
 
-      {/* Agenda side panel — opens when a day cell is clicked. Shows every
-          job in the works on that date: any order whose creation date
-          (o.date) is on or before the date AND whose due date (o.due_date)
-          is on or after the date. Sorted by creation date ascending — the
-          oldest in-progress jobs first.
-          Completed orders are included if they were completed ON or AFTER
-          the selected date (so a job completed yesterday still shows up on
-          a day it was actively being worked on last week).
+      {/* Agenda side panel — opens when a day cell is clicked. Shows only
+          the orders that have a chip on the day cell, so the agenda matches
+          the calendar visually. Previously this used a looser "in the works
+          on that date" filter (start ≤ date ≤ due/completed) which listed
+          7+ jobs on days where only one chip was visible — confusing.
+          The same fix shipped to src/pages/Calendar.jsx in PR #318; this
+          is the missed Production sibling.
           Empty day still opens the panel so a click never feels broken. */}
       {selectedDate && (() => {
-        const inWorks = orders.filter((o) => {
-          if (!o.date) return false;
-          const start = String(o.date).slice(0, 10);
-          // End date: completed_date wins for completed orders (the job
-          // was no longer "in the works" after completion), otherwise the
-          // due_date. Orders with no due_date are open-ended and considered
-          // in-the-works from creation onward.
-          const end =
-            o.status === "Completed" && o.completed_date
-              ? String(o.completed_date).slice(0, 10)
-              : o.due_date
-                ? String(o.due_date).slice(0, 10)
-                : null;
-          if (start > selectedDate) return false;
-          if (end && end < selectedDate) return false;
-          return true;
-        }).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const dayEvents = pointEvents[selectedDate] || [];
+        // Dedupe orders by id — an order may have multiple chips on a day
+        // (e.g. Order Goods + Due). Quotes intentionally skipped: clicking
+        // a quote chip already jumps to /Quotes inline, and the agenda
+        // body is order-shaped.
+        const seen = new Set();
+        const inWorks = [];
+        for (const ev of dayEvents) {
+          if (ev.kind === "quote") continue;
+          const subject = ev.order;
+          if (!subject?.id || seen.has(subject.id)) continue;
+          seen.add(subject.id);
+          inWorks.push(subject);
+        }
 
         const fmtDateLong = (s) => {
           const [yr, mo, dy] = String(s).split("-").map(Number);
@@ -887,7 +883,7 @@ export default function Production() {
                   <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">Agenda</div>
                   <h3 className="text-lg font-bold text-slate-900 mt-0.5">{fmtDateLong(selectedDate)}</h3>
                   <div className="text-xs text-slate-400 mt-0.5">
-                    {inWorks.length === 0 ? "No jobs in the works." : `${inWorks.length} ${inWorks.length === 1 ? "job" : "jobs"} in the works`}
+                    {inWorks.length === 0 ? "Nothing scheduled." : `${inWorks.length} ${inWorks.length === 1 ? "job" : "jobs"} scheduled`}
                   </div>
                 </div>
                 <button
@@ -903,7 +899,7 @@ export default function Production() {
               <div className="p-5">
                 {inWorks.length === 0 ? (
                   <div className="text-sm text-slate-400 italic text-center py-10">
-                    No active or completed jobs on this date.
+                    Nothing scheduled for this day.
                   </div>
                 ) : (
                   <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
