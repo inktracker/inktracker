@@ -12,6 +12,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { renderEmailLayout, EMAIL_INK } from "../_shared/emailLayout.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
@@ -28,18 +29,12 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
-function bodyToHtml(body: string): string {
-  // Preserve line breaks; light typographic frame.
+function bodyToHtml(body: string, shopName?: string): string {
   const safe = escapeHtml(body).replace(/\n/g, "<br>");
-  return `
-    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1f2937;">
-      <div style="font-size:15px;line-height:1.6;color:#334155;">${safe}</div>
-      <hr style="border:none;border-top:1px solid #e2e8f0;margin:28px 0 12px;">
-      <p style="color:#94a3b8;font-size:11px;margin:0;">
-        Sent via <a href="https://www.inktracker.app" style="color:#94a3b8;text-decoration:none;">InkTracker</a>
-      </p>
-    </div>
-  `;
+  return renderEmailLayout({
+    shopName: shopName || "InkTracker",
+    contentHtml: `<div style="color:${EMAIL_INK};font-size:15px;line-height:1.7;">${safe}</div>`,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -117,7 +112,7 @@ Deno.serve(async (req) => {
     const escapeQuotes = (s: string) => String(s || "").replace(/"/g, "");
     const fromHeader = `${escapeQuotes(shopName || "InkTracker")} <${SEND_FROM}>`;
 
-    const html = bodyToHtml(body);
+    const html = bodyToHtml(body, shopName);
 
     const results = await Promise.all(
       toList.map(async (recipient: string) => {

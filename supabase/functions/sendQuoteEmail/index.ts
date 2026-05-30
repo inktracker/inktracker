@@ -4,6 +4,13 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import {
+  renderEmailLayout,
+  renderEmailButton,
+  renderEmailHighlight,
+  EMAIL_INK,
+  EMAIL_MUTED,
+} from "../_shared/emailLayout.ts";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 // Default to the verified InkTracker domain (SPF/DKIM/DMARC set up there).
@@ -126,52 +133,25 @@ Deno.serve(async (req) => {
     const customBody = body ? body
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") : "";
 
-    const html = `
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:520px;margin:0 auto;padding:0;">
-        <!-- Header -->
-        <div style="background:#1e293b;padding:28px 32px;border-radius:16px 16px 0 0;text-align:center;">
-          <h1 style="color:#ffffff;font-size:20px;font-weight:700;margin:0;">${shopName || "Your Quote"}</h1>
-          <p style="color:#94a3b8;font-size:13px;margin:6px 0 0;">Quote #${quoteId || ""}</p>
-        </div>
-
-        <!-- Body -->
-        <div style="background:#ffffff;padding:32px;border-left:1px solid #e2e8f0;border-right:1px solid #e2e8f0;">
-          ${customBody ? `<p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px;">${customBody}</p>` : `
-            <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 8px;">Hi ${firstName},</p>
-            <p style="color:#475569;font-size:15px;line-height:1.6;margin:0 0 24px;">Your quote is ready for review. Click below to view, approve, or pay online.</p>
-          `}
-
-          <!-- Total -->
-          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;text-align:center;margin-bottom:28px;">
-            <p style="color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin:0 0 4px;">Quote Total</p>
-            <p style="color:#1e293b;font-size:32px;font-weight:800;margin:0;">$${total}</p>
-          </div>
-
-          <!-- CTA Button -->
-          ${(paymentLink || approveLink) ? `
-            <div style="text-align:center;margin-bottom:24px;">
-              <a href="${paymentLink || approveLink}"
-                style="display:inline-block;background:#4f46e5;color:#ffffff;font-size:15px;font-weight:600;padding:14px 36px;border-radius:12px;text-decoration:none;">
-                ${buttonLabel || "View Quote &amp; Pay Online"}
-              </a>
-            </div>
-          ` : ""}
-
-          ${brokerName ? `<p style="color:#94a3b8;font-size:13px;margin:0 0 16px;">Submitted by ${brokerName}${brokerEmail ? ` &middot; ${brokerEmail}` : ""}</p>` : ""}
-        </div>
-
-        <!-- Footer -->
-        <div style="background:#f8fafc;padding:20px 32px;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 16px 16px;">
-          <p style="color:#94a3b8;font-size:11px;line-height:1.5;margin:0 0 12px;">
-            Sales tax shown reflects jurisdictions where we are registered to collect.
-            Buyer is responsible for any use tax owed to their home jurisdiction.
-          </p>
-          <p style="color:#cbd5e1;font-size:11px;margin:0;">
-            Powered by <a href="https://www.inktracker.app" style="color:#94a3b8;text-decoration:none;">InkTracker</a>
-          </p>
-        </div>
-      </div>
+    const bodyHtml = `
+      ${customBody
+        ? `<p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 20px;">${customBody}</p>`
+        : `
+          <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 12px;">Hi ${firstName},</p>
+          <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 24px;">Your quote is ready for review. Click below to view, approve, or pay online.</p>
+        `
+      }
+      ${renderEmailHighlight("Quote Total", `$${total}`)}
+      ${(paymentLink || approveLink) ? renderEmailButton(buttonLabel || "View Quote & Pay Online", paymentLink || approveLink) : ""}
+      ${brokerName ? `<p style="color:${EMAIL_MUTED};font-size:13px;margin:8px 0 0;">Submitted by ${brokerName}${brokerEmail ? ` &middot; ${brokerEmail}` : ""}</p>` : ""}
     `;
+
+    const html = renderEmailLayout({
+      shopName: shopName || "Your Quote",
+      subhead: quoteId ? `Quote #${quoteId}` : "",
+      contentHtml: bodyHtml,
+      footerHtml: "Sales tax shown reflects jurisdictions where we are registered to collect. Buyer is responsible for any use tax owed to their home jurisdiction.",
+    });
 
     if (!RESEND_API_KEY) {
       console.log("[sendQuoteEmail] No RESEND_API_KEY set — email not sent");

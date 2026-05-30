@@ -12,6 +12,14 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { claimWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
+import {
+  renderEmailLayout,
+  renderEmailHighlight,
+  EMAIL_INK,
+  EMAIL_MUTED,
+  EMAIL_HAIRLINE,
+  EMAIL_FOREST,
+} from "../_shared/emailLayout.ts";
 
 const STRIPE_SECRET_KEY      = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const STRIPE_WEBHOOK_SECRET  = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
@@ -125,23 +133,30 @@ async function sendOwnerNotification(quote: any, amountPaid: number, isDeposit: 
   const subject = `Payment Received — Quote #${quote.quote_id}`;
   const paymentType = isDeposit ? "Deposit" : "Full Payment";
 
-  const html = `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-      <h2 style="color:#1e293b">Payment Confirmed!</h2>
-      <p style="color:#475569;line-height:1.6">
-        <strong>${quote.customer_name}</strong> has completed their payment.
-      </p>
-      <table style="width:100%;border-collapse:collapse;margin:20px 0">
-        <tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">Quote #</td><td style="padding:8px 0;font-weight:600;color:#1e293b">${quote.quote_id}</td></tr>
-        <tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">Customer</td><td style="padding:8px 0;font-weight:600;color:#1e293b">${quote.customer_name}</td></tr>
-        <tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">Type</td><td style="padding:8px 0;font-weight:600;color:#1e293b">${paymentType}</td></tr>
-        <tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">Amount</td><td style="padding:8px 0;font-weight:700;color:#4f46e5;font-size:18px">${fmtMoney(amountPaid)}</td></tr>
-        ${quote.due_date ? `<tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">In-Hands Date</td><td style="padding:8px 0;font-weight:600;color:#1e293b">${quote.due_date}</td></tr>` : ""}
-      </table>
-      ${isDeposit ? `<p style="color:#92400e;font-size:13px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px"><strong>Note:</strong> This was a deposit. The remaining balance is due upon completion.</p>` : ""}
-      <p style="color:#94a3b8;font-size:12px;margin-top:32px">Stripe-verified · Sent by InkTracker</p>
-    </div>
+  const rowStyle = `padding:10px 0;border-bottom:1px solid ${EMAIL_HAIRLINE};font-size:14px;`;
+  const labelStyle = `color:${EMAIL_MUTED};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;`;
+  const valueStyle = `color:${EMAIL_INK};font-weight:600;text-align:right;`;
+  const tableHtml = `
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td style="${rowStyle}${labelStyle}">Quote #</td><td style="${rowStyle}${valueStyle}">${quote.quote_id}</td></tr>
+      <tr><td style="${rowStyle}${labelStyle}">Customer</td><td style="${rowStyle}${valueStyle}">${quote.customer_name}</td></tr>
+      <tr><td style="${rowStyle}${labelStyle}">Type</td><td style="${rowStyle}${valueStyle}">${paymentType}</td></tr>
+      ${quote.due_date ? `<tr><td style="${rowStyle}${labelStyle}">In-Hands Date</td><td style="${rowStyle}${valueStyle}">${quote.due_date}</td></tr>` : ""}
+    </table>
   `;
+  const bodyHtml = `
+    <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 20px;">
+      <strong>${quote.customer_name}</strong> has completed their payment.
+    </p>
+    ${renderEmailHighlight("Amount Received", fmtMoney(amountPaid))}
+    ${tableHtml}
+    ${isDeposit ? `<p style="color:${EMAIL_INK};font-size:13px;background:#fffbeb;border:1px solid #fde68a;padding:12px;margin:0;"><strong>Note:</strong> This was a deposit. The remaining balance is due upon completion.</p>` : ""}
+  `;
+  const html = renderEmailLayout({
+    shopName: "Payment Confirmed",
+    subhead: "Stripe-verified",
+    contentHtml: bodyHtml,
+  });
 
   await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -158,30 +173,35 @@ async function sendCustomerConfirmation(quote: any, amountPaid: number, isDeposi
     ? `Deposit Received — ${shopName} Order #${quote.quote_id}`
     : `Payment Confirmed — ${shopName} Order #${quote.quote_id}`;
 
-  const html = `
-    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-      <h2 style="color:#1e293b">${isDeposit ? "Deposit Received!" : "Payment Confirmed!"}</h2>
-      <p style="color:#475569;line-height:1.6">
-        Hi ${quote.customer_name || "there"}, thank you for your payment to <strong>${shopName}</strong>.
-      </p>
-      <table style="width:100%;border-collapse:collapse;margin:20px 0">
-        <tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">Order #</td><td style="padding:8px 0;font-weight:600;color:#1e293b">${quote.quote_id}</td></tr>
-        <tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">Amount Paid</td><td style="padding:8px 0;font-weight:700;color:#4f46e5;font-size:18px">${fmtMoney(amountPaid)}</td></tr>
-        ${quote.due_date ? `<tr><td style="padding:8px 0;color:#94a3b8;font-size:14px">In-Hands Date</td><td style="padding:8px 0;font-weight:600;color:#1e293b">${quote.due_date}</td></tr>` : ""}
-      </table>
-      ${isDeposit
-        ? `<p style="color:#92400e;font-size:13px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px">
-             <strong>Deposit received.</strong> The remaining balance will be due upon completion.
-           </p>`
-        : `<p style="color:#065f46;font-size:13px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px">
-             <strong>Payment complete.</strong> We'll be in touch once your order is ready.
-           </p>`}
-      <p style="color:#475569;font-size:14px;margin-top:24px">
-        Questions? Reply to this email or contact ${shopName} directly.
-      </p>
-      <p style="color:#94a3b8;font-size:12px;margin-top:32px">Sent by InkTracker on behalf of ${shopName}</p>
-    </div>
+  const rowStyle = `padding:10px 0;border-bottom:1px solid ${EMAIL_HAIRLINE};font-size:14px;`;
+  const labelStyle = `color:${EMAIL_MUTED};font-size:12px;text-transform:uppercase;letter-spacing:0.08em;`;
+  const valueStyle = `color:${EMAIL_INK};font-weight:600;text-align:right;`;
+  const tableHtml = `
+    <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
+      <tr><td style="${rowStyle}${labelStyle}">Order #</td><td style="${rowStyle}${valueStyle}">${quote.quote_id}</td></tr>
+      ${quote.due_date ? `<tr><td style="${rowStyle}${labelStyle}">In-Hands Date</td><td style="${rowStyle}${valueStyle}">${quote.due_date}</td></tr>` : ""}
+    </table>
   `;
+  const noteHtml = isDeposit
+    ? `<p style="color:${EMAIL_INK};font-size:13px;background:#fffbeb;border:1px solid #fde68a;padding:12px;margin:0 0 16px;"><strong>Deposit received.</strong> The remaining balance will be due upon completion.</p>`
+    : `<p style="color:#065f46;font-size:13px;background:#f0fdf4;border:1px solid #bbf7d0;padding:12px;margin:0 0 16px;"><strong>Payment complete.</strong> We'll be in touch once your order is ready.</p>`;
+  const bodyHtml = `
+    <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 20px;">
+      Hi ${quote.customer_name || "there"}, thank you for your payment to <strong>${shopName}</strong>.
+    </p>
+    ${renderEmailHighlight("Amount Paid", fmtMoney(amountPaid))}
+    ${tableHtml}
+    ${noteHtml}
+    <p style="color:${EMAIL_MUTED};font-size:13px;margin:16px 0 0;">
+      Questions? Reply to this email or contact ${shopName} directly.
+    </p>
+  `;
+  const html = renderEmailLayout({
+    shopName,
+    subhead: isDeposit ? "Deposit Received" : "Payment Confirmed",
+    contentHtml: bodyHtml,
+    footerHtml: `Sent on behalf of ${shopName}.`,
+  });
 
   await fetch("https://api.resend.com/emails", {
     method: "POST",
