@@ -147,9 +147,14 @@ export function extractInvoiceIdsFromPayment(payment) {
 }
 
 /**
- * "Is this QB invoice fully paid?" — Balance === 0 means no remaining
- * amount due. We treat a missing Balance as "not paid" (conservative
- * — better to skip a webhook than to convert a quote prematurely).
+ * "Is this QB invoice fully paid?" — TotalAmt > 0 AND Balance === 0.
+ * A $0 invoice (draft with no line items, never sent) reads as
+ * Balance===0 alone but is NOT a paid invoice — we'd incorrectly
+ * convert the source quote to an order on a stray Update webhook.
+ * Conservative on every other edge: missing/non-finite Balance, missing
+ * TotalAmt, all read as "not paid".
+ * Matches isQbInvoicePaid in ../qbInvoice.js — both are the same
+ * predicate applied at different surfaces (write path + webhook).
  */
 export function isInvoiceFullyPaid(invoice) {
   if (!invoice) return false;
@@ -157,6 +162,7 @@ export function isInvoiceFullyPaid(invoice) {
   // would otherwise make a missing Balance falsely look fully paid.
   if (invoice.Balance === null || invoice.Balance === undefined) return false;
   const balance = Number(invoice.Balance);
-  if (!Number.isFinite(balance)) return false;
-  return balance === 0;
+  const total = Number(invoice.TotalAmt ?? 0);
+  if (!Number.isFinite(balance) || !Number.isFinite(total)) return false;
+  return total > 0 && balance === 0;
 }
