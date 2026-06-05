@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
+import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import {
   Users,
   Package,
@@ -600,6 +601,12 @@ export default function BrokerDashboard({ initialTab } = {}) {
   const [clients, setClients] = useState([]);
   const [orders, setOrders] = useState([]);
   const [shopAddons, setShopAddons] = useState(null);
+  // Per-technique addons. The broker editor mirrors the shop-side
+  // resolution — a DTG line shows DTG fees, Embroidery shows
+  // Embroidery fees, etc. Computed once from the shop's pricing_config
+  // so the legacy flat `shopAddons` stays usable for the blank-quote
+  // extras seed.
+  const [shopAddonsByScope, setShopAddonsByScope] = useState(null);
   const [shop, setShop] = useState(null);
   const [editorQuote, setEditorQuote] = useState(null);
   const [showEditor, setShowEditor] = useState(false);
@@ -664,20 +671,21 @@ export default function BrokerDashboard({ initialTab } = {}) {
         // { key, label, rate, mode } so flat vs percent shows
         // through to the toggle label.
         const cfg = shopRecord?.pricing_config;
-        if (cfg?.extras && Object.keys(cfg.extras).length > 0) {
-          const list = Object.keys(cfg.extras).map((key) => ({
-            key,
-            label: cfg.extraLabels?.[key] || key,
-            rate:  parseFloat(cfg.extras[key]) || 0,
-            mode:  cfg.extraModes?.[key] === "percent" ? "percent" : "flat",
-          }));
-          setShopAddons(list);
+        if (cfg && (cfg.extras || cfg.embroidery?.extras || cfg.custom_techniques)) {
+          const byScope = buildAddonsByScope(cfg);
+          setShopAddonsByScope(byScope);
+          // Legacy flat list: still used for the blank-quote extras
+          // seed in BrokerQuoteEditor (preserves the historical
+          // {tags: false, ...} init shape).
+          setShopAddons(byScope.root);
         } else if (shopRecord?.addons?.length) {
-          setShopAddons(shopRecord.addons.map(a => ({
+          const legacyRoot = shopRecord.addons.map(a => ({
             ...a,
             rate: parseFloat(a.rate) || 0,
             mode: a.mode === "percent" ? "percent" : "flat",
-          })));
+          }));
+          setShopAddons(legacyRoot);
+          setShopAddonsByScope({ root: legacyRoot, embroidery: [], custom: {} });
         }
         // Hydrate the assigned shop's pricing config into the module-level
         // `_pc`. Without this, getEnabledTechniques() in pricing.jsx
@@ -1426,6 +1434,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
           onClose={closeEditor}
           onAddCustomer={handleAddClient}
           shopAddons={shopAddons}
+          shopAddonsByScope={shopAddonsByScope}
           shop={shop}
           broker={user}
         />

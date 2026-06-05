@@ -11,6 +11,7 @@ import {
   uid,
   getLineExtras,
 } from "../shared/pricing";
+import { getAddonsForTechnique, pruneExtrasForTechnique } from "@/lib/pricing/extrasScopes";
 import BrokerPricePanel from "./BrokerPricePanel";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
@@ -369,7 +370,10 @@ export default function BrokerLineItemEditor({
   li,
   rushRate,
   extras,
-  addonsMeta = [],
+  // Per-technique addons map. Mirror of the shop-side LineItemEditor:
+  // built once in the parent (BrokerQuoteEditor) and resolved per
+  // line via getAddonsForTechnique.
+  addonsByScope = { root: [], embroidery: [], custom: {} },
   allLineItems = [],
   savedImprints = [],
   shopPricingConfig,
@@ -378,6 +382,8 @@ export default function BrokerLineItemEditor({
   onDuplicate,
   canRemove,
 }) {
+  const lineTechnique = (li.imprints || [])[0]?.technique;
+  const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
   // sizePrices stored in a ref (synchronous) so it survives every onChange call.
   const sizePricesRef = useRef(li.sizePrices || null);
   const onChange = (updated) => {
@@ -492,6 +498,17 @@ export default function BrokerLineItemEditor({
     const imprints = (li.imprints || []).map((im, i) =>
       i === idx ? { ...im, ...patch } : im
     );
+    // Mirror of LineItemEditor: prune extras when the active
+    // (imprint[0]) technique changes, so fees that don't exist on
+    // the new technique stop applying silently.
+    const oldTechnique = (li.imprints || [])[0]?.technique;
+    const newTechnique = imprints[0]?.technique;
+    if (idx === 0 && newTechnique !== oldTechnique) {
+      const lineExtras = getLineExtras(li, { extras });
+      const prunedExtras = pruneExtrasForTechnique(lineExtras, addonsByScope, newTechnique);
+      onChange({ ...li, imprints, extras: prunedExtras });
+      return;
+    }
     onChange({ ...li, imprints });
   }
 

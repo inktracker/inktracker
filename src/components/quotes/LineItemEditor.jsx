@@ -12,6 +12,7 @@ import {
   STANDARD_MARKUP,
   getLineExtras,
 } from "../shared/pricing";
+import { getAddonsForTechnique, pruneExtrasForTechnique } from "@/lib/pricing/extrasScopes";
 import PricePanel from "./PricePanel";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
@@ -521,7 +522,12 @@ export default function LineItemEditor({
   li,
   rushRate,
   extras,
-  addonsMeta = [],
+  // Per-technique addons map. Built once in the parent
+  // (QuoteEditorModal) from the shop's pricing_config via
+  // buildAddonsByScope. We resolve the active list per render based
+  // on the line's first imprint technique — different lines in the
+  // same quote can show different fee lists.
+  addonsByScope = { root: [], embroidery: [], custom: {} },
   allLineItems = [],
   savedImprints = [],
   onChange: _rawOnChange,
@@ -529,6 +535,10 @@ export default function LineItemEditor({
   onDuplicate,
   canRemove,
 }) {
+  // Resolve the addons list for this specific line's technique. Falls
+  // back to the root (Screen Print) scope for unknown or empty techniques.
+  const lineTechnique = (li.imprints || [])[0]?.technique;
+  const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
   // Per-line extras as of 2026-06-04. li.extras wins when set;
   // `extras` is the legacy quote-level fallback so old quotes
   // (which only have quote.extras and no li.extras yet) keep
@@ -742,6 +752,19 @@ export default function LineItemEditor({
     const imprints = (li.imprints || []).map((im, i) =>
       i === idx ? { ...normalizeImprint(im), ...patch } : normalizeImprint(im)
     );
+    // When the "active" technique (imprint[0]) changes, prune any
+    // toggled extras that aren't available in the new technique's
+    // addon list. Without this, a "Custom Tags" snapshot set while
+    // on Screen Print would keep charging $1.50/pc after the user
+    // switched to Embroidery — the user can't see the toggle to
+    // turn it off.
+    const oldTechnique = (li.imprints || [])[0]?.technique;
+    const newTechnique = imprints[0]?.technique;
+    if (idx === 0 && newTechnique !== oldTechnique) {
+      const prunedExtras = pruneExtrasForTechnique(lineExtras, addonsByScope, newTechnique);
+      onChange({ ...li, imprints, extras: prunedExtras });
+      return;
+    }
     onChange({ ...li, imprints });
   }
 
