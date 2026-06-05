@@ -1860,6 +1860,35 @@ Deno.serve(async (req) => {
         result = { pdf: base64, filename: `Invoice-${invId}.pdf` };
         break;
       }
+      case "lookupCustomerById": {
+        // Read-only QB query. Used by the Customer Duplicates UI
+        // after the operator merges two customers inside QuickBooks
+        // — we ping each side's qb_customer_id to figure out which
+        // one survived (Active=true) and which one is now Active=
+        // false (the losing record after a QB merge). Read-only by
+        // design so this surface can never accidentally damage QB.
+        const custId = params.customerId;
+        if (!custId) throw new Error("customerId required");
+        const custRes = await qbQuery(qbToken, realmId, `SELECT * FROM Customer WHERE Id = '${custId}'`);
+        const cust = custRes?.QueryResponse?.Customer?.[0];
+        if (!cust) {
+          result = { status: "notfound", qb_customer_id: custId };
+        } else if (cust.Active === false) {
+          result = {
+            status: "inactive",
+            qb_customer_id: custId,
+            displayName: cust.DisplayName,
+            mergedIntoId: cust.MergedIntoId ?? null,
+          };
+        } else {
+          result = {
+            status: "active",
+            qb_customer_id: custId,
+            displayName: cust.DisplayName,
+          };
+        }
+        break;
+      }
       case "deactivateCustomer": {
         const custId = params.customerId;
         if (!custId) throw new Error("customerId required");
