@@ -24,14 +24,31 @@ function makeSupabase(initialRows = []) {
           rows.set(row.key, { ...row });
           return Promise.resolve({ error: null });
         },
-        update(patch) {
-          return {
-            eq(_col, key) {
-              const existing = rows.get(key);
-              if (existing) rows.set(key, { ...existing, ...patch });
-              return Promise.resolve({ error: null });
+        update(patch, opts = {}) {
+          // Chainable WHERE-predicate builder so tests can exercise
+          // both the legacy `.update(p).eq("key", k)` pattern AND the
+          // new conditional-update path that chains `.eq().eq().lt()`
+          // for the stale-row reclaim race fix.
+          const preds = [];
+          const exec = () => {
+            let count = 0;
+            for (const [k, r] of rows.entries()) {
+              if (preds.every((p) => p(r))) {
+                rows.set(k, { ...r, ...patch });
+                count++;
+              }
+            }
+            return { error: null, count: opts.count === "exact" ? count : null };
+          };
+          const builder = {
+            eq(col, val) { preds.push((r) => r[col] === val); return builder; },
+            lt(col, val) { preds.push((r) => r[col] < val); return builder; },
+            gt(col, val) { preds.push((r) => r[col] > val); return builder; },
+            then(resolve, reject) {
+              try { resolve(exec()); } catch (e) { reject(e); }
             },
           };
+          return builder;
         },
         select() {
           return {
@@ -152,6 +169,96 @@ describe("withQbIdempotency — replay paths (QR1–QR4)", () => {
     expect(fn).not.toHaveBeenCalled();
     expect(result.outcome).toBe(IDEMPOTENCY_OUTCOMES.CACHED);
     expect(result.result).toBe(null);
+  });
+
+  it("QR4b — in_flight EXPIRED but another retry won the conditional UPDATE → signal IN_FLIGHT, do NOT run fn", async () => {
+    // Simulates the race the conditional UPDATE was added to close:
+    // two concurrent retries both see the same expired in-flight row.
+    // Whichever gets the UPDATE first wins (count=1, proceeds). The
+    // loser sees count=0 and must wait — running fn() would create a
+    // duplicate QB invoice.
+    const rows = new Map();
+    rows.set("k-race", {
+      key: "k-race",
+      shop_owner: ctx.shop_owner,
+      action: ctx.action,
+      status: "in_flight",
+      result: null,
+      // Already "stolen" by the winning retry: the in-flight row is
+      // FRESH, not expired. Our conditional UPDATE's `.lt(expires_at,
+      // now)` predicate sees no expired row → count=0 → IN_FLIGHT.
+      expires_at: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const sb = {
+      rows,
+      from() {
+        return {
+          insert(row) {
+            return Promise.resolve({ error: { code: "23505", message: "duplicate" } });
+          },
+          update(patch, opts = {}) {
+            const preds = [];
+            const exec = () => {
+              let count = 0;
+              for (const [k, r] of rows.entries()) {
+                if (preds.every((p) => p(r))) {
+                  rows.set(k, { ...r, ...patch });
+                  count++;
+                }
+              }
+              return { error: null, count: opts.count === "exact" ? count : null };
+            };
+            const b = {
+              eq(col, val) { preds.push((r) => r[col] === val); return b; },
+              lt(col, val) { preds.push((r) => r[col] < val); return b; },
+              gt(col, val) { preds.push((r) => r[col] > val); return b; },
+              then(resolve, reject) {
+                try { resolve(exec()); } catch (e) { reject(e); }
+              },
+            };
+            return b;
+          },
+          select() {
+            return {
+              eq(_col, key) {
+                return {
+                  maybeSingle: () => Promise.resolve({ data: rows.get(key) ?? null, error: null }),
+                };
+              },
+            };
+          },
+        };
+      },
+    };
+    const fn = vi.fn().mockResolvedValue({ qbInvoiceId: "WOULD_BE_DUPLICATE" });
+    // The JS-side stale check would have triggered if we read the row
+    // first — but the row is now fresh (just-replaced by the winner).
+    // Skip the JS check by passing a manually-stale row to readExisting
+    // is awkward; instead just verify the conditional UPDATE returning
+    // count=0 lands as IN_FLIGHT.
+    rows.set("k-race", { ...rows.get("k-race"), expires_at: new Date(Date.now() - 60_000).toISOString() });
+    // Now overwrite mid-flight: another retry replaced expires_at to fresh
+    // BETWEEN readExisting and our UPDATE. The conditional `.lt` on the
+    // actual (fresh) row excludes it, so count=0.
+    sb.from = () => ({
+      insert: () => Promise.resolve({ error: { code: "23505" } }),
+      update: () => {
+        const b = {
+          eq() { return b; },
+          lt() { return b; },
+          then(r) { r({ error: null, count: 0 }); },
+        };
+        return b;
+      },
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: rows.get("k-race"), error: null }),
+        }),
+      }),
+    });
+    const result = await withQbIdempotency(sb, "k-race", ctx, fn);
+    expect(fn).not.toHaveBeenCalled();
+    expect(result.outcome).toBe(IDEMPOTENCY_OUTCOMES.IN_FLIGHT);
   });
 
   it("QR4 — in_flight EXPIRED → treated as stale, lock re-acquired, fn runs", async () => {

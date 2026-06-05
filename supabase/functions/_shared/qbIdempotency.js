@@ -148,13 +148,32 @@ async function tryClaimKey(supabase, key, ctx) {
   }
 
   // Expired in-flight rows are stale (the original caller crashed
-  // before persisting). Replace with a fresh in_flight row and let
-  // the new caller proceed.
+  // before persisting). Conditionally REPLACE the row only if it's
+  // still in the same expired state — without the predicates two
+  // concurrent retries could both pass the JS check and both update,
+  // both proceed to call QB, both create. The `.eq + .lt` predicates
+  // collapse the race because Postgres serializes the WHERE-bound
+  // update. Whichever caller wins the update gets count=1; the loser
+  // sees count=0 and waits as in-flight.
   if (existing.status === "in_flight" && existing.expires_at && new Date(existing.expires_at).getTime() < Date.now()) {
-    await supabase.from("qb_idempotency")
-      .update({ status: "in_flight", expires_at: expiresAt, result: null, error_message: null })
-      .eq("key", key);
-    return { outcome: IDEMPOTENCY_OUTCOMES.EXECUTED };
+    const nowIso = new Date().toISOString();
+    const { error: updErr, count } = await supabase
+      .from("qb_idempotency")
+      .update(
+        { status: "in_flight", expires_at: expiresAt, result: null, error_message: null },
+        { count: "exact" },
+      )
+      .eq("key", key)
+      .eq("status", "in_flight")
+      .lt("expires_at", nowIso);
+    if (updErr) {
+      console.error("[qbIdempotency] stale-row reclaim update failed:", updErr.message);
+      return { outcome: IDEMPOTENCY_OUTCOMES.EXECUTED };
+    }
+    if ((count ?? 0) > 0) return { outcome: IDEMPOTENCY_OUTCOMES.EXECUTED };
+    // Lost the race — another retry got there first. Signal in-flight
+    // so the caller doesn't fire its own QB write.
+    return { outcome: IDEMPOTENCY_OUTCOMES.IN_FLIGHT };
   }
 
   if (existing.status === "in_flight") {

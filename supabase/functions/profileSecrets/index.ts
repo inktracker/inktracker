@@ -101,7 +101,8 @@ Deno.serve(async (req) => {
       // provider in { "qb", "gmail" }. Generates a fresh state UUID, stores
       // it on profile_secrets, returns it so the frontend can put it in
       // the OAuth authorize URL. The callback later finds the profile by
-      // matching this state.
+      // matching this state and (for QB) checks the issuance timestamp
+      // to enforce a 30-minute lifetime.
       const provider = body.provider;
       const stateKey =
         provider === "qb"    ? "qb_oauth_state" :
@@ -109,7 +110,11 @@ Deno.serve(async (req) => {
         null;
       if (!stateKey) return json({ error: `Unknown provider: ${provider}` }, 400);
       const state = crypto.randomUUID();
-      await updateProfileSecrets(admin, profile.id, { [stateKey]: state });
+      // qb_oauth_state_at lets qbOAuthCallback reject expired states.
+      // gmail follows the same column convention but expiry isn't
+      // enforced there yet (separate audit pass).
+      const stampedAt = provider === "qb" ? { qb_oauth_state_at: new Date().toISOString() } : {};
+      await updateProfileSecrets(admin, profile.id, { [stateKey]: state, ...stampedAt });
       return json({ state });
     }
 

@@ -376,8 +376,10 @@ const buildQBCustomerBody = sharedBuildQBCustomerBody;
 async function updateQBCustomer(token: string, realmId: string, qbId: string, customer: any) {
   const displayName = buildQBDisplayName(customer);
 
-  // Fetch current SyncToken (required for QB updates)
-  const existing = await qbQuery(token, realmId, `SELECT Id, SyncToken FROM Customer WHERE Id = '${qbId}'`);
+  // Fetch current SyncToken (required for QB updates). Escape qbId
+  // even though it normally arrives as digits from QB — defense in
+  // depth in case a malformed id ever slips into the column.
+  const existing = await qbQuery(token, realmId, `SELECT Id, SyncToken FROM Customer WHERE Id = '${escapeQbStringLiteral(qbId)}'`);
   const current = existing?.QueryResponse?.Customer?.[0];
   if (!current) return qbId;
 
@@ -552,7 +554,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // 3. Check QB customer's tax status
   let isTaxExempt = !!customer?.tax_exempt;
   try {
-    const qbCustData = await qbQuery(token, realmId, `SELECT * FROM Customer WHERE Id = '${qbCustomerId}'`);
+    const qbCustData = await qbQuery(token, realmId, `SELECT * FROM Customer WHERE Id = '${escapeQbStringLiteral(qbCustomerId)}'`);
     const qbCust = qbCustData?.QueryResponse?.Customer?.[0];
     if (qbCust?.Taxable === false) isTaxExempt = true;
     console.error(`[createInvoice] QB customer ${qbCustomerId} Taxable=${qbCust?.Taxable}, isTaxExempt=${isTaxExempt}`);
@@ -605,7 +607,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     //   (b) hand the SyncToken to a subsequent update.
     let existingInv: any = null;
     try {
-      const existing = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
+      const existing = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(qbInvoiceId)}'`);
       existingInv = existing?.QueryResponse?.Invoice?.[0] ?? null;
     } catch (e) {
       console.error(`[createInvoice] Could not fetch existing QB invoice ${qbInvoiceId}:`, (e as Error)?.message);
@@ -787,7 +789,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 
   // Re-read the invoice to ensure we have the final AST-computed tax/total
   try {
-    const re = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
+    const re = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(qbInvoiceId)}'`);
     const fetched = re?.QueryResponse?.Invoice?.[0];
     if (fetched) qbInvoiceFinal = fetched;
   } catch (e) {
@@ -1363,7 +1365,7 @@ async function handleRefreshInvoice(
   }
 
   // Fetch fresh state from QB.
-  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
+  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(qbInvoiceId)}'`);
   const freshInvoice = resp?.QueryResponse?.Invoice?.[0] || null;
   if (!freshInvoice) {
     return {
@@ -1573,7 +1575,7 @@ async function handleRecordPayment(
 
   // Pull current QB state — both for the idempotency guard and for the
   // CustomerRef we need to attach to the Payment row.
-  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
+  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(qbInvoiceId)}'`);
   const freshInvoice = resp?.QueryResponse?.Invoice?.[0] || null;
   if (!freshInvoice) {
     return {
@@ -1760,6 +1762,14 @@ Deno.serve(async (req) => {
       .eq("auth_id", user.id)
       .maybeSingle();
     const shopOwnerEmail = shopProfile?.shop_owner || shopProfile?.email || user.email || "";
+    // Fail closed if we couldn't derive a tenant scope. An empty string
+    // would still find no rows in practice today, but anyone refactoring
+    // a downstream `.eq("shop_owner", shopOwnerEmail)` into a partial
+    // match would suddenly match all rows where shop_owner is empty.
+    // 401 is the safest answer — caller should never reach this branch.
+    if (!shopOwnerEmail) {
+      return Response.json({ error: "Unable to derive tenant scope" }, { status: 401, headers: CORS });
+    }
 
     let result: any;
     switch (action) {
@@ -1869,7 +1879,7 @@ Deno.serve(async (req) => {
         // design so this surface can never accidentally damage QB.
         const custId = params.customerId;
         if (!custId) throw new Error("customerId required");
-        const custRes = await qbQuery(qbToken, realmId, `SELECT * FROM Customer WHERE Id = '${custId}'`);
+        const custRes = await qbQuery(qbToken, realmId, `SELECT * FROM Customer WHERE Id = '${escapeQbStringLiteral(custId)}'`);
         const cust = custRes?.QueryResponse?.Customer?.[0];
         if (!cust) {
           result = { status: "notfound", qb_customer_id: custId };
@@ -1897,17 +1907,18 @@ Deno.serve(async (req) => {
         // making one QB call per customer. One QB SELECT regardless
         // of list size. Read-only — no mutation, no QB-side write.
         const idsRaw = Array.isArray(params.customerIds) ? params.customerIds : [];
-        // Strip quotes defensively — QBO query language uses single
-        // quotes as string delimiters. Any embedded apostrophe in an
-        // ID would break the IN clause.
+        // Use escapeQbStringLiteral on each ID — QBO query language
+        // uses single quotes as string delimiters, and the helper
+        // doubles any quote per QBO BNF. Belt-and-suspenders with
+        // the local DB (which only ever stores numeric QB IDs).
         const ids = idsRaw
-          .map((v: unknown) => String(v ?? "").replace(/['"\\]/g, "").trim())
+          .map((v: unknown) => String(v ?? "").trim())
           .filter((s: string) => s.length > 0);
         if (ids.length === 0) {
           result = { inactive: [] };
           break;
         }
-        const idList = ids.map((id: string) => `'${id}'`).join(",");
+        const idList = ids.map((id: string) => `'${escapeQbStringLiteral(id)}'`).join(",");
         const r = await qbQuery(
           qbToken,
           realmId,
@@ -1926,7 +1937,7 @@ Deno.serve(async (req) => {
       case "deactivateCustomer": {
         const custId = params.customerId;
         if (!custId) throw new Error("customerId required");
-        const custRes = await qbQuery(qbToken, realmId, `SELECT * FROM Customer WHERE Id = '${custId}'`);
+        const custRes = await qbQuery(qbToken, realmId, `SELECT * FROM Customer WHERE Id = '${escapeQbStringLiteral(custId)}'`);
         const cust = custRes?.QueryResponse?.Customer?.[0];
         if (cust) {
           await qbUpdate(qbToken, realmId, "customer", {

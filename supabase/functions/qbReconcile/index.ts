@@ -37,6 +37,7 @@ import {
   buildRefreshedTokenFields,
 } from "../_shared/connectionLogic.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
+import { escapeQbStringLiteral } from "../_shared/qbInvoice.js";
 import { logEvent } from "../_shared/qbAudit.js";
 import {
   classifyQuoteDrift,
@@ -65,6 +66,19 @@ const QB_BASE          = "https://quickbooks.api.intuit.com/v3/company";
 const CRON_SECRET      = Deno.env.get("CRON_SECRET") ?? "";
 const SUPABASE_URL     = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_KEY     = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// Constant-time string compare. Used for the CRON_SECRET bearer
+// check below — `!==` short-circuits on the first mismatched byte
+// and leaks character-position timing under a high-resolution clock.
+// The secret is high-entropy and Vercel rate-limits, so the practical
+// risk is near-zero, but the standard mitigation is essentially free.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return mismatch === 0;
+}
 
 // ── Token loading (same shape as qbSync/qbWebhook) ──────────────────
 
@@ -249,7 +263,7 @@ async function reconcileCascadeQuote(
   quote: any,
   shopOwner: string,
 ) {
-  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${quote.qb_invoice_id}'`);
+  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(quote.qb_invoice_id)}'`);
   const freshInvoice = resp?.QueryResponse?.Invoice?.[0] || null;
   if (!isInvoiceFullyPaid(freshInvoice)) {
     return { kind: "cascade-skip", reason: "not paid in QB", qb_invoice_id: quote.qb_invoice_id };
@@ -312,7 +326,7 @@ async function reconcileCascadeInvoice(
   invoice: any,
   shopOwner: string,
 ) {
-  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${invoice.qb_invoice_id}'`);
+  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(invoice.qb_invoice_id)}'`);
   const freshInvoice = resp?.QueryResponse?.Invoice?.[0] || null;
   if (!isInvoiceFullyPaid(freshInvoice)) {
     return { kind: "cascade-invoice-skip", reason: "not paid in QB", qb_invoice_id: invoice.qb_invoice_id };
@@ -340,7 +354,7 @@ async function reconcileOneQuote(
   shopOwner: string,
 ) {
   // Pull current QB state.
-  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${quote.qb_invoice_id}'`);
+  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(quote.qb_invoice_id)}'`);
   const freshInvoice = resp?.QueryResponse?.Invoice?.[0] || null;
 
   const classification = classifyQuoteDrift(freshInvoice, quote);
@@ -466,9 +480,11 @@ Deno.serve(async (req) => {
   }
 
   // CRON_SECRET gate. Without this, the function is a public
-  // unauthenticated DB writer.
+  // unauthenticated DB writer. Use a timing-safe compare so the
+  // header bytewise short-circuit can't leak character-position
+  // timing (defense in depth — the secret is high-entropy anyway).
   const authHeader = req.headers.get("authorization") || "";
-  if (!CRON_SECRET || authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!CRON_SECRET || !timingSafeEqual(authHeader, `Bearer ${CRON_SECRET}`)) {
     return new Response("unauthorized", { status: 401 });
   }
 

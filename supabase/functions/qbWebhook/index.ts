@@ -8,7 +8,7 @@
 // Deploy: npx supabase functions deploy qbWebhook --no-verify-jwt
 
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
-import { claimWebhookEvent, extractQbEventId } from "../_shared/webhookIdempotency.js";
+import { claimWebhookEventDetailed, CLAIM_OUTCOMES, extractQbEventId } from "../_shared/webhookIdempotency.js";
 import { logEvent } from "../_shared/qbAudit.js";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
 import {
@@ -383,11 +383,22 @@ Deno.serve(async (req) => {
     // failures; processing notifications twice would over-sync data
     // (e.g. duplicate quote→order conversions). Tests CW1–CW6 +
     // WQ1–WQ5 in _shared/__tests__/webhookIdempotency.test.js.
+    //
+    // We use the DETAILED variant so a transient DB error returns 503
+    // (QB retries with exponential backoff) instead of 200 (QB treats
+    // as delivered and never retries). Pre-detailed behavior silently
+    // dropped events when processed_webhook_events was briefly
+    // unhealthy — same class of "everything looks fine, no events
+    // arrive" bug as a missing webhook signing key.
     const dedupId = extractQbEventId(body);
-    const isFirstDelivery = await claimWebhookEvent(supabase, "qb", dedupId, body);
-    if (!isFirstDelivery) {
+    const claim = await claimWebhookEventDetailed(supabase, "qb", dedupId, body);
+    if (claim.status === CLAIM_OUTCOMES.DUPLICATE) {
       console.log(`[qbWebhook] Duplicate event ${dedupId} — skipping`);
       return new Response("ok", { status: 200, headers: CORS });
+    }
+    if (claim.status === CLAIM_OUTCOMES.ERROR) {
+      console.error(`[qbWebhook] DB error during idempotency claim ${dedupId} — returning 503 so QB retries`);
+      return new Response("idempotency store unavailable", { status: 503, headers: CORS });
     }
 
     await Promise.all(notifications.map((n: any) => processNotification(supabase, n)));
