@@ -2596,7 +2596,7 @@ function PricingConfigSection({ user }) {
             label="Standard turnaround days"
             className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
           />
-          <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">biz days</span>
+          <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">days</span>
         </div>
         <p className="text-[10px] text-slate-400 mt-1">Default due-date offset on new quotes. Anything sooner than this triggers the rush rate below.</p>
       </div>
@@ -2640,7 +2640,7 @@ function PricingConfigSection({ user }) {
                     label={`Rush tier ${idx + 1} max days`}
                     className="w-full text-xs border border-slate-200 rounded pl-3 pr-12 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                   />
-                  <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">biz days</span>
+                  <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">days</span>
                 </div>
                 <div className="relative">
                   <NumericInput
