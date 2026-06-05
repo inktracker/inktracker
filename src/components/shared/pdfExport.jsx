@@ -11,7 +11,8 @@ import {
   fmtMoney,
   getDisplayName,
   BROKER_MARKUP,
-  STANDARD_MARKUP
+  STANDARD_MARKUP,
+  getLineExtras,
 } from './pricing';
 import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
 
@@ -480,7 +481,11 @@ function renderLineItems(
     }
 
     const qty = getQty(li);
-    const r = getGroupPriceForPdf(li, rushRate, extras, isBroker, lineItems);
+    // Per-line extras win (new shape). The `extras` arg is treated as
+    // the quote-level legacy fallback — getLineExtras returns it when
+    // li.extras is absent (old quotes pre-2026-06-04).
+    const lineExtras = getLineExtras(li, { extras });
+    const r = getGroupPriceForPdf(li, rushRate, lineExtras, isBroker, lineItems);
     const activeSizes = SIZES.filter(
       (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
     );

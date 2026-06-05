@@ -28,8 +28,9 @@ export {
   normalizeExtraConfigEntry,
   resolveExtraRatePerPiece,
   snapshotExtraForQuote,
+  getLineExtras,
 } from "@/lib/pricing/extras";
-import { resolveExtraRatePerPiece as _resolveExtraRatePerPiece } from "@/lib/pricing/extras";
+import { resolveExtraRatePerPiece as _resolveExtraRatePerPiece, getLineExtras as _getLineExtras } from "@/lib/pricing/extras";
 
 export const EXTRA_RATES = {
   colorMatch: 1.0,
@@ -745,7 +746,7 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
       subtotal += override * qty;
       return;
     }
-    const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, markup, linkedQtyMap);
+    const r = calcLinkedLinePrice(li, q.rush_rate, _getLineExtras(li, q), markup, linkedQtyMap);
     if (r) {
       // Use ppp × qty so totals match the displayed average per-piece price
       subtotal += r.ppp * r.qty;
@@ -911,7 +912,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
         lineTotalForQb = override * qty;
         unitPriceForQb = override;
       } else {
-        const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
+        const r = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap);
         if (!r) return;
         lineTotalForQb = r.lineTotal;
         unitPriceForQb = qty > 0 ? r.lineTotal / qty : 0;

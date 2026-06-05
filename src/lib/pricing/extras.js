@@ -66,6 +66,30 @@ export function resolveExtraRatePerPiece(quoteValue, garmentCost) {
 }
 
 /**
+ * Per-line extras with quote-level fallback.
+ *
+ * Extras moved from quote.extras (one toggle set per quote) to
+ * li.extras (one set per line item) on 2026-06-04. Old quotes still
+ * carry quote.extras and no li.extras — those keep computing
+ * identically by falling through to the quote-level map.
+ *
+ *   new quote, line set up explicitly: li.extras = { tags: 1.5 } → use it
+ *   new quote, untouched line:         li.extras = {}            → no fees on this line
+ *   legacy quote pre-2026-06-04:       no li.extras, quote.extras = {...} → quote-level fallback
+ *
+ * The hasOwn check is load-bearing — distinguishes "explicitly empty
+ * (new line, no fees)" from "field never existed (old quote)".
+ *
+ * @param {object} li     line item
+ * @param {object} quote  the parent quote
+ * @returns {object}      extras map ready for resolveExtraRatePerPiece
+ */
+export function getLineExtras(li, quote) {
+  if (li && Object.prototype.hasOwnProperty.call(li, "extras") && li.extras) return li.extras;
+  return (quote && quote.extras) || {};
+}
+
+/**
  * Snapshot a shop-config entry onto a quote. The toggle UI calls
  * this when the user turns a fee on — the returned value is what
  * goes onto quote.extras[key].

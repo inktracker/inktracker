@@ -10,6 +10,7 @@ import {
   normalizeExtraConfigEntry,
   resolveExtraRatePerPiece,
   snapshotExtraForQuote,
+  getLineExtras,
 } from "../extras";
 
 describe("normalizeExtraConfigEntry — shop-side config normalization", () => {
@@ -101,6 +102,43 @@ describe("snapshotExtraForQuote — what the toggle UI writes to quote.extras", 
   it("zeroes a missing entry", () => {
     expect(snapshotExtraForQuote(null)).toBe(0);
     expect(snapshotExtraForQuote(undefined)).toBe(0);
+  });
+});
+
+describe("getLineExtras — per-line vs legacy quote-level fallback", () => {
+  it("uses li.extras when the line has its own (new quotes)", () => {
+    const li = { extras: { tags: 1.5 } };
+    const q  = { extras: { waterbased: 2 } };
+    expect(getLineExtras(li, q)).toEqual({ tags: 1.5 });
+  });
+
+  it("falls back to quote.extras when the line has no extras field (old quotes)", () => {
+    const li = { id: "li-1" };
+    const q  = { extras: { tags: 1.5 } };
+    expect(getLineExtras(li, q)).toEqual({ tags: 1.5 });
+  });
+
+  it("respects an EXPLICITLY empty li.extras — does NOT fall through to quote", () => {
+    // A fresh line on a new quote: user hasn't toggled any fees on
+    // this particular line. Falling through to quote.extras would
+    // wrongly apply quote-level legacy fees to the new line.
+    const li = { extras: {} };
+    const q  = { extras: { tags: 1.5 } };
+    expect(getLineExtras(li, q)).toEqual({});
+  });
+
+  it("returns {} when both line and quote have no extras", () => {
+    expect(getLineExtras({}, {})).toEqual({});
+    expect(getLineExtras(null, null)).toEqual({});
+    expect(getLineExtras(undefined, undefined)).toEqual({});
+  });
+
+  it("treats li.extras = null as 'never set' and falls back to quote (defensive)", () => {
+    // JSONB round-trips can sometimes nullify an empty object. Be
+    // conservative and fall back rather than mis-render zero fees.
+    const li = { extras: null };
+    const q  = { extras: { tags: 1.5 } };
+    expect(getLineExtras(li, q)).toEqual({ tags: 1.5 });
   });
 });
 

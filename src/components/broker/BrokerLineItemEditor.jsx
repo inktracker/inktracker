@@ -9,6 +9,7 @@ import {
   getShopPricingConfig,
   getEnabledTechniques,
   uid,
+  getLineExtras,
 } from "../shared/pricing";
 import BrokerPricePanel from "./BrokerPricePanel";
 import Icon from "../shared/Icon";
@@ -368,6 +369,7 @@ export default function BrokerLineItemEditor({
   li,
   rushRate,
   extras,
+  addonsMeta = [],
   allLineItems = [],
   savedImprints = [],
   shopPricingConfig,
@@ -932,10 +934,49 @@ export default function BrokerLineItemEditor({
               <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
                 Live Pricing Estimate
               </div>
+              {/* Per-line add-on toggles for brokers (post-2026-06-04). */}
+              {addonsMeta.length > 0 && (
+                <div className="mb-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">
+                    Add-ons (this line only)
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {addonsMeta.map(({ key, label, rate, mode }) => {
+                      const lineExtras = getLineExtras(li, { extras });
+                      const isOn = !!lineExtras[key];
+                      const isPercent = mode === "percent";
+                      const snapshot = isPercent
+                        ? { mode: "percent", rate: parseFloat(rate) || 0 }
+                        : (parseFloat(rate) || 0);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => onChange({
+                            extras: { ...lineExtras, [key]: isOn ? false : snapshot },
+                          })}
+                          className={`rounded-lg border px-2 py-1.5 text-left transition ${
+                            isOn ? "border-teal-600 bg-teal-50" : "border-slate-200 hover:border-slate-300 bg-white"
+                          }`}
+                        >
+                          <div className={`text-[11px] font-semibold leading-tight ${isOn ? "text-teal-700" : "text-slate-700"}`}>
+                            {label}
+                          </div>
+                          <div className="text-[10px] text-slate-400 leading-tight">
+                            {isPercent
+                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of garment`
+                              : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <BrokerPricePanel
                 li={li}
                 rushRate={rushRate}
-                extras={extras}
+                extras={getLineExtras(li, { extras })}
                 allLineItems={previewLineItems}
                 onChange={onChange}
                 sizePrices={(ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices || undefined}

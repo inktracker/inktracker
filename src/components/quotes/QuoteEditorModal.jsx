@@ -831,50 +831,11 @@ export default function QuoteEditorModal({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                Add-ons (per piece)
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {addonsMeta.map(({ key, label, rate, mode }) => {
-                  const isOn = !!q.extras[key];
-                  const isPercent = mode === "percent";
-                  // Toggle handler — snapshot a number for flat fees
-                  // (back-compat with the typeof === "number" checks
-                  // in the pricing engine), and the full {mode,rate}
-                  // object for percent so the engine knows to apply
-                  // it against the line's garment cost.
-                  const snapshot = isPercent
-                    ? { mode: "percent", rate: parseFloat(rate) || 0 }
-                    : (parseFloat(rate) || 0);
-                  return (
-                    <button
-                      key={key}
-                      onClick={() =>
-                        setQ({
-                          ...q,
-                          extras: { ...q.extras, [key]: isOn ? false : snapshot },
-                        })
-                      }
-                      className={`rounded-xl border-2 px-3 py-2 text-left transition ${
-                        isOn
-                          ? "border-teal-600 bg-teal-50"
-                          : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-white dark:bg-slate-900"
-                      }`}
-                    >
-                      <div className={`text-xs font-bold ${isOn ? "text-teal-700" : "text-slate-700"}`}>
-                        {label}
-                      </div>
-                      <div className="text-xs text-slate-400">
-                        {isPercent
-                          ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of garment`
-                          : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {/* Per-line add-ons. The quote-level toggle block that
+                used to live here was removed on 2026-06-04 — each
+                LineItemEditor now renders its own toggle group so a
+                fee can apply to one garment without inflating every
+                other line in the order. */}
           </div>
 
           <div className="space-y-4">
@@ -942,6 +903,7 @@ export default function QuoteEditorModal({
                 li={li}
                 rushRate={q.rush_rate}
                 extras={q.extras}
+                addonsMeta={addonsMeta}
                 allLineItems={q.line_items}
                 savedImprints={savedImprints}
                 onChange={(updated) => updateLineItem(idx, updated)}
