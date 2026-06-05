@@ -16,6 +16,8 @@ import {
   getStandardTurnaroundDays,
   getRushTurnaroundDays,
   getShopRushRate,
+  getRushTiers,
+  getRushRateForDaysOut,
 } from "../shared/pricing";
 import LineItemEditor from "./LineItemEditor";
 
@@ -619,29 +621,33 @@ export default function QuoteEditorModal({
                             (1000 * 60 * 60 * 24)
                         )
                       : null;
-                    // Anything sooner than the shop's standard
-                    // turnaround triggers Rush auto-apply. Previously
-                    // this was a hard-coded 7-day threshold.
-                    const isRush = diffDays !== null && diffDays < getStandardTurnaroundDays();
+                    // Variable rush: the rate is determined by the
+                    // shop's rushTiers + the days-out. Any change in
+                    // due date can move the rate to a different tier
+                    // (or to zero when standard).
+                    const autoRate = diffDays !== null
+                      ? getRushRateForDaysOut(diffDays)
+                      : q.rush_rate;
 
                     setQ({
                       ...q,
                       due_date: due,
-                      rush_rate: isRush ? getShopRushRate() : q.rush_rate,
+                      rush_rate: autoRate,
                     });
                   }}
                   className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
-                {q.due_date &&
-                  q.date &&
-                  Math.round(
-                    (new Date(q.due_date) - new Date(q.date)) /
-                      (1000 * 60 * 60 * 24)
-                  ) < getStandardTurnaroundDays() && (
+                {(() => {
+                  if (!q.due_date || !q.date) return null;
+                  const diff = Math.round((new Date(q.due_date) - new Date(q.date)) / (1000 * 60 * 60 * 24));
+                  const rate = getRushRateForDaysOut(diff);
+                  if (rate <= 0) return null;
+                  return (
                     <div className="text-xs text-orange-500 font-semibold mt-1">
-                      ⚡ Rush automatically applied (under {getStandardTurnaroundDays()} days)
+                      ⚡ Rush +{Math.round(rate * 100)}% (auto from tier table)
                     </div>
-                  )}
+                  );
+                })()}
               </div>
 
               <div>
@@ -758,40 +764,56 @@ export default function QuoteEditorModal({
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                 Turnaround
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {(() => {
-                  // Read fresh from the shop's config so the labels
-                  // and the rush rate the button applies stay in sync
-                  // with Account → Pricing.
-                  const stdDays  = getStandardTurnaroundDays();
-                  const rushDays = getRushTurnaroundDays();
-                  const rushRate = getShopRushRate();
-                  return [
-                    { val: 0,        label: "Standard",                              sub: `${stdDays} business days`,  daysOut: stdDays },
-                    { val: rushRate, label: `Rush +${Math.round(rushRate * 100)}%`,  sub: `${rushDays} business days`, daysOut: rushDays },
+                  // Build a button per tier — Standard at the loose
+                  // end, then one entry per configured rush tier
+                  // (sorted by tightest → loosest day count). Picking
+                  // a button slides the due date to that tier's
+                  // window and applies its rate. The actual rate that
+                  // gets charged at render time still comes from the
+                  // tier table via getRushRateForDaysOut, so the
+                  // operator can also slide the due date manually
+                  // and the rate follows.
+                  const stdDays = getStandardTurnaroundDays();
+                  const tiers = getRushTiers().slice().sort((a, b) => b.maxDays - a.maxDays); // loosest → tightest, render right-to-left tightening
+                  const opts = [
+                    { key: "std",       label: "Standard",                                          sub: `${stdDays} business days`,           daysOut: stdDays, rate: 0 },
                   ];
+                  for (const t of tiers) {
+                    // Pick a representative "days out" for the tier
+                    // that's one shorter than the cliff (so 'less than 5'
+                    // sets due to 4 days out).
+                    const repDays = Math.max(1, t.maxDays - 1);
+                    opts.push({
+                      key:   `tier-${t.maxDays}`,
+                      label: `Rush +${Math.round(t.rate * 100)}%`,
+                      sub:   `${repDays} business day${repDays === 1 ? "" : "s"}`,
+                      daysOut: repDays,
+                      rate:  t.rate,
+                    });
+                  }
+                  return opts;
                 })().map((opt) => (
                   <button
-                    key={opt.val}
+                    key={opt.key}
                     onClick={() => setQ({
                       ...q,
-                      rush_rate: opt.val,
-                      // Slide the due date to match the picked turnaround
-                      // window. Operators routinely changed the due
-                      // date by hand after this toggle anyway — doing
-                      // it for them removes one click and one
-                      // forgot-to-update bug.
+                      rush_rate: opt.rate,
+                      // Slide the due date to match the picked tier's
+                      // representative window. Operators were doing
+                      // this by hand after every toggle change.
                       due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
                     })}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
-                      q.rush_rate === opt.val
+                      Math.abs((q.rush_rate || 0) - opt.rate) < 0.0001
                         ? "border-teal-600 bg-teal-50"
                         : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-white dark:bg-slate-900"
                     }`}
                   >
                     <div
                       className={`text-sm font-bold ${
-                        q.rush_rate === opt.val
+                        Math.abs((q.rush_rate || 0) - opt.rate) < 0.0001
                           ? "text-teal-700"
                           : "text-slate-700"
                       }`}

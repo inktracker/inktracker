@@ -13,6 +13,8 @@ import {
   getStandardTurnaroundDays,
   getRushTurnaroundDays,
   getShopRushRate,
+  getRushTiers,
+  getRushRateForDaysOut,
 } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -462,27 +464,32 @@ export default function BrokerQuoteEditor({
                             (1000 * 60 * 60 * 24)
                         )
                       : null;
-                    // Anything sooner than the shop's standard
-                    // turnaround triggers Rush auto-apply.
-                    const isRush = diffDays !== null && diffDays < getStandardTurnaroundDays();
+                    // Variable rush: the rate comes from the shop's
+                    // rushTiers + the days-out. Sliding the due date
+                    // can move the rate to a different tier (or zero
+                    // when standard).
+                    const autoRate = diffDays !== null
+                      ? getRushRateForDaysOut(diffDays)
+                      : q.rush_rate;
                     setQ({
                       ...q,
                       due_date: due,
-                      rush_rate: isRush ? getShopRushRate() : q.rush_rate,
+                      rush_rate: autoRate,
                     });
                   }}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
-                {q.due_date &&
-                  q.date &&
-                  Math.round(
-                    (new Date(q.due_date) - new Date(q.date)) /
-                      (1000 * 60 * 60 * 24)
-                  ) < getStandardTurnaroundDays() && (
+                {(() => {
+                  if (!q.due_date || !q.date) return null;
+                  const diff = Math.round((new Date(q.due_date) - new Date(q.date)) / (1000 * 60 * 60 * 24));
+                  const rate = getRushRateForDaysOut(diff);
+                  if (rate <= 0) return null;
+                  return (
                     <div className="text-xs text-orange-500 font-semibold mt-1">
-                      ⚡ Rush automatically applied (under {getStandardTurnaroundDays()} days)
+                      ⚡ Rush +{Math.round(rate * 100)}% (auto from tier table)
                     </div>
-                  )}
+                  );
+                })()}
               </div>
             </div>
 
@@ -565,32 +572,41 @@ export default function BrokerQuoteEditor({
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
                 Turnaround
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {(() => {
-                  const stdDays  = getStandardTurnaroundDays();
-                  const rushDays = getRushTurnaroundDays();
-                  const rushRate = getShopRushRate();
-                  return [
-                    { val: 0,        label: "Standard",                              sub: `${stdDays} business days`,  daysOut: stdDays },
-                    { val: rushRate, label: `Rush +${Math.round(rushRate * 100)}%`,  sub: `${rushDays} business days`, daysOut: rushDays },
+                  const stdDays = getStandardTurnaroundDays();
+                  const tiers = getRushTiers().slice().sort((a, b) => b.maxDays - a.maxDays);
+                  const opts = [
+                    { key: "std", label: "Standard", sub: `${stdDays} business days`, daysOut: stdDays, rate: 0 },
                   ];
+                  for (const t of tiers) {
+                    const repDays = Math.max(1, t.maxDays - 1);
+                    opts.push({
+                      key: `tier-${t.maxDays}`,
+                      label: `Rush +${Math.round(t.rate * 100)}%`,
+                      sub:   `${repDays} business day${repDays === 1 ? "" : "s"}`,
+                      daysOut: repDays,
+                      rate: t.rate,
+                    });
+                  }
+                  return opts;
                 })().map((opt) => (
                   <button
-                    key={opt.val}
+                    key={opt.key}
                     onClick={() => setQ({
                       ...q,
-                      rush_rate: opt.val,
+                      rush_rate: opt.rate,
                       due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
                     })}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
-                      q.rush_rate === opt.val
+                      Math.abs((q.rush_rate || 0) - opt.rate) < 0.0001
                         ? "border-teal-600 bg-teal-50"
                         : "border-slate-200 hover:border-slate-300 bg-white"
                     }`}
                   >
                     <div
                       className={`text-sm font-bold ${
-                        q.rush_rate === opt.val
+                        Math.abs((q.rush_rate || 0) - opt.rate) < 0.0001
                           ? "text-teal-700"
                           : "text-slate-700"
                       }`}

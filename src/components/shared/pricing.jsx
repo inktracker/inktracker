@@ -142,11 +142,89 @@ export function getRushTurnaroundDays() {
  * with the historical 0.20 platform fallback so existing quote-modal
  * code that previously hard-coded 0.2 keeps producing the same
  * behavior for shops who never visited Account → Pricing.
+ *
+ * Kept for back-compat with the single-tier API. New consumers
+ * should prefer getRushRateForDaysOut(daysOut) which respects the
+ * shop's variable rush tier table.
  */
 export function getShopRushRate() {
   const v = Number(_pc?.rushRate);
   if (Number.isFinite(v) && v >= 0) return v;
   return 0.20;
+}
+
+/**
+ * Variable rush surcharge tiers. Each tier means:
+ *   "if the order is due in less than `maxDays` business days,
+ *    charge `rate` on top of the line subtotal."
+ *
+ * Tiers are returned sorted ascending by maxDays. The smallest
+ * matching tier wins — a 2-day job hits the tightest tier first
+ * (the highest rate), a 6-day job slides up to the looser tier.
+ *
+ * When the shop hasn't defined any tiers, we synthesize a single
+ * tier from the legacy {rushRate, rushTurnaroundDays} pair so
+ * existing quote behavior doesn't break for shops on the old
+ * single-rate model.
+ *
+ * Tiers above the shop's standard turnaround are dropped on read —
+ * "if due in less than 20 days" makes no sense when the shop's
+ * standard turnaround is 10 days, because anything that close
+ * would already qualify as standard.
+ *
+ * @returns {{ maxDays: number, rate: number }[]}
+ */
+export function getRushTiers() {
+  const raw = _pc?.rushTiers;
+  const std = getStandardTurnaroundDays();
+  let tiers = [];
+  if (Array.isArray(raw)) {
+    tiers = raw
+      .map((t) => ({
+        maxDays: Math.round(Number(t?.maxDays)),
+        rate: Number(t?.rate),
+      }))
+      .filter((t) =>
+        Number.isFinite(t.maxDays) && t.maxDays > 0 && t.maxDays <= std &&
+        Number.isFinite(t.rate) && t.rate >= 0
+      );
+  }
+  // Legacy single-rate fallback. Lets shops who haven't migrated to
+  // the tier table keep seeing rush surcharge on tight due dates.
+  if (tiers.length === 0) {
+    const legacyRate = Number(_pc?.rushRate);
+    if (Number.isFinite(legacyRate) && legacyRate > 0) {
+      const legacyMax = getRushTurnaroundDays();
+      tiers = [{ maxDays: legacyMax, rate: legacyRate }];
+    }
+  }
+  return tiers.sort((a, b) => a.maxDays - b.maxDays);
+}
+
+/**
+ * Look up the rush rate for an order that is `daysOut` business
+ * days from being due. Returns 0 (no rush) when daysOut is at or
+ * above the shop's standard turnaround, or when no tier covers
+ * that window.
+ *
+ * Picks the SMALLEST matching tier — tightest rush wins. A 2-day
+ * job under tiers [(5, 0.50), (8, 0.25)] gets 0.50, not 0.25.
+ *
+ * @param {number} daysOut  business days between today and due date
+ * @returns {number}        rate multiplier (0.20 = +20%); 0 = standard
+ */
+export function getRushRateForDaysOut(daysOut) {
+  // Explicit nullish guard — Number(null) coerces to 0, which would
+  // wrongly match the tightest tier as a "0-day" job.
+  if (daysOut === null || daysOut === undefined) return 0;
+  const d = Number(daysOut);
+  if (!Number.isFinite(d)) return 0;
+  if (d >= getStandardTurnaroundDays()) return 0;
+  const tiers = getRushTiers(); // already sorted ascending
+  for (const t of tiers) {
+    if (d < t.maxDays) return t.rate;
+  }
+  return 0;
 }
 
 // Minimum order quantity per garment — derived from the shop's first
