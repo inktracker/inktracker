@@ -22,6 +22,15 @@ export const ADDL_PRINT = {
   8: { 25: 4.85, 50: 4.12, 100: 3.7, 200: 3.51 },
 };
 
+// Re-exported here so existing callers that import from "@/components/shared/pricing"
+// don't have to know about the extracted helpers file.
+export {
+  normalizeExtraConfigEntry,
+  resolveExtraRatePerPiece,
+  snapshotExtraForQuote,
+} from "@/lib/pricing/extras";
+import { resolveExtraRatePerPiece as _resolveExtraRatePerPiece } from "@/lib/pricing/extras";
+
 export const EXTRA_RATES = {
   colorMatch: 1.0,
   difficultPrint: 0.5,
@@ -606,20 +615,18 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   // both tables (their key sets are disjoint — e.g. puffEmbroidery vs
   // flashCure) so whichever extra the user toggles on resolves
   // against the right rate.
+  //
+  // NOTE: per-piece resolution moved AFTER `flatCost` is known so
+  // percent-mode fees can apply against the line's garment cost.
+  // The merged config table is still built here so flat fees that
+  // need the shop-side rate (when quote.extras[k] === true rather
+  // than a snapshotted number) keep working.
   const hasEmbroidery = sorted.some((i) => (i.technique || "Screen Print") === "Embroidery");
   const hasScreenPrint = sorted.some((i) => (i.technique || "Screen Print") !== "Embroidery");
   const er = {
     ...(hasScreenPrint ? (_pc?.extras || EXTRA_RATES) : {}),
     ...(hasEmbroidery ? (_pc?.embroidery?.extras || {}) : {}),
   };
-  let extraPPP = 0;
-  Object.entries(extras || {}).forEach(([k, on]) => {
-    if (on) extraPPP += typeof on === "number" ? on : (er[k] || EXTRA_RATES[k] || 0);
-  });
-  const extraCost = Math.round(extraPPP * qty * 100) / 100;
-
-  // Per-piece print + extras cost (same for all sizes)
-  const printExtraPpp = qty > 0 ? Math.round((roundedPrintCost + extraCost) / qty * 100) / 100 : 0;
 
   // Garment cost per size — use actual per-size prices from API when available,
   // fall back to flat garmentCost × markup for all sizes.
@@ -627,6 +634,27 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   const hasSizePrices = Object.keys(sizePrices).length > 0;
   const flatCost = parseFloat(li.garmentCost) || 0;
   const flatMarkup = getMarkup(flatCost, isBroker);
+
+  // Now that flatCost is known, resolve per-piece extras dollars.
+  // resolveExtraRatePerPiece handles:
+  //   - number (legacy / flat snapshot)            → that many $/pc
+  //   - { mode:"percent", rate:N } (new)           → flatCost × N/100
+  //   - { mode:"flat",    rate:N }                 → N $/pc
+  //   - true (no snapshot, look up shop rate)      → use er[k]
+  let extraPPP = 0;
+  Object.entries(extras || {}).forEach(([k, on]) => {
+    if (!on) return;
+    if (on === true) {
+      // True-toggle (no snapshot) — fall back to shop's current rate.
+      extraPPP += Number(er[k] || EXTRA_RATES[k] || 0);
+      return;
+    }
+    extraPPP += _resolveExtraRatePerPiece(on, flatCost);
+  });
+  const extraCost = Math.round(extraPPP * qty * 100) / 100;
+
+  // Per-piece print + extras cost (same for all sizes)
+  const printExtraPpp = qty > 0 ? Math.round((roundedPrintCost + extraCost) / qty * 100) / 100 : 0;
 
   // Build per-piece price for each size and compute garment cost total
   const sizeBreakdown = {}; // { size: { qty, garmentPpp, totalPpp } }

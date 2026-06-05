@@ -657,8 +657,27 @@ export default function BrokerDashboard({ initialTab } = {}) {
           logo_url: shopProfile?.logo_url || shopRecord?.logo_url || "",
           owner_email: assignedShop || shopRecord?.owner_email || "",
         } : null);
-        if (shopRecord?.addons?.length) {
-          setShopAddons(shopRecord.addons.map(a => ({ ...a, rate: parseFloat(a.rate) || 0 })));
+        // Source of truth is the shop's pricing_config (extras +
+        // extraLabels + extraModes). The legacy shops.addons column
+        // is a fallback for early-vintage shops that never resaved
+        // their config. Either way the broker editor gets a list of
+        // { key, label, rate, mode } so flat vs percent shows
+        // through to the toggle label.
+        const cfg = shopRecord?.pricing_config;
+        if (cfg?.extras && Object.keys(cfg.extras).length > 0) {
+          const list = Object.keys(cfg.extras).map((key) => ({
+            key,
+            label: cfg.extraLabels?.[key] || key,
+            rate:  parseFloat(cfg.extras[key]) || 0,
+            mode:  cfg.extraModes?.[key] === "percent" ? "percent" : "flat",
+          }));
+          setShopAddons(list);
+        } else if (shopRecord?.addons?.length) {
+          setShopAddons(shopRecord.addons.map(a => ({
+            ...a,
+            rate: parseFloat(a.rate) || 0,
+            mode: a.mode === "percent" ? "percent" : "flat",
+          })));
         }
         // Hydrate the assigned shop's pricing config into the module-level
         // `_pc`. Without this, getEnabledTechniques() in pricing.jsx

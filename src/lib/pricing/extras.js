@@ -1,0 +1,87 @@
+// Per-piece "extra fees" helpers.
+//
+// Shape evolution:
+//   v1 — pricing_config.extras: { tags: 1.5, waterbased: 1 }
+//        Plain number = dollars per piece. No mode concept.
+//   v2 — pricing_config.extras: { tags: 1.5, waterbased: 5 }
+//        +  pricing_config.extraModes: { tags: "flat", waterbased: "percent" }
+//        The numeric value is the RATE in either dollars (flat) or
+//        percent points (percent). Mode lives in a parallel map so
+//        existing rows with no extraModes default to "flat" cleanly.
+//
+// Quote-snapshot shapes (on quote.extras[key] when toggled on):
+//   number                          → legacy / flat snapshot ($X per piece)
+//   { mode: "flat", rate: N }       → explicit flat (equivalent to N)
+//   { mode: "percent", rate: N }    → N% of the line's garment cost per piece
+//   false / null / undefined        → off
+
+/**
+ * Normalize a shop's extras + extraModes config for a single key.
+ * Always returns { mode, rate } with mode in {"flat","percent"}.
+ *
+ * @param {object|undefined} extras       pricing_config.extras
+ * @param {object|undefined} extraModes   pricing_config.extraModes
+ * @param {string} key
+ * @returns {{ mode: "flat"|"percent", rate: number }}
+ */
+export function normalizeExtraConfigEntry(extras, extraModes, key) {
+  const raw = extras?.[key];
+  const rate = Number.isFinite(Number(raw)) ? Number(raw) : 0;
+  const mode = extraModes?.[key] === "percent" ? "percent" : "flat";
+  return { mode, rate };
+}
+
+/**
+ * Resolve a quote.extras[key] value into a per-piece dollar amount.
+ *
+ *   off (false/null/0)           → 0
+ *   number                       → that many dollars per piece
+ *   { mode: "flat", rate: N }    → N dollars per piece
+ *   { mode: "percent", rate: N } → garmentCost × N / 100 per piece
+ *   anything else                → 0 (defensive)
+ *
+ * Percent mode multiplies against the line's garment cost — that's
+ * the field shops mean when they say "10% of garment." Per-size
+ * pricing variations don't apply because the snapshot is per line,
+ * not per size.
+ *
+ * @param {*} quoteValue   what was stored on quote.extras[key]
+ * @param {number} garmentCost   the line's per-piece garment cost
+ * @returns {number}
+ */
+export function resolveExtraRatePerPiece(quoteValue, garmentCost) {
+  if (!quoteValue) return 0;
+  if (typeof quoteValue === "number") return quoteValue;
+  if (typeof quoteValue === "object") {
+    const rate = Number(quoteValue.rate);
+    if (!Number.isFinite(rate)) return 0;
+    if (quoteValue.mode === "percent") {
+      const g = Number(garmentCost);
+      if (!Number.isFinite(g) || g <= 0) return 0;
+      return g * rate / 100;
+    }
+    return rate;
+  }
+  return 0;
+}
+
+/**
+ * Snapshot a shop-config entry onto a quote. The toggle UI calls
+ * this when the user turns a fee on — the returned value is what
+ * goes onto quote.extras[key].
+ *
+ * For flat fees we return the bare number so old code paths
+ * (typeof === "number") keep working unchanged. For percent we
+ * return the full object so the pricing engine knows how to apply
+ * it against garment cost later.
+ *
+ * @param {{ mode, rate }} entry  (the output of normalizeExtraConfigEntry)
+ * @returns {number|{mode:"percent", rate:number}}
+ */
+export function snapshotExtraForQuote(entry) {
+  if (!entry) return 0;
+  if (entry.mode === "percent") {
+    return { mode: "percent", rate: Number(entry.rate) || 0 };
+  }
+  return Number(entry.rate) || 0;
+}

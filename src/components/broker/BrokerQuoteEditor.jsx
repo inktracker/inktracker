@@ -608,15 +608,19 @@ export default function BrokerQuoteEditor({
                 Add-ons (per piece)
               </label>
               <div className="grid grid-cols-2 gap-2">
-                {addonsMeta.map(({ key, label, rate }) => {
+                {addonsMeta.map(({ key, label, rate, mode }) => {
                   const isOn = !!q.extras[key];
+                  const isPercent = mode === "percent";
+                  const snapshot = isPercent
+                    ? { mode: "percent", rate: parseFloat(rate) || 0 }
+                    : (parseFloat(rate) || 0);
                   return (
                     <button
                       key={key}
                       onClick={() =>
                         setQ({
                           ...q,
-                          extras: { ...q.extras, [key]: isOn ? false : rate },
+                          extras: { ...q.extras, [key]: isOn ? false : snapshot },
                         })
                       }
                       className={`rounded-xl border-2 px-3 py-2 text-left transition ${
@@ -632,7 +636,11 @@ export default function BrokerQuoteEditor({
                       >
                         {label}
                       </div>
-                      <div className="text-xs text-slate-400">+${(parseFloat(rate) || 0).toFixed(2)}/pc</div>
+                      <div className="text-xs text-slate-400">
+                        {isPercent
+                          ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of garment`
+                          : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}
+                      </div>
                     </button>
                   );
                 })}
