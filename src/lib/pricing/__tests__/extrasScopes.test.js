@@ -11,6 +11,7 @@ import {
   sliceToAddons,
   buildAddonsByScope,
   getAddonsForTechnique,
+  pruneExtrasForTechnique,
 } from "../extrasScopes";
 
 describe("sliceToAddons", () => {
@@ -186,5 +187,79 @@ describe("getAddonsForTechnique", () => {
     };
     expect(getAddonsForTechnique(tricky, "embroidery")).toBe(tricky.custom.embroidery);
     expect(getAddonsForTechnique(tricky, "Embroidery")).toBe(tricky.embroidery);
+  });
+});
+
+describe("pruneExtrasForTechnique", () => {
+  const byScope = {
+    root: [
+      { key: "tags", label: "Tags", rate: 1.5, mode: "flat" },
+      { key: "colorMatch", label: "Color Match", rate: 1, mode: "flat" },
+    ],
+    embroidery: [{ key: "puff", label: "Puff", rate: 2, mode: "flat" }],
+    custom: { DTG: [{ key: "rush", label: "Rush", rate: 3, mode: "flat" }] },
+  };
+
+  it("drops keys not present in the new technique's addon list", () => {
+    const extras = { tags: 1.5, colorMatch: 1 };
+    // Switching from Screen Print (root) → Embroidery should drop
+    // tags + colorMatch because neither exists in the embroidery scope.
+    expect(pruneExtrasForTechnique(extras, byScope, "Embroidery")).toEqual({});
+  });
+
+  it("keeps keys that exist in the new technique's addon list", () => {
+    const extras = { tags: 1.5, colorMatch: 1 };
+    // Switching back to Screen Print → both keys allowed.
+    expect(pruneExtrasForTechnique(extras, byScope, "Screen Print")).toEqual({
+      tags: 1.5,
+      colorMatch: 1,
+    });
+  });
+
+  it("keeps overlapping keys when two scopes share a name", () => {
+    const overlap = {
+      ...byScope,
+      embroidery: [{ key: "tags", label: "Embroidered Tags", rate: 2, mode: "flat" }],
+    };
+    const extras = { tags: 1.5, colorMatch: 1 };
+    // The 'tags' key happens to exist in BOTH scopes (different
+    // labels / rates). Keep the snapshot — engine reads the rate
+    // from li.extras, not from the addon meta.
+    expect(pruneExtrasForTechnique(extras, overlap, "Embroidery")).toEqual({ tags: 1.5 });
+  });
+
+  it("preserves explicit-false (turned-off) entries when the key is in scope", () => {
+    // The toggle UI sets value=false to mean "explicitly off". We
+    // keep it so engine math stays a no-op rather than ambiguous.
+    expect(pruneExtrasForTechnique({ tags: false }, byScope, "Screen Print")).toEqual({ tags: false });
+  });
+
+  it("returns {} when extras is null/undefined/non-object", () => {
+    expect(pruneExtrasForTechnique(null, byScope, "Embroidery")).toEqual({});
+    expect(pruneExtrasForTechnique(undefined, byScope, "Embroidery")).toEqual({});
+    expect(pruneExtrasForTechnique("nope", byScope, "Embroidery")).toEqual({});
+  });
+
+  it("returns {} when byScope is null (defensive)", () => {
+    expect(pruneExtrasForTechnique({ tags: 1.5 }, null, "Screen Print")).toEqual({});
+  });
+
+  it("falls back to root scope for unknown technique names", () => {
+    const extras = { tags: 1.5, puff: false };
+    // 'VinylTransfer' is not a registered scope → root applies →
+    // keep tags (in root), drop puff (not in root).
+    expect(pruneExtrasForTechnique(extras, byScope, "VinylTransfer")).toEqual({ tags: 1.5 });
+  });
+
+  it("preserves percent-mode object snapshots when allowed", () => {
+    const extras = { tags: { mode: "percent", rate: 10 } };
+    expect(pruneExtrasForTechnique(extras, byScope, "Screen Print")).toEqual({
+      tags: { mode: "percent", rate: 10 },
+    });
+  });
+
+  it("custom technique scope: keeps that scope's keys, drops everything else", () => {
+    const extras = { tags: 1.5, rush: 3, puff: false };
+    expect(pruneExtrasForTechnique(extras, byScope, "DTG")).toEqual({ rush: 3 });
   });
 });

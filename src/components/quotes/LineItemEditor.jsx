@@ -12,7 +12,7 @@ import {
   STANDARD_MARKUP,
   getLineExtras,
 } from "../shared/pricing";
-import { getAddonsForTechnique } from "@/lib/pricing/extrasScopes";
+import { getAddonsForTechnique, pruneExtrasForTechnique } from "@/lib/pricing/extrasScopes";
 import PricePanel from "./PricePanel";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
@@ -752,6 +752,19 @@ export default function LineItemEditor({
     const imprints = (li.imprints || []).map((im, i) =>
       i === idx ? { ...normalizeImprint(im), ...patch } : normalizeImprint(im)
     );
+    // When the "active" technique (imprint[0]) changes, prune any
+    // toggled extras that aren't available in the new technique's
+    // addon list. Without this, a "Custom Tags" snapshot set while
+    // on Screen Print would keep charging $1.50/pc after the user
+    // switched to Embroidery — the user can't see the toggle to
+    // turn it off.
+    const oldTechnique = (li.imprints || [])[0]?.technique;
+    const newTechnique = imprints[0]?.technique;
+    if (idx === 0 && newTechnique !== oldTechnique) {
+      const prunedExtras = pruneExtrasForTechnique(lineExtras, addonsByScope, newTechnique);
+      onChange({ ...li, imprints, extras: prunedExtras });
+      return;
+    }
     onChange({ ...li, imprints });
   }
 

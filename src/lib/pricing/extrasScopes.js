@@ -114,3 +114,35 @@ export function getAddonsForTechnique(byScope, technique) {
   }
   return byScope.root || [];
 }
+
+/**
+ * Drop fee keys from `extras` that don't exist in the active
+ * technique's addon list.
+ *
+ * Called when the user changes a line's imprint technique. Without
+ * this, a "Custom Tags" snapshot toggled on while the line was
+ * Screen Print would keep charging $1.50/pc after the user switched
+ * to Embroidery — the engine resolves whatever's on li.extras, and
+ * Tags isn't an Embroidery fee, so the user can't see it (and can't
+ * un-toggle it) but it still applies.
+ *
+ * Keeps any key present in the new scope's list (rare overlap when
+ * two techniques happen to define a fee with the same key). Keeps
+ * explicit `false` values too — they preserve the "user turned this
+ * off" intent rather than silently leaving it ambiguous.
+ *
+ * @param {object|null|undefined} extras   per-line extras map
+ * @param {{root:any[], embroidery:any[], custom:Record<string, any[]>}|null|undefined} byScope
+ * @param {string|undefined} technique     the line's new technique
+ * @returns {object}                       pruned extras map
+ */
+export function pruneExtrasForTechnique(extras, byScope, technique) {
+  if (!extras || typeof extras !== "object") return {};
+  const list = getAddonsForTechnique(byScope, technique);
+  const allowed = new Set((list || []).map((a) => a && a.key).filter(Boolean));
+  const out = {};
+  for (const [k, v] of Object.entries(extras)) {
+    if (allowed.has(k)) out[k] = v;
+  }
+  return out;
+}
