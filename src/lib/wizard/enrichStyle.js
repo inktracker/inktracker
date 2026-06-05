@@ -115,19 +115,32 @@ export function pickAndNormalize(ssData, acData, { brandHint, styleNumber } = {}
   let source = null;
 
   if (isAsColourHint) {
+    // Brand hint pins us to AS Colour. If AC has no match for this
+    // style number, return null instead of falling through to S&S
+    // — silently substituting an S&S product (e.g. a women's polo
+    // when the wizard asked for AS Colour 5029 L/S Tee) is worse
+    // than showing nothing. The wizard tile just won't enrich and
+    // the audit gate flags it.
     if (acMatches[0]) { match = acMatches[0]; source = "ac"; }
   } else if (brandLower) {
+    // Brand hint specifies a brand carried by S&S. Same strict
+    // semantics: if no S&S row matches that brand, don't fall back
+    // to "any S&S product with that style number" — the collision
+    // risk is exactly the bug we're guarding against.
     const brandMatch = ssMatches.find(m => {
       const b = (m.brandName || "").toLowerCase();
       return b && (b.includes(brandLower) || brandLower.includes(b));
     });
     if (brandMatch) { match = brandMatch; source = "ss"; }
-  }
-  // Fallback when no brand hint or no brand-specific hit — first match wins.
-  if (!match) {
+  } else {
+    // No brand hint — first match wins. S&S preferred when both
+    // suppliers have a match (legacy compat; predates the wizard
+    // brand field). Used by free-form lookups where the caller has
+    // no opinion about the brand.
     if (ssMatches[0]) { match = ssMatches[0]; source = "ss"; }
     else if (acMatches[0]) { match = acMatches[0]; source = "ac"; }
   }
+
   if (!match) return null;
   return normalizeSupplierMatch(match, { brandHint, source, styleNumber });
 }
