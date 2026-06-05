@@ -1,15 +1,12 @@
 import { useEffect, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { Plus, Trash2, RotateCcw, Check, Search, RefreshCw } from "lucide-react";
-import { DEFAULT_WIZARD_STYLES, DEFAULT_WIZARD_SETUPS } from "./OrderWizard";
+import { DEFAULT_WIZARD_STYLES } from "./OrderWizard";
 import {
   fetchEnrichedStyle as enrichStyleData,
   isStyleEnriched,
 } from "@/lib/wizard/enrichStyle";
 
-const ICON_OPTIONS = ["tee", "hoodie", "longsleeve", "crew", "front", "frontback", "chestback", "leftchest", "frontsleeve"];
-const LOCATION_OPTIONS = ["Front", "Back", "Left Chest", "Right Chest", "Left Sleeve", "Right Sleeve", "Pocket", "Hood", "Other"];
-const TECHNIQUE_OPTIONS = ["Screen Print", "DTG", "Embroidery", "DTF", "Heat Transfer", "Sublimation"];
 const CATEGORIES = ["T-Shirts", "Long Sleeve", "Hoodies", "Crewnecks", "Tank Tops", "Polos", "Hats", "Other"];
 
 function uid() {
@@ -25,9 +22,6 @@ function uid() {
 export default function WizardConfigEditor({ user, shop, onSaved }) {
   const [styles, setStyles] = useState(() =>
     shop?.wizard_styles?.length ? shop.wizard_styles : DEFAULT_WIZARD_STYLES
-  );
-  const [setups, setSetups] = useState(() =>
-    shop?.wizard_setups?.length ? shop.wizard_setups : DEFAULT_WIZARD_SETUPS
   );
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -52,7 +46,6 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
 
   useEffect(() => {
     if (shop?.wizard_styles?.length) setStyles(shop.wizard_styles);
-    if (shop?.wizard_setups?.length) setSetups(shop.wizard_setups);
   }, [shop]);
 
   function updateStyle(idx, patch) {
@@ -189,58 +182,9 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
     setSyncProgress({ done: 0, total: 0 });
   }
 
-  function updateSetup(idx, patch) {
-    setSetups((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
-  }
-
-  function removeSetup(idx) {
-    setSetups((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function addSetup() {
-    setSetups((prev) => [
-      ...prev,
-      {
-        id: uid(),
-        name: "New Setup",
-        icon: "front",
-        imprints: [{ location: "Front", colors: 1, pantones: "", technique: "Screen Print", details: "" }],
-      },
-    ]);
-  }
-
-  function updateSetupImprint(setupIdx, impIdx, patch) {
-    setSetups((prev) =>
-      prev.map((s, i) =>
-        i === setupIdx
-          ? { ...s, imprints: s.imprints.map((im, j) => (j === impIdx ? { ...im, ...patch } : im)) }
-          : s
-      )
-    );
-  }
-
-  function addSetupImprint(setupIdx) {
-    setSetups((prev) =>
-      prev.map((s, i) =>
-        i === setupIdx
-          ? { ...s, imprints: [...s.imprints, { location: "Back", colors: 1, pantones: "", technique: "Screen Print", details: "" }] }
-          : s
-      )
-    );
-  }
-
-  function removeSetupImprint(setupIdx, impIdx) {
-    setSetups((prev) =>
-      prev.map((s, i) =>
-        i === setupIdx ? { ...s, imprints: s.imprints.filter((_, j) => j !== impIdx) } : s
-      )
-    );
-  }
-
   function resetToDefaults() {
-    if (!window.confirm("Reset wizard styles and setups to InkTracker defaults?")) return;
+    if (!window.confirm("Reset wizard styles to InkTracker defaults?")) return;
     setStyles(DEFAULT_WIZARD_STYLES);
-    setSetups(DEFAULT_WIZARD_SETUPS);
   }
 
   async function handleSave() {
@@ -267,7 +211,6 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
       }
       const payload = {
         wizard_styles: finalStyles,
-        wizard_setups: setups,
       };
       const shops = await base44.entities.Shop.filter({ owner_email: user.email });
       if (shops?.length) {
@@ -429,97 +372,6 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
           ))}
           {styles.length === 0 && (
             <div className="text-sm text-slate-400 text-center py-4">No styles configured.</div>
-          )}
-        </div>
-      </div>
-
-      {/* Setups */}
-      <div className="border border-slate-200 rounded-2xl bg-white p-5">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Wizard Print Setups</h3>
-            <p className="text-xs text-slate-500 mt-0.5">Preset print-location combos (e.g. Front Only, Front + Back).</p>
-          </div>
-          <button
-            onClick={addSetup}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-teal-600 border border-teal-200 px-2.5 py-1.5 rounded-lg hover:bg-teal-50"
-          >
-            <Plus className="w-3.5 h-3.5" /> Add Setup
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          {setups.map((s, idx) => (
-            <div key={s.id || idx} className="border border-slate-200 rounded-xl p-3 bg-slate-50/50">
-              <div className="flex flex-wrap items-center gap-2 mb-2">
-                <input
-                  value={s.name || ""}
-                  onChange={(e) => updateSetup(idx, { name: e.target.value })}
-                  placeholder="Setup name"
-                  className="flex-1 min-w-40 text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
-                />
-                <select
-                  value={s.icon || "front"}
-                  onChange={(e) => updateSetup(idx, { icon: e.target.value })}
-                  className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
-                >
-                  {ICON_OPTIONS.map((i) => <option key={i} value={i}>{i}</option>)}
-                </select>
-                <button
-                  onClick={() => removeSetup(idx)}
-                  title="Remove setup"
-                  className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg px-2 py-1.5"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="space-y-1.5">
-                {(s.imprints || []).map((imp, j) => (
-                  <div key={j} className="grid gap-2 sm:grid-cols-[1.3fr_0.8fr_1fr_auto]">
-                    <select
-                      value={imp.location}
-                      onChange={(e) => updateSetupImprint(idx, j, { location: e.target.value })}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
-                    >
-                      {LOCATION_OPTIONS.map((l) => <option key={l} value={l}>{l}</option>)}
-                    </select>
-                    <input
-                      type="number"
-                      min="1"
-                      max="8"
-                      value={imp.colors || 1}
-                      onChange={(e) => updateSetupImprint(idx, j, { colors: parseInt(e.target.value) || 1 })}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
-                      placeholder="# colors"
-                    />
-                    <select
-                      value={imp.technique || "Screen Print"}
-                      onChange={(e) => updateSetupImprint(idx, j, { technique: e.target.value })}
-                      className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
-                    >
-                      {TECHNIQUE_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <button
-                      onClick={() => removeSetupImprint(idx, j)}
-                      disabled={(s.imprints || []).length <= 1}
-                      title="Remove print location"
-                      className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg px-2 disabled:opacity-30"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  onClick={() => addSetupImprint(idx)}
-                  className="text-[11px] font-semibold text-teal-600 hover:text-teal-700"
-                >
-                  + Add location
-                </button>
-              </div>
-            </div>
-          ))}
-          {setups.length === 0 && (
-            <div className="text-sm text-slate-400 text-center py-4">No setups configured.</div>
           )}
         </div>
       </div>

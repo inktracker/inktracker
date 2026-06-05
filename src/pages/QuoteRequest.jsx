@@ -19,7 +19,6 @@ export default function QuoteRequest() {
 
   const [shop, setShop] = useState(null);
   const [wizardStyles, setWizardStyles] = useState(null);
-  const [wizardSetups, setWizardSetups] = useState(null);
   const [shopOwner, setShopOwner] = useState(shopParam);
   // Gate the wizard render on the shop fetch finishing — without it,
   // OrderWizard mounts with shop=null, paints the default teal CSS vars,
@@ -44,7 +43,6 @@ export default function QuoteRequest() {
         if (s) {
           setShop(s);
           if (s.wizard_styles?.length) setWizardStyles(s.wizard_styles);
-          if (s.wizard_setups?.length) setWizardSetups(s.wizard_setups);
           // Hydrate the shared pricing module with the shop's per-shop
           // config so getEnabledTechniques() returns ALL methods the
           // shop offers (Screen Print + Embroidery + DTF + …), not just
@@ -125,7 +123,6 @@ export default function QuoteRequest() {
             <OrderWizard
               onSubmit={handleSubmit}
               styles={wizardStyles}
-              setups={wizardSetups}
               shopOwner={shopOwner}
               shop={shop}
             />
