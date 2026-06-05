@@ -107,6 +107,48 @@ export function loadShopPricingConfig(config) {
 
 export function getShopPricingConfig() { return _pc; }
 
+// Default turnaround windows in BUSINESS days. The shop can override
+// either of these in Account → Pricing alongside the Rush Fee %, so
+// a one-person tee shop with a 2-week standard can show that on
+// quotes instead of the platform-wide 10/5 fallback.
+export const DEFAULT_STANDARD_TURNAROUND_DAYS = 10;
+export const DEFAULT_RUSH_TURNAROUND_DAYS = 5;
+
+function clampPositiveInt(n, fallback) {
+  const x = Number(n);
+  if (!Number.isFinite(x) || x <= 0) return fallback;
+  return Math.round(x);
+}
+
+/**
+ * Standard turnaround used as the default due-date offset on new
+ * quotes. Returns shop's value when set; falls back to the platform
+ * default (10) when not configured.
+ */
+export function getStandardTurnaroundDays() {
+  return clampPositiveInt(_pc?.standardTurnaroundDays, DEFAULT_STANDARD_TURNAROUND_DAYS);
+}
+
+/**
+ * Rush turnaround applied when the shop toggles Rush on a quote.
+ * Falls back to platform default (5).
+ */
+export function getRushTurnaroundDays() {
+  return clampPositiveInt(_pc?.rushTurnaroundDays, DEFAULT_RUSH_TURNAROUND_DAYS);
+}
+
+/**
+ * Rush fee multiplier (e.g. 0.20 = +20%). Reads from shop config
+ * with the historical 0.20 platform fallback so existing quote-modal
+ * code that previously hard-coded 0.2 keeps producing the same
+ * behavior for shops who never visited Account → Pricing.
+ */
+export function getShopRushRate() {
+  const v = Number(_pc?.rushRate);
+  if (Number.isFinite(v) && v >= 0) return v;
+  return 0.20;
+}
+
 // Minimum order quantity per garment — derived from the shop's first
 // screen-print tier. Defaults to 25 (the platform default tier) when
 // no pricing config is loaded. Drives the wizard's "MIN X PCS" badge,

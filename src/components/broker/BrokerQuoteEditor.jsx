@@ -10,6 +10,9 @@ import {
   newLineItem,
   BROKER_MARKUP,
   STANDARD_MARKUP,
+  getStandardTurnaroundDays,
+  getRushTurnaroundDays,
+  getShopRushRate,
 } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -60,7 +63,7 @@ function blankQuote() {
     customer_id: "",
     customer_name: "",
     date: tod(),
-    due_date: addBusinessDays(new Date(), 10),
+    due_date: addBusinessDays(new Date(), getStandardTurnaroundDays()),
     status: "Draft",
     notes: "",
     rush_rate: 0,
@@ -459,11 +462,13 @@ export default function BrokerQuoteEditor({
                             (1000 * 60 * 60 * 24)
                         )
                       : null;
-                    const isRush = diffDays !== null && diffDays < 7;
+                    // Anything sooner than the shop's standard
+                    // turnaround triggers Rush auto-apply.
+                    const isRush = diffDays !== null && diffDays < getStandardTurnaroundDays();
                     setQ({
                       ...q,
                       due_date: due,
-                      rush_rate: isRush ? 0.2 : q.rush_rate,
+                      rush_rate: isRush ? getShopRushRate() : q.rush_rate,
                     });
                   }}
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
@@ -473,9 +478,9 @@ export default function BrokerQuoteEditor({
                   Math.round(
                     (new Date(q.due_date) - new Date(q.date)) /
                       (1000 * 60 * 60 * 24)
-                  ) < 7 && (
+                  ) < getStandardTurnaroundDays() && (
                     <div className="text-xs text-orange-500 font-semibold mt-1">
-                      ⚡ Rush automatically applied (under 7 days)
+                      ⚡ Rush automatically applied (under {getStandardTurnaroundDays()} days)
                     </div>
                   )}
               </div>
@@ -561,13 +566,22 @@ export default function BrokerQuoteEditor({
                 Turnaround
               </label>
               <div className="flex gap-2">
-                {[
-                  { val: 0, label: "Standard", sub: "14 business days" },
-                  { val: 0.2, label: "Rush +20%", sub: "7 business days" },
-                ].map((opt) => (
+                {(() => {
+                  const stdDays  = getStandardTurnaroundDays();
+                  const rushDays = getRushTurnaroundDays();
+                  const rushRate = getShopRushRate();
+                  return [
+                    { val: 0,        label: "Standard",                              sub: `${stdDays} business days`,  daysOut: stdDays },
+                    { val: rushRate, label: `Rush +${Math.round(rushRate * 100)}%`,  sub: `${rushDays} business days`, daysOut: rushDays },
+                  ];
+                })().map((opt) => (
                   <button
                     key={opt.val}
-                    onClick={() => setQ({ ...q, rush_rate: opt.val })}
+                    onClick={() => setQ({
+                      ...q,
+                      rush_rate: opt.val,
+                      due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
+                    })}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
                       q.rush_rate === opt.val
                         ? "border-teal-600 bg-teal-50"

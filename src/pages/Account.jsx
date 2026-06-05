@@ -2689,8 +2689,12 @@ function PricingConfigSection({ user }) {
         </button>
       </div>
 
-      {/* Other Rates */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Other Rates — Rush + the turnaround windows that drive the
+          due-date defaults on every new quote. Standard turnaround
+          determines the default due-date offset; rush turnaround is
+          what the quote modal sets the due date to when the operator
+          flips Turnaround → Rush. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
           <label className="text-[10px] text-slate-400 block mb-1">Rush Fee (%)</label>
           <div className="relative">
@@ -2705,6 +2709,39 @@ function PricingConfigSection({ user }) {
             />
             <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>
           </div>
+          <p className="text-[10px] text-slate-400 mt-1">Added to the line subtotal when a quote is marked Rush.</p>
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-400 block mb-1">Standard Turnaround</label>
+          <div className="relative">
+            <NumericInput
+              value={config.standardTurnaroundDays ?? 10}
+              onChange={(n) => setConfig(prev => ({ ...prev, standardTurnaroundDays: Math.max(1, Math.round(Number(n) || 1)) }))}
+              min={1}
+              max={365}
+              integer
+              label="Standard turnaround days"
+              className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+            />
+            <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">biz days</span>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">Default due-date offset on new quotes.</p>
+        </div>
+        <div>
+          <label className="text-[10px] text-slate-400 block mb-1">Rush Turnaround</label>
+          <div className="relative">
+            <NumericInput
+              value={config.rushTurnaroundDays ?? 5}
+              onChange={(n) => setConfig(prev => ({ ...prev, rushTurnaroundDays: Math.max(1, Math.round(Number(n) || 1)) }))}
+              min={1}
+              max={365}
+              integer
+              label="Rush turnaround days"
+              className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+            />
+            <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">biz days</span>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">Due date the modal sets when Rush is chosen.</p>
         </div>
       </div>
 

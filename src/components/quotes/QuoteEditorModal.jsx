@@ -13,6 +13,9 @@ import {
   tod,
   uid,
   newLineItem,
+  getStandardTurnaroundDays,
+  getRushTurnaroundDays,
+  getShopRushRate,
 } from "../shared/pricing";
 import LineItemEditor from "./LineItemEditor";
 
@@ -43,7 +46,7 @@ function blankQuote(defaultTaxRate = 8.265) {
     customer_name: "",
     job_title: "",
     date: tod(),
-    due_date: addBusinessDays(new Date(), 10),
+    due_date: addBusinessDays(new Date(), getStandardTurnaroundDays()),
     expires_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
     status: "Draft",
     notes: "",
@@ -616,12 +619,15 @@ export default function QuoteEditorModal({
                             (1000 * 60 * 60 * 24)
                         )
                       : null;
-                    const isRush = diffDays !== null && diffDays < 7;
+                    // Anything sooner than the shop's standard
+                    // turnaround triggers Rush auto-apply. Previously
+                    // this was a hard-coded 7-day threshold.
+                    const isRush = diffDays !== null && diffDays < getStandardTurnaroundDays();
 
                     setQ({
                       ...q,
                       due_date: due,
-                      rush_rate: isRush ? 0.2 : q.rush_rate,
+                      rush_rate: isRush ? getShopRushRate() : q.rush_rate,
                     });
                   }}
                   className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
@@ -631,9 +637,9 @@ export default function QuoteEditorModal({
                   Math.round(
                     (new Date(q.due_date) - new Date(q.date)) /
                       (1000 * 60 * 60 * 24)
-                  ) < 7 && (
+                  ) < getStandardTurnaroundDays() && (
                     <div className="text-xs text-orange-500 font-semibold mt-1">
-                      ⚡ Rush automatically applied (under 7 days)
+                      ⚡ Rush automatically applied (under {getStandardTurnaroundDays()} days)
                     </div>
                   )}
               </div>
@@ -753,13 +759,30 @@ export default function QuoteEditorModal({
                 Turnaround
               </label>
               <div className="flex gap-2">
-                {[
-                  { val: 0, label: "Standard", sub: "14 business days" },
-                  { val: 0.2, label: "Rush +20%", sub: "7 business days" },
-                ].map((opt) => (
+                {(() => {
+                  // Read fresh from the shop's config so the labels
+                  // and the rush rate the button applies stay in sync
+                  // with Account → Pricing.
+                  const stdDays  = getStandardTurnaroundDays();
+                  const rushDays = getRushTurnaroundDays();
+                  const rushRate = getShopRushRate();
+                  return [
+                    { val: 0,        label: "Standard",                              sub: `${stdDays} business days`,  daysOut: stdDays },
+                    { val: rushRate, label: `Rush +${Math.round(rushRate * 100)}%`,  sub: `${rushDays} business days`, daysOut: rushDays },
+                  ];
+                })().map((opt) => (
                   <button
                     key={opt.val}
-                    onClick={() => setQ({ ...q, rush_rate: opt.val })}
+                    onClick={() => setQ({
+                      ...q,
+                      rush_rate: opt.val,
+                      // Slide the due date to match the picked turnaround
+                      // window. Operators routinely changed the due
+                      // date by hand after this toggle anyway — doing
+                      // it for them removes one click and one
+                      // forgot-to-update bug.
+                      due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
+                    })}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
                       q.rush_rate === opt.val
                         ? "border-teal-600 bg-teal-50"
