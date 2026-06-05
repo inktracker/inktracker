@@ -1287,7 +1287,7 @@ export default function LineItemEditor({
                           </div>
                           <div className="text-[10px] text-slate-400 leading-tight">
                             {isPercent
-                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of garment`
+                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
                               : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}
                           </div>
                         </button>

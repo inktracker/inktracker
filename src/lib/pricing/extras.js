@@ -37,28 +37,29 @@ export function normalizeExtraConfigEntry(extras, extraModes, key) {
  *   off (false/null/0)           → 0
  *   number                       → that many dollars per piece
  *   { mode: "flat", rate: N }    → N dollars per piece
- *   { mode: "percent", rate: N } → garmentCost × N / 100 per piece
+ *   { mode: "percent", rate: N } → percentBasisPerPiece × N / 100
  *   anything else                → 0 (defensive)
  *
- * Percent mode multiplies against the line's garment cost — that's
- * the field shops mean when they say "10% of garment." Per-size
- * pricing variations don't apply because the snapshot is per line,
- * not per size.
+ * Percent mode multiplies against the per-piece DECORATION cost of
+ * the line (printing + setup, not the blank). User explicitly chose
+ * decoration over garment cost so a "10% specialty ink" fee scales
+ * with the cost of decorating each garment, not with the blank
+ * cost. Pass `printCost / qty` as the basis from the caller.
  *
- * @param {*} quoteValue   what was stored on quote.extras[key]
- * @param {number} garmentCost   the line's per-piece garment cost
+ * @param {*} quoteValue              what was stored on quote.extras[key]
+ * @param {number} basisPerPiece      per-piece decoration cost ($)
  * @returns {number}
  */
-export function resolveExtraRatePerPiece(quoteValue, garmentCost) {
+export function resolveExtraRatePerPiece(quoteValue, basisPerPiece) {
   if (!quoteValue) return 0;
   if (typeof quoteValue === "number") return quoteValue;
   if (typeof quoteValue === "object") {
     const rate = Number(quoteValue.rate);
     if (!Number.isFinite(rate)) return 0;
     if (quoteValue.mode === "percent") {
-      const g = Number(garmentCost);
-      if (!Number.isFinite(g) || g <= 0) return 0;
-      return g * rate / 100;
+      const b = Number(basisPerPiece);
+      if (!Number.isFinite(b) || b <= 0) return 0;
+      return b * rate / 100;
     }
     return rate;
   }

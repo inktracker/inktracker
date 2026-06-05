@@ -62,20 +62,20 @@ describe("resolveExtraRatePerPiece — quote-time dollar resolution", () => {
     expect(resolveExtraRatePerPiece(2, 0)).toBe(2);
   });
 
-  it("applies percent mode against garment cost", () => {
-    // 5% of $10 = $0.50
+  it("applies percent mode against per-piece decoration cost", () => {
+    // 5% of $10 decoration/pc = $0.50/pc
     expect(resolveExtraRatePerPiece({ mode: "percent", rate: 5 }, 10)).toBe(0.5);
     // 100% of $4 = $4
     expect(resolveExtraRatePerPiece({ mode: "percent", rate: 100 }, 4)).toBe(4);
   });
 
-  it("returns 0 for percent when garment cost is zero / missing", () => {
+  it("returns 0 for percent when decoration cost is zero / missing", () => {
     expect(resolveExtraRatePerPiece({ mode: "percent", rate: 5 }, 0)).toBe(0);
     expect(resolveExtraRatePerPiece({ mode: "percent", rate: 5 }, null)).toBe(0);
     expect(resolveExtraRatePerPiece({ mode: "percent", rate: 5 }, undefined)).toBe(0);
   });
 
-  it("returns 0 for percent when garment cost is negative (defensive)", () => {
+  it("returns 0 for percent when decoration cost is negative (defensive)", () => {
     expect(resolveExtraRatePerPiece({ mode: "percent", rate: 5 }, -10)).toBe(0);
   });
 
@@ -151,7 +151,7 @@ describe("end-to-end snapshot round-trip", () => {
     expect(resolveExtraRatePerPiece(snapshot, 99)).toBe(1.5);
   });
 
-  it("percent fee: shop=5% / garment=$10 → snapshot stays 5% → $0.50/pc regardless of shop changes", () => {
+  it("percent fee: shop=5% / decoration=$10/pc → snapshot stays 5% → $0.50/pc regardless of shop changes", () => {
     const shop = { tags: 5 };
     const modes = { tags: "percent" };
     const entry = normalizeExtraConfigEntry(shop, modes, "tags");

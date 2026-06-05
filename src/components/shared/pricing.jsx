@@ -636,10 +636,16 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   const flatCost = parseFloat(li.garmentCost) || 0;
   const flatMarkup = getMarkup(flatCost, isBroker);
 
-  // Now that flatCost is known, resolve per-piece extras dollars.
-  // resolveExtraRatePerPiece handles:
+  // Per-piece decoration cost — printCost is the total imprint cost
+  // (first + additional locations × qty). Percent-mode extras apply
+  // against THIS (not the garment), per the user's spec: a 10%
+  // specialty-ink fee scales with the cost of decorating the
+  // garment, not with the blank.
+  const decorationPpp = qty > 0 ? printCost / qty : 0;
+
+  // Resolve per-piece extras dollars. resolveExtraRatePerPiece handles:
   //   - number (legacy / flat snapshot)            → that many $/pc
-  //   - { mode:"percent", rate:N } (new)           → flatCost × N/100
+  //   - { mode:"percent", rate:N } (new)           → decorationPpp × N/100
   //   - { mode:"flat",    rate:N }                 → N $/pc
   //   - true (no snapshot, look up shop rate)      → use er[k]
   let extraPPP = 0;
@@ -650,7 +656,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
       extraPPP += Number(er[k] || EXTRA_RATES[k] || 0);
       return;
     }
-    extraPPP += _resolveExtraRatePerPiece(on, flatCost);
+    extraPPP += _resolveExtraRatePerPiece(on, decorationPpp);
   });
   const extraCost = Math.round(extraPPP * qty * 100) / 100;
 

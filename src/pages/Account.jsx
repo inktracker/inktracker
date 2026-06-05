@@ -2650,7 +2650,7 @@ function PricingConfigSection({ user }) {
       {/* Extras & Fees */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Extra Fees (per piece)</h4>
-        <p className="text-[10px] text-slate-400 mb-2">Rename, reprice, or remove fees. Toggle the $ / % button to charge a flat dollar amount per piece OR a percentage of the line's garment cost.</p>
+        <p className="text-[10px] text-slate-400 mb-2">Rename, reprice, or remove fees. Toggle the $ / % button to charge a flat dollar amount per piece OR a percentage of the line's per-piece decoration cost.</p>
         <div className="space-y-2">
           {Object.entries(config.extras || {}).map(([key, val]) => {
             const mode = config.extraModes?.[key] === "percent" ? "percent" : "flat";
