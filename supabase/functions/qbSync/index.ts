@@ -1860,6 +1860,69 @@ Deno.serve(async (req) => {
         result = { pdf: base64, filename: `Invoice-${invId}.pdf` };
         break;
       }
+      case "lookupCustomerById": {
+        // Read-only QB query. Used by the Customer Duplicates UI
+        // after the operator merges two customers inside QuickBooks
+        // — we ping each side's qb_customer_id to figure out which
+        // one survived (Active=true) and which one is now Active=
+        // false (the losing record after a QB merge). Read-only by
+        // design so this surface can never accidentally damage QB.
+        const custId = params.customerId;
+        if (!custId) throw new Error("customerId required");
+        const custRes = await qbQuery(qbToken, realmId, `SELECT * FROM Customer WHERE Id = '${custId}'`);
+        const cust = custRes?.QueryResponse?.Customer?.[0];
+        if (!cust) {
+          result = { status: "notfound", qb_customer_id: custId };
+        } else if (cust.Active === false) {
+          result = {
+            status: "inactive",
+            qb_customer_id: custId,
+            displayName: cust.DisplayName,
+            mergedIntoId: cust.MergedIntoId ?? null,
+          };
+        } else {
+          result = {
+            status: "active",
+            qb_customer_id: custId,
+            displayName: cust.DisplayName,
+          };
+        }
+        break;
+      }
+      case "scanInactiveCustomers": {
+        // Batch read-only check. Given an array of QB customer IDs,
+        // return only the ones that are now Active=false (i.e. were
+        // merged into another QB customer). Used by the Customers
+        // page on load to auto-detect post-QB-merge orphans without
+        // making one QB call per customer. One QB SELECT regardless
+        // of list size. Read-only — no mutation, no QB-side write.
+        const idsRaw = Array.isArray(params.customerIds) ? params.customerIds : [];
+        // Strip quotes defensively — QBO query language uses single
+        // quotes as string delimiters. Any embedded apostrophe in an
+        // ID would break the IN clause.
+        const ids = idsRaw
+          .map((v: unknown) => String(v ?? "").replace(/['"\\]/g, "").trim())
+          .filter((s: string) => s.length > 0);
+        if (ids.length === 0) {
+          result = { inactive: [] };
+          break;
+        }
+        const idList = ids.map((id: string) => `'${id}'`).join(",");
+        const r = await qbQuery(
+          qbToken,
+          realmId,
+          `SELECT Id, DisplayName, Active, MergedIntoId FROM Customer WHERE Active = false AND Id IN (${idList})`,
+        );
+        const rows = r?.QueryResponse?.Customer || [];
+        result = {
+          inactive: rows.map((c: { Id: string; DisplayName?: string; MergedIntoId?: string }) => ({
+            qb_customer_id: c.Id,
+            displayName: c.DisplayName || "",
+            mergedIntoId: c.MergedIntoId ?? null,
+          })),
+        };
+        break;
+      }
       case "deactivateCustomer": {
         const custId = params.customerId;
         if (!custId) throw new Error("customerId required");
