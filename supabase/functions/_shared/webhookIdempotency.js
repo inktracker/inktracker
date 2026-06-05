@@ -78,28 +78,36 @@ export function extractBillingEventId(event) {
 // ── DB: atomic dedup INSERT ─────────────────────────────────────────
 
 /**
- * Atomically claim ownership of a webhook event. Returns true if
- * this is the first time we've seen it (caller should process),
- * false if it's already been processed (caller should return 200
- * without side effects).
- *
- * Returns false on ANY DB error too — conservative posture, prefer
- * skipping a possible duplicate over running side effects twice.
- *
- * @param {object} supabase  — service-role client
- * @param {string} source    — 'stripe' / 'qb' / 'billing'
- * @param {string} eventId   — provider's event ID (from extract* above)
- * @param {object} [payload] — optional, stored for forensics
- * @returns {Promise<boolean>}
+ * Discriminated outcomes returned by `claimWebhookEventDetailed`.
+ *   - first      → atomic INSERT succeeded; caller should process
+ *   - duplicate  → unique-violation (23505) tripped; already processed
+ *   - error      → unexpected DB error (or thrown); caller decides
+ *                  whether to skip or return 5xx to trigger a retry
+ *   - no_event_id → caller passed a falsy eventId; no dedup possible
+ *                  (caller should process the event as one-shot)
  */
-export async function claimWebhookEvent(supabase, source, eventId, payload = null) {
+export const CLAIM_OUTCOMES = Object.freeze({
+  FIRST:        "first",
+  DUPLICATE:    "duplicate",
+  ERROR:        "error",
+  NO_EVENT_ID:  "no_event_id",
+});
+
+/**
+ * Like `claimWebhookEvent` but returns the discriminated outcome so
+ * callers can distinguish "duplicate" from "DB unhealthy". Used by
+ * qbWebhook to return 503 on DB errors (QB then retries with
+ * exponential backoff) instead of silently dropping the event.
+ *
+ * @param {object} supabase
+ * @param {string} source
+ * @param {string} eventId
+ * @param {object} [payload]
+ * @returns {Promise<{ status: string, error?: any }>}
+ */
+export async function claimWebhookEventDetailed(supabase, source, eventId, payload = null) {
   if (!eventId) {
-    // No dedup possible — caller has to decide whether to process.
-    // We return true (process) because losing an unidentifiable
-    // event is worse than running it once (the caller's handler is
-    // the only chance to act on it). Logging this case is the
-    // caller's responsibility.
-    return true;
+    return { status: CLAIM_OUTCOMES.NO_EVENT_ID };
   }
   try {
     const { error, count } = await supabase
@@ -109,23 +117,44 @@ export async function claimWebhookEvent(supabase, source, eventId, payload = nul
         { count: "exact" },
       );
     if (error) {
-      // Postgres unique-violation code is 23505. ON CONFLICT-style
-      // upsert would be cleaner but the supabase-js insert option
-      // doesn't expose ON CONFLICT DO NOTHING — and we want the
-      // explicit error so we can tell duplicate from "DB is down".
       if (error.code === "23505") {
-        // Duplicate — already processed. Caller should short-circuit.
-        return false;
+        return { status: CLAIM_OUTCOMES.DUPLICATE };
       }
-      // Unexpected DB error. Conservatively skip processing — if
-      // the DB is unhealthy we don't want to compound the issue by
-      // sending duplicate emails or recording duplicate QB payments.
       console.error(`[webhookIdempotency] ${source}/${eventId} claim failed:`, error.message);
-      return false;
+      return { status: CLAIM_OUTCOMES.ERROR, error };
     }
-    return (count ?? 0) > 0;
+    if ((count ?? 0) > 0) return { status: CLAIM_OUTCOMES.FIRST };
+    // Insert succeeded but returned zero rows — extremely unusual.
+    // Conservatively treat as duplicate.
+    return { status: CLAIM_OUTCOMES.DUPLICATE };
   } catch (err) {
     console.error(`[webhookIdempotency] ${source}/${eventId} threw:`, err?.message || err);
-    return false;
+    return { status: CLAIM_OUTCOMES.ERROR, error: err };
   }
+}
+
+/**
+ * Atomically claim ownership of a webhook event. Returns true if
+ * this is the first time we've seen it (caller should process),
+ * false if it's already been processed (caller should return 200
+ * without side effects).
+ *
+ * Returns false on ANY DB error too — conservative posture, prefer
+ * skipping a possible duplicate over running side effects twice.
+ *
+ * Backwards-compatible wrapper around `claimWebhookEventDetailed`.
+ * New code that needs error-vs-duplicate distinction should call
+ * the detailed variant directly.
+ *
+ * @param {object} supabase  — service-role client
+ * @param {string} source    — 'stripe' / 'qb' / 'billing'
+ * @param {string} eventId   — provider's event ID (from extract* above)
+ * @param {object} [payload] — optional, stored for forensics
+ * @returns {Promise<boolean>}
+ */
+export async function claimWebhookEvent(supabase, source, eventId, payload = null) {
+  const detailed = await claimWebhookEventDetailed(supabase, source, eventId, payload);
+  if (detailed.status === CLAIM_OUTCOMES.FIRST) return true;
+  if (detailed.status === CLAIM_OUTCOMES.NO_EVENT_ID) return true;
+  return false;
 }

@@ -14,6 +14,7 @@ export const SECRET_KEYS = [
   "qb_token_expires_at",
   "qb_realm_id",
   "qb_oauth_state",
+  "qb_oauth_state_at",
   "gmail_access_token",
   "gmail_refresh_token",
   "gmail_token_expires_at",

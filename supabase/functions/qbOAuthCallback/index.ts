@@ -95,16 +95,29 @@ Deno.serve(async (req) => {
     );
 
     // Look up the profile via profile_secrets (where qb_oauth_state now
-    // lives, post-secrets-migration). Falls back to profiles for old
-    // pending connects that started before the migration.
+    // lives, post-secrets-migration). The companion `qb_oauth_state_at`
+    // column lets us enforce a 30-minute expiry — closes the
+    // "state stays valid forever" property the column-less design had.
     let profileId: string | null = null;
     let profileRole: string | null = null;
     const { data: secretRow } = await supabaseAdmin
       .from("profile_secrets")
-      .select("profile_id")
+      .select("profile_id, qb_oauth_state_at")
       .eq("qb_oauth_state", state)
       .maybeSingle();
+
     if (secretRow?.profile_id) {
+      // Enforce expiry. Default to "expired" when the timestamp is
+      // missing — pre-migration states never get accepted again, which
+      // is what we want (force a fresh connect through the new flow).
+      const stateAt = secretRow.qb_oauth_state_at
+        ? new Date(secretRow.qb_oauth_state_at).getTime()
+        : 0;
+      const STATE_TTL_MS = 30 * 60 * 1000;
+      if (!stateAt || Date.now() - stateAt > STATE_TTL_MS) {
+        console.error(`[qbOAuthCallback] State expired (age ${stateAt ? Date.now() - stateAt : "no-timestamp"}ms) — refusing token exchange`);
+        return Response.redirect(`${appBaseUrl}/Account?qb_error=state_expired`);
+      }
       profileId = secretRow.profile_id;
       const { data: p } = await supabaseAdmin
         .from("profiles")
@@ -125,10 +138,21 @@ Deno.serve(async (req) => {
     // Single write — profile_secrets is the canonical location for tokens.
     // The legacy `profiles` columns were dropped in the
     // 20260520_drop_legacy_profile_secret_columns migration.
+    //
+    // Clear the OAuth state (and its issued-at timestamp) in the same
+    // upsert so it can't be replayed. The auth code from Intuit is
+    // already one-time-use on their side, but the state should
+    // independently follow the same property — defense in depth.
     const { error: upsertErr } = await supabaseAdmin
       .from("profile_secrets")
       .upsert(
-        { profile_id: profileId, ...tokenFields, updated_at: new Date().toISOString() },
+        {
+          profile_id: profileId,
+          ...tokenFields,
+          qb_oauth_state: null,
+          qb_oauth_state_at: null,
+          updated_at: new Date().toISOString(),
+        },
         { onConflict: "profile_id" },
       );
     if (upsertErr) {

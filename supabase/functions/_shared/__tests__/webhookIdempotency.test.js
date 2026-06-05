@@ -202,3 +202,82 @@ describe("claimWebhookEvent (CW1–CW6)", () => {
     );
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// claimWebhookEventDetailed — discriminated outcomes so callers can
+// distinguish "duplicate" from "DB unhealthy". qbWebhook uses this to
+// return 503 (QB retries) on DB errors instead of swallowing the
+// event with a 200.
+// ─────────────────────────────────────────────────────────────────────
+
+// Late import so we don't disturb the existing tests above. Same module.
+import { claimWebhookEventDetailed, CLAIM_OUTCOMES } from "../webhookIdempotency.js";
+
+describe("claimWebhookEventDetailed (CWD1–CWD5)", () => {
+  function mockSupabase(insertResult) {
+    return {
+      from() {
+        return {
+          insert: vi.fn().mockResolvedValue(insertResult),
+        };
+      },
+    };
+  }
+
+  it("CWD1 — first-time event returns FIRST", async () => {
+    const supabase = mockSupabase({ error: null, count: 1 });
+    const out = await claimWebhookEventDetailed(supabase, "qb", "evt_new");
+    expect(out.status).toBe(CLAIM_OUTCOMES.FIRST);
+  });
+
+  it("CWD2 — unique-violation returns DUPLICATE (no error attached)", async () => {
+    const supabase = mockSupabase({
+      error: { code: "23505", message: "duplicate key value violates unique constraint" },
+      count: 0,
+    });
+    const out = await claimWebhookEventDetailed(supabase, "qb", "evt_dup");
+    expect(out.status).toBe(CLAIM_OUTCOMES.DUPLICATE);
+    expect(out.error).toBeUndefined();
+  });
+
+  it("CWD3 — non-23505 DB error returns ERROR with the error attached", async () => {
+    // This is the path qbWebhook uses to return 503 — must be
+    // distinguishable from DUPLICATE so the caller doesn't silently
+    // swallow a transient outage.
+    const supabase = mockSupabase({
+      error: { code: "08006", message: "connection failure" },
+      count: 0,
+    });
+    const out = await claimWebhookEventDetailed(supabase, "qb", "evt_any");
+    expect(out.status).toBe(CLAIM_OUTCOMES.ERROR);
+    expect(out.error?.code).toBe("08006");
+  });
+
+  it("CWD4 — supabase throws returns ERROR with the error attached", async () => {
+    const supabase = {
+      from() {
+        return { insert: vi.fn().mockRejectedValue(new Error("ECONNRESET")) };
+      },
+    };
+    const out = await claimWebhookEventDetailed(supabase, "qb", "evt_x");
+    expect(out.status).toBe(CLAIM_OUTCOMES.ERROR);
+    expect(out.error?.message).toBe("ECONNRESET");
+  });
+
+  it("CWD5 — missing eventId returns NO_EVENT_ID (callers process as one-shot)", async () => {
+    const supabase = mockSupabase({ error: null, count: 1 });
+    expect((await claimWebhookEventDetailed(supabase, "qb", null)).status).toBe(CLAIM_OUTCOMES.NO_EVENT_ID);
+    expect((await claimWebhookEventDetailed(supabase, "qb", "")).status).toBe(CLAIM_OUTCOMES.NO_EVENT_ID);
+  });
+
+  it("CWD6 — claimWebhookEvent (boolean wrapper) preserves CW1–CW6 semantics", async () => {
+    // Wrapper contract: FIRST → true, NO_EVENT_ID → true, anything
+    // else → false. This is what stripeWebhook + billingWebhook
+    // depend on; refactoring the wrapper must NOT change their
+    // observable behavior.
+    expect(await claimWebhookEvent(mockSupabase({ error: null, count: 1 }), "stripe", "evt_1")).toBe(true);
+    expect(await claimWebhookEvent(mockSupabase({ error: null, count: 1 }), "stripe", null)).toBe(true);
+    expect(await claimWebhookEvent(mockSupabase({ error: { code: "23505" }, count: 0 }), "stripe", "evt_2")).toBe(false);
+    expect(await claimWebhookEvent(mockSupabase({ error: { code: "08006" }, count: 0 }), "stripe", "evt_3")).toBe(false);
+  });
+});
