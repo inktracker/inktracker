@@ -2581,6 +2581,114 @@ function PricingConfigSection({ user }) {
         </div>
       </div>
 
+      {/* Standard turnaround — shop-wide, lives above the decoration
+          tabs because the default due date and rush surcharge are not
+          decoration-specific. */}
+      <div>
+        <label className="text-[10px] text-slate-400 block mb-1">Standard Turnaround</label>
+        <div className="relative w-40">
+          <NumericInput
+            value={config.standardTurnaroundDays ?? 10}
+            onChange={(n) => setConfig(prev => ({ ...prev, standardTurnaroundDays: Math.max(1, Math.round(Number(n) || 1)) }))}
+            min={1}
+            max={365}
+            integer
+            label="Standard turnaround days"
+            className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+          />
+          <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">biz days</span>
+        </div>
+        <p className="text-[10px] text-slate-400 mt-1">Default due-date offset on new quotes. Anything sooner than this triggers the rush rate below.</p>
+      </div>
+
+      {/* Variable Rush Surcharge — shop-wide tier list. */}
+      <div>
+        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-1">Rush Surcharge Tiers</h4>
+        <p className="text-[10px] text-slate-400 mb-2">
+          Variable rush rate based on how soon the order is due. Add a tier per "cliff": e.g. less than 3 days = +50%, less than 6 days = +25%. The tightest matching tier wins.
+        </p>
+        <div className="border border-slate-200 rounded-xl p-3 space-y-2">
+          <div className="grid grid-cols-[1fr_120px_120px_32px] gap-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">
+            <div>If due in less than</div>
+            <div>Surcharge</div>
+            <div />
+            <div />
+          </div>
+          {(() => {
+            const tiers = Array.isArray(config.rushTiers) ? [...config.rushTiers] : [];
+            const sorted = tiers
+              .map((t, i) => ({ ...t, _origIdx: i }))
+              .sort((a, b) => (Number(a.maxDays) || 0) - (Number(b.maxDays) || 0));
+            if (sorted.length === 0) {
+              return (
+                <div className="text-xs text-slate-400 italic px-1 py-1">No rush tiers — your shop won't charge any rush surcharge until you add at least one.</div>
+              );
+            }
+            return sorted.map((tier, idx) => (
+              <div key={tier._origIdx} className="grid grid-cols-[1fr_120px_120px_32px] gap-2 items-center">
+                <div className="relative">
+                  <NumericInput
+                    value={tier.maxDays ?? ""}
+                    onChange={(n) => setConfig(prev => {
+                      const next = [...(prev.rushTiers || [])];
+                      next[tier._origIdx] = { ...next[tier._origIdx], maxDays: Math.max(1, Math.round(Number(n) || 1)) };
+                      return { ...prev, rushTiers: next };
+                    })}
+                    min={1}
+                    max={365}
+                    integer
+                    label={`Rush tier ${idx + 1} max days`}
+                    className="w-full text-xs border border-slate-200 rounded pl-3 pr-12 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                  />
+                  <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">biz days</span>
+                </div>
+                <div className="relative">
+                  <NumericInput
+                    value={Math.round((Number(tier.rate) || 0) * 100)}
+                    onChange={(pct) => setConfig(prev => {
+                      const next = [...(prev.rushTiers || [])];
+                      next[tier._origIdx] = { ...next[tier._origIdx], rate: Math.max(0, Math.min(100, Number(pct) || 0)) / 100 };
+                      return { ...prev, rushTiers: next };
+                    })}
+                    min={0}
+                    max={500}
+                    integer
+                    label={`Rush tier ${idx + 1} rate %`}
+                    className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                  />
+                  <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>
+                </div>
+                <div />
+                <button
+                  onClick={() => setConfig(prev => ({
+                    ...prev,
+                    rushTiers: (prev.rushTiers || []).filter((_, i) => i !== tier._origIdx),
+                  }))}
+                  className="text-slate-300 hover:text-red-500 transition text-sm"
+                  title="Remove tier"
+                >&times;</button>
+              </div>
+            ));
+          })()}
+          <button
+            type="button"
+            onClick={() => {
+              const tiers = Array.isArray(config.rushTiers) ? config.rushTiers : [];
+              const sorted = [...tiers].sort((a, b) => (Number(b.maxDays) || 0) - (Number(a.maxDays) || 0));
+              const loosest = sorted[0]?.maxDays;
+              const defaultDays = loosest ? Math.max(1, loosest - 2) : 3;
+              setConfig(prev => ({
+                ...prev,
+                rushTiers: [...(prev.rushTiers || []), { maxDays: defaultDays, rate: 0.25 }],
+              }));
+            }}
+            className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-1 transition"
+          >
+            + Add tier
+          </button>
+        </div>
+      </div>
+
       {/* Decoration type tabs */}
       <div className="flex gap-1 border-b border-slate-200 pb-0">
         <button onClick={() => setPricingTab("screen_print")}
@@ -2722,122 +2830,6 @@ function PricingConfigSection({ user }) {
         }} className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-2 transition">
           + Add fee
         </button>
-      </div>
-
-      {/* Standard turnaround — single number, drives the default
-          due date on every new quote. Rush surcharge is now a
-          variable tier table rendered separately below. */}
-      <div>
-        <label className="text-[10px] text-slate-400 block mb-1">Standard Turnaround</label>
-        <div className="relative w-40">
-          <NumericInput
-            value={config.standardTurnaroundDays ?? 10}
-            onChange={(n) => setConfig(prev => ({ ...prev, standardTurnaroundDays: Math.max(1, Math.round(Number(n) || 1)) }))}
-            min={1}
-            max={365}
-            integer
-            label="Standard turnaround days"
-            className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
-          />
-          <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">biz days</span>
-        </div>
-        <p className="text-[10px] text-slate-400 mt-1">Default due-date offset on new quotes. Anything sooner than this triggers the rush rate below.</p>
-      </div>
-
-      {/* Variable Rush Surcharge — sliding scale by days-out.
-          Replaces the single Rush Fee % / Rush Turnaround pair.
-          Engine picks the tightest tier whose maxDays is greater
-          than the quote's days-out, so a 2-day job hits the
-          tightest tier even when looser tiers also overlap. */}
-      <div>
-        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-1">Rush Surcharge Tiers</h4>
-        <p className="text-[10px] text-slate-400 mb-2">
-          Variable rush rate based on how soon the order is due. Add a tier per "cliff": e.g. less than 3 days = +50%, less than 6 days = +25%. The tightest matching tier wins.
-        </p>
-        <div className="border border-slate-200 rounded-xl p-3 space-y-2">
-          <div className="grid grid-cols-[1fr_120px_120px_32px] gap-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">
-            <div>If due in less than</div>
-            <div>Surcharge</div>
-            <div />
-            <div />
-          </div>
-          {(() => {
-            // Normalize the stored shape for display: sort ascending
-            // by maxDays so the editor reads naturally tightest → loosest.
-            const tiers = Array.isArray(config.rushTiers) ? [...config.rushTiers] : [];
-            const sorted = tiers
-              .map((t, i) => ({ ...t, _origIdx: i }))
-              .sort((a, b) => (Number(a.maxDays) || 0) - (Number(b.maxDays) || 0));
-            if (sorted.length === 0) {
-              return (
-                <div className="text-xs text-slate-400 italic px-1 py-1">No rush tiers — your shop won't charge any rush surcharge until you add at least one.</div>
-              );
-            }
-            return sorted.map((tier, idx) => (
-              <div key={tier._origIdx} className="grid grid-cols-[1fr_120px_120px_32px] gap-2 items-center">
-                <div className="relative">
-                  <NumericInput
-                    value={tier.maxDays ?? ""}
-                    onChange={(n) => setConfig(prev => {
-                      const next = [...(prev.rushTiers || [])];
-                      next[tier._origIdx] = { ...next[tier._origIdx], maxDays: Math.max(1, Math.round(Number(n) || 1)) };
-                      return { ...prev, rushTiers: next };
-                    })}
-                    min={1}
-                    max={365}
-                    integer
-                    label={`Rush tier ${idx + 1} max days`}
-                    className="w-full text-xs border border-slate-200 rounded pl-3 pr-12 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
-                  />
-                  <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">biz days</span>
-                </div>
-                <div className="relative">
-                  <NumericInput
-                    value={Math.round((Number(tier.rate) || 0) * 100)}
-                    onChange={(pct) => setConfig(prev => {
-                      const next = [...(prev.rushTiers || [])];
-                      next[tier._origIdx] = { ...next[tier._origIdx], rate: Math.max(0, Math.min(100, Number(pct) || 0)) / 100 };
-                      return { ...prev, rushTiers: next };
-                    })}
-                    min={0}
-                    max={500}
-                    integer
-                    label={`Rush tier ${idx + 1} rate %`}
-                    className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
-                  />
-                  <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>
-                </div>
-                <div />
-                <button
-                  onClick={() => setConfig(prev => ({
-                    ...prev,
-                    rushTiers: (prev.rushTiers || []).filter((_, i) => i !== tier._origIdx),
-                  }))}
-                  className="text-slate-300 hover:text-red-500 transition text-sm"
-                  title="Remove tier"
-                >&times;</button>
-              </div>
-            ));
-          })()}
-          <button
-            type="button"
-            onClick={() => {
-              // Seed a new tier with a sensible default: 1 day shorter
-              // than the loosest existing tier (or 3 if first).
-              const tiers = Array.isArray(config.rushTiers) ? config.rushTiers : [];
-              const sorted = [...tiers].sort((a, b) => (Number(b.maxDays) || 0) - (Number(a.maxDays) || 0));
-              const loosest = sorted[0]?.maxDays;
-              const defaultDays = loosest ? Math.max(1, loosest - 2) : 3;
-              setConfig(prev => ({
-                ...prev,
-                rushTiers: [...(prev.rushTiers || []), { maxDays: defaultDays, rate: 0.25 }],
-              }));
-            }}
-            className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-1 transition"
-          >
-            + Add tier
-          </button>
-        </div>
       </div>
 
       {/* Setup Fees — per-screen multiplier (list) */}
