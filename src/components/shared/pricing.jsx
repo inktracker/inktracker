@@ -78,8 +78,46 @@ export function getEnabledTechniques(configOverride) {
   const emb = pc?.embroidery;
   const hasPricing = emb?.pricing && Object.keys(emb.pricing).length > 0;
   if (emb?.enabled || hasPricing) enabled.push("Embroidery");
-  // Future: add DTG, DTF, etc. when those pricing tabs are built
+  // Custom techniques (DTG, DTF, Heat Transfer, Sublimation, anything
+  // the shop adds on Account → Pricing). Order matches insertion in
+  // the JSONB object, which JS object iteration preserves.
+  const custom = pc?.custom_techniques;
+  if (custom && typeof custom === "object") {
+    for (const name of Object.keys(custom)) {
+      const t = String(name || "").trim();
+      if (t && !enabled.includes(t)) enabled.push(t);
+    }
+  }
   return enabled;
+}
+
+// Resolve the firstPrint/addlPrint/tiers/maxColors table set to use for
+// a given imprint's technique.
+//   Embroidery       → returns null (caller uses the embroidery path)
+//   Custom technique → uses pc.custom_techniques[tech] with screen-print
+//                      fallbacks for any missing field
+//   Otherwise        → screen-print defaults
+//
+// Exposed so the Account UI can render the same input grid against
+// either the legacy `_pc.firstPrint` or a custom tech's namespace
+// without duplicating the field-resolution logic.
+export function getTechniqueRates(tech, configOverride) {
+  if (tech === "Embroidery") return null;
+  const pc = configOverride ?? _pc;
+  const baseFp    = pc?.firstPrint || FIRST_PRINT;
+  const baseAp    = pc?.addlPrint  || ADDL_PRINT;
+  const baseTiers = pc?.tiers      || [25, 50, 100, 200];
+  const baseMax   = pc?.maxColors  || 8;
+  const custom = pc?.custom_techniques?.[tech];
+  if (!custom) {
+    return { firstPrint: baseFp, addlPrint: baseAp, tiers: baseTiers, maxColors: baseMax };
+  }
+  return {
+    firstPrint: custom.firstPrint || baseFp,
+    addlPrint:  custom.addlPrint  || baseAp,
+    tiers:      custom.tiers      || baseTiers,
+    maxColors:  Number.isFinite(Number(custom.maxColors)) && Number(custom.maxColors) > 0 ? Number(custom.maxColors) : baseMax,
+  };
 }
 export const TECHNIQUES = ALL_TECHNIQUES; // backward compat for code that imports it directly
 export const Q_STATUSES = ["Draft", "Sent", "Pending", "Approved", "Approved and Paid", "Declined"];
@@ -251,8 +289,10 @@ export function getMinOrderQty() {
 }
 
 
-export function getTier(qty) {
-  const tiers = _pc?.tiers || [25, 50, 100, 200];
+export function getTier(qty, tiersOverride) {
+  const tiers = (Array.isArray(tiersOverride) && tiersOverride.length > 0)
+    ? tiersOverride
+    : (_pc?.tiers || [25, 50, 100, 200]);
   // Find the highest tier the qty meets or exceeds
   const sorted = [...tiers].sort((a, b) => b - a);
   for (const t of sorted) {
@@ -644,7 +684,18 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     const gIdx = groupCount[tech] = (groupCount[tech] ?? -1) + 1;
     const isFirstInGroup = gIdx === 0;
 
-    const colors = Math.min(maxColors, Math.max(1, imp.colors || 1));
+    // Per-technique rate table: custom techniques (DTG, DTF, etc.)
+    // get their own firstPrint/addlPrint/tiers/maxColors when
+    // configured on Account → Pricing. Falls back to screen print's
+    // tables for unknown techniques so newly-added techs without a
+    // custom rate sheet still price something.
+    const techCfg = isEmb ? null : getTechniqueRates(tech, _pc);
+    const techFp        = techCfg ? techCfg.firstPrint : fp;
+    const techAp        = techCfg ? techCfg.addlPrint  : ap;
+    const techTiers     = techCfg ? techCfg.tiers      : (_pc?.tiers || [25, 50, 100, 200]);
+    const techMaxColors = techCfg ? techCfg.maxColors  : maxColors;
+
+    const colors = Math.min(techMaxColors, Math.max(1, imp.colors || 1));
     const linkedKey = imp.linked ? getPrintKey(imp) : null;
     const tierQty = linkedKey && linkedQtyMap[linkedKey] ? linkedQtyMap[linkedKey] : qty;
     let tier, rate;
@@ -657,9 +708,9 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
       tier = stiers[stiers.length - 1];
       for (const t of stiers) { if (tierQty >= t) { tier = t; break; } }
     } else {
-      tier = getTier(tierQty);
-      const table = isFirstInGroup ? fp : ap;
-      rate = table[colors]?.[tier] ?? table[Math.min(colors, 8)]?.[tier] ?? 0;
+      tier = getTier(tierQty, techTiers);
+      const table = isFirstInGroup ? techFp : techAp;
+      rate = table[colors]?.[tier] ?? table[Math.min(colors, techMaxColors)]?.[tier] ?? 0;
     }
     const lineCost = Math.round(rate * qty * 100) / 100;
 

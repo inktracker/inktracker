@@ -2690,7 +2690,7 @@ function PricingConfigSection({ user }) {
       </div>
 
       {/* Decoration type tabs */}
-      <div className="flex gap-1 border-b border-slate-200 pb-0">
+      <div className="flex gap-1 border-b border-slate-200 pb-0 flex-wrap">
         <button onClick={() => setPricingTab("screen_print")}
           className={`text-xs font-semibold px-4 py-2 rounded-t-lg transition ${pricingTab === "screen_print" ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
           Screen Print
@@ -2698,6 +2698,53 @@ function PricingConfigSection({ user }) {
         <button onClick={() => { setPricingTab("embroidery"); if (!emb.enabled) setConfig(prev => ({ ...prev, embroidery: { ...prev.embroidery, enabled: true } })); }}
           className={`text-xs font-semibold px-4 py-2 rounded-t-lg transition ${pricingTab === "embroidery" ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
           Embroidery {emb.enabled && <span className="ml-1 text-emerald-400">*</span>}
+        </button>
+        {/* Custom techniques (DTG, DTF, Heat Transfer, Sublimation,
+            anything the shop has named). Inserted between Embroidery
+            and the + Add button so the order matches the technique
+            dropdown the line-item editor sees. */}
+        {Object.keys(config.custom_techniques || {}).map((name) => (
+          <button
+            key={name}
+            onClick={() => setPricingTab(`custom:${name}`)}
+            className={`text-xs font-semibold px-4 py-2 rounded-t-lg transition ${pricingTab === `custom:${name}` ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}
+          >
+            {name}
+          </button>
+        ))}
+        <button
+          onClick={() => {
+            const name = (window.prompt("New decoration method name (e.g. DTG, DTF, Heat Transfer):", "DTG") || "").trim();
+            if (!name) return;
+            if (name === "Screen Print" || name === "Embroidery") {
+              window.alert(`"${name}" already exists as a built-in tab.`);
+              return;
+            }
+            if (config.custom_techniques?.[name]) {
+              window.alert(`"${name}" already exists.`);
+              setPricingTab(`custom:${name}`);
+              return;
+            }
+            // Seed with the current Screen Print values so the shop
+            // has a sane starting point. They can edit any cell.
+            setConfig(prev => ({
+              ...prev,
+              custom_techniques: {
+                ...(prev.custom_techniques || {}),
+                [name]: {
+                  firstPrint: JSON.parse(JSON.stringify(prev.firstPrint || {})),
+                  addlPrint:  JSON.parse(JSON.stringify(prev.addlPrint  || {})),
+                  tiers:      [...(prev.tiers || [25, 50, 100, 200])],
+                  maxColors:  prev.maxColors || 8,
+                },
+              },
+            }));
+            setPricingTab(`custom:${name}`);
+          }}
+          className="text-xs font-semibold px-3 py-2 rounded-t-lg transition text-teal-600 hover:bg-teal-50"
+          title="Add a custom decoration method with its own rate table"
+        >
+          + Add Method
         </button>
       </div>
 
@@ -3066,6 +3113,161 @@ function PricingConfigSection({ user }) {
           </>}
         </div>
       )}
+
+      {/* Custom technique editor — renders when the active tab is one
+          of the shop's custom methods. Each method gets its own
+          firstPrint + addlPrint + tiers + maxColors set in
+          config.custom_techniques[name]. Falls back to screen-print
+          values per-field so a partial save still prices something. */}
+      {pricingTab.startsWith("custom:") && (() => {
+        const name = pricingTab.slice("custom:".length);
+        const tech = config.custom_techniques?.[name];
+        if (!tech) {
+          // Tab pointing at a tech that's already been removed —
+          // bounce back to screen print so the rest of the page
+          // remains functional.
+          return (
+            <div className="text-xs text-slate-400 italic py-4">
+              This technique no longer exists.
+              <button
+                onClick={() => setPricingTab("screen_print")}
+                className="ml-2 text-teal-600 font-semibold hover:text-teal-700"
+              >
+                Back to Screen Print
+              </button>
+            </div>
+          );
+        }
+
+        const tiers = Array.isArray(tech.tiers) && tech.tiers.length > 0
+          ? tech.tiers
+          : (config.tiers || [25, 50, 100, 200]);
+        const maxC = Number(tech.maxColors) > 0 ? Number(tech.maxColors) : 8;
+        const colorRows = Array.from({ length: maxC }, (_, i) => i + 1);
+
+        const updateTechField = (field, value) =>
+          setConfig(prev => ({
+            ...prev,
+            custom_techniques: {
+              ...(prev.custom_techniques || {}),
+              [name]: { ...(prev.custom_techniques?.[name] || {}), [field]: value },
+            },
+          }));
+
+        const updateCell = (section /* "firstPrint" | "addlPrint" */, colors, tier, value) => {
+          const cur = config.custom_techniques?.[name]?.[section] || {};
+          const next = {
+            ...cur,
+            [colors]: { ...(cur[colors] || {}), [tier]: Number(value) || 0 },
+          };
+          updateTechField(section, next);
+        };
+
+        const renderTable = (title, section) => (
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest">{title}</h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="text-slate-400 text-xs">
+                    <th className="text-left font-semibold py-2 pr-2">Colors</th>
+                    {tiers.map((t) => (
+                      <th key={t} className="text-left font-semibold px-2 py-2">{t}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {colorRows.map((c) => (
+                    <tr key={c} className="border-t border-slate-100">
+                      <td className="text-xs font-semibold text-slate-500 uppercase pr-2 py-2">
+                        {c} color{c === 1 ? "" : "s"}
+                      </td>
+                      {tiers.map((t) => {
+                        const cellValue = config.custom_techniques?.[name]?.[section]?.[c]?.[t] ?? "";
+                        return (
+                          <td key={t} className="px-2 py-1.5">
+                            <NumericInput
+                              value={cellValue}
+                              onChange={(n) => updateCell(section, c, t, n)}
+                              min={0}
+                              max={10000}
+                              label={`${name} → ${section} → ${c} color × ${t} tier`}
+                              className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+
+        return (
+          <div className="space-y-5 bg-slate-50/50 rounded-2xl border border-slate-100 p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900">{name}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Custom decoration method. Anyone selecting <span className="font-semibold">{name}</span> on a quote imprint will use these rates instead of Screen Print&apos;s.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  if (!window.confirm(`Remove "${name}"? Past quotes that used these rates stay anchored to their saved values — only future imprints are affected.`)) return;
+                  setConfig(prev => {
+                    const next = { ...prev, custom_techniques: { ...(prev.custom_techniques || {}) } };
+                    delete next.custom_techniques[name];
+                    return next;
+                  });
+                  setPricingTab("screen_print");
+                }}
+                className="text-xs font-semibold text-red-400 hover:text-red-600 transition px-3 py-1.5 rounded-lg border border-red-100 hover:bg-red-50"
+              >
+                Remove {name}
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Max Colors</label>
+                <NumericInput
+                  value={maxC}
+                  onChange={(n) => updateTechField("maxColors", Math.max(1, Math.min(16, Number(n) || 1)))}
+                  min={1}
+                  max={16}
+                  label={`${name} → maxColors`}
+                  className="w-24 text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Quantity Tiers</label>
+                <input
+                  type="text"
+                  defaultValue={tiers.join(", ")}
+                  onBlur={(e) => {
+                    const parsed = e.target.value
+                      .split(/[\s,]+/)
+                      .map((s) => parseInt(s, 10))
+                      .filter((n) => Number.isFinite(n) && n > 0)
+                      .sort((a, b) => a - b);
+                    if (parsed.length === 0) return;
+                    updateTechField("tiers", parsed);
+                  }}
+                  placeholder="25, 50, 100, 200"
+                  className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">Comma-separated minimum-piece counts (e.g. 25, 50, 100, 200).</p>
+              </div>
+            </div>
+
+            {renderTable("First Print Location (per piece)", "firstPrint")}
+            {renderTable("Additional Print Locations (per piece)", "addlPrint")}
+          </div>
+        );
+      })()}
 
       <div className="flex items-center gap-3">
         <button onClick={handleSave} disabled={saving}
