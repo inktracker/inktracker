@@ -10,6 +10,7 @@ import {
   getQty,
   uid,
   STANDARD_MARKUP,
+  getLineExtras,
 } from "../shared/pricing";
 import PricePanel from "./PricePanel";
 import Icon from "../shared/Icon";
@@ -520,6 +521,7 @@ export default function LineItemEditor({
   li,
   rushRate,
   extras,
+  addonsMeta = [],
   allLineItems = [],
   savedImprints = [],
   onChange: _rawOnChange,
@@ -527,6 +529,11 @@ export default function LineItemEditor({
   onDuplicate,
   canRemove,
 }) {
+  // Per-line extras as of 2026-06-04. li.extras wins when set;
+  // `extras` is the legacy quote-level fallback so old quotes
+  // (which only have quote.extras and no li.extras yet) keep
+  // rendering identical totals.
+  const lineExtras = getLineExtras(li, { extras });
   // sizePrices stored in a ref (synchronous) so it survives every onChange call.
   // React state updates are async and can be overwritten by rapid onChange calls.
   const sizePricesRef = useRef(li.sizePrices || null);
@@ -1239,6 +1246,57 @@ export default function LineItemEditor({
                 })}
               </div>
 
+              {/* Per-line add-ons. Each line item gets its own fee
+                  toggles so a "Color Match" or "Specialty Ink" fee can
+                  be applied to one garment in the order without
+                  inflating the price on every other line. Same toggle
+                  semantics as the old quote-level section. */}
+              {addonsMeta.length > 0 && (
+                <div className="mt-3">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">
+                    Add-ons (this line only)
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {addonsMeta.map(({ key, label, rate, mode }) => {
+                      const isOn = !!lineExtras[key];
+                      const isPercent = mode === "percent";
+                      const snapshot = isPercent
+                        ? { mode: "percent", rate: parseFloat(rate) || 0 }
+                        : (parseFloat(rate) || 0);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() =>
+                            // Parent's updateLineItem REPLACES the line
+                            // wholesale — must spread `li` so we don't
+                            // wipe imprints / sizes / garmentCost.
+                            onChange({
+                              ...li,
+                              extras: { ...lineExtras, [key]: isOn ? false : snapshot },
+                            })
+                          }
+                          className={`rounded-lg border px-2 py-1.5 text-left transition ${
+                            isOn
+                              ? "border-teal-600 bg-teal-50"
+                              : "border-slate-200 hover:border-slate-300 bg-white"
+                          }`}
+                        >
+                          <div className={`text-[11px] font-semibold leading-tight ${isOn ? "text-teal-700" : "text-slate-700"}`}>
+                            {label}
+                          </div>
+                          <div className="text-[10px] text-slate-400 leading-tight">
+                            {isPercent
+                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
+                              : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="mt-2 space-y-2">
                 <div className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-100">
                   {(li.imprints || [])[0]?.technique === "Embroidery"
@@ -1253,7 +1311,7 @@ export default function LineItemEditor({
             <PricePanel
               li={li}
               rushRate={rushRate}
-              extras={extras}
+              extras={lineExtras}
               allLineItems={previewLineItems}
               markup={STANDARD_MARKUP}
               onChange={onChange}

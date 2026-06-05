@@ -21,12 +21,25 @@ import LineItemEditor from "./LineItemEditor";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
+// Hard-coded fallback used until the shop's own pricing_config loads
+// (or for shops that haven't customized their extras at all). Every
+// entry uses `mode: "flat"` because the historical UI was flat-only;
+// once the shop saves their config the live values + modes take over.
 const DEFAULT_ADDONS = [
-  { key: "tags", label: "Custom Tags", rate: 1.5 },
-  { key: "difficultPrint", label: "Difficult Print", rate: 0.5 },
-  { key: "colorMatch", label: "Pantone Match", rate: 1.0 },
-  { key: "waterbased", label: "Water-Based Ink", rate: 1.0 },
+  { key: "tags",           label: "Custom Tags",      rate: 1.5, mode: "flat" },
+  { key: "difficultPrint", label: "Difficult Print",  rate: 0.5, mode: "flat" },
+  { key: "colorMatch",     label: "Pantone Match",    rate: 1.0, mode: "flat" },
+  { key: "waterbased",     label: "Water-Based Ink",  rate: 1.0, mode: "flat" },
 ];
+
+// Friendly default labels for the standard keys so a freshly-saved
+// shop's extras render with sensible names before they customize.
+const DEFAULT_LABELS = {
+  tags:           "Custom Tags",
+  difficultPrint: "Difficult Print",
+  colorMatch:     "Pantone Match",
+  waterbased:     "Water-Based Ink",
+};
 
 function addBusinessDays(date, days) {
   const d = new Date(date);
@@ -191,13 +204,27 @@ export default function QuoteEditorModal({
       try {
         const currentUser = await base44.auth.me();
         setUser(currentUser);
-        // Load addons from Shop entity
+        // Load addons. Source of truth is pricing_config.extras
+        // (+ extraLabels, extraModes). Legacy shops.addons is a
+        // separate column kept around for safety but no longer
+        // populated by anything in the Account UI.
         try {
           const shops = await base44.entities.Shop.filter({ owner_email: currentUser.email });
-          if (shops?.[0]?.addons?.length) {
+          const cfg = shops?.[0]?.pricing_config;
+          if (cfg?.extras && Object.keys(cfg.extras).length > 0) {
+            const list = Object.keys(cfg.extras).map((key) => ({
+              key,
+              label: cfg.extraLabels?.[key] || DEFAULT_LABELS[key] || key,
+              rate:  parseFloat(cfg.extras[key]) || 0,
+              mode:  cfg.extraModes?.[key] === "percent" ? "percent" : "flat",
+            }));
+            setAddonsMeta(list.sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' })));
+          } else if (shops?.[0]?.addons?.length) {
+            // Legacy fall-through: a few early shops have shops.addons
+            // populated but no pricing_config.extras yet.
             setAddonsMeta(
               shops[0].addons
-                .map(a => ({ ...a, rate: parseFloat(a.rate) || 0 }))
+                .map(a => ({ ...a, rate: parseFloat(a.rate) || 0, mode: a.mode === "percent" ? "percent" : "flat" }))
                 .sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' }))
             );
           }
@@ -804,37 +831,11 @@ export default function QuoteEditorModal({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                Add-ons (per piece)
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {addonsMeta.map(({ key, label, rate }) => {
-                  const isOn = !!q.extras[key];
-                  return (
-                    <button
-                      key={key}
-                      onClick={() =>
-                        setQ({
-                          ...q,
-                          extras: { ...q.extras, [key]: isOn ? false : rate },
-                        })
-                      }
-                      className={`rounded-xl border-2 px-3 py-2 text-left transition ${
-                        isOn
-                          ? "border-teal-600 bg-teal-50"
-                          : "border-slate-200 dark:border-slate-700 hover:border-slate-300 bg-white dark:bg-slate-900"
-                      }`}
-                    >
-                      <div className={`text-xs font-bold ${isOn ? "text-teal-700" : "text-slate-700"}`}>
-                        {label}
-                      </div>
-                      <div className="text-xs text-slate-400">+${(parseFloat(rate) || 0).toFixed(2)}/pc</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {/* Per-line add-ons. The quote-level toggle block that
+                used to live here was removed on 2026-06-04 — each
+                LineItemEditor now renders its own toggle group so a
+                fee can apply to one garment without inflating every
+                other line in the order. */}
           </div>
 
           <div className="space-y-4">
@@ -902,6 +903,7 @@ export default function QuoteEditorModal({
                 li={li}
                 rushRate={q.rush_rate}
                 extras={q.extras}
+                addonsMeta={addonsMeta}
                 allLineItems={q.line_items}
                 savedImprints={savedImprints}
                 onChange={(updated) => updateLineItem(idx, updated)}

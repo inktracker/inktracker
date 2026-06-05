@@ -22,6 +22,16 @@ export const ADDL_PRINT = {
   8: { 25: 4.85, 50: 4.12, 100: 3.7, 200: 3.51 },
 };
 
+// Re-exported here so existing callers that import from "@/components/shared/pricing"
+// don't have to know about the extracted helpers file.
+export {
+  normalizeExtraConfigEntry,
+  resolveExtraRatePerPiece,
+  snapshotExtraForQuote,
+  getLineExtras,
+} from "@/lib/pricing/extras";
+import { resolveExtraRatePerPiece as _resolveExtraRatePerPiece, getLineExtras as _getLineExtras } from "@/lib/pricing/extras";
+
 export const EXTRA_RATES = {
   colorMatch: 1.0,
   difficultPrint: 0.5,
@@ -606,20 +616,18 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   // both tables (their key sets are disjoint — e.g. puffEmbroidery vs
   // flashCure) so whichever extra the user toggles on resolves
   // against the right rate.
+  //
+  // NOTE: per-piece resolution moved AFTER `flatCost` is known so
+  // percent-mode fees can apply against the line's garment cost.
+  // The merged config table is still built here so flat fees that
+  // need the shop-side rate (when quote.extras[k] === true rather
+  // than a snapshotted number) keep working.
   const hasEmbroidery = sorted.some((i) => (i.technique || "Screen Print") === "Embroidery");
   const hasScreenPrint = sorted.some((i) => (i.technique || "Screen Print") !== "Embroidery");
   const er = {
     ...(hasScreenPrint ? (_pc?.extras || EXTRA_RATES) : {}),
     ...(hasEmbroidery ? (_pc?.embroidery?.extras || {}) : {}),
   };
-  let extraPPP = 0;
-  Object.entries(extras || {}).forEach(([k, on]) => {
-    if (on) extraPPP += typeof on === "number" ? on : (er[k] || EXTRA_RATES[k] || 0);
-  });
-  const extraCost = Math.round(extraPPP * qty * 100) / 100;
-
-  // Per-piece print + extras cost (same for all sizes)
-  const printExtraPpp = qty > 0 ? Math.round((roundedPrintCost + extraCost) / qty * 100) / 100 : 0;
 
   // Garment cost per size — use actual per-size prices from API when available,
   // fall back to flat garmentCost × markup for all sizes.
@@ -627,6 +635,33 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   const hasSizePrices = Object.keys(sizePrices).length > 0;
   const flatCost = parseFloat(li.garmentCost) || 0;
   const flatMarkup = getMarkup(flatCost, isBroker);
+
+  // Per-piece decoration cost — printCost is the total imprint cost
+  // (first + additional locations × qty). Percent-mode extras apply
+  // against THIS (not the garment), per the user's spec: a 10%
+  // specialty-ink fee scales with the cost of decorating the
+  // garment, not with the blank.
+  const decorationPpp = qty > 0 ? printCost / qty : 0;
+
+  // Resolve per-piece extras dollars. resolveExtraRatePerPiece handles:
+  //   - number (legacy / flat snapshot)            → that many $/pc
+  //   - { mode:"percent", rate:N } (new)           → decorationPpp × N/100
+  //   - { mode:"flat",    rate:N }                 → N $/pc
+  //   - true (no snapshot, look up shop rate)      → use er[k]
+  let extraPPP = 0;
+  Object.entries(extras || {}).forEach(([k, on]) => {
+    if (!on) return;
+    if (on === true) {
+      // True-toggle (no snapshot) — fall back to shop's current rate.
+      extraPPP += Number(er[k] || EXTRA_RATES[k] || 0);
+      return;
+    }
+    extraPPP += _resolveExtraRatePerPiece(on, decorationPpp);
+  });
+  const extraCost = Math.round(extraPPP * qty * 100) / 100;
+
+  // Per-piece print + extras cost (same for all sizes)
+  const printExtraPpp = qty > 0 ? Math.round((roundedPrintCost + extraCost) / qty * 100) / 100 : 0;
 
   // Build per-piece price for each size and compute garment cost total
   const sizeBreakdown = {}; // { size: { qty, garmentPpp, totalPpp } }
@@ -717,7 +752,7 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
       subtotal += override * qty;
       return;
     }
-    const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, markup, linkedQtyMap);
+    const r = calcLinkedLinePrice(li, q.rush_rate, _getLineExtras(li, q), markup, linkedQtyMap);
     if (r) {
       // Use ppp × qty so totals match the displayed average per-piece price
       subtotal += r.ppp * r.qty;
@@ -883,7 +918,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
         lineTotalForQb = override * qty;
         unitPriceForQb = override;
       } else {
-        const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
+        const r = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap);
         if (!r) return;
         lineTotalForQb = r.lineTotal;
         unitPriceForQb = qty > 0 ? r.lineTotal / qty : 0;

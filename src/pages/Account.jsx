@@ -2650,32 +2650,66 @@ function PricingConfigSection({ user }) {
       {/* Extras & Fees */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Extra Fees (per piece)</h4>
-        <p className="text-[10px] text-slate-400 mb-2">Rename, reprice, or remove fees. Add new ones with the button below.</p>
+        <p className="text-[10px] text-slate-400 mb-2">Rename, reprice, or remove fees. Toggle the $ / % button to charge a flat dollar amount per piece OR a percentage of the line's per-piece decoration cost.</p>
         <div className="space-y-2">
-          {Object.entries(config.extras || {}).map(([key, val]) => (
-            <div key={key} className="flex items-center gap-2">
-              <input type="text" value={config.extraLabels?.[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()}
-                onChange={e => setConfig(prev => ({ ...prev, extraLabels: { ...(prev.extraLabels || {}), [key]: e.target.value } }))}
-                className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-              <div className="relative w-24 shrink-0">
-                <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-                <NumericInput
-                  value={val}
-                  onChange={(n) => updateExtra(key, n)}
-                  min={0}
-                  max={10000}
-                  label={`Extras → ${key}`}
-                  className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
-                />
+          {Object.entries(config.extras || {}).map(([key, val]) => {
+            const mode = config.extraModes?.[key] === "percent" ? "percent" : "flat";
+            const isPercent = mode === "percent";
+            return (
+              <div key={key} className="flex items-center gap-2">
+                <input type="text" value={config.extraLabels?.[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()}
+                  onChange={e => setConfig(prev => ({ ...prev, extraLabels: { ...(prev.extraLabels || {}), [key]: e.target.value } }))}
+                  className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300" />
+                {/* Mode toggle. Defaults to "flat" — `extraModes` may be
+                    unset on shops that pre-date this feature. */}
+                <div className="flex shrink-0 border border-slate-200 rounded overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setConfig(prev => {
+                      const next = { ...prev, extraModes: { ...(prev.extraModes || {}) } };
+                      next.extraModes[key] = "flat";
+                      return next;
+                    })}
+                    className={`text-xs font-semibold w-7 py-1.5 transition ${!isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}
+                    title="Flat dollar amount per piece"
+                  >
+                    $
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfig(prev => {
+                      const next = { ...prev, extraModes: { ...(prev.extraModes || {}) } };
+                      next.extraModes[key] = "percent";
+                      return next;
+                    })}
+                    className={`text-xs font-semibold w-7 py-1.5 transition border-l border-slate-200 ${isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}
+                    title="Percent of the line's garment cost"
+                  >
+                    %
+                  </button>
+                </div>
+                <div className="relative w-24 shrink-0">
+                  {!isPercent && <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>}
+                  <NumericInput
+                    value={val}
+                    onChange={(n) => updateExtra(key, n)}
+                    min={0}
+                    max={isPercent ? 100 : 10000}
+                    label={`Extras → ${key}`}
+                    className={`w-full text-xs border border-slate-200 rounded py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300 ${isPercent ? "pl-2 pr-6" : "pl-5 pr-2"}`}
+                  />
+                  {isPercent && <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>}
+                </div>
+                <button onClick={() => setConfig(prev => {
+                  const next = { ...prev, extras: { ...prev.extras } };
+                  delete next.extras[key];
+                  if (next.extraLabels) { next.extraLabels = { ...next.extraLabels }; delete next.extraLabels[key]; }
+                  if (next.extraModes)  { next.extraModes  = { ...next.extraModes  }; delete next.extraModes[key]; }
+                  return next;
+                })} className="text-slate-300 hover:text-red-500 transition text-sm px-1" title="Remove">&times;</button>
               </div>
-              <button onClick={() => setConfig(prev => {
-                const next = { ...prev, extras: { ...prev.extras } };
-                delete next.extras[key];
-                if (next.extraLabels) { next.extraLabels = { ...next.extraLabels }; delete next.extraLabels[key]; }
-                return next;
-              })} className="text-slate-300 hover:text-red-500 transition text-sm px-1" title="Remove">&times;</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <button onClick={() => {
           const id = `custom_${Date.now()}`;
@@ -2683,6 +2717,7 @@ function PricingConfigSection({ user }) {
             ...prev,
             extras: { ...(prev.extras || {}), [id]: 0 },
             extraLabels: { ...(prev.extraLabels || {}), [id]: "New Fee" },
+            extraModes: { ...(prev.extraModes || {}), [id]: "flat" },
           }));
         }} className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-2 transition">
           + Add fee

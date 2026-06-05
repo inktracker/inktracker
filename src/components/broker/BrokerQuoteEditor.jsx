@@ -13,6 +13,7 @@ import {
   getStandardTurnaroundDays,
   getRushTurnaroundDays,
   getShopRushRate,
+  getLineExtras,
 } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -287,8 +288,9 @@ export default function BrokerQuoteEditor({
       const stampedItems = (q.line_items || []).map(li => {
         const qty = getQty(li);
         if (!qty) return li;
-        const brokerR = calcLinkedLinePrice(li, q.rush_rate, q.extras, BROKER_MARKUP, linkedQtyMap);
-        const clientR = calcLinkedLinePrice(li, q.rush_rate, q.extras, STANDARD_MARKUP, linkedQtyMap);
+        const lineExtras = getLineExtras(li, q);
+        const brokerR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, BROKER_MARKUP, linkedQtyMap);
+        const clientR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, STANDARD_MARKUP, linkedQtyMap);
         const clientOverride = Number(li?.clientPpp);
         const hasClientOverride = Number.isFinite(clientOverride) && clientOverride > 0;
 
@@ -603,41 +605,9 @@ export default function BrokerQuoteEditor({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-                Add-ons (per piece)
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {addonsMeta.map(({ key, label, rate }) => {
-                  const isOn = !!q.extras[key];
-                  return (
-                    <button
-                      key={key}
-                      onClick={() =>
-                        setQ({
-                          ...q,
-                          extras: { ...q.extras, [key]: isOn ? false : rate },
-                        })
-                      }
-                      className={`rounded-xl border-2 px-3 py-2 text-left transition ${
-                        isOn
-                          ? "border-teal-600 bg-teal-50"
-                          : "border-slate-200 hover:border-slate-300 bg-white"
-                      }`}
-                    >
-                      <div
-                        className={`text-xs font-bold ${
-                          isOn ? "text-teal-700" : "text-slate-700"
-                        }`}
-                      >
-                        {label}
-                      </div>
-                      <div className="text-xs text-slate-400">+${(parseFloat(rate) || 0).toFixed(2)}/pc</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            {/* Quote-level add-ons block removed 2026-06-04. Fees now
+                live on each line item — BrokerLineItemEditor renders
+                its own toggle group. */}
           </div>
 
           <div className="space-y-4">
@@ -659,6 +629,7 @@ export default function BrokerQuoteEditor({
                 li={li}
                 rushRate={q.rush_rate}
                 extras={q.extras}
+                addonsMeta={addonsMeta}
                 allLineItems={q.line_items}
                 savedImprints={selectedCustomer?.saved_imprints || []}
                 shopPricingConfig={shop?.pricing_config}
