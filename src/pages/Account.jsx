@@ -2293,14 +2293,24 @@ function PricingConfigSection({ user }) {
   // callers). Don't re-coerce — that's how the silent-zero bug crept
   // in originally. Save-gate (decidePricingSave) catches anything
   // that slips through.
-  function updatePrintTable(table, colors, tier, value) {
-    setConfig(prev => ({
-      ...prev,
-      [table]: {
-        ...prev[table],
-        [colors]: { ...prev[table][colors], [tier]: value },
-      },
-    }));
+  function updatePrintTable(table, colors, tier, value, scope) {
+    setConfig(prev => {
+      const slice = scope ? (prev.custom_techniques?.[scope] || {}) : prev;
+      const next = {
+        [table]: {
+          ...(slice[table] || {}),
+          [colors]: { ...((slice[table] || {})[colors] || {}), [tier]: value },
+        },
+      };
+      if (!scope) return { ...prev, ...next };
+      return {
+        ...prev,
+        custom_techniques: {
+          ...(prev.custom_techniques || {}),
+          [scope]: { ...slice, ...next },
+        },
+      };
+    });
   }
 
   function updateMarkup(idx, field, value) {
@@ -2311,88 +2321,171 @@ function PricingConfigSection({ user }) {
     });
   }
 
-  function updateExtra(key, value) {
-    setConfig(prev => ({
+  // ── Scope-aware accessors ─────────────────────────────────────────
+  // `scope` is undefined for the built-in Screen Print tab (handlers
+  // operate on top-level config fields) or a custom-technique name
+  // for the "+ Add Method" tabs (handlers operate on
+  // config.custom_techniques[scope]). Same rendering + handler code
+  // serves both — that's how Screen Print and DTG end up looking
+  // structurally identical instead of feeling like two different
+  // tools bolted together.
+  function getSlice(cfg, scope) {
+    if (!scope) return cfg || {};
+    return cfg?.custom_techniques?.[scope] || {};
+  }
+  function setSlice(prev, scope, patch) {
+    if (!scope) return { ...prev, ...patch };
+    return {
       ...prev,
-      extras: { ...prev.extras, [key]: value },
-    }));
-  }
-
-  function addTier() {
-    const tiers = config.tiers || DEFAULT_TIERS;
-    const last = tiers[tiers.length - 1] || 100;
-    const newTier = last * 2;
-    const newTiers = [...tiers, newTier].sort((a, b) => a - b);
-    // Add the new tier column to all print tables with 0 default
-    const fp = { ...config.firstPrint };
-    const ap = { ...config.addlPrint };
-    for (const c of Object.keys(fp)) { fp[c] = { ...fp[c], [newTier]: 0 }; }
-    for (const c of Object.keys(ap)) { ap[c] = { ...ap[c], [newTier]: 0 }; }
-    setConfig(prev => ({ ...prev, tiers: newTiers, firstPrint: fp, addlPrint: ap }));
-  }
-
-  function removeTier(tier) {
-    const tiers = (config.tiers || DEFAULT_TIERS).filter(t => t !== tier);
-    if (tiers.length < 1) return;
-    // Drop the column from the print tables too. addTier seeds each
-    // color row with a {[tier]: 0} entry; symmetric cleanup keeps the
-    // saved pricing_config clean instead of accumulating orphan
-    // {400: 0, 800: 0, ...} keys every time a shop adjusts their tiers.
-    const stripColumn = (table) => {
-      const out = {};
-      for (const c of Object.keys(table || {})) {
-        const { [tier]: _drop, ...rest } = table[c] || {};
-        out[c] = rest;
-      }
-      return out;
+      custom_techniques: {
+        ...(prev.custom_techniques || {}),
+        [scope]: { ...(prev.custom_techniques?.[scope] || {}), ...patch },
+      },
     };
-    setConfig(prev => ({
-      ...prev,
-      tiers,
-      firstPrint: stripColumn(prev.firstPrint),
-      addlPrint:  stripColumn(prev.addlPrint),
-    }));
   }
 
-  function updateTierValue(oldTier, newValue) {
+  function updateExtra(key, value, scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      return setSlice(prev, scope, {
+        extras: { ...(slice.extras || {}), [key]: value },
+      });
+    });
+  }
+
+  function setExtraMode(key, mode, scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      return setSlice(prev, scope, {
+        extraModes: { ...(slice.extraModes || {}), [key]: mode },
+      });
+    });
+  }
+
+  function addExtra(scope) {
+    const id = `custom_${Date.now()}`;
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      return setSlice(prev, scope, {
+        extras:      { ...(slice.extras || {}),      [id]: 0 },
+        extraLabels: { ...(slice.extraLabels || {}), [id]: "New Fee" },
+        extraModes:  { ...(slice.extraModes || {}),  [id]: "flat" },
+      });
+    });
+  }
+
+  function removeExtra(key, scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      const next = {
+        extras:      { ...(slice.extras || {}) },
+        extraLabels: { ...(slice.extraLabels || {}) },
+        extraModes:  { ...(slice.extraModes || {}) },
+      };
+      delete next.extras[key];
+      delete next.extraLabels[key];
+      delete next.extraModes[key];
+      return setSlice(prev, scope, next);
+    });
+  }
+
+  function updateExtraLabel(key, label, scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      return setSlice(prev, scope, {
+        extraLabels: { ...(slice.extraLabels || {}), [key]: label },
+      });
+    });
+  }
+
+  function addTier(scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      const tiers = slice.tiers || prev.tiers || DEFAULT_TIERS;
+      const last = tiers[tiers.length - 1] || 100;
+      const newTier = last * 2;
+      const newTiers = [...tiers, newTier].sort((a, b) => a - b);
+      const fp = { ...(slice.firstPrint || {}) };
+      const ap = { ...(slice.addlPrint  || {}) };
+      for (const c of Object.keys(fp)) { fp[c] = { ...fp[c], [newTier]: 0 }; }
+      for (const c of Object.keys(ap)) { ap[c] = { ...ap[c], [newTier]: 0 }; }
+      return setSlice(prev, scope, { tiers: newTiers, firstPrint: fp, addlPrint: ap });
+    });
+  }
+
+  function removeTier(tier, scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      const tiers = (slice.tiers || prev.tiers || DEFAULT_TIERS).filter(t => t !== tier);
+      if (tiers.length < 1) return prev;
+      const stripColumn = (table) => {
+        const out = {};
+        for (const c of Object.keys(table || {})) {
+          const { [tier]: _drop, ...rest } = table[c] || {};
+          out[c] = rest;
+        }
+        return out;
+      };
+      return setSlice(prev, scope, {
+        tiers,
+        firstPrint: stripColumn(slice.firstPrint),
+        addlPrint:  stripColumn(slice.addlPrint),
+      });
+    });
+  }
+
+  function updateTierValue(oldTier, newValue, scope) {
     const val = parseInt(newValue) || 0;
     if (val <= 0) return;
-    const tiers = (config.tiers || DEFAULT_TIERS).map(t => t === oldTier ? val : t).sort((a, b) => a - b);
-    // Rename the key in print tables
-    const rename = (table) => {
-      const out = {};
-      for (const c of Object.keys(table)) {
-        out[c] = {};
-        for (const t of Object.keys(table[c])) {
-          const k = parseInt(t) === oldTier ? val : parseInt(t);
-          out[c][k] = table[c][t];
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      const tiers = (slice.tiers || prev.tiers || DEFAULT_TIERS)
+        .map(t => t === oldTier ? val : t)
+        .sort((a, b) => a - b);
+      const rename = (table) => {
+        const out = {};
+        for (const c of Object.keys(table || {})) {
+          out[c] = {};
+          for (const t of Object.keys(table[c])) {
+            const k = parseInt(t) === oldTier ? val : parseInt(t);
+            out[c][k] = table[c][t];
+          }
         }
-      }
-      return out;
-    };
-    setConfig(prev => ({ ...prev, tiers, firstPrint: rename(prev.firstPrint), addlPrint: rename(prev.addlPrint) }));
+        return out;
+      };
+      return setSlice(prev, scope, {
+        tiers,
+        firstPrint: rename(slice.firstPrint),
+        addlPrint:  rename(slice.addlPrint),
+      });
+    });
   }
 
-  function addColorRow() {
-    const maxC = config.maxColors || DEFAULT_COLORS;
-    const newC = maxC + 1;
-    const tiers = config.tiers || DEFAULT_TIERS;
-    const emptyRow = {};
-    tiers.forEach(t => { emptyRow[t] = 0; });
-    setConfig(prev => ({
-      ...prev,
-      maxColors: newC,
-      firstPrint: { ...prev.firstPrint, [newC]: { ...emptyRow } },
-      addlPrint: { ...prev.addlPrint, [newC]: { ...emptyRow } },
-    }));
+  function addColorRow(scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      const maxC = slice.maxColors || prev.maxColors || DEFAULT_COLORS;
+      const newC = maxC + 1;
+      const tiers = slice.tiers || prev.tiers || DEFAULT_TIERS;
+      const emptyRow = {};
+      tiers.forEach(t => { emptyRow[t] = 0; });
+      return setSlice(prev, scope, {
+        maxColors:  newC,
+        firstPrint: { ...(slice.firstPrint || {}), [newC]: { ...emptyRow } },
+        addlPrint:  { ...(slice.addlPrint  || {}), [newC]: { ...emptyRow } },
+      });
+    });
   }
 
-  function removeColorRow() {
-    const maxC = config.maxColors || DEFAULT_COLORS;
-    if (maxC <= 1) return;
-    const fp = { ...config.firstPrint }; delete fp[maxC];
-    const ap = { ...config.addlPrint }; delete ap[maxC];
-    setConfig(prev => ({ ...prev, maxColors: maxC - 1, firstPrint: fp, addlPrint: ap }));
+  function removeColorRow(scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      const maxC = slice.maxColors || prev.maxColors || DEFAULT_COLORS;
+      if (maxC <= 1) return prev;
+      const fp = { ...(slice.firstPrint || {}) }; delete fp[maxC];
+      const ap = { ...(slice.addlPrint  || {}) }; delete ap[maxC];
+      return setSlice(prev, scope, { maxColors: maxC - 1, firstPrint: fp, addlPrint: ap });
+    });
   }
 
   // Embroidery helpers
@@ -2470,7 +2563,20 @@ function PricingConfigSection({ user }) {
   const emb = config.embroidery || DEFAULTS.embroidery;
   const inputCls = "w-full text-xs text-center border border-slate-200 rounded px-1 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300";
 
-  function renderPrintTable(tableKey, title) {
+  // Same renderer for Screen Print (scope undefined) and any custom
+  // technique (scope = tech name). Pulls tiers/maxColors/table data
+  // from the scope's slice via getSlice, dispatches handlers with
+  // the same scope. That's how DTG / DTF / etc. end up with the
+  // identical UI as Screen Print instead of feeling like a
+  // separate, lesser editor.
+  function renderPrintTable(tableKey, title, scope) {
+    const cfg = scope ? (config.custom_techniques?.[scope] || {}) : config;
+    const t_iers = (Array.isArray(cfg.tiers) && cfg.tiers.length > 0)
+      ? cfg.tiers
+      : (config.tiers || DEFAULT_TIERS);
+    const maxC = cfg.maxColors || (scope ? (config.maxColors || DEFAULT_COLORS) : (config.maxColors || DEFAULT_COLORS));
+    const c_rows = Array.from({ length: maxC }, (_, i) => i + 1);
+    const table = cfg[tableKey] || {};
     return (
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">{title}</h4>
@@ -2479,18 +2585,18 @@ function PricingConfigSection({ user }) {
             <thead>
               <tr className="text-slate-400">
                 <th className="text-left py-1 pr-2">Colors</th>
-                {tiers.map(t => (
+                {t_iers.map(t => (
                   <th key={t} className="text-center py-1">
                     <div className="inline-flex items-center gap-1">
                       <input type="number" value={t}
-                        onChange={e => updateTierValue(t, e.target.value)}
+                        onChange={e => updateTierValue(t, e.target.value, scope)}
                         className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-400 font-semibold" />
                       <span className="text-slate-300">+</span>
                       {/* Remove this tier column. Hidden when there's
                           only one tier left (can't remove the last). */}
-                      {tiers.length > 1 && (
+                      {t_iers.length > 1 && (
                         <button
-                          onClick={() => removeTier(t)}
+                          onClick={() => removeTier(t, scope)}
                           className="text-slate-300 hover:text-red-500 text-xs ml-0.5"
                           title={`Remove ${t}+ tier`}
                         >×</button>
@@ -2499,22 +2605,22 @@ function PricingConfigSection({ user }) {
                   </th>
                 ))}
                 <th className="py-1 px-1">
-                  <button onClick={addTier} className="text-teal-500 hover:text-teal-700 text-xs font-bold" title="Add tier">+</button>
+                  <button onClick={() => addTier(scope)} className="text-teal-500 hover:text-teal-700 text-xs font-bold" title="Add tier">+</button>
                 </th>
               </tr>
             </thead>
             <tbody>
-              {colorRows.map(c => (
+              {c_rows.map(c => (
                 <tr key={c}>
                   <td className="py-1 pr-2 font-semibold text-slate-600 whitespace-nowrap">{c} color{c > 1 ? "s" : ""}</td>
-                  {tiers.map(t => (
+                  {t_iers.map(t => (
                     <td key={t} className="py-1 px-0.5">
                       <NumericInput
-                        value={config[tableKey][c]?.[t]}
-                        onChange={(n) => updatePrintTable(tableKey, c, t, n)}
+                        value={table[c]?.[t]}
+                        onChange={(n) => updatePrintTable(tableKey, c, t, n, scope)}
                         min={0}
                         max={10000}
-                        label={`${tableKey === "firstPrint" ? "First print" : "Additional print"} ${c} color × ${t} pcs`}
+                        label={`${scope || "Screen Print"} ${tableKey === "firstPrint" ? "first" : "additional"} ${c} color × ${t} pcs`}
                         className={inputCls}
                       />
                     </td>
@@ -2690,6 +2796,43 @@ function PricingConfigSection({ user }) {
       </div>
 
       {/* Decoration type tabs */}
+      {/* First-Location Ordering — global setting, applies to every
+          non-embroidery decoration method. Lives above the tabs so
+          it's clear it isn't a per-technique knob. */}
+      <div>
+        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">First-Location Ordering</h4>
+        <p className="text-[10px] text-slate-400 mb-2">
+          When a job has multiple imprint locations with different color counts, which one absorbs the "first" rate (where you&apos;ve baked in setup)? Applies to all decoration methods.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            { value: "fewest", label: "Fewest colors first", hint: "Simpler imprint carries setup. Lower bill on mixed jobs." },
+            { value: "most", label: "Most colors first", hint: "Complex imprint carries setup. Matches typical industry convention." },
+          ].map(opt => {
+            const current = config.firstPrintOrdering || "fewest";
+            const selected = current === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setConfig(prev => ({ ...prev, firstPrintOrdering: opt.value }))}
+                className={`text-left border rounded-lg p-3 transition ${
+                  selected
+                    ? "border-teal-500 bg-teal-50 ring-1 ring-teal-300"
+                    : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <div className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <span className={`inline-block w-3 h-3 rounded-full border ${selected ? "bg-teal-500 border-teal-500" : "border-slate-300"}`} />
+                  {opt.label}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1 ml-4">{opt.hint}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex gap-1 border-b border-slate-200 pb-0 flex-wrap">
         <button onClick={() => setPricingTab("screen_print")}
           className={`text-xs font-semibold px-4 py-2 rounded-t-lg transition ${pricingTab === "screen_print" ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
@@ -2761,41 +2904,6 @@ function PricingConfigSection({ user }) {
             <button onClick={addColorRow}
               className="w-6 h-6 flex items-center justify-center text-xs font-bold border border-slate-200 rounded hover:bg-slate-50">+</button>
           </div>
-        </div>
-      </div>
-
-      {/* First-print ordering toggle */}
-      <div>
-        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">First-Print Ordering</h4>
-        <p className="text-[10px] text-slate-400 mb-2">
-          When a job has multiple imprint locations with different color counts, which one absorbs the "first print" rate (where you've baked in setup)?
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {[
-            { value: "fewest", label: "Fewest colors first", hint: "Simpler print carries setup. Lower bill on mixed jobs." },
-            { value: "most", label: "Most colors first", hint: "Complex print carries setup. Matches typical industry convention." },
-          ].map(opt => {
-            const current = config.firstPrintOrdering || "fewest";
-            const selected = current === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setConfig(prev => ({ ...prev, firstPrintOrdering: opt.value }))}
-                className={`text-left border rounded-lg p-3 transition ${
-                  selected
-                    ? "border-teal-500 bg-teal-50 ring-1 ring-teal-300"
-                    : "border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                <div className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <span className={`inline-block w-3 h-3 rounded-full border ${selected ? "bg-teal-500 border-teal-500" : "border-slate-300"}`} />
-                  {opt.label}
-                </div>
-                <p className="text-[10px] text-slate-500 mt-1 ml-4">{opt.hint}</p>
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -3114,21 +3222,18 @@ function PricingConfigSection({ user }) {
         </div>
       )}
 
-      {/* Custom technique editor — renders when the active tab is one
-          of the shop's custom methods. Each method gets its own
-          firstPrint + addlPrint + tiers + maxColors set in
-          config.custom_techniques[name]. Falls back to screen-print
-          values per-field so a partial save still prices something. */}
+      {/* Custom technique editor — uses the SAME blocks as Screen
+          Print (Max Colors header + inline +/× matrices + Extras
+          section) via the scope-aware handlers above. That's how
+          DTG / DTF / etc. end up structurally identical to Screen
+          Print instead of feeling like a separate, lesser editor. */}
       {pricingTab.startsWith("custom:") && (() => {
         const name = pricingTab.slice("custom:".length);
         const tech = config.custom_techniques?.[name];
         if (!tech) {
-          // Tab pointing at a tech that's already been removed —
-          // bounce back to screen print so the rest of the page
-          // remains functional.
           return (
             <div className="text-xs text-slate-400 italic py-4">
-              This technique no longer exists.
+              This method no longer exists.
               <button
                 onClick={() => setPricingTab("screen_print")}
                 className="ml-2 text-teal-600 font-semibold hover:text-teal-700"
@@ -3139,84 +3244,19 @@ function PricingConfigSection({ user }) {
           );
         }
 
-        const tiers = Array.isArray(tech.tiers) && tech.tiers.length > 0
-          ? tech.tiers
-          : (config.tiers || [25, 50, 100, 200]);
-        const maxC = Number(tech.maxColors) > 0 ? Number(tech.maxColors) : 8;
-        const colorRows = Array.from({ length: maxC }, (_, i) => i + 1);
-
-        const updateTechField = (field, value) =>
-          setConfig(prev => ({
-            ...prev,
-            custom_techniques: {
-              ...(prev.custom_techniques || {}),
-              [name]: { ...(prev.custom_techniques?.[name] || {}), [field]: value },
-            },
-          }));
-
-        const updateCell = (section /* "firstPrint" | "addlPrint" */, colors, tier, value) => {
-          const cur = config.custom_techniques?.[name]?.[section] || {};
-          const next = {
-            ...cur,
-            [colors]: { ...(cur[colors] || {}), [tier]: Number(value) || 0 },
-          };
-          updateTechField(section, next);
-        };
-
-        const renderTable = (title, section) => (
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest">{title}</h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm border-collapse">
-                <thead>
-                  <tr className="text-slate-400 text-xs">
-                    <th className="text-left font-semibold py-2 pr-2">Colors</th>
-                    {tiers.map((t) => (
-                      <th key={t} className="text-left font-semibold px-2 py-2">{t}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {colorRows.map((c) => (
-                    <tr key={c} className="border-t border-slate-100">
-                      <td className="text-xs font-semibold text-slate-500 uppercase pr-2 py-2">
-                        {c} color{c === 1 ? "" : "s"}
-                      </td>
-                      {tiers.map((t) => {
-                        const cellValue = config.custom_techniques?.[name]?.[section]?.[c]?.[t] ?? "";
-                        return (
-                          <td key={t} className="px-2 py-1.5">
-                            <NumericInput
-                              value={cellValue}
-                              onChange={(n) => updateCell(section, c, t, n)}
-                              min={0}
-                              max={10000}
-                              label={`${name} → ${section} → ${c} color × ${t} tier`}
-                              className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
-                            />
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
+        const techMaxC = tech.maxColors || maxColors;
+        const techExtras = tech.extras || {};
+        const techLabels = tech.extraLabels || {};
 
         return (
-          <div className="space-y-5 bg-slate-50/50 rounded-2xl border border-slate-100 p-5">
+          <div className="space-y-5">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex-1">
-                <h3 className="text-base font-bold text-slate-900">{name}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Custom decoration method. Anyone selecting <span className="font-semibold">{name}</span> on a quote imprint will use these rates instead of Screen Print&apos;s.
-                </p>
-              </div>
+              <p className="text-xs text-slate-500">
+                Rates apply when an imprint's technique is set to <span className="font-semibold text-slate-700">{name}</span>. Fields with no value fall back to your Screen Print rates so a partial save still produces a quote.
+              </p>
               <button
                 onClick={() => {
-                  if (!window.confirm(`Remove "${name}"? Past quotes that used these rates stay anchored to their saved values — only future imprints are affected.`)) return;
+                  if (!window.confirm(`Remove "${name}"? Past quotes stay anchored to their saved values — only future imprints are affected.`)) return;
                   setConfig(prev => {
                     const next = { ...prev, custom_techniques: { ...(prev.custom_techniques || {}) } };
                     delete next.custom_techniques[name];
@@ -3224,47 +3264,62 @@ function PricingConfigSection({ user }) {
                   });
                   setPricingTab("screen_print");
                 }}
-                className="text-xs font-semibold text-red-400 hover:text-red-600 transition px-3 py-1.5 rounded-lg border border-red-100 hover:bg-red-50"
+                className="text-xs font-semibold text-red-400 hover:text-red-600 transition px-3 py-1.5 rounded-lg border border-red-100 hover:bg-red-50 whitespace-nowrap"
               >
                 Remove {name}
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Max Colors</label>
-                <NumericInput
-                  value={maxC}
-                  onChange={(n) => updateTechField("maxColors", Math.max(1, Math.min(16, Number(n) || 1)))}
-                  min={1}
-                  max={16}
-                  label={`${name} → maxColors`}
-                  className="w-24 text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Quantity Tiers</label>
-                <input
-                  type="text"
-                  defaultValue={tiers.join(", ")}
-                  onBlur={(e) => {
-                    const parsed = e.target.value
-                      .split(/[\s,]+/)
-                      .map((s) => parseInt(s, 10))
-                      .filter((n) => Number.isFinite(n) && n > 0)
-                      .sort((a, b) => a - b);
-                    if (parsed.length === 0) return;
-                    updateTechField("tiers", parsed);
-                  }}
-                  placeholder="25, 50, 100, 200"
-                  className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Comma-separated minimum-piece counts (e.g. 25, 50, 100, 200).</p>
+            {/* Max Colors — same control as Screen Print, scoped to this tech */}
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Max Colors</h4>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => removeColorRow(name)} disabled={techMaxC <= 1}
+                    className="w-6 h-6 flex items-center justify-center text-xs font-bold border border-slate-200 rounded hover:bg-slate-50 disabled:opacity-30">-</button>
+                  <span className="text-sm font-bold text-slate-700 w-6 text-center">{techMaxC}</span>
+                  <button onClick={() => addColorRow(name)}
+                    className="w-6 h-6 flex items-center justify-center text-xs font-bold border border-slate-200 rounded hover:bg-slate-50">+</button>
+                </div>
               </div>
             </div>
 
-            {renderTable("First Print Location (per piece)", "firstPrint")}
-            {renderTable("Additional Print Locations (per piece)", "addlPrint")}
+            {renderPrintTable("firstPrint", `First ${name} Location (per piece)`, name)}
+            {renderPrintTable("addlPrint",  `Additional ${name} Locations (per piece)`, name)}
+
+            {/* Per-technique Extras */}
+            <div>
+              <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Extra Fees (per piece)</h4>
+              <p className="text-[10px] text-slate-400 mb-2">Fees only available on {name} imprints. Add new ones with the button below.</p>
+              <div className="space-y-2">
+                {Object.entries(techExtras).map(([key, val]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <input type="text" value={techLabels[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()}
+                      onChange={e => updateExtraLabel(key, e.target.value, name)}
+                      className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300" />
+                    <div className="relative w-24 shrink-0">
+                      <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
+                      <NumericInput
+                        value={val}
+                        onChange={(n) => updateExtra(key, n, name)}
+                        min={0}
+                        max={10000}
+                        label={`${name} extras → ${key}`}
+                        className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                      />
+                    </div>
+                    <button
+                      onClick={() => removeExtra(key, name)}
+                      className="text-slate-300 hover:text-red-500 transition text-sm px-1"
+                      title="Remove"
+                    >&times;</button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => addExtra(name)} className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-2 transition">
+                + Add fee
+              </button>
+            </div>
           </div>
         );
       })()}

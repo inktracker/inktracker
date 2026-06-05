@@ -752,10 +752,25 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   // need the shop-side rate (when quote.extras[k] === true rather
   // than a snapshotted number) keep working.
   const hasEmbroidery = sorted.some((i) => (i.technique || "Screen Print") === "Embroidery");
-  const hasScreenPrint = sorted.some((i) => (i.technique || "Screen Print") !== "Embroidery");
+  const hasScreenPrint = sorted.some((i) => (i.technique || "Screen Print") === "Screen Print");
+  // Custom-technique extras: merge in the extras for every custom
+  // tech that appears on this line. Lets a "Specialty Foil" fee on
+  // the DTF tab show up when the line has a DTF imprint, without
+  // polluting screen-print-only lines with DTF-specific fees.
+  const customExtras = {};
+  const customTechs = _pc?.custom_techniques || {};
+  for (const imp of sorted) {
+    const tech = imp.technique || "Screen Print";
+    if (tech === "Screen Print" || tech === "Embroidery") continue;
+    const techExtras = customTechs[tech]?.extras;
+    if (techExtras && typeof techExtras === "object") {
+      Object.assign(customExtras, techExtras);
+    }
+  }
   const er = {
     ...(hasScreenPrint ? (_pc?.extras || EXTRA_RATES) : {}),
     ...(hasEmbroidery ? (_pc?.embroidery?.extras || {}) : {}),
+    ...customExtras,
   };
 
   // Garment cost per size — use actual per-size prices from API when available,
