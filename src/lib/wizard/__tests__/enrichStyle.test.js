@@ -171,6 +171,46 @@ describe("pickAndNormalize — supplier disambiguation", () => {
     expect(pickAndNormalize(null, null, {})).toBeNull();
     expect(pickAndNormalize({ matches: [] }, { matches: [] }, {})).toBeNull();
   });
+
+  it("returns null when brandHint='AS Colour' and AS Colour has no match (won't substitute S&S)", () => {
+    // The collision bug that shipped: shop saved AS Colour 5029 (Base
+    // L/S Tee) → AS Colour API didn't return a match → enricher fell
+    // through to S&S → picked Women's Two-Tone Vital Polo on style
+    // number 5029. Wizard tile displayed the polo instead of the tee.
+    // Strict-brand semantics: if brandHint pins AS Colour, only AS
+    // Colour matches qualify. Empty AC matches → null → audit gate
+    // catches it on the next sync.
+    const result = pickAndNormalize(
+      { matches: [SS_MATCH_REDKAP_5080] }, // S&S has SOMETHING for this style
+      { matches: [] },                     // AS Colour has nothing
+      { brandHint: "AS Colour" }
+    );
+    expect(result).toBeNull();
+  });
+
+  it("returns null when brandHint is a non-AS-Colour brand and S&S has no matching-brand row", () => {
+    // Same strict semantics for S&S brands. If brandHint says
+    // "Bella+Canvas" but the only S&S match is Red Kap, return null
+    // rather than substituting an unrelated product.
+    const result = pickAndNormalize(
+      { matches: [SS_MATCH_REDKAP_5080] },
+      null,
+      { brandHint: "Bella+Canvas" }
+    );
+    expect(result).toBeNull();
+  });
+
+  it("still falls back to first match when NO brand hint is provided (legacy free-form lookup path)", () => {
+    // The strict-brand rule only kicks in when the caller declared a
+    // brand. Free-form lookups (customer hand-types a style number in
+    // the wizard with no brand context) keep first-match-wins behavior.
+    const result = pickAndNormalize(
+      { matches: [SS_MATCH_REDKAP_5080] },
+      { matches: [AC_MATCH_5080] },
+      {}
+    );
+    expect(result.enrichedFrom).toBe("ss");
+  });
 });
 
 describe("isStyleEnriched — predicate", () => {
