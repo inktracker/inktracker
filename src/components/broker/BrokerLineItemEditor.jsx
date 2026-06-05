@@ -952,7 +952,9 @@ export default function BrokerLineItemEditor({
                         <button
                           key={key}
                           type="button"
+                          // Parent replaces the line — spread li so imprints / sizes / garmentCost survive.
                           onClick={() => onChange({
+                            ...li,
                             extras: { ...lineExtras, [key]: isOn ? false : snapshot },
                           })}
                           className={`rounded-lg border px-2 py-1.5 text-left transition ${

@@ -1268,7 +1268,11 @@ export default function LineItemEditor({
                           key={key}
                           type="button"
                           onClick={() =>
+                            // Parent's updateLineItem REPLACES the line
+                            // wholesale — must spread `li` so we don't
+                            // wipe imprints / sizes / garmentCost.
                             onChange({
+                              ...li,
                               extras: { ...lineExtras, [key]: isOn ? false : snapshot },
                             })
                           }
