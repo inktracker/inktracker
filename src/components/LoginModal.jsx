@@ -25,6 +25,63 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   const [resendLoading, setResendLoading] = useState(false);
   const [pendingConfirmEmail, setPendingConfirmEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+  // Signup-only — explicit click-through of Terms + Privacy. The
+  // checkbox is required to submit so a shop can't claim they never
+  // saw or agreed to the platform agreement. Plain checkbox by design;
+  // anything fancier reads as "growth-hack overlay" and erodes trust.
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  // ── Cross-device confirmation sync ───────────────────────────────
+  // After signup, the desktop tab shows "Confirmation email sent."
+  // Operators commonly confirm on their phone (clicking the email
+  // link there). The phone gets signed in and navigates to
+  // onboarding, but the original desktop tab has no signal that the
+  // confirmation happened — it just sits there until the user
+  // manually refreshes.
+  //
+  // Fix: poll every 4 seconds while `pendingConfirmEmail` is set,
+  // retrying signInWithPassword with the password the user just
+  // typed. Supabase rejects sign-in for unconfirmed accounts; as
+  // soon as confirmation lands (from any device), this call
+  // succeeds — onClose() fires and the AuthContext listener takes
+  // over to navigate into onboarding, identical to a normal sign-in.
+  //
+  // Cleanup runs on modal close, mode switch, or successful sign-in
+  // so we don't keep pinging the auth endpoint forever.
+  useEffect(() => {
+    // Bail when the modal is closed — React doesn't unmount on
+    // `if (!isOpen) return null` (early returns leave hooks live),
+    // so the effect would otherwise keep polling Supabase silently
+    // after the user dismissed the modal.
+    if (!isOpen || !pendingConfirmEmail || !password) return undefined;
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      if (cancelled) return;
+      try {
+        const { data, error: pollErr } = await supabase.auth.signInWithPassword({
+          email: pendingConfirmEmail,
+          password,
+        });
+        if (!cancelled && !pollErr && data?.session) {
+          clearInterval(interval);
+          onClose();
+        }
+      } catch {
+        // Swallow — keep polling until success, cleanup, or the
+        // 10-minute timeout below stops us.
+      }
+    }, 4000);
+    // Hard stop after 10 minutes. If the user hasn't confirmed by
+    // then they probably aren't going to this session; no point
+    // pinging Supabase's auth endpoint indefinitely from a
+    // background tab.
+    const timeout = setTimeout(() => clearInterval(interval), 10 * 60 * 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      clearTimeout(timeout);
+    };
+  }, [pendingConfirmEmail, password, onClose]);
 
   if (!isOpen) return null;
 
@@ -73,6 +130,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         }
         if (password !== confirmPassword) {
           setError("Passwords don't match.");
+          setLoading(false);
+          return;
+        }
+        if (!agreedToTerms) {
+          setError("Please agree to the Terms of Service and Privacy Policy.");
           setLoading(false);
           return;
         }
@@ -378,9 +440,31 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               </div>
             )}
 
+            {mode === "signup" && (
+              <label className="flex items-start gap-2 text-xs text-slate-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={agreedToTerms}
+                  onChange={(e) => setAgreedToTerms(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500 flex-shrink-0"
+                />
+                <span className="leading-snug">
+                  I agree to the{" "}
+                  <a href="/terms" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-600 hover:text-teal-700 underline">
+                    Terms of Service
+                  </a>{" "}
+                  and{" "}
+                  <a href="/privacy" target="_blank" rel="noopener noreferrer" className="font-semibold text-teal-600 hover:text-teal-700 underline">
+                    Privacy Policy
+                  </a>
+                  .
+                </span>
+              </label>
+            )}
+
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (mode === "signup" && !agreedToTerms)}
               className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading

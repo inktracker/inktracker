@@ -8,12 +8,20 @@
 // Deploy: npx supabase functions deploy qbWebhook --no-verify-jwt
 
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
-import { makeOrderId } from "../_shared/qbInvoice.js";
 import { claimWebhookEvent, extractQbEventId } from "../_shared/webhookIdempotency.js";
+import { logEvent } from "../_shared/qbAudit.js";
+import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
+import {
+  chooseQuotePaymentRecipient,
+  buildQuotePaymentEmail,
+  sendAndLogApprovalNotification,
+} from "../_shared/approvalNotificationEmail.js";
 import {
   buildPaidInvoiceQuery,
+  buildPaidInvoiceQueryFromInvoices,
+  cascadeMarkLinkedPaid,
+  cascadeMarkInvoicePaid,
   decidePaidInvoiceAction,
-  buildOrderInsertFromQuote,
   extractInvoiceIdsFromPayment,
   isInvoiceFullyPaid,
   PAID_INVOICE_ACTIONS,
@@ -126,30 +134,6 @@ async function getAccessToken(supabase: any, profile: any): Promise<string> {
   return fresh.access_token;
 }
 
-// ── Convert quote → order (mirrors Quotes.jsx handleConvert) ─────────────────
-
-// Pure logic + tests live in ../_shared/qbInvoice.js + __tests__.
-
-async function convertQuoteToOrder(supabase: any, quote: any) {
-  const orderId = makeOrderId();
-  const orderRow = buildOrderInsertFromQuote(quote, orderId);
-
-  await supabase.from("orders").insert(orderRow);
-
-  // Mark quote as converted. Scope by both id AND shop_owner — same
-  // tenant-scoping rule we apply on the read side; the service-role
-  // client would otherwise update across tenants on a row-id collision
-  // (e.g. if a quote.id was ever changed manually).
-  await supabase.from("quotes").update({
-    status:             "Converted to Order",
-    converted_order_id: orderId,
-    converted_at:       new Date().toISOString(),
-    deposit_paid:       true,
-  }).eq("id", quote.id).eq("shop_owner", quote.shop_owner);
-
-  console.error(`[qbWebhook] Quote ${quote.quote_id} → Order ${orderId}`);
-}
-
 // ── Core: find quote by QB invoice ID and mark paid ──────────────────────────
 
 async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: string) {
@@ -162,17 +146,156 @@ async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: 
 
   if (error) {
     console.error(`[qbWebhook] DB error looking up invoice ${qbInvoiceId} for ${shopOwner}: ${error.message}`);
+    await logEvent(supabase, {
+      shop_owner: shopOwner,
+      action: "webhook_paid_invoice",
+      status: "error",
+      qb_invoice_id: qbInvoiceId,
+      error_message: `quote lookup failed: ${error.message}`,
+    });
     return;
   }
+
+  // UTC date for paid_date stamping. The webhook runs in a server context
+  // without shop timezone — accepting ~24h precision on paid_date is the
+  // tradeoff. Operator can fix in QB if exact-day-of-payment matters.
+  const today = new Date().toISOString().slice(0, 10);
 
   const decision = decidePaidInvoiceAction(quote);
-  if (decision.action !== PAID_INVOICE_ACTIONS.CONVERT) {
-    console.error(`[qbWebhook] invoice ${qbInvoiceId} for ${shopOwner}: ${decision.action} — ${decision.reason}`);
+
+  // First-payment path — unchanged from the original implementation.
+  if (decision.action === PAID_INVOICE_ACTIONS.CONVERT) {
+    console.error(`[qbWebhook] Marking quote ${quote.quote_id} as paid and converting to order`);
+    const orderId = await convertQuoteToOrder(supabase, quote);
+    console.error(`[qbWebhook] Quote ${quote.quote_id} → Order ${orderId}`);
+    await logEvent(supabase, {
+      shop_owner: shopOwner,
+      action: "webhook_paid_invoice",
+      status: "success",
+      qb_invoice_id: qbInvoiceId,
+      quote_id: quote.id,
+      response_body: { converted: true, quote_id_human: quote.quote_id, order_id: orderId },
+    });
+    await sendPaymentNotification(supabase, quote, orderId);
     return;
   }
 
-  console.error(`[qbWebhook] Marking quote ${quote.quote_id} as paid and converting to order`);
-  await convertQuoteToOrder(supabase, quote);
+  // New path: quote was converted manually (or auto-) BEFORE payment.
+  // Customer eventually paid; walk quote → order → invoice and mark
+  // each paid. Same notification email as the CONVERT path.
+  if (decision.action === PAID_INVOICE_ACTIONS.MARK_LINKED_PAID) {
+    const updates = await cascadeMarkLinkedPaid(supabase, quote, today);
+    console.error(
+      `[qbWebhook] Cascade-marked paid: quote ${quote.quote_id} ${JSON.stringify(updates)}`,
+    );
+    await logEvent(supabase, {
+      shop_owner: shopOwner,
+      action: "webhook_paid_invoice",
+      status: "success",
+      qb_invoice_id: qbInvoiceId,
+      quote_id: quote.id,
+      response_body: { cascade: true, ...updates },
+    });
+    // Only notify if something was newly flipped — re-deliveries of the
+    // same webhook event would otherwise spam the shop owner.
+    if (updates.quoteUpdated || updates.orderUpdated || updates.invoiceUpdated) {
+      await sendPaymentNotification(supabase, quote, quote.converted_order_id);
+    }
+    return;
+  }
+
+  // Quote not found → fall back to the invoices table. Covers the path
+  // where an order was completed without going through Send Quote
+  // (runOrderCompletion created the invoice independently). Same
+  // cross-tenant scoping rule.
+  if (decision.action === PAID_INVOICE_ACTIONS.SKIP_NOT_FOUND) {
+    const { data: invoice, error: invErr } = await buildPaidInvoiceQueryFromInvoices(
+      supabase, qbInvoiceId, shopOwner,
+    );
+    if (invErr) {
+      console.error(`[qbWebhook] DB error in invoice lookup ${qbInvoiceId}: ${invErr.message}`);
+      await logEvent(supabase, {
+        shop_owner: shopOwner,
+        action: "webhook_paid_invoice",
+        status: "error",
+        qb_invoice_id: qbInvoiceId,
+        error_message: `invoice lookup failed: ${invErr.message}`,
+      });
+      return;
+    }
+    if (!invoice) {
+      console.error(`[qbWebhook] invoice ${qbInvoiceId} for ${shopOwner}: no quote AND no invoice match`);
+      await logEvent(supabase, {
+        shop_owner: shopOwner,
+        action: "webhook_paid_invoice",
+        status: "skipped",
+        qb_invoice_id: qbInvoiceId,
+        response_body: { decision: "no_match_in_quotes_or_invoices" },
+      });
+      return;
+    }
+    const updates = await cascadeMarkInvoicePaid(supabase, invoice, today);
+    console.error(
+      `[qbWebhook] Cascade-marked invoice paid: ${invoice.invoice_id ?? invoice.id} ${JSON.stringify(updates)}`,
+    );
+    await logEvent(supabase, {
+      shop_owner: shopOwner,
+      action: "webhook_paid_invoice",
+      status: "success",
+      qb_invoice_id: qbInvoiceId,
+      response_body: { cascade: "invoice", ...updates },
+    });
+    // No matching quote means no payment recipient — skip notification.
+    // The shop will see the paid status flip in their list view.
+    return;
+  }
+
+  // All other skip cases: SKIP_ALREADY_CONVERTED (already paid),
+  // SKIP_INVALID_QUOTE. Log + return.
+  console.error(`[qbWebhook] invoice ${qbInvoiceId} for ${shopOwner}: ${decision.action} — ${decision.reason}`);
+  await logEvent(supabase, {
+    shop_owner: shopOwner,
+    action: "webhook_paid_invoice",
+    status: "skipped",
+    qb_invoice_id: qbInvoiceId,
+    quote_id: quote?.id ?? null,
+    response_body: { decision: decision.action, reason: decision.reason },
+  });
+}
+
+// Helper: payment-received notification email. Extracted from the
+// CONVERT path so the new MARK_LINKED_PAID path can call it too without
+// drift. Best-effort: a Resend failure must never block the cascade or
+// the conversion that already committed.
+async function sendPaymentNotification(supabase: any, quote: any, orderId: string | null) {
+  try {
+    const recipient = chooseQuotePaymentRecipient(quote);
+    let email: any = null;
+    if (recipient) {
+      const { data: shopRow } = await supabase
+        .from("shops")
+        .select("shop_name")
+        .eq("owner_email", quote.shop_owner)
+        .maybeSingle();
+      email = buildQuotePaymentEmail({
+        quote, shop: shopRow, customer: null, recipient,
+        orderId, amountPaid: quote.total,
+      });
+    }
+    await sendAndLogApprovalNotification(supabase, {
+      shop_owner: quote.shop_owner,
+      event_type: "quote_payment",
+      quote_id:   quote.id,
+      recipient_email: recipient?.to ?? "",
+      recipient_role:  recipient?.role,
+      to:       recipient?.to,
+      subject:  email?.subject,
+      html:     email?.html,
+      reply_to: email?.reply_to,
+    });
+  } catch (notifyErr) {
+    console.error("[qbWebhook] payment notification failed:", notifyErr);
+  }
 }
 
 // ── Process one notification ─────────────────────────────────────────────────

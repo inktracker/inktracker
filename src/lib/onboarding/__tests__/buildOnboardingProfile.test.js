@@ -141,6 +141,7 @@ describe("buildOnboardingProfile — full happy path", () => {
         city: "Austin",
         stateVal: "TX",
         zip: "78701",
+        website: "https://biotamfg.com",
         taxRate: "8.25",
       },
       { now: NOW },
@@ -153,6 +154,7 @@ describe("buildOnboardingProfile — full happy path", () => {
       city: "Austin",
       state: "TX",
       zip: "78701",
+      website: "https://biotamfg.com",
       default_tax_rate: 8.25,
       subscription_tier: "trial",
       subscription_status: "trialing",
@@ -218,17 +220,17 @@ describe("buildOnboardingProfile — robustness", () => {
 
 describe("buildShopUpsertPayload", () => {
   it("uses shop_name when present", () => {
-    expect(
-      buildShopUpsertPayload({
-        user: NEW_USER,
-        shopName: "Biota Mfg",
-        logoUrl: "https://cdn.example.com/logo.png",
-      })
-    ).toEqual({
-      owner_email: "owner@example.com",
-      shop_name: "Biota Mfg",
-      logo_url: "https://cdn.example.com/logo.png",
+    const p = buildShopUpsertPayload({
+      user: NEW_USER,
+      shopName: "Biota Mfg",
+      logoUrl: "https://cdn.example.com/logo.png",
     });
+    // Identity fields locked exactly; pricing_config is asserted in
+    // its own dedicated tests below (new always-full-config contract).
+    expect(p.owner_email).toBe("owner@example.com");
+    expect(p.shop_name).toBe("Biota Mfg");
+    expect(p.logo_url).toBe("https://cdn.example.com/logo.png");
+    expect(p.pricing_config).toBeDefined();
   });
 
   it("falls back to user.email when shop_name is blank", () => {
@@ -243,29 +245,54 @@ describe("buildShopUpsertPayload", () => {
     expect(typeof p.shop_name).toBe("string");
   });
 
-  it("omits pricing_config entirely when offersEmbroidery is false or missing", () => {
+  // New contract (2026-05-30): always write a full pricing_config so
+  // the new shop's quote modal has real numbers from minute one. The
+  // old minimal `{ embroidery: { enabled: true } }` payload left
+  // _pc.embroidery without any pricing tables — the dropdown silently
+  // dropped Embroidery even with the toggle on. Tests pinned the old
+  // minimal contract; rewritten here to lock the new full-config one.
+
+  it("always writes a complete pricing_config — even when no toggles are flipped", () => {
     const a = buildShopUpsertPayload({ user: NEW_USER });
     const b = buildShopUpsertPayload({ user: NEW_USER, offersEmbroidery: false });
-    expect(a).not.toHaveProperty("pricing_config");
-    expect(b).not.toHaveProperty("pricing_config");
+    expect(a.pricing_config).toBeDefined();
+    expect(b.pricing_config).toBeDefined();
+    // Sanity: the structure includes the main rate tables, not just embroidery.
+    expect(a.pricing_config.tiers).toBeDefined();
+    expect(a.pricing_config.embroidery).toBeDefined();
+    expect(a.pricing_config.embroidery.enabled).toBe(false);
   });
 
-  it("seeds pricing_config.embroidery.enabled when offersEmbroidery is true", () => {
+  it("flips pricing_config.embroidery.enabled when offersEmbroidery is true", () => {
     const p = buildShopUpsertPayload({
       user: NEW_USER,
       shopName: "Biota Mfg",
       offersEmbroidery: true,
     });
-    expect(p.pricing_config).toEqual({ embroidery: { enabled: true } });
+    expect(p.pricing_config.embroidery.enabled).toBe(true);
   });
 
-  it("does not overwrite other pricing_config keys — only sets embroidery.enabled (rest filled by defaults)", () => {
-    // Contract: the wizard never had user-edited print pricing yet, so writing
-    // just { embroidery: { enabled: true } } is correct. Account → Pricing will
-    // merge with DEFAULTS on first edit.
+  it("includes the full embroidery pricing tables when offersEmbroidery is true (not just .enabled)", () => {
+    // The bug this guards against: minimal payload meant _pc.embroidery
+    // had .enabled but no .pricing / .qtyTiers / .stitchTiers, so the
+    // technique dropdown DID show Embroidery (getEnabledTechniques
+    // honored the flag) but selecting it priced as zero. New contract
+    // includes the rate tables so quote math works immediately.
     const p = buildShopUpsertPayload({ user: NEW_USER, offersEmbroidery: true });
-    expect(Object.keys(p.pricing_config)).toEqual(["embroidery"]);
-    expect(Object.keys(p.pricing_config.embroidery)).toEqual(["enabled"]);
+    expect(p.pricing_config.embroidery.qtyTiers).toEqual([12, 24, 48, 72, 144]);
+    expect(p.pricing_config.embroidery.stitchTiers.length).toBe(4);
+    expect(p.pricing_config.embroidery.pricing["Under 5K"][72]).toBe(5.75);
+    expect(p.pricing_config.embroidery.digitizingFee).toBe(50);
+  });
+
+  it("non-embroidery toggles share the same full-config shape (tiers + brokerTiers + extras)", () => {
+    const p = buildShopUpsertPayload({ user: NEW_USER });
+    expect(p.pricing_config.tiers).toEqual([25, 50, 100, 200]);
+    expect(p.pricing_config.brokerMarkupShare).toBe(0.5);
+    expect(p.pricing_config.brokerTiers.length).toBeGreaterThan(0);
+    expect(p.pricing_config.extras).toBeDefined();
+    expect(p.pricing_config.setupFees.enabled).toBe(false);
+    expect(p.pricing_config.rushRate).toBe(0.20);
   });
 
   // Timezone — added in the onboarding wizard so calendar/date helpers

@@ -9,6 +9,7 @@ import NotificationBell from "./components/NotificationBell";
 import OnboardingAssistant from "./components/onboarding/OnboardingAssistant";
 import { canAccess, getEffectiveTier } from "@/lib/billing";
 import { resolveRoleRedirect } from "@/lib/broker/roleRedirect";
+import TrialStatusBanner from "@/components/TrialStatusBanner";
 
 const ICON_MAP = {
   Dashboard: Home,
@@ -263,6 +264,10 @@ export default function Layout({ children, currentPageName }) {
 
       {/* Main content */}
       <main className="flex-1 md:ml-56 min-h-screen max-w-full">
+        {/* Trial / expired status banner. Rendered above the page so
+            the operator can't miss it. Self-hides for paid subs and
+            non-shop roles. */}
+        <TrialStatusBanner user={user} />
         {/* Mobile header */}
         <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 sticky top-0 z-30">
           <button onClick={() => setMobileMenuOpen(true)} className="p-1 text-slate-500 hover:text-slate-700">

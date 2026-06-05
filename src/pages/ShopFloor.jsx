@@ -13,6 +13,7 @@ import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, Che
 import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 import { getStageTasks } from "@/lib/productionTasks";
+import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 
 // Collect every artwork file attached to an order so press operators
 // can preview them inline. Mirrors OrderDetailModal.getOrderArtwork:
@@ -270,6 +271,42 @@ export default function ShopFloor() {
     setOrders([]);
   }
 
+  // Auto-advance helper. After a task/goods/print mutation lands, if
+  // EVERY task in the current stage is done (including auto-derived ones
+  // like "Receive goods" from per-size counts), kick the order to the
+  // next stage. Last stage ("Completed") has no successor — no-op.
+  //
+  // Read the checklist + counts off the freshly-updated order, NOT
+  // closure'd state, so the most recent toggle is reflected. Re-toggling
+  // a task OFF leaves the stage incomplete and we don't advance,
+  // so the operator can correct mistakes without getting bounced.
+  function isStageComplete(order, stage) {
+    const tasks = getStageTasks(stage);
+    if (tasks.length === 0) return false;
+    const stepChecks = order.checklist?.[stage] || {};
+    const counts = countGoodsProgress(order);
+    return tasks.every((task) => {
+      const auto = autoCheckOrderGoodsTask(stage, task, counts);
+      return auto === null ? !!stepChecks[task] : auto;
+    });
+  }
+
+  async function maybeAutoAdvance(order) {
+    const current = order.status || "Pre-Press";
+    const idx = STEPS.indexOf(current);
+    // Already at the terminal stage (Completed) or unknown status — bail.
+    if (idx < 0 || idx >= STEPS.length - 1) return;
+    if (!isStageComplete(order, current)) return;
+    const next = STEPS[idx + 1];
+    // Cap auto-advance at Printing. The Completed transition is a real
+    // event — invoice creation, performance log writes, broker PDF
+    // attachment — so we never auto-flip it from a checklist tap. The
+    // operator hits the explicit "Mark Complete" button below to fire
+    // the full runOrderCompletion flow.
+    if (next === "Completed") return;
+    await updateStatus(order, next);
+  }
+
   async function updateStatus(order, newStatus) {
     setUpdating(true);
     try {
@@ -306,6 +343,7 @@ export default function ShopFloor() {
       const updated = await base44.entities.Order.update(order.id, { checklist });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
+      await maybeAutoAdvance(updated);
     } catch (err) {
       notify.error("Update failed", err);
     }
@@ -324,6 +362,7 @@ export default function ShopFloor() {
       const updated = await base44.entities.Order.update(order.id, { checklist });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
+      await maybeAutoAdvance(updated);
     } catch (err) {
       notify.error("Update failed", err);
     }
@@ -351,6 +390,7 @@ export default function ShopFloor() {
       const updated = await base44.entities.Order.update(order.id, { checklist });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
+      await maybeAutoAdvance(updated);
     } catch (err) {
       notify.error("Update failed", err);
     }
@@ -371,14 +411,22 @@ export default function ShopFloor() {
       const updated = await base44.entities.Order.update(order.id, { checklist });
       setOrders(prev => prev.map(o => o.id === order.id ? updated : o));
       setSelected(updated);
+      await maybeAutoAdvance(updated);
     } catch (err) {
       notify.error("Update failed", err);
     }
   }
 
   // Soft-warn version of updateStatus for the "Move to Pre-Press"
-  // button. Override is allowed for partial-ship scenarios.
+  // button. Override is allowed for partial-ship scenarios. The
+  // Printing → Completed transition takes a different path entirely
+  // (handleComplete) so the full completion plan fires — stamps
+  // completed_date, creates the invoice, writes the performance log,
+  // attaches the broker PDF — not just a status flip.
   async function moveToNextStepWithGuard(order, nextStatus) {
+    if (nextStatus === "Completed") {
+      return handleComplete(order);
+    }
     if (order.status === "Order Goods" && nextStatus === "Pre-Press") {
       const missing = unreceivedCount(order);
       const total = countGoodsProgress(order).total;
@@ -390,6 +438,29 @@ export default function ShopFloor() {
       }
     }
     return updateStatus(order, nextStatus);
+  }
+
+  // Full completion flow — invoice creation, performance rows, broker
+  // PDF attachment, notification — via the shared runOrderCompletion
+  // helper. Same path Orders.jsx and Production.jsx use, so the three
+  // surfaces can't drift on what "completed" actually means.
+  async function handleComplete(order) {
+    setUpdating(true);
+    try {
+      const updated = await runOrderCompletion({
+        order,
+        userEmail: user?.email,
+        base44,
+      });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      // Floor operators usually move on after marking complete; clear
+      // the selection so they see the next job in the queue.
+      setSelected(null);
+    } catch (err) {
+      notify.error("Couldn't complete the order", err);
+    } finally {
+      setUpdating(false);
+    }
   }
 
   async function sendNote(order) {

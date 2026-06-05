@@ -5,7 +5,6 @@ import {
   isBillingOwnerAction,
   isBillingOwner,
   resolveBillingChoice,
-  priceTierForMonthlyClaim,
   computeTrialMeta,
   trialPeriodDaysForCheckout,
   buildSubscriptionMetadata,
@@ -28,32 +27,20 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const APP_URL = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
 
-// Three monthly tiers + one annual.
+// Two billing cadences: monthly $99 or annual $999. Founding member
+// program was removed 2026-06-02 (see migration
+// 20260620020000_remove_founding_member.sql). Beta promo code (3 free
+// months + $40/mo forever) is a Stripe Promotion Code on the standard
+// $99 price; checkout has allow_promotion_codes: true so the user
+// enters it at the Stripe checkout page.
 //
-// Founding ($50/mo) is locked for the first 10 shops to claim it
-// (enforced atomically by the claim_founding_slot RPC; cap defined
-// in 20260520_..., tightened 50→10 in 20260603_founding_cap_to_10.sql).
-// Cap is hidden from the public UI — there's no slot counter on
-// the landing page.
-// Standard ($99/mo) kicks in after the cap fills OR for any prior
-// founding member who canceled (the forfeit is permanent).
-// Annual ($999/yr) is a flat option — does NOT consume a founding
-// slot and the founding rate doesn't apply to annual. Annual was
-// designed as a parallel SKU, not a discounted variant of either
-// monthly tier. Beta promo code (3 free months + $40/mo forever) is
-// a Stripe Promotion Code on the standard $99 price; checkout has
-// allow_promotion_codes: true so the user enters it at the Stripe
-// checkout page.
-//
-// All three prices can be overridden via env vars — useful in test
-// environments where the price IDs differ from production.
-const PRICE_FOUNDING = Deno.env.get("STRIPE_PRICE_FOUNDING") || "price_1TXDSLI4m9BGT2cwgC82UIu3"; // $50/mo
+// Prices can be overridden via env vars — useful in test environments
+// where the price IDs differ from production.
 const PRICE_STANDARD = Deno.env.get("STRIPE_PRICE_STANDARD") || "price_1TXDFwI4m9BGT2cwXHD6gVXZ"; // $99/mo
 const PRICE_ANNUAL   = Deno.env.get("STRIPE_PRICE_ANNUAL")   || "price_1TXDIZI4m9BGT2cwL3Xp2Vo9"; // $999/yr
 
 const PRICES: Record<string, string> = {
-  shop:     PRICE_FOUNDING, // legacy callers that just say "shop" still work
-  founding: PRICE_FOUNDING,
+  shop:     PRICE_STANDARD, // legacy callers that just say "shop" still work
   standard: PRICE_STANDARD,
   annual:   PRICE_ANNUAL,
 };
@@ -137,34 +124,12 @@ Deno.serve(async (req) => {
     // ── createCheckoutSession ───────────────────────────────────────
     if (action === "checkout") {
       // Two checkout paths depending on body.billing:
-      //   billing === "annual"  → flat $999/yr, founding doesn't apply
-      //   billing === "monthly" (default) → claim_founding_slot decides
-      //                                     between $50 founding and $99 standard
-      //
-      // claim_founding_slot returns one of:
-      //   claimed / already_member → use $50 founding price
-      //   cap_reached / forfeited  → use $99 standard price
-      //   no_profile / bad_input   → caller bug, fail loud
+      //   billing === "annual"  → flat $999/yr
+      //   billing === "monthly" (default) → flat $99/mo
+      // Founding member program removed 2026-06-02.
       const billingChoice = resolveBillingChoice(body);
-
-      let priceTier: "founding" | "standard" | "annual";
-      if (billingChoice === "annual") {
-        priceTier = "annual";
-      } else {
-        const claim = await adminClient().rpc("claim_founding_slot", {
-          p_profile_id: profile.id,
-        });
-        if (claim.error) {
-          console.error("[billing] claim_founding_slot RPC failed:", claim.error.message);
-          return json({ error: "Checkout temporarily unavailable. Try again." }, 503);
-        }
-        const decision = priceTierForMonthlyClaim(claim.data?.status);
-        if (decision.isError) {
-          console.error("[billing] unexpected claim status:", decision.reason);
-          return json({ error: "Checkout state invalid. Contact support." }, 500);
-        }
-        priceTier = decision.tier as "founding" | "standard";
-      }
+      const priceTier: "standard" | "annual" =
+        billingChoice === "annual" ? "annual" : "standard";
       const priceId = PRICES[priceTier];
       if (!priceId) {
         console.error("[billing] no price ID for tier:", priceTier);
@@ -210,9 +175,6 @@ Deno.serve(async (req) => {
         cancel_url: `${APP_URL}/Account?billing=cancelled`,
         subscription_data: {
           trial_period_days: trialPeriodDaysForCheckout(profile),
-          // is_founding flag travels with the Stripe subscription so the
-          // webhook (on cancel) can write founding_rate_forfeited back
-          // to the right profile.
           metadata: buildSubscriptionMetadata({ profile, priceTier, billingChoice }),
         },
         allow_promotion_codes: true,

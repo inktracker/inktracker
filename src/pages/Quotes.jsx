@@ -25,6 +25,7 @@ import { useBillingGate } from "../lib/billing-gate";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { notify } from "@/lib/notify";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
+import { todayInShopTz } from "@/lib/shopTimezone";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -353,7 +354,10 @@ export default function Quotes() {
     try {
       const newId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
       const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, ...rest } = q;
-      const dup = { ...rest, quote_id: newId, status: "Draft", date: new Date().toISOString().split("T")[0] };
+      // Shop-tz, not UTC. toISOString() returns tomorrow's date after
+      // ~5pm Pacific — the duplicated quote then sorted into tomorrow's
+      // calendar slot.
+      const dup = { ...rest, quote_id: newId, status: "Draft", date: todayInShopTz() };
       const created = await base44.entities.Quote.create(dup);
       setQuotes((prev) => [created, ...prev]);
       setViewing(null);
@@ -784,6 +788,7 @@ export default function Quotes() {
           onSend={handleQuoteSent}
           onTogglePaid={handleTogglePaid}
           onDuplicate={handleDuplicate}
+          onUpdated={(u) => setQuotes((prev) => prev.map((q) => (q.id === u.id ? u : q)))}
         />
       )}
 

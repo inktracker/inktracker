@@ -93,7 +93,7 @@ export default function BrokerLayout({
       <aside className="hidden md:flex w-56 bg-white border-r border-slate-100 flex-col fixed h-full z-20">
         <div className="px-5 py-5 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
-            <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-8 h-8 object-contain" />
+            <img src={user?.logo_url || INKTRACKER_LOGO} alt={user?.logo_url ? "Logo" : "InkTracker"} className="w-8 h-8 object-contain rounded" />
             <div className="font-display uppercase text-lg text-slate-900 leading-none">Broker Portal</div>
           </div>
           <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400 mt-2 font-bold truncate">

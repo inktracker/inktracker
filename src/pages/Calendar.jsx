@@ -10,10 +10,12 @@ import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import EmptyState from "../components/shared/EmptyState";
 import Badge from "../components/shared/Badge";
 import { addDaysISO, relativeDueLabel, getOrderActionHint } from "@/lib/calendar/agendaHints";
+import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { notify } from "@/lib/notify";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
+import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
 
 // Calendar status colors. Mirrors O_STATUSES — 5 stages — plus the
 // pre-order quote lifecycle chips (Quote Sent, Quote Approved). Keep this
@@ -61,23 +63,10 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-// Resolve the best label for a quote or order chip. Company always wins —
-// either from the linked customer record OR the denormalized snapshot
-// stored on the quote/order itself (quotes write a `company` field from
-// the wizard). Only falls back to a person's name when no company is on
-// file. Applied uniformly to order chips, quote chips, and the bottom
-// "Active jobs" list so the calendar never mixes naming conventions.
-function getCompanyName(rec, customers) {
-  const cust = customers[rec?.customer_id];
-  const company =
-    (typeof cust?.company === "string" && cust.company.trim()) ||
-    (typeof rec?.company === "string" && rec.company.trim()) ||
-    "";
-  if (company) return company;
-  if (cust?.name) return cust.name;
-  if (rec?.customer_name) return rec.customer_name;
-  return "—";
-}
+// Shared resolver lives in @/lib/calendar/resolveJobLabel and now
+// handles the broker-vs-direct distinction: broker quotes/orders
+// surface the broker on shop-facing chips, NOT the end client.
+const getCompanyName = (rec, customers) => resolveJobLabel(rec, customers);
 
 export default function Calendar() {
   const navigate = useNavigate();
@@ -181,7 +170,26 @@ export default function Calendar() {
 
     // Quote lifecycle chips — pushed directly from quote rows. A quote
     // that's been sent but not yet converted to an order still shows up.
+    //
+    // Two filters intentionally applied:
+    //   1. status === "Converted to Order" → SKIP. The order's own
+    //      chips already tell that quote's story on the calendar; the
+    //      Quote Sent / Quote Approved chips become dead weight (and
+    //      they're invisible-to-delete from /Quotes because that page
+    //      hides converted rows, so users see "ghost" chips for quotes
+    //      they think they cleaned up). The Alder Creek / "My Name"
+    //      cleanup complaint on 2026-05-30.
+    //   2. status === "Declined" → SKIP. A declined quote isn't a live
+    //      pipeline event; chips would just clutter the calendar.
     quotes.forEach((q) => {
+      const status = q.status || "";
+      // "Looks converted" — same predicate resolveQuoteLink uses to
+      // route chip clicks to /Orders. Without this branch, a quote
+      // whose order was deleted (converted_order_id set, but status
+      // never flipped to "Converted to Order") slips past the filter
+      // and surfaces "ghost" Quote Sent / Approved chips that point
+      // at deleted orders. The "My Name" residue on 2026-05-30.
+      if (status === "Converted to Order" || status === "Declined" || q.converted_order_id) return;
       if (q.sent_date) {
         const d = String(q.sent_date).slice(0, 10);
         if (!hiddenSteps.has("Quote Sent")) {
@@ -424,10 +432,27 @@ export default function Calendar() {
 
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
+  // Each cell is { day, year, month, inMonth } so leading and trailing
+  // slots can render the actual adjacent-month dates (dimmed) instead
+  // of empty grey blocks. Operators still get the visual rhythm of a
+  // continuous month-to-month flow — useful for orders due on the 1st
+  // or 31st of the bordering month.
   const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
+  const prevM = month === 0 ? 11 : month - 1;
+  const prevY = month === 0 ? year - 1 : year;
+  const daysInPrev = getDaysInMonth(prevY, prevM);
+  for (let i = firstDay - 1; i >= 0; i--) {
+    cells.push({ day: daysInPrev - i, year: prevY, month: prevM, inMonth: false });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ day: d, year, month, inMonth: true });
+  }
+  const nextM = month === 11 ? 0 : month + 1;
+  const nextY = month === 11 ? year + 1 : year;
+  let trail = 1;
+  while (cells.length % 7 !== 0) {
+    cells.push({ day: trail++, year: nextY, month: nextM, inMonth: false });
+  }
 
   // Split cells into weeks for span rendering
   const weeks = [];
@@ -554,9 +579,13 @@ export default function Calendar() {
               <div key={wIdx} className="relative">
                   {/* Day cells */}
                   <div className="grid grid-cols-7 divide-x divide-y divide-slate-100">
-                    {week.map((day, dIdx) => {
-                       if (!day) return <div key={`empty-${wIdx}-${dIdx}`} className="min-h-[110px] bg-slate-50/50" />;
-                       const dateStr = toDateStr(year, month, day);
+                    {week.map((cell, dIdx) => {
+                       // cell is always populated now — adjacent-month cells
+                       // carry their own year/month so the dateStr resolves
+                       // correctly (e.g. a "31" cell trailing into next
+                       // month uses next month's year/month for chip lookup).
+                       const { day, year: cellY, month: cellM, inMonth } = cell;
+                       const dateStr = toDateStr(cellY, cellM, day);
                        const isToday = dateStr === today;
                         const pointList = pointEvents[dateStr] || [];
                         const printList = printingEvents[dateStr] || [];
@@ -566,14 +595,28 @@ export default function Calendar() {
                         return (
                          <div
                            key={dateStr}
-                           className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${isDragOver ? "bg-teal-50 ring-2 ring-inset ring-teal-400" : selectedDate === dateStr ? "bg-teal-50/60" : "hover:bg-slate-50"}`}
+                           className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${
+                             isDragOver
+                               ? "bg-teal-50 ring-2 ring-inset ring-teal-400"
+                               : selectedDate === dateStr
+                                 ? "bg-teal-50/60"
+                                 // Adjacent-month cells: same hover affordance
+                                 // as in-month cells (operators can click +
+                                 // drop on them), but a subtle gray wash so
+                                 // the current month still reads as primary.
+                                 : inMonth ? "hover:bg-slate-50" : "bg-slate-50/40 hover:bg-slate-50"
+                           }`}
                            onClick={() => setSelectedDate(dateStr)}
                            onDrop={(e) => handleDrop(e, dateStr)}
                            onDragOver={(e) => handleDragOver(e, dateStr)}
                            onDragLeave={() => setDragOverDate(null)}
                            title="Click to see the day's agenda"
                          >
-                           <div className={`text-xs font-bold mb-2 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-teal-600 text-white" : "text-slate-400"}`}>
+                           <div className={`text-xs font-bold mb-2 w-6 h-6 flex items-center justify-center rounded-full ${
+                             isToday
+                               ? "bg-teal-600 text-white"
+                               : inMonth ? "text-slate-400" : "text-slate-300"
+                           }`}>
                              {day}
                            </div>
                            <div className="flex flex-col gap-1 flex-1 overflow-y-auto">
@@ -614,8 +657,14 @@ export default function Calendar() {
                                    onDragStart={isQuoteEvent ? undefined : (e) => handleDragStart(e, ev.order, ev.step, field)}
                                    onClick={(e) => {
                                      e.stopPropagation();
-                                     if (isQuoteEvent) navigate(`/Quotes?id=${ev.quote.id}`);
-                                     else setViewing(ev.order);
+                                     if (isQuoteEvent) {
+                                       const r = resolveQuoteLink(ev.quote, orders);
+                                       if (r.kind === QUOTE_LINK_KIND.OPEN_ORDER) setViewing(r.order);
+                                       else if (r.kind === QUOTE_LINK_KIND.NAVIGATE_ORDERS) navigate("/Orders");
+                                       else navigate(`/Quotes?id=${r.quoteId}`);
+                                     } else {
+                                       setViewing(ev.order);
+                                     }
                                    }}
                                    className={`w-full text-[10px] font-semibold px-1.5 py-0.5 rounded border ${isQuoteEvent ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} whitespace-nowrap overflow-hidden text-ellipsis ${chipClass}`}
                                    title={isQuoteEvent ? `${subjectName} — ${ev.step}` : `${subjectName} — ${ev.step} · drag to reschedule`}
@@ -873,6 +922,9 @@ export default function Calendar() {
           onClose={() => setViewingInvoice(null)}
           onMarkPaid={() => {}}
           onDelete={() => {}}
+          // Same pattern as Production/Orders: successful Send returns
+          // the operator to the calendar grid, not the order modal.
+          onSendSuccess={() => setViewing(null)}
         />
       )}
     </div>

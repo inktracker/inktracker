@@ -128,15 +128,37 @@ export default function Performance() {
     return { from: r.dateFrom || null, to: r.dateTo || null };
   }, [dateRange]);
 
+  // shop_performance is denormalized — a row is written when an order
+  // completes (see buildOrderCompletionPlan.shopPerformanceCreate)
+  // and is NOT cascade-deleted when the underlying order is later
+  // removed. Without this filter, stats here would keep counting
+  // orders the operator already deleted (the "My Name" cleanup
+  // complaint on 2026-05-30). Cross-reference against the live
+  // orders list and drop any shop_performance row whose order_id
+  // no longer resolves.
+  //
+  // Edge: if a shop has more total orders than the 1000-row cap on
+  // the orders query (line ~111), some live order_ids won't be in
+  // the loaded set and would be incorrectly filtered as orphans.
+  // Guard with `orders.length < 1000` so big shops fall back to the
+  // pre-filter behavior (showing all stats, including the rare
+  // orphan) rather than silently zeroing legitimate history.
+  const liveRecords = useMemo(() => {
+    if (!records?.length) return records || [];
+    if (!orders || orders.length >= 1000) return records;
+    const liveOrderIds = new Set(orders.map((o) => o?.order_id).filter(Boolean));
+    return records.filter((r) => !r.order_id || liveOrderIds.has(r.order_id));
+  }, [records, orders]);
+
   const filteredRecords = useMemo(() => {
-    if (!from && !to) return records;
-    return records.filter((r) => {
+    if (!from && !to) return liveRecords;
+    return liveRecords.filter((r) => {
       if (!r.date) return false;
       if (from && r.date < from) return false;
       if (to   && r.date > to)   return false;
       return true;
     });
-  }, [records, from, to]);
+  }, [liveRecords, from, to]);
 
   // ── Stats ────────────────────────────────────────────────────────────────
   const totalOrders = filteredRecords.length;

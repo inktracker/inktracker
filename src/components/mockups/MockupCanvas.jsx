@@ -173,7 +173,11 @@ const MockupCanvas = forwardRef(function MockupCanvas({
           let dw = size, dh = size, dx = 0, dy = 0;
           if (aspect > 1) { dh = size / aspect; dy = (size - dh) / 2; }
           else if (aspect < 1) { dw = size * aspect; dx = (size - dw) / 2; }
-          ctx.fillStyle = "#f8fafc";
+          // Fill with WHITE (not slate-50) so the exported PNG blends
+          // into the white PDF page background. The slate-50 fill was
+          // showing as gray bars on each side of portrait-aspect
+          // garments in the Art Proof PDF.
+          ctx.fillStyle = "#ffffff";
           ctx.fillRect(0, 0, size, size);
           ctx.drawImage(gImg, dx, dy, dw, dh);
           if (artworkUrl) {
@@ -303,7 +307,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
       {/* Canvas */}
       <div
         ref={containerRef}
-        className="relative mx-auto bg-slate-50 rounded-xl overflow-hidden select-none"
+        className="relative mx-auto bg-white rounded-xl overflow-hidden select-none"
         style={{ maxWidth: maxW, aspectRatio: "1/1", cursor: wandMode ? "crosshair" : "default" }}
         onMouseDown={handleMouseDown}
       >

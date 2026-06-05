@@ -19,7 +19,7 @@ import {
   sortSizeEntries,
 } from "../components/shared/pricing";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
-import { toCustomerFacingQuote } from "@/lib/quotes/customerFacingQuote";
+import { toCustomerFacingQuote, customerFacingShopName } from "@/lib/quotes/customerFacingQuote";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -376,6 +376,16 @@ export default function QuotePayment() {
   // display on this page.
   const displayQuote = toCustomerFacingQuote(quote);
 
+  // Customer-facing brand name. For broker quotes the end client must
+  // see the broker as the merchant of record; the print shop is
+  // invisible by design. Shared helper so the email header, the page
+  // header here, and any future surface all resolve identically.
+  const displayShopName = customerFacingShopName({
+    quote,
+    shopName: shop?.shop_name,
+    fallback: "Shop",
+  });
+
   // Use saved totals when available (calculate-once principle)
   const totals = (displayQuote.total != null && displayQuote.subtotal != null)
     ? {
@@ -400,12 +410,12 @@ export default function QuotePayment() {
             />
           ) : (
             <div className="w-12 h-12 bg-teal-600 rounded-lg flex items-center justify-center text-white font-black text-xl">
-              {(shop?.shop_name || "S")[0]}
+              {(displayShopName || "S")[0]}
             </div>
           )}
           <div className="flex-1">
             <div className="text-white font-bold text-lg leading-tight">
-              {shop?.shop_name || "Shop"}
+              {displayShopName}
             </div>
             <div className="text-slate-400 text-sm">
               Quote #{quote.quote_id}
@@ -704,7 +714,7 @@ export default function QuotePayment() {
               <div className="font-bold text-base mb-1">This quote has expired</div>
               <div className="text-sm text-amber-700">
                 The quote expiration date was {fmtDate(quote.expires_date)}. Please contact{" "}
-                {shop?.shop_name || "the shop"} to request an updated quote.
+                {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "the shop" })} to request an updated quote.
               </div>
             </div>
           ) : alreadyPaid ? (
@@ -735,7 +745,7 @@ export default function QuotePayment() {
                 )}
               </button>
               <p className="mt-3 text-center text-xs text-slate-400">
-                {shop?.shop_name || "The shop"} will be in touch about payment after you approve.
+                {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment after you approve.
               </p>
             </>
           ) : (() => {

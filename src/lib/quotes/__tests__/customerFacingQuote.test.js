@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toCustomerFacingQuote, isBrokerQuote } from "../customerFacingQuote";
+import { toCustomerFacingQuote, isBrokerQuote, customerFacingShopName } from "../customerFacingQuote";
 
 describe("isBrokerQuote", () => {
   it("true when broker_id is set", () => {
@@ -108,5 +108,123 @@ describe("toCustomerFacingQuote — defensive", () => {
   it("BQ7 — null / undefined returns input unchanged", () => {
     expect(toCustomerFacingQuote(null)).toBe(null);
     expect(toCustomerFacingQuote(undefined)).toBe(undefined);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// customerFacingShopName — the brand the end client sees
+// ─────────────────────────────────────────────────────────────────────
+
+describe("customerFacingShopName (CFSN)", () => {
+  it("CFSN1 — direct shop quote → shopName as-is", () => {
+    expect(customerFacingShopName({
+      quote: { shop_owner: "shop@x.com" },
+      shopName: "Print Shop",
+      fallback: "Shop",
+    })).toBe("Print Shop");
+  });
+
+  it("CFSN2 — direct shop quote with empty shopName → fallback", () => {
+    expect(customerFacingShopName({
+      quote: { shop_owner: "shop@x.com" },
+      shopName: "",
+      fallback: "Shop",
+    })).toBe("Shop");
+  });
+
+  it("CFSN3 — broker quote with broker_company → broker_company wins", () => {
+    // The 2026-05-31 case: end client sees the broker, not the shop.
+    expect(customerFacingShopName({
+      quote: {
+        shop_owner: "shop@x.com",
+        broker_id: "b1",
+        broker_email: "broker@x.com",
+        broker_company: "BrokerCo",
+        broker_name: "Jane Doe",
+      },
+      shopName: "Print Shop",
+      fallback: "Shop",
+    })).toBe("BrokerCo");
+  });
+
+  it("CFSN4 — broker quote without broker_company → broker_name", () => {
+    expect(customerFacingShopName({
+      quote: {
+        broker_id: "b1",
+        broker_name: "Jane Doe",
+      },
+      shopName: "Print Shop",
+      fallback: "Shop",
+    })).toBe("Jane Doe");
+  });
+
+  it("CFSN5 — broker quote with all broker fields blank → falls to shopName, NOT fallback", () => {
+    // Defensive: better to show the print shop's name than "Shop" if
+    // the broker entity is mis-configured. Operator can fix later.
+    expect(customerFacingShopName({
+      quote: {
+        broker_id: "b1",
+        broker_company: "",
+        broker_name: "",
+      },
+      shopName: "Print Shop",
+      fallback: "Shop",
+    })).toBe("Print Shop");
+  });
+
+  it("CFSN6 — broker quote with everything blank → fallback (last resort)", () => {
+    expect(customerFacingShopName({
+      quote: { broker_id: "b1" },
+      shopName: "",
+      fallback: "Shop",
+    })).toBe("Shop");
+  });
+
+  it("CFSN7 — non-broker quote ignores stale broker_* fields", () => {
+    // A quote that USED to be a broker quote but was unlinked: id and
+    // email are clear, but the company name might linger. Don't surface
+    // a name from a dissolved broker relationship.
+    expect(customerFacingShopName({
+      quote: {
+        shop_owner: "shop@x.com",
+        broker_company: "Stale BrokerCo",
+        broker_name: "Stale Name",
+      },
+      shopName: "Print Shop",
+      fallback: "Shop",
+    })).toBe("Print Shop");
+  });
+
+  it("CFSN8 — broker gate uses broker_email alone (no broker_id needed)", () => {
+    expect(customerFacingShopName({
+      quote: {
+        broker_email: "broker@x.com",
+        broker_name: "Jane Doe",
+      },
+      shopName: "Print Shop",
+      fallback: "Shop",
+    })).toBe("Jane Doe");
+  });
+
+  it("CFSN9 — null quote → just shopName / fallback (no crash)", () => {
+    expect(customerFacingShopName({
+      quote: null, shopName: "Print Shop", fallback: "Shop",
+    })).toBe("Print Shop");
+    expect(customerFacingShopName({
+      quote: null, shopName: "", fallback: "Shop",
+    })).toBe("Shop");
+  });
+
+  it("CFSN10 — fallback defaults to 'Shop' when caller omits it", () => {
+    expect(customerFacingShopName({ quote: null, shopName: "" })).toBe("Shop");
+  });
+
+  it("CFSN11 — fallback is caller-supplied so different surfaces can have different defaults", () => {
+    // /QuotePayment uses "Shop", email uses "Your Shop", body templates
+    // use "the shop". Caller picks the in-context default.
+    expect(customerFacingShopName({ quote: null, shopName: "", fallback: "Your Shop" }))
+      .toBe("Your Shop");
+    expect(customerFacingShopName({ quote: null, shopName: "", fallback: "the shop" }))
+      .toBe("the shop");
   });
 });

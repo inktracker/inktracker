@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, buildLinkedQtyMap, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques } from "../shared/pricing";
+import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, buildLinkedQtyMap, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques, getMinOrderQty } from "../shared/pricing";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
@@ -7,6 +7,8 @@ import { getEffectiveCost } from "@/lib/wizard/getEffectiveCost";
 import { analyzeColors } from "@/lib/colorAnalyzer";
 import ColorAnalysisResult from "../shared/ColorAnalysisResult";
 import { notify } from "@/lib/notify";
+import { todayInShopTz } from "@/lib/shopTimezone";
+import { brand, darken, tint } from "@/lib/branding";
 
 export const DEFAULT_WIZARD_STYLES = [
   // T-Shirts
@@ -112,7 +114,7 @@ function StepBadge({ n, title, subtitle }) {
     <div className="flex items-start gap-3 mb-3">
       <span
         className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white"
-        style={{ background: "#2c5840" }}
+        style={{ background: "var(--brand-dark)" }}
       >
         {n}
       </span>
@@ -304,8 +306,26 @@ function TintedImage({ baseImg, colorName, className }) {
   return <img src={dataUrl} alt={colorName} className={`${className} rounded-lg object-contain bg-white`} />;
 }
 
-export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _setupsProp, shopOwner }) {
+export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _setupsProp, shopOwner, shop }) {
   const POPULAR_STYLES = Array.isArray(stylesProp) && stylesProp.length > 0 ? stylesProp : DEFAULT_WIZARD_STYLES;
+  // Per-shop brand color drives all primary CTAs + active states +
+  // dark-band backgrounds. Falls back to the InkTracker default teal
+  // when no shop is provided or the shop hasn't set one.
+  // bcDark = 30% darker for the right sidebar's dark band.
+  // bcDarker = 50% darker for the sidebar's border.
+  // bcTint = 8% alpha for hover/light backgrounds (replaces bg-[var(--brand-tint)]).
+  const bc = brand(shop);
+  const bcDark = darken(bc, 30);
+  const bcDarker = darken(bc, 50);
+  const bcTint = tint(bc, 0.08);
+  // CSS variables let JSX use `text-[var(--brand)]` etc. via Tailwind
+  // arbitrary-value classes throughout the tree without prop drilling.
+  const brandStyle = {
+    "--brand": bc,
+    "--brand-dark": bcDark,
+    "--brand-darker": bcDarker,
+    "--brand-tint": bcTint,
+  };
   // setupsProp is plumbed through for future use (e.g. per-shop default
   // imprint setups). Not consumed today, but kept on the props contract.
   const [step, setStep] = useState(1);
@@ -789,7 +809,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
       customer_email: contact.email,
       phone: contact.phone,
       company: contact.company,
-      date: new Date().toISOString().split("T")[0],
+      // Shop-tz, not UTC. Falls through to the customer's browser tz
+      // when no shop tz is loaded (the anonymous wizard path), which
+      // is the right behavior for a customer submitting from their
+      // own location.
+      date: todayInShopTz(),
       due_date: contact.dueDate || null,
       status: "Pending",
       notes: contact.notes,
@@ -860,11 +884,12 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
     if (!garments.some(gg => gg.style)) issues.push("Select a garment style");
     else if (!garments.some(gg => gg.style && gg.color)) issues.push("Choose a garment color");
     else {
+      const minQty = getMinOrderQty();
       const hasEnoughQty = garments.some(gg => {
         const gQ = Object.values(gg.sizes).reduce((a,v) => a + (parseInt(v) || 0), 0);
-        return gg.style && gg.color && gQ >= 25;
+        return gg.style && gg.color && gQ >= minQty;
       });
-      if (!hasEnoughQty) issues.push("Minimum 25 pieces required per garment");
+      if (!hasEnoughQty) issues.push(`Minimum ${minQty} pieces required per garment`);
     }
     return issues;
   }
@@ -890,9 +915,9 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
           })}
           <div className="flex justify-between"><span className="text-slate-400">Print</span><span className="font-semibold">{imprints.map(i => `${i.location} (${i.colors}c)`).join(", ")}</span></div>
           <div className="flex justify-between"><span className="text-slate-400">Turnaround</span><span className="font-semibold">{rush ? "Rush — 7 days" : "Standard — 14 days"}</span></div>
-          <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-base"><span>Estimated Total</span><span className="text-teal-600">{fmtMoney(liveTotals?.total || total)}</span></div>
+          <div className="border-t border-slate-200 pt-2 flex justify-between font-bold text-base"><span>Estimated Total</span><span className="text-[var(--brand)]">{fmtMoney(liveTotals?.total || total)}</span></div>
         </div>
-        <button onClick={resetWizard} className="bg-teal-600 hover:bg-teal-700 text-white font-semibold px-6 py-3 rounded-xl transition">
+        <button onClick={resetWizard} style={{ backgroundColor: bc }} className="hover:opacity-90 text-white font-semibold px-6 py-3 rounded-xl transition">
           Start Another Order
         </button>
       </div>
@@ -913,7 +938,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
   const showPriceSummary = liveTotals && garments.some(gg => gg.style) && !enrichingStyle;
 
   return (
-    <div className="max-w-6xl mx-auto md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-6">
+    <div style={brandStyle} className="max-w-6xl mx-auto md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-6">
       {/* Honeypot — invisible to real users (off-screen + aria-hidden +
           tabIndex -1 so keyboard navigation skips it). Naïve bots that
           auto-fill every input on the page will tick this box; server
@@ -955,7 +980,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
               { num: "3", title: "Approve & we print", sub: "Approve when you're ready" },
             ].map(s => (
               <div key={s.num} className="bg-white rounded-xl border border-slate-100 p-4">
-                <div className="w-7 h-7 rounded-full bg-teal-600 text-white text-xs font-bold flex items-center justify-center mx-auto mb-2">{s.num}</div>
+                <div style={{ backgroundColor: bc }} className="w-7 h-7 rounded-full text-white text-xs font-bold flex items-center justify-center mx-auto mb-2">{s.num}</div>
                 <div className="text-xs font-bold text-slate-800">{s.title}</div>
                 <div className="text-[10px] text-slate-400 mt-0.5">{s.sub}</div>
               </div>
@@ -974,8 +999,10 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
             <div key={s} className="flex items-center flex-1 last:flex-none">
               <button onClick={()=>{ if(done) setStep(num); }}
                 className={`flex items-center gap-2 text-xs font-semibold transition ${done?"cursor-pointer":""}`}>
-                <div className={`w-3 h-3 rounded-full flex-shrink-0 transition ${active?"bg-teal-600":done?"bg-emerald-500":"bg-slate-200"}`} />
-                <span className={`hidden sm:block ${active?"text-teal-600 font-bold":done?"text-emerald-600":"text-slate-400"}`}>{s}</span>
+                <div
+                  style={active ? { backgroundColor: bc } : undefined}
+                  className={`w-3 h-3 rounded-full flex-shrink-0 transition ${active?"":done?"bg-emerald-500":"bg-slate-200"}`} />
+                <span className={`hidden sm:block ${active?"text-[var(--brand)] font-bold":done?"text-emerald-600":"text-slate-400"}`}>{s}</span>
               </button>
               {i < STEPS.length-1 && <div className={`flex-1 h-0.5 mx-2 ${done?"bg-emerald-300":"bg-slate-100"}`} />}
             </div>
@@ -1006,7 +1033,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
             if (!isActive) {
               return (
                 <button key={gg.id} onClick={() => setActiveIdx(idx)}
-                  className="w-full flex items-center justify-between bg-white rounded-2xl px-5 py-4 border-2 border-slate-200 hover:border-teal-300 transition text-left">
+                  className="w-full flex items-center justify-between bg-white rounded-2xl px-5 py-4 border-2 border-slate-200 hover:border-[var(--brand)] transition text-left">
                   <div className="flex items-center gap-3 min-w-0">
                     {(() => {
                       const colorImg = hasStyle && gg.style.colorImages?.[gg.color];
@@ -1026,7 +1053,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                     </div>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className="text-xs text-teal-600 font-semibold">Edit</span>
+                    <span className="text-xs text-[var(--brand)] font-semibold">Edit</span>
                     {garments.length > 1 && (
                       <span onClick={(e) => { e.stopPropagation(); removeGarment(idx); }}
                         className="text-xs text-red-400 hover:text-red-600">Remove</span>
@@ -1039,7 +1066,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
             // Expanded card — all sections inside one block
             const isCollapsed = gg.collapsed && hasStyle && gg.color;
             return (
-              <div key={gg.id} className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-teal-300 dark:border-teal-700 shadow-sm">
+              <div key={gg.id} className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-[var(--brand)] dark:border-[var(--brand-dark)] shadow-sm">
                 {/* Card header */}
                 <div className="bg-slate-50 dark:bg-slate-800 px-5 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between rounded-t-2xl">
                   <div className="flex items-center gap-3">
@@ -1059,7 +1086,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                   <div className="flex items-center gap-3">
                     {hasStyle && gg.color && (
                       <button onClick={() => setG({ collapsed: !gg.collapsed })}
-                        className="text-xs font-semibold text-teal-600 hover:text-teal-700">
+                        className="text-xs font-semibold text-[var(--brand)] hover:text-[var(--brand-dark)]">
                         {isCollapsed ? "Expand" : "Collapse"}
                       </button>
                     )}
@@ -1094,11 +1121,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                       className={`text-left px-4 py-3 border-2 rounded-xl transition ${
                         active
                           ? "text-white border-transparent shadow-sm"
-                          : "bg-white border-slate-200 hover:border-teal-300 text-slate-800"
+                          : "bg-white border-slate-200 hover:border-[var(--brand)] text-slate-800"
                       }`}
-                      style={active ? { background: "#2c5840", borderColor: "#1a3a28" } : undefined}
+                      style={active ? { background: bcDark, borderColor: bcDarker } : undefined}
                     >
-                      <div className={`font-bold text-sm uppercase tracking-wide ${active ? "text-white" : "text-teal-700"}`}>
+                      <div className={`font-bold text-sm uppercase tracking-wide ${active ? "text-white" : "text-[var(--brand-dark)]"}`}>
                         {gt}
                       </div>
                       {CATEGORY_BLURBS[gt] && (
@@ -1118,9 +1145,9 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                 <label className="block text-xs text-slate-400 mb-1">Or search by style #</label>
                 <form onSubmit={handleSSLookup} className="flex gap-1.5">
                   <input value={ssLookupInput} onChange={(e) => setSsLookupInput(e.target.value)} placeholder="e.g. 5001"
-                    className="flex-1 text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" disabled={ssLookupLoading} />
+                    className="flex-1 text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" disabled={ssLookupLoading} />
                     <button type="submit" disabled={ssLookupLoading||!ssLookupInput.trim()}
-                      className="text-sm font-semibold text-teal-600 border border-teal-200 px-3 py-2 rounded-xl hover:bg-teal-50 disabled:opacity-50">
+                      className="text-sm font-semibold text-[var(--brand)] border border-[var(--brand-tint)] px-3 py-2 rounded-xl hover:bg-[var(--brand-tint)] disabled:opacity-50">
                       {ssLookupLoading ? "…" : "Go"}</button>
                   </form>
                 {ssLookupError && <div className="text-xs text-red-500 mt-1">{ssLookupError}</div>}
@@ -1132,7 +1159,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                     href="https://www.ascolour.com/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-teal-600 hover:text-teal-700 underline underline-offset-2"
+                    className="text-[var(--brand)] hover:text-[var(--brand-dark)] underline underline-offset-2"
                   >
                     ascolour.com
                   </a>
@@ -1141,7 +1168,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                     href="https://www.ssactivewear.com/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-teal-600 hover:text-teal-700 underline underline-offset-2"
+                    className="text-[var(--brand)] hover:text-[var(--brand-dark)] underline underline-offset-2"
                   >
                     ssactivewear.com
                   </a>
@@ -1163,7 +1190,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                   const displayWeight = s.weight || (typeof ep === "object" ? ep.weight : "");
                   return (
                   <button key={s.id} onClick={() => selectAndEnrichStyle(s)}
-                    className="relative group flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-slate-200 hover:border-teal-300 hover:bg-teal-50 transition text-left">
+                    className="relative group flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-slate-200 hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition text-left">
                     {previewImg ? <img src={previewImg} alt="" className="w-10 h-10 rounded-lg object-contain bg-slate-50" /> :
                       <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center animate-pulse"><Icon name="tee" className="w-5 h-5 text-slate-300" /></div>}
                     <div className="min-w-0"><div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{displayName}</div>
@@ -1190,7 +1217,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
               {ssMatches.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {ssMatches.map(m => (
                   <button key={m.id} onClick={() => pickSSMatch(m)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 hover:border-teal-300 hover:bg-teal-50 transition text-left">
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition text-left">
                     {m.styleImage && <img src={m.styleImage} alt="" className="w-10 h-10 rounded-lg object-contain bg-white" />}
                     <div className="min-w-0"><div className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">{m.brandName} {m.styleNumber}</div>
                       <div className="text-xs text-slate-400 truncate">{m.description}</div></div>
@@ -1203,7 +1230,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                   {style.description && <div className="text-xs text-slate-500">{style.description}</div>}
                 </div>
                 <button onClick={()=>{ setStyle(null); setColor(""); setSelectedGarment(""); setPreviewStyle(null); setSsMatches([]); setSsLookupInput(""); }}
-                  className="text-xs text-teal-600 font-semibold hover:text-teal-700">Change</button>
+                  className="text-xs text-[var(--brand)] font-semibold hover:text-[var(--brand-dark)]">Change</button>
               </div>
             )}
           </div>
@@ -1242,18 +1269,18 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                             setColor(c);
                           }
                         }}
-                          className={`rounded-xl border-2 p-2 text-center transition hover:shadow-md ${isSelected?"border-teal-500 bg-teal-50":"border-slate-200 hover:border-teal-300"}`}>
+                          className={`rounded-xl border-2 p-2 text-center transition hover:shadow-md ${isSelected?"border-[var(--brand)] bg-[var(--brand-tint)]":"border-slate-200 hover:border-[var(--brand)]"}`}>
                           {colorImg ? <img src={colorImg} alt={c} className="w-full aspect-square rounded-lg object-contain bg-white mb-2" />
                             : <TintedImage baseImg={baseImg} colorName={c} className="w-full aspect-square mb-2" />}
                           <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{c}</div>
-                          {isSelected && <div className="text-[10px] text-teal-500 mt-0.5">Tap to preview</div>}
+                          {isSelected && <div className="text-[10px] text-[var(--brand)] mt-0.5">Tap to preview</div>}
                         </button>);
                     });
                   })()}
                 </div>
               ) : !enrichingStyle ? (
                 <input value={color} onChange={e=>setColor(e.target.value)} placeholder="e.g. Black, Navy, Heather Grey"
-                  className="w-full text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
+                  className="w-full text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" />
               ) : null}
             </div>
           )}
@@ -1296,7 +1323,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                       return (<div key={sz} className="text-center">
                         <div className={`text-xs font-bold mb-1 ${BIG_SIZES.includes(sz)?"text-amber-600":"text-slate-500"}`}>{sz}</div>
                         <input type="number" min="0" value={sizes[sz]||""} onChange={e=>setSizes(prev=>({...prev,[sz]:parseInt(e.target.value)||0}))}
-                          placeholder="0" className={`w-full text-center text-sm border rounded-xl py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-300 dark:text-slate-200 ${BIG_SIZES.includes(sz)?"border-amber-200 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700":"border-slate-200 dark:border-slate-600 dark:bg-slate-800"}`} />
+                          placeholder="0" className={`w-full text-center text-sm border rounded-xl py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] dark:text-slate-200 ${BIG_SIZES.includes(sz)?"border-amber-200 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700":"border-slate-200 dark:border-slate-600 dark:bg-slate-800"}`} />
                         {hasInv && <div className={`text-[10px] mt-1 ${stock!=null&&stock>0?(stock<50?"text-amber-500":"text-emerald-500"):"text-red-400"}`}>
                           {stock!=null?(stock>0?`${stock} avail`:"out"):"—"}</div>}
                       </div>);
@@ -1305,7 +1332,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                   <div className="flex justify-between items-center border-t border-slate-100 pt-3">
                     <div className="text-sm text-slate-500">Total: <span className="font-bold text-slate-900">{qty} pcs</span>
                       {oversizeQty > 0 && <span className="ml-3 text-amber-600 text-xs font-semibold">{oversizeQty} oversized pcs</span>}</div>
-                    {qty > 0 && qty < 25 && <span className="text-xs font-semibold text-red-500 bg-red-50 px-3 py-1 rounded-full border border-red-100">Min 25 pcs</span>}
+                    {qty > 0 && qty < getMinOrderQty() && <span className="text-xs font-semibold text-red-500 bg-red-50 px-3 py-1 rounded-full border border-red-100">Min {getMinOrderQty()} pcs</span>}
                   </div>
                 </>);
               })()}
@@ -1324,7 +1351,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <button
               onClick={addGarment}
-              className="font-semibold px-5 py-2.5 rounded-xl transition text-sm border-2 border-teal-200 text-teal-600 hover:bg-teal-50 self-start"
+              className="font-semibold px-5 py-2.5 rounded-xl transition text-sm border-2 border-[var(--brand-tint)] text-[var(--brand)] hover:bg-[var(--brand-tint)] self-start"
             >
               + Add Another Garment
             </button>
@@ -1337,7 +1364,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
               every garment above. Linked imprints combine quantities so
               the customer hits the right volume break. */}
           {garments.some(gg => gg.style) && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-teal-300 dark:border-teal-700 shadow-sm p-5 space-y-3">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-[var(--brand)] dark:border-[var(--brand-dark)] shadow-sm p-5 space-y-3">
               <StepBadge
                 n={3}
                 title="Print / Stitch Locations"
@@ -1352,17 +1379,18 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                   <div className="grid grid-cols-2 gap-3">
                     <div><label className="block text-[11px] text-slate-400 mb-1">Placement</label>
                       <select value={imp.location} onChange={e=>updateImprint(idx,{location:e.target.value})}
-                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
+                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]">
                         {LOCATIONS.map(l=><option key={l} value={l}>{l}</option>)}</select></div>
                     <div><label className="block text-[11px] text-slate-400 mb-1">Technique</label>
                       <select value={imp.technique} onChange={e=>updateImprint(idx,{technique:e.target.value})}
-                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
+                        className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]">
                         {getEnabledTechniques().map(t=><option key={t}>{t}</option>)}</select></div>
                   </div>
                   <div><label className="block text-[11px] text-slate-400 mb-1.5">Colors</label>
                     <div className="flex gap-1.5">{COLOR_COUNTS.map(n=>(
                       <button key={n} onClick={()=>updateImprint(idx,{colors:n})}
-                        className={`w-9 h-9 rounded-lg text-sm font-bold transition ${imp.colors===n?"bg-teal-600 text-white":"bg-white border border-slate-200 text-slate-600 hover:border-teal-300"}`}>{n}</button>
+                        style={imp.colors===n ? { backgroundColor: bc } : undefined}
+                        className={`w-9 h-9 rounded-lg text-sm font-bold transition ${imp.colors===n?"text-white":"bg-white border border-slate-200 text-slate-600 hover:border-[var(--brand)]"}`}>{n}</button>
                     ))}</div></div>
                   <div><label className="block text-[11px] text-slate-400 mb-1">Artwork <span className="text-slate-300">(optional)</span></label>
                     {artFiles[idx] ? (
@@ -1375,10 +1403,10 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                           onApplyCount={(count, pantones) => updateImprint(idx, { colors: Math.min(8, Math.max(1, count)), ...(pantones ? { pantones } : {}) })} />
                       </div>
                     ) : (
-                      <label className={`flex items-center gap-2 border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer transition text-xs ${uploading[idx]?"border-teal-300 bg-teal-50":"border-slate-200 hover:border-teal-300 hover:bg-slate-50"}`}>
+                      <label className={`flex items-center gap-2 border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer transition text-xs ${uploading[idx]?"border-[var(--brand)] bg-[var(--brand-tint)]":"border-slate-200 hover:border-[var(--brand)] hover:bg-slate-50"}`}>
                         <input type="file" accept=".ai,.eps,.pdf,.png,.jpg,.jpeg,.svg,.psd" className="hidden"
                           onChange={e=>e.target.files[0]&&handleArtUpload(idx,e.target.files[0])} />
-                        {uploading[idx] ? <span className="text-teal-500">Uploading…</span> : <span className="text-slate-400">Upload artwork</span>}
+                        {uploading[idx] ? <span className="text-[var(--brand)]">Uploading…</span> : <span className="text-slate-400">Upload artwork</span>}
                       </label>
                     )}</div>
                 </div>
@@ -1391,14 +1419,14 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                 const seedMethod = imprints[imprints.length - 1]?.technique || "Screen Print";
                 setImprints(prev => [...prev, {id:uid(),location:"Back",colors:1,pantones:"",technique:seedMethod,details:""}]);
               }}
-                className="w-full text-sm font-semibold text-teal-600 border border-teal-200 rounded-xl py-2.5 hover:bg-teal-50 transition">+ Add Print Location</button>
+                className="w-full text-sm font-semibold text-[var(--brand)] border border-[var(--brand-tint)] rounded-xl py-2.5 hover:bg-[var(--brand-tint)] transition">+ Add Print Location</button>
             </div>
           )}
 
           {/* ── Run-level: Turnaround ── Global rush flag; rendered once
               so it doesn't duplicate inside every garment card. */}
           {garments.some(gg => gg.style) && (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-teal-300 dark:border-teal-700 shadow-sm p-5">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border-2 border-[var(--brand)] dark:border-[var(--brand-dark)] shadow-sm p-5">
               <StepBadge
                 n={4}
                 title="Turnaround"
@@ -1407,9 +1435,9 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
               <div className="flex gap-3">
                 {[{val:false,label:"Standard",sub:"14 business days"},{val:true,label:"Rush",sub:"7 business days",badge:"+20%"}].map(opt=>(
                   <button key={String(opt.val)} onClick={()=>setRush(opt.val)}
-                    className={`flex-1 rounded-xl border-2 px-4 py-3 text-left transition ${rush===opt.val?"border-teal-600 bg-teal-50":"border-slate-200 hover:border-slate-300"}`}>
+                    className={`flex-1 rounded-xl border-2 px-4 py-3 text-left transition ${rush===opt.val?"border-[var(--brand)] bg-[var(--brand-tint)]":"border-slate-200 hover:border-slate-300"}`}>
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm font-bold ${rush===opt.val?"text-teal-700":"text-slate-700"}`}>{opt.label}</span>
+                      <span className={`text-sm font-bold ${rush===opt.val?"text-[var(--brand-dark)]":"text-slate-700"}`}>{opt.label}</span>
                       {opt.badge && <span className="text-xs font-bold text-orange-600 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-full">{opt.badge}</span>}
                     </div>
                     <div className="text-xs text-slate-400 mt-0.5">{opt.sub}</div>
@@ -1427,7 +1455,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
             <div className="flex justify-end">
               <button onClick={() => { if (getValidationIssues().length === 0) setStep(2); }}
                 disabled={getValidationIssues().length > 0}
-                className={`font-semibold px-6 py-2.5 rounded-xl transition ${getValidationIssues().length === 0 ? "bg-teal-600 hover:bg-teal-700 text-white" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
+                style={getValidationIssues().length === 0 ? { backgroundColor: bc } : undefined}
+                className={`font-semibold px-6 py-2.5 rounded-xl transition ${getValidationIssues().length === 0 ? "hover:opacity-90 text-white" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}>
                 Continue →
               </button>
             </div>
@@ -1455,7 +1484,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                   <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{f.label}</label>
                   <input type={f.type} value={contact[f.key]} onChange={e=>setContact(c=>({...c,[f.key]:e.target.value}))}
                     placeholder={f.placeholder}
-                    className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
+                    className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" />
                 </div>
               ))}
             </div>
@@ -1463,18 +1492,18 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
               <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">In-Hands Date</label>
                 <input type="date" value={contact.dueDate} onChange={e=>setContact(c=>({...c,dueDate:e.target.value}))}
-                  className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
+                  className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Art / Special Notes</label>
                 <textarea rows={3} value={contact.notes} onChange={e=>setContact(c=>({...c,notes:e.target.value}))}
                   placeholder="File format, special instructions, Pantone refs…"
-                  className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 resize-none" />
+                  className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] resize-none" />
               </div>
             </div>
             <label className="flex items-center gap-3 cursor-pointer">
               <input type="checkbox" checked={contact.taxExempt} onChange={e => setContact(c => ({ ...c, taxExempt: e.target.checked, taxId: e.target.checked ? c.taxId : "" }))}
-                className="w-4 h-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500" />
+                className="w-4 h-4 rounded border-slate-300 text-[var(--brand)] focus:ring-[var(--brand)]" />
               <span className="text-sm font-semibold text-slate-600">Tax Exempt</span>
             </label>
             {contact.taxExempt && (
@@ -1482,7 +1511,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Resale / Tax Exempt Certificate #</label>
                 <input type="text" value={contact.taxId} onChange={e => setContact(c => ({ ...c, taxId: e.target.value }))}
                   placeholder="e.g. NV-12345678"
-                  className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
+                  className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" />
               </div>
             )}
           </div>
@@ -1490,7 +1519,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
             <button
               onClick={()=>contact.name.trim()&&contact.email.trim()&&setStep(3)}
               disabled={!contact.name.trim() || !contact.email.trim()}
-              className={`font-semibold px-6 py-2.5 rounded-xl transition ${contact.name.trim() && contact.email.trim() ? "bg-teal-600 hover:bg-teal-700 text-white" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}
+              style={contact.name.trim() && contact.email.trim() ? { backgroundColor: bc } : undefined}
+              className={`font-semibold px-6 py-2.5 rounded-xl transition ${contact.name.trim() && contact.email.trim() ? "hover:opacity-90 text-white" : "bg-slate-100 text-slate-400 cursor-not-allowed"}`}
             >
               Review Order →
             </button>
@@ -1600,11 +1630,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                   </div>
                 )}
               </div>
-              <div className="bg-emerald-800 px-5 py-5 flex justify-between items-center">
+              <div style={{ backgroundColor: bcDark }} className="px-5 py-5 flex justify-between items-center">
                 <div>
-                  <div className="text-xs font-bold text-emerald-300 uppercase tracking-widest mb-0.5">Estimated Total</div>
-                  <div className="text-emerald-200 text-xs">{totalQtyAll > 0 ? `${totalQtyAll} pcs` : "25 pcs (est.)"} · {fmtMoney(livePpp)}/pc</div>
-                  <div className="text-emerald-300 text-xs mt-1">*Final quote confirmed after art review</div>
+                  <div className="text-xs font-bold text-white/80 uppercase tracking-widest mb-0.5">Estimated Total</div>
+                  <div className="text-white/70 text-xs">{totalQtyAll > 0 ? `${totalQtyAll} pcs` : `${getMinOrderQty()} pcs (est.)`} · {fmtMoney(livePpp)}/pc</div>
+                  <div className="text-white/80 text-xs mt-1">*Final quote confirmed after art review</div>
                 </div>
                 <div className="text-4xl font-bold text-white">{fmtMoney(liveTotals?.total || total)}</div>
               </div>
@@ -1616,7 +1646,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                 )}
                 <button onClick={handleSubmit}
                   disabled={submitting}
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-3.5 rounded-xl transition text-sm disabled:opacity-50 disabled:cursor-not-allowed">
+                  style={{ backgroundColor: bc }}
+                  className="w-full hover:opacity-90 text-white font-bold py-3.5 rounded-xl transition text-sm disabled:opacity-50 disabled:cursor-not-allowed">
                   {submitting ? "Submitting..." : "Submit Order Request →"}
                 </button>
                 <p className="text-xs text-slate-500 text-center mt-3">We'll confirm your order within 1 business day. No payment required now.</p>
@@ -1643,7 +1674,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
           {/* Pricing panel proper. */}
           <div
             className="relative p-5 space-y-4 border"
-            style={{ background: "#1a3a28", borderColor: "#0f2818", color: "#fff" }}
+            style={{ background: bcDark, borderColor: bcDarker, color: "#fff" }}
           >
             <h3 className="text-2xl font-bold leading-tight">
               {showPriceSummary ? "Building your run" : "Start building"}
@@ -1743,7 +1774,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
                 "No commitment — submit a request, then review the quote before you pay.",
               ].map(text => (
                 <li key={text} className="flex items-start gap-2">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2c5840" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="mt-1 shrink-0" aria-hidden="true">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={bcDark} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="mt-1 shrink-0" aria-hidden="true">
                     <polyline points="20 6 9 17 4 12" />
                   </svg>
                   <span className="leading-snug">{text}</span>
@@ -1761,11 +1792,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
       {showPriceSummary && (
         <div
           className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t shadow-lg"
-          style={{ background: "#1a3a28", borderColor: "#0f2818", color: "#fff" }}
+          style={{ background: bcDark, borderColor: bcDarker, color: "#fff" }}
         >
           <div className="px-4 py-3 flex items-center justify-between gap-3">
             <div className="text-xs min-w-0 truncate" style={{ color: "rgba(255,255,255,0.7)" }}>
-              {totalAllQty > 0 ? `${totalAllQty} pcs` : "25 pcs (est.)"}
+              {totalAllQty > 0 ? `${totalAllQty} pcs` : `${getMinOrderQty()} pcs (est.)`}
               {rush && <span className="ml-2" style={{ color: "#FDBA74" }}>Rush</span>}
             </div>
             <div className="flex items-baseline gap-3 shrink-0">
@@ -1794,7 +1825,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
               <div className="flex justify-center gap-1 px-5 pt-3">
                 {imgs.map((img, i) => (
                   <button key={i} onClick={() => setColorPreview(prev => ({ ...prev, idx: i }))}
-                    className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition ${previewIdx === i ? "bg-teal-600 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                    style={previewIdx === i ? { backgroundColor: bc } : undefined}
+                    className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition ${previewIdx === i ? "text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
                     {img.label || `View ${i + 1}`}
                   </button>
                 ))}

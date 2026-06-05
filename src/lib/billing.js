@@ -128,8 +128,6 @@ export const PLANS = [
     name: "Monthly",
     price: 99,
     period: "/mo",
-    foundingPrice: 50,
-    foundingNote: "$50/mo locked for life — first 10 shops",
     features: SHARED_FEATURES,
   },
   {

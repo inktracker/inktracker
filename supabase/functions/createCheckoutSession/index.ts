@@ -3,6 +3,13 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
+import {
+  chooseQuoteApprovalRecipient,
+  chooseArtworkApprovalRecipient,
+  buildQuoteApprovalEmail,
+  buildArtworkApprovalEmail,
+  sendAndLogApprovalNotification,
+} from "../_shared/approvalNotificationEmail.js";
 
 const STRIPE_SECRET_KEY    = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
@@ -145,6 +152,37 @@ async function handleApproveQuote(quoteId: string, token?: string) {
     customer = c ?? null;
   }
 
+  // ── Approval notification ──────────────────────────────────────
+  // Best-effort: a Resend failure here MUST NOT roll back the
+  // approval write the caller already committed. We swallow errors
+  // inside sendApprovalNotification — this block always returns
+  // the original {quote, shop, customer} payload.
+  //
+  // Routing: broker quotes notify the broker (they need to "Submit
+  // to Shop" next); direct shop quotes notify the shop owner.
+  // chooseQuoteApprovalRecipient encodes that decision and is
+  // unit-tested separately.
+  try {
+    const recipient = chooseQuoteApprovalRecipient(quote);
+    const email = recipient ? buildQuoteApprovalEmail({ quote, shop, customer, recipient }) : null;
+    // sendAndLog handles the "no recipient" case by logging a
+    // 'skipped' row — so even if we never had a target email, the
+    // attempt is queryable from the notification_log audit.
+    await sendAndLogApprovalNotification(supabase, {
+      shop_owner: quote.shop_owner,
+      event_type: "quote_approval",
+      quote_id:   quote.id,
+      recipient_email: recipient?.to ?? "",
+      recipient_role:  recipient?.role,
+      to:       recipient?.to,
+      subject:  email?.subject,
+      html:     email?.html,
+      reply_to: email?.reply_to,
+    });
+  } catch (notifyErr) {
+    console.error("[approveQuote] notification build/send failed:", notifyErr);
+  }
+
   return { quote, shop, customer };
 }
 
@@ -211,6 +249,37 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
     .single();
 
   if (error || !order) return { error: "Failed to approve artwork." };
+
+  // Best-effort notification. Mirrors the quote-approval pattern;
+  // see the comment on handleApproveQuote for rationale.
+  try {
+    const recipient = chooseArtworkApprovalRecipient(order);
+    let email: any = null;
+    if (recipient) {
+      // Look up the shop for the email header brand name. Missing
+      // shop row is non-fatal — the builder falls back to "InkTracker".
+      const { data: shopRow } = await supabase
+        .from("shops")
+        .select("shop_name")
+        .eq("owner_email", order.shop_owner)
+        .maybeSingle();
+      email = buildArtworkApprovalEmail({ order, shop: shopRow, recipient });
+    }
+    await sendAndLogApprovalNotification(supabase, {
+      shop_owner: order.shop_owner,
+      event_type: "artwork_approval",
+      order_id:   order.id,
+      recipient_email: recipient?.to ?? "",
+      recipient_role:  recipient?.role,
+      to:       recipient?.to,
+      subject:  email?.subject,
+      html:     email?.html,
+      reply_to: email?.reply_to,
+    });
+  } catch (notifyErr) {
+    console.error("[approveArtwork] notification build/send failed:", notifyErr);
+  }
+
   return { order };
 }
 

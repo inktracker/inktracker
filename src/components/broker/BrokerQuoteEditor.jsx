@@ -647,6 +647,7 @@ export default function BrokerQuoteEditor({
                 extras={q.extras}
                 allLineItems={q.line_items}
                 savedImprints={selectedCustomer?.saved_imprints || []}
+                shopPricingConfig={shop?.pricing_config}
                 onChange={(updated) => updateLineItem(idx, updated)}
                 onRemove={() => removeLineItem(idx)}
                 onDuplicate={() => duplicateLineItem(idx)}
@@ -887,7 +888,17 @@ export default function BrokerQuoteEditor({
 
         </div>
 
-        <div className="px-6 pt-3 bg-slate-50 border-t border-slate-200">
+        <div className="px-6 pt-3 bg-slate-50 border-t border-slate-200 space-y-2">
+          {/* Draft visibility hint — surfaces the otherwise-hidden rule
+              that broker drafts aren't visible to the shop until the
+              client approves and the broker hits "Submit to Shop" on
+              the dashboard drawer. Without this, brokers expect their
+              saved draft to appear in the shop portal immediately and
+              file "my quote disappeared" reports. */}
+          <div className="text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 leading-relaxed">
+            <span className="font-semibold text-slate-700">Drafts are private to you.</span>{" "}
+            Save as draft, send to your client for approval, then click <span className="font-semibold text-slate-700">Submit to Shop</span> on the quote drawer to make it visible to your shop.
+          </div>
           {saveError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
               {saveError}

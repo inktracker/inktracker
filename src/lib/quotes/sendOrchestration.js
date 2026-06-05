@@ -1,3 +1,5 @@
+import { customerFacingShopName } from "./customerFacingQuote";
+
 // Pure orchestration logic for the Send Quote flow.
 //
 // This is the highest-stakes path in the app — it's the moment a
@@ -176,6 +178,19 @@ export function buildSendQuoteEmailRequest({
   shopLogoUrl,
   pdfBase64,
 }) {
+  // Single source of truth for customer-facing brand: shared with the
+  // /QuotePayment header and any other end-client surface, via
+  // customerFacingShopName in customerFacingQuote.js. Resolution:
+  // broker_company → broker_name → shopName → fallback. Without this,
+  // an empty shopName on a broker quote leaked the literal
+  // "Your Shop" placeholder into end clients' inboxes (the
+  // 2026-05-31 regression Joe screenshotted).
+  const effectiveShopName = customerFacingShopName({
+    quote,
+    shopName,
+    fallback: "Your Shop",
+  });
+
   return {
     customerEmails: recipients,
     customerName: quote?.customer_name ?? "",
@@ -183,7 +198,7 @@ export function buildSendQuoteEmailRequest({
     quoteTotal: quote?.total ?? null,
     paymentLink,
     approveLink: paymentLink,
-    shopName: shopName || "Your Shop",
+    shopName: effectiveShopName,
     shopLogoUrl: shopLogoUrl || "",
     subject: taggedSubject,
     body,

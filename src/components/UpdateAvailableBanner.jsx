@@ -4,12 +4,29 @@
 import { useEffect, useState } from "react";
 import { installChunkErrorHandler } from "@/lib/chunkErrorHandler";
 
+// Sticky-dismiss key. Once the user clicks Dismiss in a session, every
+// subsequent stale-chunk error in the same tab is suppressed. They
+// already saw the prompt and chose to ignore it — re-prompting on each
+// new failed dynamic import feels like nagging. They can still refresh
+// manually any time. The flag clears on tab close (sessionStorage).
+const DISMISS_KEY = "updateBanner:dismissed";
+
 export default function UpdateAvailableBanner() {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
-    installChunkErrorHandler(() => setShow(true));
+    installChunkErrorHandler(() => {
+      try {
+        if (sessionStorage.getItem(DISMISS_KEY) === "1") return;
+      } catch { /* private mode / disabled storage — fall through to show */ }
+      setShow(true);
+    });
   }, []);
+
+  function dismiss() {
+    try { sessionStorage.setItem(DISMISS_KEY, "1"); } catch {}
+    setShow(false);
+  }
 
   if (!show) return null;
 
@@ -33,7 +50,7 @@ export default function UpdateAvailableBanner() {
           Refresh
         </button>
         <button
-          onClick={() => setShow(false)}
+          onClick={dismiss}
           className="px-3 py-1 text-xs text-slate-400 hover:text-slate-200 transition"
         >
           Dismiss

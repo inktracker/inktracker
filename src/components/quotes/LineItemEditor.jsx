@@ -558,6 +558,17 @@ export default function LineItemEditor({
     item.id === li.id ? li : item
   );
 
+  // Always-fresh mirror of the `li` prop. Async paths (handleStyleBlur
+  // takes ~1s for an S&S/AC API lookup) must read the LATEST `li` —
+  // not the closure-captured value from when the lookup started. The
+  // race: user blurs the style field, then picks a color while the
+  // lookup is in flight, then the lookup completes and stamps a
+  // garmentColor derived from the stale (closure-captured) `li`,
+  // wiping out the color the user just picked. Always use `liRef.current`
+  // inside any async resolution path that builds an onChange patch.
+  const liRef = useRef(li);
+  useEffect(() => { liRef.current = li; }, [li]);
+
   // Auto-lookup on mount when a line item arrived with a style # but no
   // resolved brand options yet — for example, after the "Paste Order" parser
   // Auto-lookup on mount for line items that already have a style number
@@ -624,11 +635,22 @@ export default function LineItemEditor({
         setSsInventory(selected.inventoryMap || {});
         setSsPriceMap(selected.priceMap || {});
         setSsSizePriceMap(selected.sizePriceMap || {});
+        // Read the FRESHEST li from the ref — the user may have picked
+        // a different color while this lookup was in flight. Without
+        // this, applySelectedMatch builds firstColor off the stale
+        // closure-captured li and overwrites the user's pick.
+        const freshLi = liRef.current;
         const colors = selected.colors || [];
-        const firstColor = colors.find((c) => c.colorName === li.garmentColor)?.colorName || colors[0]?.colorName || li.garmentColor;
+        const firstColor = colors.find((c) => c.colorName === freshLi.garmentColor)?.colorName || colors[0]?.colorName || freshLi.garmentColor;
         const sp = (selected.sizePriceMap && selected.sizePriceMap[firstColor]) || {};
-        if (Object.keys(sp).length > 0) sizePricesRef.current = sp;
-        onChange(applySelectedMatch(li, selected));
+        // Always reset — including to {} — so switching to a brand
+        // without per-size prices clears the prior brand's table. Was
+        // `if (length > 0)` which left stale Paragon sp on the ref
+        // when switching to AS Colour, pegging line totals to the
+        // old garment cost. The onChange wrapper re-attaches from
+        // this ref unconditionally.
+        sizePricesRef.current = sp;
+        onChange(applySelectedMatch(freshLi, selected));
       } else {
         setSsColors(options[0].colors || []);
         setSsInventory(options[0].inventoryMap || {});
@@ -655,12 +677,20 @@ export default function LineItemEditor({
     setSsInventory(selected.inventoryMap || {});
     setSsPriceMap(selected.priceMap || {});
     setSsSizePriceMap(selected.sizePriceMap || {});
-    // Set ref before onChange
+    // Set ref before onChange. Read freshest li from the ref —
+    // defends against the same class of bug as handleStyleBlur, even
+    // though this handler is synchronous (between React batches the
+    // li prop could be marginally newer than the closure value).
+    const freshLi = liRef.current;
     const colors = selected.colors || [];
-    const fc = colors.find((c) => c.colorName === li.garmentColor)?.colorName || colors[0]?.colorName || li.garmentColor;
+    const fc = colors.find((c) => c.colorName === freshLi.garmentColor)?.colorName || colors[0]?.colorName || freshLi.garmentColor;
     const sp = (selected.sizePriceMap && selected.sizePriceMap[fc]) || {};
-    if (Object.keys(sp).length > 0) sizePricesRef.current = sp;
-    onChange(applySelectedMatch(li, selected));
+    // Always reset (see handleStyleBlur for the bug story). Without
+    // this, switching from a brand with per-size prices to a brand
+    // without leaves stale prices on the ref and locks the line
+    // total at the previous brand's cost.
+    sizePricesRef.current = sp;
+    onChange(applySelectedMatch(freshLi, selected));
   }
 
   function handleColorChange(colorName) {

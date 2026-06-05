@@ -22,12 +22,29 @@ import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { quoteThreadId } from "@/lib/messageThreads";
 import { taxProviderFor } from "@/lib/tax/factory";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, UserCheck, UserX } from "lucide-react";
+import { notify } from "@/lib/notify";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
+}
+
+// Render qb_event_log timestamps as "5 min ago" / "2h ago" up to 24h,
+// then switch to short absolute "May 28 12:14". Operators usually want
+// a relative read on the recent rows, an absolute read on older ones.
+function formatEventTime(iso) {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const deltaSec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (deltaSec < 60)    return `${deltaSec}s ago`;
+  if (deltaSec < 3600)  return `${Math.floor(deltaSec / 60)}m ago`;
+  if (deltaSec < 86400) return `${Math.floor(deltaSec / 3600)}h ago`;
+  return new Date(iso).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+  });
 }
 
 // For broker quotes the SHOP's "customer" is the broker (they pay the
@@ -259,6 +276,10 @@ export default function QuoteDetailModal({
   onSend,
   onTogglePaid,
   onDuplicate,
+  // Called when the quote row is updated in-place (e.g. customer
+  // re-linked from the possible-duplicate banner). Parent splices the
+  // updated row into its quotes state so the modal re-renders.
+  onUpdated,
 }) {
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -267,13 +288,146 @@ export default function QuoteDetailModal({
   const [qbSyncing, setQbSyncing] = useState(false);
   const [qbPaymentLink, setQbPaymentLink] = useState(quote?.qb_payment_link ?? null);
   const [qbInvoiceId, setQbInvoiceId] = useState(quote?.qb_invoice_id ?? null);
+  const [qbDocNumber, setQbDocNumber] = useState(quote?.qb_doc_number ?? null);
   const [qbError, setQbError] = useState(null);
   const [showQBPanel, setShowQBPanel] = useState(false);
   const [qbConnected, setQbConnected] = useState(null); // null=unknown, true, false
   const [qbCheckingConn, setQbCheckingConn] = useState(false);
   const [qbCopied, setQbCopied] = useState(false);
 
+  // ── QB Panel tabs (Status | Events | Link) ─────────────────────────
+  // The Status tab is the historical view (connection + invoice +
+  // payment link + actions). Events renders qb_event_log entries for
+  // this quote — operators answer "what happened?" without opening
+  // the database. Link is the orphan-recovery flow: paste a QB
+  // invoice number that was created outside InkTracker and link it
+  // to this quote.
+  const [qbPanelTab, setQbPanelTab] = useState("status");
+  const [qbEvents, setQbEvents] = useState([]);
+  const [qbEventsLoading, setQbEventsLoading] = useState(false);
+  const [qbEventsErr, setQbEventsErr] = useState("");
+  const [qbRefreshing, setQbRefreshing] = useState(false);
+  const [qbLinkInput, setQbLinkInput] = useState("");
+  const [qbLinking, setQbLinking] = useState(false);
+  const [qbLinkMsg, setQbLinkMsg] = useState("");
+
   const [localArtwork, setLocalArtwork] = useState(quote?.selected_artwork || []);
+
+  // ── Possible-duplicate customer banner ───────────────────────────
+  // Wizard submissions always create a fresh customer row, then flag
+  // any same-email match under the same shop as
+  // `possible_existing_customer_id`. The banner gives the shop two
+  // shop-driven decisions (never automatic):
+  //   "Link to existing"   → re-points quote.customer_id to the
+  //                          match, additively fills blank fields on
+  //                          the existing customer from the wizard
+  //                          submission, and deletes the auto-created
+  //                          row if it has no other refs.
+  //   "Keep separate"      → clears the suggestion without changing
+  //                          anything else.
+  // Either choice clears `possible_existing_customer_id` so the
+  // banner doesn't reappear. No data is ever erased — see the
+  // beloved's-merge incident in feedback_customer_merge_safety.
+  const [possibleMatch, setPossibleMatch] = useState(null);
+  const [possibleMatchPriorCount, setPossibleMatchPriorCount] = useState(0);
+  const [linkingCustomer, setLinkingCustomer] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMatch() {
+      const matchId = quote?.possible_existing_customer_id;
+      if (!matchId) {
+        setPossibleMatch(null);
+        setPossibleMatchPriorCount(0);
+        return;
+      }
+      try {
+        const matchRow = await base44.entities.Customer.get(matchId);
+        if (cancelled) return;
+        setPossibleMatch(matchRow);
+        const priorQuotes = await base44.entities.Quote
+          .filter({ shop_owner: quote.shop_owner, customer_id: matchId }, "", 200);
+        if (cancelled) return;
+        setPossibleMatchPriorCount((priorQuotes || []).length);
+      } catch {
+        if (!cancelled) {
+          setPossibleMatch(null);
+          setPossibleMatchPriorCount(0);
+        }
+      }
+    }
+    loadMatch();
+    return () => { cancelled = true; };
+  }, [quote?.possible_existing_customer_id, quote?.shop_owner]);
+
+  async function handleLinkToExisting() {
+    if (!possibleMatch) return;
+    setLinkingCustomer(true);
+    try {
+      const autoCustomerId = quote.customer_id;
+      const targetId = possibleMatch.id;
+
+      // Additive merge — fill blanks on the existing record from the
+      // wizard-created one. Never overwrite a field that already has
+      // a value on the existing customer.
+      try {
+        const autoCustomer = await base44.entities.Customer.get(autoCustomerId);
+        const mergeUpdates = {};
+        const fields = ["name", "email", "phone", "company", "address", "tax_id", "notes"];
+        for (const f of fields) {
+          const cur = (possibleMatch[f] ?? "").toString().trim();
+          const incoming = (autoCustomer?.[f] ?? "").toString().trim();
+          if (!cur && incoming) mergeUpdates[f] = incoming;
+        }
+        if (Object.keys(mergeUpdates).length > 0) {
+          await base44.entities.Customer.update(targetId, mergeUpdates);
+        }
+      } catch {
+        // Merge attempt is best-effort. Re-pointing still proceeds.
+      }
+
+      const updatedQuote = await base44.entities.Quote.update(quote.id, {
+        customer_id: targetId,
+        possible_existing_customer_id: null,
+      });
+
+      // Cleanup: delete the auto-created customer if nothing else
+      // references it. Safe by definition — we just re-pointed the
+      // only quote pointing at it.
+      try {
+        const [otherQ, ords, invs] = await Promise.all([
+          base44.entities.Quote.filter({ customer_id: autoCustomerId }, "", 1),
+          base44.entities.Order.filter({ customer_id: autoCustomerId }, "", 1),
+          base44.entities.Invoice.filter({ customer_id: autoCustomerId }, "", 1),
+        ]);
+        if ((otherQ || []).length === 0 && (ords || []).length === 0 && (invs || []).length === 0) {
+          await base44.entities.Customer.delete(autoCustomerId);
+        }
+      } catch {
+        // Cleanup is best-effort. The quote is already correctly linked.
+      }
+
+      onUpdated?.(updatedQuote);
+      notify.success(`Linked to ${possibleMatch.name || "existing customer"}.`);
+    } catch (err) {
+      notify.error("Couldn't link to existing customer", err);
+    } finally {
+      setLinkingCustomer(false);
+    }
+  }
+
+  async function handleKeepSeparate() {
+    setLinkingCustomer(true);
+    try {
+      const updated = await base44.entities.Quote.update(quote.id, {
+        possible_existing_customer_id: null,
+      });
+      onUpdated?.(updated);
+    } catch (err) {
+      notify.error("Couldn't update quote", err);
+    } finally {
+      setLinkingCustomer(false);
+    }
+  }
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
 
@@ -337,6 +491,19 @@ export default function QuoteDetailModal({
   }
 
   async function handleQBSync() {
+    // First-time invoice creation triggers QBO's POST /invoice/{id}/send,
+    // which emails the customer a copy + payment link from QuickBooks'
+    // own mail servers. Re-sync (when qb_invoice_id already exists) is
+    // an UPDATE — no new send. So gate the confirm on the create case
+    // only; re-syncs run silently.
+    if (!qbInvoiceId) {
+      const recipientEmail = customer?.email || quote.customer_email;
+      const proceed = window.confirm(
+        `Heads up: QuickBooks will email ${recipientEmail || "the customer"} a copy of this invoice with a pay-now link the moment you click OK.\n\n` +
+        `This happens on QuickBooks' side — InkTracker can't suppress it. Continue?`
+      );
+      if (!proceed) return;
+    }
     setQbSyncing(true);
     setQbError(null);
     try {
@@ -370,8 +537,22 @@ export default function QuoteDetailModal({
         invoicePayload,
       });
 
+      // UPDATE-on-existing-invoice failed in QB. Edge function refused
+      // to silently create a duplicate (the Shana Krochmal class of
+      // bug). Surface the structured guidance directly — operator's
+      // next move is to hit Refresh, not retry Sync (which would just
+      // fail the same way again until the underlying QB-side issue
+      // resolves).
+      if (data?.updateFailed) {
+        setQbInvoiceId(data.qbInvoiceId);
+        if (data.paymentLink) setQbPaymentLink(data.paymentLink);
+        setQbError(data.message || "QuickBooks update failed; we refused to create a duplicate. Try Refresh.");
+        return;
+      }
+
       setQbPaymentLink(data.paymentLink);
       setQbInvoiceId(data.qbInvoiceId);
+      if (data.qbDocNumber) setQbDocNumber(data.qbDocNumber);
       setQbConnected(true);
       onSend?.();
     } catch (err) {
@@ -387,6 +568,120 @@ export default function QuoteDetailModal({
     setQbCopied(true);
     setTimeout(() => setQbCopied(false), 2000);
   }
+
+  // ── Refresh from QB: re-pull invoice state, reconcile back, convert
+  // if newly paid. Read-mostly write that uses the qb_event_log audit
+  // wrapper on the edge function so every refresh leaves a trail.
+  async function handleQBRefresh() {
+    setQbRefreshing(true);
+    setQbError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in");
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "refreshInvoice",
+        accessToken: session.access_token,
+        quote_id: quote.id,
+        qb_invoice_id: qbInvoiceId || null,
+      });
+      if (invErr) throw new Error(invErr.message || "Refresh failed.");
+      if (data?.error) throw new Error(data.error);
+      if (data?.refreshed === false) {
+        setQbError(data.message || "Nothing to refresh.");
+        return;
+      }
+      // Patch local state — the edge function already wrote back to
+      // the quotes row, this just mirrors so the modal updates
+      // without a full reload.
+      if (data?.paymentLink) setQbPaymentLink(data.paymentLink);
+      // If the refresh triggered a quote → order conversion, the
+      // quote is no longer a quote. Surface that and let the parent
+      // refetch (onSend triggers the same path).
+      if (data?.conversion?.action === "convert" && data?.conversion?.orderId) {
+        setQbError(
+          `QuickBooks reports this invoice paid — converted to order ${data.conversion.orderId}. ` +
+          `Refresh the page to see the new order.`,
+        );
+        onSend?.();
+      }
+      // Always re-load the events tab after a refresh, so the operator
+      // sees the new audit row land.
+      if (qbPanelTab === "events") loadQbEvents();
+    } catch (err) {
+      setQbError(err?.message || "Refresh failed.");
+    } finally {
+      setQbRefreshing(false);
+    }
+  }
+
+  // ── Link an existing QB invoice (created outside InkTracker) ─────
+  async function handleQBLink() {
+    setQbLinking(true);
+    setQbLinkMsg("");
+    setQbError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in");
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "linkQbInvoice",
+        accessToken: session.access_token,
+        quote_id: quote.id,
+        qb_invoice_input: qbLinkInput,
+      });
+      if (invErr) throw new Error(invErr.message || "Link failed.");
+      if (data?.error) throw new Error(data.error);
+      if (data?.linked === false) {
+        // Structured outcomes — invalid_input / not_found / ambiguous.
+        // The edge function already shaped the message for display.
+        setQbLinkMsg(data.message || "Couldn't link that invoice.");
+        return;
+      }
+      setQbInvoiceId(data.qbInvoiceId);
+      if (data.qbDocNumber) setQbDocNumber(data.qbDocNumber);
+      if (data.paymentLink) setQbPaymentLink(data.paymentLink);
+      setQbLinkInput("");
+      setQbLinkMsg(
+        `Linked QuickBooks invoice ${data.qbDocNumber || `#${data.qbInvoiceId}`}` +
+        (data.paid ? " — already paid in QB." : "."),
+      );
+      // Jump back to the Status tab so the operator sees the new link.
+      setQbPanelTab("status");
+      onSend?.();
+    } catch (err) {
+      setQbLinkMsg(err?.message || "Link failed.");
+    } finally {
+      setQbLinking(false);
+    }
+  }
+
+  // ── Load the qb_event_log timeline for this quote ────────────────
+  async function loadQbEvents() {
+    setQbEventsLoading(true);
+    setQbEventsErr("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in");
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "getQbEvents",
+        accessToken: session.access_token,
+        quote_id: quote.id,
+        limit: 100,
+      });
+      if (invErr) throw new Error(invErr.message || "Couldn't load events.");
+      if (data?.error) throw new Error(data.error);
+      setQbEvents(Array.isArray(data?.events) ? data.events : []);
+    } catch (err) {
+      setQbEventsErr(err?.message || "Couldn't load events.");
+    } finally {
+      setQbEventsLoading(false);
+    }
+  }
+
+  // Auto-load events when the user switches to the Events tab.
+  useEffect(() => {
+    if (showQBPanel && qbPanelTab === "events") loadQbEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showQBPanel, qbPanelTab]);
 
   useEffect(() => {
     base44.auth
@@ -475,6 +770,40 @@ export default function QuoteDetailModal({
           </div>
 
           <div className="p-4 sm:p-6 space-y-5">
+            {possibleMatch && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <UserCheck className="w-5 h-5 text-amber-700 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm text-amber-900 leading-snug">
+                    This wizard submission's email matches an existing customer{" "}
+                    <span className="font-semibold">{possibleMatch.name || possibleMatch.email}</span>
+                    {possibleMatchPriorCount > 0 && ` (${possibleMatchPriorCount} prior quote${possibleMatchPriorCount === 1 ? "" : "s"})`}
+                    . Link this quote to that customer, or keep them separate?
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleLinkToExisting}
+                    disabled={linkingCustomer}
+                    className="text-xs font-semibold uppercase tracking-wider px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50 transition flex items-center gap-1.5"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    Link to {possibleMatch.name || "existing"}
+                  </button>
+                  <button
+                    onClick={handleKeepSeparate}
+                    disabled={linkingCustomer}
+                    className="text-xs font-semibold uppercase tracking-wider px-3 py-2 rounded-lg bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 disabled:opacity-50 transition flex items-center gap-1.5"
+                  >
+                    <UserX className="w-3.5 h-3.5" />
+                    Keep separate
+                  </button>
+                </div>
+                <div className="text-[11px] text-amber-700/80 leading-snug">
+                  Linking fills any blank fields on the existing customer from this submission, then removes the duplicate row. No data is overwritten.
+                </div>
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
                 <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
@@ -788,7 +1117,7 @@ export default function QuoteDetailModal({
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                 <span className="text-xs font-semibold text-emerald-800 flex-1">
-                  QB Invoice {qbInvoiceId ? `#${qbInvoiceId}` : ""} created
+                  QB Invoice {qbDocNumber || (qbInvoiceId ? `#${qbInvoiceId}` : "")} created
                   {qbPaymentLink ? " · Payment link ready" : ""}
                 </span>
                 <span className="text-xs text-emerald-600 font-semibold">View →</span>
@@ -954,10 +1283,32 @@ export default function QuoteDetailModal({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-lg bg-[#2CA01C] flex items-center justify-center text-white font-black text-xs">QB</div>
-                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg">QuickBooks Status</h3>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg">QuickBooks</h3>
               </div>
               <button onClick={() => setShowQBPanel(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
             </div>
+
+            {/* Tabs */}
+            <div className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
+              {[
+                { id: "status", label: "Status" },
+                { id: "events", label: "Events" },
+                { id: "link",   label: "Link Existing" },
+              ].map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setQbPanelTab(t.id)}
+                  className={
+                    "px-3 py-2 text-xs font-bold transition border-b-2 -mb-px " +
+                    (qbPanelTab === t.id
+                      ? "border-[#2CA01C] text-[#2CA01C]"
+                      : "border-transparent text-slate-500 hover:text-slate-800")
+                  }
+                >{t.label}</button>
+              ))}
+            </div>
+
+            {qbPanelTab === "status" && (<>
 
             {/* Connection status */}
             <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
@@ -987,7 +1338,7 @@ export default function QuoteDetailModal({
                 <div className="flex items-center gap-2 p-3 rounded-xl border border-emerald-200 bg-emerald-50">
                   <span className="text-emerald-600 text-lg">✓</span>
                   <div>
-                    <div className="text-sm font-bold text-emerald-800">Invoice #{qbInvoiceId}</div>
+                    <div className="text-sm font-bold text-emerald-800">Invoice {qbDocNumber || `#${qbInvoiceId}`}</div>
                     <div className="text-xs text-emerald-600">Created in QuickBooks</div>
                   </div>
                 </div>
@@ -1049,7 +1400,17 @@ export default function QuoteDetailModal({
                   disabled={qbSyncing}
                   className="flex-1 bg-[#2CA01C] hover:bg-[#238516] disabled:opacity-50 text-white font-bold py-2.5 rounded-xl text-sm transition"
                 >
-                  {qbSyncing ? "Syncing…" : qbInvoiceId ? "Re-sync Invoice" : "Create QB Invoice"}
+                  {qbSyncing ? "Syncing…" : qbInvoiceId ? "Re-sync Invoice" : "Create QB Invoice & Email Customer"}
+                </button>
+              )}
+              {qbInvoiceId && qbConnected && (
+                <button
+                  onClick={handleQBRefresh}
+                  disabled={qbRefreshing}
+                  className="px-3 text-sm font-semibold border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition"
+                  title="Re-pull this invoice's current state from QuickBooks. Use when a payment looks missed or totals look stale."
+                >
+                  {qbRefreshing ? "…" : "Refresh"}
                 </button>
               )}
               {qbPaymentLink && (
@@ -1079,6 +1440,97 @@ export default function QuoteDetailModal({
               >
                 Send to Customer
               </button>
+            )}
+            </>)}
+
+            {qbPanelTab === "events" && (
+              <div className="space-y-2">
+                {qbEventsLoading && (
+                  <div className="text-sm text-slate-500 p-4 text-center">Loading…</div>
+                )}
+                {qbEventsErr && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 font-semibold">
+                    {qbEventsErr}
+                  </div>
+                )}
+                {!qbEventsLoading && !qbEventsErr && qbEvents.length === 0 && (
+                  <div className="p-6 text-center text-sm text-slate-500">
+                    No QuickBooks events recorded for this quote yet.
+                  </div>
+                )}
+                {!qbEventsLoading && qbEvents.length > 0 && (
+                  <ul className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                    {qbEvents.map((ev) => (
+                      <li
+                        key={ev.id}
+                        className="p-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className={
+                              "px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded " +
+                              (ev.status === "success"   ? "bg-emerald-100 text-emerald-700" :
+                               ev.status === "error"     ? "bg-red-100 text-red-700" :
+                               ev.status === "skipped"   ? "bg-slate-200 text-slate-600" :
+                               ev.status === "duplicate" ? "bg-amber-100 text-amber-700" :
+                               ev.status === "started"   ? "bg-blue-100 text-blue-700" :
+                               "bg-slate-100 text-slate-600")
+                            }>{ev.status}</span>
+                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{ev.action}</span>
+                            <span className="text-[10px] text-slate-400 uppercase">{ev.direction}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">{formatEventTime(ev.created_at)}</span>
+                        </div>
+                        {ev.error_message && (
+                          <div className="mt-1 text-xs text-red-700 font-mono break-words">{ev.error_message}</div>
+                        )}
+                        <div className="mt-1 text-[10px] text-slate-400 flex items-center gap-2 flex-wrap">
+                          {ev.qb_invoice_id && <span>inv #{ev.qb_invoice_id}</span>}
+                          {ev.duration_ms != null && <span>{ev.duration_ms}ms</span>}
+                          {ev.idempotency_key && <span title={ev.idempotency_key}>idemp ✓</span>}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {qbPanelTab === "link" && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500">
+                  Already created the QuickBooks invoice manually? Paste its
+                  Invoice # (e.g. <span className="font-mono">Q-2026-115</span>)
+                  or numeric Id to link it to this quote. Payment status will
+                  carry over.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={qbLinkInput}
+                    onChange={(e) => setQbLinkInput(e.target.value)}
+                    placeholder="QB invoice # or Id"
+                    className="flex-1 px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900"
+                  />
+                  <button
+                    onClick={handleQBLink}
+                    disabled={qbLinking || !qbLinkInput.trim() || !qbConnected}
+                    className="px-4 bg-[#2CA01C] hover:bg-[#238516] disabled:opacity-50 text-white font-bold rounded-xl text-sm transition"
+                  >
+                    {qbLinking ? "Linking…" : "Link"}
+                  </button>
+                </div>
+                {qbLinkMsg && (
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300">
+                    {qbLinkMsg}
+                  </div>
+                )}
+                {!qbConnected && !qbCheckingConn && (
+                  <div className="text-xs text-rose-600">
+                    Connect QuickBooks first to link an existing invoice.
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </ModalBackdrop>

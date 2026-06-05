@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/qb-reconcile-cron",
+      "schedule": "0 5 * * *"
+    }
+  ],
   "redirects": [
     {
       "source": "/(.*)",

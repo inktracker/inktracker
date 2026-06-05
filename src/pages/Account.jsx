@@ -2,10 +2,12 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
+import { DEFAULT_BRAND, BRAND_PRESETS, normalizeBrandColor } from "@/lib/branding";
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2, CheckSquare } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
+import { normalizePresses, serializePresses } from "@/lib/presses/normalizePresses";
 import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
@@ -69,11 +71,17 @@ export default function Account() {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
+  // Stored on shops.brand_color, drives customer-facing surfaces
+  // (wizard in Phase 1; email/QuotePayment/ArtApproval/PDFs in Phase 2).
+  // Empty string = use the default (teal). normalizeBrandColor on save
+  // turns invalid input into null so the DB CHECK never rejects.
+  const [brandColor, setBrandColor] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [stateVal, setStateVal] = useState("");
   const [zip, setZip] = useState("");
+  const [website, setWebsite] = useState("");
   const [taxRate, setTaxRate] = useState("");
   // Empty string = "use browser default" (the first picker option). Stored
   // on the shops table so it applies to every user in this shop.
@@ -127,12 +135,14 @@ export default function Account() {
         setCity(currentUser.city || "");
         setStateVal(currentUser.state || "");
         setZip(currentUser.zip || "");
+        setWebsite(currentUser.website || "");
         setTaxRate(currentUser.default_tax_rate || "");
         // Load addons from Shop entity
         try {
           const shops = await base44.entities.Shop.filter({ owner_email: currentUser.email });
           setShopRecord(shops?.[0] || null);
           setTimezone(shops?.[0]?.timezone || "");
+          setBrandColor(shops?.[0]?.brand_color || "");
           if (shops?.[0]?.addons?.length) {
             setAddons(
               shops[0].addons
@@ -218,6 +228,7 @@ export default function Account() {
         city: city.trim(),
         state: stateVal.trim().toUpperCase(),
         zip: zip.trim(),
+        website: website.trim() || null,
         default_tax_rate: parseFloat(taxRate) || 0,
       });
 
@@ -226,7 +237,10 @@ export default function Account() {
       // shouldn't undo the profile save above.
       try {
         const shops = await base44.entities.Shop.filter({ owner_email: user.email });
-        const payload = { timezone: timezone || null };
+        const payload = {
+          timezone: timezone || null,
+          brand_color: normalizeBrandColor(brandColor),
+        };
         if (shops?.[0]) {
           await base44.entities.Shop.update(shops[0].id, payload);
         } else {
@@ -563,6 +577,13 @@ export default function Account() {
             </div>
 
             <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Website</label>
+              <input type="url" value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://yourshop.com"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
+              <p className="text-xs text-slate-400 mt-1">Shown on art proofs in place of the platform footer.</p>
+            </div>
+
+            <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">
                 Logo
               </label>
@@ -596,6 +617,59 @@ export default function Account() {
                   className="hidden"
                 />
               </label>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Brand Color
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                Drives the order wizard's primary button and step accents. Leave unset to use the InkTracker default.
+              </p>
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                {BRAND_PRESETS.map(p => {
+                  const selected = (brandColor || "").toLowerCase() === p.hex;
+                  return (
+                    <button
+                      key={p.hex}
+                      type="button"
+                      onClick={() => setBrandColor(p.hex)}
+                      title={p.label}
+                      aria-label={p.label}
+                      aria-pressed={selected}
+                      className={`w-9 h-9 rounded-full border-2 transition ${selected ? "border-slate-900 dark:border-white scale-110" : "border-slate-200 dark:border-slate-700"}`}
+                      style={{ backgroundColor: p.hex }}
+                    />
+                  );
+                })}
+                {brandColor && (
+                  <button
+                    type="button"
+                    onClick={() => setBrandColor("")}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-700 ml-1 underline"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={brandColor || DEFAULT_BRAND}
+                  onChange={e => setBrandColor(e.target.value)}
+                  className="w-12 h-10 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                  aria-label="Custom brand color"
+                />
+                <div
+                  className="px-4 py-2 rounded-lg text-white text-sm font-semibold"
+                  style={{ backgroundColor: brandColor || DEFAULT_BRAND }}
+                >
+                  Preview button
+                </div>
+                <span className="text-xs font-mono text-slate-500">
+                  {brandColor ? brandColor.toLowerCase() : `${DEFAULT_BRAND} (default)`}
+                </span>
+              </div>
             </div>
 
             {message && (
@@ -819,6 +893,26 @@ export default function Account() {
               <p className="text-sm text-slate-500">
                 Connect QuickBooks to automatically generate payment links when you send quotes. When a client pays, InkTracker converts the quote to an order automatically.
               </p>
+
+              {/* Inline trust signals. Surfaced HERE rather than buried on
+                  the /security page because operators won't click through —
+                  the moment of trust is right when they're about to hand
+                  over QB write access. */}
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3 text-xs text-slate-600 dark:text-slate-300 space-y-1.5">
+                <div className="font-semibold text-slate-700 dark:text-slate-200 text-xs uppercase tracking-wider">Before you connect:</div>
+                <ul className="space-y-1">
+                  <li className="flex gap-2"><span className="text-emerald-600">✓</span><span>Your QuickBooks tokens live server-side only — never visible in your browser.</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600">✓</span><span>Every action InkTracker takes on your books shows up in the Events tab of each quote.</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600">✓</span><span>Idempotency keys prevent double-billing from network retries or double-clicks.</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600">✓</span><span>Nightly reconciliation catches missed payment webhooks and re-syncs your books.</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600">✓</span><span>One-click disconnect, anytime. Revoke from QuickBooks side too for defense in depth.</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600">✓</span><span>Customer card and bank info stays inside QuickBooks Payments — we never see it.</span></li>
+                </ul>
+                <div className="pt-1">
+                  <a href="/security" className="text-teal-600 hover:underline font-semibold">Full security details →</a>
+                </div>
+              </div>
+
               <button
                 onClick={handleConnectQB}
                 disabled={qbConnecting}
@@ -889,10 +983,7 @@ function BillingSection({ user }) {
   }, []);
 
   async function handleCheckout(billing) {
-    // billing: "monthly" | "annual"
-    // For monthly the server picks $50 founding or $99 standard based on
-    // the founding-slot claim. For annual it's flat $999/yr — no founding
-    // discount applies.
+    // billing: "monthly" ($99/mo) | "annual" ($999/yr)
     setCheckoutLoading(billing);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -912,27 +1003,30 @@ function BillingSection({ user }) {
   }
 
   async function handlePortal() {
-    // Founding members forfeit their $50/mo rate permanently if they
-    // cancel their subscription. Stripe's hosted portal doesn't know
-    // about that policy, so we warn before sending them in — without
-    // this, someone clicking "Manage billing" to update their card
-    // could absentmindedly hit cancel and lose the rate forever.
-    if (user?.is_founding_member && !user?.founding_rate_forfeited) {
-      const proceed = window.confirm(
-        "Heads up — you have the founding $50/mo rate.\n\n" +
-        "If you cancel your subscription in the next screen, that rate is forfeited permanently. Re-signups pay the standard $99/month (or $999/year).\n\n" +
-        "If you're just updating your card or billing info, that's safe — the warning only matters if you click Cancel.\n\n" +
-        "Continue to billing?"
-      );
-      if (!proceed) return;
-    }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error: invErr } = await base44.functions.invoke("billing", {
         action: "portal",
         accessToken: session?.access_token,
       });
-      if (invErr) { notify.error("Couldn't open billing portal", invErr); return; }
+      if (invErr) {
+        // Supabase wraps non-2xx responses in FunctionsHttpError and
+        // hides the real error message behind `.context.response`.
+        // Without this unwrap, the operator sees "Edge Function
+        // returned a non-2xx status code" with no signal about which
+        // Stripe / config issue caused it.
+        const ctxRes = invErr.context?.response ?? (typeof invErr.context?.text === "function" ? invErr.context : null);
+        let detail = invErr.message;
+        if (ctxRes?.text) {
+          try {
+            const body = await ctxRes.text();
+            const parsed = JSON.parse(body);
+            detail = parsed?.error || body || detail;
+          } catch {}
+        }
+        notify.error("Couldn't open billing portal", detail);
+        return;
+      }
       if (data?.url) window.location.href = data.url;
       else notify.error("Couldn't open billing portal", data?.error);
     } catch (err) {
@@ -1598,6 +1692,8 @@ function ExportDataSection({ user }) {
 // (Auto 1 vs auto-1 vs Press A) and gave no canonical list to filter
 // reports by.
 function PressesSection({ user }) {
+  // Stored as v2 objects: { name, colors }. Legacy string entries are
+  // promoted on load via normalizePresses. See lib/presses/normalizePresses.
   const [presses, setPresses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1613,7 +1709,7 @@ function PressesSection({ user }) {
           .select("presses")
           .eq("owner_email", user.email)
           .maybeSingle();
-        if (alive) setPresses(Array.isArray(shop?.presses) ? [...shop.presses] : []);
+        if (alive) setPresses(normalizePresses(shop?.presses));
       } catch {
         if (alive) setPresses([]);
       } finally {
@@ -1623,12 +1719,15 @@ function PressesSection({ user }) {
     return () => { alive = false; };
   }, [user?.email]);
 
-  function updatePress(idx, value) {
-    setPresses(prev => {
-      const next = [...prev];
-      next[idx] = value;
-      return next;
-    });
+  function updatePressName(idx, name) {
+    setPresses(prev => prev.map((p, i) => (i === idx ? { ...p, name } : p)));
+  }
+
+  function updatePressColors(idx, value) {
+    // Allow blank for "unknown". Coerce numeric strings; reject negative / non-finite.
+    const n = value === "" ? null : Number(value);
+    const colors = Number.isFinite(n) && n > 0 ? n : null;
+    setPresses(prev => prev.map((p, i) => (i === idx ? { ...p, colors } : p)));
   }
 
   function removePress(idx) {
@@ -1636,14 +1735,14 @@ function PressesSection({ user }) {
   }
 
   function addPress() {
-    setPresses(prev => [...prev, ""]);
+    setPresses(prev => [...prev, { name: "", colors: null }]);
   }
 
   async function handleSave() {
     setSaving(true);
     setSaved(false);
     try {
-      const cleaned = presses.map(p => String(p).trim()).filter(Boolean);
+      const cleaned = serializePresses(presses);
       const { error } = await supabase
         .from("shops")
         .update({ presses: cleaned })
@@ -1664,7 +1763,7 @@ function PressesSection({ user }) {
   return (
     <div className="space-y-4">
       <p className="text-xs text-slate-500 leading-relaxed">
-        List the presses your shop runs jobs on (e.g. "Auto 1", "Manual A"). They'll appear as picker options under <span className="font-semibold">Assigned Press</span> on each order. Operators are picked from the employees you invited via Admin Panel — no extra setup here.
+        List the presses your shop runs jobs on (e.g. "Auto 1 — 8 colors", "Manual A — 6 colors"). They'll appear as picker options under <span className="font-semibold">Assigned Press</span> on each order, and the color count is shown on the Press Schedule lane so dispatchers know which press can run a given job's color count. Operators come from your Admin Panel invites.
       </p>
 
       <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-2">
@@ -1676,11 +1775,24 @@ function PressesSection({ user }) {
               <div key={idx} className="flex items-center gap-2">
                 <input
                   type="text"
-                  value={press}
-                  onChange={e => updatePress(idx, e.target.value)}
-                  placeholder="Press name"
+                  value={press.name}
+                  onChange={e => updatePressName(idx, e.target.value)}
+                  placeholder="Press name (e.g. Auto 1)"
                   className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                 />
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={press.colors ?? ""}
+                    onChange={e => updatePressColors(idx, e.target.value)}
+                    placeholder="—"
+                    title="Number of color stations (heads). Leave blank if unknown."
+                    className="w-16 text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300 text-center"
+                  />
+                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">colors</span>
+                </div>
                 <button
                   type="button"
                   onClick={() => removePress(idx)}
@@ -2222,7 +2334,24 @@ function PricingConfigSection({ user }) {
   function removeTier(tier) {
     const tiers = (config.tiers || DEFAULT_TIERS).filter(t => t !== tier);
     if (tiers.length < 1) return;
-    setConfig(prev => ({ ...prev, tiers }));
+    // Drop the column from the print tables too. addTier seeds each
+    // color row with a {[tier]: 0} entry; symmetric cleanup keeps the
+    // saved pricing_config clean instead of accumulating orphan
+    // {400: 0, 800: 0, ...} keys every time a shop adjusts their tiers.
+    const stripColumn = (table) => {
+      const out = {};
+      for (const c of Object.keys(table || {})) {
+        const { [tier]: _drop, ...rest } = table[c] || {};
+        out[c] = rest;
+      }
+      return out;
+    };
+    setConfig(prev => ({
+      ...prev,
+      tiers,
+      firstPrint: stripColumn(prev.firstPrint),
+      addlPrint:  stripColumn(prev.addlPrint),
+    }));
   }
 
   function updateTierValue(oldTier, newValue) {
@@ -2280,7 +2409,19 @@ function PricingConfigSection({ user }) {
   function removeEmbTier(tier) {
     const et = (config.embroidery?.qtyTiers || []).filter(t => t !== tier);
     if (et.length < 1) return;
-    setConfig(prev => ({ ...prev, embroidery: { ...prev.embroidery, qtyTiers: et } }));
+    // Symmetric cleanup with addEmbTier: drop the orphan column from
+    // each stitch-tier's pricing object. Without this, removing a tier
+    // leaves {[tier]: 0} keys lingering in pricing_config and they
+    // accumulate every time a shop adjusts their tiers.
+    const pricing = {};
+    for (const st of Object.keys(config.embroidery?.pricing || {})) {
+      const { [tier]: _drop, ...rest } = config.embroidery.pricing[st] || {};
+      pricing[st] = rest;
+    }
+    setConfig(prev => ({
+      ...prev,
+      embroidery: { ...prev.embroidery, qtyTiers: et, pricing },
+    }));
   }
 
   function updateEmbTierValue(oldTier, newValue) {
@@ -2340,10 +2481,21 @@ function PricingConfigSection({ user }) {
                 <th className="text-left py-1 pr-2">Colors</th>
                 {tiers.map(t => (
                   <th key={t} className="text-center py-1">
-                    <input type="number" value={t}
-                      onChange={e => updateTierValue(t, e.target.value)}
-                      className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-400 font-semibold" />
-                    <span className="text-slate-300">+</span>
+                    <div className="inline-flex items-center gap-1">
+                      <input type="number" value={t}
+                        onChange={e => updateTierValue(t, e.target.value)}
+                        className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-400 font-semibold" />
+                      <span className="text-slate-300">+</span>
+                      {/* Remove this tier column. Hidden when there's
+                          only one tier left (can't remove the last). */}
+                      {tiers.length > 1 && (
+                        <button
+                          onClick={() => removeTier(t)}
+                          className="text-slate-300 hover:text-red-500 text-xs ml-0.5"
+                          title={`Remove ${t}+ tier`}
+                        >×</button>
+                      )}
+                    </div>
                   </th>
                 ))}
                 <th className="py-1 px-1">
@@ -2700,27 +2852,13 @@ function PricingConfigSection({ user }) {
               </div>
             </div>
 
-            {/* Embroidery Quantity Tiers */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Quantity Tiers</h4>
-              </div>
-              <div className="flex flex-wrap gap-2 items-center">
-                {(emb.qtyTiers || []).map(t => (
-                  <div key={t} className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-                    <input type="number" value={t} onChange={e => updateEmbTierValue(t, e.target.value)}
-                      className="w-14 text-xs text-center border-none bg-transparent focus:outline-none font-semibold text-slate-700" />
-                    <span className="text-[10px] text-slate-400">pcs</span>
-                    {(emb.qtyTiers || []).length > 1 && (
-                      <button onClick={() => removeEmbTier(t)} className="text-slate-300 hover:text-red-500 text-xs ml-1">x</button>
-                    )}
-                  </div>
-                ))}
-                <button onClick={addEmbTier} className="text-xs font-semibold text-teal-600 border border-teal-200 px-2.5 py-1 rounded-lg hover:bg-teal-50">+ Add Tier</button>
-              </div>
-            </div>
-
             {/* Embroidery Pricing Table */}
+            {/* Tier editing lives in the table header (same pattern as
+                renderPrintTable above) — the previous standalone
+                "Quantity Tiers" section was redundant since the table
+                already renders one column per tier. Edit a tier value
+                inline, click × to remove a column, click + at the end
+                to add one. */}
             <div>
               <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Per Piece Pricing</h4>
               <div className="overflow-x-auto">
@@ -2728,7 +2866,26 @@ function PricingConfigSection({ user }) {
                   <thead>
                     <tr className="text-slate-400">
                       <th className="text-left py-1 pr-2">Stitch Count</th>
-                      {(emb.qtyTiers || []).map(t => <th key={t} className="text-center py-1">{t}+</th>)}
+                      {(emb.qtyTiers || []).map(t => (
+                        <th key={t} className="text-center py-1">
+                          <div className="inline-flex items-center gap-1">
+                            <input type="number" value={t}
+                              onChange={e => updateEmbTierValue(t, e.target.value)}
+                              className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-400 font-semibold" />
+                            <span className="text-slate-300">+</span>
+                            {(emb.qtyTiers || []).length > 1 && (
+                              <button
+                                onClick={() => removeEmbTier(t)}
+                                className="text-slate-300 hover:text-red-500 text-xs ml-0.5"
+                                title={`Remove ${t}+ tier`}
+                              >×</button>
+                            )}
+                          </div>
+                        </th>
+                      ))}
+                      <th className="py-1 px-1">
+                        <button onClick={addEmbTier} className="text-teal-500 hover:text-teal-700 text-xs font-bold" title="Add tier">+</button>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2747,6 +2904,8 @@ function PricingConfigSection({ user }) {
                             />
                           </td>
                         ))}
+                        {/* Pad for the + add-tier column in the header */}
+                        <td></td>
                       </tr>
                     ))}
                   </tbody>

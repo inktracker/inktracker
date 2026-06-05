@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import { Mail, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
@@ -56,6 +56,24 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // `totals` for non-broker quotes; reads client_* fields for broker.
   const customerTotals = getCustomerFacingTotals(quote);
 
+  // ── Customer-facing brand name ───────────────────────────────────────
+  // For broker quotes the END CLIENT must see the BROKER as the merchant
+  // of record (they're the entity the broker has a relationship with —
+  // the print shop is invisible to them by design). For direct shop
+  // quotes, the shop is the merchant. This is the customer-facing
+  // surface rule: same one applied via toCustomerFacingQuote for
+  // pricing fields.
+  //
+  // Resolution mirrors broker chip-label logic:
+  //   broker_company → broker_name → fall through to shop name
+  //
+  // Without this, broker-sent quotes landed in clients' inboxes with
+  // "Your Shop" or the shop's actual name in the header — confusing
+  // at best, identity-leaking at worst.
+  const displayBrandName = isBrokerQuote(quote)
+    ? (quote?.broker_company?.trim() || quote?.broker_name?.trim() || shopName || "Your Shop")
+    : (shopName || "Your Shop");
+
   const [shopTemplate, setShopTemplate] = useState(null);
 
   // ── Payment provider selection ──────────────────────────────────────
@@ -67,9 +85,18 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const paymentProvider = "qb";
   const [qbConnected, setQbConnected] = useState(false);
   const [qbInvoiceId, setQbInvoiceId] = useState(quote.qb_invoice_id ?? null);
+  const [qbDocNumber, setQbDocNumber] = useState(quote.qb_doc_number ?? null);
   const [qbPaymentLink, setQbPaymentLink] = useState(quote.qb_payment_link ?? null);
   const [creatingQbInvoice, setCreatingQbInvoice] = useState(false);
   const [qbError, setQbError] = useState("");
+
+  // Idempotency key for the next createInvoice attempt. Held in a ref
+  // so a React re-render mid-flight doesn't lose it — only an explicit
+  // clearQbAttemptKey() (after success/terminal failure) generates a
+  // new one. Same key on a retry within 5 min collapses to one QB
+  // write on the edge function side.
+  const qbAttemptKeyRef = useRef(null);
+  function clearQbAttemptKey() { qbAttemptKeyRef.current = null; }
 
   // Re-fetch the quote from DB on mount to pick up qb_invoice_id /
   // qb_payment_link that the qbSync edge function wrote on a previous
@@ -84,6 +111,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         const fresh = await base44.entities.Quote.get(quote.id);
         if (!active || !fresh) return;
         if (fresh.qb_invoice_id   != null) setQbInvoiceId(fresh.qb_invoice_id);
+        if (fresh.qb_doc_number   != null) setQbDocNumber(fresh.qb_doc_number);
         if (fresh.qb_payment_link != null) setQbPaymentLink(fresh.qb_payment_link);
       } catch (err) {
         // Non-fatal — modal will operate on the parent prop's snapshot.
@@ -169,9 +197,41 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // payment provider and clicks the explicit "Create QB Invoice" button.
   // Send remains disabled until this succeeds.
   async function handleCreateQbInvoice() {
+    // Last-mile confirm. The inline banner above the button warns about
+    // this too, but the operator can still click-through if they're
+    // scanning fast. QBO's POST /invoice/{id}/send (the only API that
+    // mints a payment link) ALSO emails the customer from QuickBooks'
+    // mail servers — there's no opt-out. Re-tries (status === "send_failed")
+    // skip the confirm because the customer already got the first email.
+    if (qbState.status === "needs_create") {
+      const recipientEmail = quote?.customer_email;
+      const proceed = window.confirm(
+        `Heads up: QuickBooks will email ${recipientEmail || "the customer"} a copy of this invoice with a pay-now link the moment you click OK.\n\n` +
+        `This will also send the InkTracker quote email (PDF + approve button) right after, so the customer gets both. Continue?`
+      );
+      if (!proceed) return;
+    }
+    // We auto-fire handleSend() after a CLEAN QB create — operator's
+    // intent on this button is "send the quote, with QB attached." Skip
+    // the auto-send on alreadyPaid (no quote-send needed), updateFailed
+    // (operator needs to review/refresh first), or any caught error.
+    let autoSendAfter = false;
     setCreatingQbInvoice(true);
     setQbError("");
     try {
+      // Frontend gate so we never even ask the edge function when QB
+      // obviously isn't connected. Without this, the edge function
+      // surfaces "QuickBooks not connected" wrapped in a generic
+      // Supabase "EDGE FUNCTION RETURNED A NON-2XX STATUS CODE"
+      // shell — totally unactionable. The Create button below is
+      // already hidden when !qbConnected, so reaching this branch
+      // requires state to change mid-flight (rare). Hard-stop with
+      // copy that names the next step.
+      if (!qbConnected) {
+        throw new Error(
+          "QuickBooks isn't connected on your account yet. Connect it in Account → Integrations to add a pay-now link, or skip this step and send the quote without one.",
+        );
+      }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Not signed in.");
       // If the saved quote / customer record doesn't carry an email but
@@ -199,22 +259,63 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // UNAUTHORIZED_NO_AUTH_HEADER otherwise. Bug Joe surfaced
       // 2026-05-18: the user saw "QuickBooks rejected the invoice"
       // because the gateway rejected before QB was ever called.
+      // Idempotency key. The frontend mints a UUID per *attempt* —
+      // double-clicking Send, a network retry, or a fast re-open of
+      // the modal that re-fires this function all reuse the same key
+      // until the attempt resolves, so the edge function collapses
+      // duplicate requests onto one QB write. The key is regenerated
+      // for the next intentional attempt by re-rendering this scope
+      // (closing/reopening the modal resets the React state).
+      const idempotencyKey = qbAttemptKeyRef.current || crypto.randomUUID();
+      qbAttemptKeyRef.current = idempotencyKey;
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
         action: "createInvoice",
         accessToken: session.access_token,
         quote: quoteForQb,
         customer: customerPayload,
         invoicePayload,
+        idempotencyKey,
       });
       if (invErr) throw new Error(invErr.message || "Couldn't reach QuickBooks. Please try again.");
       if (data?.error) throw new Error(data.error);
+      // Another in-flight request with the same key is still running
+      // (rare — happens if the operator double-clicks Send before the
+      // first request returns). The edge function returned without
+      // calling QB. Tell the operator and bail; the original request
+      // will populate qbInvoiceId/qbPaymentLink when it completes.
+      if (data.inFlight) {
+        setQbError("Already creating this invoice — waiting on the first request. Refresh in a moment.");
+        return;
+      }
+      // Terminal outcome: clear the attempt key so a *new* attempt
+      // (e.g. operator hits Send again deliberately) mints a fresh
+      // UUID instead of replaying the just-cached result.
+      clearQbAttemptKey();
       setQbInvoiceId(data.qbInvoiceId);
+      setQbDocNumber(data.qbDocNumber || null);
       setQbPaymentLink(data.paymentLink || null);
+      // Clean success — fire the InkTracker quote send in the finally
+      // block. Any of the four guards below will flip this off if we
+      // hit a state where the operator should review before sending.
+      autoSendAfter = Boolean(data.qbInvoiceId);
+      // UPDATE-on-existing-invoice failed in QB. The edge function
+      // refused to silently create a duplicate (-r2). Show the
+      // structured guidance so the operator opens the QB panel and
+      // hits Refresh instead of trying to Send again.
+      if (data.updateFailed) {
+        autoSendAfter = false;
+        setQbError(
+          data.message ||
+          "Couldn't update the existing QuickBooks invoice. Open QB → Refresh to re-pull current state, or fix the invoice in QuickBooks directly.",
+        );
+        return;
+      }
       // Paid-state guard from the edge function. The customer already
       // paid via the existing QB invoice, so we refused to create a
       // -rN duplicate. Surface that so the operator knows to refresh
       // / mark the quote paid rather than retrying.
       if (data.alreadyPaid) {
+        autoSendAfter = false;
         setQbError(
           data.alreadyPaidMessage ||
           "This quote already has a paid QuickBooks invoice. No new invoice was created."
@@ -226,6 +327,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // was already pushed; the inline warning here makes sure the
       // operator can't miss it during a send flow.
       if (data.depositRecordFailed) {
+        autoSendAfter = false;
         setQbError(
           "Warning: QB invoice created, but couldn't record the deposit payment against it. " +
           "The QuickBooks invoice will show the full balance instead of the remaining-after-deposit. " +
@@ -237,6 +339,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // falls through to `send_failed`/`needs_create`; this string
       // shows up under either banner.
       if (!data.paymentLink && data.linkFailureReason) {
+        autoSendAfter = false;
         if (data.linkFailureReason === "no_link_after_retry") {
           setQbError(
             "QuickBooks created the invoice but didn't mint a payment link, even after retries. " +
@@ -252,9 +355,27 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         }
       }
     } catch (err) {
+      // Non-200 / network failure. The attempt key STAYS so an
+      // immediate retry collapses to the same idempotency entry,
+      // letting the edge function return the cached failure rather
+      // than re-firing a possibly-partial QB write. The next
+      // *deliberate* attempt (operator dismisses the error and tries
+      // again, or closes/reopens the modal) will mint a new key on
+      // its own — qbAttemptKeyRef is reset when the modal unmounts.
+      autoSendAfter = false;
       setQbError(err.message || "Couldn't create the QB invoice. Try again.");
     } finally {
       setCreatingQbInvoice(false);
+    }
+    // Chain the InkTracker quote send so the customer gets BOTH:
+    //   1. The QB invoice email (from QBO's mail servers — already sent
+    //      by /invoice/{id}/send inside qbSync)
+    //   2. The InkTracker branded quote email with PDF breakdown + Approve
+    //      button (this handleSend call)
+    // Only on clean success — any of the guards above flips autoSendAfter
+    // off so the operator can review before sending.
+    if (autoSendAfter) {
+      await handleSend();
     }
   }
 
@@ -263,7 +384,12 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const recipientEmails = parseRecipients(emailsInput);
 
   useEffect(() => {
-    const shop = shopName || "Your Shop";
+    // For broker quotes, use the broker's brand name in every
+    // customer-facing string — subject, {{shop_name}} placeholder,
+    // and the default body template. The shop name field on the
+    // template editor was authored from the shop's POV; for broker
+    // sends we substitute the broker's identity instead.
+    const shop = displayBrandName;
 
     function fillPlaceholders(tmpl) {
       return tmpl
@@ -287,7 +413,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         `Hi ${quote.customer_name}, your quote is ready for review. Total: ${fmtMoney(customerTotals.total)}. Click below to view, approve, or pay online.`
       );
     }
-  }, [shopName, shopTemplate, quote.quote_id, quote.customer_name, customerTotals.total]);
+  }, [displayBrandName, shopTemplate, quote.quote_id, quote.customer_name, customerTotals.total]);
 
   async function handleSend() {
     setError("");
@@ -342,7 +468,10 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       try {
         pdfBase64 = await exportQuoteToPDF(quoteForPdf, {
           mode: "client",
-          shopName: shopName || "Your Shop",
+          // Customer-facing PDF: same broker-vs-shop brand resolution
+          // as the email body. The PDF header shouldn't leak the print
+          // shop's name to the broker's end client either.
+          shopName: displayBrandName,
           logoUrl,
           customerCompany: customer?.company || "",
           customerEmail: quote.customer_email || customer?.email || "",
@@ -357,7 +486,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // can be routed back to this thread by emailScanner. The shop code makes
       // the tag globally unique across all shops on the platform.
       const taggedSubject = addRefTag(
-        subject || `Your Quote from ${shopName || "Your Shop"} - Quote #${quote.quote_id}`,
+        subject || `Your Quote from ${displayBrandName} - Quote #${quote.quote_id}`,
         quote.quote_id,
         quote.shop_owner
       );
@@ -374,7 +503,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         taggedSubject,
         body,
         paymentLink,
-        shopName,
+        // Pass the customer-facing brand name (broker for broker quotes,
+        // shop for direct quotes) — this is what renders in the email
+        // header. The edge function also derives a fromHeader from
+        // brokerName separately; both stay in sync.
+        shopName: displayBrandName,
         shopLogoUrl: logoUrl,
         pdfBase64,
       });
@@ -405,7 +538,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
             logOutboundMessage({
               threadId,
               fromEmail: quote.shop_owner || "",
-              fromName: shopName || "Your Shop",
+              fromName: displayBrandName,
               toEmail: to,
               subject: taggedSubject,
               body: body || `Quote ${quote.quote_id} sent to ${to}.`,
@@ -576,7 +709,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                     <span className="text-xs text-emerald-700 leading-relaxed">
-                      QB invoice #{qbInvoiceId} ready. Customer's payment link is set.
+                      QB invoice {qbDocNumber || `#${qbInvoiceId}`} ready. QuickBooks has emailed the customer with the pay-now link.
                     </span>
                   </div>
                 )}
@@ -586,7 +719,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                     <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                       <div className="text-xs text-amber-700 leading-relaxed">
-                        <div className="font-semibold mb-0.5">QB invoice #{qbInvoiceId} created, but no payment link came back.</div>
+                        <div className="font-semibold mb-0.5">QB invoice {qbDocNumber || `#${qbInvoiceId}`} created, but no payment link came back.</div>
                         You can send the quote anyway — the customer will see the line items + total but won't have a pay-now button. Or retry below to get the link.
                       </div>
                     </div>
@@ -607,7 +740,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   </div>
                 )}
 
-                {paymentProvider === "qb" && qbState.status === "needs_create" && (
+                {paymentProvider === "qb" && qbState.status === "needs_create" && qbConnected && (
                   <div className="space-y-2">
                     <button
                       type="button"
@@ -616,15 +749,27 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                       className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
                     >
                       {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      {creatingQbInvoice ? "Creating QB invoice…" : "Create QB Invoice (optional)"}
+                      {creatingQbInvoice ? "Creating QB invoice…" : "Create QB Invoice & Send Quote"}
                     </button>
-                    <p className="text-xs text-slate-500">Adds a pay-now link to the email. Skip to send a quote without one — the customer can still approve and pay out-of-band.</p>
+                    <p className="text-xs text-slate-500">QuickBooks emails the invoice + pay-now link, then InkTracker sends the branded quote email with PDF breakdown and Approve button. Skip this step to send a plain quote (no pay-now link).</p>
                     {qbError && (
                       <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
                         {qbError}
                       </div>
                     )}
                   </div>
+                )}
+
+                {/* QB-not-connected branch. The button up there would just
+                    error if clicked (no token), so hide it entirely. The
+                    gate card at the top of this section already says
+                    "Connect QuickBooks in Account → Integrations." This
+                    extra line confirms the operator can still send the
+                    quote — they're not blocked, just QB-less. */}
+                {paymentProvider === "qb" && qbState.status === "needs_create" && !qbConnected && (
+                  <p className="text-xs text-slate-500 italic">
+                    No pay-now link will be attached. Click Send below to email the quote as-is.
+                  </p>
                 )}
               </div>
 
