@@ -122,7 +122,35 @@ export default function QuoteEditorModal({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  // Paste Order: paste an email/spreadsheet and have the parser prefill line_items
+  // Paste Order: paste an email/spreadsheet and have the parser prefill
+  // line_items. Hidden 2026-06-02 for customer-facing release — parser
+  // still misclassifies enough edge cases to generate support load.
+  //
+  // Internal-only override for testing without flipping the whole shop:
+  //   Visit any quote modal once with `?paste=1` in the URL → sets a
+  //   localStorage flag → button stays visible for THIS browser/profile
+  //   indefinitely.
+  // To turn off: visit with `?paste=0`, or run
+  //   `localStorage.removeItem('inktracker.devtools.pasteOrder')`
+  // in the browser console.
+  //
+  // Persists across sessions but not across browsers/devices, which is
+  // exactly what we want for an internal-test flag (nothing leaks to
+  // a real shop without them deliberately opting in via URL).
+  const PASTE_FLAG_KEY = "inktracker.devtools.pasteOrder";
+  const [pasteOrderEnabled, setPasteOrderEnabled] = useState(false);
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      const override = sp.get("paste");
+      if (override === "1") window.localStorage.setItem(PASTE_FLAG_KEY, "1");
+      if (override === "0") window.localStorage.removeItem(PASTE_FLAG_KEY);
+      setPasteOrderEnabled(window.localStorage.getItem(PASTE_FLAG_KEY) === "1");
+    } catch {
+      // localStorage blocked (private mode) — feature stays off, which
+      // is the conservative default.
+    }
+  }, []);
   const [showPaste, setShowPaste] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasting, setPasting] = useState(false);
@@ -792,13 +820,15 @@ export default function QuoteEditorModal({
                 Line Items
               </h3>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => { setShowPaste((v) => !v); setPasteError(""); }}
-                  className="text-xs font-semibold text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition"
-                  title="Paste an email or spreadsheet to auto-fill line items"
-                >
-                  📋 Paste Order
-                </button>
+                {pasteOrderEnabled && (
+                  <button
+                    onClick={() => { setShowPaste((v) => !v); setPasteError(""); }}
+                    className="text-xs font-semibold text-emerald-700 border border-emerald-200 px-3 py-1.5 rounded-lg hover:bg-emerald-50 transition"
+                    title="Paste an email or spreadsheet to auto-fill line items"
+                  >
+                    📋 Paste Order
+                  </button>
+                )}
                 <button
                   onClick={addLineItem}
                   className="text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
@@ -808,7 +838,7 @@ export default function QuoteEditorModal({
               </div>
             </div>
 
-            {showPaste && (
+            {pasteOrderEnabled && showPaste && (
               <div className="border border-emerald-200 bg-emerald-50/40 rounded-xl p-4 space-y-2">
                 <div className="text-xs font-semibold text-slate-700">
                   Paste a customer email or order list — sizes, style numbers, garment names. The parser will extract line items.

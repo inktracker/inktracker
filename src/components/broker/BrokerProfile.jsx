@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { User, Save, CheckCircle2, AlertCircle, Link2, Unlink } from "lucide-react";
+import { User, Save, CheckCircle2, AlertCircle, Link2, Unlink, Upload, X } from "lucide-react";
+import { uploadFile } from "@/lib/uploadFile";
+import { notify } from "@/lib/notify";
 import BrokerCredentials from "./BrokerCredentials";
 
 const QB_CLIENT_ID = import.meta.env.VITE_QB_CLIENT_ID;
@@ -33,6 +35,13 @@ export default function BrokerProfile({ user, onUpdate }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  // Logo state — separate from `form` because the upload commits
+  // immediately (operator expects to see the new logo without hitting
+  // a Save button). Consumers (BrokerQuoteEditor, BrokerInvoicesTab)
+  // already read `broker?.logo_url` when stamping client-facing PDFs;
+  // this UI is the missing input side of that contract.
+  const [logoUrl, setLogoUrl] = useState(user.logo_url || "");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   function set(field, value) {
     setForm(f => ({ ...f, [field]: value }));
@@ -56,6 +65,35 @@ export default function BrokerProfile({ user, onUpdate }) {
     }
   }
 
+  async function handleLogoUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingLogo(true);
+    try {
+      const { file_url } = await uploadFile(file);
+      setLogoUrl(file_url);
+      await base44.auth.updateMe({ logo_url: file_url });
+      const updated = await base44.auth.me();
+      onUpdate?.(updated);
+    } catch (err) {
+      notify.error("Logo upload failed", err);
+    } finally {
+      setUploadingLogo(false);
+      e.target.value = ""; // allow re-uploading the same file
+    }
+  }
+
+  async function handleRemoveLogo() {
+    try {
+      setLogoUrl("");
+      await base44.auth.updateMe({ logo_url: "" });
+      const updated = await base44.auth.me();
+      onUpdate?.(updated);
+    } catch (err) {
+      notify.error("Couldn't remove logo", err);
+    }
+  }
+
   const fields = [
     { label: "Display Name", key: "display_name", type: "text", placeholder: "Your name as shown in the app" },
     { label: "Company Name", key: "company_name", type: "text", placeholder: "Your company or agency name" },
@@ -74,13 +112,61 @@ export default function BrokerProfile({ user, onUpdate }) {
       <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
         {/* Read-only account info */}
         <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-          <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center">
-            <User className="w-6 h-6 text-teal-600" />
-          </div>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="Logo"
+              className="w-12 h-12 rounded-full object-cover border border-slate-200"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center">
+              <User className="w-6 h-6 text-teal-600" />
+            </div>
+          )}
           <div>
             <div className="font-bold text-slate-900">{user.display_name || user.full_name || "Broker"}</div>
             <div className="text-xs text-slate-400">{user.email} · Broker account</div>
           </div>
+        </div>
+
+        {/* Logo upload */}
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+            Logo
+          </label>
+          <p className="text-xs text-slate-500 mb-2">
+            Shows on the quotes and invoices your clients see — replaces
+            the shop's logo on broker-submitted PDFs.
+          </p>
+          {logoUrl && (
+            <div className="mb-3 relative w-24 h-24">
+              <img
+                src={logoUrl}
+                alt="Logo"
+                className="w-24 h-24 object-contain rounded-lg border border-slate-200"
+              />
+              <button
+                onClick={handleRemoveLogo}
+                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full p-1 transition"
+                title="Remove logo"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          <label className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl border-2 border-dashed border-slate-200 hover:border-teal-400 cursor-pointer transition bg-slate-50 hover:bg-teal-50">
+            <Upload className="w-4 h-4 text-slate-500" />
+            <span className="text-sm font-semibold text-slate-600">
+              {uploadingLogo ? "Uploading..." : logoUrl ? "Change Logo" : "Upload Logo"}
+            </span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleLogoUpload}
+              disabled={uploadingLogo}
+              className="hidden"
+            />
+          </label>
         </div>
 
         {/* Editable fields */}

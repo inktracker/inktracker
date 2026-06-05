@@ -9,6 +9,7 @@ import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { bucketQuotes } from "@/lib/broker/quoteStatus";
 import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, BarChart2, Package, DollarSign, FileText, Bell, RefreshCw } from "lucide-react";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
+import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
 import GettingStartedChecklist from "../components/GettingStartedChecklist";
@@ -794,18 +795,21 @@ export default function Dashboard() {
                     <button
                       key={q.id}
                       onClick={() => {
-                        // "Converted to Order" quotes have an empty editor —
-                        // the actual job lives on the order. Route the user
-                        // to that order if we can find it; otherwise fall
-                        // back to the quote (rare — would mean stale data).
-                        if (q.status === "Converted to Order" && q.converted_order_id) {
-                          const target = orders.find(o => o.order_id === q.converted_order_id);
-                          if (target) {
-                            navigate(`/Orders?id=${target.id}`);
-                            return;
-                          }
+                        // Shared resolver (lib/quotes/resolveQuoteLink) so the
+                        // Dashboard, Calendar, and Production grids all route
+                        // converted quotes identically. Includes a reverse-link
+                        // fallback (orders.find by quote_id) for legacy rows
+                        // where converted_order_id was never written.
+                        const r = resolveQuoteLink(q, orders);
+                        if (r.kind === QUOTE_LINK_KIND.OPEN_ORDER) {
+                          navigate(`/Orders?id=${r.order.id}`);
+                          return;
                         }
-                        navigate(`/Quotes?id=${q.id}`);
+                        if (r.kind === QUOTE_LINK_KIND.NAVIGATE_ORDERS) {
+                          navigate("/Orders");
+                          return;
+                        }
+                        navigate(`/Quotes?id=${r.quoteId}`);
                       }}
                       className="w-full text-left px-5 py-3 flex items-center justify-between hover:bg-slate-50 dark:bg-slate-800 transition"
                     >

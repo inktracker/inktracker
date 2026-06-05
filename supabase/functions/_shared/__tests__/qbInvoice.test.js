@@ -12,6 +12,7 @@ import {
   stripDocNumberRevision,
   isRevisionDocNumber,
   isQbInvoicePaid,
+  buildUpdateFailureResponse,
 } from "../qbInvoice";
 
 // ── nextAvailableDocNumber ──────────────────────────────────────────────────
@@ -646,5 +647,62 @@ describe("isQbInvoicePaid", () => {
     // QBO sometimes returns these as strings depending on the API surface.
     expect(isQbInvoicePaid({ TotalAmt: "350.00", Balance: "0" })).toBe(true);
     expect(isQbInvoicePaid({ TotalAmt: "350.00", Balance: "100" })).toBe(false);
+  });
+});
+
+// ── buildUpdateFailureResponse ──────────────────────────────────────────────
+//
+// Regression fence for the Shana Krochmal Q-2026-F4O5-r2 duplication.
+// Until 2026-05-30, handleCreateInvoice silently created a duplicate
+// invoice when an UPDATE on the existing qb_invoice_id failed. The
+// fix: refuse the duplicate and return this structured response so
+// the frontend can render actionable guidance.
+
+describe("buildUpdateFailureResponse (BUFR)", () => {
+  it("BUFR1 — throws without qbInvoiceId (caller must supply)", () => {
+    expect(() => buildUpdateFailureResponse({})).toThrow(/qbInvoiceId/);
+  });
+
+  it("BUFR2 — sets updateFailed: true and copies through the QB doc number", () => {
+    const r = buildUpdateFailureResponse({
+      qbInvoiceId: "1042",
+      qbDocNumber: "Q-2026-F4O5",
+      existingPaymentLink: "https://qb.example/pay/abc",
+      updateErrMessage: "Stale Object Error",
+    });
+    expect(r.updateFailed).toBe(true);
+    expect(r.qbInvoiceId).toBe("1042");
+    expect(r.qbDocNumber).toBe("Q-2026-F4O5");
+    expect(r.paymentLink).toBe("https://qb.example/pay/abc");
+    expect(r.updateFailureReason).toBe("Stale Object Error");
+  });
+
+  it("BUFR3 — message names the DocNumber for operator clarity", () => {
+    const r = buildUpdateFailureResponse({
+      qbInvoiceId: "1042",
+      qbDocNumber: "Q-2026-F4O5",
+      updateErrMessage: "boom",
+    });
+    expect(r.message).toMatch(/Q-2026-F4O5/);
+    expect(r.message).toMatch(/Refresh/);
+    expect(r.message).toMatch(/refused to create a duplicate/i);
+  });
+
+  it("BUFR4 — falls back to numeric Id in the message when no DocNumber", () => {
+    const r = buildUpdateFailureResponse({
+      qbInvoiceId: "1042",
+      updateErrMessage: "boom",
+    });
+    expect(r.message).toMatch(/Id 1042/);
+  });
+
+  it("BUFR5 — null payment link allowed (caller couldn't extract one)", () => {
+    const r = buildUpdateFailureResponse({
+      qbInvoiceId: "1042",
+      qbDocNumber: "Q-1",
+      existingPaymentLink: null,
+      updateErrMessage: "x",
+    });
+    expect(r.paymentLink).toBe(null);
   });
 });

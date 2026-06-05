@@ -5,7 +5,6 @@ import {
   isBillingOwnerAction,
   isBillingOwner,
   resolveBillingChoice,
-  priceTierForMonthlyClaim,
   computeTrialMeta,
   trialPeriodDaysForCheckout,
   buildSubscriptionMetadata,
@@ -103,42 +102,6 @@ describe("resolveBillingChoice", () => {
     expect(resolveBillingChoice({})).toBe("monthly");
     expect(resolveBillingChoice(null)).toBe("monthly");
     expect(resolveBillingChoice(undefined)).toBe("monthly");
-  });
-});
-
-// ── priceTierForMonthlyClaim ─────────────────────────────────────────
-
-describe("priceTierForMonthlyClaim", () => {
-  it("claimed → founding (new $50/mo founder)", () => {
-    expect(priceTierForMonthlyClaim("claimed"))
-      .toEqual({ tier: "founding", reason: "claimed", isError: false });
-  });
-
-  it("already_member → founding (idempotent re-call)", () => {
-    expect(priceTierForMonthlyClaim("already_member"))
-      .toEqual({ tier: "founding", reason: "already_member", isError: false });
-  });
-
-  it("cap_reached → standard ($99/mo, post-50)", () => {
-    expect(priceTierForMonthlyClaim("cap_reached"))
-      .toEqual({ tier: "standard", reason: "cap_reached", isError: false });
-  });
-
-  it("forfeited → standard (prior-canceler, no second bite at $50)", () => {
-    expect(priceTierForMonthlyClaim("forfeited"))
-      .toEqual({ tier: "standard", reason: "forfeited", isError: false });
-  });
-
-  it("any other status → error (refuse to proceed silently)", () => {
-    const r = priceTierForMonthlyClaim("no_profile");
-    expect(r.isError).toBe(true);
-    expect(r.tier).toBe(null);
-    expect(r.reason).toMatch(/unexpected/);
-  });
-
-  it("undefined / null status → error", () => {
-    expect(priceTierForMonthlyClaim(undefined).isError).toBe(true);
-    expect(priceTierForMonthlyClaim(null).isError).toBe(true);
   });
 });
 
@@ -284,34 +247,27 @@ describe("trialPeriodDaysForCheckout", () => {
 // ── buildSubscriptionMetadata ────────────────────────────────────────
 
 describe("buildSubscriptionMetadata", () => {
-  it("emits is_founding='true' (string) only for the founding tier", () => {
-    const m = buildSubscriptionMetadata({
-      profile: { id: "prof-1" },
-      priceTier: "founding",
-      billingChoice: "monthly",
-    });
-    expect(m.is_founding).toBe("true"); // string, not boolean
-  });
-
-  it("emits is_founding='false' (string) for standard/annual", () => {
-    expect(
-      buildSubscriptionMetadata({ profile: { id: "p" }, priceTier: "standard", billingChoice: "monthly" }).is_founding,
-    ).toBe("false");
-    expect(
-      buildSubscriptionMetadata({ profile: { id: "p" }, priceTier: "annual", billingChoice: "annual" }).is_founding,
-    ).toBe("false");
-  });
-
-  it("carries profile_id, tier, and billing in the metadata bag", () => {
+  it("carries profile_id, tier, and billing in the metadata bag (monthly)", () => {
     expect(buildSubscriptionMetadata({
       profile: { id: "prof-42" },
       priceTier: "standard",
-      billingChoice: "annual",
+      billingChoice: "monthly",
     })).toEqual({
       profile_id: "prof-42",
       tier: "standard",
+      billing: "monthly",
+    });
+  });
+
+  it("carries profile_id, tier, and billing in the metadata bag (annual)", () => {
+    expect(buildSubscriptionMetadata({
+      profile: { id: "prof-42" },
+      priceTier: "annual",
+      billingChoice: "annual",
+    })).toEqual({
+      profile_id: "prof-42",
+      tier: "annual",
       billing: "annual",
-      is_founding: "false",
     });
   });
 });

@@ -261,9 +261,101 @@ describe("buildSendQuoteEmailRequest (E1–E5)", () => {
       .toBe("shop@example.test");
   });
 
-  it("E5 — shopName defaults to 'Your Shop' when missing/empty", () => {
+  it("E5 — shopName defaults to 'Your Shop' when missing/empty AND not a broker quote", () => {
     const req = buildSendQuoteEmailRequest({ ...baseArgs, shopName: "" });
     expect(req.shopName).toBe("Your Shop");
+  });
+
+  // ── Broker-quote brand resolution ────────────────────────────────
+  // End clients of broker quotes must see the BROKER as the merchant,
+  // not the print shop and definitely not the "Your Shop" placeholder.
+  // The 2026-05-31 regression that screenshotted "YOUR SHOP" as the
+  // email header was a broker quote where shopName came through empty
+  // (shop record had no shop_name set) — the helper used to fall back
+  // to the literal "Your Shop". These tests fence the fix.
+
+  it("E6 — broker quote uses broker_company in shopName (highest priority)", () => {
+    const req = buildSendQuoteEmailRequest({
+      ...baseArgs,
+      quote: {
+        ...baseArgs.quote,
+        broker_id: "b1",
+        broker_email: "broker@example.com",
+        broker_company: "BrokerCo",
+        broker_name: "Jane Doe",
+      },
+      shopName: "Print Shop",
+    });
+    expect(req.shopName).toBe("BrokerCo");
+  });
+
+  it("E7 — broker quote without broker_company falls back to broker_name", () => {
+    const req = buildSendQuoteEmailRequest({
+      ...baseArgs,
+      quote: {
+        ...baseArgs.quote,
+        broker_id: "b1",
+        broker_name: "Jane Doe",
+      },
+      shopName: "Print Shop",
+    });
+    expect(req.shopName).toBe("Jane Doe");
+  });
+
+  it("E8 — broker quote with empty broker fields falls to shopName, NOT Your Shop", () => {
+    // Defensive: broker entity exists (id/email set) but somehow
+    // company AND name are blank. We still prefer the configured
+    // shopName over the dead-air "Your Shop" placeholder.
+    const req = buildSendQuoteEmailRequest({
+      ...baseArgs,
+      quote: {
+        ...baseArgs.quote,
+        broker_id: "b1",
+        broker_email: "broker@example.com",
+        broker_company: "",
+        broker_name: "",
+      },
+      shopName: "Print Shop",
+    });
+    expect(req.shopName).toBe("Print Shop");
+  });
+
+  it("E9 — broker quote with empty broker fields AND empty shopName → 'Your Shop' fallback (last resort)", () => {
+    const req = buildSendQuoteEmailRequest({
+      ...baseArgs,
+      quote: { ...baseArgs.quote, broker_id: "b1" },
+      shopName: "",
+    });
+    expect(req.shopName).toBe("Your Shop");
+  });
+
+  it("E10 — non-broker quote ignores broker_* fields entirely", () => {
+    // Defensive: a quote with stale broker_company leftover but no
+    // broker_id/broker_email shouldn't accidentally surface the broker
+    // name on a direct shop send.
+    const req = buildSendQuoteEmailRequest({
+      ...baseArgs,
+      quote: {
+        ...baseArgs.quote,
+        broker_company: "Stale BrokerCo",
+        broker_name: "Stale Name",
+      },
+      shopName: "Print Shop",
+    });
+    expect(req.shopName).toBe("Print Shop");
+  });
+
+  it("E11 — broker gate uses broker_email alone (no broker_id needed)", () => {
+    const req = buildSendQuoteEmailRequest({
+      ...baseArgs,
+      quote: {
+        ...baseArgs.quote,
+        broker_email: "broker@example.com",
+        broker_name: "Jane Doe",
+      },
+      shopName: "Print Shop",
+    });
+    expect(req.shopName).toBe("Jane Doe");
   });
 });
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
-import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
+import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
@@ -11,8 +11,8 @@ import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
-import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
+import { todayInShopTz } from "@/lib/shopTimezone";
 
 function getOrderArtworkCount(order) {
   const keys = new Set();
@@ -57,6 +57,19 @@ export default function Orders() {
     async function loadData() {
       try {
         const currentUser = await base44.auth.me();
+        // base44.auth.me() returns null when the auth session is
+        // missing OR the profile lookup misses (the most common cause:
+        // a race with the handle_new_user trigger right after signup
+        // — JWT lands in the browser before the profile row is
+        // committed). Bail with a soft empty state instead of throwing
+        // "Cannot read properties of null (reading 'email')". The
+        // AuthContext layer will re-check and route the user to
+        // PostConfirmSpinner if the profile is genuinely missing.
+        if (!currentUser?.email) {
+          setOrders([]);
+          setCustomers({});
+          return;
+        }
         setUser(currentUser);
         const [o, c] = await Promise.all([
           base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 100),
@@ -150,11 +163,23 @@ export default function Orders() {
       // from this list.
       const payload = { status: nextStatus };
       if (nextStatus === "Completed" && !order.completed_date) {
-        payload.completed_date = new Date().toISOString().split("T")[0];
+        // Shop-tz, not UTC. After ~5pm Pacific the UTC date is
+        // already tomorrow — using toISOString() here stamped
+        // tomorrow's date and the Calendar's green chip landed on
+        // the wrong day. The Alder Creek "didn't show on today"
+        // regression (2026-05-30).
+        payload.completed_date = todayInShopTz();
       }
       const updated = await base44.entities.Order.update(id, payload);
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-      if (viewing?.id === id) setViewing(updated);
+
+      // Modal lifecycle: keep open through the pipeline stages so the
+      // operator doesn't lose their place mid-job. Final transition
+      // to Completed → close so they return to the order queue.
+      if (viewing?.id === id) {
+        if (nextStatus === "Completed") setViewing(null);
+        else setViewing(updated);
+      }
     }
   }
 
@@ -171,88 +196,9 @@ export default function Orders() {
 
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
-    // Uses the same pure helper + pre-fetch pattern as Production.jsx
-    // so completion is duplicate-proof. The BrokerFile branch
-    // (PDF attachment for broker orders) isn't in the helper because
-    // it's optional and Orders-specific — kept inline below.
-    const today = new Date().toISOString().split("T")[0];
-
-    let existingInvoice = null;
-    try {
-      const byOrderId = await base44.entities.Invoice.filter({
-        shop_owner: user.email,
-        order_id: order.order_id,
-      });
-      if (byOrderId.length > 0) {
-        existingInvoice = byOrderId[0];
-      } else if (order.quote_id) {
-        const byQuoteId = await base44.entities.Invoice.filter({
-          shop_owner: user.email,
-          invoice_id: order.quote_id,
-        });
-        if (byQuoteId.length > 0) existingInvoice = byQuoteId[0];
-      }
-      // Third fallback: orders converted before PR#45 lack order.quote_id.
-      // Walk Quote.converted_order_id → quote_id to recover the link.
-      if (!existingInvoice) {
-        const originatingQuotes = await base44.entities.Quote.filter({
-          shop_owner: user.email,
-          converted_order_id: order.order_id,
-        });
-        const qId = originatingQuotes?.[0]?.quote_id;
-        if (qId) {
-          const byReversedQuoteId = await base44.entities.Invoice.filter({
-            shop_owner: user.email,
-            invoice_id: qId,
-          });
-          if (byReversedQuoteId.length > 0) existingInvoice = byReversedQuoteId[0];
-        }
-      }
-    } catch (err) {
-      console.error("[handleComplete] failed to look up existing invoice:", err);
-    }
-
-    const plan = buildOrderCompletionPlan(order, {
-      today,
-      shopOwner: user.email,
-      existingInvoice,
-    });
-
-    if (plan.invoiceLink) {
-      await base44.entities.Invoice.update(plan.invoiceLink.id, plan.invoiceLink.patch);
-    } else if (plan.invoiceCreate) {
-      await base44.entities.Invoice.create(plan.invoiceCreate);
-    }
-
-    if (plan.brokerPerformanceCreate) {
-      await base44.entities.BrokerPerformance.create(plan.brokerPerformanceCreate);
-
-      // BrokerFile attachment — only fires when the order has a
-      // pdf_url already on it. Independent of the invoice path.
-      if (order.pdf_url) {
-        await base44.entities.BrokerFile.create({
-          broker_id: order.broker_id,
-          shop_owner: user.email,
-          order_id: order.order_id,
-          customer_name: order.customer_name,
-          file_url: order.pdf_url,
-          date: today,
-        });
-      }
-    }
-    await base44.entities.ShopPerformance.create(plan.shopPerformanceCreate);
-    const updated = await base44.entities.Order.update(plan.orderUpdate.id, plan.orderUpdate.patch);
+    const updated = await runOrderCompletion({ order, userEmail: user.email, base44 });
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(null);
-
-    // Notify the broker (no-op for non-broker orders). Helper looks at
-    // broker_id / customer_name / id on the row directly — quote_id falls
-    // back to order_id so the feed reads "completed your order — ORD-XXX".
-    notifyBrokerOfShopAction({
-      quote: { ...updated, quote_id: updated.order_id || updated.quote_id },
-      action: "shop_completed_order",
-      shopEmail: user?.email,
-    });
   }
 
   async function handleDelete(id) {
@@ -450,6 +396,8 @@ export default function Orders() {
           onClose={() => setViewingInvoice(null)}
           onMarkPaid={() => {}}
           onDelete={() => {}}
+          // Successful Send returns operator to the orders queue.
+          onSendSuccess={() => setViewing(null)}
         />
       )}
     </div>

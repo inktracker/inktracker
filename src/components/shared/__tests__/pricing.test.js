@@ -204,16 +204,28 @@ describe("Helper Functions", () => {
       expect(brokerM).toBeLessThan(adminM);
     });
 
-    it("uses formula: 1 + (adminMarkup - 1) * share", () => {
-      // Default share = 0.2, admin markup for $5 = 1.4
-      // broker = 1 + (1.4 - 1) * 0.2 = 1 + 0.08 = 1.08
-      expect(getBrokerMarkup(5)).toBeCloseTo(1.08, 2);
+    it("uses formula: 1 + (adminMarkup - 1) * (1 - share) — share is the DISCOUNT off markup", () => {
+      // Default share = 0.5 (50% discount off the markup, 50/50 split),
+      // admin markup for $5 = 1.4. Broker pays half the 40% markup
+      // spread on top of cost:
+      //   broker = 1 + (1.4 - 1) * (1 - 0.5) = 1 + 0.2 = 1.2
+      expect(getBrokerMarkup(5)).toBeCloseTo(1.2, 2);
     });
 
-    it("accepts custom share", () => {
-      // share = 0.5, admin markup for $5 = 1.4
-      // broker = 1 + (1.4 - 1) * 0.5 = 1 + 0.2 = 1.2
+    it("accepts custom share (50% discount means broker pays half the markup)", () => {
+      // share = 0.5 (50% discount), admin markup for $5 = 1.4
+      //   broker = 1 + (1.4 - 1) * (1 - 0.5) = 1 + 0.2 = 1.2
       expect(getBrokerMarkup(5, 0.5)).toBeCloseTo(1.2, 2);
+    });
+
+    it("share = 0 → broker pays full retail (no discount)", () => {
+      // 0% discount → broker pays full admin markup
+      expect(getBrokerMarkup(5, 0)).toBeCloseTo(getAdminMarkup(5), 2);
+    });
+
+    it("share = 1 → broker pays raw cost (100% discount on the markup)", () => {
+      // 100% discount on the markup → broker pays cost only
+      expect(getBrokerMarkup(5, 1)).toBeCloseTo(1, 2);
     });
   });
 
@@ -228,8 +240,8 @@ describe("Helper Functions", () => {
   });
 
   describe("getBrokerMarkupShare", () => {
-    it("returns default 0.2", () => {
-      expect(getBrokerMarkupShare()).toBe(0.2);
+    it("returns default 0.5 (50/50 markup split between shop and broker)", () => {
+      expect(getBrokerMarkupShare()).toBe(0.5);
     });
 
     it("returns custom value from config", () => {
@@ -1241,14 +1253,16 @@ describe("Edge Cases", () => {
   });
 
   describe("brokerMarkupShare boundaries", () => {
-    it("share=0 → broker markup is 1.0 (broker pays raw cost)", () => {
-      expect(getBrokerMarkup(5, 0)).toBeCloseTo(1.0, 2);
+    // New semantic 2026-06-03: share is the DISCOUNT off the markup,
+    // not the fraction the broker pays. share=1 = full discount = raw
+    // cost. share=0 = no discount = full retail.
+    it("share=0 → broker markup equals admin markup (no discount)", () => {
+      const adminM = getAdminMarkup(5);
+      expect(getBrokerMarkup(5, 0)).toBeCloseTo(adminM, 2);
     });
 
-    it("share=1 → broker markup equals admin markup", () => {
-      const adminM = getAdminMarkup(5);
-      const brokerM = getBrokerMarkup(5, 1);
-      expect(brokerM).toBeCloseTo(adminM, 2);
+    it("share=1 → broker markup is 1.0 (broker pays raw cost, full discount)", () => {
+      expect(getBrokerMarkup(5, 1)).toBeCloseTo(1.0, 2);
     });
 
     it("share from config overrides default", () => {

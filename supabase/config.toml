@@ -46,6 +46,9 @@ verify_jwt = false
 [functions.qbWebhook]
 verify_jwt = false
 
+[functions.qbReconcile]
+verify_jwt = false
+
 [functions.sendQuoteEmail]
 verify_jwt = false
 

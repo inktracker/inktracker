@@ -25,6 +25,36 @@ export function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
 }
 
+// ── Customer-facing brand name ──────────────────────────────────────
+//
+// The end client always sees the merchant-of-record on top of the
+// quote — the broker on broker quotes, the shop otherwise. Every
+// customer-facing surface (email header, /QuotePayment page, PDF)
+// reaches through this helper so a future surface can't quietly
+// regress to "Your Shop" or leak the print-shop name into a broker's
+// end-client inbox.
+//
+// Precedence (matches the chip-label resolver on Calendar/Production
+// and the buildSendQuoteEmailRequest baseline):
+//   1. broker_company (broker quotes only)
+//   2. broker_name    (broker quotes only)
+//   3. provided shopName (loaded from shops.shop_name by caller)
+//   4. fallback (caller-supplied string for empty-everywhere cases)
+//
+// Admins, brokers, and direct shop owners all converge here — same
+// quote shape, same logic. There's no "admin quote" special case in
+// the model: a quote is either broker-attributed or not, based on
+// broker_id/broker_email.
+export function customerFacingShopName({ quote, shopName = "", fallback = "Shop" } = {}) {
+  const broker = isBrokerQuote(quote);
+  const brokerCompany = typeof quote?.broker_company === "string" && quote.broker_company.trim();
+  const brokerName    = typeof quote?.broker_name    === "string" && quote.broker_name.trim();
+  if (broker) {
+    return brokerCompany || brokerName || shopName || fallback;
+  }
+  return shopName || fallback;
+}
+
 export function toCustomerFacingQuote(quote) {
   if (!quote || !isBrokerQuote(quote)) return quote;
 

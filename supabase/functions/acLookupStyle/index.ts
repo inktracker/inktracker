@@ -18,6 +18,7 @@ import {
 } from "../_shared/ascolour.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
+import { buildSupplierCacheKey, readSupplierCache, writeSupplierCache } from "../_shared/supplierCache.ts";
 
 // Returns the AcCreds bundle to use for this request.
 //
@@ -93,6 +94,31 @@ Deno.serve(async (req) => {
           { error: "Too many requests — please try again shortly." },
           { status: 429, headers: CORS },
         );
+      }
+    }
+
+    // ── Read-through cache (anonymous public-wizard path only) ──────────────
+    // Only the wizard passes shopOwner; authenticated in-app calls don't, so
+    // they always hit live AS Colour below. Pricing/inventory are per-shop, so
+    // the cache key is scoped by shopOwner. Skip debug requests. Fail-open: a
+    // miss or error just falls through to the live lookup.
+    const cacheable =
+      hasShopOwner && !debug &&
+      typeof styleCode !== "undefined" && String(styleCode).trim().length > 0;
+    let cacheAdmin: ReturnType<typeof createClient> | null = null;
+    const cacheKey = cacheable
+      ? buildSupplierCacheKey({ code: String(styleCode), inv: includeInventory ? "1" : "0" })
+      : "";
+    if (cacheable) {
+      cacheAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      );
+      const cached = await readSupplierCache(cacheAdmin, { supplier: "ac", shopOwner, cacheKey });
+      if (cached) {
+        console.error(`[acLookupStyle] cache HIT for "${styleCode}" (shop ${shopOwner})`);
+        return Response.json(cached, { headers: CORS });
       }
     }
 
@@ -301,6 +327,15 @@ Deno.serve(async (req) => {
 
     const response: any = { matches: [matchUiShape], product };
     if (debug) response._debug = logs;
+
+    // Cache only a clean successful result (we're past the 404 / error paths).
+    if (cacheable && cacheAdmin) {
+      await writeSupplierCache(
+        cacheAdmin,
+        { supplier: "ac", shopOwner, cacheKey },
+        { matches: [matchUiShape], product },
+      );
+    }
 
     return Response.json(response, { headers: CORS });
   } catch (err) {

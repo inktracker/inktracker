@@ -131,6 +131,47 @@ export function isQbInvoicePaid(invoice) {
   return total > 0 && balance === 0;
 }
 
+// ── UPDATE-failure shape ────────────────────────────────────────────
+//
+// Why this exists: until 2026-05-30, handleCreateInvoice silently
+// fell through to CREATE when an UPDATE on an existing qb_invoice_id
+// failed. Result: Shana Krochmal's Q-2026-F4O5 → Q-2026-F4O5-r2
+// duplication — original orphaned UNPAID in InkTracker, payment
+// landed on the -r2 in QB, books visibly diverged.
+//
+// New contract: if we have a qb_invoice_id and the update fails, we
+// refuse to create a duplicate. We return a structured failure that
+// the frontend renders with actionable guidance (Refresh, or fix in
+// QB) — but we DO NOT mint a new invoice unilaterally.
+//
+// The function isolates the failure-payload shape so the rule is
+// testable without spinning up Deno + Supabase + a QB mock.
+export function buildUpdateFailureResponse({
+  qbInvoiceId,
+  qbDocNumber,
+  existingPaymentLink,
+  updateErrMessage,
+}) {
+  if (!qbInvoiceId) throw new Error("buildUpdateFailureResponse: qbInvoiceId required");
+  return {
+    qbInvoiceId,
+    qbDocNumber:        qbDocNumber || null,
+    paymentLink:        existingPaymentLink || null,
+    updateFailed:       true,
+    updateFailureReason: updateErrMessage || "unknown",
+    // The message renders in the operator's banner. Keep it crisp and
+    // actionable. Mention the exact action (Refresh button) so they
+    // don't go hunting.
+    message:
+      `Couldn't update the existing QuickBooks invoice ` +
+      `(${qbDocNumber || `Id ${qbInvoiceId}`}). ` +
+      `Use the Refresh button to re-pull current state from QuickBooks, ` +
+      `or fix the invoice in QuickBooks directly. ` +
+      `InkTracker refused to create a duplicate invoice. ` +
+      (updateErrMessage ? `Underlying error: ${updateErrMessage}` : ""),
+  };
+}
+
 // ── Translate our invoicePayload to QBO Line[] ──────────────────────────────
 // Inputs:
 //   payload          — { lines, discountPercent, discountAmount, discountType }

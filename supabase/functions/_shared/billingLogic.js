@@ -45,21 +45,6 @@ export function resolveBillingChoice(body) {
   return body?.billing === "annual" ? "annual" : "monthly";
 }
 
-// Map a claim_founding_slot RPC response status → priceTier decision.
-// Mirrors the contract in src/lib/billing/foundingMember.js but lives
-// here in the edge function's _shared so the server has its own
-// independent copy (prevents accidental drift when a contributor only
-// edits the front-end mirror).
-export function priceTierForMonthlyClaim(claimStatus) {
-  if (claimStatus === "claimed" || claimStatus === "already_member") {
-    return { tier: "founding", reason: claimStatus, isError: false };
-  }
-  if (claimStatus === "cap_reached" || claimStatus === "forfeited") {
-    return { tier: "standard", reason: claimStatus, isError: false };
-  }
-  return { tier: null, reason: `unexpected:${claimStatus}`, isError: true };
-}
-
 // ── Trial meta ──────────────────────────────────────────────────────
 
 // Pure read of the profile's trial state. Does NOT collapse expired
@@ -123,16 +108,13 @@ export function trialPeriodDaysForCheckout(profile, now = Date.now()) {
   return Math.max(1, Math.min(days, 14));
 }
 
-// Subscription metadata we attach to every Stripe checkout. The
-// is_founding flag is the one the billingWebhook reads on cancel to
-// write founding_rate_forfeited back to the profile — must be a
-// string (Stripe metadata is string-typed).
+// Subscription metadata we attach to every Stripe checkout. Stripe
+// metadata is string-typed.
 export function buildSubscriptionMetadata({ profile, priceTier, billingChoice }) {
   return {
     profile_id: profile.id,
     tier: priceTier,
     billing: billingChoice,
-    is_founding: priceTier === "founding" ? "true" : "false",
   };
 }
 

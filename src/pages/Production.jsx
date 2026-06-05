@@ -2,20 +2,28 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
-import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
+import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
 import { addDaysISO, relativeDueLabel, getOrderActionHint } from "@/lib/calendar/agendaHints";
+import { normalizePresses } from "@/lib/presses/normalizePresses";
+import {
+  dayIndex as schedulerDayIndex,
+  spanDays as schedulerSpanDays,
+  placementsForPress as schedulerPlacementsForPress,
+  hoursOnPressDay as schedulerHoursOnPressDay,
+} from "@/lib/scheduler/schedulerHelpers";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import ACOrderModal from "../components/orders/ACOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
-import { ChevronLeft, ChevronRight, CalendarDays, List } from "lucide-react";
+import { ChevronLeft, ChevronRight, CalendarDays, List, LayoutGrid } from "lucide-react";
 import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
-import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
+import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink";
+import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
 
 // Mirrors STATUS_COLORS in src/pages/Calendar.jsx — each step gets a
 // visually distinct hue so the production board reads as a progress
@@ -77,21 +85,10 @@ const MONTH_NAMES = [
 ];
 const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
-// Same resolver as Calendar.jsx — company always wins, whether it lives
-// on the linked customer record or as a denormalized field on the
-// quote/order itself (quotes write `company` from the order wizard).
-// Falls through to a person's name only when no company is on file.
-function getCompanyName(rec, customers) {
-  const cust = customers[rec?.customer_id];
-  const company =
-    (typeof cust?.company === "string" && cust.company.trim()) ||
-    (typeof rec?.company === "string" && rec.company.trim()) ||
-    "";
-  if (company) return company;
-  if (cust?.name) return cust.name;
-  if (rec?.customer_name) return rec.customer_name;
-  return "—";
-}
+// Shared resolver lives in @/lib/calendar/resolveJobLabel — same one
+// Calendar.jsx uses. Handles broker-vs-direct so all chips on a
+// broker job render with the broker's name, never the end client.
+const getCompanyName = (rec, customers) => resolveJobLabel(rec, customers);
 
 export default function Production() {
   const navigate = useNavigate();
@@ -115,12 +112,39 @@ export default function Production() {
   // Nested invoice preview when the user clicks "Preview Invoice"
   // on the OrderDetailModal for an already-invoiced order.
   const [viewingInvoice, setViewingInvoice] = useState(null);
-  const [viewMode, setViewMode] = useState("calendar");
+  // Default to the table view on mobile — the calendar grid is too
+  // cramped on narrow screens and the table is the actionable view
+  // (sort, filter, advance status). Desktop still opens on calendar
+  // since the month overview is the higher-density view there.
+  const [viewMode, setViewMode] = useState(() =>
+    (typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px)").matches)
+      ? "table"
+      : "calendar"
+  );
   const [filter, setFilter] = useState("All");
   const [originFilter, setOriginFilter] = useState("All");
   const [advFilters, setAdvFilters] = useState({});
   const [dragOverDate, setDragOverDate] = useState(null);
   const [user, setUser] = useState(null);
+  // Shop record — needed for the press scheduler's lane list
+  // (`shop.presses` is the configured press names from Account →
+  // Presses). Soft-failing: if the shop row isn't there, the scheduler
+  // renders an empty-state nudging the user to set up presses.
+  const [shop, setShop] = useState(null);
+  // Press-scheduler state: which week is visible (Monday = week start),
+  // and which order is being dragged. Holding the drag target in state
+  // (not just the dataTransfer payload) is what makes the lane highlight
+  // when the drag is over it.
+  const [scheduleWeekStart, setScheduleWeekStart] = useState(() => {
+    const d = new Date();
+    const dow = d.getDay(); // 0 = Sunday
+    // Monday-start weeks. JS Sunday=0, so a Sunday-on-load lands on
+    // the prior Monday (dow=0 → -6, else 1-dow).
+    d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+    return d.toISOString().split("T")[0];
+  });
+  const [draggingOrderId, setDraggingOrderId] = useState(null);
+  const [dragOverKey, setDragOverKey] = useState(null);
   const { gate: billingGate } = useBillingGate(user);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
@@ -133,7 +157,7 @@ export default function Production() {
       try {
         const u = await base44.auth.me();
         setUser(u);
-        const [o, c, q, pos] = await Promise.all([
+        const [o, c, q, pos, shops] = await Promise.all([
           base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
           base44.entities.Customer.filter({ shop_owner: u.email }),
           // All quotes — independent of conversion status. Lets a sent or
@@ -143,7 +167,9 @@ export default function Production() {
           // OrderDetailModal's tri-state Order from AS Colour button.
           // Soft-fails so a missing column / RLS issue doesn't break the page.
           base44.entities.PurchaseOrder.filter({ shop_owner: u.email }).catch(() => []),
+          base44.entities.Shop.filter({ owner_email: u.email }).catch(() => []),
         ]);
+        setShop((shops || [])[0] || null);
         setOrders(o || []);
         const map = {};
         (c || []).forEach((cust) => (map[cust.id] = cust));
@@ -302,9 +328,28 @@ export default function Production() {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
     if (idx >= 0 && idx < O_STATUSES.length - 1) {
-      const updated = await base44.entities.Order.update(id, { status: O_STATUSES[idx + 1] });
+      const nextStatus = O_STATUSES[idx + 1];
+      // When advancing INTO Completed, also stamp completed_date.
+      // Calendar's green chip requires BOTH status==="Completed" AND
+      // completed_date — without the stamp the order silently
+      // disappears from the calendar.
+      const payload = { status: nextStatus };
+      if (nextStatus === "Completed" && !order.completed_date) {
+        payload.completed_date = todayInShopTz();
+      }
+      const updated = await base44.entities.Order.update(id, payload);
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-      if (viewing?.id === id) setViewing(updated);
+
+      // Modal lifecycle: keep the order modal open while the operator
+      // walks through the production pipeline (Art Approval → Order
+      // Goods → Pre-Press → Printing). Closing on every click made
+      // them lose their place. But the FINAL transition to "Completed"
+      // ends the work on this card — close the modal so they return
+      // to the production queue and pick up the next job.
+      if (viewing?.id === id) {
+        if (nextStatus === "Completed") setViewing(null);
+        else setViewing(updated);
+      }
     }
   }
 
@@ -320,93 +365,9 @@ export default function Production() {
 
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
-    // Completion = transition, never destruction. (20260516 trigger
-    // refuses DELETE on Completed orders — that's the platform-level
-    // backstop.)
-    //
-    // Pre-fetch any existing invoice for this job to prevent the
-    // duplicate Joe hit on 2026-05-12: SendQuoteModal had already
-    // pushed the quote to QB and pulled an invoice row back
-    // (invoice_id = quote_id), and this handler was about to create
-    // a SECOND row. Now we link the existing invoice to the order
-    // instead of duplicating.
-    //
-    // Match by either invoice_id = order.quote_id (Send-Quote path)
-    // OR order_id = order.order_id (a previous in-flight completion
-    // that landed an INV-* row).
-    const td = new Date().toISOString().split("T")[0];
-
-    let existingInvoice = null;
-    try {
-      const byOrderId = await base44.entities.Invoice.filter({
-        shop_owner: user.email,
-        order_id: order.order_id,
-      });
-      if (byOrderId.length > 0) {
-        existingInvoice = byOrderId[0];
-      } else if (order.quote_id) {
-        const byQuoteId = await base44.entities.Invoice.filter({
-          shop_owner: user.email,
-          invoice_id: order.quote_id,
-        });
-        if (byQuoteId.length > 0) existingInvoice = byQuoteId[0];
-      }
-      // Third fallback: orders converted before PR#45 lack order.quote_id.
-      // Walk Quote.converted_order_id → quote_id to recover the link.
-      // Works for broker quotes (always preserved) and for any future
-      // quote conversion once PR#45 is in.
-      if (!existingInvoice) {
-        const originatingQuotes = await base44.entities.Quote.filter({
-          shop_owner: user.email,
-          converted_order_id: order.order_id,
-        });
-        const qId = originatingQuotes?.[0]?.quote_id;
-        if (qId) {
-          const byReversedQuoteId = await base44.entities.Invoice.filter({
-            shop_owner: user.email,
-            invoice_id: qId,
-          });
-          if (byReversedQuoteId.length > 0) existingInvoice = byReversedQuoteId[0];
-        }
-      }
-    } catch (err) {
-      console.error("[handleComplete] failed to look up existing invoice:", err);
-      // Continue without — the DB unique index from
-      // 20260519_invoices_no_duplicates.sql is the last-line backstop
-      // and will refuse a duplicate insert.
-    }
-
-    const plan = buildOrderCompletionPlan(order, {
-      today: td,
-      shopOwner: user.email,
-      existingInvoice,
-    });
-
-    if (plan.invoiceLink) {
-      // Existing invoice — link to this order, don't create a new row.
-      await base44.entities.Invoice.update(plan.invoiceLink.id, plan.invoiceLink.patch);
-    } else if (plan.invoiceCreate) {
-      await base44.entities.Invoice.create(plan.invoiceCreate);
-    }
-
-    if (plan.brokerPerformanceCreate) {
-      await base44.entities.BrokerPerformance.create(plan.brokerPerformanceCreate);
-    }
-    await base44.entities.ShopPerformance.create(plan.shopPerformanceCreate);
-    const updated = await base44.entities.Order.update(plan.orderUpdate.id, plan.orderUpdate.patch);
+    const updated = await runOrderCompletion({ order, userEmail: user.email, base44 });
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(null);
-
-    // Notify the broker (if this was a broker order). Best-effort.
-    // The helper looks at broker_id / broker_name / broker_company /
-    // customer_name / id directly on the row, so the order object works
-    // without re-shaping. Item label falls back to the order_id so the
-    // feed entry reads "completed your order — ORD-2026-XXXX".
-    notifyBrokerOfShopAction({
-      quote: { ...updated, quote_id: updated.order_id || updated.quote_id },
-      action: "shop_completed_order",
-      shopEmail: user?.email,
-    });
   }
 
   async function handleDelete(id) {
@@ -454,6 +415,72 @@ export default function Production() {
     setDragOverDate(dateStr);
   }
 
+  // ── Press scheduler handlers ──────────────────────────────────────
+  // Native HTML5 DnD; identical pattern to the calendar above so the
+  // surrounding UX is consistent. Cell key is `${press}|${date}`. The
+  // Unscheduled pool uses key `unscheduled` and a sentinel "drop"
+  // payload that clears both fields.
+  async function handleScheduleAssign(orderId, press, startDate, endDate) {
+    if (!orderId) return;
+    try {
+      const safeEnd = endDate && endDate >= startDate ? endDate : startDate;
+      const updated = await base44.entities.Order.update(orderId, {
+        assigned_press: press,
+        scheduled_date: startDate,
+        scheduled_end_date: safeEnd,
+      });
+      setOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
+    } catch (err) {
+      notify.error("Couldn't schedule that order", err);
+    }
+  }
+
+  async function handleScheduleResize(orderId, newEnd) {
+    if (!orderId) return;
+    const o = orders.find(x => x.id === orderId);
+    if (!o?.scheduled_date) return;
+    // Clamp end so it never precedes start — matches the DB CHECK.
+    const safeEnd = newEnd < o.scheduled_date ? o.scheduled_date : newEnd;
+    try {
+      const updated = await base44.entities.Order.update(orderId, {
+        scheduled_end_date: safeEnd,
+      });
+      setOrders(prev => prev.map(x => (x.id === updated.id ? updated : x)));
+    } catch (err) {
+      notify.error("Couldn't resize that schedule", err);
+    }
+  }
+
+  async function handleScheduleUnassign(orderId) {
+    if (!orderId) return;
+    try {
+      const updated = await base44.entities.Order.update(orderId, {
+        scheduled_date: null,
+        scheduled_end_date: null,
+      });
+      setOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
+    } catch (err) {
+      notify.error("Couldn't unschedule that order", err);
+    }
+  }
+
+  function shiftScheduleWeek(deltaDays) {
+    const d = new Date(scheduleWeekStart);
+    d.setDate(d.getDate() + deltaDays);
+    setScheduleWeekStart(d.toISOString().split("T")[0]);
+  }
+
+  function scheduleWeekDays() {
+    const days = [];
+    const base = new Date(scheduleWeekStart);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      days.push(d.toISOString().split("T")[0]);
+    }
+    return days;
+  }
+
   async function handleBulkStatusUpdate() {
     if (!bulkStatus || selectedIds.size === 0) return;
     const ids = [...selectedIds];
@@ -487,10 +514,26 @@ export default function Production() {
 
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
+  // Each cell is { day, year, month, inMonth } so leading and trailing
+  // slots render the actual adjacent-month dates (dimmed) instead of
+  // empty grey blocks. Same fix Calendar.jsx got — Production has its
+  // own grid implementation that also needed the change.
   const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
+  const prevM = month === 0 ? 11 : month - 1;
+  const prevY = month === 0 ? year - 1 : year;
+  const daysInPrev = getDaysInMonth(prevY, prevM);
+  for (let i = firstDay - 1; i >= 0; i--) {
+    cells.push({ day: daysInPrev - i, year: prevY, month: prevM, inMonth: false });
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ day: d, year, month, inMonth: true });
+  }
+  const nextM = month === 11 ? 0 : month + 1;
+  const nextY = month === 11 ? year + 1 : year;
+  let trail = 1;
+  while (cells.length % 7 !== 0) {
+    cells.push({ day: trail++, year: nextY, month: nextM, inMonth: false });
+  }
   const weeks = [];
   for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
 
@@ -506,6 +549,7 @@ export default function Production() {
         <div className="flex gap-2">
           {[
             { id: "calendar", icon: CalendarDays, label: "Calendar" },
+            { id: "schedule", icon: LayoutGrid, label: "Press Schedule" },
             { id: "table", icon: List, label: "Table" },
           ].map(v => (
             <button key={v.id} onClick={() => setViewMode(v.id)}
@@ -729,9 +773,13 @@ export default function Production() {
                    return (
                      <div key={wIdx} className="relative">
                        <div className="grid grid-cols-7 divide-x divide-y divide-slate-100">
-                         {week.map((day, dIdx) => {
-                           if (!day) return <div key={`empty-${wIdx}-${dIdx}`} className="min-h-[110px] bg-slate-50 dark:bg-slate-800/50" />;
-                           const dateStr = toDateStr(year, month, day);
+                         {week.map((cell, dIdx) => {
+                           // cell is always populated — adjacent-month
+                           // slots carry their own year/month so dateStr
+                           // resolves correctly and chips for the
+                           // bordering days still render.
+                           const { day, year: cellY, month: cellM, inMonth } = cell;
+                           const dateStr = toDateStr(cellY, cellM, day);
                            const isToday = dateStr === today;
                            const events = pointEvents[dateStr] || [];
                            const isDragOver = dragOverDate === dateStr;
@@ -739,14 +787,29 @@ export default function Production() {
                           return (
                             <div
                               key={dateStr}
-                              className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${isDragOver ? "bg-teal-50 ring-2 ring-inset ring-teal-400" : selectedDate === dateStr ? "bg-teal-50/60" : "hover:bg-slate-50 dark:bg-slate-800"}`}
+                              className={`min-h-[110px] p-1.5 flex flex-col transition cursor-pointer ${
+                                isDragOver
+                                  ? "bg-teal-50 ring-2 ring-inset ring-teal-400"
+                                  : selectedDate === dateStr
+                                    ? "bg-teal-50/60"
+                                    // Adjacent-month cells: subtle gray wash so the
+                                    // current month still reads as primary. Same
+                                    // interactivity (click + drop) as in-month cells.
+                                    : inMonth
+                                      ? "hover:bg-slate-50 dark:bg-slate-800"
+                                      : "bg-slate-50/40 hover:bg-slate-50 dark:bg-slate-800/40"
+                              }`}
                               onClick={() => setSelectedDate(dateStr)}
                               onDrop={(e) => handleDrop(e, dateStr)}
                               onDragOver={(e) => handleDragOver(e, dateStr)}
                               onDragLeave={() => setDragOverDate(null)}
                               title="Click to see the day's agenda"
                             >
-                              <div className={`text-xs font-bold mb-1 w-6 h-6 flex items-center justify-center rounded-full ${isToday ? "bg-teal-600 text-white" : "text-slate-400"}`}>
+                              <div className={`text-xs font-bold mb-1 w-6 h-6 flex items-center justify-center rounded-full ${
+                                isToday
+                                  ? "bg-teal-600 text-white"
+                                  : inMonth ? "text-slate-400" : "text-slate-300"
+                              }`}>
                                 {day}
                               </div>
                               <div className="space-y-0.5 flex-1 overflow-hidden">
@@ -789,7 +852,13 @@ export default function Production() {
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         if (isQuoteEvent) {
-                                          navigate(`/Quotes?id=${ev.quote.id}`);
+                                          // Same resolution as Calendar — converted quotes
+                                          // open the order modal; /Quotes is the fallback
+                                          // only for genuinely unconverted rows.
+                                          const r = resolveQuoteLink(ev.quote, orders);
+                                          if (r.kind === QUOTE_LINK_KIND.OPEN_ORDER) setViewing(r.order);
+                                          else if (r.kind === QUOTE_LINK_KIND.NAVIGATE_ORDERS) navigate("/Orders");
+                                          else navigate(`/Quotes?id=${r.quoteId}`);
                                         } else {
                                           setViewing(ev.order);
                                         }
@@ -837,6 +906,312 @@ export default function Production() {
           )}
         </>
       )}
+
+      {viewMode === "schedule" && (() => {
+        const presses = normalizePresses(shop?.presses);
+        if (presses.length === 0) {
+          return (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 p-8 text-center">
+              <LayoutGrid className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <div className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1">No presses configured yet</div>
+              <p className="text-sm text-slate-500 mb-4">Add your presses on the Account page to start scheduling.</p>
+              <button
+                onClick={() => navigate("/Account")}
+                className="text-xs font-bold uppercase tracking-wider px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white transition"
+              >
+                Go to Account → Presses
+              </button>
+            </div>
+          );
+        }
+
+        const days = scheduleWeekDays();
+        const dayLabel = (iso) => {
+          const d = new Date(iso + "T00:00:00");
+          return d.toLocaleDateString(undefined, { weekday: "short", month: "numeric", day: "numeric" });
+        };
+        const isToday = (iso) => iso === today;
+        const PRESS_CAPACITY_HOURS = 8;
+        const ROW_HEIGHT_PX = 36;       // chip + spacing
+        const ROW_PADDING_PX = 8;       // top padding inside the lane
+        const FOOTER_HEIGHT_PX = 16;    // capacity badges sit below stacked chips
+
+        // Active (non-Completed) orders the scheduler considers.
+        const scheduleableOrders = orders.filter(o => o.status !== "Completed");
+        // Unscheduled = either no scheduled_date OR no assigned_press.
+        const unscheduled = scheduleableOrders
+          .filter(o => !o.scheduled_date || !o.assigned_press)
+          .sort((a, b) => (a.due_date || "9999").localeCompare(b.due_date || "9999"));
+
+        // Multi-day helpers live in src/lib/scheduler/schedulerHelpers.
+        // Re-bound here as locals so the closure-captured weekStart
+        // doesn't have to be threaded through every call site below.
+        const weekStart = days[0];
+        const spanDays = schedulerSpanDays;
+        const placementsForPress = (pressName) =>
+          schedulerPlacementsForPress(scheduleableOrders, pressName, weekStart, 7);
+        const hoursOnPressDay = (pressName, day) =>
+          schedulerHoursOnPressDay(scheduleableOrders, pressName, day);
+        // dayIndex isn't used directly in this scope anymore, but
+        // expose it via a thin wrapper in case a future widget needs
+        // it without re-importing.
+        // eslint-disable-next-line no-unused-vars
+        const dayIndex = (iso) => schedulerDayIndex(iso, weekStart);
+
+        // ── DnD payload helpers ───────────────────────────────────────
+        // text/plain carries the orderId as a fallback.
+        // application/json carries { orderId, mode, spanDays? } so the
+        // drop target can preserve duration on move (and skip duration
+        // logic on resize).
+        function handleChipDragStart(e, order, mode) {
+          const payload = { orderId: order.id, mode };
+          if (mode === "move") payload.spanDays = spanDays(order);
+          e.dataTransfer.setData("text/plain", order.id);
+          e.dataTransfer.setData("application/json", JSON.stringify(payload));
+          e.dataTransfer.effectAllowed = "move";
+          setDraggingOrderId(order.id);
+        }
+        function handleChipDragEnd() {
+          setDraggingOrderId(null);
+          setDragOverKey(null);
+        }
+        function handleCellDragOver(e, key) {
+          e.preventDefault();
+          if (key !== dragOverKey) setDragOverKey(key);
+        }
+        function readPayload(e) {
+          let payload = {};
+          try { payload = JSON.parse(e.dataTransfer.getData("application/json") || "{}"); } catch {}
+          const orderId = payload.orderId || e.dataTransfer.getData("text/plain");
+          return { orderId, mode: payload.mode, spanDays: payload.spanDays };
+        }
+        function handleCellDrop(e, press, day) {
+          e.preventDefault();
+          const { orderId, mode, spanDays: span } = readPayload(e);
+          setDragOverKey(null);
+          setDraggingOrderId(null);
+          if (!orderId) return;
+          if (mode === "resize") {
+            handleScheduleResize(orderId, day);
+          } else {
+            const dur = Math.max(1, span || 1);
+            const endDate = addDaysISO(day, dur - 1);
+            handleScheduleAssign(orderId, press, day, endDate);
+          }
+        }
+        function handleUnscheduledDrop(e) {
+          e.preventDefault();
+          const { orderId, mode } = readPayload(e);
+          setDragOverKey(null);
+          setDraggingOrderId(null);
+          // A resize drag dropped on the pool is meaningless — ignore
+          // so the user doesn't accidentally unschedule when reaching
+          // for the wrong target.
+          if (orderId && mode !== "resize") handleScheduleUnassign(orderId);
+        }
+
+        // ── Chip render ───────────────────────────────────────────────
+        function OrderChip({ order, clippedLeft, clippedRight }) {
+          const client = companyName(order);
+          const hrs = Number(order.estimated_hours) || 0;
+          const total = spanDays(order);
+          return (
+            <div
+              draggable
+              onDragStart={(e) => handleChipDragStart(e, order, "move")}
+              onDragEnd={handleChipDragEnd}
+              onClick={() => setViewing(order)}
+              className={`group relative select-none cursor-grab active:cursor-grabbing bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg px-2 py-1 text-[11px] leading-tight transition h-[32px] flex items-center ${draggingOrderId === order.id ? "opacity-50" : ""} ${clippedLeft ? "rounded-l-none border-l-0" : ""} ${clippedRight ? "rounded-r-none border-r-0" : ""}`}
+              title={`${order.order_id || ""} · ${client}\nDue ${fmtDate(order.due_date)}${total > 1 ? ` · ${total}-day span` : ""}`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-teal-900 truncate">{client}</div>
+                <div className="text-teal-700/80 flex items-center justify-between gap-2 text-[10px]">
+                  <span className="truncate">{order.order_id || "—"}</span>
+                  {hrs > 0 && <span className="font-semibold tabular-nums">{hrs}h</span>}
+                </div>
+              </div>
+              {/* Right-edge resize handle. Its own draggable so the
+                  outer chip's onDragStart doesn't fire — HTML5 DnD
+                  dispatches dragstart on the deepest draggable. */}
+              {!clippedRight && (
+                <div
+                  draggable
+                  onDragStart={(e) => { e.stopPropagation(); handleChipDragStart(e, order, "resize"); }}
+                  onDragEnd={handleChipDragEnd}
+                  onClick={(e) => e.stopPropagation()}
+                  className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize bg-teal-300/0 hover:bg-teal-300/40 rounded-r-lg"
+                  title="Drag to resize span"
+                />
+              )}
+            </div>
+          );
+        }
+
+        return (
+          <div className="space-y-4">
+            {/* Week navigation */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => shiftScheduleWeek(-7)}
+                className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition"
+              >
+                <ChevronLeft className="w-4 h-4 text-slate-600" />
+              </button>
+              <button
+                onClick={() => {
+                  const d = new Date();
+                  const dow = d.getDay();
+                  d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
+                  setScheduleWeekStart(d.toISOString().split("T")[0]);
+                }}
+                className="text-sm font-semibold text-teal-600 hover:underline"
+              >
+                This week
+              </button>
+              <button
+                onClick={() => shiftScheduleWeek(7)}
+                className="p-2 rounded-xl hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition"
+              >
+                <ChevronRight className="w-4 h-4 text-slate-600" />
+              </button>
+              <span className="text-sm font-semibold text-slate-700">
+                Week of {dayLabel(days[0])} – {dayLabel(days[6])}
+              </span>
+            </div>
+
+            {/* Unscheduled pool */}
+            <div
+              onDragOver={(e) => handleCellDragOver(e, "unscheduled")}
+              onDrop={handleUnscheduledDrop}
+              className={`bg-white dark:bg-slate-900 rounded-2xl border-2 border-dashed p-3 transition ${dragOverKey === "unscheduled" ? "border-amber-400 bg-amber-50/40" : "border-slate-200 dark:border-slate-700"}`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                  Unscheduled · {unscheduled.length}
+                </div>
+                <div className="text-[11px] text-slate-400">Drag onto a press lane to schedule</div>
+              </div>
+              {unscheduled.length === 0 ? (
+                <div className="text-xs text-slate-400 italic px-1 py-1">Everything's scheduled.</div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {unscheduled.map(o => (
+                    <div key={o.id} className="w-44">
+                      <OrderChip order={o} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Press × day overlay grid */}
+            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-x-auto">
+              <div className="min-w-[1100px]">
+                {/* Header */}
+                <div className="grid bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 sticky top-0" style={{ gridTemplateColumns: "140px repeat(7, minmax(0, 1fr))" }}>
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 px-3 py-2">Press</div>
+                  {days.map(d => (
+                    <div
+                      key={d}
+                      className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-2 border-l border-slate-100 dark:border-slate-700 ${isToday(d) ? "text-teal-700 bg-teal-50" : "text-slate-500"}`}
+                    >
+                      {dayLabel(d)}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Lanes */}
+                {presses.map(press => {
+                  const { items, maxStack } = placementsForPress(press.name);
+                  const laneHeight = Math.max(60, ROW_PADDING_PX * 2 + (maxStack || 1) * ROW_HEIGHT_PX + FOOTER_HEIGHT_PX);
+                  return (
+                    <div
+                      key={press.name}
+                      className="grid border-t border-slate-100 dark:border-slate-700"
+                      style={{ gridTemplateColumns: "140px repeat(7, minmax(0, 1fr))" }}
+                    >
+                      {/* Lane label */}
+                      <div className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200 bg-slate-50/60 dark:bg-slate-800/40 text-xs">
+                        <div className="truncate">{press.name}</div>
+                        {press.colors ? (
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-teal-700 bg-teal-100/70 inline-block rounded px-1.5 py-0.5 mt-1">
+                            {press.colors}-color
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-slate-400 mt-1">Set colors on Account</div>
+                        )}
+                      </div>
+
+                      {/* Background day cells + overlay chips. We
+                          render this as col-span 7 so chips can
+                          absolutely position by left/width
+                          percentage. */}
+                      <div className="relative" style={{ gridColumn: "2 / span 7", height: laneHeight }}>
+                        {/* Background day cells (drop targets) */}
+                        <div className="absolute inset-0 grid" style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}>
+                          {days.map(d => {
+                            const k = `${press.name}|${d}`;
+                            const over = dragOverKey === k;
+                            const hrs = hoursOnPressDay(press.name, d);
+                            const cap = press.colors && hrs > 0 ? PRESS_CAPACITY_HOURS : PRESS_CAPACITY_HOURS;
+                            const overCap = hrs > cap;
+                            const over80 = hrs > cap * 0.8 && !overCap;
+                            return (
+                              <div
+                                key={d}
+                                onDragOver={(e) => handleCellDragOver(e, k)}
+                                onDrop={(e) => handleCellDrop(e, press.name, d)}
+                                className={`border-l border-slate-100 dark:border-slate-700 transition relative ${over ? "bg-teal-50/60" : isToday(d) ? "bg-teal-50/20" : ""}`}
+                              >
+                                {hrs > 0 && (
+                                  <div className={`absolute bottom-1 left-1.5 text-[10px] font-semibold tabular-nums ${overCap ? "text-rose-600" : over80 ? "text-amber-600" : "text-slate-400"}`}>
+                                    {hrs}/{cap}h
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Overlay chips, positioned by percentage so
+                            they span multiple background cells. */}
+                        {items.map(p => {
+                          const span = p.endCol - p.startCol + 1;
+                          const leftPct = (p.startCol / 7) * 100;
+                          const widthPct = (span / 7) * 100;
+                          return (
+                            <div
+                              key={p.order.id}
+                              className="absolute"
+                              style={{
+                                left: `calc(${leftPct}% + 4px)`,
+                                width: `calc(${widthPct}% - 8px)`,
+                                top: ROW_PADDING_PX + p.stackIdx * ROW_HEIGHT_PX,
+                                height: ROW_HEIGHT_PX - 4,
+                              }}
+                            >
+                              <OrderChip
+                                order={p.order}
+                                clippedLeft={p.clippedLeft}
+                                clippedRight={p.clippedRight}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-400 leading-snug">
+              Capacity assumes {PRESS_CAPACITY_HOURS} hrs/day per press. Multi-day jobs split their estimated hours evenly across the span. Drag the right edge of a chip to extend the span; drag the body to move it. Click a chip to open the order.
+            </div>
+          </div>
+        );
+      })()}
 
 
       {/* Agenda side panel — planning view, not a literal mirror of the
@@ -1026,6 +1401,11 @@ export default function Production() {
           onClose={() => setViewingInvoice(null)}
           onMarkPaid={() => {}}
           onDelete={() => {}}
+          // After a successful Send: close the order modal too. The
+          // operator just shipped the deliverable; they want to return
+          // to the production queue, not get stranded on the order
+          // card again.
+          onSendSuccess={() => setViewing(null)}
         />
       )}
 

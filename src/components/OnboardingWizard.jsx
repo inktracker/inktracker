@@ -7,6 +7,7 @@ import {
   buildShopUpsertPayload,
 } from "@/lib/onboarding/buildOnboardingProfile";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
+import { loadShopPricingConfig } from "@/components/shared/pricing";
 import {
   Store, Image, Mail, CheckCircle2, ChevronRight,
   Loader2, Upload, X, FileText, Package, Users, Settings
@@ -35,6 +36,7 @@ export default function OnboardingWizard({ user, onComplete }) {
   const [city, setCity] = useState(user?.city || "");
   const [stateVal, setStateVal] = useState(user?.state || "");
   const [zip, setZip] = useState(user?.zip || "");
+  const [website, setWebsite] = useState(user?.website || "");
   const [taxRate, setTaxRate] = useState(user?.default_tax_rate || "");
   // Pre-select the user's browser timezone if it's one of our curated
   // options — saves 95% of US shops a click. Falls back to "" (browser
@@ -129,14 +131,19 @@ export default function OnboardingWizard({ user, onComplete }) {
   async function saveAndFinish() {
     setSaving(true);
     try {
-      const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, taxRate, timezone, offersEmbroidery };
+      const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, website, taxRate, timezone, offersEmbroidery };
       const profileData = buildOnboardingProfile(wizardInput);
       await base44.auth.updateMe(profileData);
 
+      // Built before the upsert try-block so it's in scope for the
+      // loadShopPricingConfig call below — that fires regardless of
+      // whether the network upsert succeeded (in-memory _pc should
+      // reflect what we INTENDED to save, even if Supabase was
+      // unreachable; the hard reload will re-sync from DB anyway).
+      const shopPayload = buildShopUpsertPayload(wizardInput);
       // Also upsert a Shop entity so quotes/orders can find it
       try {
         const shops = await base44.entities.Shop.filter({ owner_email: user.email });
-        const shopPayload = buildShopUpsertPayload(wizardInput);
         if (shops?.length) {
           await base44.entities.Shop.update(shops[0].id, shopPayload);
         } else {
@@ -150,6 +157,18 @@ export default function OnboardingWizard({ user, onComplete }) {
       // helpers pick up the user's choice without a hard reload. Mirrors
       // the loadShopPricingConfig pattern called on Save in Account.
       loadShopTimezone(timezone || null);
+
+      // Same refresh for pricing config. Account → Pricing → Save
+      // already does this; without it, the onboarding finish leaves
+      // _pc out of sync (the user "enabled embroidery" but the quote
+      // modal didn't show it). The hard reload at the end would
+      // eventually fix it via AuthContext, but anything between (a
+      // CTA, a router transition, a pre-reload render) saw stale _pc.
+      // The shopPayload.pricing_config we just persisted IS the
+      // authoritative new value — replay it in memory now too.
+      if (shopPayload?.pricing_config) {
+        loadShopPricingConfig(shopPayload.pricing_config);
+      }
 
       // Seed demo data if the user opted in. Non-blocking on failure —
       // we'd rather drop them into the app than fail the whole flow.
@@ -299,6 +318,18 @@ export default function OnboardingWizard({ user, onComplete }) {
                     <input type="text" value={zip} onChange={e => setZip(e.target.value)} placeholder=""
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Website</label>
+                  <input
+                    type="url"
+                    value={website}
+                    onChange={e => setWebsite(e.target.value)}
+                    placeholder="https://yourshop.com"
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900"
+                  />
+                  <p className="text-xs text-slate-400 mt-1.5">Shown on art proofs in place of the platform footer.</p>
                 </div>
 
                 <div>

@@ -11,7 +11,7 @@ This directory holds the HTML for the Supabase-managed templates so the theme st
 ## How to update the Supabase templates
 
 1. Open https://supabase.com/dashboard/project/skmltfbibaqcjddmeqvi/auth/templates
-2. For each template (Confirm signup, Magic Link, Reset Password, Invite User):
+2. For each template (Confirm signup, Magic Link, Reset Password, Invite User, Change Email Address):
    - Copy the matching `.html` file in this directory
    - Paste into the dashboard's HTML editor
    - Update the Subject line if needed (see top of each file)
@@ -26,7 +26,8 @@ Supabase substitutes these at send time. Don't change them.
 
 | Variable               | Where it appears                |
 |------------------------|--------------------------------|
-| `{{ .ConfirmationURL }}` | All four templates             |
-| `{{ .Email }}`         | All four templates             |
+| `{{ .ConfirmationURL }}` | All five templates             |
+| `{{ .Email }}`         | All five templates             |
+| `{{ .NewEmail }}`      | Change Email Address only      |
 | `{{ .SiteURL }}`       | Footer links (optional)        |
 | `{{ .Token }}`         | OTP code (we don't use it)     |

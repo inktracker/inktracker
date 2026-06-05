@@ -10,6 +10,7 @@ import {
   Trash2,
   ExternalLink,
 } from "lucide-react";
+import { getEnabledTechniques } from "../shared/pricing";
 
 const FIELDS = [
   { key: "name", label: "Name *", placeholder: "Jane Smith" },
@@ -54,7 +55,7 @@ function newArtwork(file, fileUrl, note = "") {
   };
 }
 
-export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
+export default function BrokerClientList({ clients, shopPricingConfig, onAdd, onEdit, onDelete }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [editing, setEditing] = useState(null);
@@ -460,7 +461,7 @@ export default function BrokerClientList({ clients, onAdd, onEdit, onDelete }) {
                             }}
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none"
                           >
-                            {["Screen Print","DTG","Embroidery","DTF","Heat Transfer","Sublimation"].map(t => <option key={t}>{t}</option>)}
+                            {getEnabledTechniques(shopPricingConfig).map(t => <option key={t}>{t}</option>)}
                           </select>
                         </div>
                         <button

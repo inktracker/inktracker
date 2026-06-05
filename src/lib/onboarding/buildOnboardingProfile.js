@@ -5,6 +5,8 @@
 // If you change behavior, update __tests__/buildOnboardingProfile.test.js
 // — those tests are the canonical contract.
 
+import { buildInitialPricingConfig } from "./shopPricingDefaults";
+
 const TRIAL_DAYS = 14;
 const TRIAL_MS   = TRIAL_DAYS * 86_400_000;
 
@@ -45,6 +47,7 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
     city = "",
     stateVal = "",
     zip = "",
+    website = "",
     taxRate = "",
   } = input || {};
 
@@ -56,6 +59,7 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
     city:                trimStr(city),
     state:               trimStr(stateVal).toUpperCase(),
     zip:                 trimStr(zip),
+    website:             trimStr(website) || null,
     default_tax_rate:    parseTaxRate(taxRate),
     subscription_tier:   user.subscription_tier   || "trial",
     subscription_status: user.subscription_status || "trialing",
@@ -68,10 +72,16 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
  * inline shape so tests catch shape regressions (extra/missing fields
  * would silently break per-shop pricing config / quote ownership lookups).
  *
- * If `offersEmbroidery` is true, seeds `pricing_config.embroidery.enabled`
- * so the embroidery technique becomes selectable immediately. The rest of
- * the embroidery config (tiers, pricing) is filled in by the pricing
- * engine's defaults until the user customizes it in Account → Pricing.
+ * Writes a COMPLETE `pricing_config` — all tier tables, all rates,
+ * all extras — so the new shop's quote modal has real numbers from
+ * minute one. The previous behavior wrote a minimal
+ * `{ embroidery: { enabled: true } }` payload that left _pc.embroidery
+ * with no pricing tables; the dropdown silently dropped Embroidery as
+ * an option even though the toggle was on. Same shape Account →
+ * Pricing → Save writes, so onboarding and save can't drift.
+ *
+ * Source-of-truth defaults live in ./shopPricingDefaults — one place
+ * to bump rates, one place to add future toggles.
  */
 export function buildShopUpsertPayload(input) {
   const { user = {}, shopName = "", logoUrl = "", offersEmbroidery = false, timezone = "" } = input || {};
@@ -86,9 +96,14 @@ export function buildShopUpsertPayload(input) {
   // a specific zone.
   const tz = trimStr(timezone);
   if (tz) base.timezone = tz;
-  if (offersEmbroidery) {
-    base.pricing_config = { embroidery: { enabled: true } };
-  }
+  // Always seed the full pricing config. The onboarding step is a
+  // shop's introduction to the pricing engine; writing zeros for
+  // every tier was the historical default behavior but bit operators
+  // who flipped offersEmbroidery and then couldn't see embroidery
+  // anywhere. Now: every new shop starts with sensible numbers, and
+  // any toggles set during onboarding (currently just embroidery)
+  // are honored on top.
+  base.pricing_config = buildInitialPricingConfig({ offersEmbroidery });
   return base;
 }
 

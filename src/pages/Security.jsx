@@ -11,8 +11,65 @@ export default function Security() {
             Plain-English description of how we protect your shop's data. We update this page when
             anything material changes.
           </p>
-          <p className="text-xs text-slate-400">Last updated: May 3, 2026</p>
+          <p className="text-xs text-slate-400">Last updated: May 30, 2026</p>
         </header>
+
+        <Section title="QuickBooks integration">
+          <p>
+            Connecting QuickBooks is the highest-trust thing you do in InkTracker —
+            you're letting us read and write to your books. Here's exactly how we
+            handle that:
+          </p>
+          <ul className="list-disc list-outside ml-5 mt-2 space-y-1.5">
+            <li>
+              <strong>Tokens are server-side only.</strong> Your QuickBooks access
+              and refresh tokens live in a service-role-only table. They are never
+              sent to your browser, never appear in network traffic, and are
+              inaccessible to your own users' API queries.
+            </li>
+            <li>
+              <strong>Every action is auditable.</strong> Every operation we
+              perform against QuickBooks — create invoice, send payment link,
+              receive paid webhook, nightly reconciliation — writes one row to a
+              per-shop event log. Open any quote → QuickBooks → Events to see the
+              full timeline.
+            </li>
+            <li>
+              <strong>No duplicate invoices.</strong> Every create-invoice
+              attempt carries an idempotency key. A double-click, network
+              retry, or mid-flight crash collapses to a single QuickBooks
+              write — never two.
+            </li>
+            <li>
+              <strong>Webhook signatures are verified.</strong> Inbound webhook
+              payloads from Intuit are HMAC-SHA256 verified with constant-time
+              comparison. Nobody can forge a "this invoice was paid" event.
+            </li>
+            <li>
+              <strong>Tenant isolation is hard-coded.</strong> QuickBooks invoice
+              IDs are realm-scoped, not globally unique — two shops can each
+              have an invoice "1042". Every lookup is scoped by both the
+              invoice ID and the shop owner. The webhook handler rejects
+              cross-tenant matches by construction.
+            </li>
+            <li>
+              <strong>Nightly reconciliation.</strong> Every night we re-read
+              each linked invoice from QuickBooks and reconcile against
+              InkTracker. Missed webhooks are caught and converted; totals
+              drift triggers a notification.
+            </li>
+            <li>
+              <strong>One-click disconnect.</strong> Disconnecting clears your
+              tokens immediately. We also recommend revoking InkTracker from
+              the QuickBooks side (Settings → Apps) for defense in depth.
+            </li>
+            <li>
+              <strong>We don't touch payment instruments.</strong> Customer
+              card and bank info stays inside QuickBooks Payments — we never
+              receive it.
+            </li>
+          </ul>
+        </Section>
 
         <Section title="Where your data lives">
           <p>
@@ -45,12 +102,12 @@ export default function Security() {
           </p>
         </Section>
 
-        <Section title="Third-party integrations">
+        <Section title="Other third-party integrations">
           <p>
-            When you connect QuickBooks, Shopify, or a garment supplier, we store an OAuth refresh
-            token (or API credential) so we can act on your behalf. These tokens are stored
-            encrypted, scoped to your shop, and never shared. You can disconnect any integration at
-            any time from the Account page, which immediately revokes our access.
+            For Shopify and garment suppliers (S&S Activewear, AS Colour), we store an OAuth
+            refresh token or API credential so we can act on your behalf. These credentials are
+            stored encrypted, scoped to your shop, and never shared. Disconnect any integration at
+            any time from the Account page — it immediately revokes our access.
           </p>
         </Section>
 

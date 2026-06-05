@@ -11,8 +11,9 @@ import { invoiceThreadId } from "@/lib/messageThreads";
 import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
+import { todayInShopTz } from "@/lib/shopTimezone";
 
-export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice }) {
+export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onSendSuccess }) {
   const [loading, setLoading] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [reordered, setReordered] = useState(false);
@@ -62,6 +63,17 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       });
       return;
     }
+    // QBO's POST /invoice/{id}/send is the only API that mints a
+    // customer-facing payment link — and it also emails the customer
+    // a copy of the invoice from QuickBooks' own mail servers. There
+    // is no "create without notifying" option. Confirm so operators
+    // don't accidentally fire off an invoice from a quiet footer button.
+    const recipientEmail = customer?.email || invoice.customer_email;
+    const proceed = window.confirm(
+      `Heads up: QuickBooks will email ${recipientEmail || "the customer"} a copy of this invoice with a pay-now link the moment you click OK.\n\n` +
+      `This happens on QuickBooks' side — InkTracker can't suppress it. Continue?`
+    );
+    if (!proceed) return;
     setQbCreating(true);
     setQbStatus(null);
     try {
@@ -165,7 +177,11 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         shop_owner: invoice.shop_owner,
         customer_id: invoice.customer_id || "",
         customer_name: invoice.customer_name || "",
-        date: new Date().toISOString().split("T")[0],
+        // Shop-tz, not UTC. After ~5pm Pacific, toISOString() returns
+        // tomorrow's date — the reorder quote then sorted into
+        // tomorrow's calendar slot. Same bug class fixed for quote
+        // creation in QuoteEditorModal.
+        date: todayInShopTz(),
         due_date: null,
         status: "Draft",
         notes: invoice.notes || "",
@@ -536,7 +552,17 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             invoice={invoice}
             customer={customer}
             onClose={() => setShowSendModal(false)}
-            onSuccess={() => setShowSendModal(false)}
+            onSuccess={() => {
+              // Successful send is the terminal customer-facing action.
+              // Close the send modal AND propagate to the parent so it
+              // can close itself + any ancestor (e.g., the parent
+              // OrderDetailModal opened from the Production page).
+              // Without this propagation, operators were left stranded
+              // on a stack of modals after the deliverable went out.
+              setShowSendModal(false);
+              onClose();
+              onSendSuccess?.();
+            }}
           />
         )}
         {viewingOrder && (

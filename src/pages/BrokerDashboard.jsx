@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
 import {
@@ -38,6 +38,7 @@ import {
   fmtMoney,
   calcQuoteTotals,
   BROKER_MARKUP,
+  loadShopPricingConfig,
 } from "../components/shared/pricing";
 import BrokerQuoteEditor from "../components/broker/BrokerQuoteEditor";
 import BrokerClientList from "../components/broker/BrokerClientList";
@@ -572,17 +573,29 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
 // ?tab= and finally to "overview" when no signal is provided.
 export default function BrokerDashboard({ initialTab } = {}) {
   const navigate = useNavigate();
+  // Read the active tab from the live URL so a sidebar nav (which
+  // navigates to /BrokerDashboard?tab=X without remounting) actually
+  // swaps the rendered panel. The previous implementation seeded
+  // `tab` from window.location once via useState — after that, every
+  // URL change was a no-op because React Router doesn't remount the
+  // route on a same-path query-string change. Symptom: sidebar items
+  // highlight correctly but the right pane stays on the first tab
+  // visited. Fixed 2026-06-03.
+  const location = useLocation();
+  const tab = (() => {
+    if (initialTab) return initialTab;
+    const params = new URLSearchParams(location.search);
+    return params.get("tab") || "overview";
+  })();
+  // No-op setter kept so child components that still call setTab() —
+  // e.g. internal tab switches from action chips — don't crash. The
+  // canonical way to switch tabs is now navigate(), which the layout
+  // already does on sidebar clicks.
+  const setTab = (next) => {
+    navigate(createPageUrl("BrokerDashboard") + (next && next !== "overview" ? `?tab=${next}` : ""));
+  };
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState(() => {
-    // initialTab (from a top-level route wrapper like QuotesRoute) wins
-    // over the legacy ?tab= query string, which itself overrides the
-    // default landing "overview" (was "quotes" — the combined
-    // Overview+List page that got split on 2026-05-27).
-    if (initialTab) return initialTab;
-    const params = new URLSearchParams(window.location.search);
-    return params.get("tab") || "overview";
-  });
   const [quotes, setQuotes] = useState([]);
   const [clients, setClients] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -646,6 +659,16 @@ export default function BrokerDashboard({ initialTab } = {}) {
         } : null);
         if (shopRecord?.addons?.length) {
           setShopAddons(shopRecord.addons.map(a => ({ ...a, rate: parseFloat(a.rate) || 0 })));
+        }
+        // Hydrate the assigned shop's pricing config into the module-level
+        // `_pc`. Without this, getEnabledTechniques() in pricing.jsx
+        // falls back to the platform default (Screen Print only) and the
+        // technique dropdown either shows the wrong list or every
+        // technique — neither matches what the shop actually offers.
+        // Mirror of the QuoteRequest.jsx hydration step for the public
+        // wizard; same module, different surface.
+        if (shopRecord?.pricing_config) {
+          loadShopPricingConfig(shopRecord.pricing_config);
         }
 
         const myQuotes = (allQuotes || []).filter((q) => {
@@ -925,6 +948,58 @@ export default function BrokerDashboard({ initialTab } = {}) {
     setEditorQuote(null);
   }
 
+  const ACTION_STATUSES = ["Draft", "Pending", "Shop Approved", "Sent to Client", "Client Approved"];
+
+  // Single pass over the quotes array instead of 10 separate .filter()
+  // calls. With 200 quotes this dropped ~2,000 string comparisons per
+  // render to 200. Memoized on (quotes, filterStatus) so tab nav
+  // (which is a setState chain on this component) doesn't re-run it.
+  // Without the memo, every modal open / unread-count bump / form
+  // keystroke triggered the full pass even though the inputs didn't
+  // change. The 2026-06-03 "buttons feel laggy" report traced here.
+  //
+  // MUST stay above any early-return below — hooks have to run in the
+  // same order every render, otherwise React throws #310. The previous
+  // placement (after `if (loading) return`) crashed the dashboard the
+  // first time loading flipped to false.
+  const { statusCounts, filteredQuotes, actionableQuotes, needsAttentionCount } = useMemo(() => {
+    const counts = {
+      All: quotes.length,
+      Draft: 0,
+      Pending: 0,
+      "Shop Approved": 0,
+      "Sent to Client": 0,
+      "Client Approved": 0,
+      Declined: 0,
+      "Converted to Order": 0,
+    };
+    const actionable = [];
+    const filtered = [];
+    let needsAttn = 0;
+    for (const q of quotes) {
+      const s = normalizeQuoteStatus(q.status);
+      // Status counts — also include rows whose raw status matched the
+      // bucket directly (legacy rows pre-dating normalizeQuoteStatus).
+      if (counts[s] !== undefined) counts[s]++;
+      else if (counts[q.status] !== undefined) counts[q.status]++;
+      // Filtered list for the Quotes tab.
+      if (filterStatus === "All" || s === filterStatus || q.status === filterStatus) {
+        filtered.push(q);
+      }
+      // Actionable list for the action queue.
+      if (ACTION_STATUSES.includes(s)) actionable.push(q);
+      // "Needs you" badge — only the two states where the broker has
+      // a next move (submit to shop, or notify client).
+      if (s === "Client Approved" || s === "Shop Approved") needsAttn++;
+    }
+    return {
+      statusCounts: counts,
+      filteredQuotes: filtered,
+      actionableQuotes: actionable,
+      needsAttentionCount: needsAttn,
+    };
+  }, [quotes, filterStatus]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -934,31 +1009,6 @@ export default function BrokerDashboard({ initialTab } = {}) {
   }
 
   if (!user) return null;
-
-  const ACTION_STATUSES = ["Draft", "Pending", "Shop Approved", "Sent to Client", "Client Approved"];
-
-  const statusCounts = { All: quotes.length };
-  ["Draft", "Pending", "Shop Approved", "Sent to Client", "Client Approved", "Declined", "Converted to Order"].forEach((s) => {
-    statusCounts[s] = quotes.filter((q) => (normalizeQuoteStatus(q.status) === s || q.status === s)).length;
-  });
-
-  const filteredQuotes =
-    filterStatus === "All"
-      ? quotes
-      : quotes.filter((q) => normalizeQuoteStatus(q.status) === filterStatus || q.status === filterStatus);
-
-  const actionableQuotes = quotes.filter((q) => ACTION_STATUSES.includes(normalizeQuoteStatus(q.status)));
-
-  // "Needs you" badge on Overview — quotes where SOMETHING JUST HAPPENED
-  // and the broker has a next move:
-  //   - Client Approved → broker should submit to shop
-  //   - Shop Approved   → shop OK'd production, broker should notify client
-  // Draft / Sent to Client / Pending intentionally excluded (no broker
-  // action available, just waiting).
-  const needsAttentionCount = quotes.filter((q) => {
-    const s = normalizeQuoteStatus(q.status);
-    return s === "Client Approved" || s === "Shop Approved";
-  }).length;
 
   return (
     <BrokerLayout
@@ -1143,6 +1193,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
 
             <BrokerClientList
               clients={clients}
+              shopPricingConfig={shop?.pricing_config}
               onAdd={handleAddClient}
               onEdit={handleEditClient}
               onDelete={handleDeleteClient}

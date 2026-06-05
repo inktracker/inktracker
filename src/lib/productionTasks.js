@@ -27,6 +27,17 @@ export function getMissingAutoDerivedTasks(stage, taskList) {
   return ORDER_GOODS_AUTO_DERIVED_TASKS.filter((name) => !set.has(name));
 }
 
+// Default task list per production stage. Refreshed 2026-05-31 to
+// match Joe's operator-tested checklist — trimmed from the original
+// (which had a handful of less-used items like "Set up registration",
+// "Mount screens on press", "Count pieces", "Color match (if needed)",
+// "Flash/cure prints") to a leaner set that mirrors how Biota actually
+// works the floor. Shops can still add anything they want per stage
+// via Account → Production Tasks; defaults are just the starting
+// point for new shops.
+//
+// "Art Approval" intentionally retains the original 4 items — they're
+// the unchanged customer-facing approval loop.
 export const DEFAULT_TASKS = {
   "Art Approval": ["Receive artwork", "Review file specs", "Send proof to customer", "Get approval"],
   // "Place blank order" + "Receive goods" auto-derive from per-size
@@ -35,16 +46,13 @@ export const DEFAULT_TASKS = {
   // removes these, the auto-derive won't fire — operators just check
   // them manually. Keep the canonical names to keep auto-derive working.
   "Order Goods":  ["Place blank order", "Receive goods"],
-  "Pre-Press":    ["Burn screens", "Set up registration", "Mix ink colors", "Color match (if needed)"],
+  "Pre-Press":    ["Output/Pull Film", "Burn screens", "Mix ink colors"],
   "Printing": [
-    "Mount screens on press",
     "Run test prints",
     "Get test approval",
-    "Run full batch",
-    "Flash/cure prints",
     "Quality inspect",
     "Fold & tag",
-    "Count pieces",
+    "Check quantities",
     "Bag/box order",
     "Stage for pickup/shipping",
   ],

@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import {
   buildPaidInvoiceQuery,
+  buildPaidInvoiceQueryFromInvoices,
+  cascadeMarkLinkedPaid,
+  cascadeMarkInvoicePaid,
   decidePaidInvoiceAction,
   buildOrderInsertFromQuote,
   extractInvoiceIdsFromPayment,
@@ -144,16 +147,17 @@ describe("decidePaidInvoiceAction", () => {
     expect(r.action).toBe(PAID_INVOICE_ACTIONS.SKIP_INVALID_QUOTE);
   });
 
-  it("returns SKIP_ALREADY_CONVERTED when status is 'Converted to Order' (idempotency)", () => {
+  it("returns SKIP_ALREADY_CONVERTED when status is 'Converted to Order' AND quote.paid is true (true idempotency)", () => {
     const r = decidePaidInvoiceAction({
       id: "q1",
       shop_owner: "x@y.com",
       status: "Converted to Order",
+      paid: true,
     });
     expect(r.action).toBe(PAID_INVOICE_ACTIONS.SKIP_ALREADY_CONVERTED);
   });
 
-  it("returns SKIP_ALREADY_CONVERTED when converted_order_id is set, even if status drifted", () => {
+  it("returns SKIP_ALREADY_CONVERTED when converted_order_id is set AND paid, even if status drifted", () => {
     // QB might fire a duplicate webhook before status is updated, OR a
     // user might manually edit the status. converted_order_id is the
     // authoritative idempotency key.
@@ -162,8 +166,33 @@ describe("decidePaidInvoiceAction", () => {
       shop_owner: "x@y.com",
       status: "Quote Sent",
       converted_order_id: "ORD-001",
+      paid: true,
     });
     expect(r.action).toBe(PAID_INVOICE_ACTIONS.SKIP_ALREADY_CONVERTED);
+  });
+
+  it("returns MARK_LINKED_PAID when converted but quote.paid is false — the approve→convert→pay-later scenario", () => {
+    // Quote was manually converted before payment, customer paid later
+    // in QB. The webhook should NOT skip — it should cascade-mark paid.
+    const r = decidePaidInvoiceAction({
+      id: "q1",
+      shop_owner: "x@y.com",
+      status: "Converted to Order",
+      converted_order_id: "ORD-001",
+      paid: false,
+    });
+    expect(r.action).toBe(PAID_INVOICE_ACTIONS.MARK_LINKED_PAID);
+  });
+
+  it("returns MARK_LINKED_PAID when converted_order_id set + paid undefined (legacy unpaid)", () => {
+    // Legacy rows that pre-date the paid column treat paid as falsy
+    // → should still cascade rather than skip silently.
+    const r = decidePaidInvoiceAction({
+      id: "q1",
+      shop_owner: "x@y.com",
+      converted_order_id: "ORD-002",
+    });
+    expect(r.action).toBe(PAID_INVOICE_ACTIONS.MARK_LINKED_PAID);
   });
 
   it("returns CONVERT for an active quote", () => {
@@ -412,5 +441,225 @@ describe("isInvoiceFullyPaid", () => {
     // Negative balance means QB has more from the customer than owed —
     // typically a credit on file. We don't auto-convert in that case.
     expect(isInvoiceFullyPaid({ Balance: -1 })).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// buildPaidInvoiceQueryFromInvoices — second-pass lookup for orders that
+// don't have a quote (runOrderCompletion created invoice independently)
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("buildPaidInvoiceQueryFromInvoices — tenant-scoped invoice lookup", () => {
+  it("queries the INVOICES table (not quotes)", async () => {
+    const sb = mockSupabase([{ id: "inv1", qb_invoice_id: "1042", shop_owner: "shopA@example.com" }]);
+    await buildPaidInvoiceQueryFromInvoices(sb, "1042", "shopA@example.com");
+    expect(sb._calls.from).toContain("invoices");
+    expect(sb._calls.from).not.toContain("quotes");
+  });
+
+  it("scopes by both qb_invoice_id AND shop_owner (cross-tenant safety)", async () => {
+    const sb = mockSupabase([
+      { id: "shopB-inv", qb_invoice_id: "1042", shop_owner: "shopB@example.com" },
+      { id: "shopA-inv", qb_invoice_id: "1042", shop_owner: "shopA@example.com" },
+    ]);
+    const { data } = await buildPaidInvoiceQueryFromInvoices(sb, "1042", "shopA@example.com");
+    expect(data?.id).toBe("shopA-inv");
+  });
+
+  it("returns null when no invoice matches", async () => {
+    const sb = mockSupabase([]);
+    const { data } = await buildPaidInvoiceQueryFromInvoices(sb, "1042", "shopA@example.com");
+    expect(data).toBeNull();
+  });
+
+  it("throws on missing qbInvoiceId", () => {
+    expect(() => buildPaidInvoiceQueryFromInvoices(mockSupabase(), "", "x@y.com")).toThrow(/qbInvoiceId required/);
+  });
+
+  it("throws on missing shopOwner — tenant-scope bypass guard", () => {
+    expect(() => buildPaidInvoiceQueryFromInvoices(mockSupabase(), "1042", "")).toThrow(/shopOwner required/);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// cascadeMarkLinkedPaid / cascadeMarkInvoicePaid — payment cascade logic
+//
+// Richer mock that simulates a multi-table database with maybeSingle()
+// reads + update() writes. Records every shop_owner filter so tests can
+// pin cross-tenant safety on EVERY write.
+// ════════════════════════════════════════════════════════════════════════════
+
+function mockDb(initial = {}) {
+  // initial: { quotes: [...], orders: [...], invoices: [...] }
+  const tables = {
+    quotes:   [...(initial.quotes   || [])],
+    orders:   [...(initial.orders   || [])],
+    invoices: [...(initial.invoices || [])],
+  };
+  const writes = []; // every update — for cross-tenant assertions
+
+  function chain(tableName, op, filters = [], patch = null) {
+    return {
+      eq(col, val) {
+        return chain(tableName, op, [...filters, [col, val]], patch);
+      },
+      async maybeSingle() {
+        const row = tables[tableName].find((r) =>
+          filters.every(([c, v]) => r?.[c] === v),
+        );
+        return { data: row ?? null, error: null };
+      },
+      // .update().eq().eq()... returns a Promise that yields { error: null }
+      // when awaited at the end of the chain. We model this by giving the
+      // chain a .then so await works without an explicit terminator.
+      then(resolve) {
+        if (op !== "update") {
+          resolve({ error: null });
+          return;
+        }
+        // Apply patch to all matching rows
+        let touched = 0;
+        for (const r of tables[tableName]) {
+          if (filters.every(([c, v]) => r?.[c] === v)) {
+            Object.assign(r, patch);
+            touched += 1;
+          }
+        }
+        writes.push({ table: tableName, filters, patch, touched });
+        resolve({ error: null });
+      },
+    };
+  }
+
+  return {
+    from(tableName) {
+      return {
+        select() { return chain(tableName, "select", []); },
+        update(patch) { return chain(tableName, "update", [], patch); },
+      };
+    },
+    _tables: tables,
+    _writes: writes,
+  };
+}
+
+describe("cascadeMarkLinkedPaid — quote → order → invoice walk", () => {
+  it("flips quote.paid, then order.paid, then invoice.paid — full chain", async () => {
+    const db = mockDb({
+      quotes:   [{ id: "q1", shop_owner: "shopA@example.com", paid: false, converted_order_id: "ORD-001", quote_id: "Q-001" }],
+      orders:   [{ id: "o1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+      invoices: [{ id: "inv1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+    });
+    const quote = db._tables.quotes[0];
+    const updates = await cascadeMarkLinkedPaid(db, quote, "2026-06-01");
+    expect(updates).toEqual({ quoteUpdated: true, orderUpdated: true, invoiceUpdated: true });
+    expect(db._tables.quotes[0].paid).toBe(true);
+    expect(db._tables.orders[0].paid).toBe(true);
+    expect(db._tables.invoices[0].paid).toBe(true);
+    // paid_date stamped on all three
+    expect(db._tables.quotes[0].paid_date).toBe("2026-06-01");
+    expect(db._tables.orders[0].paid_date).toBe("2026-06-01");
+    expect(db._tables.invoices[0].paid_date).toBe("2026-06-01");
+  });
+
+  it("is idempotent — already-paid rows are not re-touched (eq paid:false guard)", async () => {
+    const db = mockDb({
+      quotes:   [{ id: "q1", shop_owner: "shopA@example.com", paid: true, paid_date: "2026-05-01", converted_order_id: "ORD-001", quote_id: "Q-001" }],
+      orders:   [{ id: "o1", shop_owner: "shopA@example.com", paid: true, paid_date: "2026-05-01", order_id: "ORD-001" }],
+      invoices: [{ id: "inv1", shop_owner: "shopA@example.com", paid: true, paid_date: "2026-05-01", order_id: "ORD-001" }],
+    });
+    const quote = db._tables.quotes[0];
+    const updates = await cascadeMarkLinkedPaid(db, quote, "2026-06-01");
+    expect(updates).toEqual({ quoteUpdated: false, orderUpdated: false, invoiceUpdated: false });
+    // paid_date NOT overwritten
+    expect(db._tables.quotes[0].paid_date).toBe("2026-05-01");
+  });
+
+  it("CROSS-TENANT: every update carries the shop_owner filter (defense in depth)", async () => {
+    const db = mockDb({
+      quotes:   [{ id: "q1", shop_owner: "shopA@example.com", paid: false, converted_order_id: "ORD-001" }],
+      orders:   [{ id: "o1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+      invoices: [{ id: "inv1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+    });
+    await cascadeMarkLinkedPaid(db, db._tables.quotes[0], "2026-06-01");
+    for (const w of db._writes) {
+      const filterCols = w.filters.map(([c]) => c);
+      expect(filterCols).toContain("shop_owner");
+      expect(filterCols).toContain("paid"); // the eq paid:false race guard
+    }
+  });
+
+  it("skips order + invoice when converted_order_id is null (legacy / orphan)", async () => {
+    const db = mockDb({
+      quotes: [{ id: "q1", shop_owner: "shopA@example.com", paid: false, converted_order_id: null }],
+    });
+    const updates = await cascadeMarkLinkedPaid(db, db._tables.quotes[0], "2026-06-01");
+    expect(updates.quoteUpdated).toBe(true);
+    expect(updates.orderUpdated).toBe(false);
+    expect(updates.invoiceUpdated).toBe(false);
+  });
+
+  it("skips invoice when no invoice row exists for the order", async () => {
+    const db = mockDb({
+      quotes: [{ id: "q1", shop_owner: "shopA@example.com", paid: false, converted_order_id: "ORD-001" }],
+      orders: [{ id: "o1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+    });
+    const updates = await cascadeMarkLinkedPaid(db, db._tables.quotes[0], "2026-06-01");
+    expect(updates).toEqual({ quoteUpdated: true, orderUpdated: true, invoiceUpdated: false });
+  });
+
+  it("throws on missing required arguments — defensive", async () => {
+    const db = mockDb({});
+    await expect(cascadeMarkLinkedPaid(null, {}, "2026-06-01")).rejects.toThrow(/supabase required/);
+    await expect(cascadeMarkLinkedPaid(db, null, "2026-06-01")).rejects.toThrow(/quote.id \+ shop_owner required/);
+    await expect(cascadeMarkLinkedPaid(db, { id: "q1", shop_owner: "x@y.com", paid: false, converted_order_id: null }, "")).rejects.toThrow(/today/);
+  });
+});
+
+describe("cascadeMarkInvoicePaid — invoice → order walk (no quote)", () => {
+  it("flips invoice.paid then order.paid", async () => {
+    const db = mockDb({
+      orders:   [{ id: "o1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+      invoices: [{ id: "inv1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+    });
+    const updates = await cascadeMarkInvoicePaid(db, db._tables.invoices[0], "2026-06-01");
+    expect(updates).toEqual({ invoiceUpdated: true, orderUpdated: true });
+    expect(db._tables.invoices[0].paid).toBe(true);
+    expect(db._tables.orders[0].paid).toBe(true);
+  });
+
+  it("is idempotent on already-paid invoice + order", async () => {
+    const db = mockDb({
+      orders:   [{ id: "o1", shop_owner: "shopA@example.com", paid: true, order_id: "ORD-001" }],
+      invoices: [{ id: "inv1", shop_owner: "shopA@example.com", paid: true, order_id: "ORD-001" }],
+    });
+    const updates = await cascadeMarkInvoicePaid(db, db._tables.invoices[0], "2026-06-01");
+    expect(updates).toEqual({ invoiceUpdated: false, orderUpdated: false });
+  });
+
+  it("no-ops when order doesn't exist (orphan invoice)", async () => {
+    const db = mockDb({
+      invoices: [{ id: "inv1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+    });
+    const updates = await cascadeMarkInvoicePaid(db, db._tables.invoices[0], "2026-06-01");
+    expect(updates).toEqual({ invoiceUpdated: true, orderUpdated: false });
+  });
+
+  it("CROSS-TENANT: every update carries shop_owner filter", async () => {
+    const db = mockDb({
+      orders:   [{ id: "o1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+      invoices: [{ id: "inv1", shop_owner: "shopA@example.com", paid: false, order_id: "ORD-001" }],
+    });
+    await cascadeMarkInvoicePaid(db, db._tables.invoices[0], "2026-06-01");
+    for (const w of db._writes) {
+      const filterCols = w.filters.map(([c]) => c);
+      expect(filterCols).toContain("shop_owner");
+    }
+  });
+
+  it("throws on missing args", async () => {
+    const db = mockDb({});
+    await expect(cascadeMarkInvoicePaid(null, {}, "2026-06-01")).rejects.toThrow(/supabase required/);
+    await expect(cascadeMarkInvoicePaid(db, null, "2026-06-01")).rejects.toThrow(/invoice.id \+ shop_owner required/);
   });
 });

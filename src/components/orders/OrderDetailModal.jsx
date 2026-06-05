@@ -17,6 +17,7 @@ import {
   nextGoodsStatusOnTap,
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
+import { normalizePresses } from "@/lib/presses/normalizePresses";
 import { MessageSquare } from "lucide-react";
 import {
   calcLinkedLinePrice,
@@ -42,6 +43,7 @@ import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck
 // customized. Auto-derived "Place blank order" / "Receive goods" on
 // Order Goods only fire when those canonical names are in the list.
 import { getStageTasks } from "@/lib/productionTasks";
+import { todayInShopTz } from "@/lib/shopTimezone";
 
 // STATUS_ORDER previously had its own (different — missing "Order
 // Goods") list; replaced with the canonical O_STATUSES so the
@@ -151,6 +153,11 @@ export default function OrderDetailModal({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [localArtwork, setLocalArtwork] = useState(order.selected_artwork || []);
+  // Read-only sync: artwork can land on the order from outside this
+  // modal (Quote → art approval, customer upload via ArtApproval page).
+  // Without this, a freshly-attached proof wouldn't appear until the
+  // modal was closed and reopened.
+  useEffect(() => { setLocalArtwork(order.selected_artwork || []); }, [order.selected_artwork]);
   // In-modal preview: when set, the order content is hidden behind an
   // overlay that renders the artwork inline (PDF/image) so the user
   // doesn't lose their place by bouncing to a new browser tab.
@@ -175,13 +182,28 @@ export default function OrderDetailModal({
   const [showJobCost, setShowJobCost] = useState(false);
   const [actualCost, setActualCost] = useState(order.actual_cost ?? "");
   const [laborHours, setLaborHours] = useState(order.actual_labor_hours ?? "");
+  // Estimated press time — drives the Press Scheduler's capacity bar.
+  // Distinct from actual labor hours (which gets stamped after the
+  // job runs). Empty string when unset; saved as a number.
+  const [estimatedHours, setEstimatedHours] = useState(order.estimated_hours ?? "");
   const [laborCost, setLaborCost] = useState(order.actual_labor_cost ?? "");
   const [assignedPress, setAssignedPress] = useState(order.assigned_press || "");
   const [assignedOperator, setAssignedOperator] = useState(order.assigned_operator || "");
   const [stepNotes, setStepNotes] = useState(order.step_notes || {});
+  // Read-only sync: step notes are appended on every status change
+  // (handleAdvance, updateStatus) and are visible in the timeline. If
+  // the parent's order prop updates, the timeline should reflect the
+  // new note instead of the snapshot taken at modal open.
+  useEffect(() => { setStepNotes(order.step_notes || {}); }, [order.step_notes]);
   const [savingCost, setSavingCost] = useState(false);
   const [costSaved, setCostSaved] = useState(false);
   const [liveOrder, setLiveOrder] = useState(order);
+  // Re-sync liveOrder whenever the parent passes a new order prop —
+  // happens after auto-advance fires onAdvance and the parent's
+  // setViewing(updated) feeds the fresh row back in. Without this,
+  // Floor Mode renders the OLD stage's checklist forever because
+  // useState only reads the prop on mount.
+  useEffect(() => { setLiveOrder(order); }, [order]);
   // Existing invoice for this order/quote, if any. Drives whether the
   // action bar shows "Create Invoice" vs "Preview Invoice" + the
   // optional "View in QB" link. Fetched once on mount.
@@ -212,9 +234,49 @@ export default function OrderDetailModal({
   const [shipTracking, setShipTracking] = useState(order.tracking_number || "");
   const [shipLabelUrl, setShipLabelUrl] = useState(order.shipping_label_url || "");
   const [shipStatus, setShipStatus] = useState(order.shipping_status || "");
+  // Read-only sync for the shipping result trio. These get written by
+  // the in-modal "Create Label" / "Track Shipment" actions but can also
+  // arrive externally (FedEx webhook, label created from another tab).
+  // The shipping FORM inputs above (address, weight, dims) deliberately
+  // DON'T sync — they're user-editable and would clobber in-progress
+  // edits if the order prop refreshed mid-typing.
+  useEffect(() => { setShipTracking(order.tracking_number || ""); }, [order.tracking_number]);
+  useEffect(() => { setShipLabelUrl(order.shipping_label_url || ""); }, [order.shipping_label_url]);
+  useEffect(() => { setShipStatus(order.shipping_status || ""); }, [order.shipping_status]);
   const [savingShipping, setSavingShipping] = useState(false);
   const [shippingSaved, setShippingSaved] = useState(false);
   const [shipError, setShipError] = useState("");
+
+  // Stage-complete check + auto-advance. Mirrors ShopFloor.jsx so the
+  // two surfaces behave the same way: when every task in the current
+  // stage is done (including auto-derived "Receive goods" from per-size
+  // counts), kick the order to the next stage via onAdvance.
+  //
+  // Capped at Printing — the Printing → Completed transition involves
+  // invoice creation downstream, so we make the operator press the
+  // explicit "Order Status Complete →" button for that one and review
+  // before the modal closes.
+  function isStageComplete(order, stage) {
+    const tasks = getStageTasks(stage);
+    if (tasks.length === 0) return false;
+    const stepChecks = order.checklist?.[stage] || {};
+    const counts = countGoodsProgress(order);
+    return tasks.every((task) => {
+      const auto = autoCheckOrderGoodsTask(stage, task, counts);
+      return auto === null ? !!stepChecks[task] : auto;
+    });
+  }
+
+  function maybeAutoAdvance(order) {
+    if (!onAdvance) return;
+    const current = order.status || "Pre-Press";
+    const idx = O_STATUSES.indexOf(current);
+    if (idx < 0 || idx >= O_STATUSES.length - 1) return;
+    if (!isStageComplete(order, current)) return;
+    const next = O_STATUSES[idx + 1];
+    if (next === "Completed") return;
+    onAdvance(order.id);
+  }
 
   async function floorToggleTask(task) {
     const step = liveOrder.status || "Pre-Press";
@@ -223,6 +285,7 @@ export default function OrderDetailModal({
     checklist[step][task] = checklist[step][task] ? null : { by: shopName || "Admin", at: new Date().toISOString() };
     const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
     setLiveOrder(prev => ({ ...prev, ...updated }));
+    maybeAutoAdvance(updated);
   }
 
   async function floorTogglePrint(liIdx, size, impIdx) {
@@ -233,6 +296,7 @@ export default function OrderDetailModal({
     checklist.print_progress = pp;
     const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
     setLiveOrder(prev => ({ ...prev, ...updated }));
+    maybeAutoAdvance(updated);
   }
 
   // Per-size goods tap — cycles blank → ordered → received → blank
@@ -252,6 +316,7 @@ export default function OrderDetailModal({
     checklist.goods_progress = gp;
     const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
     setLiveOrder(prev => ({ ...prev, ...updated }));
+    maybeAutoAdvance(updated);
   }
 
   // Bulk override for the Order Goods parent tasks. Lets a shop whose
@@ -262,6 +327,7 @@ export default function OrderDetailModal({
     checklist.goods_progress = bulkSetOrderGoodsStep(liveOrder, target, shopName || "Admin");
     const updated = await base44.entities.Order.update(liveOrder.id, { checklist });
     setLiveOrder(prev => ({ ...prev, ...updated }));
+    maybeAutoAdvance(updated);
   }
 
   // Per-size shortfall tracking. Capacity isn't deducted from line.sizes
@@ -363,10 +429,12 @@ export default function OrderDetailModal({
       const ac = parseFloat(actualCost) || 0;
       const lh = parseFloat(laborHours) || 0;
       const lc = parseFloat(laborCost) || 0;
+      const eh = estimatedHours === "" ? null : parseFloat(estimatedHours);
       await base44.entities.Order.update(order.id, {
         actual_cost: ac,
         actual_labor_hours: lh,
         actual_labor_cost: lc,
+        estimated_hours: Number.isFinite(eh) ? eh : null,
         assigned_press: assignedPress,
         assigned_operator: assignedOperator,
         step_notes: stepNotes,
@@ -528,7 +596,9 @@ export default function OrderDetailModal({
         customer_id: order.customer_id || "",
         customer_name: order.customer_name || "",
         job_title: order.job_title || "",
-        date: new Date().toISOString().split("T")[0],
+        // Shop-tz, not UTC. Reorder quotes were stamping tomorrow's
+        // date for any shop west of London past ~5pm local.
+        date: todayInShopTz(),
         due_date: null,
         status: "Draft",
         notes: order.notes || "",
@@ -626,7 +696,7 @@ export default function OrderDetailModal({
           .select("presses")
           .eq("owner_email", order.shop_owner)
           .maybeSingle();
-        if (!cancelled) setPresses(Array.isArray(shop?.presses) ? shop.presses : []);
+        if (!cancelled) setPresses(normalizePresses(shop?.presses));
       } catch {
         if (!cancelled) setPresses([]);
       }
@@ -679,7 +749,7 @@ export default function OrderDetailModal({
   // pattern as QuoteEditorModal (PR #120).
   return createPortal(
     <div
-      className="fixed bg-slate-900/60 backdrop-blur-sm z-[60] flex items-start justify-center p-4 overflow-auto"
+      className="fixed bg-slate-900/60 backdrop-blur-sm z-[60] flex items-start justify-center p-2 sm:p-4 overflow-auto"
       style={{ top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -746,8 +816,8 @@ export default function OrderDetailModal({
             still persists via handleSaveJobCost so the order's
             step_notes column isn't broken — just no inline editor
             here. */}
-        <div className="px-4 sm:px-6 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-          <div className="flex items-center w-full">
+        <div className="px-3 sm:px-6 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 overflow-x-auto">
+          <div className="flex items-center w-full min-w-max sm:min-w-0">
             {O_STATUSES.map((s, i) => {
               const currentIdx = O_STATUSES.indexOf(order.status);
               const done = i < currentIdx;
@@ -762,7 +832,7 @@ export default function OrderDetailModal({
                       else if (onRevert && i === currentIdx - 1) onRevert(order.id);
                     }}
                     disabled={Math.abs(i - currentIdx) > 1}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition whitespace-nowrap ${
+                    className={`flex items-center gap-1 sm:gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold transition whitespace-nowrap ${
                       active ? "bg-teal-600 text-white shadow-sm" :
                       done ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer" :
                       i === currentIdx + 1 ? "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-teal-300 hover:text-teal-600 cursor-pointer" :
@@ -773,7 +843,7 @@ export default function OrderDetailModal({
                     {s}
                   </button>
                   {!isLast && (
-                    <div className={`flex-1 h-0.5 mx-2 ${done ? "bg-emerald-300" : "bg-slate-200"}`} />
+                    <div className={`flex-1 h-0.5 mx-1 sm:mx-2 ${done ? "bg-emerald-300" : "bg-slate-200"}`} />
                   )}
                 </Fragment>
               );
@@ -1557,19 +1627,26 @@ export default function OrderDetailModal({
                 </button>
                 {showJobCost && (
                   <div className="p-4 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Actual Material Cost</label>
+                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Estimated Hours</label>
+                        <input type="number" min="0" step="0.25" value={estimatedHours} onChange={e => setEstimatedHours(e.target.value)}
+                          placeholder="planning"
+                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Actual Hours</label>
+                        <input type="number" min="0" step="0.25" value={laborHours} onChange={e => setLaborHours(e.target.value)}
+                          placeholder="after run"
+                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Material Cost</label>
                         <div className="relative mt-0.5">
                           <span className="absolute left-2 top-1.5 text-slate-400 text-sm">$</span>
                           <input type="number" min="0" step="0.01" value={actualCost} onChange={e => setActualCost(e.target.value)}
                             className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                         </div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Labor Hours</label>
-                        <input type="number" min="0" step="0.25" value={laborHours} onChange={e => setLaborHours(e.target.value)}
-                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                       </div>
                       <div>
                         <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Labor Cost</label>
@@ -1591,12 +1668,14 @@ export default function OrderDetailModal({
                           >
                             <option value="">— Unassigned —</option>
                             {presses.map(p => (
-                              <option key={p} value={p}>{p}</option>
+                              <option key={p.name} value={p.name}>
+                                {p.name}{p.colors ? ` — ${p.colors}c` : ""}
+                              </option>
                             ))}
                             {/* Preserve a saved legacy/free-text value
                                 that's not in the shop's current list so
                                 we don't silently drop it. */}
-                            {assignedPress && !presses.includes(assignedPress) && (
+                            {assignedPress && !presses.some(p => p.name === assignedPress) && (
                               <option value={assignedPress}>{assignedPress} (custom)</option>
                             )}
                           </select>

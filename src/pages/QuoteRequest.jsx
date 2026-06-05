@@ -21,6 +21,12 @@ export default function QuoteRequest() {
   const [wizardStyles, setWizardStyles] = useState(null);
   const [wizardSetups, setWizardSetups] = useState(null);
   const [shopOwner, setShopOwner] = useState(shopParam);
+  // Gate the wizard render on the shop fetch finishing — without it,
+  // OrderWizard mounts with shop=null, paints the default teal CSS vars,
+  // then re-paints with the shop's brand_color when the fetch resolves.
+  // That's the "split-second wrong color" flash. Brief spinner during
+  // load is better than that flicker.
+  const [shopLoading, setShopLoading] = useState(true);
 
   useEffect(() => {
     async function loadShop() {
@@ -52,7 +58,9 @@ export default function QuoteRequest() {
             loadShopPricingConfig(s.pricing_config);
           }
         }
-      } catch {}
+      } catch {} finally {
+        setShopLoading(false);
+      }
     }
     loadShop();
   }, [shopParam]);
@@ -108,15 +116,24 @@ export default function QuoteRequest() {
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="max-w-6xl mx-auto px-4 py-10">
-        <OrderWizard
-          onSubmit={handleSubmit}
-          styles={wizardStyles}
-          setups={wizardSetups}
-          shopOwner={shopOwner}
-        />
-        <div className="text-center mt-10 text-xs text-slate-400">
-          Questions? Reach out and we'll get back to you within 1 business day.
-        </div>
+        {shopLoading ? (
+          <div className="flex items-center justify-center py-32">
+            <div className="w-8 h-8 border-2 border-slate-300 border-t-slate-900 rounded-full animate-spin" />
+          </div>
+        ) : (
+          <>
+            <OrderWizard
+              onSubmit={handleSubmit}
+              styles={wizardStyles}
+              setups={wizardSetups}
+              shopOwner={shopOwner}
+              shop={shop}
+            />
+            <div className="text-center mt-10 text-xs text-slate-400">
+              Questions? Reach out and we'll get back to you within 1 business day.
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

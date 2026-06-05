@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Search, Download, Upload, RotateCcw, Loader2, FileText, Link2 } from "lucide-react";
 import MockupCanvas from "../components/mockups/MockupCanvas";
 import { base44 } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
+import { getShopPricingConfig } from "../components/shared/pricing";
 // jspdf loaded on demand inside generateProofPDF below
 
 export default function Mockups() {
@@ -33,24 +34,63 @@ export default function Mockups() {
   // string = standalone (no link).
   const [selectedTargetKey, setSelectedTargetKey] = useState("");
   const [linking, setLinking] = useState(false);
+  // Shop identity used by the Art Proof PDF header (logo + name) and
+  // footer (website). Falls back to the proof rendering without those
+  // accents when the load fails.
+  const [user, setUser] = useState(null);
+  const [shop, setShop] = useState(null);
 
+  // Color slot count is driven by the shop's pricing config (set on
+  // /Account → Pricing → Max Colors). Defaults to 8 when the config
+  // hasn't loaded yet so the UI never collapses to zero slots.
+  // useMemo so the slice in the render is stable across renders even
+  // though `getShopPricingConfig()` itself reads a module-level var.
+  const maxColors = useMemo(
+    () => Number(getShopPricingConfig()?.maxColors) || 8,
+    [user] // re-resolves once the user load also hydrates _pc
+  );
+
+  // Per-view custom garment uploads. Catalog garments swap images by
+  // view via getGarmentImageForView; custom uploads need their own
+  // store since they aren't tied to a supplier API response.
+  const [customGarmentImages, setCustomGarmentImages] = useState({ Front: "", Back: "" });
+
+  // Pulls the latest orders/quotes for the picker. Promoted out of the
+  // mount-effect so it can be re-run on tab focus and on the dropdown's
+  // own focus event — otherwise quotes/orders deleted in another tab
+  // keep appearing here until the page is reloaded.
+  const loadTargetsRef = useRef(null);
   useEffect(() => {
+    let cancelled = false;
     async function loadTargets() {
       try {
         const me = await base44.auth.me();
-        if (!me?.email) return;
-        const [ordersRes, quotesRes] = await Promise.all([
+        if (!me?.email || cancelled) return;
+        setUser(me);
+        const [ordersRes, quotesRes, shopsRes] = await Promise.all([
           base44.entities.Order.filter({ shop_owner: me.email }, "-created_date", 200),
           base44.entities.Quote.filter({ shop_owner: me.email }, "-created_date", 200),
+          base44.entities.Shop.filter({ owner_email: me.email }),
         ]);
+        if (cancelled) return;
         setOrders((ordersRes || []).filter(o => o.status !== "Completed"));
         const TERMINAL_QUOTE_STATUSES = new Set(["Converted to Order", "Declined", "Voided"]);
         setQuotes((quotesRes || []).filter(q => !TERMINAL_QUOTE_STATUSES.has(q.status)));
+        setShop((shopsRes || [])[0] || null);
       } catch {
         // Best-effort — the rest of the page still works without the picker.
       }
     }
+    loadTargetsRef.current = loadTargets;
     loadTargets();
+    function onVisible() {
+      if (document.visibilityState === "visible") loadTargets();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, []);
 
   // Proof detail fields
@@ -64,8 +104,11 @@ export default function Mockups() {
     frontPrintH: "19",
     backPrintW: "13",
     backPrintH: "19",
-    frontColors: ["", "", "", "", "", "", "", ""],
-    backColors: ["", "", "", "", "", "", "", ""],
+    // Sized to cover any realistic shop max (typical maxColors is 6–10).
+    // The visible slot count is driven by the shop's pricing config in
+    // the render — see `maxColors` below.
+    frontColors: Array(16).fill(""),
+    backColors: Array(16).fill(""),
     neckLabels: false,
     foldBagLabel: false,
     colorChange: false,
@@ -200,6 +243,11 @@ export default function Mockups() {
   }
 
   function getGarmentImageForView(v) {
+    if (garment?.isCustomUpload) {
+      // Fall back to the Front photo if the user hasn't uploaded a
+      // Back photo yet — better than showing an empty canvas.
+      return customGarmentImages[v] || customGarmentImages.Front || garmentImg;
+    }
     if (!selectedColor || !garment) return garmentImg;
     const colorUpper = (selectedColor.colorName || "").toUpperCase();
     const allImgs = garment.images || [];
@@ -259,7 +307,52 @@ export default function Mockups() {
       doc.setTextColor(255, 255, 255);
       doc.text("ART PROOF", m, 26);
 
-      // Quote # and customer
+      // Shop identity block — logo (left) + shop name (under or beside)
+      // — fills the previously-blank space under the ART PROOF header.
+      // Loaded via the page's `user` / `shop` state on mount. Best-effort:
+      // a failed logo fetch falls through to text-only without aborting
+      // the PDF.
+      const shopName = (user?.shop_name || user?.full_name || shop?.shop_name || "").trim();
+      const logoUrl = (user?.logo_url || shop?.logo_url || "").trim();
+      const identityY = 60;
+      let identityTextX = m;
+      if (logoUrl) {
+        try {
+          // Embed the logo at its full source resolution and let jsPDF
+          // scale it down to fit ~36pt tall on the page. The PDF viewer
+          // keeps the original pixel data, so zooming stays crisp.
+          // Previously we rasterized to an 80px canvas first, which
+          // baked in pixelation that print/zoom couldn't recover from.
+          const logo = await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+              const canvas = document.createElement("canvas");
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              canvas.getContext("2d").drawImage(img, 0, 0);
+              resolve({ url: canvas.toDataURL("image/png"), w: img.naturalWidth, h: img.naturalHeight });
+            };
+            img.onerror = reject;
+            img.src = logoUrl;
+          });
+          const targetH = 36; // pt
+          const displayH = Math.min(targetH, logo.h);
+          const displayW = logo.w * (displayH / logo.h);
+          doc.addImage(logo.url, "PNG", m, identityY - 14, displayW, displayH);
+          identityTextX = m + displayW + 8;
+        } catch {
+          // Logo unreachable — fall back to shop-name-only on the left.
+        }
+      }
+      if (shopName) {
+        doc.setFontSize(14);
+        doc.setFont(undefined, "bold");
+        doc.setTextColor(0, 0, 0);
+        doc.text(shopName, identityTextX, identityY + 4);
+      }
+
+      // Quote # and customer (right column)
       doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
       let y = 60;
@@ -401,7 +494,7 @@ export default function Mockups() {
         doc.text(sec.label, sx + 4, y + 9);
         doc.setTextColor(0, 0, 0);
         doc.setFont(undefined, "normal");
-        for (let ci = 0; ci < 8; ci++) {
+        for (let ci = 0; ci < maxColors; ci++) {
           const cy = y + 14 + ci * 13;
           doc.text(`${ci + 1}.`, sx + 4, cy + 9);
           doc.text(sec.colors[ci] || "", sx + 20, cy + 9);
@@ -449,7 +542,16 @@ export default function Mockups() {
       doc.rect(0, ph - 24, pw, 24, "F");
       doc.setFontSize(9);
       doc.setTextColor(255, 255, 255);
-      doc.text("www.biotamfg.com", pw / 2, ph - 9, { align: "center" });
+      // Footer reads from the shop's own website field. Falls back to
+      // the shop name when no website is set, and to a generic
+      // "InkTracker" string when neither is available — never the
+      // platform's own biotamfg.com.
+      const footerText = (
+        (user?.website || shop?.website || "").trim() ||
+        shopName ||
+        "InkTracker"
+      ).replace(/^https?:\/\//, "");
+      doc.text(footerText, pw / 2, ph - 9, { align: "center" });
 
       const filename = `Art-Proof-${proofDetails.quoteNumber || proofDetails.customerName || "proof"}.pdf`;
       if (mode === "blob") return { blob: doc.output("blob"), filename };
@@ -537,6 +639,75 @@ export default function Mockups() {
                 {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               </button>
             </div>
+
+            {/* Custom garment upload — for shops using InkTracker just for
+                proofs, or with garments not in the S&S / AS Colour APIs.
+                The uploaded image becomes the canvas background; no
+                catalog lookup, no color picker. Reading as a data URL
+                keeps it local to the session — the proof PDF embeds it,
+                so nothing is lost when the page is refreshed. */}
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-400">
+              <div className="flex-1 h-px bg-slate-100" />
+              <span>or</span>
+              <div className="flex-1 h-px bg-slate-100" />
+            </div>
+            {/* Per-view custom uploads. The label changes with the
+                current view (Front / Back), matching the existing
+                artwork upload pattern further down the page. Either
+                view can be uploaded first; the canvas swap follows the
+                view toggle in the preview panel. */}
+            <label className="w-full flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-200 rounded-xl py-2.5 text-xs text-slate-500 cursor-pointer transition">
+              <Upload className="w-3.5 h-3.5" />
+              {customGarmentImages[view]
+                ? `Change Custom ${view} Garment Photo`
+                : `Upload Custom ${view} Garment Photo`}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const dataUrl = reader.result;
+                    const isFirstUpload = !garment?.isCustomUpload;
+                    if (isFirstUpload) {
+                      setGarment({
+                        brandName: "Custom",
+                        styleNumber: file.name.replace(/\.[^.]+$/, ""),
+                        isCustomUpload: true,
+                      });
+                      setColors([]);
+                      setSelectedColor(null);
+                      setBrandMatches([]);
+                    }
+                    setCustomGarmentImages(prev => ({ ...prev, [view]: dataUrl }));
+                    // Keep `garmentImg` in sync with the Front photo so
+                    // all the `disabled={!garmentImg}` gates further
+                    // down still let the user generate / link proofs.
+                    if (view === "Front" || isFirstUpload) {
+                      setGarmentImg(dataUrl);
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = ""; // allow re-selecting the same file
+                }}
+              />
+            </label>
+            {garment?.isCustomUpload && (
+              <div className="text-[11px] text-slate-400 flex items-center gap-2">
+                <span>Custom:</span>
+                <span className={customGarmentImages.Front ? "text-emerald-600 font-semibold" : ""}>
+                  Front {customGarmentImages.Front ? "✓" : "—"}
+                </span>
+                <span>·</span>
+                <span className={customGarmentImages.Back ? "text-emerald-600 font-semibold" : ""}>
+                  Back {customGarmentImages.Back ? "✓" : "—"}
+                </span>
+              </div>
+            )}
+
             {garment && (
               <div className="text-sm font-semibold text-emerald-600">
                 {garment.brandName} {garment.styleNumber || garment.resolvedStyleNumber}
@@ -604,6 +775,7 @@ export default function Mockups() {
               <select
                 value={selectedTargetKey}
                 onChange={e => pickTargetToLink(e.target.value)}
+                onFocus={() => loadTargetsRef.current?.()}
                 className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white"
               >
                 <option value="">— Standalone proof (no link) —</option>
@@ -688,7 +860,7 @@ export default function Mockups() {
             <div className={`grid ${backArtwork ? "grid-cols-2" : "grid-cols-1"} gap-3 border-t border-slate-100 pt-3`}>
               <div>
                 <label className="text-[10px] text-slate-400 block mb-1">Front Colors</label>
-                {proofDetails.frontColors.slice(0, 4).map((c, i) => (
+                {proofDetails.frontColors.slice(0, maxColors).map((c, i) => (
                   <input key={i} value={c} onChange={e => updateFrontColor(i, e.target.value)}
                     placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                 ))}
@@ -696,7 +868,7 @@ export default function Mockups() {
               {backArtwork && (
                 <div>
                   <label className="text-[10px] text-slate-400 block mb-1">Back Colors</label>
-                  {proofDetails.backColors.slice(0, 4).map((c, i) => (
+                  {proofDetails.backColors.slice(0, maxColors).map((c, i) => (
                     <input key={i} value={c} onChange={e => updateBackColor(i, e.target.value)}
                       placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                   ))}

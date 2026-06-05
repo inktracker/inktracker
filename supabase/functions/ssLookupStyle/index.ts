@@ -5,6 +5,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
+import { buildSupplierCacheKey, readSupplierCache, writeSupplierCache } from "../_shared/supplierCache.ts";
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
 const GLOBAL_SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
@@ -267,6 +268,30 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── Read-through cache (anonymous public-wizard path only) ──────────────
+    // Only the wizard passes shopOwner; authenticated in-app editors don't, so
+    // they always hit live S&S below. Pricing is per-shop, so the cache key is
+    // scoped by shopOwner. Skip the rawSkus action (used at order time — must
+    // be fresh) and debug requests (always exercise the live path). Fail-open:
+    // a cache miss or error just falls through to the live lookup.
+    const cacheable =
+      hasShopOwner && !debug && action !== "rawSkus" &&
+      typeof styleNumber !== "undefined" && String(styleNumber).trim().length > 0;
+    let cacheAdmin: ReturnType<typeof createClient> | null = null;
+    const cacheKey = cacheable ? buildSupplierCacheKey({ q: String(styleNumber) }) : "";
+    if (cacheable) {
+      cacheAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      );
+      const cached = await readSupplierCache(cacheAdmin, { supplier: "ss", shopOwner, cacheKey });
+      if (cached) {
+        console.error(`[ssLookupStyle] cache HIT for "${styleNumber}" (shop ${shopOwner})`);
+        return Response.json(cached, { headers: CORS });
+      }
+    }
+
     // Resolve per-shop or global S&S credentials
     const requestAuth = await resolveSSAuth(accessToken || authHeader, shopOwner);
 
@@ -429,6 +454,12 @@ Deno.serve(async (req) => {
 
     const response: any = { matches };
     if (debug) response._debug = logs;
+
+    // Cache only clean, non-empty successful results. Never cache errors or
+    // empty match sets, so a transient supplier hiccup can't be memoized.
+    if (cacheable && cacheAdmin && matches.length > 0) {
+      await writeSupplierCache(cacheAdmin, { supplier: "ss", shopOwner, cacheKey }, { matches });
+    }
 
     return Response.json(response, { headers: CORS });
   } catch (err) {

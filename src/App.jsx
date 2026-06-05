@@ -7,11 +7,13 @@ import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import Changelog from "./pages/Changelog.jsx";
 import Security from "./pages/Security.jsx";
+import Support from "./pages/Support.jsx";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import { pagesConfig } from "./pages.config";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
 import PageNotFound from "./lib/PageNotFound";
+import CookieConsent from "@/components/CookieConsent";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
@@ -335,7 +337,7 @@ function PublicLandingPage() {
     { q: "Can I import data from Printavo, Shopworks, or another shop tool?", a: "Not via a self-serve CSV upload yet — but email support@inktracker.app with an export from your old platform and we'll port your customers, quotes, or orders over manually. Self-serve import is on the roadmap." },
     { q: "Does this work for embroidery shops, or only screen printing?", a: "Both. Quote-to-invoice, customer management, production tracking, and QuickBooks sync work the same for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap." },
     { q: "What happens to my data if I cancel?", a: "Yours, always. Export everything — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation." },
-    { q: "Is there a long-term contract?", a: "No. Month-to-month, cancel anytime. Founding-rate plans aren't transferable after cancellation; re-signups pay the standard $99/mo (or $999/year)." },
+    { q: "Is there a long-term contract?", a: "No. Month-to-month, cancel anytime." },
     { q: "How do I know InkTracker won't disappear in six months?", a: "Biota Mfg has been printing in the Reno/Tahoe area for ten years and we run the shop on InkTracker daily. If it stops being maintained, our own production stops. The financial structure also funds long-horizon land-conservation work — both keep this project on a multi-year commitment." },
     { q: "How does the conservation contribution actually work?", a: "A piece of every subscription is allocated to a long-term land-conservation fund operated by Biota Mfg. The full five-year plan — how funds are set aside, deployed, and reported — lives at biotamfg.com/pages/wildways." },
   ];
@@ -754,7 +756,7 @@ function PublicLandingPage() {
                 {
                   label: "Imprints",
                   title: "Color tiers + setup fees",
-                  body: "Screen-print pricing climbs by ink count using your shop's tier table. Setups apply per imprint location, not per shirt. Embroidery stitch counts price the same way.",
+                  body: "Screen-print pricing climbs by screen count using your shop's tier table. Setups apply per imprint location, not per shirt. Embroidery stitch counts price the same way.",
                 },
                 {
                   label: "Brokers",
@@ -1022,11 +1024,20 @@ function PublicLandingPage() {
                 ["#wildways", "Wildways"],
                 ["#pricing", "Pricing"],
                 ["#faq", "FAQ"],
-                ["mailto:support@inktracker.app", "Support"],
+                ["/support", "Support"],
+                ["/security", "Security"],
                 ["/privacy", "Privacy"],
                 ["/terms", "Terms"],
+                ["https://status.inktracker.app", "Status"],
               ].map(([href, label]) => (
-                <a key={label} href={href} className={navLink} style={{ color: MUTED }}>
+                <a
+                  key={label}
+                  href={href}
+                  target={href.startsWith("http") ? "_blank" : undefined}
+                  rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
+                  className={navLink}
+                  style={{ color: MUTED }}
+                >
                   {label}
                 </a>
               ))}
@@ -1283,6 +1294,7 @@ function AppRoutes() {
         <Route path="/terms" element={<Terms />} />
         <Route path="/changelog" element={<Changelog />} />
         <Route path="/security" element={<Security />} />
+        <Route path="/support" element={<Support />} />
 
         <Route path="*" element={<PageNotFound />} />
       </Routes>
@@ -1410,6 +1422,7 @@ function App() {
           <ErrorBoundary>
             <PublicRouteGuard />
           </ErrorBoundary>
+          <CookieConsent />
         </Router>
         <Toaster />
       </QueryClientProvider>

@@ -146,13 +146,65 @@ export default function Invoices() {
   const filteredTotal = filtered.reduce((s, i) => s + (i.total || 0), 0);
 
   async function markPaid(id) {
+    const invoice = invoices.find((i) => i.id === id);
+    // QB-synced invoices: push the payment through to QB so the two
+    // systems stay in sync. Without this, the InkTracker invoice flips
+    // to paid while the QB invoice still shows an open balance — and
+    // anyone looking at QB sees the customer still owes us.
+    if (invoice?.qb_invoice_id) {
+      const docLabel = invoice.qb_doc_number || `#${invoice.qb_invoice_id}`;
+      const amount = Number(invoice.total) || 0;
+      const proceed = window.confirm(
+        `Record ${fmtMoney(amount)} payment in QuickBooks for invoice ${docLabel}?\n\n` +
+        `This posts a Payment to QB linked to that invoice, marks both QB and InkTracker as paid, and does NOT email the customer. ` +
+        `If the customer already paid via the QB portal link, we'll detect that and just sync the local state without double-counting.\n\n` +
+        `Continue?`
+      );
+      if (!proceed) return;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const { data, error } = await supabase.functions.invoke("qbSync", {
+          body: {
+            action: "recordPayment",
+            accessToken: session?.access_token,
+            invoice_id: id,
+            qb_invoice_id: invoice.qb_invoice_id,
+          },
+        });
+        if (error) throw new Error(error.message || "QB payment record failed");
+        if (data?.error) throw new Error(data.error);
+        // Re-pull the row — the edge function patched it server-side.
+        const refreshed = await base44.entities.Invoice.get(id);
+        setInvoices(prev => prev.map(i => i.id === id ? refreshed : i));
+        return;
+      } catch (err) {
+        console.error("[markPaid] QB push failed:", err);
+        window.alert(
+          `Couldn't record the payment in QuickBooks: ${err.message || "unknown error"}.\n\n` +
+          `The InkTracker invoice was NOT marked paid to avoid drift. Open QuickBooks → Receive Payment to record it manually, then refresh.`
+        );
+        return;
+      }
+    }
+    // No QB linkage: local-only flip (unchanged behavior).
     const updated = await base44.entities.Invoice.update(id, { paid: true, paid_date: tod() });
     setInvoices(prev => prev.map(i => i.id === id ? updated : i));
   }
 
   async function handleDelete(id) {
-    if (!window.confirm("Delete this invoice? This cannot be undone.")) return;
     const invoice = invoices.find((i) => i.id === id);
+    // QB-synced invoices: deleting the InkTracker row leaves the QB
+    // invoice intact (and still collecting on the customer-facing pay
+    // link). Operators need to delete it inside QuickBooks first or the
+    // two systems silently drift. Make the prompt unambiguous about it.
+    const isQbSynced = Boolean(invoice?.qb_invoice_id);
+    const message = isQbSynced
+      ? `This invoice is synced to QuickBooks (${invoice.qb_doc_number || `#${invoice.qb_invoice_id}`}).\n\n` +
+        `Deleting it here will NOT delete it in QuickBooks — the QB invoice and its payment link stay live, and your customer can still pay. ` +
+        `To fully remove the invoice, delete it inside QuickBooks first, then remove it here.\n\n` +
+        `Continue removing this row from InkTracker anyway?`
+      : "Delete this invoice? This cannot be undone.";
+    if (!window.confirm(message)) return;
     await base44.entities.Invoice.delete(id);
     setInvoices(prev => prev.filter(i => i.id !== id));
     setSelected(null);

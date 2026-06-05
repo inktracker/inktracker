@@ -20,6 +20,7 @@ import {
   buildQbSendInvoiceUrl,
   stripDocNumberRevision,
   isQbInvoicePaid,
+  buildUpdateFailureResponse,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -31,6 +32,29 @@ import {
   recordShopNotification,
   buildQbDriftNotification,
 } from "../_shared/shopNotifications.js";
+import { withQbAudit, logEvent } from "../_shared/qbAudit.js";
+import {
+  withQbIdempotency,
+  IDEMPOTENCY_OUTCOMES,
+} from "../_shared/qbIdempotency.js";
+import {
+  buildQuotePatchFromFreshInvoice,
+  decideRefreshConversion,
+  REFRESH_CONVERSION,
+} from "../_shared/qbRefreshLogic.js";
+import {
+  classifyLinkInput,
+  chooseInvoiceCandidate,
+  buildLinkPatch,
+  LINK_INPUT_KIND,
+  LINK_OUTCOMES,
+} from "../_shared/qbLinkLogic.js";
+import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
+import {
+  chooseQuotePaymentRecipient,
+  buildQuotePaymentEmail,
+  sendAndLogApprovalNotification,
+} from "../_shared/approvalNotificationEmail.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -602,8 +626,13 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         `(Balance=0 of $${Number(existingInv.TotalAmt ?? 0)}). ` +
         `Refusing to resync — would create a duplicate -rN.`,
       );
+      // Return a PLAIN object — the dispatcher spreads it into
+      // Response.json({success: true, ...result}). Returning a
+      // Response instance here would lose every field via the spread
+      // (Response has no own enumerable props) and the frontend's
+      // alreadyPaid banner would never fire.
       const paymentLink = sharedExtractPaymentLink(existingInv);
-      return Response.json({
+      return {
         qbInvoiceId,
         paymentLink: paymentLink ?? null,
         linkFailureReason: null,
@@ -611,7 +640,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         alreadyPaidMessage:
           `This quote already has a paid QuickBooks invoice (#${existingInv.DocNumber ?? qbInvoiceId}). ` +
           `No new invoice was created.`,
-      }, { headers: CORS });
+      };
     }
 
     if (!existingInv) {
@@ -646,13 +675,36 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         qbInvoiceFinal = updated?.Invoice ?? updated;
         qbInvoiceId = String(qbInvoiceFinal?.Id || qbInvoiceId);
       } catch (updateErr: any) {
-        // The existing invoice is NOT paid (paid-state guard above would
-        // have returned) but QB still refused the update — could be a
-        // locked record, voided invoice, or transient API error.
-        // Falling through to CREATE is safe at this point because we've
-        // already proven the original carries no customer payment.
-        console.error(`[createInvoice] Update failed, creating new invoice:`, updateErr?.message);
-        qbInvoiceId = "";
+        // ── HARD STOP: never silently create a duplicate ────────────
+        // Previous behavior (pre-2026-05-30) was to clear qbInvoiceId
+        // and fall through to CREATE here. That produced the Shana
+        // Krochmal Q-2026-F4O5 → Q-2026-F4O5-r2 split: the original
+        // invoice stayed UNPAID in InkTracker, the duplicate -r2
+        // collected the payment in QB, and the books diverged.
+        //
+        // The existing invoice is unpaid (we checked above) AND its
+        // row exists in QB (existingInv was truthy). An UPDATE failure
+        // here is a TRANSIENT or POLICY problem — not a "the link is
+        // stale" problem. The right answer is to surface the failure
+        // and let the operator choose: Refresh to re-pull state, fix
+        // the invoice manually in QB, or edit and retry.
+        //
+        // Note: there IS still one legitimate path to a -rN: when the
+        // stored qb_invoice_id genuinely doesn't resolve in QB (deleted
+        // by the operator), the `if (!existingInv)` branch above clears
+        // the id and the CREATE block downstream uses the next free
+        // DocNumber. That path is correct — no duplicate exists to
+        // collide with.
+        console.error(
+          `[createInvoice] Update failed for invoice ${qbInvoiceId}. ` +
+          `Refusing to create duplicate. Reason: ${updateErr?.message}`,
+        );
+        return buildUpdateFailureResponse({
+          qbInvoiceId,
+          qbDocNumber:        String(existingInv?.DocNumber || ""),
+          existingPaymentLink: sharedExtractPaymentLink(existingInv) ?? null,
+          updateErrMessage:    updateErr?.message,
+        });
       }
     }
   }
@@ -876,11 +928,19 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }
   }
 
-  // 5. Save QB invoice ID + payment link + final QB-computed totals back to the source record
+  // The DocNumber that was actually written to QB. Differs from quote.quote_id
+  // when a previous invoice with the same base existed and we created a
+  // versioned revision (e.g. Q-2026-115-r2).
+  const qbDocNumber = String(qbInvoiceFinal?.DocNumber || baseDocNumber);
+
+  // 5. Save QB invoice ID + DocNumber + payment link + final QB-computed
+  // totals back to the source record. Both ids matter — the internal id
+  // for API calls, the DocNumber for the operator-facing UI.
   if (quote.id) {
     // Try quotes table first (quote-originated invoices)
     await supabase.from("quotes").update({
       qb_invoice_id:   qbInvoiceId,
+      qb_doc_number:   qbDocNumber,
       qb_payment_link: paymentLink,
       qb_synced_at:    new Date().toISOString(),
       qb_subtotal:     qbSubtotal,
@@ -892,14 +952,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     // Also try invoices table (invoice-originated, same ID format)
     await supabase.from("invoices").update({
       qb_invoice_id:   qbInvoiceId,
+      qb_doc_number:   qbDocNumber,
       qb_payment_link: paymentLink,
     }).eq("id", quote.id);
   }
-
-  // The DocNumber that was actually written to QB. Differs from quote.quote_id
-  // when a previous invoice with the same base existed and we created a
-  // versioned revision (e.g. Q-2026-115-r2).
-  const qbDocNumber = String(qbInvoiceFinal?.DocNumber || baseDocNumber);
 
   return {
     qbInvoiceId,
@@ -1260,6 +1316,346 @@ async function handleCheckConnection(supabase: any, authId: string, email: strin
   return extractConnectionStatus(profile);
 }
 
+// ── Action: refreshInvoice ──────────────────────────────────────────────────
+// Pull current state from QB and reconcile back to the InkTracker quote.
+// Recovery primitive for missed webhooks + manual operator audits.
+//
+// Input:  { quote_id, qb_invoice_id? }
+//   quote_id is REQUIRED — we use it (and shop_owner) to fetch the
+//   quote row, then either trust the passed qb_invoice_id or read it
+//   from the row.
+//
+// Output: { refreshed: true, qbInvoice, patch, conversion: { action, reason, orderId? } }
+//
+// Side effects: writes the totals patch to the quotes row; if QB
+// reports the invoice fully paid AND the quote is not yet converted,
+// runs the same quote → order conversion that the webhook does.
+
+async function handleRefreshInvoice(
+  token: string,
+  realmId: string,
+  params: any,
+  adminClient: any,
+  shopOwnerEmail: string,
+) {
+  const quoteId = params?.quote_id;
+  if (!quoteId) throw new Error("refreshInvoice: quote_id is required");
+
+  // Always re-fetch the quote (don't trust client state — the row may
+  // have been updated between the user opening the modal and clicking
+  // Refresh).
+  const { data: quote, error: quoteErr } = await adminClient
+    .from("quotes")
+    .select("*")
+    .eq("id", quoteId)
+    .eq("shop_owner", shopOwnerEmail)
+    .maybeSingle();
+  if (quoteErr) throw new Error(`refreshInvoice: quote lookup failed: ${quoteErr.message}`);
+  if (!quote)   throw new Error(`refreshInvoice: quote ${quoteId} not found for this shop`);
+
+  const qbInvoiceId = params?.qb_invoice_id || quote.qb_invoice_id;
+  if (!qbInvoiceId) {
+    return {
+      refreshed: false,
+      reason: "no_qb_invoice_id",
+      message: "This quote isn't linked to a QuickBooks invoice yet. Create one or link an existing one first.",
+    };
+  }
+
+  // Fetch fresh state from QB.
+  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
+  const freshInvoice = resp?.QueryResponse?.Invoice?.[0] || null;
+  if (!freshInvoice) {
+    return {
+      refreshed: false,
+      reason: "qb_invoice_not_found",
+      message: `QuickBooks no longer has an invoice with Id ${qbInvoiceId}. It may have been deleted in QB.`,
+    };
+  }
+
+  // Patch quotes row with fresh QB-side totals + paid state.
+  const patch: any = buildQuotePatchFromFreshInvoice(freshInvoice, quote);
+  if (patch) {
+    await adminClient
+      .from("quotes")
+      .update(patch)
+      .eq("id", quote.id)
+      .eq("shop_owner", quote.shop_owner);
+  }
+
+  // Convert quote → order if newly paid + not already converted.
+  // Same idempotency contract as the webhook handler so a refresh and
+  // a webhook racing each other can't double-create an order.
+  const conversion = decideRefreshConversion(freshInvoice, quote);
+  let orderId: string | undefined;
+  if (conversion.action === REFRESH_CONVERSION.CONVERT) {
+    // Re-read the quote AFTER applying the patch so the order row
+    // carries the latest paid state (deposit_paid etc.).
+    const { data: latestQuote } = await adminClient
+      .from("quotes")
+      .select("*")
+      .eq("id", quote.id)
+      .eq("shop_owner", quote.shop_owner)
+      .maybeSingle();
+    orderId = await convertQuoteToOrder(adminClient, latestQuote || quote);
+
+    // Same payment-received notification the webhook would have sent,
+    // for the case where Refresh caught a payment the webhook missed.
+    // Best-effort: a Resend failure must not break the response.
+    try {
+      const q = latestQuote || quote;
+      const recipient = chooseQuotePaymentRecipient(q);
+      let email: any = null;
+      if (recipient) {
+        const { data: shopRow } = await adminClient
+          .from("shops")
+          .select("shop_name")
+          .eq("owner_email", q.shop_owner)
+          .maybeSingle();
+        email = buildQuotePaymentEmail({
+          quote: q, shop: shopRow, customer: null, recipient,
+          orderId, amountPaid: q.total,
+        });
+      }
+      await sendAndLogApprovalNotification(adminClient, {
+        shop_owner: q.shop_owner,
+        event_type: "quote_payment",
+        quote_id:   q.id,
+        recipient_email: recipient?.to ?? "",
+        recipient_role:  recipient?.role,
+        to:       recipient?.to,
+        subject:  email?.subject,
+        html:     email?.html,
+        reply_to: email?.reply_to,
+      });
+    } catch (notifyErr) {
+      console.error("[refreshInvoice] payment notification failed:", notifyErr);
+    }
+  }
+
+  return {
+    refreshed: true,
+    qbInvoiceId,
+    qbTotal:     Number(freshInvoice.TotalAmt ?? 0),
+    qbBalance:   Number(freshInvoice.Balance ?? 0),
+    paid:        patch?.paid ?? Boolean(quote.paid),
+    conversion: {
+      action: conversion.action,
+      reason: conversion.reason,
+      orderId,
+    },
+  };
+}
+
+// ── Action: linkQbInvoice ───────────────────────────────────────────────────
+// Operator pastes a QB invoice Id or DocNumber. We locate the invoice,
+// validate it's unambiguous, and write qb_invoice_id back to the
+// quote. Lets shops adopt QB invoices created outside InkTracker
+// (manual entry in QBO, migration from a prior system) without
+// double-billing the customer.
+
+async function handleLinkQbInvoice(
+  token: string,
+  realmId: string,
+  params: any,
+  adminClient: any,
+  shopOwnerEmail: string,
+) {
+  const quoteId = params?.quote_id;
+  const raw     = params?.qb_invoice_input;
+  if (!quoteId) throw new Error("linkQbInvoice: quote_id is required");
+
+  const classification = classifyLinkInput(raw);
+  if (classification.kind === LINK_INPUT_KIND.INVALID) {
+    return {
+      linked: false,
+      reason: "invalid_input",
+      message: "Type a QuickBooks invoice number (e.g. Q-2026-115) or numeric Id.",
+    };
+  }
+
+  // Search QB. Id lookup is exact; DocNumber lookup may return >1
+  // (QB doesn't enforce DocNumber uniqueness — we handle the
+  // ambiguous case downstream).
+  const where = classification.kind === LINK_INPUT_KIND.ID
+    ? `Id = '${escapeQbStringLiteral(classification.value)}'`
+    : `DocNumber = '${escapeQbStringLiteral(classification.value)}'`;
+  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE ${where}`);
+  const hits = resp?.QueryResponse?.Invoice ?? [];
+  const decision = chooseInvoiceCandidate(classification.kind, hits);
+
+  if (decision.outcome === LINK_OUTCOMES.NOT_FOUND) {
+    return {
+      linked: false,
+      reason: "not_found",
+      message: `No QuickBooks invoice matches "${classification.value}".`,
+    };
+  }
+  if (decision.outcome === LINK_OUTCOMES.AMBIGUOUS) {
+    return {
+      linked: false,
+      reason: "ambiguous",
+      message:
+        `Multiple QuickBooks invoices share DocNumber "${classification.value}" ` +
+        `(Ids: ${decision.candidateIds.join(", ")}). ` +
+        `Use the numeric Invoice Id instead to disambiguate.`,
+    };
+  }
+
+  const linkedInvoice = decision.invoice;
+  const patch: any = buildLinkPatch(linkedInvoice);
+
+  // Tenant-scoped write. Even though the caller is authenticated, the
+  // shop_owner filter ensures we never silently link a quote owned
+  // by a different tenant on a row-id collision.
+  const { error: updateErr } = await adminClient
+    .from("quotes")
+    .update(patch)
+    .eq("id", quoteId)
+    .eq("shop_owner", shopOwnerEmail);
+  if (updateErr) throw new Error(`linkQbInvoice: write failed: ${updateErr.message}`);
+
+  return {
+    linked: true,
+    qbInvoiceId: patch.qb_invoice_id,
+    qbDocNumber: linkedInvoice.DocNumber || null,
+    paid:        Boolean(patch.paid),
+    paymentLink: patch.qb_payment_link || null,
+  };
+}
+
+// ── Action: recordPayment ──────────────────────────────────────────────────
+// Operator clicked "Mark as Paid" on an InkTracker invoice/quote that's
+// linked to a QB invoice. Push the payment to QB so the two systems
+// stay in sync — without it, marking paid in InkTracker would silently
+// diverge from QB's still-open balance.
+//
+// Idempotent: if QB already shows Balance = 0 (the customer paid via the
+// portal link and the webhook hasn't caught up locally yet), skip the
+// create and just flip the local paid flag.
+//
+// Defaults: PaymentMethod is unset on the QB Payment — QB shows it as
+// "no payment method", which is fine for a generic "operator recorded
+// it" entry. Operator can edit in QB if they want to tag it cash/check.
+// PrivateNote names the originating InkTracker DocNumber for audit.
+async function handleRecordPayment(
+  token: string,
+  realmId: string,
+  params: any,
+  adminClient: any,
+  shopOwnerEmail: string,
+) {
+  const invoiceId = params?.invoice_id;
+  const quoteId   = params?.quote_id;
+  if (!invoiceId && !quoteId) {
+    throw new Error("recordPayment: invoice_id or quote_id is required");
+  }
+  const table = invoiceId ? "invoices" : "quotes";
+  const rowId = invoiceId || quoteId;
+
+  const { data: row, error: rowErr } = await adminClient
+    .from(table)
+    .select("*")
+    .eq("id", rowId)
+    .eq("shop_owner", shopOwnerEmail)
+    .maybeSingle();
+  if (rowErr) throw new Error(`recordPayment: ${table} lookup failed: ${rowErr.message}`);
+  if (!row)   throw new Error(`recordPayment: ${table} ${rowId} not found for this shop`);
+
+  const qbInvoiceId = row.qb_invoice_id;
+  if (!qbInvoiceId) {
+    return {
+      recorded: false,
+      reason: "no_qb_invoice_id",
+      message: "This row isn't linked to a QuickBooks invoice. Mark it paid locally only.",
+    };
+  }
+
+  // Pull current QB state — both for the idempotency guard and for the
+  // CustomerRef we need to attach to the Payment row.
+  const resp = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${qbInvoiceId}'`);
+  const freshInvoice = resp?.QueryResponse?.Invoice?.[0] || null;
+  if (!freshInvoice) {
+    return {
+      recorded: false,
+      reason: "qb_invoice_not_found",
+      message: `QuickBooks no longer has an invoice with Id ${qbInvoiceId}. It may have been deleted in QB.`,
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  const qbBalance = Number(freshInvoice.Balance ?? 0);
+  if (qbBalance === 0) {
+    // QB already paid — just sync local. No new Payment row to avoid double-counting.
+    await adminClient
+      .from(table)
+      .update({ paid: true, paid_date: nowIso, qb_synced_at: nowIso })
+      .eq("id", row.id)
+      .eq("shop_owner", shopOwnerEmail);
+    return {
+      recorded: false,
+      alreadyPaidInQb: true,
+      message: "QuickBooks already shows this invoice as paid. Local state synced.",
+    };
+  }
+
+  const customerRef = freshInvoice?.CustomerRef?.value;
+  if (!customerRef) throw new Error("recordPayment: QB invoice missing CustomerRef");
+
+  // Default: pay the remaining QB balance in full. Caller can override
+  // with params.amount for partial payments (not used in v1 UI but the
+  // server-side contract supports it).
+  const amount = Number(params?.amount ?? qbBalance);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("recordPayment: amount must be a positive number");
+  }
+
+  const docLabel = row.qb_doc_number || `Id ${qbInvoiceId}`;
+  const payment = await qbCreate(token, realmId, "payment", {
+    CustomerRef: { value: customerRef },
+    TotalAmt: amount,
+    PrivateNote: `InkTracker manual payment recorded for ${docLabel}`,
+    Line: [{
+      Amount: amount,
+      LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: "Invoice" }],
+    }],
+  });
+
+  await adminClient
+    .from(table)
+    .update({ paid: true, paid_date: nowIso, qb_synced_at: nowIso })
+    .eq("id", row.id)
+    .eq("shop_owner", shopOwnerEmail);
+
+  return {
+    recorded: true,
+    qbPaymentId: payment?.Payment?.Id ?? null,
+    qbDocNumber: row.qb_doc_number || null,
+    amount,
+  };
+}
+
+// ── Action: getQbEvents ─────────────────────────────────────────────────────
+// Returns the qb_event_log timeline for one quote, scoped by the
+// caller's shop_owner. Powers the "QB Events" tab in QuoteDetailModal.
+// Read-only — no writes, no side effects.
+
+async function handleGetQbEvents(adminClient: any, quoteId: string, shopOwnerEmail: string, limit: number) {
+  if (!quoteId) throw new Error("getQbEvents: quote_id is required");
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 50, 200));
+
+  const { data, error } = await adminClient
+    .from("qb_event_log")
+    .select("id, action, direction, status, qb_invoice_id, qb_customer_id, error_message, request_body, response_body, idempotency_key, duration_ms, created_at")
+    .eq("quote_id", quoteId)
+    .eq("shop_owner", shopOwnerEmail)
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (error) throw new Error(`getQbEvents: ${error.message}`);
+  return { events: data ?? [], count: data?.length ?? 0, limit: safeLimit };
+}
+
 // ── Main handler ────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -1289,6 +1685,29 @@ Deno.serve(async (req) => {
     if (action === "checkConnection") {
       const result = await handleCheckConnection(supabase, user.id, user.email ?? null);
       return Response.json(result, { headers: CORS });
+    }
+
+    // Hoisted ABOVE the subscription + token gates because:
+    //   - it's a pure DB read (no QB API call), so QB tokens irrelevant
+    //   - operators with a disconnected/expired QB connection still
+    //     need to view "what happened?" — gating this on a live QB
+    //     token would hide history exactly when they want it
+    //   - subscription-expired shops should still see their own audit
+    //     trail (read-only is not a billable QB write)
+    if (action === "getQbEvents") {
+      const adminClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      // Resolve the shop for tenant scoping without a token check.
+      const { data: shopProfile } = await supabase
+        .from("profiles")
+        .select("shop_owner, email")
+        .eq("auth_id", user.id)
+        .maybeSingle();
+      const shopOwnerEmail = shopProfile?.shop_owner || shopProfile?.email || user.email || "";
+      const result = await handleGetQbEvents(adminClient, params?.quote_id, shopOwnerEmail, params?.limit);
+      return Response.json({ success: true, ...result }, { headers: CORS });
     }
 
     if (action === "disconnect") {
@@ -1344,9 +1763,65 @@ Deno.serve(async (req) => {
 
     let result: any;
     switch (action) {
-      case "createInvoice":
-        result = await handleCreateInvoice(qbToken, realmId, params, supabase);
+      case "createInvoice": {
+        // ── Idempotency + audit envelope ─────────────────────────────
+        // Every createInvoice is wrapped twice:
+        //   (a) withQbIdempotency — short-circuits a duplicate request
+        //       carrying the same key within the 5-min TTL, returning
+        //       the cached result instead of firing QB again. This is
+        //       what prevents the "double-click Send creates two
+        //       invoices" race.
+        //   (b) withQbAudit — records start + completion rows in
+        //       qb_event_log around the actual QB write, so the
+        //       QuoteDetailModal "QB Events" tab can render the
+        //       provenance trail.
+        // Both wrappers need service-role access (the two tables are
+        // service-role-only). The audit/idempotency calls are
+        // best-effort: if the log/cache write fails, the QB call
+        // still runs and the caller still gets its result.
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const quote        = params?.quote ?? {};
+        const idempKey     = params?.idempotencyKey ?? null;
+        const quoteShop    = quote?.shop_owner || shopOwnerEmail;
+        const auditCtx = {
+          shop_owner:      quoteShop,
+          action:          "create_invoice",
+          quote_id:        quote?.id ?? null,
+          qb_invoice_id:   quote?.qb_invoice_id ?? null,
+          idempotency_key: idempKey,
+          request_body: {
+            quote_id:       quote?.quote_id,
+            customer_email: quote?.customer_email,
+            total:          params?.invoicePayload?.total,
+            line_count:     params?.invoicePayload?.lines?.length,
+            has_deposit:    Boolean(quote?.deposit_paid),
+          },
+        };
+        const idempOutcome = await withQbIdempotency(
+          adminClient,
+          idempKey,
+          { shop_owner: quoteShop, action: "create_invoice" },
+          () => withQbAudit(adminClient, auditCtx, () =>
+            handleCreateInvoice(qbToken, realmId, params, supabase),
+          ),
+        );
+        if (idempOutcome.outcome === IDEMPOTENCY_OUTCOMES.IN_FLIGHT) {
+          // Another request with the same key is mid-flight. Don't
+          // fire a parallel QB write. The caller surfaces a
+          // "already creating, refresh in a moment" hint.
+          result = {
+            inFlight: true,
+            message: "Another request with the same idempotency key is still processing.",
+          };
+          break;
+        }
+        result = idempOutcome.result;
+        if (idempOutcome.fromCache) result = { ...result, fromCache: true };
         break;
+      }
       case "syncCustomer": {
         const { customer } = params;
         if (!customer) throw new Error("Missing customer payload");
@@ -1402,6 +1877,60 @@ Deno.serve(async (req) => {
         } else {
           result = { deactivated: false, reason: "Customer not found in QB" };
         }
+        break;
+      }
+      case "refreshInvoice": {
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const auditCtx = {
+          shop_owner:    shopOwnerEmail,
+          action:        "refresh_invoice",
+          quote_id:      params?.quote_id ?? null,
+          qb_invoice_id: params?.qb_invoice_id ?? null,
+          request_body:  { quote_id: params?.quote_id, qb_invoice_id: params?.qb_invoice_id },
+        };
+        result = await withQbAudit(adminClient, auditCtx, () =>
+          handleRefreshInvoice(qbToken, realmId, params, adminClient, shopOwnerEmail),
+        );
+        break;
+      }
+      case "linkQbInvoice": {
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const auditCtx = {
+          shop_owner:   shopOwnerEmail,
+          action:       "link_qb_invoice",
+          quote_id:     params?.quote_id ?? null,
+          request_body: { quote_id: params?.quote_id, qb_invoice_input: params?.qb_invoice_input },
+        };
+        result = await withQbAudit(adminClient, auditCtx, () =>
+          handleLinkQbInvoice(qbToken, realmId, params, adminClient, shopOwnerEmail),
+        );
+        break;
+      }
+      case "recordPayment": {
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const auditCtx = {
+          shop_owner:    shopOwnerEmail,
+          action:        "record_payment",
+          quote_id:      params?.quote_id ?? null,
+          qb_invoice_id: params?.qb_invoice_id ?? null,
+          request_body:  {
+            invoice_id: params?.invoice_id,
+            quote_id:   params?.quote_id,
+            amount:     params?.amount ?? null,
+          },
+        };
+        result = await withQbAudit(adminClient, auditCtx, () =>
+          handleRecordPayment(qbToken, realmId, params, adminClient, shopOwnerEmail),
+        );
         break;
       }
       default:

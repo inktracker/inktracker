@@ -1,6 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
 import { claimWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
+import { sendApprovalNotification } from "../_shared/approvalNotificationEmail.js";
+import { buildTrialWillEndEmail } from "../_shared/trialWillEndEmail.js";
 
 // Prefer prod key over test — matches `billing/index.ts`. If both are set
 // (during local testing), prod wins. Previously this preferred test, which
@@ -115,24 +117,11 @@ Deno.serve(async (req) => {
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         const customerId = sub.customer as string;
-
-        // Founding-member forfeit. When the canceled subscription was
-        // on the founding rate (metadata.is_founding=true OR profile
-        // currently flagged is_founding_member), set
-        // founding_rate_forfeited=true so claim_founding_slot refuses
-        // any re-signup. The forfeit is permanent — re-signups always
-        // pay the standard $149 rate.
-        const wasFounding = sub.metadata?.is_founding === "true";
-        const updates: Record<string, unknown> = {
+        await updateProfileByCustomer(customerId, {
           subscription_tier: "expired",
           subscription_status: "canceled",
           stripe_subscription_id: null,
-        };
-        if (wasFounding) {
-          updates.founding_rate_forfeited = true;
-          updates.is_founding_member = false;
-        }
-        await updateProfileByCustomer(customerId, updates);
+        });
         break;
       }
 
@@ -143,6 +132,48 @@ Deno.serve(async (req) => {
         await updateProfileByCustomer(customerId, {
           subscription_status: "past_due",
         });
+        break;
+      }
+
+      case "customer.subscription.trial_will_end": {
+        // Stripe fires this 3 days before a subscription's trial ends.
+        // Since billing/index.ts syncs the Stripe trial to whatever's
+        // left of the in-app 14-day trial, this lands as a 3-day
+        // warning email. Only reaches subs created via Stripe checkout
+        // — never-subscribed-yet users are warned by the in-app banner
+        // (src/components/TrialStatusBanner.jsx).
+        //
+        // Best-effort: a Resend failure must not return a non-2xx,
+        // because Stripe would retry forever and we'd never advance
+        // past this event.
+        const sub = event.data.object as Stripe.Subscription;
+        const customerId = sub.customer as string;
+        try {
+          const supabase = adminClient();
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("shop_owner, shop_name, trial_ends_at")
+            .eq("stripe_customer_id", customerId)
+            .maybeSingle();
+          const recipient = profile?.shop_owner;
+          if (recipient) {
+            const trialEnd = sub.trial_end
+              ? new Date(sub.trial_end * 1000)
+              : (profile.trial_ends_at ? new Date(profile.trial_ends_at) : null);
+            const trialEndsOn = trialEnd && Number.isFinite(trialEnd.getTime())
+              ? trialEnd.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+              : null;
+            const { subject, html } = buildTrialWillEndEmail({
+              shopName: profile.shop_name,
+              trialEndsOn,
+            });
+            await sendApprovalNotification({ to: recipient, subject, html });
+          } else {
+            console.warn(`[billingWebhook] trial_will_end: no profile for customer ${customerId}`);
+          }
+        } catch (notifyErr) {
+          console.error("[billingWebhook] trial_will_end notification failed:", notifyErr);
+        }
         break;
       }
     }

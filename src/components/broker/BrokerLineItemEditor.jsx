@@ -3,11 +3,11 @@ import {
   SIZES,
   BIG_SIZES,
   LOCATIONS,
-  TECHNIQUES,
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
   getQty,
   getShopPricingConfig,
+  getEnabledTechniques,
   uid,
 } from "../shared/pricing";
 import BrokerPricePanel from "./BrokerPricePanel";
@@ -370,6 +370,7 @@ export default function BrokerLineItemEditor({
   extras,
   allLineItems = [],
   savedImprints = [],
+  shopPricingConfig,
   onChange: _rawOnChange,
   onRemove,
   onDuplicate,
@@ -886,7 +887,7 @@ export default function BrokerLineItemEditor({
                           onChange={(e) => updateImprint(idx, { technique: e.target.value })}
                           className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                         >
-                          {TECHNIQUES.map((t) => (
+                          {getEnabledTechniques(shopPricingConfig).map((t) => (
                             <option key={t}>{t}</option>
                           ))}
                         </select>

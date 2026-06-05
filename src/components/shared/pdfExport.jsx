@@ -21,6 +21,136 @@ function loadJsPDF() {
   return _jsPdfPromise;
 }
 
+let _pdfLibPromise;
+function loadPdfLib() {
+  if (!_pdfLibPromise) _pdfLibPromise = import('pdf-lib');
+  return _pdfLibPromise;
+}
+
+function normalizeArtworkList(record) {
+  return (record?.selected_artwork || [])
+    .filter(Boolean)
+    .map(a => ({
+      name: a.name || a.artwork_name || 'Artwork',
+      url:  a.url  || a.file_url     || a.artwork_url || '',
+    }))
+    .filter(a => a.url);
+}
+
+// Final output stage. Merges any PDF artwork on the record into the
+// generated jsPDF using pdf-lib, then ships the result in the
+// requested form. Image attachments are handled separately by
+// `appendArtworkPages` (which uses jsPDF.addImage). This handles the
+// PDF case — including proofs we generated from the Mockup designer
+// and stored back on the record's selected_artwork.
+//
+// pdf-lib failure is non-fatal: we ship the un-merged jsPDF bytes
+// rather than blow up the whole export.
+//   output = 'base64' → base64 string with no data: prefix
+//   output = 'blob'   → blob URL (caller revokes)
+//   otherwise         → triggers a download via the given filename
+async function finalizePdf(doc, record, output, filename) {
+  let bytes = doc.output('arraybuffer');
+  const pdfAttachments = normalizeArtworkList(record).filter(a =>
+    /\.pdf(\?|$)/i.test(a.url)
+  );
+
+  if (pdfAttachments.length > 0) {
+    try {
+      const { PDFDocument } = await loadPdfLib();
+      const merged = await PDFDocument.load(bytes);
+      for (const att of pdfAttachments) {
+        try {
+          const resp = await fetch(att.url);
+          if (!resp.ok) continue;
+          const ab = await resp.arrayBuffer();
+          const src = await PDFDocument.load(ab);
+          const pages = await merged.copyPages(src, src.getPageIndices());
+          for (const p of pages) merged.addPage(p);
+        } catch {
+          // Skip this attachment — bad URL, encrypted PDF, etc.
+        }
+      }
+      bytes = await merged.save();
+    } catch {
+      // pdf-lib failure → ship the un-merged jsPDF bytes.
+    }
+  }
+
+  if (output === 'base64') {
+    let s = '';
+    const u8 = new Uint8Array(bytes);
+    for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+    return btoa(s);
+  }
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  if (output === 'blob') return URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  return null;
+}
+
+// Appends one extra page per attached raster artwork file on the
+// record. Used by both quote and order PDF exports so a single PDF
+// carries the document AND the customer's source art together —
+// instead of the customer needing to dig links out of the email.
+// PDF attachments are handled by finalizePdf (pdf-lib merge) instead.
+// Image load is best-effort: a CORS / 404 / decode error on one file
+// silently skips that page rather than aborting the whole PDF.
+async function appendArtworkPages(doc, record) {
+  const items = normalizeArtworkList(record);
+  if (items.length === 0) return;
+
+  const pw = doc.internal.pageSize.getWidth();
+  const ph = doc.internal.pageSize.getHeight();
+  const m = 15;
+  const cw = pw - m * 2;
+
+  for (const art of items) {
+    const isRaster = /\.(png|jpe?g|webp)(\?|$)/i.test(art.url);
+    if (!isRaster) continue;
+    let img;
+    try {
+      img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.crossOrigin = 'anonymous';
+        i.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = i.width;
+          c.height = i.height;
+          c.getContext('2d').drawImage(i, 0, 0);
+          resolve({ dataUrl: c.toDataURL('image/png'), w: i.width, h: i.height });
+        };
+        i.onerror = reject;
+        i.src = art.url;
+      });
+    } catch {
+      continue;
+    }
+
+    doc.addPage();
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(80, 80, 80);
+    doc.text('ATTACHED ARTWORK', m, m + 4);
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 0);
+    doc.text(art.name, m, m + 16);
+
+    const maxW = cw;
+    const maxH = ph - (m + 24) - m;
+    const scale = Math.min(maxW / img.w, maxH / img.h, 1);
+    const drawW = img.w * scale;
+    const drawH = img.h * scale;
+    const drawX = m + (cw - drawW) / 2;
+    const drawY = m + 24;
+    doc.addImage(img.dataUrl, 'PNG', drawX, drawY, drawW, drawH);
+  }
+}
+
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
 }
@@ -850,18 +980,11 @@ export async function exportQuoteToPDF(
     quotePdfLineTotals.length > 0 ? quotePdfLineTotals.reduce((s, v) => s + v, 0) : null
   );
 
+  await appendArtworkPages(doc, quote);
+
   const fileId = quote.quote_id || 'quote';
   const fileName = isClientMode ? `Quote-Client-${fileId}.pdf` : `Quote-Shop-${fileId}.pdf`;
-  if (output === 'base64') {
-    const raw = doc.output('datauristring');
-    return raw.split(',')[1];
-  }
-  if (output === 'blob') {
-    const blob = doc.output('blob');
-    return URL.createObjectURL(blob);
-  }
-  doc.save(fileName);
-  return null;
+  return finalizePdf(doc, quote, output, fileName);
 }
 
 export async function exportOrderToPDF(order, shopName, logoUrl, output) {
@@ -998,11 +1121,8 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output) {
     }
   }
 
-  if (output === 'blob') {
-    const blob = doc.output('blob');
-    return URL.createObjectURL(blob);
-  }
-  doc.save(`Order-${order.order_id}.pdf`);
+  await appendArtworkPages(doc, order);
+  return finalizePdf(doc, order, output, `Order-${order.order_id}.pdf`);
 }
 
 // QB-style invoice layout — clean tabular DESCRIPTION/QTY/RATE/AMOUNT rows

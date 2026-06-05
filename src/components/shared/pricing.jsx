@@ -1,3 +1,5 @@
+import { todayInShopTz } from "@/lib/shopTimezone";
+
 export const FIRST_PRINT = {
   1: { 25: 6.3, 50: 5.67, 100: 5.22, 200: 4.9 },
   2: { 25: 6.93, 50: 6.24, 100: 5.77, 200: 5.48 },
@@ -51,9 +53,19 @@ export const ALL_TECHNIQUES = ["Screen Print", "DTG", "Embroidery", "DTF", "Heat
 //   2. Legacy configs from before the enabled flag existed.
 // If neither flag nor pricing exists, embroidery stays hidden so a
 // shop that doesn't do it doesn't accidentally pick it on a quote.
-export function getEnabledTechniques() {
+export function getEnabledTechniques(configOverride) {
+  // `configOverride` lets a caller (e.g. BrokerDashboard) pass the
+  // shop's pricing_config DIRECTLY instead of relying on the
+  // module-level `_pc`. React doesn't track changes to `_pc`, so any
+  // component that calls getEnabledTechniques() during render and
+  // mounted BEFORE _pc was hydrated would be stuck on Screen Print
+  // until something else re-rendered it. The broker quote editor hit
+  // exactly this bug 2026-06-02 — embroidery never appeared in the
+  // technique dropdown because _pc was still null on the first render.
+  // Passing the config explicitly makes it React-tracked state.
+  const pc = configOverride ?? _pc;
   const enabled = ["Screen Print"];
-  const emb = _pc?.embroidery;
+  const emb = pc?.embroidery;
   const hasPricing = emb?.pricing && Object.keys(emb.pricing).length > 0;
   if (emb?.enabled || hasPricing) enabled.push("Embroidery");
   // Future: add DTG, DTF, etc. when those pricing tabs are built
@@ -71,7 +83,19 @@ export const O_STATUSES = ["Art Approval", "Order Goods", "Pre-Press", "Printing
 
 export const STANDARD_MARKUP = 1.4;
 export const BROKER_MARKUP = 1.2;
-export const BROKER_MARKUP_SHARE = 0.2;
+// brokerMarkupShare semantics: % DISCOUNT off the shop's standard
+// markup that brokers receive on their wholesale rate.
+//   0.0 = no discount (broker pays full retail, $0 spread)
+//   1.0 = full discount (broker pays raw cost, keeps the entire markup)
+// Default 0.5 = 50/50 split — broker gets half the markup as their
+// spread, shop keeps the other half. Set 2026-06-03.
+//
+// Fixed 2026-06-03: the formula was previously inverted relative to
+// the labeled UX. The Account UI said "higher = lower wholesale" but
+// the math did the opposite. Joe set 80% expecting a big broker
+// discount and got the smallest possible spread (8% of cost). After
+// the fix his 0.8 setting correctly applies an 80% discount.
+export const BROKER_MARKUP_SHARE = 0.5;
 
 // Per-shop pricing config — set via loadShopPricingConfig() on app startup.
 // When null, all functions use the hardcoded defaults above.
@@ -82,6 +106,19 @@ export function loadShopPricingConfig(config) {
 }
 
 export function getShopPricingConfig() { return _pc; }
+
+// Minimum order quantity per garment — derived from the shop's first
+// screen-print tier. Defaults to 25 (the platform default tier) when
+// no pricing config is loaded. Drives the wizard's "MIN X PCS" badge,
+// per-garment quantity validation, and the est-quantity placeholder.
+export function getMinOrderQty() {
+  const tiers = _pc?.tiers;
+  if (Array.isArray(tiers) && tiers.length > 0) {
+    const first = Number(tiers[0]);
+    if (Number.isFinite(first) && first > 0) return first;
+  }
+  return 25;
+}
 
 
 export function getTier(qty) {
@@ -148,9 +185,18 @@ export function getBrokerMarkupShare() {
 }
 
 export function getBrokerMarkup(garmentCost, share) {
+  // `share` is the broker's % DISCOUNT off the shop's standard markup.
+  // The broker pays (1 - share) of the standard markup spread above
+  // raw cost:
+  //   share = 0   → broker pays full markup (no discount, no spread)
+  //   share = 1   → broker pays raw cost (full discount, keeps all markup)
+  //   share = 0.8 → broker pays 20% of the markup spread, keeps 80%
+  // Pre-2026-06-03 the formula used `share` directly, which inverted
+  // the UX — higher input gave smaller broker discount. See the
+  // BROKER_MARKUP_SHARE constant header for the bug story.
   const s = share ?? getBrokerMarkupShare();
   const adminMarkup = getAdminMarkup(garmentCost);
-  return 1 + ((adminMarkup - 1) * s);
+  return 1 + ((adminMarkup - 1) * (1 - s));
 }
 
 export function getMarkup(garmentCost, isBroker = false) {
@@ -174,8 +220,19 @@ export function uid() {
   return Math.random().toString(36).slice(2, 9);
 }
 
+// "Today" as a YYYY-MM-DD string, scoped to the shop's configured
+// timezone. The historical implementation used new Date().toISOString()
+// which returns the UTC date — wrong for any shop west of London past
+// 5pm local. A shop in Reno writing a quote at 6pm Pacific got a quote
+// stamped with tomorrow's UTC date, which then sorted into tomorrow's
+// calendar slot. Same bug class fixed in Production/Orders earlier
+// (handleAdvance + handleComplete).
+//
+// Falls through to the browser tz when no shop tz is set —
+// shopTimezone.js has the precedence rules. Import is at the top
+// of the file.
 export function tod() {
-  return new Date().toISOString().split("T")[0];
+  return todayInShopTz();
 }
 
 export function getDisplayName(customer) {
