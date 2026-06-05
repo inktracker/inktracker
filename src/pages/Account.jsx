@@ -2240,6 +2240,8 @@ function PricingConfigSection({ user }) {
         "15K+":     { 12: 15.00, 24: 13.50, 48: 12.00, 72: 10.75, 144: 9.75 },
       },
       extras: { puffEmbroidery: 2.0, metallicThread: 1.5, applique: 3.0 },
+      extraLabels: { puffEmbroidery: "Puff / 3D Embroidery", metallicThread: "Metallic Thread", applique: "Applique" },
+      extraModes: { puffEmbroidery: "flat", metallicThread: "flat", applique: "flat" },
     },
   };
 
@@ -2331,10 +2333,14 @@ function PricingConfigSection({ user }) {
   // tools bolted together.
   function getSlice(cfg, scope) {
     if (!scope) return cfg || {};
+    if (scope === "embroidery") return cfg?.embroidery || {};
     return cfg?.custom_techniques?.[scope] || {};
   }
   function setSlice(prev, scope, patch) {
     if (!scope) return { ...prev, ...patch };
+    if (scope === "embroidery") {
+      return { ...prev, embroidery: { ...(prev.embroidery || {}), ...patch } };
+    }
     return {
       ...prev,
       custom_techniques: {
@@ -2396,6 +2402,78 @@ function PricingConfigSection({ user }) {
         extraLabels: { ...(slice.extraLabels || {}), [key]: label },
       });
     });
+  }
+
+  // Single editor for any technique's extras. Same row layout
+  // (label | $/% toggle | value | × remove) and + Add fee button
+  // everywhere — Screen Print, Embroidery, and any custom method.
+  // The scope-aware handlers above route writes to the right slice.
+  function renderExtrasEditor(scope, opts = {}) {
+    const slice = getSlice(config, scope);
+    const extras = slice.extras || {};
+    const extraLabels = slice.extraLabels || {};
+    const extraModes = slice.extraModes || {};
+    const title = opts.title ?? "Extra Fees (per piece)";
+    const description = opts.description ?? "Rename, reprice, or remove fees. Toggle the $ / % button to charge a flat dollar amount per piece OR a percentage of the line's per-piece decoration cost.";
+    return (
+      <div>
+        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">{title}</h4>
+        <p className="text-[10px] text-slate-400 mb-2">{description}</p>
+        <div className="space-y-2">
+          {Object.entries(extras).map(([key, val]) => {
+            const mode = extraModes[key] === "percent" ? "percent" : "flat";
+            const isPercent = mode === "percent";
+            return (
+              <div key={key} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={extraLabels[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()}
+                  onChange={e => updateExtraLabel(key, e.target.value, scope)}
+                  className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                />
+                <div className="flex shrink-0 border border-slate-200 rounded overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setExtraMode(key, "flat", scope)}
+                    className={`text-xs font-semibold w-7 py-1.5 transition ${!isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}
+                    title="Flat dollar amount per piece"
+                  >$</button>
+                  <button
+                    type="button"
+                    onClick={() => setExtraMode(key, "percent", scope)}
+                    className={`text-xs font-semibold w-7 py-1.5 transition border-l border-slate-200 ${isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}
+                    title="Percent of the line's per-piece decoration cost"
+                  >%</button>
+                </div>
+                <div className="relative w-24 shrink-0">
+                  {!isPercent && <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>}
+                  <NumericInput
+                    value={val}
+                    onChange={(n) => updateExtra(key, n, scope)}
+                    min={0}
+                    max={isPercent ? 100 : 10000}
+                    label={`Extras → ${key}`}
+                    className={`w-full text-xs border border-slate-200 rounded py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300 ${isPercent ? "pl-2 pr-6" : "pl-5 pr-2"}`}
+                  />
+                  {isPercent && <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>}
+                </div>
+                <button
+                  onClick={() => removeExtra(key, scope)}
+                  className="text-slate-300 hover:text-red-500 transition text-sm px-1"
+                  title="Remove"
+                >&times;</button>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          onClick={() => addExtra(scope)}
+          className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-2 transition"
+        >
+          + Add fee
+        </button>
+      </div>
+    );
   }
 
   function addTier(scope) {
@@ -2545,15 +2623,6 @@ function PricingConfigSection({ user }) {
     }));
   }
 
-  function updateEmbroideryExtra(key, value) {
-    setConfig(prev => ({
-      ...prev,
-      embroidery: {
-        ...prev.embroidery,
-        extras: { ...prev.embroidery.extras, [key]: value },
-      },
-    }));
-  }
 
   if (loading || !config) return <div className="text-sm text-slate-400 py-4">Loading pricing config...</div>;
 
@@ -2910,82 +2979,9 @@ function PricingConfigSection({ user }) {
       {renderPrintTable("firstPrint", "First Print Location (per piece)")}
       {renderPrintTable("addlPrint", "Additional Print Locations (per piece)")}
 
-      {/* Extras & Fees */}
-      <div>
-        <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Extra Fees (per piece)</h4>
-        <p className="text-[10px] text-slate-400 mb-2">Rename, reprice, or remove fees. Toggle the $ / % button to charge a flat dollar amount per piece OR a percentage of the line's per-piece decoration cost.</p>
-        <div className="space-y-2">
-          {Object.entries(config.extras || {}).map(([key, val]) => {
-            const mode = config.extraModes?.[key] === "percent" ? "percent" : "flat";
-            const isPercent = mode === "percent";
-            return (
-              <div key={key} className="flex items-center gap-2">
-                <input type="text" value={config.extraLabels?.[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()}
-                  onChange={e => setConfig(prev => ({ ...prev, extraLabels: { ...(prev.extraLabels || {}), [key]: e.target.value } }))}
-                  className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                {/* Mode toggle. Defaults to "flat" — `extraModes` may be
-                    unset on shops that pre-date this feature. */}
-                <div className="flex shrink-0 border border-slate-200 rounded overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setConfig(prev => {
-                      const next = { ...prev, extraModes: { ...(prev.extraModes || {}) } };
-                      next.extraModes[key] = "flat";
-                      return next;
-                    })}
-                    className={`text-xs font-semibold w-7 py-1.5 transition ${!isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}
-                    title="Flat dollar amount per piece"
-                  >
-                    $
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfig(prev => {
-                      const next = { ...prev, extraModes: { ...(prev.extraModes || {}) } };
-                      next.extraModes[key] = "percent";
-                      return next;
-                    })}
-                    className={`text-xs font-semibold w-7 py-1.5 transition border-l border-slate-200 ${isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}
-                    title="Percent of the line's garment cost"
-                  >
-                    %
-                  </button>
-                </div>
-                <div className="relative w-24 shrink-0">
-                  {!isPercent && <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>}
-                  <NumericInput
-                    value={val}
-                    onChange={(n) => updateExtra(key, n)}
-                    min={0}
-                    max={isPercent ? 100 : 10000}
-                    label={`Extras → ${key}`}
-                    className={`w-full text-xs border border-slate-200 rounded py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300 ${isPercent ? "pl-2 pr-6" : "pl-5 pr-2"}`}
-                  />
-                  {isPercent && <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>}
-                </div>
-                <button onClick={() => setConfig(prev => {
-                  const next = { ...prev, extras: { ...prev.extras } };
-                  delete next.extras[key];
-                  if (next.extraLabels) { next.extraLabels = { ...next.extraLabels }; delete next.extraLabels[key]; }
-                  if (next.extraModes)  { next.extraModes  = { ...next.extraModes  }; delete next.extraModes[key]; }
-                  return next;
-                })} className="text-slate-300 hover:text-red-500 transition text-sm px-1" title="Remove">&times;</button>
-              </div>
-            );
-          })}
-        </div>
-        <button onClick={() => {
-          const id = `custom_${Date.now()}`;
-          setConfig(prev => ({
-            ...prev,
-            extras: { ...(prev.extras || {}), [id]: 0 },
-            extraLabels: { ...(prev.extraLabels || {}), [id]: "New Fee" },
-            extraModes: { ...(prev.extraModes || {}), [id]: "flat" },
-          }));
-        }} className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-2 transition">
-          + Add fee
-        </button>
-      </div>
+      {/* Extras & Fees — same editor used by Embroidery + each custom
+          method so the layout never drifts between tabs. */}
+      {renderExtrasEditor(null)}
 
       {/* Setup Fees — per-screen multiplier (list) */}
       <div className="border-t border-slate-100 dark:border-slate-700 pt-5 mt-5">
@@ -3192,32 +3188,14 @@ function PricingConfigSection({ user }) {
               </div>
             </div>
 
-            {/* Embroidery Extras */}
-            <div>
-              <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Embroidery Extras (per piece)</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {[
-                  { key: "puffEmbroidery", label: "Puff / 3D Embroidery" },
-                  { key: "metallicThread", label: "Metallic Thread" },
-                  { key: "applique", label: "Applique" },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <label className="text-[10px] text-slate-400 block mb-1">{label}</label>
-                    <div className="relative">
-                      <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-                      <NumericInput
-                        value={emb.extras?.[key]}
-                        onChange={(n) => updateEmbroideryExtra(key, n)}
-                        min={0}
-                        max={10000}
-                        label={`Embroidery extra → ${key}`}
-                        className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Embroidery Extras — same editor as Screen Print, scoped
+                to the embroidery slice. Existing rows without
+                extraLabels/extraModes fall back to camelCase→Title +
+                "flat" so the migration is implicit. */}
+            {renderExtrasEditor("embroidery", {
+              title: "Embroidery Extras (per piece)",
+              description: "Fees that only apply when an imprint's technique is Embroidery. Toggle $ / % per fee.",
+            })}
           </>}
         </div>
       )}
@@ -3245,8 +3223,6 @@ function PricingConfigSection({ user }) {
         }
 
         const techMaxC = tech.maxColors || maxColors;
-        const techExtras = tech.extras || {};
-        const techLabels = tech.extraLabels || {};
 
         return (
           <div className="space-y-5">
@@ -3287,39 +3263,10 @@ function PricingConfigSection({ user }) {
             {renderPrintTable("firstPrint", `First ${name} Location (per piece)`, name)}
             {renderPrintTable("addlPrint",  `Additional ${name} Locations (per piece)`, name)}
 
-            {/* Per-technique Extras */}
-            <div>
-              <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Extra Fees (per piece)</h4>
-              <p className="text-[10px] text-slate-400 mb-2">Fees only available on {name} imprints. Add new ones with the button below.</p>
-              <div className="space-y-2">
-                {Object.entries(techExtras).map(([key, val]) => (
-                  <div key={key} className="flex items-center gap-2">
-                    <input type="text" value={techLabels[key] || key.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()}
-                      onChange={e => updateExtraLabel(key, e.target.value, name)}
-                      className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                    <div className="relative w-24 shrink-0">
-                      <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
-                      <NumericInput
-                        value={val}
-                        onChange={(n) => updateExtra(key, n, name)}
-                        min={0}
-                        max={10000}
-                        label={`${name} extras → ${key}`}
-                        className="w-full text-xs border border-slate-200 rounded pl-5 pr-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
-                      />
-                    </div>
-                    <button
-                      onClick={() => removeExtra(key, name)}
-                      className="text-slate-300 hover:text-red-500 transition text-sm px-1"
-                      title="Remove"
-                    >&times;</button>
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => addExtra(name)} className="text-xs font-semibold text-teal-600 hover:text-teal-700 mt-2 transition">
-                + Add fee
-              </button>
-            </div>
+            {/* Per-technique Extras — same editor as Screen Print + Embroidery. */}
+            {renderExtrasEditor(name, {
+              description: `Fees that only apply when an imprint's technique is ${name}. Toggle $ / % per fee.`,
+            })}
           </div>
         );
       })()}
