@@ -88,6 +88,51 @@ describe("normalizePresses — color count handling", () => {
   });
 });
 
+describe("normalizePresses — JSON-stringified entries (double-encoded data)", () => {
+  // Bug surfaced 2026-06-05: some shops' shop.presses rows ended up
+  // with each press stored as a JSON-stringified object instead of a
+  // real JSONB object. Without the defensive unwrap, the entire
+  // `'{"name":"Riley Hopkins 360","colors":8}'` string was being
+  // shown as the press's name in the editor input. Pin the recovery.
+  it("unwraps a stringified v2 object back to { name, colors }", () => {
+    expect(normalizePresses(['{"name":"Riley Hopkins 360","colors":8}'])).toEqual([
+      { name: "Riley Hopkins 360", colors: 8 },
+    ]);
+  });
+
+  it("unwraps a stringified v2 object with no colors", () => {
+    expect(normalizePresses(['{"name":"Auto 1"}'])).toEqual([
+      { name: "Auto 1", colors: null },
+    ]);
+  });
+
+  it("treats a non-JSON brace-looking string as a plain name", () => {
+    // Defensive: shop accidentally typed `{Auto 1}` as a press name.
+    // We don't blow up; we treat it as a v1 name string.
+    expect(normalizePresses(["{Auto 1}"])).toEqual([
+      { name: "{Auto 1}", colors: null },
+    ]);
+  });
+
+  it("handles a stringified object with a numeric-string colors field", () => {
+    expect(normalizePresses(['{"name":"Auto 1","colors":"6"}'])).toEqual([
+      { name: "Auto 1", colors: 6 },
+    ]);
+  });
+
+  it("mixes string, object, and stringified-object entries in one save", () => {
+    expect(normalizePresses([
+      "Auto 1",
+      { name: "Manual A", colors: 6 },
+      '{"name":"Manual B","colors":4}',
+    ])).toEqual([
+      { name: "Auto 1", colors: null },
+      { name: "Manual A", colors: 6 },
+      { name: "Manual B", colors: 4 },
+    ]);
+  });
+});
+
 describe("serializePresses — write-back round-trip", () => {
   it("is idempotent — normalize → serialize → normalize is stable", () => {
     const input = ["Auto 1", { name: "Manual A", colors: "6" }, ""];
