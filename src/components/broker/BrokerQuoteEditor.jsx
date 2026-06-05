@@ -105,10 +105,20 @@ export default function BrokerQuoteEditor({
   onClose,
   onAddCustomer,
   shopAddons,
+  // Per-technique addons computed by BrokerDashboard from the
+  // assigned shop's pricing_config. When absent (early shops that
+  // haven't resaved) we fall back to the legacy flat shopAddons
+  // list seeded into the root scope.
+  shopAddonsByScope,
   shop,
   broker,
 }) {
   const addonsMeta = shopAddons?.length ? shopAddons : DEFAULT_EXTRAS_META;
+  const addonsByScope = shopAddonsByScope || {
+    root: addonsMeta,
+    embroidery: [],
+    custom: {},
+  };
   const [q, setQ] = useState(() => {
     if (quote) return withBrokerDefaults(quote);
     const base = blankQuote();
@@ -645,7 +655,7 @@ export default function BrokerQuoteEditor({
                 li={li}
                 rushRate={q.rush_rate}
                 extras={q.extras}
-                addonsMeta={addonsMeta}
+                addonsByScope={addonsByScope}
                 allLineItems={q.line_items}
                 savedImprints={selectedCustomer?.saved_imprints || []}
                 shopPricingConfig={shop?.pricing_config}

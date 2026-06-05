@@ -19,6 +19,7 @@ import {
   getRushTiers,
   getRushRateForDaysOut,
 } from "../shared/pricing";
+import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import LineItemEditor from "./LineItemEditor";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -136,7 +137,15 @@ export default function QuoteEditorModal({
 
   const [user, setUser] = useState(null);
   const [savedImprints, setSavedImprints] = useState([]);
-  const [addonsMeta, setAddonsMeta] = useState(DEFAULT_ADDONS);
+  // Per-technique addons. `root` seeds with the Screen Print defaults
+  // so the legacy fee buttons render before the shop's pricing_config
+  // loads; embroidery + custom start empty (no defaults outside Screen
+  // Print) and the load effect below replaces with the live data.
+  const [addonsByScope, setAddonsByScope] = useState({
+    root: DEFAULT_ADDONS,
+    embroidery: [],
+    custom: {},
+  });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
@@ -206,29 +215,28 @@ export default function QuoteEditorModal({
       try {
         const currentUser = await base44.auth.me();
         setUser(currentUser);
-        // Load addons. Source of truth is pricing_config.extras
-        // (+ extraLabels, extraModes). Legacy shops.addons is a
-        // separate column kept around for safety but no longer
-        // populated by anything in the Account UI.
+        // Load addons. Source of truth is pricing_config: root extras
+        // (+ extraLabels + extraModes) for Screen Print, embroidery.*
+        // for Embroidery, custom_techniques[name].* for custom methods.
+        // Per-line resolution by technique happens in LineItemEditor
+        // via getAddonsForTechnique. Legacy shops.addons is a separate
+        // column kept around for safety but no longer populated.
         try {
           const shops = await base44.entities.Shop.filter({ owner_email: currentUser.email });
           const cfg = shops?.[0]?.pricing_config;
-          if (cfg?.extras && Object.keys(cfg.extras).length > 0) {
-            const list = Object.keys(cfg.extras).map((key) => ({
-              key,
-              label: cfg.extraLabels?.[key] || DEFAULT_LABELS[key] || key,
-              rate:  parseFloat(cfg.extras[key]) || 0,
-              mode:  cfg.extraModes?.[key] === "percent" ? "percent" : "flat",
-            }));
-            setAddonsMeta(list.sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' })));
+          if (cfg && (cfg.extras || cfg.embroidery?.extras || cfg.custom_techniques)) {
+            setAddonsByScope(buildAddonsByScope(cfg, DEFAULT_LABELS));
           } else if (shops?.[0]?.addons?.length) {
             // Legacy fall-through: a few early shops have shops.addons
-            // populated but no pricing_config.extras yet.
-            setAddonsMeta(
-              shops[0].addons
+            // populated but no pricing_config.extras yet. Only seeds
+            // the root scope — embroidery/custom stay empty.
+            setAddonsByScope({
+              root: shops[0].addons
                 .map(a => ({ ...a, rate: parseFloat(a.rate) || 0, mode: a.mode === "percent" ? "percent" : "flat" }))
-                .sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' }))
-            );
+                .sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' })),
+              embroidery: [],
+              custom: {},
+            });
           }
         } catch {}
       } catch (error) {
@@ -925,7 +933,7 @@ export default function QuoteEditorModal({
                 li={li}
                 rushRate={q.rush_rate}
                 extras={q.extras}
-                addonsMeta={addonsMeta}
+                addonsByScope={addonsByScope}
                 allLineItems={q.line_items}
                 savedImprints={savedImprints}
                 onChange={(updated) => updateLineItem(idx, updated)}
