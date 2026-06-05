@@ -6,7 +6,6 @@ import { ChevronDown, ChevronRight, Code2 } from "lucide-react";
 
 export default function Wizard() {
   const [styles, setStyles] = useState(null);
-  const [setups, setSetups] = useState(null);
 
   const [shopOwner, setShopOwner] = useState("");
   const [shopName, setShopName] = useState("");
@@ -23,7 +22,6 @@ export default function Wizard() {
         const shop = shops?.[0];
         if (shop?.shop_name && !me.shop_name) setShopName(shop.shop_name);
         if (shop?.wizard_styles?.length) setStyles(shop.wizard_styles);
-        if (shop?.wizard_setups?.length) setSetups(shop.wizard_setups);
       } catch {
         // Fall back to defaults
       }
@@ -74,7 +72,7 @@ export default function Wizard() {
         <h2 className="text-2xl font-bold text-slate-900">Order Wizard</h2>
         <p className="text-slate-400 text-sm mt-1">Step-by-step quote builder for walk-in or phone customers</p>
       </div>
-      <OrderWizard onSubmit={handleSubmit} styles={styles} setups={setups} shopOwner={shopOwner} />
+      <OrderWizard onSubmit={handleSubmit} styles={styles} shopOwner={shopOwner} />
 
       {/* Embed snippets — collapsable, closed by default. The wizard
           is the primary thing on this page; embedding is a secondary

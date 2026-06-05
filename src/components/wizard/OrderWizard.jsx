@@ -67,24 +67,6 @@ export const DEFAULT_WIZARD_STYLES = [
     hoverDescription:"Corduroy cap" },
 ];
 
-export const DEFAULT_WIZARD_SETUPS = [
-  { id:"setup1", name:"Front Only",
-    imprints:[{location:"Front",colors:1,pantones:"",technique:"Screen Print",details:""}],
-    icon:"front" },
-  { id:"setup2", name:"Front + Back",
-    imprints:[
-      {location:"Front",colors:1,pantones:"",technique:"Screen Print",details:""},
-      {location:"Back",colors:1,pantones:"",technique:"Screen Print",details:""},
-    ],
-    icon:"frontback" },
-  { id:"setup3", name:"Left Chest + Back",
-    imprints:[
-      {location:"Left Chest",colors:1,pantones:"",technique:"Screen Print",details:""},
-      {location:"Back",colors:1,pantones:"",technique:"Screen Print",details:""},
-    ],
-    icon:"chestback" },
-];
-
 const STEPS = ["Configure","Details","Review"];
 const LOCATIONS = ["Front","Back","Left Chest","Right Chest","Left Sleeve","Right Sleeve","Pocket","Hood"];
 const COLOR_COUNTS = [1,2,3,4,5,6,7,8];
@@ -306,7 +288,7 @@ function TintedImage({ baseImg, colorName, className }) {
   return <img src={dataUrl} alt={colorName} className={`${className} rounded-lg object-contain bg-white`} />;
 }
 
-export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _setupsProp, shopOwner, shop }) {
+export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, shop }) {
   const POPULAR_STYLES = Array.isArray(stylesProp) && stylesProp.length > 0 ? stylesProp : DEFAULT_WIZARD_STYLES;
   // Per-shop brand color drives all primary CTAs + active states +
   // dark-band backgrounds. Falls back to the InkTracker default teal
@@ -326,8 +308,6 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
     "--brand-darker": bcDarker,
     "--brand-tint": bcTint,
   };
-  // setupsProp is plumbed through for future use (e.g. per-shop default
-  // imprint setups). Not consumed today, but kept on the props contract.
   const [step, setStep] = useState(1);
   const blankGarment = () => ({
     id: uid(), style: null, color: "", sizes: {},
@@ -362,10 +342,6 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
   function setColor(v) { setG({ color: v }); }
   function setSizes(fn) { setGarments(prev => prev.map((gg, i) => i === activeIdx ? { ...gg, sizes: typeof fn === "function" ? fn(gg.sizes) : fn } : gg)); }
 
-  // setSetup is referenced by resetWizard + applySetup; the getter
-  // itself isn't consumed yet (saved-setup picker not built), so prefix
-  // with _ to silence the unused-vars lint while keeping the setter live.
-  const [_setup, setSetup] = useState(null);
   const [rush, setRush] = useState(false);
   const [contact, setContact] = useState({ name:"", email:"", phone:"", company:"", notes:"", dueDate:"", taxExempt:false, taxId:"" });
   const [submitted, setSubmitted] = useState(false);
@@ -865,7 +841,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, setups: _set
   }
 
   function resetWizard() {
-    setSubmitted(false); setStep(1); setSetup(null); setRush(false);
+    setSubmitted(false); setStep(1); setRush(false);
     setGarments([blankGarment()]); setActiveIdx(0);
     setImprints([{ id: uid(), location: "Front", colors: 1, pantones: "", technique: "Screen Print", details: "" }]);
     setArtFiles({}); setColorResults({});
