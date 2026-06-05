@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
@@ -8,6 +8,7 @@ import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
 import { buildAdditiveMergePatch, describeMergeFor } from "@/lib/customers/mergeCustomerData";
+import { findReconcileNeeded, partitionReconcilePairs } from "@/lib/customers/qbReconcileDetect";
 import { Loader2, GitMerge, Check, AlertTriangle, RefreshCw } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
 import {
@@ -69,6 +70,13 @@ export default function Customers() {
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
   const [qbStats, setQbStats] = useState({});
   const [showMerge, setShowMerge] = useState(false);
+  // Auto-detected post-QB-merge orphans. Fires once after the customer
+  // list loads — when the shop has merged customers in QuickBooks but
+  // InkTracker's local table still has two records. Banner UI offers
+  // a one-click finish for the actionable cases.
+  const [reconcileNeeded, setReconcileNeeded] = useState([]);
+  const [showReconcileReview, setShowReconcileReview] = useState(false);
+  const didDetectReconcileRef = useRef(false);
 
   useEffect(() => {
     async function loadData() {
@@ -114,6 +122,109 @@ export default function Customers() {
 
     loadData();
   }, []);
+
+  // Auto-detect QB-side merges that still need finishing in InkTracker.
+  // Fires ONCE after the customer list loads — one batched QB call
+  // returns only the inactive customers whose IDs we're linked to,
+  // and the helper pairs them with their survivor (when local). The
+  // ref-guard prevents this from re-running on every customer edit.
+  useEffect(() => {
+    if (didDetectReconcileRef.current) return;
+    if (loading) return;
+    if (!customers || customers.length === 0) return;
+    const qbIds = customers
+      .map((c) => c.qb_customer_id)
+      .filter((id) => id != null && String(id) !== "");
+    if (qbIds.length === 0) return;
+    didDetectReconcileRef.current = true;
+
+    (async () => {
+      try {
+        const { data, error } = await base44.functions.invoke("qbSync", {
+          action: "scanInactiveCustomers",
+          customerIds: qbIds,
+        });
+        if (error || !data?.inactive) return;
+        const pairs = findReconcileNeeded(customers, data.inactive);
+        if (pairs.length > 0) setReconcileNeeded(pairs);
+      } catch (err) {
+        // Quiet on failure — auto-detect is a nice-to-have. The
+        // manual Merge Duplicates → Reconcile path still works.
+        console.warn("[qb reconcile detect] skipped:", err?.message);
+      }
+    })();
+  }, [customers, loading]);
+
+  // Hoisted merge handler. Reused by MergeDuplicatesModal (operator-
+  // initiated) and QbReconcileReviewModal (auto-detected QB pairs).
+  // Same additive merge contract either way — buildAdditiveMergePatch
+  // fills blanks on the primary, appends notes with attribution,
+  // unions saved_imprints. Child quote/order/invoice rows reassign
+  // before the duplicate row is deleted; if any reassign fails the
+  // duplicate stays in place to avoid orphans.
+  async function runCustomerMerge(primary, duplicates) {
+    if (!canDelete()) return;
+    let totalMoved = 0;
+    const fullyMergedIds = [];
+    const partiallyFailed = [];
+
+    for (const dup of duplicates) {
+      const [quotesById, ordersByName, invoicesById, quotesByName, invoicesByName] = await Promise.all([
+        base44.entities.Quote.filter({ customer_id: dup.id }),
+        base44.entities.Order.filter({ customer_name: dup.name }),
+        base44.entities.Invoice.filter({ customer_id: dup.id }),
+        base44.entities.Quote.filter({ customer_name: dup.name }),
+        base44.entities.Invoice.filter({ customer_name: dup.name }),
+      ]);
+      const allQuotes = [...new Map([...quotesById, ...quotesByName].map((q) => [q.id, q])).values()];
+      const allInvoices = [...new Map([...invoicesById, ...invoicesByName].map((i) => [i.id, i])).values()];
+
+      let dupReassignsOk = true;
+      for (const q of allQuotes) {
+        try { await base44.entities.Quote.update(q.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
+        catch (e) { console.error("Quote reassign failed:", e); dupReassignsOk = false; }
+      }
+      for (const o of ordersByName) {
+        try { await base44.entities.Order.update(o.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
+        catch (e) { console.error("Order reassign failed:", e); dupReassignsOk = false; }
+      }
+      for (const inv of allInvoices) {
+        try { await base44.entities.Invoice.update(inv.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
+        catch (e) { console.error("Invoice reassign failed:", e); dupReassignsOk = false; }
+      }
+
+      const mergeFields = buildAdditiveMergePatch(primary, dup);
+      if (mergeFields) {
+        try {
+          const updated = await base44.entities.Customer.update(primary.id, mergeFields);
+          primary = updated || { ...primary, ...mergeFields };
+        } catch {}
+      }
+
+      if (dupReassignsOk) {
+        try {
+          await base44.entities.Customer.delete(dup.id);
+          fullyMergedIds.push(dup.id);
+        } catch (e) {
+          console.error("Duplicate delete failed:", e);
+          partiallyFailed.push(dup);
+        }
+      } else {
+        partiallyFailed.push(dup);
+      }
+    }
+
+    const failedNames = partiallyFailed.map((d) => d.name).join(", ");
+    if (partiallyFailed.length > 0) {
+      notify.error(
+        `Merged ${fullyMergedIds.length} of ${duplicates.length}`,
+        `Couldn't finish merging ${partiallyFailed.length} duplicate(s) (${failedNames}) — some child records didn't reassign and were left in place to avoid orphans. ${totalMoved} record(s) moved overall.`,
+      );
+    } else {
+      notify.success(`Merged ${duplicates.length} duplicate(s) into ${primary.name}`, `${totalMoved} records reassigned.`);
+    }
+    setCustomers((prev) => prev.filter((c) => !fullyMergedIds.includes(c.id)));
+  }
 
   const artworkByCustomer = useMemo(() => {
     const map = {};
@@ -345,6 +456,37 @@ export default function Customers() {
           </button>
         </div>
       </div>
+
+      {/* Auto-detect banner: surfaces post-QB-merge orphans that need
+          finishing in InkTracker. Click → opens review modal that
+          uses the same additive merge handler. Hidden when no
+          actionable pairs OR when the banner has been dismissed. */}
+      {reconcileNeeded.length > 0 && (() => {
+        const { actionable, survivorMissing } = partitionReconcilePairs(reconcileNeeded);
+        return (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+              <div className="text-xs">
+                <div className="font-semibold text-amber-800">
+                  {reconcileNeeded.length} QuickBooks merge{reconcileNeeded.length === 1 ? "" : "s"} need finishing in InkTracker
+                </div>
+                <div className="text-amber-700 mt-0.5">
+                  You merged customers in QuickBooks but their local InkTracker records still split quotes, notes, and saved imprints.
+                  {actionable.length > 0 && ` ${actionable.length} can be finished with one click.`}
+                  {survivorMissing.length > 0 && ` ${survivorMissing.length} need the survivor pulled from QB first.`}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowReconcileReview(true)}
+              className="text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg whitespace-nowrap shrink-0"
+            >
+              Review →
+            </button>
+          </div>
+        );
+      })()}
 
       <AdvancedFilters
         filters={filters}
@@ -941,84 +1083,22 @@ export default function Customers() {
         <MergeDuplicatesModal
           customers={customers}
           user={user}
-          onMerge={async (primary, duplicates) => {
-            // Merge reassigns quotes/orders/invoices then deletes the dup
-            // row — same shop-owner-only gate as handleDelete. RLS blocks
-            // cross-shop writes; this is the in-app guard.
-            if (!canDelete()) return;
-            let totalMoved = 0;
-            const fullyMergedIds = [];
-            const partiallyFailed = [];
-
-            for (const dup of duplicates) {
-              const [quotesById, ordersByName, invoicesById, quotesByName, invoicesByName] = await Promise.all([
-                base44.entities.Quote.filter({ customer_id: dup.id }),
-                base44.entities.Order.filter({ customer_name: dup.name }),
-                base44.entities.Invoice.filter({ customer_id: dup.id }),
-                base44.entities.Quote.filter({ customer_name: dup.name }),
-                base44.entities.Invoice.filter({ customer_name: dup.name }),
-              ]);
-              const allQuotes = [...new Map([...quotesById, ...quotesByName].map(q => [q.id, q])).values()];
-              const allInvoices = [...new Map([...invoicesById, ...invoicesByName].map(i => [i.id, i])).values()];
-
-              // Track reassign failures. If ANY child row fails to move,
-              // leave the duplicate customer in place so the user can
-              // retry manually — deleting it would orphan the remaining
-              // children (the bug Joe got bit by before this guard).
-              let dupReassignsOk = true;
-              for (const q of allQuotes) {
-                try { await base44.entities.Quote.update(q.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
-                catch (e) { console.error("Quote reassign failed:", e); dupReassignsOk = false; }
-              }
-              for (const o of ordersByName) {
-                try { await base44.entities.Order.update(o.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
-                catch (e) { console.error("Order reassign failed:", e); dupReassignsOk = false; }
-              }
-              for (const inv of allInvoices) {
-                try { await base44.entities.Invoice.update(inv.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
-                catch (e) { console.error("Invoice reassign failed:", e); dupReassignsOk = false; }
-              }
-
-              // Additive-merge — fills blanks on the primary from the
-              // duplicate AND appends notes / unions saved_imprints so
-              // nothing on the duplicate is silently dropped when its
-              // row gets deleted. Contract pinned in
-              // lib/customers/mergeCustomerData.test.js after the
-              // "beloved's" incident.
-              const mergeFields = buildAdditiveMergePatch(primary, dup);
-              if (mergeFields) {
-                try {
-                  const updated = await base44.entities.Customer.update(primary.id, mergeFields);
-                  primary = updated || { ...primary, ...mergeFields };
-                } catch {}
-              }
-
-              if (dupReassignsOk) {
-                try {
-                  await base44.entities.Customer.delete(dup.id);
-                  fullyMergedIds.push(dup.id);
-                } catch (e) {
-                  console.error("Duplicate delete failed:", e);
-                  partiallyFailed.push(dup);
-                }
-              } else {
-                partiallyFailed.push(dup);
-              }
-            }
-
-            const failedNames = partiallyFailed.map(d => d.name).join(", ");
-            if (partiallyFailed.length > 0) {
-              notify.error(
-                `Merged ${fullyMergedIds.length} of ${duplicates.length}`,
-                `Couldn't finish merging ${partiallyFailed.length} duplicate(s) (${failedNames}) — some child records didn't reassign and were left in place to avoid orphans. ${totalMoved} record(s) moved overall.`,
-              );
-            } else {
-              notify.success(`Merged ${duplicates.length} duplicate(s) into ${primary.name}`, `${totalMoved} records reassigned.`);
-            }
-            setCustomers(prev => prev.filter(c => !fullyMergedIds.includes(c.id)));
-          }}
+          onMerge={runCustomerMerge}
           onClose={() => setShowMerge(false)}
           supabaseFuncUrl={SUPABASE_FUNC_URL}
+        />
+      )}
+
+      {showReconcileReview && (
+        <QbReconcileReviewModal
+          pairs={reconcileNeeded}
+          onMerge={runCustomerMerge}
+          onClose={() => {
+            setShowReconcileReview(false);
+            // Recompute remaining pairs after a reconcile so the
+            // banner count stays accurate.
+            setReconcileNeeded((prev) => prev.filter((p) => customers.some((c) => c.id === p.inactive.id)));
+          }}
         />
       )}
     </div>
@@ -1374,6 +1454,130 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
           </div>
         </ModalBackdrop>
       )}
+    </ModalBackdrop>
+  );
+}
+
+// Surfaces post-QB-merge orphans the auto-detect picked up. Each
+// actionable pair shows: which local record is the survivor, which
+// will be merged into it, and exactly what data moves. Calls the
+// same runCustomerMerge as the operator-driven merge flow so the
+// additive-merge contract is identical. Pairs where the QB survivor
+// has no local row yet display a "pull from QB first" hint instead
+// of a merge button.
+function QbReconcileReviewModal({ pairs, onMerge, onClose }) {
+  const [merging, setMerging] = useState(false);
+  const [doneIds, setDoneIds] = useState([]);
+
+  const { actionable, survivorMissing } = useMemo(
+    () => partitionReconcilePairs(pairs || []),
+    [pairs],
+  );
+
+  async function handleReconcile(pair) {
+    if (merging) return;
+    setMerging(true);
+    try {
+      // Survivor = winner (Active in QB), inactive = loser. Additive
+      // patch carries inactive's local data over to survivor; child
+      // quotes/orders/invoices reassign; inactive row deletes.
+      await onMerge(pair.survivor, [pair.inactive]);
+      setDoneIds((prev) => [...prev, pair.inactive.id]);
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  const remaining = actionable.filter((p) => !doneIds.includes(p.inactive.id));
+
+  return (
+    <ModalBackdrop onClose={onClose}>
+      <div className="bg-white rounded-2xl p-5 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <RefreshCw className="w-5 h-5 text-amber-600" />
+            Finish QuickBooks Merges
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <p className="text-xs text-slate-500 mb-4">
+          These customers were merged in QuickBooks. Click <span className="font-semibold">Finish merge</span> to consolidate their local InkTracker data into the survivor — quotes, orders, invoices, notes, and saved imprints all transfer. QuickBooks is not touched.
+        </p>
+
+        {remaining.length === 0 && actionable.length > 0 && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 mb-3 flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600" />
+            <div className="text-xs text-emerald-700 font-semibold">All actionable merges finished.</div>
+          </div>
+        )}
+
+        {remaining.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {remaining.map((p) => (
+              <div key={p.inactive.id} className="border border-slate-200 rounded-lg p-3 flex items-center justify-between gap-3">
+                <div className="text-xs min-w-0">
+                  <div className="font-semibold text-slate-800 truncate">
+                    {p.inactive.company || p.inactive.name || p.qbDisplayName || "(unnamed)"}
+                  </div>
+                  <div className="text-slate-500 mt-0.5">
+                    Local record will merge into{" "}
+                    <span className="font-semibold text-slate-700">
+                      {p.survivor.company || p.survivor.name || "(survivor)"}
+                    </span>
+                    {" "}(active in QuickBooks).
+                  </div>
+                  {(() => {
+                    const items = describeMergeFor(p.survivor, p.inactive);
+                    if (!items?.length) return null;
+                    return (
+                      <ul className="text-[10px] text-slate-400 mt-1 ml-3 list-disc">
+                        {items.slice(0, 4).map((line, i) => <li key={i}>{line}</li>)}
+                        {items.length > 4 && <li>+ {items.length - 4} more</li>}
+                      </ul>
+                    );
+                  })()}
+                </div>
+                <button
+                  onClick={() => handleReconcile(p)}
+                  disabled={merging}
+                  className="text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+                >
+                  {merging ? <Loader2 className="w-3 h-3 animate-spin" /> : <GitMerge className="w-3 h-3" />}
+                  Finish merge
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {survivorMissing.length > 0 && (
+          <div className="border-t border-slate-100 pt-3 mt-3">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
+              Need QB pull first
+            </div>
+            <p className="text-[10px] text-slate-400 mb-2">
+              These were merged in QuickBooks but the survivor isn't in InkTracker yet. Run your QuickBooks customer pull to bring it in, then revisit this banner.
+            </p>
+            <div className="space-y-1">
+              {survivorMissing.map((p) => (
+                <div key={p.inactive.id} className="text-xs text-slate-600 px-2 py-1.5 bg-slate-50 rounded">
+                  {p.inactive.company || p.inactive.name || p.qbDisplayName || "(unnamed)"}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex justify-end mt-4">
+          <button
+            onClick={onClose}
+            className="text-xs font-semibold text-slate-600 hover:text-slate-800 px-4 py-2"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </ModalBackdrop>
   );
 }
