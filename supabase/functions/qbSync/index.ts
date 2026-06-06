@@ -743,11 +743,23 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     const docNumber = nextAvailableDocNumber(baseDocNumber, existingDocs);
     const isRevision = docNumber !== baseDocNumber;
 
+    // DueDate = TxnDate. The QB invoice should be due on receipt —
+    // the customer's already approved the quote and the pay-now link
+    // is on the email. Previously we mapped `quote.due_date` here,
+    // but that's the PRODUCTION due date (when the job ships to the
+    // customer), not the PAYMENT due date — different semantics. QB
+    // would then display "Due in 15 days" (or whatever the production
+    // turnaround was), discouraging immediate payment.
+    //
+    // Setting DueDate explicitly to the invoice date overrides the
+    // QB customer's default terms ("Net 15", etc.) so every shop's
+    // invoices land as "Due on receipt" regardless of their QB
+    // company settings.
     const invoiceBody: any = {
       CustomerRef: { value: qbCustomerId },
       DocNumber: docNumber,
       TxnDate: quote.date,
-      DueDate: quote.due_date || undefined,
+      DueDate: quote.date || undefined,
       AllowOnlineCreditCardPayment: true,
       AllowOnlineACHPayment: true,
       Line: lines,
