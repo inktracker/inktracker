@@ -702,7 +702,7 @@ export default function BrokerQuoteEditor({
                     max="100"
                     value={q.discount}
                     onChange={(e) => setQ({ ...q, discount: e.target.value })}
-                    className="w-14 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                    className="w-24 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
                   <span className="text-slate-400 text-xs">%</span>
                 </div>

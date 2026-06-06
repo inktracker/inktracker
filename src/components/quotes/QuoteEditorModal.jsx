@@ -976,7 +976,7 @@ export default function QuoteEditorModal({
                     max={q.discount_type === "flat" ? undefined : 100}
                     value={q.discount}
                     onChange={(e) => setQ({ ...q, discount: e.target.value })}
-                    className="w-16 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                    className="w-24 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
                   {q.discount_type !== "flat" && <span className="text-slate-400 text-xs">%</span>}
                   <button
