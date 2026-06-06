@@ -3,6 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { User, Save, CheckCircle2, AlertCircle, Link2, Unlink, Upload, X } from "lucide-react";
 import { uploadFile } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
+import { qbOAuthErrorMessage } from "@/lib/qb/oauthErrorMessage";
 import BrokerCredentials from "./BrokerCredentials";
 
 const QB_CLIENT_ID = import.meta.env.VITE_QB_CLIENT_ID;
@@ -246,7 +247,9 @@ function BrokerQBSection({ user }) {
       window.history.replaceState({}, "", window.location.pathname);
     }
     if (params.get("qb_error")) {
-      setQbMessage({ type: "error", text: `QuickBooks connection failed: ${params.get("qb_error")}` });
+      // Shared helper with Account.jsx so the broker UI doesn't drift
+      // from the shop UI on OAuth error copy.
+      setQbMessage({ type: "error", text: qbOAuthErrorMessage(params.get("qb_error")) });
       window.history.replaceState({}, "", window.location.pathname);
     }
 
