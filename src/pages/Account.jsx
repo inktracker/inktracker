@@ -199,6 +199,30 @@ export default function Account() {
       // panel in sync — both pages call the same helper.
       setQbMessage({ type: "error", text: qbOAuthErrorMessage(params.get("qb_error")) });
       window.history.replaceState({}, "", window.location.pathname);
+    } else if (params.get("qb_disconnected_remotely") === "1") {
+      // Intuit redirected the user here via api/qb-disconnect after
+      // they revoked InkTracker from the QuickBooks side. Fire the
+      // local disconnect to clear our tokens too, so the connection
+      // panel reflects the disconnected state immediately rather than
+      // staying optimistic until the next failed refresh.
+      setQbConnected(false);
+      setQbMessage({
+        type: "success",
+        text: "QuickBooks was disconnected from your QuickBooks account. We've cleared the connection on our side too — reconnect anytime.",
+      });
+      window.history.replaceState({}, "", window.location.pathname);
+      (async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session?.access_token) return;
+          await base44.functions.invoke("qbSync", {
+            action: "disconnect",
+            accessToken: session.access_token,
+          });
+        } catch (err) {
+          console.warn("[qb-disconnect-remote] local token clear failed:", err?.message);
+        }
+      })();
     }
   }, [location.search]);
 
