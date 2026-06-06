@@ -27,6 +27,7 @@ import {
   RECONCILE_SEVERITY,
 } from "../_shared/qbWriteContracts.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
+import { UserFacingError, USER_FACING_CODES, isUserFacingError } from "../_shared/userFacingError.ts";
 import { summarizeInvoicesForDashboard } from "../_shared/qbDashboardMetrics.js";
 import {
   recordShopNotification,
@@ -82,9 +83,15 @@ async function refreshToken(refreshTok: string) {
     const body = await res.text();
     console.error(`[qbSync] Token refresh failed: ${res.status} ${body}`);
     if (body.includes("invalid_grant")) {
-      throw new Error("Your QuickBooks connection has expired. Please go to Account → QuickBooks and reconnect.");
+      throw new UserFacingError(
+        USER_FACING_CODES.QB_DISCONNECTED,
+        "Your QuickBooks connection has expired. Please go to Account → QuickBooks and reconnect.",
+      );
     }
-    throw new Error("QuickBooks connection error. Please reconnect in Account settings.");
+    throw new UserFacingError(
+      USER_FACING_CODES.QB_REFRESH_FAILED,
+      "QuickBooks connection error. Please reconnect in Account settings.",
+    );
   }
   // Validate the response shape before trusting it. See
   // validateQbTokenResponse for why this matters — malformed OK
@@ -94,7 +101,10 @@ async function refreshToken(refreshTok: string) {
   const check = validateQbTokenResponse(fresh);
   if (!check.ok) {
     console.error(`[qbSync] Token refresh returned malformed body (${check.reason}):`, fresh);
-    throw new Error("QuickBooks token refresh returned an unexpected response. Please reconnect in Account settings.");
+    throw new UserFacingError(
+      USER_FACING_CODES.QB_MALFORMED_TOKEN,
+      "QuickBooks token refresh returned an unexpected response. Please reconnect in Account settings.",
+    );
   }
   return fresh;
 }
@@ -125,7 +135,10 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
   const profile = await findUserProfile(supabase, authId, email);
 
   if (!profile?.qb_access_token) {
-    throw new Error("QuickBooks not connected. Please connect your account in Settings.");
+    throw new UserFacingError(
+      USER_FACING_CODES.QB_NOT_CONNECTED,
+      "QuickBooks not connected. Please connect your account in Settings.",
+    );
   }
 
   // Pure refresh-decision lives in ../_shared/connectionLogic.js (tested).
@@ -1742,11 +1755,21 @@ Deno.serve(async (req) => {
       return Response.json({ ok: true }, { headers: CORS });
     }
 
-    // Subscription check — QB write operations cost money
+    // Subscription check — QB write operations cost money.
+    // requireActiveSubscription returns a 403 Response. We unwrap its
+    // body and re-emit as a 200 + success:false so SendQuoteModal /
+    // any other caller sees the clean message via data.error instead
+    // of "Edge Function returned a non-2xx status code".
     {
       const { data: subProfile } = await supabase.from("profiles").select("subscription_tier, subscription_status, trial_ends_at, shop_owner, email").eq("auth_id", user.id).maybeSingle();
       const blocked = requireActiveSubscription(subProfile);
-      if (blocked) return blocked;
+      if (blocked) {
+        const body = await blocked.json().catch(() => ({ error: "Subscription required" }));
+        return Response.json(
+          { success: false, error_code: USER_FACING_CODES.SUBSCRIPTION_BLOCKED, error: body.error },
+          { status: 200, headers: CORS },
+        );
+      }
     }
 
     // All other actions need valid QB tokens
@@ -2013,6 +2036,15 @@ Deno.serve(async (req) => {
 
     return Response.json({ success: true, ...result }, { headers: CORS });
   } catch (err) {
+    // Known user-facing errors land as 200 + success:false so the
+    // Supabase JS client's FunctionsHttpError wrap doesn't swallow
+    // the message. See _shared/userFacingError.ts for the rationale.
+    if (isUserFacingError(err)) {
+      return Response.json(
+        { success: false, error_code: err.code, error: err.message },
+        { status: 200, headers: CORS },
+      );
+    }
     console.error("qbSync error:", err);
     return Response.json({ error: err.message }, { status: 500, headers: CORS });
   }

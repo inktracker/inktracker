@@ -12,6 +12,7 @@ import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 import { notify } from "@/lib/notify";
+import { qbOAuthErrorMessage } from "@/lib/qb/oauthErrorMessage";
 import { getMissingAutoDerivedTasks } from "@/lib/productionTasks";
 
 function Section({ icon: IconComp, title, defaultOpen = false, children }) {
@@ -194,15 +195,9 @@ export default function Account() {
       setQbMessage({ type: "success", text: "QuickBooks connected successfully!" });
       window.history.replaceState({}, "", window.location.pathname);
     } else if (params.get("qb_error")) {
-      const errCode = params.get("qb_error");
-      const msgs = {
-        state_mismatch:      "Connection failed. Please try again.",
-        token_exchange_failed: "Could not connect to QuickBooks. Please try again — if the issue persists, contact support.",
-        storage_failed:      "Connected to QuickBooks but could not save. Please try again.",
-        missing_params:      "QuickBooks did not return the expected data. Please try again.",
-        server_error:        "Something went wrong. Please try again.",
-      };
-      setQbMessage({ type: "error", text: msgs[errCode] || `Connection failed: ${errCode}` });
+      // Centralized copy keeps the broker dashboard's OAuth error
+      // panel in sync — both pages call the same helper.
+      setQbMessage({ type: "error", text: qbOAuthErrorMessage(params.get("qb_error")) });
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, [location.search]);
