@@ -638,12 +638,21 @@ export default function LineItemEditor({
         throw new Error("Style not found");
       }
 
-      // If the current brand matches one of the options, auto-select it.
-      // If there's only one option, auto-select it.
-      // If there are multiple, don't auto-apply — let the user pick from the dropdown.
+      // Read brand AND color from the FRESHEST li — the user may
+      // have picked a different brand from the dropdown while this
+      // lookup was in flight. Without this, the closure-captured
+      // li.brand is stale (often empty) so the brandMatch lookup
+      // fails, we fall into the else branch, and the user-selected
+      // brand ends up paired with options[0]'s colors. That's the
+      // bug Joe surfaced — typing 5001 returns both Flexfit and
+      // AS Colour; picking AS Colour mid-lookup leaves the brand
+      // dropdown showing AS Colour but the color dropdown showing
+      // Flexfit's colors. Same staleness class as the garmentColor
+      // guard already inside this branch.
+      const freshLi = liRef.current;
       const brandMatch = options.find(
         (option) =>
-          cleanText(option.brandName).toLowerCase() === cleanText(li.brand).toLowerCase()
+          cleanText(option.brandName).toLowerCase() === cleanText(freshLi.brand).toLowerCase()
       );
       const selected = brandMatch || (options.length === 1 ? options[0] : null);
 
@@ -652,11 +661,6 @@ export default function LineItemEditor({
         setSsInventory(selected.inventoryMap || {});
         setSsPriceMap(selected.priceMap || {});
         setSsSizePriceMap(selected.sizePriceMap || {});
-        // Read the FRESHEST li from the ref — the user may have picked
-        // a different color while this lookup was in flight. Without
-        // this, applySelectedMatch builds firstColor off the stale
-        // closure-captured li and overwrites the user's pick.
-        const freshLi = liRef.current;
         const colors = selected.colors || [];
         const firstColor = colors.find((c) => c.colorName === freshLi.garmentColor)?.colorName || colors[0]?.colorName || freshLi.garmentColor;
         const sp = (selected.sizePriceMap && selected.sizePriceMap[firstColor]) || {};
@@ -668,7 +672,13 @@ export default function LineItemEditor({
         // this ref unconditionally.
         sizePricesRef.current = sp;
         onChange(applySelectedMatch(freshLi, selected));
-      } else {
+      } else if (!freshLi.brand) {
+        // Multiple options AND the user hasn't picked a brand yet —
+        // preview options[0]'s data so the brand dropdown isn't
+        // paired with an empty color list. When freshLi.brand IS
+        // set but doesn't match any option, leave state alone:
+        // handleBrandSelection populated it correctly and clobbering
+        // here is exactly the desync we're fixing.
         setSsColors(options[0].colors || []);
         setSsInventory(options[0].inventoryMap || {});
         setSsPriceMap(options[0].priceMap || {});
