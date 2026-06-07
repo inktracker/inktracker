@@ -787,6 +787,10 @@ export default function QuotePayment() {
                   </div>
                 )}
 
+                <p className="mb-3 text-center text-[11px] text-slate-500 leading-relaxed">
+                  By submitting payment, you approve the items, sizes, and decoration details on this quote and authorize production to begin.
+                </p>
+
                 <button
                   onClick={handleCheckout}
                   disabled={checkoutLoading || approveLoading}
