@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getQty, BIG_SIZES, SIZES, buildQBInvoicePayload } from "../shared/pricing";
-import { exportInvoiceToPDF } from "../shared/pdfExport";
+import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -513,17 +513,16 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           )}
           {/* Preview PDF — the preview window has its own download
               button, so we don't render a separate "Download PDF" here. */}
-          <button onClick={async () => {
+          <button onClick={() => previewPdf((async () => {
             // QB-synced invoices: show what QB actually generated, not our local copy.
             const target = resolveInvoicePdfSource(invoice);
             if (target.source === "qb") {
               const blobUrl = await fetchQBInvoicePdfBlob(target.qbInvoiceId);
-              if (blobUrl) { window.open(blobUrl, "_blank"); return; }
+              if (blobUrl) return blobUrl;
               // QB fetch failed — fall through to local PDF.
             }
-            const url = await exportInvoiceToPDF(invoice, customer, { shop: shopProfile || { shop_name: shopName }, logoUrl, output: "blob" });
-            if (url) window.open(url, "_blank");
-          }}
+            return await exportInvoiceToPDF(invoice, customer, { shop: shopProfile || { shop_name: shopName }, logoUrl, output: "blob" });
+          })())}
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
             Preview PDF
           </button>
