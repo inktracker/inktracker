@@ -5,7 +5,7 @@ import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJo
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
 import { addDaysISO, relativeDueLabel, getOrderActionHint } from "@/lib/calendar/agendaHints";
-import { normalizePresses } from "@/lib/presses/normalizePresses";
+import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 import {
   dayIndex as schedulerDayIndex,
   spanDays as schedulerSpanDays,
@@ -676,8 +676,8 @@ export default function Production() {
                           ) : <span className="text-xs text-slate-300">—</span>}
                         </td>
                         <td className="px-5 py-3.5">
-                          {o.assigned_press ? (
-                            <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">{o.assigned_press}</span>
+                          {normalizeAssignedPress(o.assigned_press) ? (
+                            <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">{normalizeAssignedPress(o.assigned_press)}</span>
                           ) : <span className="text-xs text-slate-300">—</span>}
                         </td>
                         <td className="px-5 py-3.5"><Badge s={o.status} /></td>
