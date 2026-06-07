@@ -234,6 +234,51 @@ describe("Wizard render path — degraded supplier data still produces a non-zer
   });
 });
 
+describe("Wizard render path — unpriceable garment is detectable end-to-end", () => {
+  // Layer 2 of the "wizard never undercharges" SLA. Layer 1 (audit gate)
+  // catches stale wizard_styles[] before deploy. This layer catches the
+  // case where layer 1 misses (e.g. a customer hand-types a style number
+  // at runtime, supplier API rate-limits the lookup, or a freshly-saved
+  // style legitimately has no cost data). The wizard's runtime gate is:
+  //
+  //   getEffectiveCost(g) === 0  →  block submit + suppress price summary
+  //
+  // If that contract ever breaks, the bug we shipped twice (2026-05-26,
+  // 2026-06-07) ships a third time. Pin it.
+  it("style + color but zero cost everywhere → getEffectiveCost is exactly 0", () => {
+    const unpriceable = {
+      ...SAVED_BELLA_3001,
+      garmentCost: 0,
+      priceMap: {}, // shop saved a row before the resync could fetch costs
+    };
+    const garment = { id: "g1", style: unpriceable, color: "Black", sizes: { M: 50 } };
+    expect(getEffectiveCost(garment)).toBe(0);
+  });
+
+  it("priceMap exists but every entry is 0 → still detected as unpriceable", () => {
+    // The "supplier returned a match but no real cost" case (5100S etc).
+    const allZero = {
+      ...SAVED_BELLA_3001,
+      garmentCost: 0,
+      priceMap: { Black: { piecePrice: 0 }, White: { piecePrice: 0 } },
+    };
+    const garment = { id: "g1", style: allZero, color: "Black", sizes: { M: 50 } };
+    expect(getEffectiveCost(garment)).toBe(0);
+  });
+
+  it("ANY non-zero color in priceMap is enough — guard does NOT fire", () => {
+    // Don't over-trigger the guard: as long as one color is priceable,
+    // the cascade in getEffectiveCost recovers and the customer can quote.
+    const partial = {
+      ...SAVED_BELLA_3001,
+      garmentCost: 0,
+      priceMap: { White: { piecePrice: 2.95 } }, // Black missing
+    };
+    const garment = { id: "g1", style: partial, color: "Black", sizes: { M: 50 } };
+    expect(getEffectiveCost(garment)).toBeGreaterThan(0);
+  });
+});
+
 describe("Wizard render path — pricing config hydration", () => {
   it("loadShopPricingConfig(null) → math falls back to platform default tiers", () => {
     // Confirms the wizard's empty-hydration state still produces a

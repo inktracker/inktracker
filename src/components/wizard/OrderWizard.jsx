@@ -39,12 +39,12 @@ export const DEFAULT_WIZARD_STYLES = [
   { id:"hd-relax", garment:"Hoodies", styleNumber:"5161", brand:"AS Colour", tag:"Relax",
     hoverDescription:"Relaxed fit, heavyweight hood" },
   // Crewnecks
-  { id:"cn-supply", garment:"Crewnecks", styleNumber:"5100S", brand:"AS Colour", tag:"Supply",
-    hoverDescription:"Mid weight, cotton-rich crew" },
+  // NOTE: 5100S (Supply) and 5130S (United) intentionally omitted — AS
+  // Colour's API returns matches for both but ships zero color/cost
+  // data. Including them as platform defaults would seed every new
+  // shop with two tiles that the runtime guard has to refuse to quote.
   { id:"cn-relax", garment:"Crewnecks", styleNumber:"5160", brand:"AS Colour", tag:"Relax",
     hoverDescription:"Relaxed fit, mid-weight 9.4 oz crew" },
-  { id:"cn-united", garment:"Crewnecks", styleNumber:"5130S", brand:"AS Colour", tag:"United",
-    hoverDescription:"Heavy weight, premium crew" },
   { id:"cn-heavy", garment:"Crewnecks", styleNumber:"5145", brand:"AS Colour", tag:"Heavy",
     hoverDescription:"Heavy weight, 13 oz crew" },
   // Tank Tops
@@ -61,8 +61,7 @@ export const DEFAULT_WIZARD_STYLES = [
     hoverDescription:"6-panel cotton twill cap" },
   { id:"ht-trucker", garment:"Hats", styleNumber:"1102", brand:"AS Colour", tag:"Trucker",
     hoverDescription:"Faded trucker cap" },
-  { id:"ht-finn", garment:"Hats", styleNumber:"1103", brand:"AS Colour", tag:"Finn",
-    hoverDescription:"5-panel cap" },
+  // 1103 (Finn 5-panel) intentionally omitted — same reason as 5100S/5130S.
   { id:"ht-cord", garment:"Hats", styleNumber:"1110", brand:"AS Colour", tag:"Cord",
     hoverDescription:"Corduroy cap" },
 ];
@@ -867,8 +866,30 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
       });
       if (!hasEnoughQty) issues.push(`Minimum ${minQty} pieces required per garment`);
     }
+    // Fail-closed guard: if any picked style+color has no resolvable
+    // wholesale cost, refuse to advance. The bug this prevents — wizard
+    // silently shipping print-only pricing when wizard_styles[] is stale
+    // — already shipped twice (2026-05-26, 2026-06-07). The shop fixes
+    // it by re-syncing in Account → Wizard Setup; the customer sees a
+    // clear "contact us" message instead of an undercharged quote.
+    for (const gg of garments) {
+      if (gg.style && gg.color && getEffectiveCost(gg) === 0) {
+        const label = `${gg.style.brand || ""} ${gg.style.styleNumber || gg.style.name || ""}`.trim() || "this style";
+        issues.push(`Live pricing isn't available for ${label} right now — please contact us to quote it.`);
+        console.warn("[Wizard] blocked submit: no cost data for", label, gg.color);
+        break;
+      }
+    }
     return issues;
   }
+
+  // Surface a hard "unpriceable" signal to the live-price summary so the
+  // side panel + bottom bar suppress the partial (print-only) total
+  // instead of flashing a misleading number while validation blocks the
+  // button.
+  const hasUnpriceableGarment = garments.some(
+    (gg) => gg.style && gg.color && getEffectiveCost(gg) === 0
+  );
 
   if (submitted) {
     return (
@@ -911,7 +932,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
   // only includes imprint costs — both confuse customers. Treat
   // enriching as "not ready to price yet" and fall back to the empty
   // state ("Add quantities to see pricing") until enrichment finishes.
-  const showPriceSummary = liveTotals && garments.some(gg => gg.style) && !enrichingStyle;
+  const showPriceSummary = liveTotals && garments.some(gg => gg.style) && !enrichingStyle && !hasUnpriceableGarment;
 
   return (
     <div style={brandStyle} className="max-w-6xl mx-auto md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-6">
