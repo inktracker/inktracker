@@ -14,6 +14,7 @@ import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 import { getStageTasks } from "@/lib/productionTasks";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
+import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 
 // Collect every artwork file attached to an order so press operators
 // can preview them inline. Mirrors OrderDetailModal.getOrderArtwork:
@@ -634,7 +635,7 @@ export default function ShopFloor() {
                 </div>
                 <div className="flex items-center gap-4 text-sm text-slate-500">
                   {selected.due_date && <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> Due {fmtDate(selected.due_date)}</span>}
-                  {selected.assigned_press && <span>Press: {selected.assigned_press}</span>}
+                  {normalizeAssignedPress(selected.assigned_press) && <span>Press: {normalizeAssignedPress(selected.assigned_press)}</span>}
                   {selected.assigned_operator && <span>Operator: {selected.assigned_operator}</span>}
                 </div>
               </div>

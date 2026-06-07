@@ -5,7 +5,7 @@
 // pin that contract.
 
 import { describe, it, expect } from "vitest";
-import { normalizePresses, serializePresses } from "../normalizePresses";
+import { normalizePresses, serializePresses, normalizeAssignedPress } from "../normalizePresses";
 
 describe("normalizePresses — input shapes", () => {
   it("returns [] for non-array input", () => {
@@ -153,5 +153,61 @@ describe("serializePresses — write-back round-trip", () => {
       { name: "Auto 1", colors: 8 },
       { name: "Manual A", colors: 6 },
     ]);
+  });
+});
+
+describe("normalizeAssignedPress — single-value readers", () => {
+  // The bug Joe surfaced: ORD-2026-ZMN57 stored `assigned_press` as
+  // `'{"name":"Riley Hopkins 360","colors":8}'` (the whole v2 press
+  // object JSON-stringified). The Production table rendered the raw
+  // string AND the scheduler's `o.assigned_press === pressName`
+  // strict-equality check failed because pressName was the bare
+  // "Riley Hopkins 360". Result: the order showed JSON in the table
+  // and silently fell off its press lane.
+
+  it("returns '' for null / undefined / empty", () => {
+    expect(normalizeAssignedPress(null)).toBe("");
+    expect(normalizeAssignedPress(undefined)).toBe("");
+    expect(normalizeAssignedPress("")).toBe("");
+    expect(normalizeAssignedPress("   ")).toBe("");
+  });
+
+  it("returns plain v1 strings trimmed", () => {
+    expect(normalizeAssignedPress("Riley Hopkins 360")).toBe("Riley Hopkins 360");
+    expect(normalizeAssignedPress("  Manual A  ")).toBe("Manual A");
+  });
+
+  it("unwraps the bug-shape: a JSON-stringified press object", () => {
+    expect(normalizeAssignedPress('{"name":"Riley Hopkins 360","colors":8}'))
+      .toBe("Riley Hopkins 360");
+    expect(normalizeAssignedPress('{"name":"Auto 1","colors":6}'))
+      .toBe("Auto 1");
+  });
+
+  it("trims the name unwrapped from a JSON-string entry", () => {
+    expect(normalizeAssignedPress('{"name":"  Auto 1  ","colors":8}'))
+      .toBe("Auto 1");
+  });
+
+  it("falls back to plain-string treatment when the JSON-looking string isn't a valid press object", () => {
+    // Real string content that happens to start with `{` and end with `}` —
+    // shouldn't crash, shouldn't lose data.
+    expect(normalizeAssignedPress("{not actually json}"))
+      .toBe("{not actually json}");
+    expect(normalizeAssignedPress('{"colors":8}')) // no name key
+      .toBe('{"colors":8}');
+  });
+
+  it("accepts an actual object (not just JSON-stringified) defensively", () => {
+    // Some code paths might pass the parsed v2 object directly.
+    expect(normalizeAssignedPress({ name: "Riley Hopkins 360", colors: 8 }))
+      .toBe("Riley Hopkins 360");
+    expect(normalizeAssignedPress({ name: "", colors: 8 })).toBe("");
+  });
+
+  it("ignores junk types", () => {
+    expect(normalizeAssignedPress(42)).toBe("");
+    expect(normalizeAssignedPress(true)).toBe("");
+    expect(normalizeAssignedPress([])).toBe("");
   });
 });

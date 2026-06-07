@@ -5,6 +5,8 @@
 // March or November can otherwise come out as 0.96 or 1.04 days
 // apart, and Math.round at the rounding boundary flips the result.
 
+import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
+
 /**
  * Days between two YYYY-MM-DD ISO strings.
  *   daysBetween("2026-06-04", "2026-06-04") === 0
@@ -77,7 +79,7 @@ export function spanDays(order) {
 export function placementsForPress(orders, pressName, weekStartIso, daysVisible = 7) {
   const maxCol = daysVisible - 1;
   const items = (orders || [])
-    .filter((o) => o && o.assigned_press === pressName && o.scheduled_date)
+    .filter((o) => o && normalizeAssignedPress(o.assigned_press) === pressName && o.scheduled_date)
     .map((o) => {
       const rawStart = dayIndex(o.scheduled_date, weekStartIso);
       const rawEnd   = dayIndex(o.scheduled_end_date || o.scheduled_date, weekStartIso);
@@ -123,7 +125,7 @@ export function placementsForPress(orders, pressName, weekStartIso, daysVisible 
 export function hoursOnPressDay(orders, pressName, dayIso) {
   let total = 0;
   for (const o of orders || []) {
-    if (!o || o.assigned_press !== pressName || !o.scheduled_date) continue;
+    if (!o || normalizeAssignedPress(o.assigned_press) !== pressName || !o.scheduled_date) continue;
     const start = o.scheduled_date;
     const end   = o.scheduled_end_date || o.scheduled_date;
     if (dayIso < start || dayIso > end) continue;

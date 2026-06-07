@@ -17,7 +17,7 @@ import {
   nextGoodsStatusOnTap,
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
-import { normalizePresses } from "@/lib/presses/normalizePresses";
+import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 import { MessageSquare } from "lucide-react";
 import {
   calcLinkedLinePrice,
@@ -187,7 +187,11 @@ export default function OrderDetailModal({
   // job runs). Empty string when unset; saved as a number.
   const [estimatedHours, setEstimatedHours] = useState(order.estimated_hours ?? "");
   const [laborCost, setLaborCost] = useState(order.actual_labor_cost ?? "");
-  const [assignedPress, setAssignedPress] = useState(order.assigned_press || "");
+  // Normalize on initial read so a legacy JSON-string-shaped value
+  // matches the dropdown options (which are plain press names).
+  // Without this the <select> shows no selected value when the row
+  // was written by the old `assigned_press: pressObject` writer.
+  const [assignedPress, setAssignedPress] = useState(normalizeAssignedPress(order.assigned_press));
   const [assignedOperator, setAssignedOperator] = useState(order.assigned_operator || "");
   const [stepNotes, setStepNotes] = useState(order.step_notes || {});
   // Read-only sync: step notes are appended on every status change
@@ -777,9 +781,9 @@ export default function OrderDetailModal({
                   {artworkFiles.length} artwork file{artworkFiles.length === 1 ? "" : "s"}
                 </span>
               )}
-              {order.assigned_press && (
+              {normalizeAssignedPress(order.assigned_press) && (
                 <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2.5 py-1 rounded-full">
-                  {order.assigned_press}
+                  {normalizeAssignedPress(order.assigned_press)}
                 </span>
               )}
               {order.assigned_operator && (

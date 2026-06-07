@@ -60,3 +60,37 @@ export function normalizePresses(raw) {
 export function serializePresses(rows) {
   return normalizePresses(rows);
 }
+
+/**
+ * Read a single `orders.assigned_press` value and return the display
+ * name string. Same v1/v2 schema bleed as the `shop.presses` array
+ * above: some rows are plain strings like `"Riley Hopkins 360"`,
+ * others are JSON-stringified objects like `'{"name":"Riley Hopkins
+ * 360","colors":8}'` written by an early Production-scheduler commit
+ * that passed the whole press object instead of `press.name`.
+ *
+ * Without this helper, the v2-shaped rows render as raw JSON in
+ * the Production table AND fail strict-equality comparisons in
+ * `schedulerHelpers.placementsForPress` / `hoursOnPressDay`, so
+ * those orders silently drop off their press lanes.
+ *
+ * @param {unknown} raw
+ * @returns {string}  display name, or "" when unset/unparseable
+ */
+export function normalizeAssignedPress(raw) {
+  if (raw == null) return "";
+  if (typeof raw === "object") {
+    return String(raw.name || "").trim();
+  }
+  if (typeof raw !== "string") return "";
+  const trimmed = raw.trim();
+  if (trimmed.length > 1 && trimmed[0] === "{" && trimmed[trimmed.length - 1] === "}") {
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj && typeof obj === "object" && obj.name != null) {
+        return String(obj.name).trim();
+      }
+    } catch { /* not JSON — fall through to plain-string treatment */ }
+  }
+  return trimmed;
+}
