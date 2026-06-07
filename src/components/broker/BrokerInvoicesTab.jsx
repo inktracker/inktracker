@@ -22,24 +22,9 @@ import {
   Package,
   Clock,
 } from "lucide-react";
-import { exportQuoteToPDF, exportInvoiceToPDF } from "../shared/pdfExport";
+import { exportQuoteToPDF, exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import { toCustomerFacingQuote } from "@/lib/quotes/customerFacingQuote";
 import ModalBackdrop from "../shared/ModalBackdrop";
-
-// Open the generated PDF in a new tab instead of triggering a download.
-// Window is opened synchronously from the click to avoid popup blockers,
-// then navigated to the blob URL once it's ready.
-async function previewPdf(buildPromise) {
-  const win = window.open("", "_blank");
-  try {
-    const blobUrl = await buildPromise;
-    if (win) win.location.href = blobUrl;
-    else window.location.href = blobUrl;
-  } catch (err) {
-    if (win) win.close();
-    throw err;
-  }
-}
 import {
   AreaChart,
   Area,

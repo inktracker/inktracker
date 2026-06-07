@@ -14,7 +14,7 @@ import {
   BROKER_MARKUP,
   STANDARD_MARKUP,
 } from "../shared/pricing";
-import { exportQuoteToPDF } from "../shared/pdfExport";
+import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -1179,13 +1179,10 @@ export default function QuoteDetailModal({
             )}
 
             <button
-              onClick={async () => {
-                const url = await exportQuoteToPDF(
-                  quote,
-                  { shopName, logoUrl, customerCompany: customer?.company || "", customerEmail: quote.customer_email || customer?.email || "", customerPhone: quote.customer_phone || customer?.phone || "", output: "blob" }
-                );
-                if (url) window.open(url, "_blank");
-              }}
+              onClick={() => previewPdf(exportQuoteToPDF(
+                quote,
+                { shopName, logoUrl, customerCompany: customer?.company || "", customerEmail: quote.customer_email || customer?.email || "", customerPhone: quote.customer_phone || customer?.phone || "", output: "blob" },
+              ))}
               className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
             >
               Preview PDF

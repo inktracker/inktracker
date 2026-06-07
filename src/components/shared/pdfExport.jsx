@@ -759,6 +759,43 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   return yPos;
 }
 
+/**
+ * Open a generated-PDF blob URL in a new browser tab without
+ * tripping mobile Safari's popup blocker.
+ *
+ * The naive `await exportXToPDF(...); window.open(url)` pattern
+ * fails silently on iOS Safari (and a handful of mobile Chromes):
+ * any `window.open()` call that runs AFTER an await is no longer
+ * considered "user-initiated" and the browser blocks the popup
+ * with no error surface — the button appears dead.
+ *
+ * Fix: call `window.open("", "_blank")` synchronously inside the
+ * click handler (still tied to the gesture), then navigate that
+ * pre-opened window once the blob URL is ready.
+ *
+ * Pass a Promise that resolves to a blob URL string. On error, the
+ * placeholder window is closed and the error rethrown so callers
+ * can surface it.
+ *
+ * @param {Promise<string|null|undefined>} buildPromise
+ * @returns {Promise<void>}
+ */
+export async function previewPdf(buildPromise) {
+  const win = window.open("", "_blank");
+  try {
+    const blobUrl = await buildPromise;
+    if (!blobUrl) {
+      if (win) win.close();
+      return;
+    }
+    if (win) win.location.href = blobUrl;
+    else window.location.href = blobUrl;
+  } catch (err) {
+    if (win) win.close();
+    throw err;
+  }
+}
+
 export async function exportQuoteToPDF(
   quote,
   shopNameOrOptions,
