@@ -1427,10 +1427,10 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
               <StepBadge
                 n={4}
                 title="Turnaround"
-                subtitle={`Standard ships in ~${getStandardTurnaroundDays()} business days. Rush ships in ~${getWizardRushDisplay().days} business days for a ${Math.round(getWizardRushDisplay().rate * 100)}% surcharge.`}
+                subtitle={`Standard ships in ~${getStandardTurnaroundDays()} business days. Rush ships in ${getWizardRushDisplay().daysLabel} for a ${Math.round(getWizardRushDisplay().rate * 100)}% surcharge.`}
               />
               <div className="flex gap-3">
-                {[{val:false,label:"Standard",sub:`${getStandardTurnaroundDays()} business days`},{val:true,label:"Rush",sub:`${getWizardRushDisplay().days} business days`,badge:`+${Math.round(getWizardRushDisplay().rate * 100)}%`}].map(opt=>(
+                {[{val:false,label:"Standard",sub:`${getStandardTurnaroundDays()} business days`},{val:true,label:"Rush",sub:getWizardRushDisplay().daysLabel,badge:`+${Math.round(getWizardRushDisplay().rate * 100)}%`}].map(opt=>(
                   <button key={String(opt.val)} onClick={()=>setRush(opt.val)}
                     className={`flex-1 rounded-xl border-2 px-4 py-3 text-left transition ${rush===opt.val?"border-[var(--brand)] bg-[var(--brand-tint)]":"border-slate-200 hover:border-slate-300"}`}>
                     <div className="flex items-center gap-2">
