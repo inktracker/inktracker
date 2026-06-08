@@ -268,7 +268,7 @@ function getBestDescription(selectedMatch) {
   return "";
 }
 
-function buildBrandOptions(matches, typedStyleNumber) {
+export function buildBrandOptions(matches, typedStyleNumber) {
   const typed = normalizeTypedStyleNumber(typedStyleNumber);
   const unique = [];
   const seen = new Set();
@@ -282,8 +282,14 @@ function buildBrandOptions(matches, typedStyleNumber) {
     if (seen.has(key)) return;
     seen.add(key);
 
+    // Prefix with brand to guarantee uniqueness across suppliers.
+    // See LineItemEditor.jsx buildBrandOptions for the bug story —
+    // supplier `id` fields collide (style 5071 = same id on both S&S
+    // and AS Colour) so without the brand prefix, every option ends
+    // up with the same <option value> and the find-by-id resolution
+    // always returns the first one in array order.
     unique.push({
-      id: match.id || `brand-${index}`,
+      id: `${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,

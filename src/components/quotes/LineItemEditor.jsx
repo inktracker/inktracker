@@ -320,7 +320,7 @@ function getBestDescription(selectedMatch) {
   return "";
 }
 
-function buildBrandOptions(matches, typedStyleNumber) {
+export function buildBrandOptions(matches, typedStyleNumber) {
   const typed = normalizeTypedStyleNumber(typedStyleNumber);
   const unique = [];
   const seen = new Set();
@@ -335,8 +335,17 @@ function buildBrandOptions(matches, typedStyleNumber) {
     if (seen.has(key)) return;
     seen.add(key);
 
+    // Prefix with brand to guarantee uniqueness across suppliers. Bug
+    // surfaced 2026-06-08 with style 5071: both AS Colour and S&S
+    // (Augusta Sportswear) returned matches with `id: 5071`. Without
+    // the prefix, both options ended up with the same value on their
+    // <option> elements, so `brandOptions.find(o => o.id === selected)`
+    // always returned the first one in array order (Augusta — S&S is
+    // grabbed first in lookupStyle), regardless of which one the user
+    // clicked. Result: dropdown visually showed AS Colour but the
+    // applied data was always Augusta.
     unique.push({
-      id: match.id || `brand-${index}`,
+      id: `${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,
