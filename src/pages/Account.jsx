@@ -2775,24 +2775,44 @@ function PricingConfigSection({ user }) {
         </div>
       </div>
 
-      {/* Standard turnaround — shop-wide, lives above the decoration
-          tabs because the default due date and rush surcharge are not
-          decoration-specific. */}
-      <div>
-        <label className="text-[10px] text-slate-400 block mb-1">Standard Turnaround</label>
-        <div className="relative w-40">
-          <NumericInput
-            value={config.standardTurnaroundDays ?? 10}
-            onChange={(n) => setConfig(prev => ({ ...prev, standardTurnaroundDays: Math.max(1, Math.round(Number(n) || 1)) }))}
-            min={1}
-            max={365}
-            integer
-            label="Standard turnaround days"
-            className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
-          />
-          <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">days</span>
+      {/* Standard + Rush turnaround — shop-wide, lives above the
+          decoration tabs because they're not decoration-specific.
+          Both feed the public quote wizard's "Standard ships in ~N
+          business days. Rush ships in ~M business days" copy and
+          the QuoteEditor's default due-date offset. */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-[10px] text-slate-400 block mb-1">Standard Turnaround</label>
+          <div className="relative w-40">
+            <NumericInput
+              value={config.standardTurnaroundDays ?? 10}
+              onChange={(n) => setConfig(prev => ({ ...prev, standardTurnaroundDays: Math.max(1, Math.round(Number(n) || 1)) }))}
+              min={1}
+              max={365}
+              integer
+              label="Standard turnaround days"
+              className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+            />
+            <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">days</span>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">Default due-date offset on new quotes. Anything sooner than this triggers the rush rate below.</p>
         </div>
-        <p className="text-[10px] text-slate-400 mt-1">Default due-date offset on new quotes. Anything sooner than this triggers the rush rate below.</p>
+        <div>
+          <label className="text-[10px] text-slate-400 block mb-1">Rush Turnaround</label>
+          <div className="relative w-40">
+            <NumericInput
+              value={config.rushTurnaroundDays ?? 5}
+              onChange={(n) => setConfig(prev => ({ ...prev, rushTurnaroundDays: Math.max(1, Math.round(Number(n) || 1)) }))}
+              min={1}
+              max={365}
+              integer
+              label="Rush turnaround days"
+              className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+            />
+            <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">days</span>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">Shown in the public wizard's Rush option ("Rush ships in ~N business days for a 20% surcharge").</p>
+        </div>
       </div>
 
       {/* Variable Rush Surcharge — shop-wide tier list. */}
