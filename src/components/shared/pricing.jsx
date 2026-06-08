@@ -204,18 +204,25 @@ export function getShopRushRate() {
 /**
  * The single rush tier the public wizard's Rush button advertises.
  *
- * Both numbers come straight from the shop's Rush Surcharge Tiers in
- * Account → Pricing. No derivation, no fallbacks layered on top — the
- * wizard mirrors what the shop set:
+ * Both values come straight from the shop's Rush Surcharge Tiers in
+ * Account → Pricing. The wizard mirrors what the shop set:
  *
- *   - rate = the LOOSEST tier's rate (largest maxDays). Multi-tier
- *            shops keep their urgent tier (e.g. 3 days → 50%) as a
- *            pricing override; the wizard advertises the moderate one
- *            (e.g. 7 days → 20%) as the default rush option.
- *   - days = that same tier's maxDays. Whatever cutoff the shop typed
- *            into the tier IS the rush window the wizard shows. If the
- *            display feels off, the shop changes the tier — there is
- *            no second knob.
+ *   - rate      = the LOOSEST tier's rate (largest maxDays). Multi-tier
+ *                 shops keep their urgent tier (e.g. 3 days → 50%) as a
+ *                 pricing override; the wizard advertises the moderate
+ *                 one (e.g. 14 days → 20%) as the default rush option.
+ *
+ *   - daysLabel = a human-readable string of the days that hit the
+ *                 advertised tier. Reads naturally as marketing copy:
+ *
+ *                   single tier  (maxDays=14)        → "14 business days or less"
+ *                   multi-tier   ([{7,..}, {14,..}]) → "7-14 business days"
+ *
+ *                 Multi-tier uses the next-tighter tier's maxDays as
+ *                 the low bound: a customer asking for fewer days than
+ *                 the tighter tier's cutoff would hit THAT tier (a
+ *                 different rate), so the loosest tier really only
+ *                 covers the gap between the two.
  *
  * When NO tiers are configured we fall back to the legacy single-rate
  * pair (`rushRate` + `rushTurnaroundDays`). Both have defaults in
@@ -223,15 +230,22 @@ export function getShopRushRate() {
  * something to render for a brand-new shop that hasn't touched
  * Account → Pricing yet.
  *
- * @returns {{ days: number, rate: number }}
+ * @returns {{ daysLabel: string, rate: number }}
  */
 export function getWizardRushDisplay() {
-  const tiers = getRushTiers();
+  const tiers = getRushTiers(); // ascending by maxDays
   if (tiers.length > 0) {
-    const tier = tiers[tiers.length - 1]; // loosest = largest maxDays
-    return { days: tier.maxDays, rate: tier.rate };
+    const loosest = tiers[tiers.length - 1];
+    const tighter = tiers.length > 1 ? tiers[tiers.length - 2] : null;
+    const daysLabel = tighter
+      ? `${tighter.maxDays}-${loosest.maxDays} business days`
+      : `${loosest.maxDays} business days or less`;
+    return { daysLabel, rate: loosest.rate };
   }
-  return { days: getRushTurnaroundDays(), rate: getShopRushRate() };
+  return {
+    daysLabel: `${getRushTurnaroundDays()} business days or less`,
+    rate: getShopRushRate(),
+  };
 }
 
 /**
