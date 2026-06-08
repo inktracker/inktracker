@@ -1,6 +1,17 @@
 import { useState, useEffect } from "react";
-import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail } from "lucide-react";
+import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail, ShieldCheck } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
+import { consumeRecoveryCode, logMfaEvent } from "@/lib/mfa";
+
+// Lockout policy for MFA challenge attempts. After this many failed
+// codes in a row, the user is signed out and locked from re-attempting
+// for the lockout duration. localStorage-backed so the lockout survives
+// page reloads (and is enforced for the same browser on a brand-new
+// tab). Server-side enforcement is the audit log + Supabase Auth's
+// per-IP rate limit on the verify endpoint.
+const MFA_MAX_ATTEMPTS = 10;
+const MFA_LOCKOUT_MS = 15 * 60 * 1000;
+const MFA_LOCKOUT_STORAGE_KEY = "inktracker_mfa_lockout_until";
 
 export default function LoginModal({ isOpen, onClose, defaultMode }) {
   const [mode, setMode] = useState(defaultMode || "signin");
@@ -30,6 +41,32 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   // saw or agreed to the platform agreement. Plain checkbox by design;
   // anything fancier reads as "growth-hack overlay" and erodes trust.
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  // ── MFA challenge state ─────────────────────────────────────────
+  // After signInWithPassword succeeds, the session lands at AAL1. If
+  // the user has a verified TOTP factor we switch the modal into
+  // `mfa-challenge` mode (or `mfa-recovery` when they click "use a
+  // recovery code instead") and don't dismiss until they step up to
+  // AAL2 or successfully consume a recovery code. Closing the modal
+  // mid-challenge signs them out — sitting at AAL1 with the rest of
+  // the app open would be the bypass we're guarding against.
+  const [mfaFactorId, setMfaFactorId] = useState(null);
+  const [mfaChallengeId, setMfaChallengeId] = useState(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaFailedAttempts, setMfaFailedAttempts] = useState(0);
+  const [mfaLockedUntil, setMfaLockedUntil] = useState(null);
+
+  // Rehydrate lockout from localStorage on mount so a refresh during
+  // lockout doesn't reset the timer.
+  useEffect(() => {
+    const stored = Number(localStorage.getItem(MFA_LOCKOUT_STORAGE_KEY));
+    if (Number.isFinite(stored) && stored > Date.now()) {
+      setMfaLockedUntil(stored);
+    } else if (Number.isFinite(stored)) {
+      // Expired — clean up so we don't keep re-reading a dead value.
+      localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
+    }
+  }, []);
 
   // ── Cross-device confirmation sync ───────────────────────────────
   // After signup, the desktop tab shows "Confirmation email sent."
@@ -111,6 +148,116 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     }
   };
 
+  // ── MFA verify handlers ───────────────────────────────────────────
+
+  function lockoutMinutesRemaining() {
+    if (!mfaLockedUntil) return 0;
+    return Math.max(0, Math.ceil((mfaLockedUntil - Date.now()) / 60000));
+  }
+
+  async function applyMfaFailure(eventName, extraMetadata = {}) {
+    const next = mfaFailedAttempts + 1;
+    setMfaFailedAttempts(next);
+    setMfaCode("");
+    try {
+      await logMfaEvent(eventName, { metadata: { attempt: next, ...extraMetadata } });
+    } catch { /* audit failures are best-effort */ }
+    if (next >= MFA_MAX_ATTEMPTS) {
+      const lockUntil = Date.now() + MFA_LOCKOUT_MS;
+      setMfaLockedUntil(lockUntil);
+      localStorage.setItem(MFA_LOCKOUT_STORAGE_KEY, String(lockUntil));
+      try { await logMfaEvent("lockout", { metadata: { attempts: next } }); } catch { /* ignore */ }
+      // Drop AAL1 session so the user can't sit on the modal at AAL1
+      // and bypass MFA by closing the X. They have to wait + sign in
+      // again. Audit log already records the lockout.
+      try { await supabase.auth.signOut(); } catch { /* ignore */ }
+      setError(`Too many failed attempts. Wait ${Math.ceil(MFA_LOCKOUT_MS / 60000)} minutes before trying again. You've been signed out.`);
+      return;
+    }
+    setError(`Invalid code — ${MFA_MAX_ATTEMPTS - next} attempt${MFA_MAX_ATTEMPTS - next === 1 ? "" : "s"} remaining.`);
+  }
+
+  const handleMfaVerify = async (e) => {
+    e?.preventDefault?.();
+    if (lockoutMinutesRemaining() > 0) {
+      setError(`Too many failed attempts. Try again in ${lockoutMinutesRemaining()} minute(s).`);
+      return;
+    }
+    const trimmed = mfaCode.trim().replace(/\s+/g, "");
+    if (!/^\d{6}$/.test(trimmed)) {
+      setError("Enter the 6-digit code from your authenticator app.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const { error: verifyErr } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: mfaChallengeId,
+        code: trimmed,
+      });
+      if (verifyErr) throw verifyErr;
+      try { await logMfaEvent("challenge_succeeded"); } catch { /* ignore */ }
+      setMfaFailedAttempts(0);
+      localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
+      onClose();
+    } catch (err) {
+      // Common Supabase error: "Invalid TOTP code entered" / "Code is incorrect"
+      await applyMfaFailure("challenge_failed", { reason: err?.message?.slice(0, 80) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRecoveryCodeVerify = async (e) => {
+    e?.preventDefault?.();
+    if (lockoutMinutesRemaining() > 0) {
+      setError(`Too many failed attempts. Try again in ${lockoutMinutesRemaining()} minute(s).`);
+      return;
+    }
+    const trimmed = mfaCode.trim();
+    if (!trimmed) {
+      setError("Enter a recovery code.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const result = await consumeRecoveryCode(trimmed);
+      if (!result.ok) throw new Error(result.error || "invalid");
+      // Recovery codes are a one-time bypass: they DISABLE MFA on the
+      // account so the user can complete login. Re-enrollment happens
+      // afterwards on Account → Security. This is the industry-standard
+      // pattern (GitHub, Stripe, Linear). Without unenrolling, the
+      // user's AAL would still be AAL1 and the session would be
+      // unable to step up.
+      try { await supabase.auth.mfa.unenroll({ factorId: mfaFactorId }); } catch { /* ignore */ }
+      try { await logMfaEvent("disabled", { metadata: { via: "recovery_code" } }); } catch { /* ignore */ }
+      setMfaFailedAttempts(0);
+      localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
+      onClose();
+    } catch (err) {
+      await applyMfaFailure("recovery_failed", { reason: err?.message?.slice(0, 80) });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Close-guard: bailing out of a challenge means we sign out so the
+  // user can't be left at AAL1 with the rest of the app accessible.
+  const handleCloseModal = async () => {
+    if (mode === "mfa-challenge" || mode === "mfa-recovery") {
+      try { await supabase.auth.signOut(); } catch { /* ignore */ }
+      setMode("signin");
+      setMfaFactorId(null);
+      setMfaChallengeId(null);
+      setMfaCode("");
+      setMfaFailedAttempts(0);
+      setError("");
+    }
+    onClose();
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -161,6 +308,27 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
+
+        // Password is correct. If the user has a verified TOTP factor
+        // we're now sitting at AAL1 and need to step up to AAL2 before
+        // dismissing the modal. getAuthenticatorAssuranceLevel returns
+        // currentLevel + nextLevel — nextLevel === "aal2" means MFA is
+        // enrolled and required. No factor → nextLevel === currentLevel.
+        const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        const needsMfa = aalData?.nextLevel === "aal2" && aalData?.currentLevel === "aal1";
+        if (needsMfa) {
+          const { data: factorsData } = await supabase.auth.mfa.listFactors();
+          const totp = (factorsData?.totp || []).find((f) => f.status === "verified");
+          if (totp) {
+            const { data: chData, error: chErr } = await supabase.auth.mfa.challenge({ factorId: totp.id });
+            if (chErr) throw chErr;
+            setMfaFactorId(totp.id);
+            setMfaChallengeId(chData.id);
+            setMode("mfa-challenge");
+            setLoading(false);
+            return; // don't onClose — modal stays in challenge mode
+          }
+        }
         onClose();
       }
     } catch (err) {
@@ -237,9 +405,13 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               ? "Create Account"
               : mode === "forgot"
               ? "Reset Password"
+              : mode === "mfa-challenge"
+              ? "Verify your identity"
+              : mode === "mfa-recovery"
+              ? "Use a recovery code"
               : "Sign In"}
           </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+          <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600 transition">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -358,6 +530,90 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 {resetLoading ? "Sending…" : "Send reset link"}
               </button>
             </div>
+          ) : mode === "mfa-challenge" ? (
+            <form onSubmit={handleMfaVerify} className="space-y-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Two-factor authentication is on for this account. Enter the 6-digit code from your authenticator app.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  6-digit code
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123456"
+                  className="w-40 px-4 py-2.5 border border-slate-200 rounded-xl text-base font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  autoFocus
+                  disabled={lockoutMinutesRemaining() > 0}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || mfaCode.length !== 6 || lockoutMinutesRemaining() > 0}
+                className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
+              >
+                {loading ? "Verifying…" : "Verify and sign in"}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => { setMode("mfa-recovery"); setMfaCode(""); setError(""); }}
+                  className="text-xs font-semibold text-teal-600 hover:text-teal-700"
+                >
+                  Use a recovery code instead
+                </button>
+              </div>
+            </form>
+          ) : mode === "mfa-recovery" ? (
+            <form onSubmit={handleRecoveryCodeVerify} className="space-y-4">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Enter one of your single-use recovery codes. Using a recovery code will turn off two-factor authentication — you'll need to re-enable it from Account → Security.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                  Recovery code
+                </label>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.toUpperCase())}
+                  placeholder="ABCDE-FGHJK"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-base font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  autoFocus
+                  disabled={lockoutMinutesRemaining() > 0}
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading || !mfaCode.trim() || lockoutMinutesRemaining() > 0}
+                className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
+              >
+                {loading ? "Verifying…" : "Verify and sign in"}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={() => { setMode("mfa-challenge"); setMfaCode(""); setError(""); }}
+                  className="text-xs font-semibold text-teal-600 hover:text-teal-700"
+                >
+                  Back to authenticator code
+                </button>
+              </div>
+            </form>
           ) : (
           /* Form */
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -500,7 +756,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
             </>
           )}
 
-          {/* Mode toggle */}
+          {/* Mode toggle — hidden during MFA challenge / recovery since
+              switching to "Sign up" or "Forgot password" mid-challenge
+              would leave the session at AAL1. Use the X to bail (which
+              signs the user out via handleCloseModal). */}
+          {(mode === "mfa-challenge" || mode === "mfa-recovery") ? null : (
           <div className="text-center">
             {mode === "signin" ? (
               <p className="text-sm text-slate-500">
@@ -534,6 +794,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               </p>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>
