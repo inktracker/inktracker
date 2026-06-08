@@ -2800,6 +2800,7 @@ function PricingConfigSection({ user }) {
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-1">Rush Surcharge Tiers</h4>
         <p className="text-[10px] text-slate-400 mb-2">
           Variable rush rate based on how soon the order is due. Add a tier per "cliff": e.g. less than 3 days = +50%, less than 6 days = +25%. The tightest matching tier wins.
+          {" "}Tier days can't be longer than Standard Turnaround above — rush is faster than standard, by definition.
         </p>
         <div className="border border-slate-200 rounded-xl p-3 space-y-2">
           <div className="grid grid-cols-[1fr_120px_120px_32px] gap-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">
@@ -2824,12 +2825,21 @@ function PricingConfigSection({ user }) {
                   <NumericInput
                     value={tier.maxDays ?? ""}
                     onChange={(n) => setConfig(prev => {
+                      // Cap at Standard Turnaround — a rush tier longer
+                      // than standard makes no sense (the order would
+                      // already be standard, not rush). getRushTiers()
+                      // already filters higher values at read time; this
+                      // input cap prevents them being stored at all.
+                      const stdCap = Math.max(1, Math.round(Number(prev.standardTurnaroundDays || 10)));
                       const next = [...(prev.rushTiers || [])];
-                      next[tier._origIdx] = { ...next[tier._origIdx], maxDays: Math.max(1, Math.round(Number(n) || 1)) };
+                      next[tier._origIdx] = {
+                        ...next[tier._origIdx],
+                        maxDays: Math.max(1, Math.min(stdCap, Math.round(Number(n) || 1))),
+                      };
                       return { ...prev, rushTiers: next };
                     })}
                     min={1}
-                    max={365}
+                    max={Math.max(1, Math.round(Number(config.standardTurnaroundDays || 10)))}
                     integer
                     label={`Rush tier ${idx + 1} max days`}
                     className="w-full text-xs border border-slate-200 rounded pl-3 pr-12 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
@@ -2870,7 +2880,15 @@ function PricingConfigSection({ user }) {
               const tiers = Array.isArray(config.rushTiers) ? config.rushTiers : [];
               const sorted = [...tiers].sort((a, b) => (Number(b.maxDays) || 0) - (Number(a.maxDays) || 0));
               const loosest = sorted[0]?.maxDays;
-              const defaultDays = loosest ? Math.max(1, loosest - 2) : 3;
+              const stdCap = Math.max(1, Math.round(Number(config.standardTurnaroundDays || 10)));
+              // Cap the seeded default at Standard Turnaround too — a
+              // freshly-added tier with maxDays > std would just be
+              // filtered out by getRushTiers() at read time, leaving
+              // the shop confused about why it isn't applying.
+              const defaultDays = Math.min(
+                stdCap,
+                loosest ? Math.max(1, loosest - 2) : 3
+              );
               setConfig(prev => ({
                 ...prev,
                 rushTiers: [...(prev.rushTiers || []), { maxDays: defaultDays, rate: 0.25 }],

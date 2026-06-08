@@ -2,25 +2,10 @@
 // wizard uses to derive its "Rush ships in ~D days for R% surcharge"
 // copy from whatever the shop has configured in Account → Pricing.
 //
-// Bug history: the wizard hardcoded 14/7/20% until 2026-06-08. PR #350
-// wired the labels to read `pricing_config`, but there was no UI for
-// `rushTurnaroundDays` — and we tried to add one (PR #353), which Joe
-// rejected because rush information already lives in the Rush
-// Surcharge Tiers table. The wizard should derive its display from
-// that table, not add a parallel field.
-//
-// This test pins the derivation rules so future refactors can't shift
-// them silently:
-//
-//   - Standard turnaround comes straight from pricing_config (already
-//     covered by existing helpers).
-//   - Rush rate = the LOOSEST tier's rate (largest maxDays). The
-//     urgent tier doesn't apply unless a customer asks for an urgent
-//     timeline, so the wizard advertises the moderate one.
-//   - Rush days = half of standard, rounded down, minimum 1. Industry
-//     convention; intentionally derived, not configurable.
-//   - Cleanly falls back to getShopRushRate() and half-of-standard
-//     when no tiers are set.
+// Joe's rule, locked in 2026-06-08: the wizard mirrors the shop's
+// rush tier table directly. No derivation, no extra knobs. If the
+// shop sets a tier maxDays of 15 → the wizard shows 15. Want a
+// different number? Change the tier.
 
 import { describe, it, expect, beforeEach } from "vitest";
 import {
@@ -31,42 +16,27 @@ import {
 beforeEach(() => loadShopPricingConfig(null));
 
 describe("getWizardRushDisplay — fallback when no shop config", () => {
-  it("returns platform defaults (5 days, 0.20 rate) on null config", () => {
+  it("returns platform defaults on null config", () => {
     const { days, rate } = getWizardRushDisplay();
-    // Standard default = 10; half = 5; rate falls back to 0.20.
-    expect(days).toBe(5);
-    expect(rate).toBe(0.20);
+    expect(days).toBe(5);    // DEFAULT_RUSH_TURNAROUND_DAYS
+    expect(rate).toBe(0.20); // legacy rushRate default
   });
 });
 
-describe("getWizardRushDisplay — derivation from standardTurnaroundDays", () => {
-  it("rush days = floor(standard / 2)", () => {
-    loadShopPricingConfig({ standardTurnaroundDays: 14 });
-    expect(getWizardRushDisplay().days).toBe(7);
+describe("getWizardRushDisplay — derivation from rush tiers", () => {
+  it("uses the loosest tier's maxDays + rate directly when one tier is set", () => {
+    loadShopPricingConfig({
+      standardTurnaroundDays: 15,
+      rushTiers: [{ maxDays: 15, rate: 0.20 }],
+    });
+    expect(getWizardRushDisplay()).toEqual({ days: 15, rate: 0.20 });
   });
 
-  it("rush days never goes below 1, even for very short standards", () => {
-    loadShopPricingConfig({ standardTurnaroundDays: 1 });
-    expect(getWizardRushDisplay().days).toBe(1);
-  });
-
-  it("rounds down (15 / 2 = 7.5 → 7)", () => {
-    loadShopPricingConfig({ standardTurnaroundDays: 15 });
-    expect(getWizardRushDisplay().days).toBe(7);
-  });
-
-  it("respects a custom long standard (30 → 15)", () => {
-    loadShopPricingConfig({ standardTurnaroundDays: 30 });
-    expect(getWizardRushDisplay().days).toBe(15);
-  });
-});
-
-describe("getWizardRushDisplay — rate from rush tiers", () => {
-  it("uses the loosest tier's rate when multiple are configured", () => {
-    // Multi-tier: urgent (3 days → 50%), moderate (7 days → 25%). The
-    // wizard should advertise the moderate one because that's what a
-    // customer hits when they click Rush without specifying an urgent
-    // timeline.
+  it("picks the LOOSEST tier (largest maxDays) when multiple are set", () => {
+    // Multi-tier: urgent 3 days → 50%, moderate 7 days → 25%.
+    // Wizard advertises the moderate (loosest) tier; the urgent rate
+    // is a pricing override that only kicks in when a customer asks
+    // for a sub-3-day due date.
     loadShopPricingConfig({
       standardTurnaroundDays: 14,
       rushTiers: [
@@ -74,38 +44,53 @@ describe("getWizardRushDisplay — rate from rush tiers", () => {
         { maxDays: 7, rate: 0.25 },
       ],
     });
-    expect(getWizardRushDisplay().rate).toBe(0.25);
+    expect(getWizardRushDisplay()).toEqual({ days: 7, rate: 0.25 });
   });
 
-  it("uses the single tier's rate when only one is configured", () => {
+  it("uses the tier values verbatim — no /2, no -1, no derivation", () => {
+    // Pins the contract: whatever the shop typed is what the wizard
+    // shows. Regression guard against re-introducing the floor(std/2)
+    // derivation that was tried 2026-06-08 and rejected.
     loadShopPricingConfig({
-      standardTurnaroundDays: 15,
-      rushTiers: [{ maxDays: 15, rate: 0.20 }],
+      standardTurnaroundDays: 20,
+      rushTiers: [{ maxDays: 10, rate: 0.30 }],
     });
-    expect(getWizardRushDisplay().rate).toBe(0.20);
+    expect(getWizardRushDisplay()).toEqual({ days: 10, rate: 0.30 });
   });
+});
 
-  it("falls back to legacy rushRate when no tiers are set", () => {
+describe("getWizardRushDisplay — fallback to legacy single-rate fields", () => {
+  it("falls back to rushTurnaroundDays + rushRate when no tiers are set", () => {
     loadShopPricingConfig({
       standardTurnaroundDays: 14,
+      rushTurnaroundDays: 7,
       rushRate: 0.30,
     });
-    expect(getWizardRushDisplay().rate).toBe(0.30);
+    expect(getWizardRushDisplay()).toEqual({ days: 7, rate: 0.30 });
+  });
+
+  it("still falls back when rushTiers exists but is empty array", () => {
+    loadShopPricingConfig({
+      standardTurnaroundDays: 14,
+      rushTiers: [],
+      rushRate: 0.25,
+    });
+    expect(getWizardRushDisplay()).toEqual({ days: 5, rate: 0.25 });
   });
 });
 
 describe("getWizardRushDisplay — Biota Mfg's actual config (regression pin)", () => {
   // Pulled from prod 2026-06-08: standardTurnaroundDays=15,
-  // rushTiers=[{maxDays:15, rate:0.20}]. After this fix, the wizard
-  // should show "Standard ships in ~15 business days. Rush ships in
-  // ~7 business days for a 20% surcharge."
-  it("derives 7 days at 20% for the live Biota config", () => {
+  // rushTiers=[{maxDays:15, rate:0.20}]. Wizard should show:
+  //   "Standard ships in ~15 business days.
+  //    Rush ships in ~15 business days for a 20% surcharge."
+  // If that reads weirdly to a customer (rush = standard), the fix
+  // is on Joe's side — tighten the rush tier maxDays.
+  it("derives 15 days at 20% for the live Biota config", () => {
     loadShopPricingConfig({
       standardTurnaroundDays: 15,
       rushTiers: [{ maxDays: 15, rate: 0.20 }],
     });
-    const { days, rate } = getWizardRushDisplay();
-    expect(days).toBe(7);
-    expect(rate).toBe(0.20);
+    expect(getWizardRushDisplay()).toEqual({ days: 15, rate: 0.20 });
   });
 });
