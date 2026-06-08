@@ -204,40 +204,34 @@ export function getShopRushRate() {
 /**
  * The single rush tier the public wizard's Rush button advertises.
  *
- * The shop's Rush Surcharge Tiers are an "if due within N days, charge
- * rate" table — they don't say "here is the rush window we ship in."
- * The wizard, however, has to show ONE concrete promise:
- *   "Rush ships in ~D business days for an R% surcharge."
+ * Both numbers come straight from the shop's Rush Surcharge Tiers in
+ * Account → Pricing. No derivation, no fallbacks layered on top — the
+ * wizard mirrors what the shop set:
  *
- * The derivation pins both numbers to the shop's existing config so a
- * shop never has to set a separate `rushTurnaroundDays`:
+ *   - rate = the LOOSEST tier's rate (largest maxDays). Multi-tier
+ *            shops keep their urgent tier (e.g. 3 days → 50%) as a
+ *            pricing override; the wizard advertises the moderate one
+ *            (e.g. 7 days → 20%) as the default rush option.
+ *   - days = that same tier's maxDays. Whatever cutoff the shop typed
+ *            into the tier IS the rush window the wizard shows. If the
+ *            display feels off, the shop changes the tier — there is
+ *            no second knob.
  *
- *   - rate  = the LOOSEST tier's rate (largest maxDays). This is the
- *             rate the customer actually hits when they pick Rush
- *             without specifying an aggressive due date — multi-tier
- *             shops keep their urgent tier (e.g. 3 days → 50%) as a
- *             pricing override, but the wizard advertises the moderate
- *             tier (e.g. 7 days → 20%) as the "default rush."
- *
- *   - days  = half of the shop's standard turnaround, rounded down,
- *             minimum 1. Industry convention — "rush is roughly twice
- *             as fast." Intentionally a derived display value, not
- *             configurable. Shops that want to advertise a different
- *             window can tighten their standard turnaround, which the
- *             wizard already reflects from `standardTurnaroundDays`.
- *
- * Falls back cleanly when no tiers are configured:
- *   - rate  → getShopRushRate() (legacy single-rate fallback, 0.20 default)
- *   - days  → half of standard (same derivation, no tier required)
+ * When NO tiers are configured we fall back to the legacy single-rate
+ * pair (`rushRate` + `rushTurnaroundDays`). Both have defaults in
+ * `getShopRushRate` / `getRushTurnaroundDays`, so the wizard still has
+ * something to render for a brand-new shop that hasn't touched
+ * Account → Pricing yet.
  *
  * @returns {{ days: number, rate: number }}
  */
 export function getWizardRushDisplay() {
-  const std = getStandardTurnaroundDays();
   const tiers = getRushTiers();
-  const rate = tiers.length > 0 ? tiers[tiers.length - 1].rate : getShopRushRate();
-  const days = Math.max(1, Math.floor(std / 2));
-  return { days, rate };
+  if (tiers.length > 0) {
+    const tier = tiers[tiers.length - 1]; // loosest = largest maxDays
+    return { days: tier.maxDays, rate: tier.rate };
+  }
+  return { days: getRushTurnaroundDays(), rate: getShopRushRate() };
 }
 
 /**
