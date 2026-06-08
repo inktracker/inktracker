@@ -18,7 +18,22 @@
 // their respective records. Both editors carry their own copy of the
 // helper — until they're DRY'd up, both need to pass this contract.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+// Both editor modules import `@/api/supabaseClient` at the top, which
+// runs `createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)` at
+// module-load time. In CI those env vars aren't set, so importing the
+// editor would throw "supabaseUrl is required" before any test runs.
+// Mock the client to a no-op so the module-level createClient never
+// fires. `buildBrandOptions` is pure — it doesn't use any of these
+// stubs, they only exist to keep the editor module loadable.
+vi.mock("@/api/supabaseClient", () => ({
+  supabase: {
+    functions: { invoke: () => Promise.resolve({ data: null, error: null }) },
+  },
+  base44: { entities: {}, auth: {}, functions: {} },
+}));
+
 import { buildBrandOptions as buildBrandOptionsShop }   from "../LineItemEditor";
 import { buildBrandOptions as buildBrandOptionsBroker } from "../../broker/BrokerLineItemEditor";
 
