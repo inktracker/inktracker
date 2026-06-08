@@ -4,7 +4,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { clampRushTierMaxDays, defaultNewRushTierMaxDays } from "@/lib/pricing/rushTierClamp";
 import { DEFAULT_BRAND, BRAND_PRESETS, normalizeBrandColor } from "@/lib/branding";
-import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2, CheckSquare } from "lucide-react";
+import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2, CheckSquare, Shield } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
@@ -12,6 +12,7 @@ import { normalizePresses, serializePresses } from "@/lib/presses/normalizePress
 import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
+import SecuritySection from "../components/account/SecuritySection";
 import { notify } from "@/lib/notify";
 import { qbOAuthErrorMessage } from "@/lib/qb/oauthErrorMessage";
 import { getMissingAutoDerivedTasks } from "@/lib/productionTasks";
@@ -743,6 +744,11 @@ export default function Account() {
           </div>
         </Section>
 
+        {user && (
+          <Section icon={Shield} title="Security">
+            <SecuritySection />
+          </Section>
+        )}
 
         {user && (
           <Section icon={Wand2} title="Quote Wizard">
