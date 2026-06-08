@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
+import { clampRushTierMaxDays, defaultNewRushTierMaxDays } from "@/lib/pricing/rushTierClamp";
 import { DEFAULT_BRAND, BRAND_PRESETS, normalizeBrandColor } from "@/lib/branding";
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2, CheckSquare } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
@@ -2825,16 +2826,10 @@ function PricingConfigSection({ user }) {
                   <NumericInput
                     value={tier.maxDays ?? ""}
                     onChange={(n) => setConfig(prev => {
-                      // Cap at Standard Turnaround — a rush tier longer
-                      // than standard makes no sense (the order would
-                      // already be standard, not rush). getRushTiers()
-                      // already filters higher values at read time; this
-                      // input cap prevents them being stored at all.
-                      const stdCap = Math.max(1, Math.round(Number(prev.standardTurnaroundDays || 10)));
                       const next = [...(prev.rushTiers || [])];
                       next[tier._origIdx] = {
                         ...next[tier._origIdx],
-                        maxDays: Math.max(1, Math.min(stdCap, Math.round(Number(n) || 1))),
+                        maxDays: clampRushTierMaxDays(n, prev.standardTurnaroundDays),
                       };
                       return { ...prev, rushTiers: next };
                     })}
@@ -2877,17 +2872,9 @@ function PricingConfigSection({ user }) {
           <button
             type="button"
             onClick={() => {
-              const tiers = Array.isArray(config.rushTiers) ? config.rushTiers : [];
-              const sorted = [...tiers].sort((a, b) => (Number(b.maxDays) || 0) - (Number(a.maxDays) || 0));
-              const loosest = sorted[0]?.maxDays;
-              const stdCap = Math.max(1, Math.round(Number(config.standardTurnaroundDays || 10)));
-              // Cap the seeded default at Standard Turnaround too — a
-              // freshly-added tier with maxDays > std would just be
-              // filtered out by getRushTiers() at read time, leaving
-              // the shop confused about why it isn't applying.
-              const defaultDays = Math.min(
-                stdCap,
-                loosest ? Math.max(1, loosest - 2) : 3
+              const defaultDays = defaultNewRushTierMaxDays(
+                config.rushTiers,
+                config.standardTurnaroundDays,
               );
               setConfig(prev => ({
                 ...prev,
