@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, buildLinkedQtyMap, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques, getMinOrderQty, getStandardTurnaroundDays, getRushTurnaroundDays, getShopRushRate } from "../shared/pricing";
+import { calcLinkedLinePrice, calcQuoteTotalsWithLinking, buildLinkedQtyMap, BIG_SIZES, SIZES, fmtMoney, fmtDate, uid, getEnabledTechniques, getMinOrderQty, getStandardTurnaroundDays, getWizardRushDisplay } from "../shared/pricing";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
@@ -637,7 +637,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
   const qty = Object.values(sizes).reduce((s,v)=>s+(parseInt(v)||0),0);
   const price = style ? calcLinkedLinePrice(
     { garmentCost: effectiveCost, sizes, imprints: imprints.length ? imprints : [{colors:1}] },
-    rush ? getShopRushRate() : 0, {}, undefined, {}
+    rush ? getWizardRushDisplay().rate : 0, {}, undefined, {}
   ) : null;
   const total = price ? price.lineTotal : 0;
 
@@ -657,7 +657,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
   });
   const liveQuote = allLiveItems.length > 0 ? {
     line_items: allLiveItems,
-    rush_rate: rush ? getShopRushRate() : 0,
+    rush_rate: rush ? getWizardRushDisplay().rate : 0,
     extras: {}, discount: 0, tax_rate: 0, deposit_pct: 0,
   } : null;
   const totalAllQty = garments.reduce((s,gg) => s + Object.values(gg.sizes).reduce((a,v)=>a+(parseInt(v)||0),0), 0);
@@ -792,7 +792,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
       due_date: contact.dueDate || null,
       status: "Pending",
       notes: contact.notes,
-      rush_rate: rush ? getShopRushRate() : 0,
+      rush_rate: rush ? getWizardRushDisplay().rate : 0,
       extras: { colorMatch:false, difficultPrint:false, waterbased:false, tags:false },
       line_items,
       selected_artwork: allArtwork,
@@ -1427,10 +1427,10 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
               <StepBadge
                 n={4}
                 title="Turnaround"
-                subtitle={`Standard ships in ~${getStandardTurnaroundDays()} business days. Rush ships in ~${getRushTurnaroundDays()} business days for a ${Math.round(getShopRushRate() * 100)}% surcharge.`}
+                subtitle={`Standard ships in ~${getStandardTurnaroundDays()} business days. Rush ships in ~${getWizardRushDisplay().days} business days for a ${Math.round(getWizardRushDisplay().rate * 100)}% surcharge.`}
               />
               <div className="flex gap-3">
-                {[{val:false,label:"Standard",sub:`${getStandardTurnaroundDays()} business days`},{val:true,label:"Rush",sub:`${getRushTurnaroundDays()} business days`,badge:`+${Math.round(getShopRushRate() * 100)}%`}].map(opt=>(
+                {[{val:false,label:"Standard",sub:`${getStandardTurnaroundDays()} business days`},{val:true,label:"Rush",sub:`${getWizardRushDisplay().days} business days`,badge:`+${Math.round(getWizardRushDisplay().rate * 100)}%`}].map(opt=>(
                   <button key={String(opt.val)} onClick={()=>setRush(opt.val)}
                     className={`flex-1 rounded-xl border-2 px-4 py-3 text-left transition ${rush===opt.val?"border-[var(--brand)] bg-[var(--brand-tint)]":"border-slate-200 hover:border-slate-300"}`}>
                     <div className="flex items-center gap-2">
@@ -1612,7 +1612,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                         {(() => {
                           const gPrice = calcLinkedLinePrice(
                             { garmentCost: gg.style.garmentCost, sizes: gg.sizes, imprints: imprints.length ? imprints : [{colors:1}] },
-                            rush ? getShopRushRate() : 0, {}, undefined, {}
+                            rush ? getWizardRushDisplay().rate : 0, {}, undefined, {}
                           );
                           return gPrice ? fmtMoney(gPrice.lineTotal) : "—";
                         })()}
