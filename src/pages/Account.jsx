@@ -13,6 +13,7 @@ import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 import SecuritySection from "../components/account/SecuritySection";
+import StepUpConfirmModal from "@/components/StepUpConfirmModal";
 import { notify } from "@/lib/notify";
 import { qbOAuthErrorMessage } from "@/lib/qb/oauthErrorMessage";
 import { getMissingAutoDerivedTasks } from "@/lib/productionTasks";
@@ -112,6 +113,10 @@ export default function Account() {
   const [qbConnecting, setQbConnecting] = useState(false);
   const [qbMessage, setQbMessage] = useState(null); // { type: "success"|"error", text }
   const [qbDisconnecting, setQbDisconnecting] = useState(false);
+  // Step-up auth gate for QB disconnect. Open after the user passes the
+  // window.confirm; the modal handles the MFA code check (and is a no-op
+  // pass-through if MFA isn't enabled on the account).
+  const [showQbDisconnectStepUp, setShowQbDisconnectStepUp] = useState(false);
 
   // Stripe Connect was removed for the initial launch — QuickBooks is the
   // canonical customer-payment integration. The backend code (billing
@@ -419,8 +424,18 @@ export default function Account() {
     }
   }
 
-  async function handleDisconnectQB() {
+  // First gate — quick "are you sure" via native confirm. If the user
+  // says yes, we open the step-up modal which either (a) demands a
+  // fresh MFA code for users with MFA on, or (b) passes through
+  // transparently for users without MFA. The actual disconnect work
+  // lives in doDisconnectQB and runs only after both gates clear.
+  function handleDisconnectQB() {
     if (!window.confirm("Disconnect QuickBooks? Existing synced invoices won't be affected.")) return;
+    setShowQbDisconnectStepUp(true);
+  }
+
+  async function doDisconnectQB() {
+    setShowQbDisconnectStepUp(false);
     setQbDisconnecting(true);
     try {
       // Route through qbSync `disconnect` action — clears tokens from
@@ -982,6 +997,14 @@ export default function Account() {
           </button>
         </div>
       </div>
+
+      <StepUpConfirmModal
+        open={showQbDisconnectStepUp}
+        actionLabel="Disconnect QuickBooks"
+        description="Disconnecting revokes our access to your QuickBooks account. Existing synced invoices stay in QB; future syncs stop until you reconnect."
+        onConfirm={doDisconnectQB}
+        onCancel={() => setShowQbDisconnectStepUp(false)}
+      />
     </div>
   );
 }
