@@ -58,6 +58,12 @@ import {
   buildQuotePaymentEmail,
   sendAndLogApprovalNotification,
 } from "../_shared/approvalNotificationEmail.js";
+import {
+  summarizeQbErrors,
+  shouldSendErrorDigest,
+  buildQbErrorDigestText,
+  buildQbErrorDigestHtml,
+} from "../_shared/qbErrorDigest.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -66,6 +72,13 @@ const QB_BASE          = "https://quickbooks.api.intuit.com/v3/company";
 const CRON_SECRET      = Deno.env.get("CRON_SECRET") ?? "";
 const SUPABASE_URL     = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_KEY     = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Optional. When set together with RESEND_API_KEY, the cron emails a
+// digest at the start of each run if the past 24 hours' qb_event_log
+// has >= QB_ERROR_DIGEST_THRESHOLD error rows. Failure to send the
+// alert NEVER blocks reconciliation — it's monitoring, not the work.
+const OPERATOR_ALERT_EMAIL = Deno.env.get("OPERATOR_ALERT_EMAIL") ?? "";
+const RESEND_API_KEY       = Deno.env.get("RESEND_API_KEY") ?? "";
+const ALERT_FROM_EMAIL     = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
 
 // Constant-time string compare. Used for the CRON_SECRET bearer
 // check below — `!==` short-circuits on the first mismatched byte
@@ -471,6 +484,63 @@ async function pushNotification(adminClient: any, shopOwner: string, quote: any,
   });
 }
 
+// ── Operator alert digest ───────────────────────────────────────────
+// Runs once at the start of every cron tick. Queries the last 24h of
+// qb_event_log rows with status='error', summarizes by shop + action,
+// and emails a digest to OPERATOR_ALERT_EMAIL if the total crosses the
+// threshold. Failures here are swallowed — the alert is monitoring,
+// not the reconciliation work itself, and a Resend outage must not
+// stop the cron.
+async function scanAndAlertQbErrors(adminClient: any): Promise<{ scanned: number; alerted: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) {
+    return { scanned: 0, alerted: false };
+  }
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: rows, error } = await adminClient
+      .from("qb_event_log")
+      .select("shop_owner, action, error_message, created_at, status")
+      .eq("status", "error")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(500);
+    if (error) {
+      console.warn("[qbReconcile] error-digest scan failed:", error.message);
+      return { scanned: 0, alerted: false };
+    }
+    const summary = summarizeQbErrors(rows ?? []);
+    if (!shouldSendErrorDigest(summary)) {
+      return { scanned: summary.total, alerted: false };
+    }
+    const text = buildQbErrorDigestText(summary);
+    const html = buildQbErrorDigestHtml(summary);
+    const subject = `[InkTracker] QuickBooks error spike — ${summary.total} event(s) across ${summary.shopCount} shop(s)`;
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: ALERT_FROM_EMAIL,
+        to: [OPERATOR_ALERT_EMAIL],
+        subject,
+        html,
+        text,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.warn(`[qbReconcile] Resend alert send failed: ${res.status} ${body}`);
+      return { scanned: summary.total, alerted: false };
+    }
+    return { scanned: summary.total, alerted: true };
+  } catch (err) {
+    console.warn("[qbReconcile] error-digest exception:", (err as Error)?.message);
+    return { scanned: 0, alerted: false };
+  }
+}
+
 // ── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -490,6 +560,11 @@ Deno.serve(async (req) => {
 
   const adminClient = createClient(SUPABASE_URL, SUPABASE_KEY);
   const startedAt = Date.now();
+
+  // Operator monitoring — runs first so a Resend outage doesn't block
+  // reconciliation, and so the alert lands before per-shop work that
+  // could itself generate new error rows for tomorrow's digest.
+  const alertResult = await scanAndAlertQbErrors(adminClient);
 
   try {
     // Find every profile with QB connected. profile_secrets holds the
@@ -545,6 +620,7 @@ Deno.serve(async (req) => {
       shops:    shopResults.length,
       summary,
       duration_ms: durationMs,
+      alert:    alertResult,
     });
   } catch (err) {
     console.error("[qbReconcile] fatal:", err);
