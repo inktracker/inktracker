@@ -44,7 +44,14 @@ import {
   computeJobKpis,
 } from "@/lib/broker/brokerJobs";
 
-function JobDetailDrawer({ job, onClose }) {
+// Receives the four header/profile bits from BrokerInvoicesTab. Before
+// this signature change, the drawer was a top-level function and its
+// onClick handlers referenced `broker`, `shop`, `shopHeader`, and
+// `brokerHeader` as if they were in scope — they weren't (top-level
+// function = no parent closure). Every Client/Shop preview button threw
+// ReferenceError. Sentry caught it (INKTRACKER-WEB-A, "broker is not
+// defined").
+function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader }) {
   const brokerTotals = job._brokerTotal || 0;
   const clientTotals = job._clientTotal || 0;
 
@@ -501,7 +508,14 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
       </div>
 
       {selectedJob && (
-        <JobDetailDrawer job={selectedJob} onClose={() => setSelectedJob(null)} />
+        <JobDetailDrawer
+          job={selectedJob}
+          onClose={() => setSelectedJob(null)}
+          broker={broker}
+          shop={shop}
+          shopHeader={shopHeader}
+          brokerHeader={brokerHeader}
+        />
       )}
     </div>
   );
