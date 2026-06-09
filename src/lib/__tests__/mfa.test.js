@@ -10,6 +10,17 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// The test environment is plain Node — no localStorage. Phase 3b's
+// trusted-device helpers depend on it; stub it once at module load so
+// `import { ... } from "../mfa.js"` and per-test reads both succeed.
+const _store = new Map();
+globalThis.localStorage = {
+  getItem: (k) => (_store.has(k) ? _store.get(k) : null),
+  setItem: (k, v) => { _store.set(k, String(v)); },
+  removeItem: (k) => { _store.delete(k); },
+  clear: () => { _store.clear(); },
+};
+
 const rpcMock         = vi.fn();
 const fromMock        = vi.fn();
 
@@ -26,6 +37,13 @@ import {
   logMfaEvent,
   countUnusedRecoveryCodes,
   listMfaAuditEvents,
+  TRUSTED_DEVICE_STORAGE_KEY,
+  getLocalTrustedDeviceToken,
+  registerTrustedDevice,
+  checkLocalTrustedDevice,
+  listTrustedDevices,
+  revokeTrustedDevice,
+  revokeAllTrustedDevices,
 } from "../mfa.js";
 
 beforeEach(() => {
@@ -242,5 +260,183 @@ describe("listMfaAuditEvents", () => {
 
     const result = await listMfaAuditEvents();
     expect(result).toEqual({ ok: false, error: "denied" });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 3b — trusted device wrapper.
+//
+// Pins: localStorage read/write, RPC call shapes, stale-token cleanup,
+// and the "registration fails → drop the local token" guarantee.
+
+describe("trusted device — getLocalTrustedDeviceToken", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns null when no token is stored", () => {
+    expect(getLocalTrustedDeviceToken()).toBeNull();
+  });
+
+  it("returns the stored token verbatim", () => {
+    localStorage.setItem(TRUSTED_DEVICE_STORAGE_KEY, "abc-def-123");
+    expect(getLocalTrustedDeviceToken()).toBe("abc-def-123");
+  });
+});
+
+describe("registerTrustedDevice", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    if (!globalThis.crypto) globalThis.crypto = {};
+    globalThis.crypto.randomUUID = vi.fn(() => "00000000-1111-2222-3333-444444444444");
+  });
+
+  it("mints a token, calls register_mfa_trusted_device with token + label", async () => {
+    rpcMock.mockResolvedValue({
+      data:  { status: "ok", id: "row-1" },
+      error: null,
+    });
+    const result = await registerTrustedDevice("Chrome on macOS");
+    expect(rpcMock).toHaveBeenCalledWith("register_mfa_trusted_device", {
+      p_token: "00000000-1111-2222-3333-444444444444",
+      p_device_label: "Chrome on macOS",
+    });
+    expect(localStorage.getItem(TRUSTED_DEVICE_STORAGE_KEY))
+      .toBe("00000000-1111-2222-3333-444444444444");
+    expect(result).toEqual({ ok: true, id: "row-1" });
+  });
+
+  it("drops the local token when the RPC returns an error", async () => {
+    rpcMock.mockResolvedValue({
+      data:  null,
+      error: { message: "rate limited" },
+    });
+    const result = await registerTrustedDevice("Chrome");
+    expect(localStorage.getItem(TRUSTED_DEVICE_STORAGE_KEY)).toBeNull();
+    expect(result).toEqual({ ok: false, error: "rate limited" });
+  });
+
+  it("drops the local token when the RPC returns non-ok status", async () => {
+    rpcMock.mockResolvedValue({
+      data:  { status: "unauthenticated" },
+      error: null,
+    });
+    const result = await registerTrustedDevice("Chrome");
+    expect(localStorage.getItem(TRUSTED_DEVICE_STORAGE_KEY)).toBeNull();
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("unauthenticated");
+  });
+
+  it("passes null label when none supplied", async () => {
+    rpcMock.mockResolvedValue({ data: { status: "ok", id: "row-2" }, error: null });
+    await registerTrustedDevice();
+    expect(rpcMock).toHaveBeenCalledWith("register_mfa_trusted_device", {
+      p_token: expect.any(String),
+      p_device_label: null,
+    });
+  });
+});
+
+describe("checkLocalTrustedDevice", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("returns trusted:false without an RPC call when no token is stored", async () => {
+    const result = await checkLocalTrustedDevice();
+    expect(rpcMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, trusted: false });
+  });
+
+  it("returns trusted:true when the RPC confirms the token", async () => {
+    localStorage.setItem(TRUSTED_DEVICE_STORAGE_KEY, "valid-token");
+    rpcMock.mockResolvedValue({
+      data:  { status: "ok", trusted: true },
+      error: null,
+    });
+    const result = await checkLocalTrustedDevice();
+    expect(rpcMock).toHaveBeenCalledWith("check_mfa_trusted_device", {
+      p_token: "valid-token",
+    });
+    expect(result).toEqual({ ok: true, trusted: true });
+    expect(localStorage.getItem(TRUSTED_DEVICE_STORAGE_KEY)).toBe("valid-token");
+  });
+
+  it("drops the local token when the RPC says not_trusted (expired or revoked)", async () => {
+    localStorage.setItem(TRUSTED_DEVICE_STORAGE_KEY, "stale-token");
+    rpcMock.mockResolvedValue({
+      data:  { status: "not_trusted", trusted: false },
+      error: null,
+    });
+    const result = await checkLocalTrustedDevice();
+    expect(result).toEqual({ ok: true, trusted: false });
+    expect(localStorage.getItem(TRUSTED_DEVICE_STORAGE_KEY)).toBeNull();
+  });
+
+  it("preserves the token on a network error (lets caller retry later)", async () => {
+    localStorage.setItem(TRUSTED_DEVICE_STORAGE_KEY, "x");
+    rpcMock.mockResolvedValue({
+      data:  null,
+      error: { message: "network" },
+    });
+    const result = await checkLocalTrustedDevice();
+    expect(result).toEqual({ ok: false, error: "network" });
+    expect(localStorage.getItem(TRUSTED_DEVICE_STORAGE_KEY)).toBe("x");
+  });
+});
+
+describe("listTrustedDevices", () => {
+  it("reads mfa_trusted_devices ordered by created_at desc", async () => {
+    const orderMock = vi.fn().mockResolvedValue({
+      data:  [{ id: "d1" }, { id: "d2" }],
+      error: null,
+    });
+    const selectMock = vi.fn().mockReturnValue({ order: orderMock });
+    fromMock.mockReturnValue({ select: selectMock });
+
+    const result = await listTrustedDevices();
+    expect(fromMock).toHaveBeenCalledWith("mfa_trusted_devices");
+    expect(selectMock).toHaveBeenCalledWith("id, device_label, last_used_at, expires_at, created_at");
+    expect(orderMock).toHaveBeenCalledWith("created_at", { ascending: false });
+    expect(result).toEqual({ ok: true, devices: [{ id: "d1" }, { id: "d2" }] });
+  });
+});
+
+describe("revokeTrustedDevice", () => {
+  it("calls revoke_mfa_trusted_device with the row id", async () => {
+    rpcMock.mockResolvedValue({ data: { status: "ok" }, error: null });
+    const result = await revokeTrustedDevice("row-3");
+    expect(rpcMock).toHaveBeenCalledWith("revoke_mfa_trusted_device", { p_id: "row-3" });
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("surfaces 'not_found' as a failure", async () => {
+    rpcMock.mockResolvedValue({ data: { status: "not_found" }, error: null });
+    const result = await revokeTrustedDevice("missing");
+    expect(result).toEqual({ ok: false, error: "not_found" });
+  });
+});
+
+describe("revokeAllTrustedDevices", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    localStorage.setItem(TRUSTED_DEVICE_STORAGE_KEY, "still-here");
+  });
+
+  it("calls the bulk revoke RPC and clears the local token", async () => {
+    rpcMock.mockResolvedValue({
+      data:  { status: "ok", count: 3 },
+      error: null,
+    });
+    const result = await revokeAllTrustedDevices();
+    expect(rpcMock).toHaveBeenCalledWith("revoke_all_mfa_trusted_devices");
+    expect(result).toEqual({ ok: true, count: 3 });
+    expect(localStorage.getItem(TRUSTED_DEVICE_STORAGE_KEY)).toBeNull();
+  });
+
+  it("returns count=0 when the RPC doesn't supply one", async () => {
+    rpcMock.mockResolvedValue({ data: { status: "ok" }, error: null });
+    const result = await revokeAllTrustedDevices();
+    expect(result).toEqual({ ok: true, count: 0 });
   });
 });
