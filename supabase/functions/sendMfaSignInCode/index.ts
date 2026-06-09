@@ -89,7 +89,10 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: SEND_FROM,
+        // Sender display name — without this, Gmail/Outlook fall back
+        // to showing the local-part ("quotes") as the sender, which
+        // looks like spam for a system email about an account.
+        from: `InkTracker <${SEND_FROM}>`,
         to: [user.email],
         subject,
         html,
