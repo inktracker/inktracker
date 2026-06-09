@@ -20,6 +20,10 @@ export default defineConfig({
     exclude: [
       ...defaultExclude,
       "supabase/functions/_shared/__tests__/supplierCache.test.ts",
+      // Playwright e2e specs live under e2e/ — they have their own
+      // npm run e2e command and the @playwright/test runner. Vitest
+      // would try to import them as unit tests otherwise.
+      "e2e/**",
     ],
   },
 });

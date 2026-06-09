@@ -50,3 +50,9 @@ supabase/.temp/
 
 # Local scratch notes
 CONTEXT.md
+
+# Playwright outputs — never commit
+playwright-report/
+test-results/
+/blob-report/
+/playwright/.cache/
