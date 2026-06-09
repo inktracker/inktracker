@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: SEND_FROM,
+        from: `InkTracker <${SEND_FROM}>`,
         to: [user.email],
         subject,
         html,

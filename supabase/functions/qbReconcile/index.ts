@@ -522,7 +522,7 @@ async function scanAndAlertQbErrors(adminClient: any): Promise<{ scanned: number
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: ALERT_FROM_EMAIL,
+        from: `InkTracker <${ALERT_FROM_EMAIL}>`,
         to: [OPERATOR_ALERT_EMAIL],
         subject,
         html,
