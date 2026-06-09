@@ -93,6 +93,18 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   //
   // Cleanup runs on modal close, mode switch, or successful sign-in
   // so we don't keep pinging the auth endpoint forever.
+
+  // Resend cooldown tick — counts mfaRetryAfter down to zero in 1-sec
+  // ticks while the modal is in mfa-code mode. Lives up here next to
+  // the other hooks; do NOT move below `if (!isOpen) return null` or
+  // the hook count mismatches between not-open / open renders (React
+  // error #310).
+  useEffect(() => {
+    if (mode !== "mfa-code" || mfaRetryAfter <= 0) return undefined;
+    const t = setTimeout(() => setMfaRetryAfter((s) => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [mode, mfaRetryAfter]);
+
   useEffect(() => {
     // Bail when the modal is closed — React doesn't unmount on
     // `if (!isOpen) return null` (early returns leave hooks live),
@@ -264,12 +276,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     onClose();
   };
 
-  // Tick the resend cooldown so the button label counts down naturally.
-  useEffect(() => {
-    if (mode !== "mfa-code" || mfaRetryAfter <= 0) return undefined;
-    const t = setTimeout(() => setMfaRetryAfter((s) => Math.max(0, s - 1)), 1000);
-    return () => clearTimeout(t);
-  }, [mode, mfaRetryAfter]);
+  // The resend cooldown tick hook lives up next to the other useEffects,
+  // ABOVE the `if (!isOpen) return null` early return on line 131. Don't
+  // move it down here — placing a hook below the early return triggers
+  // React error #310 the moment the modal opens (the not-open render
+  // sees N hooks, the open render sees N+1).
 
   const handleSubmit = async (e) => {
     e.preventDefault();
