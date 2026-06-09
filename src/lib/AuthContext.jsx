@@ -5,6 +5,7 @@ import { loadShopTimezone } from "@/lib/shopTimezone";
 import { loadShopProductionTasks } from "@/lib/productionTasks";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
 import { setSentryUser, clearSentryUser } from "@/lib/sentry";
+import { checkLocalTrustedDevice } from "@/lib/mfa";
 
 const AuthContext = createContext();
 
@@ -95,6 +96,74 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState(null);
 
+  // MFA step-up state. After any SIGNED_IN event we check whether the
+  // current session is at AAL1 with a verified TOTP factor — if so, the
+  // user landed here via magic link (or a session restore that didn't
+  // go through LoginModal's challenge), and we need to force the
+  // challenge before letting them touch anything.
+  //
+  // `mfaChallengeRequired` is consumed by MfaSignInChallenge (mounted in
+  // App.jsx) which renders a blocking overlay until the challenge is
+  // satisfied or the user signs out. LoginModal's password path doesn't
+  // trigger this because its own flow steps up to AAL2 before SIGNED_IN
+  // fires our handler (so currentLevel reads as aal2 on this check).
+  const [mfaChallengeRequired, setMfaChallengeRequired] = useState(false);
+  const [mfaFactorId, setMfaFactorId] = useState(null);
+  const [mfaChallengeId, setMfaChallengeId] = useState(null);
+
+  const clearMfaChallenge = useCallback(() => {
+    setMfaChallengeRequired(false);
+    setMfaFactorId(null);
+    setMfaChallengeId(null);
+  }, []);
+
+  // After a successful sign-in, decide whether the current session needs
+  // an MFA step-up. Short-circuits on:
+  //   - no verified TOTP factor → AAL1 is the user's actual level
+  //   - already at AAL2 → LoginModal already did the step-up, nothing to do
+  //   - local trusted-device token matches → skip per Phase 3b
+  //   - any RPC failure → fail closed (require challenge). Magic-link
+  //     bypass is exactly what this is supposed to prevent; we'd rather
+  //     over-challenge than miss a sign-in.
+  const evaluateMfaStepUp = useCallback(async () => {
+    try {
+      const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+      const needs = aalData?.nextLevel === "aal2" && aalData?.currentLevel === "aal1";
+      if (!needs) {
+        clearMfaChallenge();
+        return;
+      }
+      // Trusted device short-circuit.
+      try {
+        const trust = await checkLocalTrustedDevice();
+        if (trust.ok && trust.trusted) {
+          clearMfaChallenge();
+          return;
+        }
+      } catch { /* fall through — challenge */ }
+
+      const { data: factorsData } = await supabase.auth.mfa.listFactors();
+      const totp = (factorsData?.totp || []).find((f) => f.status === "verified");
+      if (!totp) {
+        // Edge case: nextLevel says aal2 but no verified factor found.
+        // Don't block — there's nothing to challenge against.
+        clearMfaChallenge();
+        return;
+      }
+      const { data: chData, error: chErr } = await supabase.auth.mfa.challenge({ factorId: totp.id });
+      if (chErr) throw chErr;
+      setMfaFactorId(totp.id);
+      setMfaChallengeId(chData.id);
+      setMfaChallengeRequired(true);
+    } catch (err) {
+      // Fail closed: if we couldn't determine MFA state, sign the user
+      // out rather than let them through at AAL1. Logging only.
+      console.warn("[Auth] MFA step-up evaluation failed:", err?.message);
+      try { await supabase.auth.signOut(); } catch { /* ignore */ }
+      clearMfaChallenge();
+    }
+  }, [clearMfaChallenge]);
+
   const setLoggedOut = useCallback(() => {
     setUser(null);
     setIsAuthenticated(false);
@@ -112,7 +181,13 @@ export const AuthProvider = ({ children }) => {
       const fullUser = await fetchUserWithProfile();
       if (!fullUser) {
         setLoggedOut();
+        clearMfaChallenge();
       } else {
+        // Run the MFA check in parallel with the rest of the state set.
+        // Failure modes are handled inside evaluateMfaStepUp (fails
+        // closed → sign out). Awaited so the resulting UI state is
+        // consistent when checkAppState resolves.
+        await evaluateMfaStepUp();
         // Pure decision + tests in src/lib/auth/userStateChanged.js — keeps
         // role / subscription transitions from being eaten by an over-eager
         // identity-only equality check.
@@ -131,7 +206,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       if (!silent) setIsLoadingAuth(false);
     }
-  }, [setLoggedOut]);
+  }, [setLoggedOut, clearMfaChallenge, evaluateMfaStepUp]);
 
   useEffect(() => {
     // Initial check — this one DOES show the loading state
@@ -197,6 +272,13 @@ export const AuthProvider = ({ children }) => {
         logout,
         navigateToLogin,
         checkAppState,
+        // MFA step-up surface — MfaSignInChallenge in App.jsx is the
+        // sole consumer. Don't read these from page-level code; the
+        // overlay's whole job is to gate access while challenged.
+        mfaChallengeRequired,
+        mfaFactorId,
+        mfaChallengeId,
+        clearMfaChallenge,
       }}
     >
       {children}

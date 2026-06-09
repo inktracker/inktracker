@@ -17,6 +17,7 @@ import CookieConsent from "@/components/CookieConsent";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
+import MfaSignInChallenge from "@/components/MfaSignInChallenge";
 import OnboardingWizard from "@/components/OnboardingWizard";
 import {
   TYPEWRITER_LINES,
@@ -1410,6 +1411,10 @@ function PublicRouteGuard() {
   return (
     <AuthProvider>
       {isPublic ? <AppRoutes /> : <AuthenticatedApp />}
+      {/* Global MFA step-up overlay. Only renders when the AuthContext
+          flag is set — magic-link sign-ins, or any session restore
+          that lands the user at AAL1 with a verified TOTP factor. */}
+      <MfaSignInChallenge />
     </AuthProvider>
   );
 }
