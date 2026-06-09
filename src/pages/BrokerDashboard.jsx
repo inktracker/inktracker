@@ -4,10 +4,8 @@ import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
 import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import {
-  Users,
   Package,
   Plus,
-  LogOut,
   Clock,
   CheckCircle2,
   XCircle,
@@ -15,12 +13,6 @@ import {
   ChevronRight,
   X,
   Truck,
-  UserCircle,
-  MessageSquare,
-  Paperclip,
-  BarChart2,
-  FolderOpen,
-  FileText,
   Eye,
   Send,
   Pencil,
@@ -30,7 +22,6 @@ import {
   ThumbsDown,
   CreditCard,
   ArrowRight,
-  TrendingUp,
 } from "lucide-react";
 import BrokerOrderPDFModal from "../components/broker/BrokerOrderPDFModal";
 import BrokerPerformance from "../components/broker/BrokerPerformance";

@@ -4,7 +4,6 @@
 // PDFs reuse the cached promise.
 import {
   getQty,
-  BIG_SIZES,
   SIZES,
   calcLinkedLinePrice,
   buildLinkedQtyMap,

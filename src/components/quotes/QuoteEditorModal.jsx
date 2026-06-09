@@ -14,8 +14,6 @@ import {
   uid,
   newLineItem,
   getStandardTurnaroundDays,
-  getRushTurnaroundDays,
-  getShopRushRate,
   getRushTiers,
   getRushRateForDaysOut,
 } from "../shared/pricing";

@@ -12,14 +12,13 @@
 // regardless of the MFA flavor).
 
 import { useEffect, useState } from "react";
-import { Shield, ShieldCheck, AlertTriangle, Loader2, Monitor, Trash2, Activity, ArrowRight } from "lucide-react";
+import { Shield, ShieldCheck, AlertTriangle, Loader2, Monitor, Trash2, Activity } from "lucide-react";
 import {
   isMfaEmailEnabled,
   enableMfaEmail,
   disableMfaEmail,
   requestMfaSignInCode,
   verifyMfaSignInCode,
-  logMfaEvent,
   listMfaAuditEvents,
   listTrustedDevices,
   revokeTrustedDevice,

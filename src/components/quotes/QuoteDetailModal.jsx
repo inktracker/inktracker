@@ -680,7 +680,7 @@ export default function QuoteDetailModal({
   // Auto-load events when the user switches to the Events tab.
   useEffect(() => {
     if (showQBPanel && qbPanelTab === "events") loadQbEvents();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [showQBPanel, qbPanelTab]);
 
   useEffect(() => {

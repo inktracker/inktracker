@@ -1,5 +1,5 @@
 import { X, Download } from "lucide-react";
-import { fmtDate, fmtMoney, getQty, BIG_SIZES, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP } from "../shared/pricing";
+import { fmtDate, fmtMoney, getQty, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP } from "../shared/pricing";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
 

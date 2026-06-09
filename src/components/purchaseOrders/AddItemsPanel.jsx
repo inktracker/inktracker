@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { lookupStyle, SUPPLIERS } from "@/api/suppliers";
+import { lookupStyle } from "@/api/suppliers";
 import { mergeItem, routeWarehouseForSku } from "@/lib/purchaseOrders";
 import { Search, Plus, Loader2, AlertCircle } from "lucide-react";
 import { fmtMoney } from "@/components/shared/pricing";

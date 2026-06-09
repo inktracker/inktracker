@@ -27,7 +27,6 @@ import {
   getQty,
   getShortfallQty,
   getCompletedQty,
-  BIG_SIZES,
   SIZES,
   getDisplayName,
   BROKER_MARKUP,

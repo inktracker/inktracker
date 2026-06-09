@@ -3,7 +3,6 @@ import {
   calcLinkedLinePrice,
   buildLinkedQtyMap,
   fmtMoney,
-  getMarkup,
   BROKER_MARKUP,
   STANDARD_MARKUP,
 } from "../shared/pricing";
