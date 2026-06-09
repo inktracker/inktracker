@@ -100,7 +100,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
   // (one per broker on this shop) — bounded; acceptable.
   useEffect(() => {
     loadClients();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [broker.email]);
 
   function toggle() {

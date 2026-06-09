@@ -8,8 +8,8 @@
 // tests can't (useEffect timing, controlled-input warnings, blur snap-
 // back, missing onChange propagation).
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, fireEvent } from "@testing-library/react";
 import NumericInput from "../NumericInput.jsx";
 
 function setup(props = {}) {

@@ -86,7 +86,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
       }
     });
     return unsub;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [threadId, currentUser?.email]);
 
   useEffect(() => {

@@ -12,7 +12,6 @@ import {
   sortSizeEntries,
   fmtMoney,
   buildLinkedQtyMap,
-  findLinkedPrints,
   getPrintKey,
   resolveLineCategory,
   calcLinkedLinePrice,
@@ -27,8 +26,6 @@ import {
   FIRST_PRINT,
   ADDL_PRINT,
   EXTRA_RATES,
-  SIZES,
-  BIG_SIZES,
 } from "../pricing";
 
 // ── Test Fixtures ──────────────────────────────────────────────────────────

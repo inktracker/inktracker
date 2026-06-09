@@ -3,8 +3,6 @@ import {
   calcLinkedLinePrice,
   buildLinkedQtyMap,
   fmtMoney,
-  getMarkup,
-  BROKER_MARKUP,
 } from "../shared/pricing";
 
 export default function PricePanel({ li, rushRate, extras, allLineItems = [], markup, onChange, sizePrices }) {

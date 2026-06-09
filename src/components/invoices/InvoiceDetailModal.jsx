@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getQty, BIG_SIZES, SIZES, buildQBInvoicePayload } from "../shared/pricing";
+import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getQty, SIZES, buildQBInvoicePayload } from "../shared/pricing";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";

@@ -34,7 +34,7 @@ export function installChunkErrorHandler(onChunkError) {
     if (looksLikeChunkError(event.reason)) {
       // Don't spam the console with the noisy stack — it's a known/handled case.
       event.preventDefault();
-      // eslint-disable-next-line no-console
+       
       console.warn("[chunkErrorHandler] stale chunk detected — prompting reload");
       try { onChunkError(event.reason); } catch {}
     }
@@ -43,7 +43,7 @@ export function installChunkErrorHandler(onChunkError) {
   // Synchronous-looking script load errors (rare with Vite, but cheap to add).
   window.addEventListener("error", (event) => {
     if (looksLikeChunkError(event.error || event.message)) {
-      // eslint-disable-next-line no-console
+       
       console.warn("[chunkErrorHandler] script error detected — prompting reload");
       try { onChunkError(event.error || event.message); } catch {}
     }

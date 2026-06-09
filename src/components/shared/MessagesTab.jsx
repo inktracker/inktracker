@@ -11,7 +11,7 @@
 // differently and skips emailing.
 
 import { useEffect, useState } from "react";
-import { base44, supabase } from "@/api/supabaseClient";
+import { base44 } from "@/api/supabaseClient";
 import { Mail, MailOpen, Loader2, ArrowUpRight, ArrowDownLeft, Send, Lock, AlertCircle } from "lucide-react";
 import {
   parseStoredBody,

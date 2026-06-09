@@ -11,8 +11,6 @@ import {
   BROKER_MARKUP,
   STANDARD_MARKUP,
   getStandardTurnaroundDays,
-  getRushTurnaroundDays,
-  getShopRushRate,
   getLineExtras,
   getRushTiers,
   getRushRateForDaysOut,

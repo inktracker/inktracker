@@ -955,7 +955,7 @@ export default function Production() {
         // dayIndex isn't used directly in this scope anymore, but
         // expose it via a thin wrapper in case a future widget needs
         // it without re-importing.
-        // eslint-disable-next-line no-unused-vars
+         
         const dayIndex = (iso) => schedulerDayIndex(iso, weekStart);
 
         // ── DnD payload helpers ───────────────────────────────────────
