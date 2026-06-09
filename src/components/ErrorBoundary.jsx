@@ -30,12 +30,12 @@ export default class ErrorBoundary extends Component {
           </div>
           <div>
             <h2 className="text-lg font-bold text-slate-900">
-              {inline ? "This page hit an error" : "Something went wrong"}
+              {inline ? "This page hit a snag" : "Something went wrong"}
             </h2>
             <p className="text-sm text-slate-500 mt-1 leading-relaxed">
               {inline
-                ? "Your data is safe. Navigate to another page, or reload to try again."
-                : "An unexpected error occurred on this page. Your data is safe — try refreshing to continue."}
+                ? "Your data is safe. Reload to try again, or head back to the dashboard."
+                : "An unexpected error occurred. Your data is safe — reload to continue. If this keeps happening, email support@inktracker.app."}
             </p>
           </div>
           {this.state.error?.message && (
@@ -59,6 +59,11 @@ export default class ErrorBoundary extends Component {
               <RefreshCw className="w-4 h-4" /> Reload Page
             </button>
           </div>
+          {!inline && (
+            <p className="text-xs text-slate-400">
+              Persistent issue? Email <a href="mailto:support@inktracker.app" className="text-teal-600 hover:text-teal-700 font-semibold">support@inktracker.app</a> with the message above.
+            </p>
+          )}
         </div>
       </div>
     );
