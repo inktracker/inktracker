@@ -65,6 +65,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   // hash server-side so subsequent sign-ins on the same browser skip
   // the challenge entirely. Token plaintext lives only in localStorage.
   const [trustDevice, setTrustDevice] = useState(false);
+  // Email-recovery state — see handleRequestRecoveryEmail below for the
+  // full flow. Hoisted to the top of the component so the hook order
+  // stays stable across the `if (!isOpen) return null` early return.
+  const [recoveryEmailSent, setRecoveryEmailSent] = useState(false);
+  const [recoveryRetryAfter, setRecoveryRetryAfter] = useState(0);
 
   // Rehydrate lockout from localStorage on mount so a refresh during
   // lockout doesn't reset the timer.
@@ -233,10 +238,10 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   // The user clicks the link in their inbox → lands on /MfaRecovery,
   // which consumes the token and signs them in with MFA disabled. This
   // replaces the old "Use a recovery code" flow that required users to
-  // have saved 10 codes during enrollment.
-  const [recoveryEmailSent, setRecoveryEmailSent] = useState(false);
-  const [recoveryRetryAfter, setRecoveryRetryAfter] = useState(0);
-
+  // have saved 10 codes during enrollment. The useState calls live up
+  // top with the rest of the hooks — placing them here, after the
+  // `if (!isOpen) return null` early return on line 133, caused the
+  // hook count to mismatch between renders (React error #310).
   const handleRequestRecoveryEmail = async () => {
     if (lockoutMinutesRemaining() > 0) {
       setError(`Too many failed attempts. Try again in ${lockoutMinutesRemaining()} minute(s).`);
