@@ -1099,45 +1099,112 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
           <div className="space-y-4">
 
             {!style ? (<>
-              {/* Category picker — 3-column card grid at lg+ (was 2). Now that
-                  QuoteRequest.jsx wraps the wizard in max-w-6xl, the left
-                  column has room for a 3-up layout, which kills the
-                  negative space the 2-up grid left empty on the right. */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {/* Category accordion — each category is a full-width button.
+                  When one is selected, its top picks render inline directly
+                  beneath it so the suggestions sit under the category they
+                  belong to (mobile feedback 2026-06-09 — previously every
+                  category's picks rendered in one block at the bottom,
+                  which made the relationship to a specific category unclear
+                  on phones). */}
+              <div className="flex flex-col gap-2.5">
                 {garmentTypes.map(gt => {
                   const active = selectedGarment === gt;
+                  const inlineStyles = active ? POPULAR_STYLES.filter(s => s.garment === gt) : [];
                   return (
-                    <button
-                      key={gt}
-                      type="button"
-                      onClick={() => {
-                        setSelectedGarment(gt);
-                        setPreviewStyle(null);
-                        enrichStylePreviews(POPULAR_STYLES.filter(s => s.garment === gt));
-                      }}
-                      className={`text-left px-4 py-3 border-2 rounded-xl transition ${
-                        active
-                          ? "text-white border-transparent shadow-sm"
-                          : "bg-white border-slate-200 hover:border-[var(--brand)] text-slate-800"
-                      }`}
-                      style={active ? { background: bcDark, borderColor: bcDarker } : undefined}
-                    >
-                      <div className={`font-bold text-sm uppercase tracking-wide ${active ? "text-white" : "text-[var(--brand-dark)]"}`}>
-                        {gt}
-                      </div>
-                      {CATEGORY_BLURBS[gt] && (
-                        <div className={`text-xs leading-snug mt-1 ${active ? "text-white/85" : "text-slate-500"}`}>
-                          {CATEGORY_BLURBS[gt]}
+                    <div key={gt} className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedGarment(active ? "" : gt);
+                          setPreviewStyle(null);
+                          if (!active) enrichStylePreviews(POPULAR_STYLES.filter(s => s.garment === gt));
+                        }}
+                        className={`w-full text-left px-4 py-3 border-2 rounded-xl transition ${
+                          active
+                            ? "text-white border-transparent shadow-sm"
+                            : "bg-white border-slate-200 hover:border-[var(--brand)] text-slate-800"
+                        }`}
+                        style={active ? { background: bcDark, borderColor: bcDarker } : undefined}
+                      >
+                        <div className={`font-bold text-sm uppercase tracking-wide ${active ? "text-white" : "text-[var(--brand-dark)]"}`}>
+                          {gt}
+                        </div>
+                        {CATEGORY_BLURBS[gt] && (
+                          <div className={`text-xs leading-snug mt-1 ${active ? "text-white/85" : "text-slate-500"}`}>
+                            {CATEGORY_BLURBS[gt]}
+                          </div>
+                        )}
+                      </button>
+
+                      {/* Inline styles for the active category. Rendered
+                          here (not below the whole category list) so the
+                          dropdown reads as belonging to the category that
+                          was tapped. */}
+                      {active && inlineStyles.length > 0 && (
+                        <div className="pl-2 sm:pl-3 space-y-2">
+                          <p className="text-xs text-slate-400 dark:text-slate-500">
+                            Our top picks for {gt.toLowerCase()}. More options at{' '}
+                            <a
+                              href="https://www.ascolour.com/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[var(--brand)] hover:text-[var(--brand-dark)] underline underline-offset-2"
+                            >
+                              ascolour.com
+                            </a>
+                            {' '}or{' '}
+                            <a
+                              href="https://www.ssactivewear.com/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[var(--brand)] hover:text-[var(--brand-dark)] underline underline-offset-2"
+                            >
+                              ssactivewear.com
+                            </a>
+                            .
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {inlineStyles.map(s => {
+                              const ep = enrichedPreviews[s.id];
+                              const previewImg = s.styleImage || (typeof ep === "object" ? ep.styleImage : ep) || s.image;
+                              const displayName = s.name || (typeof ep === "object" ? ep.name : "") || s.styleNumber || "Style";
+                              const displayDesc = s.description || (typeof ep === "object" ? ep.description : "");
+                              const displayWeight = s.weight || (typeof ep === "object" ? ep.weight : "");
+                              return (
+                                <button key={s.id} onClick={() => selectAndEnrichStyle(s)}
+                                  className="relative group flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-slate-200 hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition text-left bg-white">
+                                  {previewImg ? <img src={previewImg} alt="" className="w-10 h-10 rounded-lg object-contain bg-slate-50" /> :
+                                    <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center animate-pulse"><Icon name="tee" className="w-5 h-5 text-slate-300" /></div>}
+                                  <div className="min-w-0"><div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{displayName}</div>
+                                    <div className="text-xs text-slate-400">{displayWeight}{s.tag ? (displayWeight ? " · " : "") + s.tag : ""}</div></div>
+                                  <div className="fixed inset-0 z-40 pointer-events-none flex items-start justify-center" style={{display:"contents"}}>
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-white rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-40 overflow-hidden">
+                                      {previewImg && <img src={previewImg} alt="" className="w-full aspect-square object-contain bg-white p-4" />}
+                                      <div className="px-4 py-3">
+                                        <div className="font-bold text-sm text-slate-900">{displayName}</div>
+                                        {displayDesc && <div className="text-xs text-slate-500 mt-0.5">{displayDesc}</div>}
+                                        <div className="mt-2 space-y-0.5 text-xs text-slate-500">
+                                          {s.styleNumber && <div>Style Number: <span className="font-semibold text-slate-700 dark:text-slate-300">{s.styleNumber}</span></div>}
+                                          {displayWeight && <div>Weight: <span className="font-semibold text-slate-700 dark:text-slate-300">{displayWeight}</span></div>}
+                                        </div>
+                                        {s.hoverDescription && (
+                                          <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-600 leading-relaxed">{s.hoverDescription}</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </button>);
+                            })}
+                          </div>
                         </div>
                       )}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
 
-              {/* Style # search — moved below the category grid so it
-                  reads as a secondary path ("can't find it? search by
-                  style number"). Same width as the grid. */}
+              {/* Style # search — now lives below the entire accordion as
+                  the "can't find it here?" escape hatch. */}
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Or search by style #</label>
                 <form onSubmit={handleSSLookup} className="flex gap-1.5">
@@ -1149,30 +1216,11 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                   </form>
                 {ssLookupError && <div className="text-xs text-red-500 mt-1">{ssLookupError}</div>}
               </div>
-              {styleOptions.length > 0 && (
-                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1 mb-1">
-                  These are just our top picks. For more options, browse{' '}
-                  <a
-                    href="https://www.ascolour.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--brand)] hover:text-[var(--brand-dark)] underline underline-offset-2"
-                  >
-                    ascolour.com
-                  </a>
-                  {' '}or{' '}
-                  <a
-                    href="https://www.ssactivewear.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--brand)] hover:text-[var(--brand-dark)] underline underline-offset-2"
-                  >
-                    ssactivewear.com
-                  </a>
-                  .
-                </p>
-              )}
-              {styleOptions.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Legacy below-the-categories block kept guarded as a
+                  no-op render — falls through to false now that styles
+                  render inline above. Left for the diff to read as a
+                  pure relocation, easy to delete in a follow-up sweep. */}
+              {false && styleOptions.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {styleOptions.map(s => {
                   const ep = enrichedPreviews[s.id];
                   // Prefer the saved-config image (whatever color the
