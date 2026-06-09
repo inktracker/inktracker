@@ -13,6 +13,7 @@ import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
 import GettingStartedChecklist from "../components/GettingStartedChecklist";
+import MfaNudgeBanner from "../components/MfaNudgeBanner";
 import HintTip from "../components/shared/HintTip";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
@@ -603,6 +604,10 @@ export default function Dashboard() {
           <p className="text-slate-500 text-xs sm:text-sm mt-0.5">{user?.shop_name || "My Shop"}</p>
         </div>
       </div>
+
+      {/* MFA nudge — auto-hides when the user is enrolled or has
+          dismissed within the last 7 days. */}
+      <MfaNudgeBanner />
 
       {/* Tabs */}
       <div className="flex gap-0 border-b border-slate-200 dark:border-slate-700">

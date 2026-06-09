@@ -745,7 +745,7 @@ export default function Account() {
         </Section>
 
         {user && (
-          <Section icon={Shield} title="Security">
+          <Section icon={Shield} title="Security" defaultOpen={location.search?.includes("security")}>
             <SecuritySection />
           </Section>
         )}
