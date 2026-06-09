@@ -4,6 +4,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { parseRetryAfterMs, QbRateLimitError } from "../_shared/qbRateLimit.ts";
 import {
   decideTokenRefresh,
   buildRefreshedTokenFields,
@@ -167,14 +168,22 @@ function qbHeaders(token: string) {
   return { Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json" };
 }
 
-// 5xx + transient-network retry policy shared by qbQuery / qbCreate /
-// qbUpdate. Mirrors what qbSendInvoice already does for /send: three
-// attempts with 0 / 500ms / 1.5s backoff. 4xx responses are NOT retried —
-// they're caller-side problems (auth, validation) that won't get better.
-// Before this lived here every QB call surfaced a single transient blip
-// directly to the operator as "QB rejected the invoice"; with retries we
-// silently soak short outages and only fail on persistent issues.
+// Retry policy shared by qbQuery / qbCreate / qbUpdate. Three attempts
+// with 0 / 500ms / 1.5s backoff for 5xx + transient network errors. 4xx
+// responses other than 429 are NOT retried — they're caller-side
+// problems (auth, validation) that won't get better.
+//
+// 429 (rate-limit) gets its own treatment: respect Intuit's Retry-After
+// header if present, otherwise fall back to longer fixed backoff because
+// rate-limit windows clear with time, not with quick retries. The header
+// is parsed in seconds (RFC 7231); we cap at 10s so an aggressively long
+// Retry-After can't hang an edge function past its execution budget.
+// When all retries exhaust on 429, we throw a tagged QbRateLimitError so
+// the action dispatcher can return a structured response instead of an
+// opaque "QB failed" — operators see "QuickBooks is rate-limiting; try
+// again in ~N seconds" and know it's not a real failure.
 const QB_RETRY_DELAYS_MS = [0, 500, 1500];
+const QB_RATE_LIMIT_DELAYS_MS = [0, 1500, 4000];
 
 async function qbFetchWithRetry(
   url: string,
@@ -182,24 +191,40 @@ async function qbFetchWithRetry(
   label: string,
 ): Promise<{ res: Response; data: any }> {
   let lastErr: unknown = null;
+  let lastRetryAfterMs: number | null = null;
   for (let attempt = 0; attempt < QB_RETRY_DELAYS_MS.length; attempt++) {
-    if (QB_RETRY_DELAYS_MS[attempt] > 0) {
-      await new Promise((r) => setTimeout(r, QB_RETRY_DELAYS_MS[attempt]));
+    // 429 path uses the longer rate-limit schedule (or the Retry-After
+    // we parsed on the previous loop iteration).
+    const baseDelay = QB_RETRY_DELAYS_MS[attempt];
+    const delay = lastRetryAfterMs !== null
+      ? lastRetryAfterMs
+      : baseDelay;
+    if (delay > 0) {
+      await new Promise((r) => setTimeout(r, delay));
     }
+    lastRetryAfterMs = null;
     try {
       const res = await fetch(url, init);
       // Always read the body so callers can inspect QB error payloads.
       let data: any = null;
       try { data = await res.json(); } catch { data = null; }
       if (res.ok) return { res, data };
+      if (res.status === 429) {
+        const headerMs = parseRetryAfterMs(res.headers.get("Retry-After"));
+        const fallbackMs = QB_RATE_LIMIT_DELAYS_MS[attempt + 1] ?? QB_RATE_LIMIT_DELAYS_MS[QB_RATE_LIMIT_DELAYS_MS.length - 1];
+        lastRetryAfterMs = headerMs ?? fallbackMs;
+        lastErr = new QbRateLimitError(label, Math.ceil(lastRetryAfterMs / 1000));
+        console.warn(`[qb] ${label} attempt ${attempt + 1} rate-limited, retry in ${Math.ceil(lastRetryAfterMs / 1000)}s`);
+        continue;
+      }
       if (res.status >= 500) {
         // Transient — retry
         lastErr = new Error(`QB ${label} ${res.status}: ${JSON.stringify(data)}`);
         console.warn(`[qb] ${label} attempt ${attempt + 1} got ${res.status}, will retry`);
         continue;
       }
-      // 4xx — don't retry, hand back to the caller so they can branch on
-      // the body (e.g. "Duplicate Document Number").
+      // Other 4xx — don't retry, hand back to the caller so they can
+      // branch on the body (e.g. "Duplicate Document Number").
       return { res, data };
     } catch (err) {
       // Network-layer failures (DNS, TLS, fetch threw). Always retry.
@@ -270,8 +295,12 @@ async function qbSendInvoice(token: string, realmId: string, invoiceId: string, 
   const url = buildQbSendInvoiceUrl(QB_BASE, realmId, invoiceId, sendTo);
   const delays = [0, 500, 1500];
   let lastErr: unknown = null;
+  // Carries over a Retry-After-derived delay from a 429 to the next iteration.
+  let rateLimitOverrideMs: number | null = null;
   for (let attempt = 0; attempt < delays.length; attempt++) {
-    if (delays[attempt] > 0) await new Promise((r) => setTimeout(r, delays[attempt]));
+    const delay = rateLimitOverrideMs !== null ? rateLimitOverrideMs : delays[attempt];
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    rateLimitOverrideMs = null;
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -279,6 +308,14 @@ async function qbSendInvoice(token: string, realmId: string, invoiceId: string, 
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) return data;
+      if (res.status === 429) {
+        const headerMs = parseRetryAfterMs(res.headers.get("Retry-After"));
+        // Use Intuit's Retry-After if present, else longer fallback than 5xx.
+        rateLimitOverrideMs = headerMs ?? 4000;
+        lastErr = new QbRateLimitError(`send invoice/${invoiceId}`, Math.ceil(rateLimitOverrideMs / 1000));
+        console.warn(`[qbSendInvoice] attempt ${attempt + 1} rate-limited, retry in ${Math.ceil(rateLimitOverrideMs / 1000)}s`);
+        continue;
+      }
       if (res.status >= 500) {
         // Transient — retry
         lastErr = new Error(`QB send invoice/${invoiceId} ${res.status}: ${JSON.stringify(data)}`);
@@ -2048,6 +2085,21 @@ Deno.serve(async (req) => {
 
     return Response.json({ success: true, ...result }, { headers: CORS });
   } catch (err) {
+    // QbRateLimitError survives all retries → tell the frontend it's a
+    // throttle, not a hard failure. 200 + structured body so the JS
+    // client's FunctionsHttpError doesn't swallow the retry-after value.
+    if (err instanceof QbRateLimitError) {
+      console.warn(`qbSync rate-limited on ${err.label}: retry in ${err.retryAfterSeconds}s`);
+      return Response.json(
+        {
+          success: false,
+          error_code: "qb_rate_limited",
+          error: `QuickBooks is rate-limiting requests. Try again in about ${err.retryAfterSeconds} second${err.retryAfterSeconds === 1 ? "" : "s"}.`,
+          retry_after_seconds: err.retryAfterSeconds,
+        },
+        { status: 200, headers: CORS },
+      );
+    }
     // Known user-facing errors land as 200 + success:false so the
     // Supabase JS client's FunctionsHttpError wrap doesn't swallow
     // the message. See _shared/userFacingError.ts for the rationale.
