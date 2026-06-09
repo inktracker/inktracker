@@ -4,7 +4,6 @@ import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { Toaster } from "@/components/ui/toaster";
 import Privacy from "./pages/Privacy.jsx";
-import MfaRecovery from "./pages/MfaRecovery.jsx";
 import Terms from "./pages/Terms.jsx";
 import Changelog from "./pages/Changelog.jsx";
 import Security from "./pages/Security.jsx";
@@ -18,7 +17,6 @@ import CookieConsent from "@/components/CookieConsent";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
-import MfaSignInChallenge from "@/components/MfaSignInChallenge";
 import OnboardingWizard from "@/components/OnboardingWizard";
 import {
   TYPEWRITER_LINES,
@@ -52,7 +50,6 @@ const PUBLIC_PAGE_NAMES = [
   "OrderStatus",
   "ShopFloor",
   "ResetPassword",
-  "MfaRecovery",
   "privacy",
   "terms",
   "changelog",
@@ -1298,8 +1295,6 @@ function AppRoutes() {
         <Route path="/changelog" element={<Changelog />} />
         <Route path="/security" element={<Security />} />
         <Route path="/support" element={<Support />} />
-        <Route path="/MfaRecovery" element={<MfaRecovery />} />
-        <Route path="/mfarecovery" element={<MfaRecovery />} />
 
         <Route path="*" element={<PageNotFound />} />
       </Routes>
@@ -1415,10 +1410,6 @@ function PublicRouteGuard() {
   return (
     <AuthProvider>
       {isPublic ? <AppRoutes /> : <AuthenticatedApp />}
-      {/* Global MFA step-up overlay. Only renders when the AuthContext
-          flag is set — magic-link sign-ins, or any session restore
-          that lands the user at AAL1 with a verified TOTP factor. */}
-      <MfaSignInChallenge />
     </AuthProvider>
   );
 }

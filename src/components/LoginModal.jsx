@@ -2,18 +2,18 @@ import { useState, useEffect } from "react";
 import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail, ShieldCheck } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import {
-  requestMfaRecoveryEmail,
+  isMfaEmailEnabledForCurrentSession,
+  requestMfaSignInCode,
+  verifyMfaSignInCode,
   logMfaEvent,
   checkLocalTrustedDevice,
   registerTrustedDevice,
 } from "@/lib/mfa";
 
-// Lockout policy for MFA challenge attempts. After this many failed
-// codes in a row, the user is signed out and locked from re-attempting
-// for the lockout duration. localStorage-backed so the lockout survives
-// page reloads (and is enforced for the same browser on a brand-new
-// tab). Server-side enforcement is the audit log + Supabase Auth's
-// per-IP rate limit on the verify endpoint.
+// Lockout policy: 10 failed code entries → 15-min lockout + sign-out.
+// localStorage-backed so the timer survives page reload. The verify
+// RPC is already rate-limited at the row level via single-use codes;
+// this client-side lockout exists to slow down a hammering attacker.
 const MFA_MAX_ATTEMPTS = 10;
 const MFA_LOCKOUT_MS = 15 * 60 * 1000;
 const MFA_LOCKOUT_STORAGE_KEY = "inktracker_mfa_lockout_until";
@@ -47,29 +47,22 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   // anything fancier reads as "growth-hack overlay" and erodes trust.
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // ── MFA challenge state ─────────────────────────────────────────
-  // After signInWithPassword succeeds, the session lands at AAL1. If
-  // the user has a verified TOTP factor we switch the modal into
-  // `mfa-challenge` mode (or `mfa-recovery` when they click "use a
-  // recovery code instead") and don't dismiss until they step up to
-  // AAL2 or successfully consume a recovery code. Closing the modal
-  // mid-challenge signs them out — sitting at AAL1 with the rest of
-  // the app open would be the bypass we're guarding against.
-  const [mfaFactorId, setMfaFactorId] = useState(null);
-  const [mfaChallengeId, setMfaChallengeId] = useState(null);
+  // ── MFA email-code state ────────────────────────────────────────
+  // After signInWithPassword succeeds, we check profiles.mfa_email_enabled.
+  // If true AND this browser isn't a trusted device, we switch the
+  // modal into `mfa-code` mode: we've already sent the 6-digit code
+  // via the edge function; the user just needs to enter it. Closing
+  // the modal mid-challenge signs them out — sitting at a half-
+  // authenticated state with the rest of the app accessible is the
+  // bypass we're guarding against.
   const [mfaCode, setMfaCode] = useState("");
   const [mfaFailedAttempts, setMfaFailedAttempts] = useState(0);
   const [mfaLockedUntil, setMfaLockedUntil] = useState(null);
-  // Phase 3b — "Remember this device for 30 days." Opt-in. When checked
-  // and the verify succeeds, we mint a per-device token and store the
-  // hash server-side so subsequent sign-ins on the same browser skip
-  // the challenge entirely. Token plaintext lives only in localStorage.
+  const [mfaRetryAfter, setMfaRetryAfter] = useState(0);
+  // Opt-in "Remember this device for 30 days." When checked + verify
+  // succeeds, we mint a per-device token and store the hash server-side
+  // so subsequent sign-ins on the same browser skip the code entirely.
   const [trustDevice, setTrustDevice] = useState(false);
-  // Email-recovery state — see handleRequestRecoveryEmail below for the
-  // full flow. Hoisted to the top of the component so the hook order
-  // stays stable across the `if (!isOpen) return null` early return.
-  const [recoveryEmailSent, setRecoveryEmailSent] = useState(false);
-  const [recoveryRetryAfter, setRecoveryRetryAfter] = useState(0);
 
   // Rehydrate lockout from localStorage on mount so a refresh during
   // lockout doesn't reset the timer.
@@ -198,26 +191,28 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
       setError(`Too many failed attempts. Try again in ${lockoutMinutesRemaining()} minute(s).`);
       return;
     }
-    const trimmed = mfaCode.trim().replace(/\s+/g, "");
-    if (!/^\d{6}$/.test(trimmed)) {
-      setError("Enter the 6-digit code from your authenticator app.");
+    const trimmed = mfaCode.trim().replace(/\D/g, "");
+    if (trimmed.length !== 6) {
+      setError("Enter the 6-digit code from your email.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const { error: verifyErr } = await supabase.auth.mfa.verify({
-        factorId: mfaFactorId,
-        challengeId: mfaChallengeId,
-        code: trimmed,
-      });
-      if (verifyErr) throw verifyErr;
-      try { await logMfaEvent("challenge_succeeded"); } catch { /* ignore */ }
+      const v = await verifyMfaSignInCode(trimmed);
+      if (!v.ok) {
+        if (v.error === "expired") {
+          setError("That code expired. Click Resend to get a new one.");
+          setMfaCode("");
+        } else {
+          await applyMfaFailure("signin_code_failed", { reason: v.error });
+        }
+        return;
+      }
       setMfaFailedAttempts(0);
       localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
-      // Phase 3b — if the user opted into "remember this device", mint
-      // a 30-day trust token now. Best-effort: a registration failure
-      // doesn't block sign-in (the verify already succeeded).
+      // Opt-in "remember this device" — mint a 30-day token. Best-
+      // effort: registration failure shouldn't block sign-in.
       if (trustDevice) {
         try {
           const label = (navigator?.userAgent || "Unknown device").slice(0, 200);
@@ -226,64 +221,55 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
       }
       onClose();
     } catch (err) {
-      // Common Supabase error: "Invalid TOTP code entered" / "Code is incorrect"
-      await applyMfaFailure("challenge_failed", { reason: err?.message?.slice(0, 80) });
+      await applyMfaFailure("signin_code_failed", { reason: err?.message?.slice(0, 80) });
     } finally {
       setLoading(false);
     }
   };
 
-  // "Send me a recovery email" — calls the edge function which mints
-  // a single-use token, stores the hash, and emails the user a link.
-  // The user clicks the link in their inbox → lands on /MfaRecovery,
-  // which consumes the token and signs them in with MFA disabled. This
-  // replaces the old "Use a recovery code" flow that required users to
-  // have saved 10 codes during enrollment. The useState calls live up
-  // top with the rest of the hooks — placing them here, after the
-  // `if (!isOpen) return null` early return on line 133, caused the
-  // hook count to mismatch between renders (React error #310).
-  const handleRequestRecoveryEmail = async () => {
-    if (lockoutMinutesRemaining() > 0) {
-      setError(`Too many failed attempts. Try again in ${lockoutMinutesRemaining()} minute(s).`);
-      return;
-    }
-    setLoading(true);
+  // "Resend code" — re-invoke the edge function. Rate-limited by the
+  // RPC to one per 60s. UI surfaces retryAfterSeconds as a countdown.
+  const handleResendCode = async () => {
     setError("");
+    setLoading(true);
     try {
-      const result = await requestMfaRecoveryEmail();
-      if (result.ok) {
-        setRecoveryEmailSent(true);
-        setRecoveryRetryAfter(0);
+      const r = await requestMfaSignInCode();
+      if (r.ok) {
+        setMfaRetryAfter(60);
         return;
       }
-      if (result.error === "rate_limited") {
-        setRecoveryEmailSent(true);
-        setRecoveryRetryAfter(result.retryAfterSeconds || 0);
+      if (r.error === "rate_limited") {
+        setMfaRetryAfter(r.retryAfterSeconds || 60);
         return;
       }
-      throw new Error(result.error || "Couldn't send recovery email.");
-    } catch (err) {
-      setError(err?.message || "Couldn't send recovery email — try again or contact support.");
+      setError(r.error || "Couldn't send a new code. Try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Close-guard: bailing out of a challenge means we sign out so the
-  // user can't be left at AAL1 with the rest of the app accessible.
+  // Close-guard: bailing out of the code-entry step means we sign out
+  // so the user can't be left half-authenticated with the rest of the
+  // app accessible behind the modal.
   const handleCloseModal = async () => {
-    if (mode === "mfa-challenge") {
+    if (mode === "mfa-code") {
       try { await supabase.auth.signOut(); } catch { /* ignore */ }
       setMode("signin");
-      setMfaFactorId(null);
-      setMfaChallengeId(null);
       setMfaCode("");
       setMfaFailedAttempts(0);
-      setRecoveryEmailSent(false);
+      setMfaRetryAfter(0);
+      setTrustDevice(false);
       setError("");
     }
     onClose();
   };
+
+  // Tick the resend cooldown so the button label counts down naturally.
+  useEffect(() => {
+    if (mode !== "mfa-code" || mfaRetryAfter <= 0) return undefined;
+    const t = setTimeout(() => setMfaRetryAfter((s) => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [mode, mfaRetryAfter]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -336,20 +322,13 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
 
-        // Password is correct. If the user has a verified TOTP factor
-        // we're now sitting at AAL1 and need to step up to AAL2 before
-        // dismissing the modal. getAuthenticatorAssuranceLevel returns
-        // currentLevel + nextLevel — nextLevel === "aal2" means MFA is
-        // enrolled and required. No factor → nextLevel === currentLevel.
-        const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-        const needsMfa = aalData?.nextLevel === "aal2" && aalData?.currentLevel === "aal1";
+        // Password is correct. If the user has profiles.mfa_email_enabled
+        // we need a 6-digit code from email before dismissing the modal.
+        // Trusted-device skip runs FIRST so a known browser doesn't get
+        // nagged. Errors fall closed (challenge anyway — better to
+        // over-challenge than miss a sign-in).
+        const needsMfa = await isMfaEmailEnabledForCurrentSession();
         if (needsMfa) {
-          // Phase 3b — short-circuit the challenge when this device is
-          // already trusted. The token check is silent: a missing or
-          // expired token returns trusted:false and we fall through
-          // to the normal challenge flow as if Phase 3 was the only
-          // path. Errors fall through too (don't fail-open on an RPC
-          // hiccup — better to challenge).
           try {
             const trust = await checkLocalTrustedDevice();
             if (trust.ok && trust.trusted) {
@@ -358,17 +337,22 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
             }
           } catch { /* fall through to challenge */ }
 
-          const { data: factorsData } = await supabase.auth.mfa.listFactors();
-          const totp = (factorsData?.totp || []).find((f) => f.status === "verified");
-          if (totp) {
-            const { data: chData, error: chErr } = await supabase.auth.mfa.challenge({ factorId: totp.id });
-            if (chErr) throw chErr;
-            setMfaFactorId(totp.id);
-            setMfaChallengeId(chData.id);
-            setMode("mfa-challenge");
-            setLoading(false);
-            return; // don't onClose — modal stays in challenge mode
+          // Kick off the code email. Rate limits are real (60s per user)
+          // — if the user already requested a code recently we surface
+          // the countdown without sending a duplicate.
+          const sendResult = await requestMfaSignInCode();
+          if (sendResult.ok) {
+            setMfaRetryAfter(60);
+          } else if (sendResult.error === "rate_limited") {
+            setMfaRetryAfter(sendResult.retryAfterSeconds || 60);
+          } else {
+            throw new Error(sendResult.error || "Couldn't send the sign-in code.");
           }
+          setMode("mfa-code");
+          setMfaCode("");
+          setMfaFailedAttempts(0);
+          setLoading(false);
+          return; // don't onClose — modal stays in code-entry mode
         }
         onClose();
       }
@@ -446,8 +430,8 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               ? "Create Account"
               : mode === "forgot"
               ? "Reset Password"
-              : mode === "mfa-challenge"
-              ? "Verify your identity"
+              : mode === "mfa-code"
+              ? "Enter your sign-in code"
               : "Sign In"}
           </h2>
           <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600 transition">
@@ -569,12 +553,12 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 {resetLoading ? "Sending…" : "Send reset link"}
               </button>
             </div>
-          ) : mode === "mfa-challenge" ? (
+          ) : mode === "mfa-code" ? (
             <form onSubmit={handleMfaVerify} className="space-y-4">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
                 <p className="text-sm text-slate-600 leading-relaxed">
-                  Two-factor authentication is on for this account. Enter the 6-digit code from your authenticator app.
+                  Check your email — we sent a 6-digit sign-in code. Enter it below to finish signing in.
                 </p>
               </div>
               <div>
@@ -611,26 +595,17 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 {loading ? "Verifying…" : "Verify and sign in"}
                 <ArrowRight className="w-4 h-4" />
               </button>
-              <div className="text-center space-y-2">
-                {recoveryEmailSent ? (
-                  <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                    Check your email — we sent a link that lets you sign in and reset two-factor.
-                    {recoveryRetryAfter > 0 && (
-                      <span className="block mt-1 text-emerald-600">
-                        Already sent recently — wait {Math.ceil(recoveryRetryAfter / 60)} min{Math.ceil(recoveryRetryAfter / 60) === 1 ? "" : "s"} before requesting another.
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleRequestRecoveryEmail}
-                    disabled={loading}
-                    className="text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-60"
-                  >
-                    Lost your authenticator? Send me a recovery email
-                  </button>
-                )}
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={handleResendCode}
+                  disabled={loading || mfaRetryAfter > 0}
+                  className="text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-60"
+                >
+                  {mfaRetryAfter > 0
+                    ? `Didn't get the code? Resend in ${mfaRetryAfter}s`
+                    : "Didn't get the code? Resend"}
+                </button>
               </div>
             </form>
           ) : (
@@ -779,7 +754,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               switching to "Sign up" or "Forgot password" mid-challenge
               would leave the session at AAL1. Use the X to bail (which
               signs the user out via handleCloseModal). */}
-          {mode === "mfa-challenge" ? null : (
+          {mode === "mfa-code" ? null : (
           <div className="text-center">
             {mode === "signin" ? (
               <p className="text-sm text-slate-500">

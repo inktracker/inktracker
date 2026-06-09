@@ -1,40 +1,119 @@
-// Multi-factor authentication helpers.
+// MFA wrapper — email-based 6-digit sign-in codes.
 //
-// Thin wrapper around the three SECURITY DEFINER RPCs added in
-// migration 20260622000000_mfa_phase1_backend.sql, plus a couple of
-// read helpers that exercise the RLS-protected SELECT path on the
-// underlying tables.
+// The product moved off TOTP / authenticator apps on 2026-06-08 because
+// print shop owners aren't going to install an authenticator. Email
+// codes are the SMB-SaaS standard, no app required, and the threat
+// surface is the same as the password-reset flow.
 //
-// Phase 2-5 UI surfaces (Account → Security, sign-in challenge,
-// recovery flow, dashboard nudge banner) all consume this module —
-// the React layer should never hit `supabase.rpc("...")` directly so
-// the contract is enforced in one place.
+// What lives here:
+//   - is/enable/disableMfaEmail — read / flip the per-user flag on the
+//     profile (single source of truth)
+//   - requestSignInCode — calls the sendMfaSignInCode edge function to
+//     mint a code + email it; rate-limited 60s per user
+//   - verifySignInCode — checks the 6-digit code via RPC
+//   - logMfaEvent / listMfaAuditEvents — audit log surface; same
+//     wrapper functions used by SecuritySection's recent-activity feed
+//   - trusted device helpers — unchanged from Phase 3b; still used to
+//     let known browsers skip the code prompt for 30 days
 //
-// TOTP enrollment / challenge / verify uses Supabase Auth's native
-// `supabase.auth.mfa.*` API directly from the React layer. We don't
-// re-wrap those here — they're already idiomatic and well-typed in
-// the Supabase SDK.
+// The UI never calls supabase.rpc / supabase.functions.invoke directly;
+// it goes through this module so the RPC contract is enforced in one
+// place.
 
 import { supabase } from "@/api/supabaseClient";
 
 /**
- * Ask the server to email the signed-in user a one-time MFA recovery
- * link. Caller must already be at AAL1 (just signed in with password
- * — the edge function reads their JWT). The RPC mints a fresh
- * 32-char token, stores the hash + 15-minute expiry server-side, and
- * Resend delivers the link to the email on the auth row.
+ * Read the caller's profiles.mfa_email_enabled flag. The flag is the
+ * single source of truth for "does this user need a code at sign-in."
  *
- * Returns `ok: true` on success regardless of which inbox got it —
- * never reveals the email to the browser, so a stolen session token
- * can't be used to enumerate who's on file.
+ * @returns {Promise<{ ok: true, enabled: boolean } | { ok: false, error: string }>}
+ */
+export async function isMfaEmailEnabled() {
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr) return { ok: false, error: userErr.message };
+  if (!user) return { ok: true, enabled: false };
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("mfa_email_enabled")
+    .eq("auth_id", user.id)
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, enabled: !!data?.mfa_email_enabled };
+}
+
+/**
+ * Look up another user's mfa_email_enabled WITHOUT requiring an
+ * authenticated session — used at sign-in time after password verify,
+ * since the user's session is freshly minted and a plain SELECT may
+ * race the JWT-propagation. We pass through a fresh getUser to read
+ * the row tied to the new session.
  *
- * Rate-limited to one request per 5 minutes per user. On rate-limit
- * the caller surfaces "we just sent you one — check your inbox."
+ * Returns enabled=false on any error so a network blip can't lock the
+ * user out (we'd rather under-protect than block sign-in entirely).
+ *
+ * @returns {Promise<boolean>}
+ */
+export async function isMfaEmailEnabledForCurrentSession() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
+    const { data } = await supabase
+      .from("profiles")
+      .select("mfa_email_enabled")
+      .eq("auth_id", user.id)
+      .maybeSingle();
+    return !!data?.mfa_email_enabled;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Turn email MFA on for the caller. Assumes the caller has just
+ * verified a test code via the wrapper UI in SecuritySection — the
+ * verify proves the email actually works before we flip the switch
+ * (otherwise the user would lock themselves out).
+ *
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function enableMfaEmail() {
+  const { data, error } = await supabase.rpc("enable_mfa_email");
+  if (error) return { ok: false, error: error.message };
+  if (!data || data.status !== "ok") {
+    return { ok: false, error: data?.status || "unknown_error" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Turn email MFA off and invalidate any outstanding sign-in codes so
+ * they can't be replayed after the user toggles back on later.
+ *
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function disableMfaEmail() {
+  const { data, error } = await supabase.rpc("disable_mfa_email");
+  if (error) return { ok: false, error: error.message };
+  if (!data || data.status !== "ok") {
+    return { ok: false, error: data?.status || "unknown_error" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Ask the server to email the caller a fresh 6-digit sign-in code.
+ * The edge function mints + stores the hash + emails the plaintext.
+ * Returns ok regardless of which inbox got it — never reveals the
+ * email address to the browser.
+ *
+ * Rate-limited to one request per 60 seconds per user. On rate-limit
+ * the caller surfaces a countdown ("wait Xs before requesting another
+ * code") rather than a generic error.
  *
  * @returns {Promise<{ ok: true } | { ok: false, error: string, retryAfterSeconds?: number }>}
  */
-export async function requestMfaRecoveryEmail() {
-  const { data, error } = await supabase.functions.invoke("sendMfaRecoveryEmail", { body: {} });
+export async function requestMfaSignInCode() {
+  const { data, error } = await supabase.functions.invoke("sendMfaSignInCode", { body: {} });
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "no_response" };
   if (data.status === "ok") return { ok: true };
@@ -45,45 +124,33 @@ export async function requestMfaRecoveryEmail() {
 }
 
 /**
- * Consume a recovery token that arrived in the email. Callable from
- * an anonymous session — the token IS the credential. On success the
- * user's TOTP factor is unenrolled (same one-time-bypass semantics
- * the old recovery codes had) and `user_id` comes back so the page
- * can sign that user in.
+ * Verify a 6-digit sign-in code. Returns:
+ *   ok: true            → code valid + consumed; caller proceeds
+ *   ok: false, "expired"→ code is past its 10-min window
+ *   ok: false, "invalid"→ no match / already consumed / malformed
  *
- * @param {string} token Plaintext recovery token from the email URL.
- * @returns {Promise<{ ok: true, userId: string } | { ok: false, error: string }>}
+ * @param {string} code  Plaintext 6-digit string from the user.
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
  */
-export async function consumeMfaEmailRecoveryToken(token) {
-  const { data, error } = await supabase.rpc("consume_mfa_email_recovery_token", {
-    p_token: token,
-  });
+export async function verifyMfaSignInCode(code) {
+  const { data, error } = await supabase.rpc("verify_mfa_signin_code", { p_code: code });
   if (error) return { ok: false, error: error.message };
   if (!data || data.status !== "ok") {
     return { ok: false, error: data?.status || "invalid" };
   }
-  return { ok: true, userId: data.user_id };
+  return { ok: true };
 }
 
 /**
- * Record an MFA event in the audit log. Used by Phase 2-4 UI to
- * capture state transitions the RPCs above don't already write:
- *   - 'enrolled'              after the user verifies the TOTP code at enrollment
- *   - 'disabled'              after the user turns off MFA
- *   - 'challenge_succeeded'   after a successful 6-digit code at sign-in
- *   - 'challenge_failed'      after a failed 6-digit code at sign-in
- *   - 'lockout'               when failed attempts cross the threshold
- *   - 'session_invalidated'   when enabling MFA forces other devices out
+ * Record an MFA event in the audit log. UI surfaces use this for
+ * non-RPC state transitions:
+ *   - 'lockout'             when client-side failed attempts hit the cap
+ *   - 'session_invalidated' when toggling MFA forces other sessions out
+ * The RPCs (enable / disable / request / verify) already write their
+ * own events server-side — don't double-log.
  *
- * `email_recovery_requested`, `email_recovery_used`, and
- * `email_recovery_failed` are already written inside the RPCs — do
- * not double-log them from the client.
- *
- * @param {string} event       One of the allow-list values above.
- * @param {object} [opts]
- * @param {string} [opts.ipAddress]  Client-passed; not authoritative.
- * @param {string} [opts.userAgent]  Client-passed; not authoritative.
- * @param {object} [opts.metadata]   Per-event JSON details.
+ * @param {string} event
+ * @param {{ ipAddress?: string, userAgent?: string, metadata?: object }} [opts]
  * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
  */
 export async function logMfaEvent(event, opts = {}) {
@@ -100,28 +167,28 @@ export async function logMfaEvent(event, opts = {}) {
   return { ok: true };
 }
 
-/* countUnusedRecoveryCodes removed — recovery codes UI was swapped for
- * email-based recovery 2026-06-08. The mfa_recovery_codes table is
- * dropped in migration 20260625000000. Any leftover imports should be
- * removed alongside their callers in the same PR. */
+/**
+ * Pull the caller's recent MFA audit-log rows, newest first.
+ *
+ * @param {number} [limit=20]
+ * @returns {Promise<{ ok: true, events: Array } | { ok: false, error: string }>}
+ */
+export async function listMfaAuditEvents(limit = 20) {
+  const { data, error } = await supabase
+    .from("mfa_audit_log")
+    .select("event, ip_address, user_agent, metadata, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, events: data ?? [] };
+}
 
-// ── Trusted device (Phase 3b) ──────────────────────────────────────
+// ── Trusted device (Phase 3b — unchanged) ──────────────────────────
 // "Remember this browser for 30 days." The plaintext token never
 // leaves the device; we send it to the server only to hash + compare.
 
-/**
- * localStorage key for the per-device trust token. The token is an
- * opaque random UUID generated client-side; the server only ever
- * sees its SHA-256 hash.
- */
 export const TRUSTED_DEVICE_STORAGE_KEY = "inktracker_mfa_trusted_device_token";
 
-/**
- * Read the plaintext token from localStorage, if any. Returns null
- * outside the browser (during tests / SSR / hostile environments).
- *
- * @returns {string | null}
- */
 export function getLocalTrustedDeviceToken() {
   try {
     if (typeof localStorage === "undefined") return null;
@@ -131,18 +198,6 @@ export function getLocalTrustedDeviceToken() {
   }
 }
 
-/**
- * Mint a fresh per-device token, store it in localStorage, register
- * the hash with the server, and return the row id (so the caller can
- * surface it for later revocation).
- *
- * If anything fails between generation and persistence, clean up the
- * localStorage write so the device isn't left with a stale token the
- * server doesn't know about.
- *
- * @param {string} [deviceLabel]
- * @returns {Promise<{ ok: true, id: string } | { ok: false, error: string }>}
- */
 export async function registerTrustedDevice(deviceLabel) {
   let token = null;
   try {
@@ -174,25 +229,10 @@ export async function registerTrustedDevice(deviceLabel) {
   }
 }
 
-/**
- * Ask the server whether the currently-stored localStorage token
- * matches an unexpired trusted-device row for the authenticated user.
- *
- * `ok: true, trusted: true`  → caller can skip the MFA challenge.
- * `ok: true, trusted: false` → no match (no token, expired, revoked);
- *                              caller must run the challenge as usual.
- *
- * Stale local tokens (expired or revoked server-side) get dropped on
- * the way out so we don't keep re-sending dead values.
- *
- * @returns {Promise<{ ok: true, trusted: boolean } | { ok: false, error: string }>}
- */
 export async function checkLocalTrustedDevice() {
   const token = getLocalTrustedDeviceToken();
   if (!token) return { ok: true, trusted: false };
-  const { data, error } = await supabase.rpc("check_mfa_trusted_device", {
-    p_token: token,
-  });
+  const { data, error } = await supabase.rpc("check_mfa_trusted_device", { p_token: token });
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "no_response" };
   if (data.trusted === true) return { ok: true, trusted: true };
@@ -200,12 +240,6 @@ export async function checkLocalTrustedDevice() {
   return { ok: true, trusted: false };
 }
 
-/**
- * List the caller's trusted devices (newest first). Reads the table
- * directly through RLS — Account → Security will use this in Phase 4.
- *
- * @returns {Promise<{ ok: true, devices: Array } | { ok: false, error: string }>}
- */
 export async function listTrustedDevices() {
   const { data, error } = await supabase
     .from("mfa_trusted_devices")
@@ -215,12 +249,6 @@ export async function listTrustedDevices() {
   return { ok: true, devices: data ?? [] };
 }
 
-/**
- * Revoke a specific trusted device by id.
- *
- * @param {string} id
- * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
- */
 export async function revokeTrustedDevice(id) {
   const { data, error } = await supabase.rpc("revoke_mfa_trusted_device", { p_id: id });
   if (error) return { ok: false, error: error.message };
@@ -230,12 +258,6 @@ export async function revokeTrustedDevice(id) {
   return { ok: true };
 }
 
-/**
- * Revoke every trusted device for the caller. Drops the local token
- * too so the current browser is no longer trusted either.
- *
- * @returns {Promise<{ ok: true, count: number } | { ok: false, error: string }>}
- */
 export async function revokeAllTrustedDevices() {
   const { data, error } = await supabase.rpc("revoke_all_mfa_trusted_devices");
   if (error) return { ok: false, error: error.message };
@@ -244,21 +266,4 @@ export async function revokeAllTrustedDevices() {
   }
   try { localStorage.removeItem(TRUSTED_DEVICE_STORAGE_KEY); } catch { /* ignore */ }
   return { ok: true, count: Number(data.count) || 0 };
-}
-
-/**
- * Pull the caller's recent MFA audit-log rows, newest first. Powers
- * the "Recent activity" section on Account → Security.
- *
- * @param {number} [limit=20]
- * @returns {Promise<{ ok: true, events: Array<{ event: string, ip_address: string|null, user_agent: string|null, metadata: object|null, created_at: string }> } | { ok: false, error: string }>}
- */
-export async function listMfaAuditEvents(limit = 20) {
-  const { data, error } = await supabase
-    .from("mfa_audit_log")
-    .select("event, ip_address, user_agent, metadata, created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, events: data ?? [] };
 }
