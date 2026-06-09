@@ -136,7 +136,23 @@ Deno.serve(async (req) => {
 
     const emailSubject = subject || `Your Quote from ${shopName} - Quote #${quoteId}`;
     const total = Number(quoteTotal || 0).toFixed(2);
-    const firstName = (customerName || "").split(" ")[0] || "there";
+
+    // Anything that flows from user-controlled fields (customer name from
+    // the public wizard, broker-set display name + email) needs HTML-
+    // escaping before it lands in the email body — otherwise a `<script>`
+    // or `<img onerror=…>` in any of those fields renders in the
+    // recipient's inbox. Same pattern sendReply + qbErrorDigest use.
+    const escapeHtml = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[ch] || ch));
+
+    const firstName = escapeHtml((customerName || "").split(" ")[0] || "there");
+    const safeBrokerName  = escapeHtml(brokerName);
+    const safeBrokerEmail = escapeHtml(brokerEmail);
 
     // If a custom body was provided, use it. Otherwise build a clean default.
     const customBody = body ? body
@@ -152,7 +168,7 @@ Deno.serve(async (req) => {
       }
       ${renderEmailHighlight("Quote Total", `$${total}`)}
       ${(paymentLink || approveLink) ? renderEmailButton(buttonLabel || "View Quote & Pay Online", paymentLink || approveLink) : ""}
-      ${brokerName ? `<p style="color:${EMAIL_MUTED};font-size:13px;margin:8px 0 0;">Submitted by ${brokerName}${brokerEmail ? ` &middot; ${brokerEmail}` : ""}</p>` : ""}
+      ${brokerName ? `<p style="color:${EMAIL_MUTED};font-size:13px;margin:8px 0 0;">Submitted by ${safeBrokerName}${brokerEmail ? ` &middot; ${safeBrokerEmail}` : ""}</p>` : ""}
     `;
 
     const html = renderEmailLayout({
