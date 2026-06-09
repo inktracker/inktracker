@@ -39,9 +39,13 @@ CREATE TABLE IF NOT EXISTS public.mfa_trusted_devices (
 );
 
 -- Hot path: "is THIS token valid for THIS user, right now?"
+-- Plain composite (no WHERE) because Postgres requires index predicates
+-- to use only IMMUTABLE functions and `now()` is STABLE. The
+-- check_mfa_trusted_device RPC filters expires_at in the query itself,
+-- so the planner still narrows correctly via this index — we just
+-- carry expired rows in it until they age out of the table.
 CREATE INDEX IF NOT EXISTS mfa_trusted_devices_lookup_idx
-  ON public.mfa_trusted_devices (user_id, token_hash)
-  WHERE expires_at > now();
+  ON public.mfa_trusted_devices (user_id, token_hash);
 
 -- "show me all my trusted devices, newest first" — Account UI.
 CREATE INDEX IF NOT EXISTS mfa_trusted_devices_user_idx
