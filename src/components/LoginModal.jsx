@@ -1,7 +1,12 @@
 import { useState, useEffect } from "react";
 import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail, ShieldCheck } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
-import { consumeRecoveryCode, logMfaEvent } from "@/lib/mfa";
+import {
+  consumeRecoveryCode,
+  logMfaEvent,
+  checkLocalTrustedDevice,
+  registerTrustedDevice,
+} from "@/lib/mfa";
 
 // Lockout policy for MFA challenge attempts. After this many failed
 // codes in a row, the user is signed out and locked from re-attempting
@@ -55,6 +60,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   const [mfaCode, setMfaCode] = useState("");
   const [mfaFailedAttempts, setMfaFailedAttempts] = useState(0);
   const [mfaLockedUntil, setMfaLockedUntil] = useState(null);
+  // Phase 3b — "Remember this device for 30 days." Opt-in. When checked
+  // and the verify succeeds, we mint a per-device token and store the
+  // hash server-side so subsequent sign-ins on the same browser skip
+  // the challenge entirely. Token plaintext lives only in localStorage.
+  const [trustDevice, setTrustDevice] = useState(false);
 
   // Rehydrate lockout from localStorage on mount so a refresh during
   // lockout doesn't reset the timer.
@@ -200,6 +210,15 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
       try { await logMfaEvent("challenge_succeeded"); } catch { /* ignore */ }
       setMfaFailedAttempts(0);
       localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
+      // Phase 3b — if the user opted into "remember this device", mint
+      // a 30-day trust token now. Best-effort: a registration failure
+      // doesn't block sign-in (the verify already succeeded).
+      if (trustDevice) {
+        try {
+          const label = (navigator?.userAgent || "Unknown device").slice(0, 200);
+          await registerTrustedDevice(label);
+        } catch { /* ignore */ }
+      }
       onClose();
     } catch (err) {
       // Common Supabase error: "Invalid TOTP code entered" / "Code is incorrect"
@@ -317,6 +336,20 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
         const needsMfa = aalData?.nextLevel === "aal2" && aalData?.currentLevel === "aal1";
         if (needsMfa) {
+          // Phase 3b — short-circuit the challenge when this device is
+          // already trusted. The token check is silent: a missing or
+          // expired token returns trusted:false and we fall through
+          // to the normal challenge flow as if Phase 3 was the only
+          // path. Errors fall through too (don't fail-open on an RPC
+          // hiccup — better to challenge).
+          try {
+            const trust = await checkLocalTrustedDevice();
+            if (trust.ok && trust.trusted) {
+              onClose();
+              return;
+            }
+          } catch { /* fall through to challenge */ }
+
           const { data: factorsData } = await supabase.auth.mfa.listFactors();
           const totp = (factorsData?.totp || []).find((f) => f.status === "verified");
           if (totp) {
@@ -555,6 +588,15 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                   disabled={lockoutMinutesRemaining() > 0}
                 />
               </div>
+              <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={trustDevice}
+                  onChange={(e) => setTrustDevice(e.target.checked)}
+                  disabled={loading}
+                />
+                <span>Remember this device for 30 days</span>
+              </label>
               <button
                 type="submit"
                 disabled={loading || mfaCode.length !== 6 || lockoutMinutesRemaining() > 0}
