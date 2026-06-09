@@ -5,6 +5,12 @@ import { loadShopTimezone } from "@/lib/shopTimezone";
 import { loadShopProductionTasks } from "@/lib/productionTasks";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
 import { setSentryUser, clearSentryUser } from "@/lib/sentry";
+import { checkLocalTrustedDevice } from "@/lib/mfa";
+import {
+  isMfaSessionVerified,
+  markMfaSessionVerified,
+  clearAllMfaSessionFlags,
+} from "@/lib/mfaSession";
 
 const AuthContext = createContext();
 
@@ -94,10 +100,22 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [authError, setAuthError] = useState(null);
+  // The real MFA enforcement point. profiles.mfa_email_enabled is the
+  // source of truth — if true, this flag stays true until the user
+  // either (a) verifies a 6-digit email code in this tab, or (b) has a
+  // valid trusted-device match. App.jsx renders <MfaGate> while this is
+  // true, blocking access to the rest of the app.
+  const [needsMfaChallenge, setNeedsMfaChallenge] = useState(false);
+
+  const markMfaChallengePassed = useCallback(() => {
+    setNeedsMfaChallenge(false);
+  }, []);
 
   const setLoggedOut = useCallback(() => {
     setUser(null);
     setIsAuthenticated(false);
+    setNeedsMfaChallenge(false);
+    clearAllMfaSessionFlags();
     setAuthError({ type: "auth_required", message: "Authentication required" });
     clearSentryUser();
   }, []);
@@ -124,6 +142,36 @@ export const AuthProvider = ({ children }) => {
         // Triage shows "Biota Mfg" directly instead of needing a
         // Supabase lookup on the auth_id. No email / person name sent.
         setSentryUser(fullUser.auth_id || fullUser.id, { shopName: fullUser.shop_name });
+
+        // ── MFA gate decision ─────────────────────────────────────────
+        // The session is technically valid at this point (Supabase has
+        // a JWT), but we treat the user as gated until the email-MFA
+        // challenge is satisfied. Order of checks:
+        //   1. mfa_email_enabled false on profile → no gate.
+        //   2. This tab already verified for this user in sessionStorage
+        //      → no gate (page refresh, route nav).
+        //   3. Trusted device match (30-day token in localStorage that
+        //      the server still has a row for) → mark verified + skip.
+        //   4. Otherwise → gate.
+        // Fail-CLOSED: if any check throws, we gate. Better to over-
+        // challenge than miss one.
+        if (!fullUser.mfa_email_enabled) {
+          setNeedsMfaChallenge(false);
+        } else if (isMfaSessionVerified(fullUser.auth_id)) {
+          setNeedsMfaChallenge(false);
+        } else {
+          try {
+            const trust = await checkLocalTrustedDevice();
+            if (trust.ok && trust.trusted) {
+              markMfaSessionVerified(fullUser.auth_id);
+              setNeedsMfaChallenge(false);
+            } else {
+              setNeedsMfaChallenge(true);
+            }
+          } catch {
+            setNeedsMfaChallenge(true);
+          }
+        }
       }
     } catch (err) {
       console.error("Auth check failed:", err);
@@ -179,6 +227,8 @@ export const AuthProvider = ({ children }) => {
   const logout = async (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
+    setNeedsMfaChallenge(false);
+    clearAllMfaSessionFlags();
     setAuthError({ type: "auth_required", message: "Authentication required" });
     await supabase.auth.signOut();
     if (shouldRedirect) window.location.href = "/";
@@ -197,6 +247,8 @@ export const AuthProvider = ({ children }) => {
         logout,
         navigateToLogin,
         checkAppState,
+        needsMfaChallenge,
+        markMfaChallengePassed,
       }}
     >
       {children}

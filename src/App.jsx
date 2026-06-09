@@ -17,6 +17,7 @@ import CookieConsent from "@/components/CookieConsent";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
+import MfaGate from "@/components/MfaGate";
 import OnboardingWizard from "@/components/OnboardingWizard";
 import {
   TYPEWRITER_LINES,
@@ -1302,7 +1303,7 @@ function AppRoutes() {
 }
 
 const AuthenticatedApp = () => {
-  const { isLoadingAuth, isAuthenticated, user } = useAuth();
+  const { isLoadingAuth, isAuthenticated, user, needsMfaChallenge, markMfaChallengePassed } = useAuth();
   const location = useLocation();
 
   const isPublicRoute = useMemo(() => {
@@ -1328,6 +1329,23 @@ const AuthenticatedApp = () => {
 
   if (!isAuthenticated) {
     return <PublicLandingPage />;
+  }
+
+  // MFA gate sits BEFORE every other authenticated branch — onboarding,
+  // pending-approval, role redirects, billing checks. While needsMfaChallenge
+  // is true the session may be technically valid in Supabase, but the user
+  // must enter a 6-digit code (or be on a trusted device) before any of
+  // the app is reachable. This is the enforcement point that makes email
+  // MFA real; the LoginModal alone couldn't enforce it because the session
+  // gets created before any verification can happen.
+  if (needsMfaChallenge) {
+    return (
+      <MfaGate
+        userId={user?.auth_id}
+        userEmail={user?.email}
+        onPass={markMfaChallengePassed}
+      />
+    );
   }
 
   if (user?.role === "user") {
