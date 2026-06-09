@@ -55,6 +55,7 @@ const PUBLIC_PAGE_NAMES = [
   "terms",
   "changelog",
   "security",
+  "support",
 ];
 
 const PUBLIC_PATHS = new Set(
@@ -1029,7 +1030,9 @@ function PublicLandingPage() {
                 ["/security", "Security"],
                 ["/privacy", "Privacy"],
                 ["/terms", "Terms"],
-                ["https://status.inktracker.app", "Status"],
+                // Status link removed 2026-06-09 — status.inktracker.app
+                // isn't provisioned yet (Path C parked item). Add back
+                // when the page actually exists.
               ].map(([href, label]) => (
                 <a
                   key={label}
