@@ -90,3 +90,6 @@ verify_jwt = false
 
 [functions.sendMfaRecoveryEmail]
 verify_jwt = false
+
+[functions.sendMfaSignInCode]
+verify_jwt = false

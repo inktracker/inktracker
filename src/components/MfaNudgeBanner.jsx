@@ -21,7 +21,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Shield, X, ArrowRight } from "lucide-react";
-import { supabase } from "@/api/supabaseClient";
+import { isMfaEmailEnabled } from "@/lib/mfa";
 
 const DISMISS_STORAGE_KEY = "inktracker_mfa_nudge_dismissed_at";
 const DISMISS_REPROMPT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -42,22 +42,20 @@ function isWithinDismissWindow() {
 }
 
 export default function MfaNudgeBanner() {
-  // "hidden" covers both "still loading" and "dismissed / enrolled."
-  // We never reveal the banner unless we've confirmed (a) no verified
-  // TOTP factor exists, and (b) the user hasn't dismissed in the last
-  // 7 days.
+  // "hidden" covers both "still loading" and "dismissed / enabled."
+  // We never reveal the banner unless we've confirmed (a) the user's
+  // mfa_email_enabled is false, and (b) they haven't dismissed in the
+  // last 7 days.
   const [show, setShow] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     async function check() {
-      // Fast bail — dismissed recently.
       if (isWithinDismissWindow()) return;
       try {
-        const { data, error } = await supabase.auth.mfa.listFactors();
-        if (error) return; // anonymous wizard / signed-out — don't show.
-        const verified = (data?.totp || []).some((f) => f.status === "verified");
-        if (!cancelled && !verified) setShow(true);
+        const result = await isMfaEmailEnabled();
+        if (!result.ok) return; // anonymous / network — don't show.
+        if (!cancelled && !result.enabled) setShow(true);
       } catch {
         // Network / config issue — hide silently rather than nag with
         // a possibly-incorrect prompt.
