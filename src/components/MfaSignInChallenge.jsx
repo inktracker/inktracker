@@ -23,7 +23,7 @@ import { useEffect, useState } from "react";
 import { ShieldCheck, AlertTriangle, ArrowRight } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { useAuth } from "@/lib/AuthContext";
-import { consumeRecoveryCode, logMfaEvent } from "@/lib/mfa";
+import { requestMfaRecoveryEmail, logMfaEvent } from "@/lib/mfa";
 
 const MFA_MAX_ATTEMPTS = 10;
 const MFA_LOCKOUT_MS = 15 * 60 * 1000;
@@ -31,12 +31,13 @@ const MFA_LOCKOUT_STORAGE_KEY = "inktracker_mfa_lockout_until"; // shared with L
 
 export default function MfaSignInChallenge() {
   const { mfaChallengeRequired, mfaFactorId, mfaChallengeId, clearMfaChallenge, checkAppState } = useAuth();
-  const [mode, setMode] = useState("challenge"); // challenge | recovery
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockedUntil, setLockedUntil] = useState(null);
+  const [recoveryEmailSent, setRecoveryEmailSent] = useState(false);
+  const [recoveryRetryAfter, setRecoveryRetryAfter] = useState(0);
 
   useEffect(() => {
     if (!mfaChallengeRequired) return;
@@ -50,7 +51,7 @@ export default function MfaSignInChallenge() {
     if (mfaChallengeRequired) {
       setCode("");
       setError("");
-      setMode("challenge");
+      setRecoveryEmailSent(false);
     }
   }, [mfaChallengeId, mfaChallengeRequired]);
 
@@ -112,33 +113,28 @@ export default function MfaSignInChallenge() {
     }
   }
 
-  async function handleRecovery(e) {
-    e?.preventDefault?.();
+  async function handleRequestRecoveryEmail() {
     if (lockoutMinutesRemaining() > 0) {
       setError(`Too many failed attempts. Try again in ${lockoutMinutesRemaining()} minute(s).`);
-      return;
-    }
-    const trimmed = code.trim();
-    if (!trimmed) {
-      setError("Enter a recovery code.");
       return;
     }
     setBusy(true);
     setError("");
     try {
-      const result = await consumeRecoveryCode(trimmed);
-      if (!result.ok) throw new Error(result.error || "invalid");
-      // Recovery code = one-time bypass. Unenroll the factor so the
-      // session proceeds at AAL1 without a step-up requirement. User
-      // re-enrolls from Account → Security afterwards.
-      try { await supabase.auth.mfa.unenroll({ factorId: mfaFactorId }); } catch { /* ignore */ }
-      try { await logMfaEvent("disabled", { metadata: { via: "recovery_code", source: "magic-link" } }); } catch { /* ignore */ }
-      setFailedAttempts(0);
-      localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
-      clearMfaChallenge();
-      try { await checkAppState({ silent: true }); } catch { /* ignore */ }
+      const result = await requestMfaRecoveryEmail();
+      if (result.ok) {
+        setRecoveryEmailSent(true);
+        setRecoveryRetryAfter(0);
+        return;
+      }
+      if (result.error === "rate_limited") {
+        setRecoveryEmailSent(true);
+        setRecoveryRetryAfter(result.retryAfterSeconds || 0);
+        return;
+      }
+      throw new Error(result.error || "Couldn't send recovery email.");
     } catch (err) {
-      await applyFailure("recovery_failed", { reason: err?.message?.slice(0, 80) });
+      setError(err?.message || "Couldn't send recovery email — try again or contact support.");
     } finally {
       setBusy(false);
     }
@@ -157,7 +153,7 @@ export default function MfaSignInChallenge() {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-auto">
         <div className="px-6 py-4 border-b border-slate-100">
           <h2 className="text-lg font-bold text-slate-900">
-            {mode === "challenge" ? "Verify your identity" : "Use a recovery code"}
+            Verify your identity
           </h2>
         </div>
         <div className="p-6 space-y-4">
@@ -168,46 +164,57 @@ export default function MfaSignInChallenge() {
             </div>
           )}
 
-          {mode === "challenge" ? (
-            <form onSubmit={handleVerify} className="space-y-4">
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Two-factor authentication is on for this account. Enter the 6-digit code from your authenticator app to continue.
-                </p>
+          <form onSubmit={handleVerify} className="space-y-4">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
+              <p className="text-sm text-slate-600 leading-relaxed">
+                Two-factor authentication is on for this account. Enter the 6-digit code from your authenticator app to continue.
+              </p>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                6-digit code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="123456"
+                className="w-40 px-4 py-2.5 border border-slate-200 rounded-xl text-base font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-teal-500"
+                autoFocus
+                disabled={lockoutMinutesRemaining() > 0}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={busy || code.length !== 6 || lockoutMinutesRemaining() > 0}
+              className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
+            >
+              {busy ? "Verifying…" : "Verify and continue"}
+              <ArrowRight className="w-4 h-4" />
+            </button>
+
+            {recoveryEmailSent ? (
+              <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                Check your email — we sent a link that lets you sign in and reset two-factor.
+                {recoveryRetryAfter > 0 && (
+                  <span className="block mt-1 text-emerald-600">
+                    Already sent recently — wait {Math.ceil(recoveryRetryAfter / 60)} min{Math.ceil(recoveryRetryAfter / 60) === 1 ? "" : "s"} before requesting another.
+                  </span>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                  6-digit code
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="123456"
-                  className="w-40 px-4 py-2.5 border border-slate-200 rounded-xl text-base font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  autoFocus
-                  disabled={lockoutMinutesRemaining() > 0}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={busy || code.length !== 6 || lockoutMinutesRemaining() > 0}
-                className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
-              >
-                {busy ? "Verifying…" : "Verify and continue"}
-                <ArrowRight className="w-4 h-4" />
-              </button>
+            ) : (
               <div className="flex items-center justify-between text-xs">
                 <button
                   type="button"
-                  onClick={() => { setMode("recovery"); setCode(""); setError(""); }}
-                  className="font-semibold text-teal-600 hover:text-teal-700"
+                  onClick={handleRequestRecoveryEmail}
+                  disabled={busy}
+                  className="font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-60"
                 >
-                  Use a recovery code instead
+                  Lost your authenticator? Send me a recovery email
                 </button>
                 <button
                   type="button"
@@ -217,56 +224,8 @@ export default function MfaSignInChallenge() {
                   Sign out
                 </button>
               </div>
-            </form>
-          ) : (
-            <form onSubmit={handleRecovery} className="space-y-4">
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Enter one of your single-use recovery codes. Using a recovery code will turn off two-factor authentication — you'll need to re-enable it from Account → Security.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                  Recovery code
-                </label>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="ABCDE-FGHJK"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-base font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  autoFocus
-                  disabled={lockoutMinutesRemaining() > 0}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={busy || !code.trim() || lockoutMinutesRemaining() > 0}
-                className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
-              >
-                {busy ? "Verifying…" : "Verify and continue"}
-                <ArrowRight className="w-4 h-4" />
-              </button>
-              <div className="flex items-center justify-between text-xs">
-                <button
-                  type="button"
-                  onClick={() => { setMode("challenge"); setCode(""); setError(""); }}
-                  className="font-semibold text-teal-600 hover:text-teal-700"
-                >
-                  Back to authenticator code
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancel}
-                  className="font-semibold text-slate-500 hover:text-slate-700"
-                >
-                  Sign out
-                </button>
-              </div>
-            </form>
-          )}
+            )}
+          </form>
         </div>
       </div>
     </div>

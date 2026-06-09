@@ -23,19 +23,20 @@ globalThis.localStorage = {
 
 const rpcMock         = vi.fn();
 const fromMock        = vi.fn();
+const invokeMock      = vi.fn();
 
 vi.mock("@/api/supabaseClient", () => ({
   supabase: {
     rpc:  (...args) => rpcMock(...args),
+    functions: { invoke: (...args) => invokeMock(...args) },
     from: (...args) => fromMock(...args),
   },
 }));
 
 import {
-  generateRecoveryCodes,
-  consumeRecoveryCode,
+  requestMfaRecoveryEmail,
+  consumeMfaEmailRecoveryToken,
   logMfaEvent,
-  countUnusedRecoveryCodes,
   listMfaAuditEvents,
   TRUSTED_DEVICE_STORAGE_KEY,
   getLocalTrustedDeviceToken,
@@ -49,90 +50,65 @@ import {
 beforeEach(() => {
   rpcMock.mockReset();
   fromMock.mockReset();
+  invokeMock.mockReset();
 });
 
-describe("generateRecoveryCodes", () => {
-  it("calls the generate_mfa_recovery_codes RPC with no args", async () => {
-    rpcMock.mockResolvedValue({
-      data:  { status: "ok", codes: ["AAAA-BBBB", "CCCC-DDDD"] },
-      error: null,
-    });
-    const result = await generateRecoveryCodes();
-    expect(rpcMock).toHaveBeenCalledWith("generate_mfa_recovery_codes");
-    expect(result).toEqual({ ok: true, codes: ["AAAA-BBBB", "CCCC-DDDD"] });
-  });
-
-  it("returns ok:false with the error message when the RPC throws", async () => {
-    rpcMock.mockResolvedValue({
-      data:  null,
-      error: { message: "rate limited" },
-    });
-    const result = await generateRecoveryCodes();
-    expect(result).toEqual({ ok: false, error: "rate limited" });
-  });
-
-  it("returns ok:false when the RPC reports unauthenticated", async () => {
-    // The SECURITY DEFINER function returns { status: 'unauthenticated' }
-    // when auth.uid() is NULL (caller has no JWT). The wrapper must
-    // surface that as a failure, not a silent success.
-    rpcMock.mockResolvedValue({
-      data:  { status: "unauthenticated", message: "No authenticated user" },
-      error: null,
-    });
-    const result = await generateRecoveryCodes();
-    expect(result.ok).toBe(false);
-    expect(result.error).toBe("No authenticated user");
-  });
-
-  it("returns an empty codes array when the RPC omits codes", async () => {
-    // Defensive: don't let undefined.length crash the UI.
-    rpcMock.mockResolvedValue({
-      data:  { status: "ok" },
-      error: null,
-    });
-    const result = await generateRecoveryCodes();
-    expect(result).toEqual({ ok: true, codes: [] });
-  });
-});
-
-describe("consumeRecoveryCode", () => {
-  it("passes the plaintext code as p_code", async () => {
-    rpcMock.mockResolvedValue({
-      data:  { status: "consumed" },
-      error: null,
-    });
-    const result = await consumeRecoveryCode("ABCDE-FGHJK");
-    expect(rpcMock).toHaveBeenCalledWith("consume_mfa_recovery_code", {
-      p_code: "ABCDE-FGHJK",
-    });
+describe("requestMfaRecoveryEmail", () => {
+  it("invokes the sendMfaRecoveryEmail edge function with an empty body", async () => {
+    invokeMock.mockResolvedValue({ data: { status: "ok" }, error: null });
+    const result = await requestMfaRecoveryEmail();
+    expect(invokeMock).toHaveBeenCalledWith("sendMfaRecoveryEmail", { body: {} });
     expect(result).toEqual({ ok: true });
   });
 
-  it("returns ok:false with 'invalid' when the code didn't match", async () => {
-    rpcMock.mockResolvedValue({
-      data:  { status: "invalid" },
+  it("surfaces rate_limited with retryAfterSeconds so the UI can show the timer", async () => {
+    invokeMock.mockResolvedValue({
+      data:  { status: "rate_limited", retry_after_seconds: 273 },
       error: null,
     });
-    const result = await consumeRecoveryCode("WRONG-CODE");
-    expect(result).toEqual({ ok: false, error: "invalid" });
+    const result = await requestMfaRecoveryEmail();
+    expect(result).toEqual({ ok: false, error: "rate_limited", retryAfterSeconds: 273 });
   });
 
-  it("surfaces network/error responses", async () => {
-    rpcMock.mockResolvedValue({
-      data:  null,
-      error: { message: "network" },
-    });
-    const result = await consumeRecoveryCode("ANYTHING");
-    expect(result).toEqual({ ok: false, error: "network" });
+  it("returns ok:false with the function error message on hard failure", async () => {
+    invokeMock.mockResolvedValue({ data: null, error: { message: "boom" } });
+    const result = await requestMfaRecoveryEmail();
+    expect(result).toEqual({ ok: false, error: "boom" });
   });
 
-  it("treats unauthenticated as failure", async () => {
-    rpcMock.mockResolvedValue({
-      data:  { status: "unauthenticated" },
-      error: null,
-    });
-    const result = await consumeRecoveryCode("X");
+  it("returns ok:false for a non-ok body even when error is null", async () => {
+    invokeMock.mockResolvedValue({ data: { status: "error" }, error: null });
+    const result = await requestMfaRecoveryEmail();
     expect(result.ok).toBe(false);
+    expect(result.error).toBe("error");
+  });
+});
+
+describe("consumeMfaEmailRecoveryToken", () => {
+  it("calls the consume RPC with p_token and returns the user_id on success", async () => {
+    rpcMock.mockResolvedValue({
+      data:  { status: "ok", user_id: "u-1" },
+      error: null,
+    });
+    const result = await consumeMfaEmailRecoveryToken("PLAINTEXT-TOKEN");
+    expect(rpcMock).toHaveBeenCalledWith("consume_mfa_email_recovery_token", {
+      p_token: "PLAINTEXT-TOKEN",
+    });
+    expect(result).toEqual({ ok: true, userId: "u-1" });
+  });
+
+  it("surfaces 'expired' / 'already_used' / 'invalid' as the failure error", async () => {
+    for (const status of ["expired", "already_used", "invalid"]) {
+      rpcMock.mockResolvedValueOnce({ data: { status }, error: null });
+      const r = await consumeMfaEmailRecoveryToken("x");
+      expect(r).toEqual({ ok: false, error: status });
+    }
+  });
+
+  it("surfaces network errors", async () => {
+    rpcMock.mockResolvedValue({ data: null, error: { message: "network" } });
+    const result = await consumeMfaEmailRecoveryToken("X");
+    expect(result).toEqual({ ok: false, error: "network" });
   });
 });
 
@@ -178,44 +154,6 @@ describe("logMfaEvent", () => {
     const result = await logMfaEvent("invalid_event_name");
     expect(result.ok).toBe(false);
     expect(result.error).toContain("check");
-  });
-});
-
-describe("countUnusedRecoveryCodes", () => {
-  it("queries mfa_recovery_codes with a head-only count + null filter", async () => {
-    const isMock     = vi.fn().mockResolvedValue({ count: 7, error: null });
-    const selectMock = vi.fn().mockReturnValue({ is: isMock });
-    fromMock.mockReturnValue({ select: selectMock });
-
-    const result = await countUnusedRecoveryCodes();
-    expect(fromMock).toHaveBeenCalledWith("mfa_recovery_codes");
-    expect(selectMock).toHaveBeenCalledWith("*", { count: "exact", head: true });
-    expect(isMock).toHaveBeenCalledWith("consumed_at", null);
-    expect(result).toEqual({ ok: true, count: 7 });
-  });
-
-  it("returns 0 when there are no unused codes (count == 0)", async () => {
-    const isMock     = vi.fn().mockResolvedValue({ count: 0, error: null });
-    fromMock.mockReturnValue({ select: () => ({ is: isMock }) });
-
-    const result = await countUnusedRecoveryCodes();
-    expect(result).toEqual({ ok: true, count: 0 });
-  });
-
-  it("returns 0 when count is null (Supabase response edge case)", async () => {
-    const isMock     = vi.fn().mockResolvedValue({ count: null, error: null });
-    fromMock.mockReturnValue({ select: () => ({ is: isMock }) });
-
-    const result = await countUnusedRecoveryCodes();
-    expect(result).toEqual({ ok: true, count: 0 });
-  });
-
-  it("surfaces query errors", async () => {
-    const isMock     = vi.fn().mockResolvedValue({ count: null, error: { message: "RLS denied" } });
-    fromMock.mockReturnValue({ select: () => ({ is: isMock }) });
-
-    const result = await countUnusedRecoveryCodes();
-    expect(result).toEqual({ ok: false, error: "RLS denied" });
   });
 });
 

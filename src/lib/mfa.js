@@ -18,49 +18,51 @@
 import { supabase } from "@/api/supabaseClient";
 
 /**
- * Generate (or regenerate) 10 single-use recovery codes for the
- * currently-authenticated user. WIPES any existing codes — UI should
- * surface a "this will invalidate your current codes" confirm before
- * calling on regenerate.
+ * Ask the server to email the signed-in user a one-time MFA recovery
+ * link. Caller must already be at AAL1 (just signed in with password
+ * — the edge function reads their JWT). The RPC mints a fresh
+ * 32-char token, stores the hash + 15-minute expiry server-side, and
+ * Resend delivers the link to the email on the auth row.
  *
- * Returns the plaintext codes ONCE. They are not stored or logged
- * anywhere else; if the caller doesn't surface them to the user
- * immediately, they're gone.
+ * Returns `ok: true` on success regardless of which inbox got it —
+ * never reveals the email to the browser, so a stolen session token
+ * can't be used to enumerate who's on file.
  *
- * @returns {Promise<{ ok: true, codes: string[] } | { ok: false, error: string }>}
+ * Rate-limited to one request per 5 minutes per user. On rate-limit
+ * the caller surfaces "we just sent you one — check your inbox."
+ *
+ * @returns {Promise<{ ok: true } | { ok: false, error: string, retryAfterSeconds?: number }>}
  */
-export async function generateRecoveryCodes() {
-  const { data, error } = await supabase.rpc("generate_mfa_recovery_codes");
+export async function requestMfaRecoveryEmail() {
+  const { data, error } = await supabase.functions.invoke("sendMfaRecoveryEmail", { body: {} });
   if (error) return { ok: false, error: error.message };
-  if (!data || data.status !== "ok") {
-    return { ok: false, error: data?.message || data?.status || "unknown_error" };
+  if (!data) return { ok: false, error: "no_response" };
+  if (data.status === "ok") return { ok: true };
+  if (data.status === "rate_limited") {
+    return { ok: false, error: "rate_limited", retryAfterSeconds: data.retry_after_seconds };
   }
-  return { ok: true, codes: data.codes || [] };
+  return { ok: false, error: data.status || "unknown_error" };
 }
 
 /**
- * Validate a plaintext recovery code against the caller's stored
- * hashes. On success, the code is marked consumed and cannot be
- * reused. On failure (no match, already-consumed, malformed), returns
- * `invalid` — the RPC intentionally returns the same shape and timing
- * for all failure cases to minimize timing-oracle leaks.
+ * Consume a recovery token that arrived in the email. Callable from
+ * an anonymous session — the token IS the credential. On success the
+ * user's TOTP factor is unenrolled (same one-time-bypass semantics
+ * the old recovery codes had) and `user_id` comes back so the page
+ * can sign that user in.
  *
- * Caller is responsible for the lockout policy (count failed attempts
- * client-side, route to lockout state after N) — this RPC just answers
- * "was the code valid this time."
- *
- * @param {string} code  Plaintext code; case + separator tolerant.
- * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ * @param {string} token Plaintext recovery token from the email URL.
+ * @returns {Promise<{ ok: true, userId: string } | { ok: false, error: string }>}
  */
-export async function consumeRecoveryCode(code) {
-  const { data, error } = await supabase.rpc("consume_mfa_recovery_code", {
-    p_code: code,
+export async function consumeMfaEmailRecoveryToken(token) {
+  const { data, error } = await supabase.rpc("consume_mfa_email_recovery_token", {
+    p_token: token,
   });
   if (error) return { ok: false, error: error.message };
-  if (!data || data.status !== "consumed") {
+  if (!data || data.status !== "ok") {
     return { ok: false, error: data?.status || "invalid" };
   }
-  return { ok: true };
+  return { ok: true, userId: data.user_id };
 }
 
 /**
@@ -73,9 +75,9 @@ export async function consumeRecoveryCode(code) {
  *   - 'lockout'               when failed attempts cross the threshold
  *   - 'session_invalidated'   when enabling MFA forces other devices out
  *
- * `recovery_used`, `recovery_failed`, and `codes_generated` are
- * already written inside the RPCs — do not double-log them from the
- * client.
+ * `email_recovery_requested`, `email_recovery_used`, and
+ * `email_recovery_failed` are already written inside the RPCs — do
+ * not double-log them from the client.
  *
  * @param {string} event       One of the allow-list values above.
  * @param {object} [opts]
@@ -98,24 +100,10 @@ export async function logMfaEvent(event, opts = {}) {
   return { ok: true };
 }
 
-/**
- * Count the unused recovery codes for the current user. Used by the
- * Account → Security UI to show "X recovery codes left" and prompt
- * regeneration when the count gets low (≤2 is a sensible threshold).
- *
- * Goes through the RLS-protected SELECT — the user can only ever see
- * their own count, so even a malicious caller can't enumerate.
- *
- * @returns {Promise<{ ok: true, count: number } | { ok: false, error: string }>}
- */
-export async function countUnusedRecoveryCodes() {
-  const { count, error } = await supabase
-    .from("mfa_recovery_codes")
-    .select("*", { count: "exact", head: true })
-    .is("consumed_at", null);
-  if (error) return { ok: false, error: error.message };
-  return { ok: true, count: count ?? 0 };
-}
+/* countUnusedRecoveryCodes removed — recovery codes UI was swapped for
+ * email-based recovery 2026-06-08. The mfa_recovery_codes table is
+ * dropped in migration 20260625000000. Any leftover imports should be
+ * removed alongside their callers in the same PR. */
 
 // ── Trusted device (Phase 3b) ──────────────────────────────────────
 // "Remember this browser for 30 days." The plaintext token never

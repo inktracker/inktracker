@@ -4,6 +4,7 @@ import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { Toaster } from "@/components/ui/toaster";
 import Privacy from "./pages/Privacy.jsx";
+import MfaRecovery from "./pages/MfaRecovery.jsx";
 import Terms from "./pages/Terms.jsx";
 import Changelog from "./pages/Changelog.jsx";
 import Security from "./pages/Security.jsx";
@@ -51,6 +52,7 @@ const PUBLIC_PAGE_NAMES = [
   "OrderStatus",
   "ShopFloor",
   "ResetPassword",
+  "MfaRecovery",
   "privacy",
   "terms",
   "changelog",
@@ -1296,6 +1298,8 @@ function AppRoutes() {
         <Route path="/changelog" element={<Changelog />} />
         <Route path="/security" element={<Security />} />
         <Route path="/support" element={<Support />} />
+        <Route path="/MfaRecovery" element={<MfaRecovery />} />
+        <Route path="/mfarecovery" element={<MfaRecovery />} />
 
         <Route path="*" element={<PageNotFound />} />
       </Routes>
