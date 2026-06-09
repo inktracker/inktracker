@@ -1,22 +1,11 @@
 import { useState, useEffect } from "react";
-import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail, ShieldCheck } from "lucide-react";
+import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
-import {
-  isMfaEmailEnabledForCurrentSession,
-  requestMfaSignInCode,
-  verifyMfaSignInCode,
-  logMfaEvent,
-  checkLocalTrustedDevice,
-  registerTrustedDevice,
-} from "@/lib/mfa";
 
-// Lockout policy: 10 failed code entries → 15-min lockout + sign-out.
-// localStorage-backed so the timer survives page reload. The verify
-// RPC is already rate-limited at the row level via single-use codes;
-// this client-side lockout exists to slow down a hammering attacker.
-const MFA_MAX_ATTEMPTS = 10;
-const MFA_LOCKOUT_MS = 15 * 60 * 1000;
-const MFA_LOCKOUT_STORAGE_KEY = "inktracker_mfa_lockout_until";
+// MFA is enforced by <MfaGate> in AuthenticatedApp, not here. This
+// modal's only job is to establish a Supabase session — the gate kicks
+// in immediately after via AuthContext (which reads profiles.mfa_email_enabled
+// and renders the gate before any app surface becomes reachable).
 
 export default function LoginModal({ isOpen, onClose, defaultMode }) {
   const [mode, setMode] = useState(defaultMode || "signin");
@@ -47,35 +36,6 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   // anything fancier reads as "growth-hack overlay" and erodes trust.
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // ── MFA email-code state ────────────────────────────────────────
-  // After signInWithPassword succeeds, we check profiles.mfa_email_enabled.
-  // If true AND this browser isn't a trusted device, we switch the
-  // modal into `mfa-code` mode: we've already sent the 6-digit code
-  // via the edge function; the user just needs to enter it. Closing
-  // the modal mid-challenge signs them out — sitting at a half-
-  // authenticated state with the rest of the app accessible is the
-  // bypass we're guarding against.
-  const [mfaCode, setMfaCode] = useState("");
-  const [mfaFailedAttempts, setMfaFailedAttempts] = useState(0);
-  const [mfaLockedUntil, setMfaLockedUntil] = useState(null);
-  const [mfaRetryAfter, setMfaRetryAfter] = useState(0);
-  // Opt-in "Remember this device for 30 days." When checked + verify
-  // succeeds, we mint a per-device token and store the hash server-side
-  // so subsequent sign-ins on the same browser skip the code entirely.
-  const [trustDevice, setTrustDevice] = useState(false);
-
-  // Rehydrate lockout from localStorage on mount so a refresh during
-  // lockout doesn't reset the timer.
-  useEffect(() => {
-    const stored = Number(localStorage.getItem(MFA_LOCKOUT_STORAGE_KEY));
-    if (Number.isFinite(stored) && stored > Date.now()) {
-      setMfaLockedUntil(stored);
-    } else if (Number.isFinite(stored)) {
-      // Expired — clean up so we don't keep re-reading a dead value.
-      localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
-    }
-  }, []);
-
   // ── Cross-device confirmation sync ───────────────────────────────
   // After signup, the desktop tab shows "Confirmation email sent."
   // Operators commonly confirm on their phone (clicking the email
@@ -93,17 +53,6 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   //
   // Cleanup runs on modal close, mode switch, or successful sign-in
   // so we don't keep pinging the auth endpoint forever.
-
-  // Resend cooldown tick — counts mfaRetryAfter down to zero in 1-sec
-  // ticks while the modal is in mfa-code mode. Lives up here next to
-  // the other hooks; do NOT move below `if (!isOpen) return null` or
-  // the hook count mismatches between not-open / open renders (React
-  // error #310).
-  useEffect(() => {
-    if (mode !== "mfa-code" || mfaRetryAfter <= 0) return undefined;
-    const t = setTimeout(() => setMfaRetryAfter((s) => Math.max(0, s - 1)), 1000);
-    return () => clearTimeout(t);
-  }, [mode, mfaRetryAfter]);
 
   useEffect(() => {
     // Bail when the modal is closed — React doesn't unmount on
@@ -168,120 +117,6 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     }
   };
 
-  // ── MFA verify handlers ───────────────────────────────────────────
-
-  function lockoutMinutesRemaining() {
-    if (!mfaLockedUntil) return 0;
-    return Math.max(0, Math.ceil((mfaLockedUntil - Date.now()) / 60000));
-  }
-
-  async function applyMfaFailure(eventName, extraMetadata = {}) {
-    const next = mfaFailedAttempts + 1;
-    setMfaFailedAttempts(next);
-    setMfaCode("");
-    try {
-      await logMfaEvent(eventName, { metadata: { attempt: next, ...extraMetadata } });
-    } catch { /* audit failures are best-effort */ }
-    if (next >= MFA_MAX_ATTEMPTS) {
-      const lockUntil = Date.now() + MFA_LOCKOUT_MS;
-      setMfaLockedUntil(lockUntil);
-      localStorage.setItem(MFA_LOCKOUT_STORAGE_KEY, String(lockUntil));
-      try { await logMfaEvent("lockout", { metadata: { attempts: next } }); } catch { /* ignore */ }
-      // Drop AAL1 session so the user can't sit on the modal at AAL1
-      // and bypass MFA by closing the X. They have to wait + sign in
-      // again. Audit log already records the lockout.
-      try { await supabase.auth.signOut(); } catch { /* ignore */ }
-      setError(`Too many failed attempts. Wait ${Math.ceil(MFA_LOCKOUT_MS / 60000)} minutes before trying again. You've been signed out.`);
-      return;
-    }
-    setError(`Invalid code — ${MFA_MAX_ATTEMPTS - next} attempt${MFA_MAX_ATTEMPTS - next === 1 ? "" : "s"} remaining.`);
-  }
-
-  const handleMfaVerify = async (e) => {
-    e?.preventDefault?.();
-    if (lockoutMinutesRemaining() > 0) {
-      setError(`Too many failed attempts. Try again in ${lockoutMinutesRemaining()} minute(s).`);
-      return;
-    }
-    const trimmed = mfaCode.trim().replace(/\D/g, "");
-    if (trimmed.length !== 6) {
-      setError("Enter the 6-digit code from your email.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const v = await verifyMfaSignInCode(trimmed);
-      if (!v.ok) {
-        if (v.error === "expired") {
-          setError("That code expired. Click Resend to get a new one.");
-          setMfaCode("");
-        } else {
-          await applyMfaFailure("signin_code_failed", { reason: v.error });
-        }
-        return;
-      }
-      setMfaFailedAttempts(0);
-      localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
-      // Opt-in "remember this device" — mint a 30-day token. Best-
-      // effort: registration failure shouldn't block sign-in.
-      if (trustDevice) {
-        try {
-          const label = (navigator?.userAgent || "Unknown device").slice(0, 200);
-          await registerTrustedDevice(label);
-        } catch { /* ignore */ }
-      }
-      onClose();
-    } catch (err) {
-      await applyMfaFailure("signin_code_failed", { reason: err?.message?.slice(0, 80) });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // "Resend code" — re-invoke the edge function. Rate-limited by the
-  // RPC to one per 60s. UI surfaces retryAfterSeconds as a countdown.
-  const handleResendCode = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      const r = await requestMfaSignInCode();
-      if (r.ok) {
-        setMfaRetryAfter(60);
-        return;
-      }
-      if (r.error === "rate_limited") {
-        setMfaRetryAfter(r.retryAfterSeconds || 60);
-        return;
-      }
-      setError(r.error || "Couldn't send a new code. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Close-guard: bailing out of the code-entry step means we sign out
-  // so the user can't be left half-authenticated with the rest of the
-  // app accessible behind the modal.
-  const handleCloseModal = async () => {
-    if (mode === "mfa-code") {
-      try { await supabase.auth.signOut(); } catch { /* ignore */ }
-      setMode("signin");
-      setMfaCode("");
-      setMfaFailedAttempts(0);
-      setMfaRetryAfter(0);
-      setTrustDevice(false);
-      setError("");
-    }
-    onClose();
-  };
-
-  // The resend cooldown tick hook lives up next to the other useEffects,
-  // ABOVE the `if (!isOpen) return null` early return on line 131. Don't
-  // move it down here — placing a hook below the early return triggers
-  // React error #310 the moment the modal opens (the not-open render
-  // sees N hooks, the open render sees N+1).
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -332,39 +167,10 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
-
-        // Password is correct. If the user has profiles.mfa_email_enabled
-        // we need a 6-digit code from email before dismissing the modal.
-        // Trusted-device skip runs FIRST so a known browser doesn't get
-        // nagged. Errors fall closed (challenge anyway — better to
-        // over-challenge than miss a sign-in).
-        const needsMfa = await isMfaEmailEnabledForCurrentSession();
-        if (needsMfa) {
-          try {
-            const trust = await checkLocalTrustedDevice();
-            if (trust.ok && trust.trusted) {
-              onClose();
-              return;
-            }
-          } catch { /* fall through to challenge */ }
-
-          // Kick off the code email. Rate limits are real (60s per user)
-          // — if the user already requested a code recently we surface
-          // the countdown without sending a duplicate.
-          const sendResult = await requestMfaSignInCode();
-          if (sendResult.ok) {
-            setMfaRetryAfter(60);
-          } else if (sendResult.error === "rate_limited") {
-            setMfaRetryAfter(sendResult.retryAfterSeconds || 60);
-          } else {
-            throw new Error(sendResult.error || "Couldn't send the sign-in code.");
-          }
-          setMode("mfa-code");
-          setMfaCode("");
-          setMfaFailedAttempts(0);
-          setLoading(false);
-          return; // don't onClose — modal stays in code-entry mode
-        }
+        // MFA enforcement happens in AuthContext + MfaGate, not here.
+        // Closing the modal lets AuthenticatedApp render — if MFA is
+        // enabled and this tab isn't verified, MfaGate appears and
+        // blocks everything until the 6-digit code is entered.
         onClose();
       }
     } catch (err) {
@@ -441,11 +247,9 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               ? "Create Account"
               : mode === "forgot"
               ? "Reset Password"
-              : mode === "mfa-code"
-              ? "Enter your sign-in code"
               : "Sign In"}
           </h2>
-          <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600 transition">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -564,61 +368,6 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 {resetLoading ? "Sending…" : "Send reset link"}
               </button>
             </div>
-          ) : mode === "mfa-code" ? (
-            <form onSubmit={handleMfaVerify} className="space-y-4">
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Check your email — we sent a 6-digit sign-in code. Enter it below to finish signing in.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                  6-digit code
-                </label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, ""))}
-                  placeholder="123456"
-                  className="w-40 px-4 py-2.5 border border-slate-200 rounded-xl text-base font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  autoFocus
-                  disabled={lockoutMinutesRemaining() > 0}
-                />
-              </div>
-              <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={trustDevice}
-                  onChange={(e) => setTrustDevice(e.target.checked)}
-                  disabled={loading}
-                />
-                <span>Remember this device for 30 days</span>
-              </label>
-              <button
-                type="submit"
-                disabled={loading || mfaCode.length !== 6 || lockoutMinutesRemaining() > 0}
-                className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
-              >
-                {loading ? "Verifying…" : "Verify and sign in"}
-                <ArrowRight className="w-4 h-4" />
-              </button>
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={handleResendCode}
-                  disabled={loading || mfaRetryAfter > 0}
-                  className="text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-60"
-                >
-                  {mfaRetryAfter > 0
-                    ? `Didn't get the code? Resend in ${mfaRetryAfter}s`
-                    : "Didn't get the code? Resend"}
-                </button>
-              </div>
-            </form>
           ) : (
           /* Form */
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -761,11 +510,6 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
             </>
           )}
 
-          {/* Mode toggle — hidden during MFA challenge / recovery since
-              switching to "Sign up" or "Forgot password" mid-challenge
-              would leave the session at AAL1. Use the X to bail (which
-              signs the user out via handleCloseModal). */}
-          {mode === "mfa-code" ? null : (
           <div className="text-center">
             {mode === "signin" ? (
               <p className="text-sm text-slate-500">
@@ -799,7 +543,6 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               </p>
             )}
           </div>
-          )}
         </div>
       </div>
     </div>
