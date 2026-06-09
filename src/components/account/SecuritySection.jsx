@@ -15,16 +15,15 @@
 // never gets stuck. Best-effort audit calls don't block the UI.
 
 import { useEffect, useState } from "react";
-import { Shield, ShieldCheck, AlertTriangle, Copy, Check, Download, Loader2, Monitor, Trash2, Activity } from "lucide-react";
+import { Shield, ShieldCheck, AlertTriangle, Copy, Check, Loader2, Monitor, Trash2, Activity } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import {
-  generateRecoveryCodes,
   logMfaEvent,
-  countUnusedRecoveryCodes,
   listTrustedDevices,
   revokeTrustedDevice,
   revokeAllTrustedDevices,
   listMfaAuditEvents,
+  registerTrustedDevice,
 } from "@/lib/mfa";
 
 // Map raw audit log event strings to short human-readable labels for
@@ -34,23 +33,23 @@ import {
 const AUDIT_EVENT_LABELS = {
   enrolled:                  "Two-factor enabled",
   disabled:                  "Two-factor disabled",
-  codes_generated:           "Recovery codes generated",
   challenge_succeeded:       "Sign-in code verified",
   challenge_failed:          "Sign-in code failed",
-  recovery_used:             "Recovery code used",
-  recovery_failed:           "Recovery code failed",
   lockout:                   "Locked out (too many attempts)",
   session_invalidated:       "Other sessions signed out",
   trusted_device_registered: "Device remembered",
   trusted_device_used:       "Trusted device sign-in",
   trusted_device_revoked:    "Trusted device revoked",
+  email_recovery_requested:  "Recovery email sent",
+  email_recovery_used:       "Recovery email link used",
+  email_recovery_failed:     "Recovery email link failed",
 };
 function formatAuditEvent(event) {
   return AUDIT_EVENT_LABELS[event] || event;
 }
 
 export default function SecuritySection() {
-  const [step, setStep] = useState("loading"); // loading | idle | enrolling | codes | enrolled
+  const [step, setStep] = useState("loading"); // loading | idle | enrolling | enrolled
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -60,22 +59,13 @@ export default function SecuritySection() {
   const [qrCode, setQrCode] = useState(null);
   const [secret, setSecret] = useState(null);
   const [code, setCode] = useState("");
-
-  // Recovery codes state
-  const [recoveryCodes, setRecoveryCodes] = useState(null);
-  const [confirmedSaved, setConfirmedSaved] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
-  const [copiedCodes, setCopiedCodes] = useState(false);
 
-  // Enrolled state
-  const [remainingCodes, setRemainingCodes] = useState(0);
-
-  // Phase 4 — step-up code confirm for destructive actions. Active when
-  // the user has clicked Disable or Regenerate; `stepUpAction` names
-  // which one is being confirmed, `stepUpCode` is the 6-digit code
-  // input. We mint a fresh challenge for every step-up so a successful
-  // verify proves the user is in front of the keyboard RIGHT NOW.
-  const [stepUpAction, setStepUpAction] = useState(null); // null | "disable" | "regenerate"
+  // Step-up code confirm — only for Disable (Regenerate was removed
+  // when recovery codes were swapped for email-based recovery). Active
+  // when the user clicks Disable; we mint a fresh challenge so a
+  // successful verify proves the user is in front of the keyboard.
+  const [stepUpAction, setStepUpAction] = useState(null); // null | "disable"
   const [stepUpChallengeId, setStepUpChallengeId] = useState(null);
   const [stepUpCode, setStepUpCode] = useState("");
 
@@ -91,12 +81,10 @@ export default function SecuritySection() {
   // destructive action so the panels stay consistent.
   async function refreshEnrolledData() {
     setDevicesLoading(true);
-    const [cnt, devs, events] = await Promise.all([
-      countUnusedRecoveryCodes(),
+    const [devs, events] = await Promise.all([
       listTrustedDevices(),
       listMfaAuditEvents(8),
     ]);
-    if (cnt.ok) setRemainingCodes(cnt.count);
     if (devs.ok) setTrustedDevices(devs.devices);
     if (events.ok) setRecentEvents(events.events);
     setDevicesLoading(false);
@@ -201,54 +189,29 @@ export default function SecuritySection() {
       });
       if (verifyErr) throw verifyErr;
 
-      // Generate the recovery codes BEFORE invalidating other sessions.
-      // If session invalidation accidentally signs us out (it shouldn't
-      // — `scope: 'others'` keeps the current one), the user would
-      // never see the codes.
-      const gen = await generateRecoveryCodes();
-      if (!gen.ok) throw new Error(gen.error || "Couldn't generate recovery codes");
-      setRecoveryCodes(gen.codes);
-
-      // Audit + force re-login on other devices. Best-effort: a
-      // logging or signOut failure shouldn't block enrollment success.
-      await logMfaEvent("enrolled", { metadata: { factor_id: factorId } });
+      // Best-effort audit + auto-trust the browser we just enrolled
+      // from. Without the auto-trust, the user would be challenged
+      // again on the very next page load — terrible UX for "I just
+      // proved I'm me 5 seconds ago." Also forces re-login on OTHER
+      // devices so a stolen pre-MFA session token can't bypass.
+      try { await logMfaEvent("enrolled", { metadata: { factor_id: factorId } }); } catch { /* ignore */ }
+      try {
+        const label = (navigator?.userAgent || "Unknown device").slice(0, 200);
+        await registerTrustedDevice(label);
+      } catch { /* ignore — user can still verify on next sign-in */ }
       try {
         await supabase.auth.signOut({ scope: "others" });
         await logMfaEvent("session_invalidated");
       } catch { /* ignore */ }
 
-      setStep("codes");
+      resetEnrollState();
+      await refreshEnrolledData();
+      setStep("enrolled");
     } catch (e) {
       setError(e?.message || "Invalid code — try again.");
     } finally {
       setBusy(false);
     }
-  }
-
-  function finishEnrollment() {
-    setStep("enrolled");
-    resetEnrollState();
-    setRecoveryCodes(null);
-    setConfirmedSaved(false);
-    countUnusedRecoveryCodes().then((r) => {
-      if (r.ok) setRemainingCodes(r.count);
-    });
-  }
-
-  function downloadCodes() {
-    if (!recoveryCodes?.length) return;
-    const blob = new Blob(
-      [`InkTracker recovery codes (generated ${new Date().toISOString()})\n\n${recoveryCodes.join("\n")}\n`],
-      { type: "text/plain" },
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "inktracker-recovery-codes.txt";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   }
 
   async function copyToClipboard(text, kind) {
@@ -257,10 +220,6 @@ export default function SecuritySection() {
       if (kind === "secret") {
         setCopiedSecret(true);
         setTimeout(() => setCopiedSecret(false), 2000);
-      }
-      if (kind === "codes") {
-        setCopiedCodes(true);
-        setTimeout(() => setCopiedCodes(false), 2000);
       }
     } catch {
       setError("Clipboard copy failed — write the value down manually.");
@@ -318,18 +277,10 @@ export default function SecuritySection() {
         if (unenrollErr) throw unenrollErr;
         try { await logMfaEvent("disabled"); } catch { /* ignore */ }
         resetEnrollState();
-        setRemainingCodes(0);
         setTrustedDevices([]);
         setRecentEvents([]);
         cancelStepUp();
         setStep("idle");
-      } else if (stepUpAction === "regenerate") {
-        const gen = await generateRecoveryCodes();
-        if (!gen.ok) throw new Error(gen.error);
-        setRecoveryCodes(gen.codes);
-        setConfirmedSaved(false);
-        cancelStepUp();
-        setStep("codes");
       }
     } catch (e) {
       setError(e?.message || "Invalid code — try again.");
@@ -475,59 +426,6 @@ export default function SecuritySection() {
         </div>
       )}
 
-      {step === "codes" && recoveryCodes && (
-        <div className="space-y-4">
-          <div className="flex items-start gap-3">
-            <ShieldCheck className="w-5 h-5 text-emerald-500 mt-0.5" />
-            <div>
-              <div className="text-sm font-semibold text-slate-700">
-                Save your recovery codes
-              </div>
-              <p className="text-xs text-slate-400 mt-1">
-                If you lose access to your authenticator app, these single-use codes are how you sign back in. Save them somewhere safe — a password manager, a printed copy in a drawer, or both. <strong>This is the only time we'll show them.</strong>
-              </p>
-            </div>
-          </div>
-          <div className="border border-slate-200 rounded-lg bg-slate-50 p-3 grid grid-cols-2 gap-x-6 gap-y-1.5 font-mono text-sm">
-            {recoveryCodes.map((c) => (
-              <div key={c} className="text-slate-700">{c}</div>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={downloadCodes}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition flex items-center gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Download .txt
-            </button>
-            <button
-              onClick={() => copyToClipboard(recoveryCodes.join("\n"), "codes")}
-              className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition flex items-center gap-1.5"
-            >
-              {copiedCodes ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedCodes ? "Copied" : "Copy all"}
-            </button>
-          </div>
-          <label className="flex items-start gap-2 text-xs text-slate-600">
-            <input
-              type="checkbox"
-              checked={confirmedSaved}
-              onChange={(e) => setConfirmedSaved(e.target.checked)}
-              className="mt-0.5"
-            />
-            <span>I've saved my recovery codes somewhere safe.</span>
-          </label>
-          <button
-            onClick={finishEnrollment}
-            disabled={!confirmedSaved}
-            className="text-xs font-semibold px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50 transition"
-          >
-            Finish setup
-          </button>
-        </div>
-      )}
-
       {step === "enrolled" && (
         <div className="space-y-6">
           <div className="flex items-start gap-3">
@@ -537,24 +435,16 @@ export default function SecuritySection() {
                 Two-factor authentication is on
               </div>
               <p className="text-xs text-slate-400 mt-1">
-                Your account is protected. You have{" "}
-                <strong>{remainingCodes}</strong>{" "}
-                recovery code{remainingCodes === 1 ? "" : "s"} remaining.
-                {remainingCodes <= 2 && remainingCodes > 0 && (
-                  <span className="text-amber-600"> Consider regenerating soon.</span>
-                )}
-                {remainingCodes === 0 && (
-                  <span className="text-red-600"> Regenerate now — you have no recovery codes left.</span>
-                )}
+                Your account is protected. If you lose access to your authenticator app, request a recovery link on the sign-in screen — we'll email you a one-time link that lets you set up a new device.
               </p>
             </div>
           </div>
 
-          {/* Step-up confirm panel — shown when the user clicks Disable
-              or Regenerate. They have to enter a fresh 6-digit code,
-              even though they're already at AAL2. Industry-standard
-              "sudo mode" pattern. */}
-          {stepUpAction ? (
+          {/* Step-up confirm panel — shown when the user clicks
+              Disable. They have to enter a fresh 6-digit code, even
+              though they're already at AAL2. Industry-standard "sudo
+              mode" pattern. */}
+          {stepUpAction === "disable" ? (
             <form
               onSubmit={runStepUpAction}
               className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-3"
@@ -562,15 +452,7 @@ export default function SecuritySection() {
               <div className="flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
                 <div className="text-xs text-amber-800">
-                  {stepUpAction === "disable" ? (
-                    <>
-                      <strong>Confirm: turn off two-factor authentication.</strong> Your account will be protected by password alone after this.
-                    </>
-                  ) : (
-                    <>
-                      <strong>Confirm: regenerate recovery codes.</strong> Your current codes will stop working immediately — you'll need to save the new ones.
-                    </>
-                  )}
+                  <strong>Confirm: turn off two-factor authentication.</strong> Your account will be protected by password alone after this.
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -588,13 +470,9 @@ export default function SecuritySection() {
                 <button
                   type="submit"
                   disabled={busy || stepUpCode.length !== 6}
-                  className={`text-xs font-semibold px-3 py-1.5 rounded-md text-white transition disabled:opacity-50 ${
-                    stepUpAction === "disable"
-                      ? "bg-red-600 hover:bg-red-700"
-                      : "bg-amber-600 hover:bg-amber-700"
-                  }`}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-md text-white transition disabled:opacity-50 bg-red-600 hover:bg-red-700"
                 >
-                  {busy ? "Verifying…" : stepUpAction === "disable" ? "Confirm disable" : "Confirm regenerate"}
+                  {busy ? "Verifying…" : "Confirm disable"}
                 </button>
                 <button
                   type="button"
@@ -607,14 +485,7 @@ export default function SecuritySection() {
               </div>
             </form>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => startStepUp("regenerate")}
-                disabled={busy}
-                className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition disabled:opacity-50"
-              >
-                Regenerate recovery codes
-              </button>
+            <div>
               <button
                 onClick={() => startStepUp("disable")}
                 disabled={busy}

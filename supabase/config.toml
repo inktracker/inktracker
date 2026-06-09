@@ -87,3 +87,6 @@ verify_jwt = false
 
 [functions.onboardingAssistant]
 verify_jwt = false
+
+[functions.sendMfaRecoveryEmail]
+verify_jwt = false

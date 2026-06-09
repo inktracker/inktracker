@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail, ShieldCheck } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import {
-  consumeRecoveryCode,
+  requestMfaRecoveryEmail,
   logMfaEvent,
   checkLocalTrustedDevice,
   registerTrustedDevice,
@@ -228,35 +228,37 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     }
   };
 
-  const handleRecoveryCodeVerify = async (e) => {
-    e?.preventDefault?.();
+  // "Send me a recovery email" — calls the edge function which mints
+  // a single-use token, stores the hash, and emails the user a link.
+  // The user clicks the link in their inbox → lands on /MfaRecovery,
+  // which consumes the token and signs them in with MFA disabled. This
+  // replaces the old "Use a recovery code" flow that required users to
+  // have saved 10 codes during enrollment.
+  const [recoveryEmailSent, setRecoveryEmailSent] = useState(false);
+  const [recoveryRetryAfter, setRecoveryRetryAfter] = useState(0);
+
+  const handleRequestRecoveryEmail = async () => {
     if (lockoutMinutesRemaining() > 0) {
       setError(`Too many failed attempts. Try again in ${lockoutMinutesRemaining()} minute(s).`);
-      return;
-    }
-    const trimmed = mfaCode.trim();
-    if (!trimmed) {
-      setError("Enter a recovery code.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const result = await consumeRecoveryCode(trimmed);
-      if (!result.ok) throw new Error(result.error || "invalid");
-      // Recovery codes are a one-time bypass: they DISABLE MFA on the
-      // account so the user can complete login. Re-enrollment happens
-      // afterwards on Account → Security. This is the industry-standard
-      // pattern (GitHub, Stripe, Linear). Without unenrolling, the
-      // user's AAL would still be AAL1 and the session would be
-      // unable to step up.
-      try { await supabase.auth.mfa.unenroll({ factorId: mfaFactorId }); } catch { /* ignore */ }
-      try { await logMfaEvent("disabled", { metadata: { via: "recovery_code" } }); } catch { /* ignore */ }
-      setMfaFailedAttempts(0);
-      localStorage.removeItem(MFA_LOCKOUT_STORAGE_KEY);
-      onClose();
+      const result = await requestMfaRecoveryEmail();
+      if (result.ok) {
+        setRecoveryEmailSent(true);
+        setRecoveryRetryAfter(0);
+        return;
+      }
+      if (result.error === "rate_limited") {
+        setRecoveryEmailSent(true);
+        setRecoveryRetryAfter(result.retryAfterSeconds || 0);
+        return;
+      }
+      throw new Error(result.error || "Couldn't send recovery email.");
     } catch (err) {
-      await applyMfaFailure("recovery_failed", { reason: err?.message?.slice(0, 80) });
+      setError(err?.message || "Couldn't send recovery email — try again or contact support.");
     } finally {
       setLoading(false);
     }
@@ -265,13 +267,14 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   // Close-guard: bailing out of a challenge means we sign out so the
   // user can't be left at AAL1 with the rest of the app accessible.
   const handleCloseModal = async () => {
-    if (mode === "mfa-challenge" || mode === "mfa-recovery") {
+    if (mode === "mfa-challenge") {
       try { await supabase.auth.signOut(); } catch { /* ignore */ }
       setMode("signin");
       setMfaFactorId(null);
       setMfaChallengeId(null);
       setMfaCode("");
       setMfaFailedAttempts(0);
+      setRecoveryEmailSent(false);
       setError("");
     }
     onClose();
@@ -440,8 +443,6 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               ? "Reset Password"
               : mode === "mfa-challenge"
               ? "Verify your identity"
-              : mode === "mfa-recovery"
-              ? "Use a recovery code"
               : "Sign In"}
           </h2>
           <button onClick={handleCloseModal} className="text-slate-400 hover:text-slate-600 transition">
@@ -605,55 +606,26 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 {loading ? "Verifying…" : "Verify and sign in"}
                 <ArrowRight className="w-4 h-4" />
               </button>
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => { setMode("mfa-recovery"); setMfaCode(""); setError(""); }}
-                  className="text-xs font-semibold text-teal-600 hover:text-teal-700"
-                >
-                  Use a recovery code instead
-                </button>
-              </div>
-            </form>
-          ) : mode === "mfa-recovery" ? (
-            <form onSubmit={handleRecoveryCodeVerify} className="space-y-4">
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="w-5 h-5 text-teal-600 mt-0.5 shrink-0" />
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Enter one of your single-use recovery codes. Using a recovery code will turn off two-factor authentication — you'll need to re-enable it from Account → Security.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                  Recovery code
-                </label>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  value={mfaCode}
-                  onChange={(e) => setMfaCode(e.target.value.toUpperCase())}
-                  placeholder="ABCDE-FGHJK"
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-base font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  autoFocus
-                  disabled={lockoutMinutesRemaining() > 0}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading || !mfaCode.trim() || lockoutMinutesRemaining() > 0}
-                className="w-full inline-flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-60"
-              >
-                {loading ? "Verifying…" : "Verify and sign in"}
-                <ArrowRight className="w-4 h-4" />
-              </button>
-              <div className="text-center">
-                <button
-                  type="button"
-                  onClick={() => { setMode("mfa-challenge"); setMfaCode(""); setError(""); }}
-                  className="text-xs font-semibold text-teal-600 hover:text-teal-700"
-                >
-                  Back to authenticator code
-                </button>
+              <div className="text-center space-y-2">
+                {recoveryEmailSent ? (
+                  <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    Check your email — we sent a link that lets you sign in and reset two-factor.
+                    {recoveryRetryAfter > 0 && (
+                      <span className="block mt-1 text-emerald-600">
+                        Already sent recently — wait {Math.ceil(recoveryRetryAfter / 60)} min{Math.ceil(recoveryRetryAfter / 60) === 1 ? "" : "s"} before requesting another.
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleRequestRecoveryEmail}
+                    disabled={loading}
+                    className="text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-60"
+                  >
+                    Lost your authenticator? Send me a recovery email
+                  </button>
+                )}
               </div>
             </form>
           ) : (
@@ -802,7 +774,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               switching to "Sign up" or "Forgot password" mid-challenge
               would leave the session at AAL1. Use the X to bail (which
               signs the user out via handleCloseModal). */}
-          {(mode === "mfa-challenge" || mode === "mfa-recovery") ? null : (
+          {mode === "mfa-challenge" ? null : (
           <div className="text-center">
             {mode === "signin" ? (
               <p className="text-sm text-slate-500">
