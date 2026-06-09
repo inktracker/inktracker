@@ -53,42 +53,18 @@ export function initSentry() {
       // Common browser extension noise.
       /chrome-extension:/,
       /moz-extension:/,
+      // Stale-chunk errors after a fresh deploy. UpdateAvailableBanner
+      // already catches these via chunkErrorHandler and prompts the
+      // user to refresh — they're not real bugs. The patterns mirror
+      // CHUNK_ERROR_PATTERNS in src/lib/chunkErrorHandler.js.
+      /Failed to fetch dynamically imported module/i,
+      /Importing a module script failed/i,
+      /error loading dynamically imported module/i,
+      /ChunkLoadError/i,
+      /Loading chunk \d+ failed/i,
     ],
 
-    // PII scrubber. Runs before every event leaves the browser.
-    beforeSend(event) {
-      try {
-        // Strip email-looking strings from the top-level message.
-        if (event.message) event.message = scrubEmails(event.message);
-
-        // Strip from breadcrumbs (these can leak user input).
-        if (Array.isArray(event.breadcrumbs)) {
-          event.breadcrumbs = event.breadcrumbs.map((b) => {
-            if (b?.message) b.message = scrubEmails(b.message);
-            if (b?.data?.url) b.data.url = scrubEmails(b.data.url);
-            return b;
-          });
-        }
-
-        // Strip from exception messages too.
-        if (event.exception?.values) {
-          event.exception.values = event.exception.values.map((ex) => {
-            if (ex?.value) ex.value = scrubEmails(ex.value);
-            return ex;
-          });
-        }
-
-        // Strip Authorization headers from request data — Sentry's
-        // request integration sometimes captures these on fetch errors.
-        if (event.request?.headers) {
-          delete event.request.headers.authorization;
-          delete event.request.headers.Authorization;
-        }
-      } catch {
-        // Never let a scrubber error block the report.
-      }
-      return event;
-    },
+    beforeSend: scrubSentryEvent,
   });
 
   initialized = true;
@@ -147,4 +123,85 @@ const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 function scrubEmails(str) {
   if (typeof str !== "string") return str;
   return str.replace(EMAIL_RE, "[email]");
+}
+
+/**
+ * Sentry `beforeSend` handler. Exported (and called by name from
+ * Sentry.init above) so the logic can be unit-tested without standing
+ * up the SDK. Three responsibilities:
+ *
+ *   1. Normalize Supabase-shaped error objects into a real message +
+ *      `source:supabase` tag, so they don't all group under the
+ *      useless "Object captured as promise rejection" bucket.
+ *   2. Scrub email-shaped strings from message, breadcrumbs, and
+ *      exception values.
+ *   3. Strip Authorization headers from captured request data.
+ *
+ * Always returns the event — even on internal failure — because
+ * dropping events because of a scrubber bug is worse than the leak.
+ *
+ * @param {object} event  Sentry event payload
+ * @param {{ originalException?: unknown }} [hint]
+ * @returns {object} the (possibly mutated) event
+ */
+export function scrubSentryEvent(event, hint) {
+  try {
+    // ── Supabase error normalizer ──────────────────────────────
+    // Supabase RPC + REST errors are plain objects shaped like
+    // { code, details, hint, message } — NOT Error instances.
+    // When code does `if (error) throw error`, the thrown thing
+    // has no stack trace, so Sentry captures it as the generic
+    // "Object captured as promise rejection with keys: code,
+    // details, hint, message" group. Useless for debugging.
+    const original = hint?.originalException;
+    if (
+      original &&
+      typeof original === "object" &&
+      !(original instanceof Error) &&
+      "message" in original &&
+      ("code" in original || "details" in original || "hint" in original)
+    ) {
+      const codeStr = original.code ? ` (code=${original.code})` : "";
+      const wrapped = `Supabase: ${original.message}${codeStr}`;
+      event.message = wrapped;
+      if (event.exception?.values?.length) {
+        event.exception.values = event.exception.values.map((ex) => ({
+          ...ex,
+          type: "SupabaseError",
+          value: wrapped,
+        }));
+      }
+      event.tags = { ...(event.tags || {}), source: "supabase" };
+    }
+
+    // Strip email-looking strings from the top-level message.
+    if (event.message) event.message = scrubEmails(event.message);
+
+    // Strip from breadcrumbs (these can leak user input).
+    if (Array.isArray(event.breadcrumbs)) {
+      event.breadcrumbs = event.breadcrumbs.map((b) => {
+        if (b?.message) b.message = scrubEmails(b.message);
+        if (b?.data?.url) b.data.url = scrubEmails(b.data.url);
+        return b;
+      });
+    }
+
+    // Strip from exception messages too.
+    if (event.exception?.values) {
+      event.exception.values = event.exception.values.map((ex) => {
+        if (ex?.value) ex.value = scrubEmails(ex.value);
+        return ex;
+      });
+    }
+
+    // Strip Authorization headers from request data — Sentry's
+    // request integration sometimes captures these on fetch errors.
+    if (event.request?.headers) {
+      delete event.request.headers.authorization;
+      delete event.request.headers.Authorization;
+    }
+  } catch {
+    // Never let a scrubber error block the report.
+  }
+  return event;
 }
