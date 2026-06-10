@@ -1,94 +1,54 @@
 # InkTracker — Tester Demo Video Script
 
-A ~2-minute screen-record walkthrough for shop owners you're inviting to test. Pair with `tester-onboarding.md`.
+A ~60-second screen-record to send to invited testers along with `tester-onboarding.md`. The UI is intuitive enough that you don't need to narrate the OAuth dance — the video's job is to surface the **one thing a shop wouldn't know to ask about**.
 
-**Tone:** conversational, no marketing-speak. Talk to one person, not an audience. Pause briefly when clicking through screens so the viewer can follow.
+**Tone:** conversational, no marketing-speak. Talk to one person. Pause briefly after each click so the viewer can follow.
 
 **Setup before recording:**
 - Use a throwaway shop account (don't show Biota's real data).
-- Have a sandbox or test QuickBooks account ready to connect.
 - Close all browser tabs except the one you're recording.
-- Camera off; it's a screen demo, not a face-cam pitch.
+- Camera off; screen demo, not a face-cam pitch.
 - Quiet room, headset mic if you have one.
 
 ---
 
-## Cold open — 0:00–0:10
+## 0:00–0:10 — Cold open
 
 **On screen:** Landing page at https://www.inktracker.app
 
-> Hey, Joe here at Biota. I built InkTracker because we've spent ten years running a print shop on software that didn't quite fit. This is a two-minute walkthrough of how the QuickBooks side works, so you know what you're signing up for.
+> Hey, Joe at Biota. Quick heads up on what you're getting into with InkTracker.
 
 ---
 
-## Sign up + onboarding — 0:10–0:30
+## 0:10–0:25 — The fast version of setup
 
-**On screen:** Click "Start free trial." Throwaway email. Email confirmation. Land on dashboard.
+**On screen:** Briefly show the dashboard, then Account → Integrations → click Connect QuickBooks → Intuit OAuth opens → land back with green "Connected" badge.
 
-> Signup's standard — email, confirm, you're in. Fourteen-day trial, no card. The onboarding wizard asks for your shop name, tax rate, and time zone — about ninety seconds.
-
-**On screen:** Optional — quickly show the dashboard after onboarding completes.
-
-> The wizard doesn't deep-link you to QuickBooks setup yet. You finish, you land on the dashboard, then you head to Account to connect.
+> Signup, onboarding, connecting QuickBooks — it's what you'd expect. Account, click Connect, sign in to Intuit, done. Three clicks.
 
 ---
 
-## Turn on 2FA first — 0:30–0:45
+## 0:25–0:50 — The one thing to know
 
-**On screen:** Account → Security tab → enable email sign-in code → enter test code → confirm.
+**On screen:** Quote detail modal → click "Create QB Invoice" → confirm dialog appears → cancel out.
 
-> Before we touch QuickBooks, I'd turn on two-factor. Account, Security, enable email sign-in code. Next time you sign in you'll get a six-digit code by email. There's a "remember this device for thirty days" checkbox so you're not typing a code every morning.
-
----
-
-## Connect QuickBooks — 0:45–1:25
-
-**On screen:** Account → Integrations → click Connect QuickBooks → Intuit OAuth flow → approve → land back on Account with green "Connected" badge.
-
-> Then the main event. Account, Integrations, Connect QuickBooks. The OAuth flow opens in a new tab — log in to your real QBO account, pick the company you want to connect, authorize, done. You land back here with a green Connected badge.
-
-**On screen:** Briefly hover on the Disconnect button.
-
-> Disconnect any time. We ask for a six-digit code to confirm so a stolen session can't yank your QB connection. Your already-synced invoices stay in QuickBooks — disconnecting just stops future syncs.
+> Here's the one thing I want you to hear from me first. When you create a QuickBooks invoice from InkTracker, QuickBooks emails your customer right away. There's no draft mode. We put a confirm dialog on every Create button so you won't fire one off by accident — but I'd rather you hear that from me than be surprised the first time you click.
 
 ---
 
-## The auto-email gotcha — 1:25–1:50
+## 0:50–1:00 — Support + close
 
-**On screen:** Quote detail modal → click "Create QB Invoice" → confirm dialog appears → cancel out without confirming.
+**On screen:** Mail composer showing joe@biotamfg.co in the To field.
 
-> Here's the one thing I want you to hear from me directly. When you create a QuickBooks invoice from InkTracker, QuickBooks emails your customer right away. There's no draft mode — the only API endpoint that mints the customer payment link also sends them the email. We put a confirm dialog on every Create Invoice button so you won't accidentally fire one off, but if you want a true draft, you do it in QuickBooks itself and let us pick it up on the next sync.
-
----
-
-## Customer pays — 1:50–2:10
-
-**On screen:** Optional — show the QB-side payment portal the customer would receive, OR show a quote whose status flipped to "Approved and Paid" after a webhook.
-
-> When the customer pays through the QuickBooks link, a webhook fires back here and the quote automatically flips to "Approved and Paid" and converts to an order. You don't have to babysit it.
+> Anything breaks, email me at joe@biotamfg.co. Thanks for taking it for a real run.
 
 ---
 
-## Outro — 2:10–2:25
+## Adapting this for the QB App Store Loom demo
 
-**On screen:** Back to dashboard, then to email client showing joe@biotamfg.co address.
+For the App Store submission, the audience is an Intuit reviewer, not a shop. Reuse the middle clip (0:10–0:25 — connect flow) and the dialog clip (0:25–0:35), drop the auto-email caveat, and bookend with:
 
-> That's the QB side. If anything breaks — anything at all — email me at joe@biotamfg.co. I usually respond within a few hours during business hours. Thanks for being one of the first shops to take this for a real run.
+- **Open:** "InkTracker is a print-shop workflow tool with QuickBooks Online integration. Here's the connect-disconnect flow."
+- **Close:** "Listed soon at apps.intuit.com — InkTracker, by Biota Manufacturing."
 
----
-
-## Trims if you need to come in under 2 minutes
-
-- Drop the dashboard glance at 0:25 (saves ~5s)
-- Combine 2FA into "I'd also recommend turning on email two-factor under Account, Security" without showing the flow (saves ~10s)
-- Skip the optional QB-side payment portal at 1:50 — just show the InkTracker quote status changing (saves ~10s)
-
-## Trims for an even tighter App Store submission cut (~60s)
-
-If you also want to repurpose this for the Intuit App Store Loom demo (which has a strict 60-second feel):
-
-1. Cold open (5s) — "This is InkTracker, a print-shop workflow tool with QuickBooks Online integration."
-2. Connect QB (25s) — Account → Integrations → OAuth → green badge
-3. Send a quote (15s) — show "Create QB Invoice" → confirm dialog appears
-4. Disconnect (10s) — show the step-up code prompt
-5. Outro (5s) — "Listed soon at apps.intuit.com — InkTracker, by Biota Manufacturing."
+Same recording session covers both videos.
