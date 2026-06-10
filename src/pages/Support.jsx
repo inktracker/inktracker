@@ -100,7 +100,7 @@ export default function Support() {
           />
           <Q
             q="Do you sell or share my data?"
-            a="No. Your data stays inside your shop. Third-party integrations (QuickBooks, Shopify, suppliers) only see what you direct us to send them on your behalf."
+            a="No. Your data stays inside your shop. Third-party integrations (QuickBooks, garment suppliers) only see what you direct us to send them on your behalf."
           />
           <Q
             q="How do I report a security issue?"

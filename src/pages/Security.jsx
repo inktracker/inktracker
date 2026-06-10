@@ -104,7 +104,7 @@ export default function Security() {
 
         <Section title="Other third-party integrations">
           <p>
-            For Shopify and garment suppliers (S&S Activewear, AS Colour), we store an OAuth
+            For garment suppliers (S&S Activewear, AS Colour), we store an OAuth
             refresh token or API credential so we can act on your behalf. These credentials are
             stored encrypted, scoped to your shop, and never shared. Disconnect any integration at
             any time from the Account page — it immediately revokes our access.
@@ -115,7 +115,9 @@ export default function Security() {
           <p>
             We use Supabase Auth for sign-in. Passwords are hashed with industry-standard
             password-hashing (currently scrypt); we never see your password. Email-based magic-link
-            login is supported. Two-factor authentication is on our roadmap.
+            login is supported. Two-factor authentication is available — enable an email sign-in
+            code under Account → Security, with single-use recovery links and per-device
+            30-day trust.
           </p>
         </Section>
 

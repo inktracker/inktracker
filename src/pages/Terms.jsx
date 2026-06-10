@@ -19,7 +19,7 @@ export default function Terms() {
           <p className="text-sm text-slate-600 leading-relaxed">
             InkTracker is a print shop management platform that helps screen printers manage quotes,
             orders, production, invoicing, and customer relationships. The platform integrates with
-            third-party services including QuickBooks, Shopify, Stripe, and garment suppliers.
+            third-party services including QuickBooks, Stripe, and garment suppliers.
           </p>
         </section>
 
@@ -47,7 +47,7 @@ export default function Terms() {
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">5. Third-Party Integrations</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
-            InkTracker integrates with QuickBooks, Shopify, Stripe, and garment suppliers. By
+            InkTracker integrates with QuickBooks, Stripe, and garment suppliers. By
             connecting these services, you authorize InkTracker to act on your behalf within the
             scope of those integrations. Use of those services is also subject to their respective
             terms of service.
