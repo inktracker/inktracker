@@ -8,7 +8,7 @@
 // rendered as a locked <select> with no way to type what the goods
 // actually were. Same lock on Garment Color once supplier colors load.
 //
-// The fix adds a "✎ Type my own…" option to both dropdowns that swaps
+// The fix adds a "Type my own…" option to both dropdowns that swaps
 // the cell to a free-text input, drops the supplier-resolved pricing
 // linkage (sizePrices/casePrice), and offers a "Back to" link to
 // restore the matched list.
@@ -112,7 +112,7 @@ describe("LineItemEditor — manual override for supplier-matched dropdowns", ()
   it("offers 'Type my own…' in the brand dropdown when the lookup returns multiple matches", async () => {
     const brandSelect = await renderWithBrandDropdown();
     const options = within(brandSelect).getAllByRole("option").map((o) => o.textContent);
-    expect(options).toContain("✎ Type my own…");
+    expect(options).toContain("Type my own…");
     expect(options.some((t) => t.includes("Artisan Collection by Reprime"))).toBe(true);
     expect(options.some((t) => t.includes("Augusta Sportswear"))).toBe(true);
   });

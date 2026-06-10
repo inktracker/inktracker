@@ -649,7 +649,7 @@ export default function BrokerLineItemEditor({
                     {option.label}
                   </option>
                 ))}
-                <option value="__custom__">✎ Type my own…</option>
+                <option value="__custom__">Type my own…</option>
               </select>
             ) : (
               <>
@@ -699,7 +699,7 @@ export default function BrokerLineItemEditor({
                     {c.colorName}
                   </option>
                 ))}
-                <option value="__custom__">✎ Type my own…</option>
+                <option value="__custom__">Type my own…</option>
               </select>
             ) : (
               <>

@@ -934,7 +934,7 @@ export default function LineItemEditor({
                     {option.label}
                   </option>
                 ))}
-                <option value="__custom__">✎ Type my own…</option>
+                <option value="__custom__">Type my own…</option>
               </select>
             ) : (
               <>
@@ -985,7 +985,7 @@ export default function LineItemEditor({
                     {c.colorName}
                   </option>
                 ))}
-                <option value="__custom__">✎ Type my own…</option>
+                <option value="__custom__">Type my own…</option>
               </select>
             ) : (
               <>
