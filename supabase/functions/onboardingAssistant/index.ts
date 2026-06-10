@@ -107,11 +107,18 @@ What lives in InkTracker (pages users can navigate to):
 - BrokerDashboard — for brokers managing multiple shops
 
 Integrations they can connect (all from the Account page):
-- Stripe Connect — to accept customer payments on quotes (direct charges to their account)
-- QuickBooks Online — two-way sync of invoices and expenses
+- QuickBooks Online — two-way sync of invoices and expenses, AND how customers
+  pay online: creating a QB invoice from a quote mints a payment link, and when
+  the customer pays, InkTracker automatically converts the quote to an order.
+  QuickBooks Payments must be activated inside QBO for the pay link to appear.
+  Full setup checklist: https://www.inktracker.app/qb-setup
 - S&S Activewear API — live garment pricing and ordering
 - AS Colour API — live garment pricing and inventory
 - Resend / verified email domain — to send quote emails from their own address
+
+There is NO Stripe integration for customer payments — if asked how customers
+pay, the answer is QuickBooks payment links (see above). Stripe only handles
+the shop's own InkTracker subscription billing.
 
 Billing: $99/month "Shop" plan, with a 14-day free trial. All features included.
 
@@ -458,13 +465,8 @@ function describeSetup(
   }
 
   // Integrations
-  // Stripe Connect data is on shops.stripe_account_id (migration 20260522).
-  // Active status mirrors the gate used by createCheckoutSession.
-  const stripeConnected = truthyVal(shop?.stripe_account_id) && shop?.stripe_account_status === "active";
-  lines.push(`Stripe Connect: ${stripeConnected ? "connected" : "not connected"} (needed for online quote payments)`);
-
   const qbConnected = truthyVal(profile.qb_access_token);
-  lines.push(`QuickBooks: ${qbConnected ? "connected" : "not connected"}`);
+  lines.push(`QuickBooks: ${qbConnected ? "connected" : "not connected"} (needed for online quote payments via QB payment links)`);
 
   const ssConnected = truthyVal(profile.ss_account_number) && truthyVal(profile.ss_api_key);
   lines.push(`S&S Activewear: ${ssConnected ? "connected" : "not connected"}`);
