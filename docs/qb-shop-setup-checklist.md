@@ -1,5 +1,9 @@
 # QuickBooks Setup Checklist — Get Your QB Side Ready
 
+> **Live version: https://www.inktracker.app/qb-setup** (rendered by
+> `src/pages/QbSetup.jsx`, linked from Account → QuickBooks). That page is
+> canonical — if integration behavior changes, update both it and this file.
+
 InkTracker connects to your QuickBooks Online in about three clicks. But a few
 settings inside QBO itself decide whether invoices, payment links, and tax all
 behave the way you expect. Run through this once before (or right after) you

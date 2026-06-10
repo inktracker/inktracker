@@ -7,6 +7,7 @@ import Privacy from "./pages/Privacy.jsx";
 import Terms from "./pages/Terms.jsx";
 import Changelog from "./pages/Changelog.jsx";
 import Security from "./pages/Security.jsx";
+import QbSetup from "./pages/QbSetup.jsx";
 import Support from "./pages/Support.jsx";
 import SentryTest from "./pages/SentryTest.jsx";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -57,6 +58,7 @@ const PUBLIC_PAGE_NAMES = [
   "changelog",
   "security",
   "support",
+  "qb-setup",
   "sentry-test",
 ];
 
@@ -1301,6 +1303,7 @@ function AppRoutes() {
         <Route path="/changelog" element={<Changelog />} />
         <Route path="/security" element={<Security />} />
         <Route path="/support" element={<Support />} />
+        <Route path="/qb-setup" element={<QbSetup />} />
         <Route path="/sentry-test" element={<SentryTest />} />
 
         <Route path="*" element={<PageNotFound />} />
