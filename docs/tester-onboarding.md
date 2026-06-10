@@ -11,7 +11,7 @@ A quote → production → invoice → paid workflow for screen-print and embroi
 1. **Sign up** at https://www.inktracker.app — click "Start free trial" (14 days, no card).
 2. **Confirm your email** (check spam if it's slow). The link signs you straight in.
 3. **Onboarding wizard** walks you through shop name, tax rate, time zone, and your S&S / AS Colour API keys if you have them.
-4. **Connect QuickBooks** under **Account → Integrations → QuickBooks**. OAuth flow opens in a new tab. After approving, you'll land back in InkTracker with the green "Connected" badge.
+4. **Connect QuickBooks** under **Account → Integrations → QuickBooks**. OAuth flow opens in a new tab. After approving, you'll land back in InkTracker with the green "Connected" badge. Then run through the **[QB setup checklist](https://www.inktracker.app/qb-setup)** — a few settings inside QBO itself (Payments activation, sales tax, customer emails) decide whether invoices and payment links behave the way you expect.
 5. **Turn on 2FA** (strongly recommended): **Account → Security → Enable email sign-in code**. The next time you sign in, you'll get a 6-digit code by email. Tick "Remember this device" if you want to skip the code on your own computer for 30 days.
 
 ## Important things to know about the QuickBooks integration

@@ -840,6 +840,9 @@ export default function Account() {
               <p className="text-sm text-slate-600">
                 Quotes can now be sent as QuickBooks invoices. Once your client pays via the QB payment link, InkTracker automatically converts the quote to an order.
               </p>
+              <a href="/qb-setup" target="_blank" rel="noopener" className="inline-block text-sm text-teal-600 hover:underline font-semibold">
+                QB setup checklist — make sure your QBO side is ready →
+              </a>
               <div className="border-t border-emerald-200 pt-3 mt-3">
                 {/* Renamed from "Data Migration" + "Import" — these
                     actions dedupe on the QB id under the hood
@@ -950,7 +953,8 @@ export default function Account() {
                   <li className="flex gap-2"><span className="text-emerald-600">✓</span><span>One-click disconnect, anytime. Revoke from QuickBooks side too for defense in depth.</span></li>
                   <li className="flex gap-2"><span className="text-emerald-600">✓</span><span>Customer card and bank info stays inside QuickBooks Payments — we never see it.</span></li>
                 </ul>
-                <div className="pt-1">
+                <div className="pt-1 flex flex-wrap gap-x-4 gap-y-1">
+                  <a href="/qb-setup" target="_blank" rel="noopener" className="text-teal-600 hover:underline font-semibold">QB setup checklist →</a>
                   <a href="/security" className="text-teal-600 hover:underline font-semibold">Full security details →</a>
                 </div>
               </div>
