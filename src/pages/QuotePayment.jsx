@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
+import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import {
   Loader2,
   CheckCircle2,
@@ -347,11 +348,7 @@ export default function QuotePayment() {
   }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
-      </div>
-    );
+    return <CenteredCardSkeleton />;
   }
 
   if (error) {

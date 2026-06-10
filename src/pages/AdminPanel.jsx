@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/api/supabaseClient";
+import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { useAuth } from "@/lib/AuthContext";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { useNavigate } from "react-router-dom";
@@ -293,9 +294,7 @@ export default function AdminPanel() {
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-16 text-slate-400">
-            <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading…
-          </div>
+          <ListCardsSkeleton rows={4} />
         ) : displayed.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
             <CheckCircle className="w-8 h-8 text-emerald-400" />

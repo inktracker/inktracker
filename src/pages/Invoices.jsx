@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
 
@@ -300,7 +301,7 @@ export default function Invoices() {
             ))}
           </tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={9} className="px-5 py-8 text-center text-slate-300">Loading…</td></tr>}
+            {loading && <TableRowsSkeleton rows={8} cols={9} />}
             {!loading && invoices.length === 0 && (
               <tr><td colSpan={9}><EmptyState type="invoices" /></td></tr>
             )}
@@ -331,7 +332,7 @@ export default function Invoices() {
         </div>
 
         <div className="md:hidden divide-y divide-slate-100">
-          {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
+          {loading && <ListCardsSkeleton />}
           {!loading && invoices.length === 0 && <EmptyState type="invoices" />}
           {sorted.map(inv => (
             <div key={inv.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setSelected(inv)}>

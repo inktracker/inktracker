@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
-import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
+import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
+import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { fmtDate, getQty, O_STATUSES } from "../components/shared/pricing";
 
 export default function OrderStatus() {
@@ -28,11 +29,7 @@ export default function OrderStatus() {
   }, [orderId]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-teal-500 animate-spin" />
-      </div>
-    );
+    return <CenteredCardSkeleton />;
   }
 
   if (error) {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
+import { CalendarGridSkeleton } from "@/components/shared/Skeletons";
 import { O_STATUSES } from "../components/shared/pricing";
 import { buildOrderCompletionPlan } from "@/lib/orders/completeOrder";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
@@ -549,7 +550,7 @@ export default function Calendar() {
       )}
 
       {loading ? (
-        <div className="py-20 text-center text-slate-300 text-sm">Loading…</div>
+        <CalendarGridSkeleton />
       ) : view === "month" ? (
         <>
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">

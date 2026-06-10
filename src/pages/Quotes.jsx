@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { Loader2, Mail, Trash2 } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
@@ -602,13 +603,7 @@ export default function Quotes() {
           </thead>
 
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={9} className="px-5 py-8 text-center text-slate-300">
-                  Loading…
-                </td>
-              </tr>
-            )}
+            {loading && <TableRowsSkeleton rows={8} cols={9} />}
 
             {!loading && quotes.length === 0 && (
               <tr>
@@ -711,7 +706,7 @@ export default function Quotes() {
         </div>
 
         <div className="md:hidden divide-y divide-slate-100">
-          {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
+          {loading && <ListCardsSkeleton />}
           {!loading && quotes.length === 0 && <EmptyState type="quotes" onAction={() => setShowNew(true)} />}
           {pagedQuotes.map((q) => {
             const t = getQuoteTotalsForDisplay(q);

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { CardGridSkeleton } from "@/components/shared/Skeletons";
 import { uploadFile } from "@/lib/uploadFile";
 import { fmtMoney } from "../components/shared/pricing";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
@@ -595,7 +596,7 @@ export default function Customers() {
       )}
 
       {loading ? (
-        <div className="text-center text-slate-300 py-10">Loading…</div>
+        <CardGridSkeleton />
       ) : customers.length === 0 ? (
         <EmptyState type="customers" onAction={() => { setForm(emptyCustomerForm); setShowForm(true); }} />
       ) : (
