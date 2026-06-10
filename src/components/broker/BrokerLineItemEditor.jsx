@@ -408,6 +408,11 @@ export default function BrokerLineItemEditor({
   const [ssLoading, setSsLoading] = useState(false);
   const [ssError, setSsError] = useState(null);
   const [brandOptions, setBrandOptions] = useState([]);
+  // Manual-entry override for the Brand / Garment Color dropdowns —
+  // mirrors LineItemEditor. "Type my own…" switches the cell to free
+  // text and drops the supplier-resolved pricing linkage.
+  const [customBrand, setCustomBrand] = useState(false);
+  const [customColor, setCustomColor] = useState(false);
 
   const qty = getQty(li);
 
@@ -582,7 +587,11 @@ export default function BrokerLineItemEditor({
             </label>
             <input
               value={li.style}
-              onChange={(e) => onChange({ ...li, style: e.target.value })}
+              onChange={(e) => {
+                setCustomBrand(false);
+                setCustomColor(false);
+                onChange({ ...li, style: e.target.value });
+              }}
               onBlur={handleStyleBlur}
               onKeyDown={(e) => e.key === "Enter" && handleStyleBlur()}
               placeholder="e.g. 1717 or G500"
@@ -611,10 +620,28 @@ export default function BrokerLineItemEditor({
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
               Brand
             </label>
-            {brandOptions.length > 1 ? (
+            {brandOptions.length > 1 && !customBrand ? (
               <select
                 value={selectedBrandOption?.id || ""}
-                onChange={(e) => handleBrandSelection(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    // Going manual: drop the supplier linkage so the line
+                    // stops carrying API colors/pricing that don't apply.
+                    setCustomBrand(true);
+                    setSsColors([]);
+                    setSsInventory({});
+                    setSsPriceMap({});
+                    sizePricesRef.current = null;
+                    onChange({
+                      ...li,
+                      resolvedStyleNumber: "", supplierStyleNumber: "",
+                      styleNumber: "", productNumber: "",
+                      casePrice: "", sizePrices: {},
+                    });
+                    return;
+                  }
+                  handleBrandSelection(e.target.value);
+                }}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
               >
                 {[...brandOptions].sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' })).map((option) => (
@@ -622,14 +649,26 @@ export default function BrokerLineItemEditor({
                     {option.label}
                   </option>
                 ))}
+                <option value="__custom__">✎ Type my own…</option>
               </select>
             ) : (
-              <input
-                value={li.brand}
-                onChange={(e) => onChange({ ...li, brand: e.target.value })}
-                placeholder="e.g. Gildan"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
-              />
+              <>
+                <input
+                  value={li.brand}
+                  onChange={(e) => onChange({ ...li, brand: e.target.value })}
+                  placeholder="e.g. Gildan"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+                {customBrand && brandOptions.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => { setCustomBrand(false); setCustomColor(false); }}
+                    className="text-[11px] font-semibold text-teal-600 hover:underline mt-0.5"
+                  >
+                    ↩ Back to matched brands
+                  </button>
+                )}
+              </>
             )}
           </div>
 
@@ -637,25 +676,49 @@ export default function BrokerLineItemEditor({
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
               Garment Color
             </label>
-            {ssColors.length > 0 ? (
+            {ssColors.length > 0 && !customColor ? (
               <select
                 value={li.garmentColor}
-                onChange={(e) => handleColorChange(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    setCustomColor(true);
+                    // Custom color has no supplier per-size prices.
+                    sizePricesRef.current = null;
+                    onChange({ ...li, sizePrices: {} });
+                    return;
+                  }
+                  handleColorChange(e.target.value);
+                }}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
               >
+                {li.garmentColor && !ssColors.some((c) => c.colorName === li.garmentColor) && (
+                  <option value={li.garmentColor}>{li.garmentColor}</option>
+                )}
                 {[...ssColors].sort((a, b) => (a.colorName || "").localeCompare(b.colorName || "", undefined, { sensitivity: 'base' })).map((c) => (
                   <option key={c.colorName} value={c.colorName}>
                     {c.colorName}
                   </option>
                 ))}
+                <option value="__custom__">✎ Type my own…</option>
               </select>
             ) : (
-              <input
-                value={li.garmentColor}
-                onChange={(e) => onChange({ ...li, garmentColor: e.target.value })}
-                placeholder="e.g. Banana"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
-              />
+              <>
+                <input
+                  value={li.garmentColor}
+                  onChange={(e) => onChange({ ...li, garmentColor: e.target.value })}
+                  placeholder="e.g. Banana"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+                {customColor && ssColors.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomColor(false)}
+                    className="text-[11px] font-semibold text-teal-600 hover:underline mt-0.5"
+                  >
+                    ↩ Back to color list
+                  </button>
+                )}
+              </>
             )}
           </div>
 
