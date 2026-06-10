@@ -19,7 +19,7 @@ const MAX_HISTORY = 30; // keep client + server caps aligned
 
 const SHOP_SUGGESTED_QUESTIONS = [
   "What should I set up first?",
-  "How do I connect Stripe so customers can pay?",
+  "How do customers pay their quotes online?",
   "How do I configure my pricing?",
   "How do I send my first quote?",
 ];
