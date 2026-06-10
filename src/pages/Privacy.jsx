@@ -22,7 +22,7 @@ export default function Privacy() {
             We collect information you provide directly, including your name, email address, business
             name, and any data you enter into the application (quotes, orders, customer records,
             expenses, artwork files). We also collect authentication credentials necessary to connect
-            third-party services such as QuickBooks, Shopify, and garment suppliers on your behalf.
+            third-party services such as QuickBooks and garment suppliers on your behalf.
           </p>
         </section>
 
@@ -44,7 +44,7 @@ export default function Privacy() {
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">4. Third-Party Integrations</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
-            When you connect third-party accounts (QuickBooks, Shopify, Gmail), we store the OAuth
+            When you connect third-party accounts (QuickBooks, Gmail), we store the OAuth
             tokens necessary to access those services on your behalf. We use this access only as
             directed by you. We do not share your third-party data with anyone. You may disconnect
             any integration at any time from the Account settings page, which revokes our access.
