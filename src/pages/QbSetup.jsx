@@ -150,6 +150,22 @@ export default function QbSetup() {
           </p>
         </Section>
 
+        <Section title="Need an invoice in QB without emailing the customer?">
+          <p>
+            Creating an invoice from InkTracker always emails the customer — that's an Intuit
+            constraint, not ours. The customer-facing payment link is minted by QuickBooks'
+            send endpoint, and that endpoint always sends the email with it. There's no
+            "create the pay link silently" option in the QuickBooks API.
+          </p>
+          <p className="mt-2">
+            <strong>The workaround:</strong> draft the invoice inside QuickBooks Online
+            directly (QBO saves without sending), review it, and hit send from QBO whenever
+            you're ready — the payment link and email go out at that moment. InkTracker picks
+            the invoice up on its next sync, and when your customer pays, the quote still
+            converts to an order automatically.
+          </p>
+        </Section>
+
         <Section title="One maintenance note">
           <p>
             QuickBooks connections expire after <strong>100 days of no activity</strong>. If
