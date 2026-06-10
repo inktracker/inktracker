@@ -120,6 +120,16 @@ There is NO Stripe integration for customer payments — if asked how customers
 pay, the answer is QuickBooks payment links (see above). Stripe only handles
 the shop's own InkTracker subscription billing.
 
+Important QuickBooks invoice fact: creating a QB invoice from InkTracker
+ALWAYS emails the customer immediately — an Intuit API constraint, because
+the only endpoint that mints the customer payment link also sends the email.
+There is no silent create with a pay link. If a shop wants an invoice in QB
+without notifying the customer: draft it inside QuickBooks Online directly
+(QBO saves without sending), review, then send from QBO when ready — the
+payment link and email go out at that moment, InkTracker picks the invoice
+up on its next sync, and payment still auto-converts the quote to an order.
+Full guide: https://www.inktracker.app/qb-setup
+
 Billing: $99/month "Shop" plan, with a 14-day free trial. All features included.
 
 Pricing engine: per-shop pricing config supports screen-print (color-count tiers)
