@@ -11,7 +11,7 @@ export default function Security() {
             Plain-English description of how we protect your shop's data. We update this page when
             anything material changes.
           </p>
-          <p className="text-xs text-slate-400">Last updated: May 30, 2026</p>
+          <p className="text-xs text-slate-400">Last updated: June 10, 2026</p>
         </header>
 
         <Section title="QuickBooks integration">
@@ -123,23 +123,25 @@ export default function Security() {
 
         <Section title="Backups & recovery">
           <p>
-            The Postgres database is backed up daily by Supabase with point-in-time recovery for the
-            past 7 days. Backups are stored encrypted in a separate region.
+            The Postgres database is backed up daily by Supabase, and backups are encrypted.
+            We do not yet have point-in-time recovery enabled — a restore today means rolling
+            back to the most recent daily backup. PITR is on our roadmap as we grow.
           </p>
         </Section>
 
         <Section title="Access controls">
           <p>
             Only a small number of named operators have production database access, and only for the
-            purpose of investigating customer-reported issues. We log every administrative query.
+            purpose of investigating customer-reported issues. Schema changes are logged at the
+            database layer; full query-level audit logging is on our roadmap.
           </p>
         </Section>
 
         <Section title="Data ownership & export">
           <p>
             Your data is yours. You can export your customers, quotes, orders, and invoices to CSV at
-            any time. If you cancel your account, we delete your data within 30 days unless you ask
-            us to retain it. Email{" "}
+            any time. If you cancel your account, you can request deletion of all your data — verified
+            deletion requests are completed within 30 days. Email{" "}
             <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
             </a>{" "}
