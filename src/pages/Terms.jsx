@@ -9,9 +9,10 @@ export default function Terms() {
           <h2 className="text-lg font-semibold text-slate-800">1. Acceptance of Terms</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
             By using InkTracker, you agree to these Terms of Service. If you do not agree, do not
-            use the application. InkTracker is a product of Biota LLC, a Nevada limited
-            liability company based in Reno, Nevada, USA. These Terms are a contract between
-            you and Biota LLC and are governed by the laws of the State of Nevada.
+            use the application. InkTracker is a product of Biota LLC (doing business as
+            Biota MFG), a Nevada limited liability company based in Reno, Nevada, USA. These
+            Terms are a contract between you and Biota LLC and are governed by the laws of
+            the State of Nevada.
           </p>
         </section>
 
