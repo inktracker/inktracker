@@ -14,11 +14,35 @@ A quote → production → invoice → paid workflow for screen-print and embroi
 4. **Connect QuickBooks** under **Account → Integrations → QuickBooks**. OAuth flow opens in a new tab. After approving, you'll land back in InkTracker with the green "Connected" badge.
 5. **Turn on 2FA** (strongly recommended): **Account → Security → Enable email sign-in code**. The next time you sign in, you'll get a 6-digit code by email. Tick "Remember this device" if you want to skip the code on your own computer for 30 days.
 
-## Important things to know before you create your first QB invoice
+## Important things to know about the QuickBooks integration
 
-**Creating a QB invoice in InkTracker emails the customer immediately.** QuickBooks Online doesn't have a "silent create" — the only API endpoint that mints the customer payment portal link also sends them the invoice email from QuickBooks' servers. We added confirm dialogs on every "Create Invoice" button to remind you, but I want you to know up front so the first one doesn't surprise you.
+A few things I want you to hear from me before you hit any of them yourself:
+
+### 1. Creating a QB invoice emails the customer immediately
+
+QuickBooks Online doesn't have a "silent create" — the only API endpoint that mints the customer payment portal link also sends them the invoice email from QuickBooks' servers. We added confirm dialogs on every "Create Invoice" button to remind you, but I want you to know up front so the first one doesn't surprise you.
 
 If you want to draft an invoice without notifying the customer, do it inside QuickBooks Online directly, then come back to InkTracker — it'll pick the invoice up on the next sync.
+
+### 2. Customers are matched by email
+
+When InkTracker creates an invoice, it finds the matching customer in your QB by email address. If you have two customers in QB with the same email (rare, but possible — same person, two businesses), we'll match the first one we find. Worth a glance at your QB customer list before sending if you have known duplicates.
+
+### 3. QB Payments has to be activated separately
+
+If you haven't turned on QuickBooks Payments inside your QBO settings, InkTracker can still create the invoice — but the customer-facing payment link won't mint. The error message points you straight at QBO → Settings → Payments → Get Started. ~30 seconds to fix once.
+
+### 4. Edits made in QB don't sync back
+
+Payment status flows both ways (customer pays in QB → InkTracker marks the quote paid). But if you edit an invoice's line items or totals inside QuickBooks, InkTracker won't pick that up. Keep edits on the InkTracker side and let it re-sync.
+
+### 5. Long idle? Reconnect once
+
+QuickBooks refresh tokens expire after 100 days of inactivity. If you don't use the QB integration for 3+ months, the next sync will fail — just click Reconnect under Account → QuickBooks and you're back. One OAuth round-trip, no data loss.
+
+### 6. Connect your real (not sandbox) QB
+
+We don't currently guard against accidentally connecting an Intuit sandbox account. Make sure you're connecting your real production QB.
 
 ## What to test
 
@@ -44,14 +68,13 @@ You can't break production data for other shops — multi-tenant isolation is en
 
 I'll usually respond within a few hours during business hours (PT). If it's blocking and urgent, text me — I'll send you my number separately.
 
-## Known rough edges
+## Other known rough edges
 
-I'd rather you hear these from me up front than be surprised:
+A few things outside QB worth knowing about up front:
 
 - **No status page yet.** If the app is down, email me — there's no public dashboard to check.
 - **Onboarding doesn't deep-link you to QuickBooks setup.** You finish the wizard, then go to Account to connect.
 - **QB connection is owner-only.** If you invite a manager or employee, they can't run QB-touching actions directly — the owner's tokens are scoped to the owner profile.
-- **Sandbox QuickBooks accounts.** I haven't put a guard against accidentally connecting an Intuit sandbox account. Connect your real production QB.
 
 ## What your data is doing
 
