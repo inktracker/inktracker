@@ -161,7 +161,7 @@ export default function Privacy() {
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">9. Contact</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
-            InkTracker is operated by Biota MFG, a screen print business based in Reno, Nevada, USA.
+            InkTracker is operated by Biota LLC, a Nevada limited liability company based in Reno, Nevada, USA.
             For any privacy-related questions or requests, contact us at{" "}
             <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
