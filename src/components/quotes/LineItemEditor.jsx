@@ -575,6 +575,13 @@ export default function LineItemEditor({
   const [ssLoading, setSsLoading] = useState(false);
   const [ssError, setSsError] = useState(null);
   const [brandOptions, setBrandOptions] = useState([]);
+  // Manual-entry override for the Brand / Garment Color dropdowns. The
+  // supplier lookup can match products that don't reflect what's actually
+  // being printed (customer-supplied goods, blanks neither S&S nor
+  // AS Colour carries) — "Type my own…" switches the cell to free text
+  // and drops the supplier-resolved pricing linkage for the line.
+  const [customBrand, setCustomBrand] = useState(false);
+  const [customColor, setCustomColor] = useState(false);
   // Track which line item ids we've already auto-looked-up so we don't loop.
   const autoLookedUpRef = useRef(new Set());
 
@@ -851,6 +858,8 @@ export default function LineItemEditor({
                 setSsColors([]);
                 setSsInventory({});
                 setSsPriceMap({});
+                setCustomBrand(false);
+                setCustomColor(false);
                 onChange({
                   ...li,
                   style: e.target.value,
@@ -890,26 +899,61 @@ export default function LineItemEditor({
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
               Brand
             </label>
-            {brandOptions.length > 1 ? (
+            {brandOptions.length > 1 && !customBrand ? (
               <select
                 value={selectedBrandOption && cleanText(selectedBrandOption.brandName).toLowerCase() === cleanText(li.brand).toLowerCase() ? selectedBrandOption.id : ""}
-                onChange={(e) => handleBrandSelection(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    // Going manual: drop the supplier-resolved linkage so
+                    // the line stops carrying API colors/pricing that
+                    // don't apply to the actual goods. Brand/color text
+                    // and garment cost stay — they're the user's to edit.
+                    setCustomBrand(true);
+                    setSsColors([]);
+                    setSsInventory({});
+                    setSsPriceMap({});
+                    setSsSizePriceMap({});
+                    sizePricesRef.current = null;
+                    onChange({
+                      ...li,
+                      resolvedStyleNumber: "", supplierStyleNumber: "",
+                      styleNumber: "", productNumber: "",
+                      casePrice: "", sizePrices: {},
+                    });
+                    return;
+                  }
+                  handleBrandSelection(e.target.value);
+                }}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
               >
-                {!li.brand && <option value="">Select brand…</option>}
+                {!(selectedBrandOption && cleanText(selectedBrandOption.brandName).toLowerCase() === cleanText(li.brand).toLowerCase()) && (
+                  <option value="">Select brand…</option>
+                )}
                 {[...brandOptions].sort((a, b) => (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: 'base' })).map((option) => (
                   <option key={option.id} value={option.id}>
                     {option.label}
                   </option>
                 ))}
+                <option value="__custom__">Type my own…</option>
               </select>
             ) : (
-              <input
-                value={li.brand}
-                onChange={(e) => onChange({ ...li, brand: e.target.value })}
-                placeholder="e.g. Gildan"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
-              />
+              <>
+                <input
+                  value={li.brand}
+                  onChange={(e) => onChange({ ...li, brand: e.target.value })}
+                  placeholder="e.g. Gildan"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+                {customBrand && brandOptions.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => { setCustomBrand(false); setCustomColor(false); }}
+                    className="text-[11px] font-semibold text-teal-600 hover:underline mt-0.5"
+                  >
+                    ↩ Back to matched brands
+                  </button>
+                )}
+              </>
             )}
           </div>
 
@@ -917,25 +961,50 @@ export default function LineItemEditor({
             <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
               Garment Color
             </label>
-            {ssColors.length > 0 ? (
+            {ssColors.length > 0 && !customColor ? (
               <select
                 value={li.garmentColor}
-                onChange={(e) => handleColorChange(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === "__custom__") {
+                    setCustomColor(true);
+                    // Custom color has no supplier per-size prices — stop
+                    // attaching the previously selected color's table.
+                    sizePricesRef.current = null;
+                    onChange({ ...li, sizePrices: {} });
+                    return;
+                  }
+                  handleColorChange(e.target.value);
+                }}
                 className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
               >
+                {li.garmentColor && !ssColors.some((c) => c.colorName === li.garmentColor) && (
+                  <option value={li.garmentColor}>{li.garmentColor}</option>
+                )}
                 {[...ssColors].sort((a, b) => (a.colorName || "").localeCompare(b.colorName || "", undefined, { sensitivity: 'base' })).map((c) => (
                   <option key={c.colorName} value={c.colorName}>
                     {c.colorName}
                   </option>
                 ))}
+                <option value="__custom__">Type my own…</option>
               </select>
             ) : (
-              <input
-                value={li.garmentColor}
-                onChange={(e) => onChange({ ...li, garmentColor: e.target.value })}
-                placeholder="e.g. Black"
-                className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
-              />
+              <>
+                <input
+                  value={li.garmentColor}
+                  onChange={(e) => onChange({ ...li, garmentColor: e.target.value })}
+                  placeholder="e.g. Black"
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+                {customColor && ssColors.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setCustomColor(false)}
+                    className="text-[11px] font-semibold text-teal-600 hover:underline mt-0.5"
+                  >
+                    ↩ Back to color list
+                  </button>
+                )}
+              </>
             )}
           </div>
 
