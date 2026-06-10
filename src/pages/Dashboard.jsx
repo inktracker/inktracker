@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { DashboardSkeleton } from "@/components/shared/Skeletons";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import { createPageUrl } from "@/utils";
@@ -520,7 +521,7 @@ export default function Dashboard() {
     return () => window.removeEventListener("inktracker:messages-marked-read", handler);
   }, []);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-slate-400">Loading…</div>;
+  if (loading) return <DashboardSkeleton />;
 
   const sumTotals = (items) => items.reduce((s, x) => s + (Number(x.total) || 0), 0);
 

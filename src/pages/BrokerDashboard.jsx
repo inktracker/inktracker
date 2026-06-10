@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
+import { DashboardSkeleton } from "@/components/shared/Skeletons";
 import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import {
   Package,
@@ -1020,8 +1021,8 @@ export default function BrokerDashboard({ initialTab } = {}) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="text-slate-400 text-sm">Loading your portal…</div>
+      <div className="min-h-screen bg-slate-50">
+        <DashboardSkeleton />
       </div>
     );
   }

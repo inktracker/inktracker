@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { FormSkeleton } from "@/components/shared/Skeletons";
 
 export default function EmployeeOnboarding() {
   const navigate = useNavigate();
@@ -129,7 +130,7 @@ export default function EmployeeOnboarding() {
     }
   }
 
-  if (loading) return <div className="text-center text-slate-400 py-16">Loading…</div>;
+  if (loading) return <div className="max-w-md mx-auto px-4 py-16"><FormSkeleton /></div>;
   if (!user) return null;
 
   return (

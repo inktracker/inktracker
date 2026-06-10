@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtMoney } from "@/components/shared/pricing";
 import { placeOrder, getShippingMethods, SUPPLIERS } from "@/api/suppliers";
 import {
@@ -284,11 +285,7 @@ export default function PurchaseOrders() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20 text-slate-400">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading purchase orders…
-      </div>
-    );
+    return <ListCardsSkeleton rows={6} />;
   }
 
   return (

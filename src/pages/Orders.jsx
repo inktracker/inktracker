@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
+import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
@@ -286,13 +287,7 @@ export default function Orders() {
               </tr>
             </thead>
             <tbody>
-              {loading && (
-                <tr>
-                  <td colSpan={7} className="px-5 py-8 text-center text-slate-300">
-                    Loading…
-                  </td>
-                </tr>
-              )}
+              {loading && <TableRowsSkeleton rows={8} cols={7} />}
               {!loading && orders.length === 0 && (
                 <tr>
                   <td colSpan={7}>
@@ -340,7 +335,7 @@ export default function Orders() {
         </div>
 
         <div className="md:hidden divide-y divide-slate-100">
-          {loading && <div className="px-4 py-8 text-center text-slate-300">Loading…</div>}
+          {loading && <ListCardsSkeleton />}
           {!loading && orders.length === 0 && <EmptyState type="orders" />}
           {filtered.map((o) => {
             const artworkCount = getOrderArtworkCount(o);

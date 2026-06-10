@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { FormSkeleton, InlineLinesSkeleton } from "@/components/shared/Skeletons";
 import { uploadFile } from "@/lib/uploadFile";
 import { clampRushTierMaxDays, defaultNewRushTierMaxDays } from "@/lib/pricing/rushTierClamp";
 import { DEFAULT_BRAND, BRAND_PRESETS, normalizeBrandColor } from "@/lib/branding";
@@ -511,7 +512,7 @@ export default function Account() {
   }
 
   if (loading) {
-    return <div className="text-center text-slate-400 py-10">Loading...</div>;
+    return <div className="max-w-5xl"><FormSkeleton fields={5} /></div>;
   }
 
   return (
@@ -1084,7 +1085,7 @@ function BillingSection({ user }) {
   }
 
   if (loading) {
-    return <div className="py-4 text-center"><Loader2 className="w-5 h-5 animate-spin text-slate-300 mx-auto" /></div>;
+    return <div className="py-4"><InlineLinesSkeleton /></div>;
   }
 
   const tier = sub?.tier || "trial";
@@ -1416,7 +1417,7 @@ function ProductionTasksSection({ user }) {
     }
   }
 
-  if (loading) return <div className="text-sm text-slate-400">Loading…</div>;
+  if (loading) return <InlineLinesSkeleton />;
 
   return (
     <div className="space-y-5">
@@ -1807,7 +1808,7 @@ function PressesSection({ user }) {
     }
   }
 
-  if (loading) return <div className="text-sm text-slate-400">Loading…</div>;
+  if (loading) return <InlineLinesSkeleton />;
 
   return (
     <div className="space-y-4">

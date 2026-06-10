@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { CalendarGridSkeleton } from "@/components/shared/Skeletons";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
@@ -759,7 +760,7 @@ export default function Production() {
           </div>
 
           {loading ? (
-            <div className="py-20 text-center text-slate-300 text-sm">Loading…</div>
+            <CalendarGridSkeleton />
           ) : (
             <>
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">

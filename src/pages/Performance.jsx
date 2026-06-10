@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { StatCardsSkeleton, ChartCardSkeleton } from "@/components/shared/Skeletons";
 import { fmtMoney, getOrderUnits } from "../components/shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
@@ -197,8 +198,9 @@ export default function Performance() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-24 text-slate-400 text-sm">
-        Loading performance…
+      <div className="space-y-6">
+        <StatCardsSkeleton count={4} />
+        <ChartCardSkeleton />
       </div>
     );
   }

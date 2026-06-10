@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, sortSizeEntries, O_STATUSES } from "../components/shared/pricing";
 import { displayFullName } from "@/lib/displayName";
 import {
@@ -524,10 +525,10 @@ export default function ShopFloor() {
   // Loading orders
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-teal-500 mx-auto mb-3" />
-          <p className="text-sm text-slate-400">Loading orders...</p>
+      <div className="min-h-screen bg-slate-100">
+        <div className="bg-teal-600 h-16 shadow-lg" />
+        <div className="max-w-3xl mx-auto">
+          <ListCardsSkeleton rows={5} />
         </div>
       </div>
     );
