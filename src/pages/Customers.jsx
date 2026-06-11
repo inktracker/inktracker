@@ -9,6 +9,7 @@ import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
 import { buildAdditiveMergePatch, describeMergeFor } from "@/lib/customers/mergeCustomerData";
+import { aggregateInvoiceStatsByCustomer } from "@/lib/customers/invoiceStats";
 import { findReconcileNeeded, partitionReconcilePairs } from "@/lib/customers/qbReconcileDetect";
 import { Loader2, GitMerge, Check, AlertTriangle, RefreshCw } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
@@ -69,7 +70,7 @@ export default function Customers() {
   const [artworkNote, setArtworkNote] = useState("");
   const [artworkColorCount, setArtworkColorCount] = useState("");
   const [uploadingArtwork, setUploadingArtwork] = useState(false);
-  const [qbStats, setQbStats] = useState({});
+  const [invoiceStats, setInvoiceStats] = useState({});
   const [showMerge, setShowMerge] = useState(false);
   // Auto-detected post-QB-merge orphans. Fires once after the customer
   // list loads — when the shop has merged customers in QuickBooks but
@@ -85,35 +86,26 @@ export default function Customers() {
         const currentUser = await base44.auth.me();
         setUser(currentUser);
 
-        const [c, docs] = await Promise.all([
+        const [c, docs, invs] = await Promise.all([
           base44.entities.Customer.filter({ shop_owner: currentUser.email }),
           base44.entities.BrokerDocument.filter(
             { shop_owner: currentUser.email },
             "-created_date",
             500
           ),
+          base44.entities.Invoice.filter({ shop_owner: currentUser.email }),
         ]);
+        // Profile-card stats come from OUR invoices table so the card
+        // always matches the Invoices tab. Previously QB-sourced, which
+        // undercounted customers with pre-QB-integration history (the
+        // Beloved's "2 invoices / $3,550 vs 4 / $8,210" mismatch).
+        setInvoiceStats(aggregateInvoiceStatsByCustomer(invs));
 
         setCustomers([...c].sort((a, b) => (a.company || a.name || "").localeCompare(b.company || b.name || "", undefined, { sensitivity: 'base' })));
         setArtworkDocs(
           (docs || []).filter((doc) => String(doc.broker_id || "").startsWith("client:"))
         );
 
-        // Fetch live stats from QB (non-blocking)
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          if (session?.access_token) {
-            const { data, error: invErr } = await base44.functions.invoke("qbSync", {
-              action: "getCustomerStats",
-              accessToken: session.access_token,
-            });
-            if (!invErr && data) {
-              setQbStats(data.stats || {});
-            }
-          }
-        } catch (err) {
-          console.warn("[QB stats] failed:", err?.message);
-        }
       } catch (error) {
         notify.error("Couldn't load customers", error);
       } finally {
@@ -602,9 +594,9 @@ export default function Customers() {
       ) : (
         <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map((c) => {
-            const qbCustStats = c.qb_customer_id ? qbStats[c.qb_customer_id] : null;
-            const orderCount = qbCustStats?.orders || 0;
-            const spent = qbCustStats?.collected || 0;
+            const custStats = invoiceStats[c.id] || null;
+            const orderCount = custStats?.count || 0;
+            const spent = custStats?.collected || 0;
 
             const artCount = (artworkByCustomer[c.id] || []).length;
 
