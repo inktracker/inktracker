@@ -307,3 +307,27 @@ export function makeOrderId(now = Date.now()) {
   const suffix = now.toString(36).toUpperCase().slice(-5);
   return `ORD-${year}-${suffix}`;
 }
+
+// ── pullInvoices customer-field resolution ──────────────────────────────────
+// NEVER downgrade an existing local customer link to null just because the
+// QB customer isn't mapped locally. That exact behavior re-buried the
+// beloved's invoices on 2026-06-10: their QB CustomerRef pointed at an
+// inactive QB customer with no local mapping, so the sync overwrote a
+// freshly repaired customer_id with null. QB is authoritative for which QB
+// customer an invoice belongs to — but absence of a local mapping is OUR
+// gap, not evidence the local link is wrong.
+export function resolveInvoiceCustomerFields(custMatch, existingRow, qbCustomerName) {
+  if (custMatch) {
+    return {
+      customer_id: custMatch.id,
+      customer_name: custMatch.name || qbCustomerName || "Unknown",
+    };
+  }
+  if (existingRow && existingRow.customer_id) {
+    return {
+      customer_id: existingRow.customer_id,
+      customer_name: existingRow.customer_name || qbCustomerName || "Unknown",
+    };
+  }
+  return { customer_id: null, customer_name: qbCustomerName || "Unknown" };
+}

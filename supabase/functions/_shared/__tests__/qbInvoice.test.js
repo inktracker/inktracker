@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  resolveInvoiceCustomerFields,
   nextAvailableDocNumber,
   buildQBDisplayName,
   buildQBCustomerBody,
@@ -704,5 +705,35 @@ describe("buildUpdateFailureResponse (BUFR)", () => {
       updateErrMessage: "x",
     });
     expect(r.paymentLink).toBe(null);
+  });
+});
+
+// Sync guard — pins the fix for the beloved's re-burial (2026-06-10):
+// pullInvoices nulled an existing customer link because QB's customer
+// (inactive, post-merge) had no local mapping.
+describe("resolveInvoiceCustomerFields", () => {
+  const existing = { id: "row1", customer_id: "local-uuid", customer_name: "Zach Condron" };
+
+  it("uses the local mapping when QB customer is mapped", () => {
+    const out = resolveInvoiceCustomerFields({ id: "cust-1", name: "Tina Stull" }, existing, "QB Name");
+    expect(out).toEqual({ customer_id: "cust-1", customer_name: "Tina Stull" });
+  });
+
+  it("PRESERVES an existing link when QB customer is unmapped (the re-burial guard)", () => {
+    const out = resolveInvoiceCustomerFields(null, existing, "Beloved's Bakery & Cafe (deleted)");
+    expect(out.customer_id).toBe("local-uuid");
+    expect(out.customer_name).toBe("Zach Condron");
+  });
+
+  it("falls back to QB name with null link only when there is nothing to preserve", () => {
+    const out = resolveInvoiceCustomerFields(null, null, "Some QB Customer");
+    expect(out).toEqual({ customer_id: null, customer_name: "Some QB Customer" });
+    const outNew = resolveInvoiceCustomerFields(null, { id: "row2", customer_id: null }, "X");
+    expect(outNew.customer_id).toBe(null);
+  });
+
+  it("never returns an empty customer_name", () => {
+    expect(resolveInvoiceCustomerFields(null, null, "").customer_name).toBe("Unknown");
+    expect(resolveInvoiceCustomerFields({ id: "c", name: "" }, null, "").customer_name).toBe("Unknown");
   });
 });

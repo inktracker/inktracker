@@ -96,11 +96,11 @@ simple: **QuickBooks is the book of record — merge duplicates there.**
 2. Merge: edit the duplicate customer and set its Display Name to exactly
    match the one you're keeping → Save → QBO asks to merge → confirm. QBO
    moves all its transactions onto the survivor.
-3. Back in InkTracker, open the Customers page. InkTracker detects the QB-side
-   merge automatically and shows a banner offering a one-click finish — it
-   combines your local records the same way, moving every quote, order, and
-   invoice to the surviving customer. Nothing is deleted until everything has
-   moved.
+3. That's it. The next time you open the Customers page in InkTracker, it
+   detects the QuickBooks merge and finishes it for you automatically —
+   combining your local records the same way and showing you a notification
+   of exactly what moved. Nothing is deleted until every quote, order, and
+   invoice has moved.
 
 **Direction doesn't matter** — either record can be the survivor; your books
 come out identical. One rule worth drilling: **never delete a duplicate

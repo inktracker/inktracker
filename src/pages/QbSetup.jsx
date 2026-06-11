@@ -170,11 +170,11 @@ export default function QbSetup() {
               QBO moves all its transactions onto the survivor.
             </li>
             <li>
-              Back in InkTracker, open the Customers page. InkTracker detects the
-              QB-side merge automatically and shows a banner offering a one-click
-              finish — it combines your local records the same way, moving every
-              quote, order, and invoice to the surviving customer. Nothing is
-              deleted until everything has moved.
+              That's it. The next time you open the Customers page in InkTracker,
+              it detects the QuickBooks merge and finishes it for you automatically —
+              combining your local records the same way and showing you a
+              notification of exactly what moved. Nothing is deleted until every
+              quote, order, and invoice has moved.
             </li>
           </ol>
           <p className="mt-2">
