@@ -137,8 +137,16 @@ Duplicate customers (e.g. after connecting QB late): the rule is merge in
 QuickBooks, not in InkTracker — QB is the book of record. After a QB-side
 merge, InkTracker detects it on the Customers page and shows a banner with a
 one-click finish that safely combines the local records (nothing is deleted
-until every quote/order/invoice has moved). Never advise deleting a customer
-that has history.
+until every quote/order/invoice has moved). Merge direction doesn't matter —
+either record can survive; the books come out identical. If QBO shows a
+customer with "(deleted)" in the name, it must be restored first (Customers
+list → gear → Include inactive → Make active) before QBO allows the merge —
+QBO errors with "you must restore" otherwise. The QBO merge mechanics:
+edit the duplicate, set its Display Name to exactly match the keeper, save,
+confirm the merge prompt. InkTracker's own Merge Duplicates button is for
+duplicates that exist only in InkTracker (no QB history on both sides).
+Never advise deleting a customer that has history — InkTracker blocks it,
+and merging moves history while deleting would strand it.
 
 Billing: $99/month "Shop" plan, with a 14-day free trial. All features included.
 

@@ -89,14 +89,24 @@ you may end up with duplicate customers — the same person under a business
 name on one side and a personal name on the other. The rule that keeps this
 simple: **QuickBooks is the book of record — merge duplicates there.**
 
-1. In QBO, merge the duplicates (edit the duplicate customer and set its
-   Display Name to exactly match the one you're keeping — QBO consolidates
-   their transactions safely).
-2. Back in InkTracker, open the Customers page. InkTracker detects the QB-side
+1. **If the duplicate shows "(deleted)" in its name, restore it first**:
+   Customers list → gear icon above the table → Include inactive → find it →
+   **Make active**. QBO won't let you merge or touch its transactions until
+   it's active again.
+2. Merge: edit the duplicate customer and set its Display Name to exactly
+   match the one you're keeping → Save → QBO asks to merge → confirm. QBO
+   moves all its transactions onto the survivor.
+3. Back in InkTracker, open the Customers page. InkTracker detects the QB-side
    merge automatically and shows a banner offering a one-click finish — it
    combines your local records the same way, moving every quote, order, and
    invoice to the surviving customer. Nothing is deleted until everything has
    moved.
+
+**Direction doesn't matter** — either record can be the survivor; your books
+come out identical. One rule worth drilling: **never delete a duplicate
+customer — always merge.** Deleting strands their history; merging moves it.
+(InkTracker blocks deleting any customer that has quotes, orders, or
+invoices, so the app enforces this even if you forget.)
 
 Day to day, duplicates are prevented at the source: InkTracker matches
 customers to QB by email, so keeping emails accurate (the checklist above)
