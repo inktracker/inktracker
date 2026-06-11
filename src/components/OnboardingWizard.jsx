@@ -10,8 +10,9 @@ import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import {
   Store, Image, Mail, CheckCircle2, ChevronRight,
-  Loader2, Upload, X, FileText, Package, Users, Settings
+  Loader2, Upload, X, FileText, Package, Users, Settings, ShieldCheck
 } from "lucide-react";
+import { requestMfaSignInCode, verifyMfaSignInCode, enableMfaEmail } from "@/lib/mfa";
 import { notify } from "@/lib/notify";
 
 const QB_CLIENT_ID    = import.meta.env.VITE_QB_CLIENT_ID;
@@ -24,6 +25,7 @@ const STEPS = [
   { id: "shop",     icon: Store,      title: "Shop Details" },
   { id: "branding", icon: Image,      title: "Logo & Branding" },
   { id: "email",    icon: Mail,       title: "Email & Payments" },
+  { id: "security", icon: ShieldCheck, title: "Protect Your Account" },
   { id: "done",     icon: CheckCircle2, title: "You're all set!" },
 ];
 
@@ -57,6 +59,14 @@ export default function OnboardingWizard({ user, onComplete }) {
   const [saving, setSaving] = useState(false);
   const [qbChecking, setQbChecking] = useState(false);
   const [qbConnected, setQbConnected] = useState(false);
+  // Phase 5b — MFA enrollment inside the wizard. Same verify-then-enable
+  // contract as SecuritySection (request code → verify → enableMfaEmail);
+  // the mfa.js wrappers carry the 34 contract specs. Skipping is fine —
+  // the Dashboard nudge banner keeps prompting until enrolled.
+  const [mfaPhase, setMfaPhase] = useState("intro"); // intro | code | on
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaBusy, setMfaBusy] = useState(false);
+  const [mfaError, setMfaError] = useState("");
   // Default OFF — most new shops want a clean dashboard, not a
   // mix of "Demo Acme Co." rows alongside real customers. Users
   // who want to see the app populated can still opt in via the
@@ -460,6 +470,143 @@ export default function OnboardingWizard({ user, onComplete }) {
 
             {/* ── Step 4: Done ────────────────────────────────────────────── */}
             {step === 4 && (
+              <div className="flex-1 flex flex-col gap-4 py-2">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center">
+                    <ShieldCheck className="w-5 h-5 text-teal-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Two-factor authentication</h3>
+                    <p className="text-xs text-slate-500">Strongly recommended — takes about 20 seconds.</p>
+                  </div>
+                </div>
+
+                {mfaPhase === "intro" && (
+                  <>
+                    <p className="text-sm text-slate-500 leading-relaxed">
+                      Your InkTracker account can connect to your QuickBooks and hold your
+                      customers' history — a stolen password shouldn't be enough to reach
+                      either. With 2FA on, signing in also takes a 6-digit code we email
+                      you. Tick "remember this device" at sign-in and your own computer
+                      skips the code for 30 days.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        setMfaError("");
+                        setMfaBusy(true);
+                        try {
+                          const r = await requestMfaSignInCode();
+                          if (r.ok || r.error === "rate_limited") {
+                            setMfaPhase("code");
+                          } else {
+                            setMfaError(r.error || "Couldn't send the verification code.");
+                          }
+                        } finally {
+                          setMfaBusy(false);
+                        }
+                      }}
+                      disabled={mfaBusy}
+                      className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50 w-full"
+                    >
+                      {mfaBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                      Turn on 2FA — email me a code
+                    </button>
+                    <p className="text-xs text-slate-400 text-center">
+                      You can also do this later under Account → Security.
+                    </p>
+                  </>
+                )}
+
+                {mfaPhase === "code" && (
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const trimmed = mfaCode.trim().replace(/\D/g, "");
+                      if (trimmed.length !== 6) {
+                        setMfaError("Enter the 6-digit code from your email.");
+                        return;
+                      }
+                      setMfaBusy(true);
+                      setMfaError("");
+                      try {
+                        const v = await verifyMfaSignInCode(trimmed);
+                        if (!v.ok) {
+                          setMfaError(v.error === "expired" ? "That code expired — resend a fresh one." : "That code didn't match — try again or resend.");
+                          setMfaCode("");
+                          return;
+                        }
+                        const en = await enableMfaEmail();
+                        if (!en.ok) {
+                          setMfaError(en.error || "Couldn't turn on 2FA after verifying. Try again.");
+                          return;
+                        }
+                        setMfaPhase("on");
+                        notify.success("Two-factor authentication is on", "Sign-ins now require a code from your email.");
+                      } finally {
+                        setMfaBusy(false);
+                      }
+                    }}
+                    className="flex flex-col gap-3"
+                  >
+                    <p className="text-sm text-slate-500">
+                      We emailed a 6-digit code to <strong>{user?.email}</strong>. Enter it to finish:
+                    </p>
+                    <input
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      inputMode="numeric"
+                      maxLength={6}
+                      placeholder="123456"
+                      autoFocus
+                      className="w-full text-center text-2xl tracking-[0.5em] font-mono border border-slate-200 rounded-xl px-3 py-3 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                    />
+                    <button
+                      type="submit"
+                      disabled={mfaBusy}
+                      className="flex items-center justify-center gap-2 px-6 py-3 text-sm font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
+                    >
+                      {mfaBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                      Verify & turn on
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setMfaError("");
+                        setMfaBusy(true);
+                        try {
+                          const r = await requestMfaSignInCode();
+                          if (!r.ok && r.error !== "rate_limited") setMfaError(r.error || "Couldn't send a new code.");
+                        } finally {
+                          setMfaBusy(false);
+                        }
+                      }}
+                      disabled={mfaBusy}
+                      className="text-xs font-semibold text-teal-600 hover:underline disabled:opacity-50"
+                    >
+                      Resend code
+                    </button>
+                  </form>
+                )}
+
+                {mfaPhase === "on" && (
+                  <div className="flex flex-col items-center gap-3 text-center py-4">
+                    <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center">
+                      <ShieldCheck className="w-7 h-7 text-emerald-600" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-slate-900">Two-factor authentication is on</div>
+                      <p className="text-sm text-slate-500 mt-1">
+                        Next sign-in, we'll email you a code. Tick "remember this device" to skip it on your own computer for 30 days.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {mfaError && <div className="text-xs text-red-500 text-center">{mfaError}</div>}
+              </div>
+            )}
+
+            {step === 5 && (
               <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center py-4">
                 <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
                   <CheckCircle2 className="w-9 h-9 text-emerald-600" />
