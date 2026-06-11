@@ -133,6 +133,13 @@ payment link and email go out at that moment, InkTracker picks the invoice
 up on its next sync, and payment still auto-converts the quote to an order.
 Full guide: https://www.inktracker.app/qb-setup
 
+Duplicate customers (e.g. after connecting QB late): the rule is merge in
+QuickBooks, not in InkTracker — QB is the book of record. After a QB-side
+merge, InkTracker detects it on the Customers page and shows a banner with a
+one-click finish that safely combines the local records (nothing is deleted
+until every quote/order/invoice has moved). Never advise deleting a customer
+that has history.
+
 Billing: $99/month "Shop" plan, with a 14-day free trial. All features included.
 
 Pricing engine: per-shop pricing config supports screen-print (color-count tiers)

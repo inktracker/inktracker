@@ -64,6 +64,10 @@ import {
   buildQbErrorDigestText,
   buildQbErrorDigestHtml,
 } from "../_shared/qbErrorDigest.js";
+import {
+  shouldSendIntegrityAlert,
+  buildIntegrityAlertText,
+} from "../_shared/dataIntegrity.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -541,6 +545,55 @@ async function scanAndAlertQbErrors(adminClient: any): Promise<{ scanned: number
   }
 }
 
+// ── Data-integrity alert ────────────────────────────────────────────
+// Runs once per cron tick, right after the error digest. Calls the
+// data_integrity_violations() SQL function (migration 20260628) and
+// emails the operator if ANY quote/order/invoice has a missing or
+// dangling customer link. The beloved's orphans sat invisible for ~9
+// months because no invariant was watched — this is the alarm that
+// was missing. Failures are swallowed: monitoring, not the work.
+async function scanAndAlertDataIntegrity(adminClient: any): Promise<{ violations: number; alerted: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) {
+    return { violations: 0, alerted: false };
+  }
+  try {
+    const { data: rows, error } = await adminClient.rpc("data_integrity_violations");
+    if (error) {
+      console.warn("[qbReconcile] integrity scan failed:", error.message);
+      return { violations: 0, alerted: false };
+    }
+    if (!shouldSendIntegrityAlert(rows)) {
+      return { violations: 0, alerted: false };
+    }
+    const text = buildIntegrityAlertText(rows);
+    const total = (rows ?? []).reduce(
+      (s: number, r: any) => s + Number(r.missing_link || 0) + Number(r.dangling_link || 0),
+      0,
+    );
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: `InkTracker <${ALERT_FROM_EMAIL}>`,
+        to: [OPERATOR_ALERT_EMAIL],
+        subject: `[InkTracker] Data integrity violation — ${total} orphaned customer reference(s)`,
+        text,
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[qbReconcile] integrity alert send failed: ${res.status} ${await res.text()}`);
+      return { violations: total, alerted: false };
+    }
+    return { violations: total, alerted: true };
+  } catch (err) {
+    console.warn("[qbReconcile] integrity scan exception:", (err as Error)?.message);
+    return { violations: 0, alerted: false };
+  }
+}
+
 // ── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -565,6 +618,8 @@ Deno.serve(async (req) => {
   // reconciliation, and so the alert lands before per-shop work that
   // could itself generate new error rows for tomorrow's digest.
   const alertResult = await scanAndAlertQbErrors(adminClient);
+  const integrityResult = await scanAndAlertDataIntegrity(adminClient);
+  console.error(`[qbReconcile] integrity: ${integrityResult.violations} violation(s), alerted=${integrityResult.alerted}`);
 
   try {
     // Find every profile with QB connected. profile_secrets holds the
