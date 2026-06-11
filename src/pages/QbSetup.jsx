@@ -150,6 +150,34 @@ export default function QbSetup() {
           </p>
         </Section>
 
+        <Section title="Connected late? Found duplicate customers?">
+          <p>
+            If you used InkTracker (or QuickBooks) for a while before connecting the two,
+            you may end up with duplicate customers — the same person under a business
+            name on one side and a personal name on the other. The rule that keeps this
+            simple: <strong>QuickBooks is the book of record — merge duplicates there.</strong>
+          </p>
+          <ol className="list-decimal list-outside ml-5 mt-2 space-y-1.5">
+            <li>
+              In QBO, merge the duplicates (edit the duplicate customer and set its
+              Display Name to exactly match the one you're keeping — QBO consolidates
+              their transactions safely).
+            </li>
+            <li>
+              Back in InkTracker, open the Customers page. InkTracker detects the
+              QB-side merge automatically and shows a banner offering a one-click
+              finish — it combines your local records the same way, moving every
+              quote, order, and invoice to the surviving customer. Nothing is
+              deleted until everything has moved.
+            </li>
+          </ol>
+          <p className="mt-2">
+            Day to day, duplicates are prevented at the source: InkTracker matches
+            customers to QB by email, so keeping emails accurate (the checklist above)
+            means invoices land on the right QB customer instead of minting a new one.
+          </p>
+        </Section>
+
         <Section title="Need an invoice in QB without emailing the customer?">
           <p>
             Creating an invoice from InkTracker always emails the customer — that's an Intuit

@@ -82,6 +82,26 @@ connect — most items take under a minute.
 If anything in that sequence doesn't happen, email support@inktracker.app with
 the quote number and I'll dig in.
 
+## Connected late? Found duplicate customers?
+
+If you used InkTracker (or QuickBooks) for a while before connecting the two,
+you may end up with duplicate customers — the same person under a business
+name on one side and a personal name on the other. The rule that keeps this
+simple: **QuickBooks is the book of record — merge duplicates there.**
+
+1. In QBO, merge the duplicates (edit the duplicate customer and set its
+   Display Name to exactly match the one you're keeping — QBO consolidates
+   their transactions safely).
+2. Back in InkTracker, open the Customers page. InkTracker detects the QB-side
+   merge automatically and shows a banner offering a one-click finish — it
+   combines your local records the same way, moving every quote, order, and
+   invoice to the surviving customer. Nothing is deleted until everything has
+   moved.
+
+Day to day, duplicates are prevented at the source: InkTracker matches
+customers to QB by email, so keeping emails accurate (the checklist above)
+means invoices land on the right QB customer instead of minting a new one.
+
 ## Need an invoice in QB without emailing the customer?
 
 Creating an invoice from InkTracker always emails the customer — that's an
