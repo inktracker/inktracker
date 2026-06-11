@@ -21,7 +21,8 @@ import {
   buildQbSendInvoiceUrl,
   stripDocNumberRevision,
   isQbInvoicePaid,
-  buildUpdateFailureResponse,
+  buildUpdateFailureResponse,,
+  resolveInvoiceCustomerFields,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -1213,13 +1214,13 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   // surfaced by the Shana Krochmal invoice.
   const { data: existingInvoices } = await supabase
     .from("invoices")
-    .select("id, invoice_id, qb_invoice_id")
+    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name")
     .eq("shop_owner", shopOwner);
-  const existingByDoc = new Map<string, string>();
-  const existingByQbId = new Map<string, string>();
+  const existingByDoc = new Map<string, any>();
+  const existingByQbId = new Map<string, any>();
   for (const row of existingInvoices ?? []) {
-    if (row.invoice_id) existingByDoc.set(String(row.invoice_id), row.id);
-    if (row.qb_invoice_id) existingByQbId.set(String(row.qb_invoice_id), row.id);
+    if (row.invoice_id) existingByDoc.set(String(row.invoice_id), row);
+    if (row.qb_invoice_id) existingByQbId.set(String(row.qb_invoice_id), row);
   }
 
   let imported = 0;
@@ -1238,17 +1239,25 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     //      spawning a sibling row.
     // Falls through to INSERT only when none match.
     const qbId = String(qbInv.Id);
-    let existingId = existingByQbId.get(qbId) || existingByDoc.get(docNumber);
-    if (!existingId) {
+    let existingRow = existingByQbId.get(qbId) || existingByDoc.get(docNumber);
+    if (!existingRow) {
       const base = stripDocNumberRevision(docNumber);
       if (base && base !== docNumber) {
-        existingId = existingByDoc.get(base);
+        existingRow = existingByDoc.get(base);
       }
     }
+    const existingId = existingRow?.id ?? null;
 
     const qbCustId = qbInv.CustomerRef?.value;
     const custMatch = qbCustId ? custByQbId.get(String(qbCustId)) : null;
-    const customerName = qbInv.CustomerRef?.name || "Unknown";
+    // Sync guard: when QB's customer has no local mapping, PRESERVE the
+    // existing local link instead of nulling it (beloved's re-burial,
+    // 2026-06-10). Pure logic + regression tests live in _shared/qbInvoice.js.
+    const customerFields = resolveInvoiceCustomerFields(
+      custMatch,
+      existingRow,
+      qbInv.CustomerRef?.name || "Unknown",
+    );
 
     const totalAmt = Number(qbInv.TotalAmt ?? 0);
     const balance = Number(qbInv.Balance ?? 0);
@@ -1281,8 +1290,8 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       invoice_id: docNumber,
       qb_invoice_id: String(qbInv.Id),
       shop_owner: shopOwner,
-      customer_id: custMatch?.id || null,
-      customer_name: custMatch?.name || customerName,
+      customer_id: customerFields.customer_id,
+      customer_name: customerFields.customer_name,
       date: qbInv.TxnDate || null,
       due: qbInv.DueDate || null,
       subtotal,

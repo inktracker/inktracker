@@ -10,7 +10,7 @@ import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
 import { buildAdditiveMergePatch, describeMergeFor } from "@/lib/customers/mergeCustomerData";
 import { aggregateInvoiceStatsByCustomer } from "@/lib/customers/invoiceStats";
-import { findReconcileNeeded, partitionReconcilePairs } from "@/lib/customers/qbReconcileDetect";
+import { findReconcileNeeded, partitionReconcilePairs, planReconcileActions } from "@/lib/customers/qbReconcileDetect";
 import { Loader2, GitMerge, Check, AlertTriangle, RefreshCw } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
 import {
@@ -139,7 +139,52 @@ export default function Customers() {
         });
         if (error || !data?.inactive) return;
         const pairs = findReconcileNeeded(customers, data.inactive);
-        if (pairs.length > 0) setReconcileNeeded(pairs);
+        if (pairs.length === 0) return;
+
+        // Auto-follow QB-side merges (policy set by Joe 2026-06-11):
+        // a merge done IN QuickBooks is a decision the shop already
+        // made — InkTracker mirrors it automatically and notifies
+        // after the fact. Only SUSPECTED duplicates (the Merge
+        // Duplicates flow) still ask first. Non-owners fall back to
+        // the review banner since the merge path is owner-gated.
+        const isOwner = user?.role === "admin" || user?.role === "shop";
+        if (!isOwner) {
+          setReconcileNeeded(pairs);
+          return;
+        }
+
+        const { merges, repoints, review } = planReconcileActions(pairs);
+
+        // Repoint: QB survivor isn't in InkTracker — the local record
+        // simply becomes the survivor's representative. Pure mapping
+        // update, nothing moves, nothing deleted. (The manual Choo
+        // Choo's fix from 2026-06-10, made automatic.)
+        for (const p of repoints) {
+          try {
+            await base44.entities.Customer.update(p.inactive.id, { qb_customer_id: p.mergedIntoId });
+            setCustomers((prev) =>
+              prev.map((c) => (c.id === p.inactive.id ? { ...c, qb_customer_id: p.mergedIntoId } : c))
+            );
+            notify.success(
+              "Followed a QuickBooks merge",
+              `${p.inactive.company || p.inactive.name} now points at its surviving QuickBooks customer — invoice links will stay correct on the next sync.`
+            );
+          } catch (err) {
+            notify.error("Couldn't follow a QuickBooks merge", err);
+          }
+        }
+
+        // Merge: both sides exist locally — finish with the same safe
+        // engine the banner used (everything moves before anything is
+        // deleted; aborts on any failure). runCustomerMerge notifies
+        // with the moved-record count.
+        for (const p of merges) {
+          await runCustomerMerge(p.survivor, [p.inactive]);
+        }
+
+        // Deactivated-but-not-merged (no MergedIntoId): intent unknown,
+        // surface for the shop to decide.
+        if (review.length > 0) setReconcileNeeded(review);
       } catch (err) {
         // Quiet on failure — auto-detect is a nice-to-have. The
         // manual Merge Duplicates → Reconcile path still works.

@@ -108,3 +108,33 @@ export function partitionReconcilePairs(pairs) {
   }
   return { actionable, survivorMissing };
 }
+
+/**
+ * Turn detected pairs into the auto-follow execution plan (policy
+ * confirmed by Joe 2026-06-11: a QB-side merge is a decision the shop
+ * already made — InkTracker mirrors it automatically with an
+ * after-the-fact notification; only SUSPECTED duplicates still require
+ * confirmation).
+ *
+ *   - merges   — survivor exists locally → run the safe local merge
+ *   - repoints — survivor known in QB but absent locally → update the
+ *                inactive-side record's qb_customer_id to the survivor
+ *                (the exact manual fix from the Choo Choo's incident)
+ *   - review   — inactive with NO MergedIntoId (deactivated, not
+ *                merged) → can't infer intent; surface for the shop
+ *
+ * @param {ReconcilePair[]} pairs
+ * @returns {{merges: ReconcilePair[], repoints: ReconcilePair[], review: ReconcilePair[]}}
+ */
+export function planReconcileActions(pairs) {
+  const merges = [];
+  const repoints = [];
+  const review = [];
+  for (const p of pairs || []) {
+    if (!p || !p.inactive) continue;
+    if (p.survivor) merges.push(p);
+    else if (p.mergedIntoId) repoints.push(p);
+    else review.push(p);
+  }
+  return { merges, repoints, review };
+}

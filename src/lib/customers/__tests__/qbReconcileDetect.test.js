@@ -5,7 +5,7 @@
 // additive merge contract pinned in mergeCustomerData.test.js.
 
 import { describe, it, expect } from "vitest";
-import { findReconcileNeeded, partitionReconcilePairs } from "../qbReconcileDetect";
+import { findReconcileNeeded, partitionReconcilePairs, planReconcileActions } from "../qbReconcileDetect";
 
 describe("findReconcileNeeded", () => {
   it("returns [] when either argument is missing or non-array", () => {
@@ -134,5 +134,44 @@ describe("partitionReconcilePairs", () => {
     const { actionable, survivorMissing } = partitionReconcilePairs(pairs);
     expect(actionable).toHaveLength(1);
     expect(survivorMissing).toHaveLength(0);
+  });
+});
+
+// Auto-follow policy (Joe, 2026-06-11): QB-side merges execute
+// automatically; only deactivated-not-merged customers go to review.
+describe("planReconcileActions", () => {
+  const inactiveLocal = { id: "L1", name: "Tina Stull", qb_customer_id: "243" };
+  const survivorLocal = { id: "L2", name: "Choo Choo's Tavern", qb_customer_id: "196" };
+
+  it("routes pairs with a local survivor to auto-merge", () => {
+    const plan = planReconcileActions([
+      { inactive: inactiveLocal, survivor: survivorLocal, mergedIntoId: "196" },
+    ]);
+    expect(plan.merges).toHaveLength(1);
+    expect(plan.repoints).toHaveLength(0);
+    expect(plan.review).toHaveLength(0);
+  });
+
+  it("routes survivor-missing pairs with MergedIntoId to repoint (the Choo Choo's shape)", () => {
+    const plan = planReconcileActions([
+      { inactive: inactiveLocal, survivor: null, mergedIntoId: "196" },
+    ]);
+    expect(plan.repoints).toHaveLength(1);
+    expect(plan.repoints[0].mergedIntoId).toBe("196");
+    expect(plan.merges).toHaveLength(0);
+  });
+
+  it("routes deactivated-not-merged (no MergedIntoId) to review", () => {
+    const plan = planReconcileActions([
+      { inactive: inactiveLocal, survivor: null, mergedIntoId: null },
+    ]);
+    expect(plan.review).toHaveLength(1);
+    expect(plan.merges).toHaveLength(0);
+    expect(plan.repoints).toHaveLength(0);
+  });
+
+  it("tolerates null/malformed input", () => {
+    expect(planReconcileActions(null)).toEqual({ merges: [], repoints: [], review: [] });
+    expect(planReconcileActions([null, {}])).toEqual({ merges: [], repoints: [], review: [] });
   });
 });
