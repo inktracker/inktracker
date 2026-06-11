@@ -159,9 +159,15 @@ export default function QbSetup() {
           </p>
           <ol className="list-decimal list-outside ml-5 mt-2 space-y-1.5">
             <li>
-              In QBO, merge the duplicates (edit the duplicate customer and set its
-              Display Name to exactly match the one you're keeping — QBO consolidates
-              their transactions safely).
+              <strong>If the duplicate shows "(deleted)" in its name, restore it
+              first</strong>: Customers list → gear icon above the table → Include
+              inactive → find it → <strong>Make active</strong>. QBO won't let you
+              merge or touch its transactions until it's active again.
+            </li>
+            <li>
+              Merge: edit the duplicate customer and set its Display Name to exactly
+              match the one you're keeping → Save → QBO asks to merge → confirm.
+              QBO moves all its transactions onto the survivor.
             </li>
             <li>
               Back in InkTracker, open the Customers page. InkTracker detects the
@@ -171,6 +177,14 @@ export default function QbSetup() {
               deleted until everything has moved.
             </li>
           </ol>
+          <p className="mt-2">
+            <strong>Direction doesn't matter</strong> — either record can be the
+            survivor; your books come out identical. And one rule worth drilling:
+            <strong> never delete a duplicate customer — always merge.</strong>{" "}
+            Deleting strands their history; merging moves it. (InkTracker blocks
+            deleting any customer that has quotes, orders, or invoices, so the app
+            enforces this even if you forget.)
+          </p>
           <p className="mt-2">
             Day to day, duplicates are prevented at the source: InkTracker matches
             customers to QB by email, so keeping emails accurate (the checklist above)
