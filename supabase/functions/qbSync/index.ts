@@ -21,7 +21,7 @@ import {
   buildQbSendInvoiceUrl,
   stripDocNumberRevision,
   isQbInvoicePaid,
-  buildUpdateFailureResponse,,
+  buildUpdateFailureResponse,
   resolveInvoiceCustomerFields,
 } from "../_shared/qbInvoice.js";
 import {
