@@ -129,8 +129,8 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         // saved password. Supabase enforces minLength=6 server-side too,
         // but we want a clear inline error instead of the generic API
         // message.
-        if (password.length < 6) {
-          setError("Password must be at least 6 characters.");
+        if (password.length < 9) {
+          setError("Password must be at least 9 characters.");
           setLoading(false);
           return;
         }
@@ -407,7 +407,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={6}
+                  minLength={9}
                   autoComplete={mode === "signup" ? "new-password" : "current-password"}
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 pr-11"
                   placeholder="••••••••"
@@ -421,7 +421,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 </button>
               </div>
               {mode === "signup" && (
-                <p className="text-xs text-slate-400 mt-1">Minimum 6 characters</p>
+                <p className="text-xs text-slate-400 mt-1">Minimum 9 characters</p>
               )}
             </div>
 
@@ -439,7 +439,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  minLength={6}
+                  minLength={9}
                   autoComplete="new-password"
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                   placeholder="••••••••"
