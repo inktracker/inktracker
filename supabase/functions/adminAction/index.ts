@@ -65,7 +65,7 @@ serve(async (req) => {
       // Query only profiles belonging to this admin's shop — scoped at DB level
       const { data: profiles, error } = await adminClient
         .from("profiles")
-        .select("id, auth_id, role, shop_name, logo_url, created_at, email, shop_owner, assigned_shops, full_name")
+        .select("id, auth_id, role, shop_name, logo_url, created_at, email, shop_owner, assigned_shops, full_name, manager_permissions")
         .or(`auth_id.eq.${user.id},shop_owner.eq.${adminEmail},assigned_shops.cs.["${adminEmail}"]`)
         .order("created_at", { ascending: false })
         .limit(200);
@@ -98,6 +98,51 @@ serve(async (req) => {
 
       return new Response(JSON.stringify({ users: enriched }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "setManagerPermissions") {
+      // Owner sets which sections a manager can see. permissions is a
+      // map { SectionKey: bool } or null (= full access). Tenant-checked
+      // the same way as setRole so an admin can only touch their own
+      // shop's managers.
+      const { permissions } = body;
+      if (!profileId) {
+        return new Response(JSON.stringify({ error: "profileId required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const adminEmail = callerProfile?.email || user.email;
+      const { data: targetProfile } = await adminClient
+        .from("profiles")
+        .select("shop_owner, assigned_shops, email, role")
+        .eq("id", profileId)
+        .maybeSingle();
+      const access = checkAdminTargetAccess({ targetProfile, adminEmail });
+      if (!access.ok) {
+        const status = access.reason === "not_found" ? 404 : 403;
+        return new Response(JSON.stringify({
+          error: access.reason === "not_found" ? "Target user not found" : "Cannot change permissions on a user from another shop",
+        }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      if (targetProfile.role !== "manager") {
+        return new Response(JSON.stringify({ error: "Permissions only apply to managers." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data, error } = await adminClient
+        .from("profiles")
+        .update({ manager_permissions: permissions ?? null })
+        .eq("id", profileId)
+        .select()
+        .single();
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message || "Failed to set permissions" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ ok: true, profile: data }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 

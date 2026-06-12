@@ -8,6 +8,7 @@ import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
 import OnboardingAssistant from "./components/onboarding/OnboardingAssistant";
 import { canAccess, getEffectiveTier } from "@/lib/billing";
+import { managerCanAccess } from "@/lib/managerPermissions";
 import { resolveRoleRedirect } from "@/lib/broker/roleRedirect";
 import TrialStatusBanner from "@/components/TrialStatusBanner";
 
@@ -98,6 +99,9 @@ export default function Layout({ children, currentPageName }) {
   // closes the slide-out menu on click. `child` styles a sub-item:
   // smaller icon, indented, no chevron of its own.
   function renderNavItem(n, { mobile = false, child = false } = {}) {
+    // Per-manager section permissions (owner-controlled). Hides nav
+    // items a manager isn't allowed to see; no-op for every other role.
+    if (!managerCanAccess(user, n.page)) return null;
     const active = currentPageName === n.page;
     const IconComponent = ICON_MAP[n.page];
     const locked = n.feature && !canAccess(tier, n.feature);
