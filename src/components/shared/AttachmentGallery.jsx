@@ -20,9 +20,14 @@ import { Paperclip, FileText, ImageIcon, Plus, X, Loader2 } from "lucide-react";
 import { collectAttachments } from "@/lib/artwork/collectAttachments";
 import ArtworkPreviewOverlay from "./ArtworkPreviewOverlay";
 
+function fileExt(name = "", url = "") {
+  return (String(name).split(".").pop() || url.split("?")[0].split(".").pop() || "").toLowerCase();
+}
 function isImageName(name = "", url = "") {
-  const ext = (String(name).split(".").pop() || url.split("?")[0].split(".").pop() || "").toLowerCase();
-  return /^(png|jpe?g|gif|webp|svg|bmp)$/i.test(ext);
+  return /^(png|jpe?g|gif|webp|svg|bmp)$/i.test(fileExt(name, url));
+}
+function isPdfName(name = "", url = "") {
+  return fileExt(name, url) === "pdf" || /\.pdf(\?|$)/i.test(url);
 }
 
 export default function AttachmentGallery({
@@ -59,6 +64,7 @@ export default function AttachmentGallery({
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {items.map((art) => {
           const img = isImageName(art.name, art.url);
+          const pdf = !img && isPdfName(art.name, art.url);
           const removable = onRemove && removableIds.has(art.id);
           return (
             <div
@@ -76,9 +82,25 @@ export default function AttachmentGallery({
                 </button>
               )}
               <button type="button" onClick={() => setPreview(art)} className="block w-full text-left">
-                <div className="aspect-[4/3] bg-slate-50 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
+                <div className="relative aspect-[4/3] bg-slate-50 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
                   {img && (art.url || art.path) ? (
                     <img src={art.url} alt={art.name} loading="lazy" className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform" />
+                  ) : pdf && (art.url || art.path) ? (
+                    // First-page PDF preview. pointer-events-none so the
+                    // click falls through to the button (opens the full
+                    // viewer); the embed is just a thumbnail. Falls back
+                    // to the icon visually if the browser can't render it.
+                    <>
+                      <object
+                        data={`${art.url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
+                        type="application/pdf"
+                        className="w-full h-full pointer-events-none"
+                        aria-label={art.name}
+                      >
+                        <FileText className="w-8 h-8 text-slate-300" />
+                      </object>
+                      <span className="absolute bottom-1 right-1 text-[9px] font-bold uppercase tracking-wider bg-slate-900/70 text-white px-1.5 py-0.5 rounded">PDF</span>
+                    </>
                   ) : (
                     <FileText className="w-8 h-8 text-slate-300" />
                   )}
