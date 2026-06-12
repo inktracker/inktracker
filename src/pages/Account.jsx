@@ -18,6 +18,7 @@ import StepUpConfirmModal from "@/components/StepUpConfirmModal";
 import { notify } from "@/lib/notify";
 import { qbOAuthErrorMessage } from "@/lib/qb/oauthErrorMessage";
 import { getMissingAutoDerivedTasks } from "@/lib/productionTasks";
+import { shopScope } from "@/lib/shopScope";
 
 function Section({ icon: IconComp, title, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -1672,7 +1673,7 @@ function ExportDataSection({ user }) {
 
   async function fetchAll(entity) {
     try {
-      return await entity.filter({ shop_owner: user.email }, "-created_date", 100000);
+      return await entity.filter({ shop_owner: shopScope(user) }, "-created_date", 100000);
     } catch (e) {
       console.error("[Export] fetch failed:", e);
       return [];

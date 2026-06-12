@@ -14,6 +14,7 @@ import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
 import { todayInShopTz } from "@/lib/shopTimezone";
+import { shopScope } from "@/lib/shopScope";
 
 function getOrderArtworkCount(order) {
   const keys = new Set();
@@ -73,8 +74,8 @@ export default function Orders() {
         }
         setUser(currentUser);
         const [o, c] = await Promise.all([
-          base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 100),
-          base44.entities.Customer.filter({ shop_owner: currentUser.email }),
+          base44.entities.Order.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 100),
+          base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }),
         ]);
         setOrders(o);
         const custMap = {};

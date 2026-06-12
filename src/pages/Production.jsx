@@ -25,6 +25,7 @@ import { notify } from "@/lib/notify";
 import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
 import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink";
 import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
+import { shopScope } from "@/lib/shopScope";
 
 // Mirrors STATUS_COLORS in src/pages/Calendar.jsx — each step gets a
 // visually distinct hue so the production board reads as a progress
@@ -159,15 +160,15 @@ export default function Production() {
         const u = await base44.auth.me();
         setUser(u);
         const [o, c, q, pos, shops] = await Promise.all([
-          base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
-          base44.entities.Customer.filter({ shop_owner: u.email }),
+          base44.entities.Order.filter({ shop_owner: shopScope(u) }, "-created_date", 200),
+          base44.entities.Customer.filter({ shop_owner: shopScope(u) }),
           // All quotes — independent of conversion status. Lets a sent or
           // approved quote appear on the calendar before there's an order.
-          base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 500).catch(() => []),
+          base44.entities.Quote.filter({ shop_owner: shopScope(u) }, "-created_date", 500).catch(() => []),
           // POs that originated from one of this shop's orders. Drives
           // OrderDetailModal's tri-state Order from AS Colour button.
           // Soft-fails so a missing column / RLS issue doesn't break the page.
-          base44.entities.PurchaseOrder.filter({ shop_owner: u.email }).catch(() => []),
+          base44.entities.PurchaseOrder.filter({ shop_owner: shopScope(u) }).catch(() => []),
           base44.entities.Shop.filter({ owner_email: u.email }).catch(() => []),
         ]);
         setShop((shops || [])[0] || null);

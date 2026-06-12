@@ -1,3 +1,4 @@
+import { shopScope } from "@/lib/shopScope";
 // Build draft PurchaseOrder payloads from an order's per-size
 // shortfall data. Used by OrderDetailModal's "Reorder Shortfall"
 // button — pulls every line item's _shortfall map, expands it into
@@ -82,7 +83,7 @@ export function buildShortfallReorderPayloads(order, user) {
   // were ordered upstream.
   const suppliers = [...itemsBySupplier.keys()].sort();
   return suppliers.map((supplier) => ({
-    shop_owner: user.email,
+    shop_owner: shopScope(user),
     supplier,
     status: "draft",
     reference: multiSupplier

@@ -19,6 +19,7 @@ import {
 } from "../shared/pricing";
 import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import LineItemEditor from "./LineItemEditor";
+import { shopScope } from "@/lib/shopScope";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -220,7 +221,7 @@ export default function QuoteEditorModal({
         // via getAddonsForTechnique. Legacy shops.addons is a separate
         // column kept around for safety but no longer populated.
         try {
-          const shops = await base44.entities.Shop.filter({ owner_email: currentUser.email });
+          const shops = await base44.entities.Shop.filter({ owner_email: shopScope(currentUser) });
           const cfg = shops?.[0]?.pricing_config;
           if (cfg && (cfg.extras || cfg.embroidery?.extras || cfg.custom_techniques)) {
             setAddonsByScope(buildAddonsByScope(cfg, DEFAULT_LABELS));

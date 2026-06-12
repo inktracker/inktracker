@@ -27,6 +27,7 @@ import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { notify } from "@/lib/notify";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 import { todayInShopTz } from "@/lib/shopTimezone";
+import { shopScope } from "@/lib/shopScope";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -89,8 +90,8 @@ export default function Quotes() {
         setUser(currentUser);
 
         const [allQuotes, c, allUsers] = await Promise.all([
-          base44.entities.Quote.filter({ shop_owner: currentUser.email }, "-created_date", 500),
-          base44.entities.Customer.filter({ shop_owner: currentUser.email }),
+          base44.entities.Quote.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 500),
+          base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }),
           base44.entities.User.list(),
         ]);
 
@@ -273,7 +274,7 @@ export default function Quotes() {
       saved = await base44.entities.Quote.create({
         ...sanitized,
         customer_email: customerEmail,
-        shop_owner: user.email,
+        shop_owner: shopScope(user),
         quote_id: q.quote_id || `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-5)}`,
       });
 
@@ -288,7 +289,7 @@ export default function Quotes() {
   async function addCustomer(c) {
     const created = await base44.entities.Customer.create({
       ...c,
-      shop_owner: user.email,
+      shop_owner: shopScope(user),
     });
 
     setCustomers((prev) => [...prev, created].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: 'base' })));
