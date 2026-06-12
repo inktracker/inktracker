@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import AttachmentGallery from "@/components/shared/AttachmentGallery";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
@@ -338,6 +339,8 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
               </div>
             </div>
           )}
+
+          <AttachmentGallery record={quote} backLabel="Back to quote" />
 
           {quote.notes && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">

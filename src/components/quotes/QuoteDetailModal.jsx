@@ -24,6 +24,7 @@ import { quoteThreadId } from "@/lib/messageThreads";
 import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare, UserCheck, UserX } from "lucide-react";
 import { notify } from "@/lib/notify";
+import AttachmentGallery from "../shared/AttachmentGallery";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
@@ -1124,6 +1125,13 @@ export default function QuoteDetailModal({
               </button>
             </div>
           )}
+
+          <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700">
+            <AttachmentGallery
+              record={{ ...quote, selected_artwork: localArtwork }}
+              backLabel="Back to quote"
+            />
+          </div>
 
           {/* Messages — threaded conversation with reply box. Collapsible;
               persists per-user via shared localStorage key so it stays
