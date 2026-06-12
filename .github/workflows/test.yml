@@ -26,6 +26,13 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Parse-check every Supabase edge function. vitest + Vite build
+      # never touch the Deno tree, so a syntax error there ships green
+      # and only breaks at deploy (the qbSync double-comma, 2026-06-11).
+      # esbuild parse mode — syntax only, no type-check, no false fails.
+      - name: Check edge function syntax
+        run: npm run check:functions
+
       # Production build — catches things vitest can't, like orphan
       # imports from pages that aren't unit-tested. Vercel runs the
       # same command at deploy time, so a green check here matches
