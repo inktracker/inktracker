@@ -16,37 +16,42 @@
 
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { signArtworkUrl } from "@/lib/uploadFile";
 
 export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back" }) {
   const fallbackUrl = art?.url || art?.file_url || "";
   const name = art?.name || "Artwork";
 
-  // Prefer a freshly-signed URL when we can resolve a storage path.
-  // Falls back to whatever URL was stored on the artwork record
-  // (legacy public URLs continue to work; bucket is still public
-  // today, so behavior doesn't change until the bucket flips private).
-  const [url, setUrl] = useState(fallbackUrl);
+  // Resolve the final URL BEFORE rendering the embed. Previously we
+  // mounted with the fallback URL and then swapped to a freshly-signed
+  // one when the async sign resolved — that swap tore down and reloaded
+  // the PDF <object>, producing a visible "glitch a lot before loading"
+  // flicker. Now we hold a loading state until the URL is settled and
+  // mount the embed exactly once.
+  const [url, setUrl] = useState(null);
   useEffect(() => {
     let cancelled = false;
+    setUrl(null);
     (async () => {
       const signed = await signArtworkUrl(art?.path || fallbackUrl);
-      if (!cancelled && signed) setUrl(signed);
+      if (!cancelled) setUrl(signed || fallbackUrl);
     })();
     return () => { cancelled = true; };
   }, [art?.path, fallbackUrl]);
 
+  const ready = !!url;
+
   const ext = String(name).split(".").pop()?.toLowerCase() ||
-              (url.split("?")[0].split(".").pop() || "").toLowerCase();
+              ((url || fallbackUrl).split("?")[0].split(".").pop() || "").toLowerCase();
   const isImage = /^(png|jpe?g|gif|webp|svg|bmp)$/i.test(ext);
-  const isPdf   = ext === "pdf" || /\.pdf(\?|$)/i.test(url);
+  const isPdf   = ext === "pdf" || /\.pdf(\?|$)/i.test(url || fallbackUrl);
 
   // PDF viewer hints — fit the whole page in view + hide the thumbnail
   // sidebar, but KEEP the toolbar so the user has native zoom in/out
   // controls. `view=Fit` fits both dimensions; `zoom=page-fit` is the
   // Chrome equivalent that older builds respect.
-  const pdfSrc = isPdf
+  const pdfSrc = isPdf && url
     ? `${url}${url.includes("#") ? "&" : "#"}view=Fit&zoom=page-fit&navpanes=0`
     : url;
 
@@ -78,7 +83,7 @@ export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back"
             file in the device's native viewer where the user can save
             via the share sheet — works everywhere. */}
         <a
-          href={url}
+          href={url || fallbackUrl}
           target="_blank"
           rel="noopener noreferrer"
           download={name}
@@ -89,7 +94,9 @@ export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back"
         </a>
       </div>
       <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-auto min-h-0 p-2 sm:p-4">
-        {isImage ? (
+        {!ready ? (
+          <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
+        ) : isImage ? (
           <img src={url} alt={name} className="max-w-full max-h-full object-contain" />
         ) : isPdf ? (
           // The PDF embed is locked to US-Letter aspect (8.5 × 11) so

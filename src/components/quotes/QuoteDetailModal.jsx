@@ -22,8 +22,9 @@ import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { quoteThreadId } from "@/lib/messageThreads";
 import { taxProviderFor } from "@/lib/tax/factory";
-import { MessageSquare, UserCheck, UserX } from "lucide-react";
+import { MessageSquare, UserCheck, UserX, Paperclip } from "lucide-react";
 import { notify } from "@/lib/notify";
+import AttachmentGallery from "../shared/AttachmentGallery";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
@@ -1124,6 +1125,23 @@ export default function QuoteDetailModal({
               </button>
             </div>
           )}
+
+          <CollapsibleSection
+            title="Attachments & Mockups"
+            icon={<Paperclip className="w-4 h-4 text-slate-500" />}
+            storageKey="attachments-window-collapsed"
+            className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700"
+          >
+            <AttachmentGallery
+              record={{ ...quote, selected_artwork: localArtwork }}
+              title={null}
+              backLabel="Back to quote"
+              onUpload={handleArtworkUpload}
+              onRemove={(art) => removeArtwork(art.id)}
+              uploading={uploading}
+              uploadError={uploadError}
+            />
+          </CollapsibleSection>
 
           {/* Messages — threaded conversation with reply box. Collapsible;
               persists per-user via shared localStorage key so it stays

@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
+import AttachmentGallery from "@/components/shared/AttachmentGallery";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
+import { uploadFile } from "@/lib/uploadFile";
+import CollapsibleSection from "@/components/shared/CollapsibleSection";
 import { DashboardSkeleton } from "@/components/shared/Skeletons";
 import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import {
@@ -22,8 +25,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   CreditCard,
-  ArrowRight,
-} from "lucide-react";
+  ArrowRight, Paperclip} from "lucide-react";
 import BrokerOrderPDFModal from "../components/broker/BrokerOrderPDFModal";
 import BrokerPerformance from "../components/broker/BrokerPerformance";
 import {
@@ -86,6 +88,46 @@ function QuoteStatusBadge({ status }) {
 }
 
 function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdate, shop, user }) {
+  // Broker-side attach: brokers can write their assigned shops' quotes
+  // (RLS quotes_broker_write) and upload to the artwork bucket. Mirrors
+  // the shop quote modal's flow via the shared uploadFile helper.
+  const [brokerArtwork, setBrokerArtwork] = useState(quote?.selected_artwork || []);
+  const [brokerUploading, setBrokerUploading] = useState(false);
+  const [brokerUploadError, setBrokerUploadError] = useState("");
+  useEffect(() => { setBrokerArtwork(quote?.selected_artwork || []); }, [quote?.id, quote?.selected_artwork]);
+
+  async function handleBrokerArtworkUpload(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setBrokerUploading(true);
+    setBrokerUploadError("");
+    try {
+      const next = [...brokerArtwork];
+      for (const file of files) {
+        const { path, file_url } = await uploadFile(file);
+        next.push({ id: path, name: file.name, url: file_url, path, note: "", source: "broker upload" });
+      }
+      await base44.entities.Quote.update(quote.id, { selected_artwork: next });
+      setBrokerArtwork(next);
+      onUpdate?.();
+    } catch (err) {
+      setBrokerUploadError(err?.message || "Upload failed.");
+    } finally {
+      setBrokerUploading(false);
+      e.target.value = "";
+    }
+  }
+
+  async function removeBrokerArtwork(art) {
+    const next = brokerArtwork.filter((a) => (a.id || a.url || a.name) !== (art.id || art.url || art.name));
+    try {
+      await base44.entities.Quote.update(quote.id, { selected_artwork: next });
+      setBrokerArtwork(next);
+      onUpdate?.();
+    } catch (err) {
+      setBrokerUploadError(err?.message || "Couldn't remove attachment.");
+    }
+  }
   // Both broker-side and client-side totals are read straight from the
   // saved quote. The broker editor stamps both at save time
   // (BrokerQuoteEditor.runSave). No recomputation — saved is the contract.
@@ -338,6 +380,22 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
               </div>
             </div>
           )}
+
+          <CollapsibleSection
+            title="Attachments & Mockups"
+            icon={<Paperclip className="w-4 h-4 text-slate-500" />}
+            storageKey="attachments-window-collapsed"
+          >
+            <AttachmentGallery
+              record={{ ...quote, selected_artwork: brokerArtwork }}
+              title={null}
+              backLabel="Back to quote"
+              onUpload={handleBrokerArtworkUpload}
+              onRemove={removeBrokerArtwork}
+              uploading={brokerUploading}
+              uploadError={brokerUploadError}
+            />
+          </CollapsibleSection>
 
           {quote.notes && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">

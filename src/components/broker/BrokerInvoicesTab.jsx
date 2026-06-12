@@ -20,9 +20,10 @@ import {
   Hash,
   ArrowUpRight,
   Package,
-  Clock,
-} from "lucide-react";
+  Clock, Paperclip} from "lucide-react";
 import { exportQuoteToPDF, exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
+import AttachmentGallery from "../shared/AttachmentGallery";
+import CollapsibleSection from "../shared/CollapsibleSection";
 import { toCustomerFacingQuote } from "@/lib/quotes/customerFacingQuote";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import {
@@ -147,6 +148,14 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
               </div>
             </div>
           )}
+
+          <CollapsibleSection
+            title="Attachments & Mockups"
+            icon={<Paperclip className="w-4 h-4 text-slate-500" />}
+            storageKey="attachments-window-collapsed"
+          >
+            <AttachmentGallery record={job} title={null} backLabel="Back to job" />
+          </CollapsibleSection>
 
           {job.notes && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">

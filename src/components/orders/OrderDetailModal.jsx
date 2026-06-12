@@ -1,4 +1,5 @@
 import { Fragment, useState, useEffect, useMemo } from "react";
+import AttachmentGallery from "../shared/AttachmentGallery";
 import ArtworkPreviewOverlay from "../shared/ArtworkPreviewOverlay";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
@@ -18,7 +19,7 @@ import {
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
 import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normalizePresses";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Paperclip} from "lucide-react";
 import {
   calcLinkedLinePrice,
   buildLinkedQtyMap,
@@ -576,6 +577,17 @@ export default function OrderDetailModal({
     }
   }
 
+  async function removeArtwork(art) {
+    const key = art?.id || art?.url || art?.name;
+    const next = (localArtwork || []).filter((a) => (a.id || a.url || a.name) !== key);
+    try {
+      await base44.entities.Order.update(order.id, { selected_artwork: next });
+      setLocalArtwork(next);
+    } catch (err) {
+      setUploadError(err?.message || "Couldn't remove attachment.");
+    }
+  }
+
   function copyLink(type) {
     // The token gates anonymous access. Customer must have this exact URL
     // (which we email them) to view art / order status. Always use the
@@ -855,90 +867,26 @@ export default function OrderDetailModal({
         </div>
 
         <div className="p-4 sm:p-6 space-y-5">
-          <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-widest text-teal-400">
-                    Artwork for Approval
-                  </div>
-                  <div className="text-sm text-slate-500 mt-1">
-                    Files uploaded here appear on the customer art approval page.
-                  </div>
+          <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4">
+              <CollapsibleSection
+                title="Artwork for Approval"
+                icon={<Paperclip className="w-4 h-4 text-teal-500" />}
+                storageKey="order-artwork-collapsed"
+              >
+                <div className="text-sm text-slate-500 -mt-1 mb-3">
+                  Files uploaded here appear on the customer art approval page.
                 </div>
-                <label className={`shrink-0 cursor-pointer px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${uploading ? "opacity-50 pointer-events-none" : ""} text-teal-600 border-teal-200 bg-white hover:bg-teal-50`}>
-                  {uploading ? "Uploading…" : "+ Upload"}
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*,.pdf,.ai,.eps,.svg,.psd"
-                    className="sr-only"
-                    onChange={handleArtworkUpload}
-                    disabled={uploading}
-                  />
-                </label>
-              </div>
-
-              {uploadError && (
-                <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                  {uploadError}
-                </div>
-              )}
-
-              {artworkFiles.length === 0 ? (
-                <div className="text-center py-4 text-sm text-slate-400">
-                  No artwork uploaded yet — use the Upload button above.
-                </div>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {artworkFiles.map((art) => (
-                    <div
-                      key={art.id || art.url || art.name}
-                      className="bg-white dark:bg-slate-900 border border-teal-200 rounded-xl p-3 flex items-start justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
-                          {art.name}
-                        </div>
-
-                        {art.note && (
-                          <div className="text-xs text-slate-400 mt-0.5 line-clamp-2">
-                            {art.note}
-                          </div>
-                        )}
-
-                        <div className="flex flex-wrap gap-2 mt-2 text-[11px]">
-                          {art.colors && (
-                            <span className="text-teal-700 bg-teal-50 border border-teal-100 px-2 py-1 rounded-full font-semibold">
-                              {art.colors} color{String(art.colors) === "1" ? "" : "s"}
-                            </span>
-                          )}
-                          {art.source && (
-                            <span className="text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2 py-1 rounded-full">
-                              {art.source}
-                            </span>
-                          )}
-                        </div>
-
-                        {art.placements?.length > 0 && (
-                          <div className="text-[11px] text-slate-500 mt-2">
-                            Used on: {art.placements.join(", ")}
-                          </div>
-                        )}
-                      </div>
-
-                      {art.url ? (
-                        <button
-                          type="button"
-                          onClick={() => setPreviewArt(art)}
-                          className="shrink-0 text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
-                        >
-                          Open
-                        </button>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
+                <AttachmentGallery
+                  record={{ ...liveOrder, selected_artwork: localArtwork }}
+                  title={null}
+                  backLabel="Back to order"
+                  accept="image/*,.pdf,.ai,.eps,.svg,.psd"
+                  onUpload={handleArtworkUpload}
+                  onRemove={removeArtwork}
+                  uploading={uploading}
+                  uploadError={uploadError}
+                />
+              </CollapsibleSection>
             </div>
 
           {(liveOrder.line_items || []).length > 0 ? (

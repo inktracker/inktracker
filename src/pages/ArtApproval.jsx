@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
-import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2 } from "lucide-react";
 import { fmtDate } from "../components/shared/pricing";
+import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 
 function getOrderArtwork(order) {
   const map = new Map();
@@ -87,6 +88,7 @@ export default function ArtApproval() {
   const [approving, setApproving] = useState(false);
   const [approveError, setApproveError] = useState("");
   const [checkedAll, setCheckedAll] = useState(false);
+  const [preview, setPreview] = useState(null);
 
   const params = new URLSearchParams(window.location.search);
   const orderId = params.get("id");
@@ -207,14 +209,47 @@ export default function ArtApproval() {
               {artwork.map((art, idx) => (
                 <div key={art.id || idx} className="border border-slate-200 rounded-xl overflow-hidden">
 
-                  {/* Image or file link */}
+                  {/* Visual preview — images AND PDFs both render so the
+                      customer can actually see what they're approving.
+                      Click to enlarge full-screen. Non-previewable files
+                      fall back to a link. */}
                   {art.url ? (
                     art.url.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? (
-                      <img
-                        src={art.url}
-                        alt={art.name}
-                        className="w-full max-h-80 object-contain bg-slate-50"
-                      />
+                      <button
+                        type="button"
+                        onClick={() => setPreview(art)}
+                        className="group relative block w-full bg-slate-50"
+                        title="Click to enlarge"
+                      >
+                        <img
+                          src={art.url}
+                          alt={art.name}
+                          className="w-full max-h-96 object-contain"
+                        />
+                        <span className="absolute top-2 right-2 inline-flex items-center gap-1 bg-slate-900/70 text-white text-[11px] font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition">
+                          <Maximize2 className="w-3.5 h-3.5" /> Enlarge
+                        </span>
+                      </button>
+                    ) : art.url.match(/\.pdf(\?|$)/i) ? (
+                      <button
+                        type="button"
+                        onClick={() => setPreview(art)}
+                        className="group relative block w-full bg-slate-100"
+                        title="Click to enlarge"
+                      >
+                        <object
+                          data={`${art.url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
+                          type="application/pdf"
+                          className="w-full h-96 pointer-events-none bg-white"
+                          aria-label={art.name}
+                        >
+                          <div className="flex items-center justify-center h-96 text-slate-400 text-sm">Proof preview unavailable — click to open</div>
+                        </object>
+                        <span className="absolute top-2 right-2 inline-flex items-center gap-1 bg-slate-900/80 text-white text-[11px] font-semibold px-2 py-1 rounded-lg">
+                          <Maximize2 className="w-3.5 h-3.5" /> Enlarge proof
+                        </span>
+                        <span className="absolute bottom-2 right-2 text-[10px] font-bold uppercase tracking-wider bg-slate-900/70 text-white px-1.5 py-0.5 rounded">PDF</span>
+                      </button>
                     ) : (
                       <a
                         href={art.url}
@@ -357,6 +392,14 @@ export default function ArtApproval() {
         </div>
 
       </div>
+
+      {preview && (
+        <ArtworkPreviewOverlay
+          art={preview}
+          onClose={() => setPreview(null)}
+          backLabel="Back to approval"
+        />
+      )}
     </div>
   );
 }
