@@ -38,6 +38,7 @@ export default function AttachmentGallery({
   onRemove,
   uploading = false,
   uploadError = "",
+  accept = "image/*,.pdf",
 }) {
   const [preview, setPreview] = useState(null);
   const fileRef = useRef(null);
@@ -53,13 +54,15 @@ export default function AttachmentGallery({
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400">
-        <Paperclip className="w-3.5 h-3.5" />
-        {title}
-        {items.length > 0 && (
-          <span className="text-slate-300 font-semibold normal-case tracking-normal">({items.length})</span>
-        )}
-      </div>
+      {title && (
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+          <Paperclip className="w-3.5 h-3.5" />
+          {title}
+          {items.length > 0 && (
+            <span className="text-slate-300 font-semibold normal-case tracking-normal">({items.length})</span>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {items.map((art) => {
@@ -127,7 +130,7 @@ export default function AttachmentGallery({
           >
             {uploading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Plus className="w-6 h-6" />}
             <span className="text-xs font-semibold">{uploading ? "Uploading…" : "Add files"}</span>
-            <input ref={fileRef} type="file" multiple accept="image/*,.pdf" className="hidden" onChange={onUpload} />
+            <input ref={fileRef} type="file" multiple accept={accept} className="hidden" onChange={onUpload} />
           </button>
         )}
       </div>
