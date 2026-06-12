@@ -79,8 +79,8 @@ export default function EmployeeOnboarding() {
       setError("Your name is required.");
       return;
     }
-    if (password.length < 6) {
-      setError("Set a password (at least 6 characters) so you can sign in later.");
+    if (password.length < 9) {
+      setError("Set a password (at least 9 characters) so you can sign in later.");
       return;
     }
     if (password !== confirmPassword) {
@@ -199,10 +199,10 @@ export default function EmployeeOnboarding() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  minLength={6}
+                  minLength={9}
                   autoComplete="new-password"
                   className="w-full px-4 py-2.5 pr-11 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
-                  placeholder="At least 6 characters"
+                  placeholder="At least 9 characters"
                 />
                 <button
                   type="button"
@@ -219,7 +219,7 @@ export default function EmployeeOnboarding() {
                 type={showPassword ? "text" : "password"}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                minLength={6}
+                minLength={9}
                 autoComplete="new-password"
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 placeholder="Re-type to confirm"

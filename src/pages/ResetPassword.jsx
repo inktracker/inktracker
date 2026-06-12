@@ -72,8 +72,8 @@ export default function ResetPassword() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (password.length < 9) {
+      setError("Password must be at least 9 characters.");
       return;
     }
     if (password !== confirmPassword) {
@@ -142,7 +142,7 @@ export default function ResetPassword() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  minLength={6}
+                  minLength={9}
                   autoComplete="new-password"
                   autoFocus
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500 pr-11"
@@ -156,7 +156,7 @@ export default function ResetPassword() {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-xs text-slate-400 mt-1">Minimum 6 characters</p>
+              <p className="text-xs text-slate-400 mt-1">Minimum 9 characters</p>
             </div>
 
             <div>
@@ -168,7 +168,7 @@ export default function ResetPassword() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={9}
                 autoComplete="new-password"
                 className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                 placeholder="••••••••"
