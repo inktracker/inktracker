@@ -19,7 +19,7 @@ import {
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
 import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normalizePresses";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, Paperclip} from "lucide-react";
 import {
   calcLinkedLinePrice,
   buildLinkedQtyMap,
@@ -867,28 +867,26 @@ export default function OrderDetailModal({
         </div>
 
         <div className="p-4 sm:p-6 space-y-5">
-          <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-widest text-teal-400">
-                    Artwork for Approval
-                  </div>
-                  <div className="text-sm text-slate-500 mt-1">
-                    Files uploaded here appear on the customer art approval page.
-                  </div>
+          <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4">
+              <CollapsibleSection
+                title="Artwork for Approval"
+                icon={<Paperclip className="w-4 h-4 text-teal-500" />}
+                storageKey="order-artwork-collapsed"
+              >
+                <div className="text-sm text-slate-500 -mt-1 mb-3">
+                  Files uploaded here appear on the customer art approval page.
                 </div>
-              </div>
-
-              <AttachmentGallery
-                record={{ ...liveOrder, selected_artwork: localArtwork }}
-                title={null}
-                backLabel="Back to order"
-                accept="image/*,.pdf,.ai,.eps,.svg,.psd"
-                onUpload={handleArtworkUpload}
-                onRemove={removeArtwork}
-                uploading={uploading}
-                uploadError={uploadError}
-              />
+                <AttachmentGallery
+                  record={{ ...liveOrder, selected_artwork: localArtwork }}
+                  title={null}
+                  backLabel="Back to order"
+                  accept="image/*,.pdf,.ai,.eps,.svg,.psd"
+                  onUpload={handleArtworkUpload}
+                  onRemove={removeArtwork}
+                  uploading={uploading}
+                  uploadError={uploadError}
+                />
+              </CollapsibleSection>
             </div>
 
           {(liveOrder.line_items || []).length > 0 ? (

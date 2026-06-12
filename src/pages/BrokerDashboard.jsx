@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44 } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
+import CollapsibleSection from "@/components/shared/CollapsibleSection";
 import { DashboardSkeleton } from "@/components/shared/Skeletons";
 import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import {
@@ -24,8 +25,7 @@ import {
   ThumbsUp,
   ThumbsDown,
   CreditCard,
-  ArrowRight,
-} from "lucide-react";
+  ArrowRight, Paperclip} from "lucide-react";
 import BrokerOrderPDFModal from "../components/broker/BrokerOrderPDFModal";
 import BrokerPerformance from "../components/broker/BrokerPerformance";
 import {
@@ -381,14 +381,21 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
             </div>
           )}
 
-          <AttachmentGallery
-            record={{ ...quote, selected_artwork: brokerArtwork }}
-            backLabel="Back to quote"
-            onUpload={handleBrokerArtworkUpload}
-            onRemove={removeBrokerArtwork}
-            uploading={brokerUploading}
-            uploadError={brokerUploadError}
-          />
+          <CollapsibleSection
+            title="Attachments & Mockups"
+            icon={<Paperclip className="w-4 h-4 text-slate-500" />}
+            storageKey="attachments-window-collapsed"
+          >
+            <AttachmentGallery
+              record={{ ...quote, selected_artwork: brokerArtwork }}
+              title={null}
+              backLabel="Back to quote"
+              onUpload={handleBrokerArtworkUpload}
+              onRemove={removeBrokerArtwork}
+              uploading={brokerUploading}
+              uploadError={brokerUploadError}
+            />
+          </CollapsibleSection>
 
           {quote.notes && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
