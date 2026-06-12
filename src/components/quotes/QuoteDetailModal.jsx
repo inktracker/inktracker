@@ -1130,6 +1130,10 @@ export default function QuoteDetailModal({
             <AttachmentGallery
               record={{ ...quote, selected_artwork: localArtwork }}
               backLabel="Back to quote"
+              onUpload={handleArtworkUpload}
+              onRemove={(art) => removeArtwork(art.id)}
+              uploading={uploading}
+              uploadError={uploadError}
             />
           </div>
 
