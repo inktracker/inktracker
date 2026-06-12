@@ -24,7 +24,8 @@
     "smoke:functions": "node scripts/smoke-public-wizard-functions.mjs",
     "deploy:functions": "npx supabase functions deploy ssLookupStyle --no-verify-jwt && npx supabase functions deploy acLookupStyle --no-verify-jwt && npx supabase functions deploy createQuoteFromPayload --no-verify-jwt",
     "predeploy": "npm run test && npm run audit:wizard",
-    "deploy": "npm run deploy:functions && npm run smoke:functions && vercel --prod --yes"
+    "deploy": "npm run deploy:functions && npm run smoke:functions && vercel --prod --yes",
+    "check:functions": "node scripts/check-edge-functions.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.3",
