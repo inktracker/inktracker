@@ -7,6 +7,7 @@ import { mergeItem, routeWarehouseForSku } from "@/lib/purchaseOrders";
 import { SUPPLIERS, lookupStyle } from "@/api/suppliers";
 import { X, Package, CheckCircle, Truck, Loader2, ExternalLink, AlertCircle } from "lucide-react";
 import ModalBackdrop from "../shared/ModalBackdrop";
+import { shopScope } from "@/lib/shopScope";
 
 // We DO NOT generate AS Colour SKUs anymore. Their format includes an
 // internal colour code (e.g. "WHI_M") and a per-size fit letter (F/G/H/...)
@@ -160,7 +161,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
       }
 
       const created = await base44.entities.PurchaseOrder.create({
-        shop_owner: user.email,
+        shop_owner: shopScope(user),
         supplier: SUPPLIERS.AC,
         status: "draft",
         reference: reference.trim() || `PO for ${order.order_id || ""}`,

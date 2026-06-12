@@ -8,6 +8,7 @@ import { QB_REPORTS, qbReportUrl } from "@/lib/reports/qbReportLink";
 import { ShoppingBag, DollarSign, Receipt, Layers, Activity, FileText, ExternalLink, RefreshCw, Package } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
+import { shopScope } from "@/lib/shopScope";
 
 const COMPLETED_STATUSES = new Set(["Completed", "Shipped", "Delivered", "Picked Up"]);
 const CANCELLED_STATUSES = new Set(["Cancelled", "Canceled", "Voided"]);
@@ -108,9 +109,9 @@ export default function Performance() {
       // bucket falls back to [] so the math below stays safe.
       let failures = 0;
       const [perfData, allOrders, allInvoices] = await Promise.all([
-        base44.entities.ShopPerformance.filter({ shop_owner: u.email }, "-date", 1000).catch((e) => { console.error("[Performance] perf fetch failed:", e); failures++; return []; }),
-        base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 1000).catch((e) => { console.error("[Performance] orders fetch failed:", e); failures++; return []; }),
-        base44.entities.Invoice.filter({ shop_owner: u.email }, "-created_date", 1000).catch((e) => { console.error("[Performance] invoices fetch failed:", e); failures++; return []; }),
+        base44.entities.ShopPerformance.filter({ shop_owner: shopScope(u) }, "-date", 1000).catch((e) => { console.error("[Performance] perf fetch failed:", e); failures++; return []; }),
+        base44.entities.Order.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] orders fetch failed:", e); failures++; return []; }),
+        base44.entities.Invoice.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] invoices fetch failed:", e); failures++; return []; }),
       ]);
       setRecords(perfData);
       setOrders(allOrders);

@@ -6,6 +6,7 @@ import { Loader2, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Tras
 import EmptyState from "../components/shared/EmptyState";
 import ShoppingList from "../components/inventory/ShoppingList";
 import { notify } from "@/lib/notify";
+import { shopScope } from "@/lib/shopScope";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -70,7 +71,7 @@ export default function Inventory() {
     base44.auth.me().then(async (u) => {
       setUser(u);
       try {
-        const i = await base44.entities.InventoryItem.filter({ shop_owner: u.email });
+        const i = await base44.entities.InventoryItem.filter({ shop_owner: shopScope(u) });
         setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
       } catch (err) {
         notify.error("Couldn't load inventory", err);
@@ -100,7 +101,7 @@ export default function Inventory() {
     setAdding(true);
     let created;
     try {
-      created = await base44.entities.InventoryItem.create({ ...form, shop_owner: user?.email });
+      created = await base44.entities.InventoryItem.create({ ...form, shop_owner: shopScope(user) });
     } catch (err) {
       notify.error("Couldn't add item", err);
       setAdding(false);
@@ -244,7 +245,7 @@ export default function Inventory() {
         onItemUpdated={(updated) => setItems(prev => prev.map(i => i.id === updated.id ? updated : i))}
         onRefresh={() => {
           if (!user?.email) return;
-          base44.entities.InventoryItem.filter({ shop_owner: user.email }).then(i => {
+          base44.entities.InventoryItem.filter({ shop_owner: shopScope(user) }).then(i => {
             setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
           });
         }}

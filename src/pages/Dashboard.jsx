@@ -17,6 +17,7 @@ import GettingStartedChecklist from "../components/GettingStartedChecklist";
 import MfaNudgeBanner from "../components/MfaNudgeBanner";
 import HintTip from "../components/shared/HintTip";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { shopScope } from "@/lib/shopScope";
 
 const STATUS_COLORS = {
   Draft: "bg-slate-100 text-slate-600",
@@ -396,12 +397,12 @@ export default function Dashboard() {
       // brokers assigned to this shop's email so the "All users" call
       // can't accidentally enumerate other shops if RLS ever loosens.
       const [q, o, invItems, allUsers, custs, localInvoices] = await Promise.all([
-        base44.entities.Quote.filter({ shop_owner: currentUser.email }, "-created_date", 100).catch((e) => { console.error("[Dashboard] quotes fetch failed:", e); return []; }),
-        base44.entities.Order.filter({ shop_owner: currentUser.email }, "-created_date", 50).catch((e) => { console.error("[Dashboard] orders fetch failed:", e); return []; }),
-        base44.entities.InventoryItem.filter({ shop_owner: currentUser.email }).catch((e) => { console.error("[Dashboard] inventory fetch failed:", e); return []; }),
+        base44.entities.Quote.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 100).catch((e) => { console.error("[Dashboard] quotes fetch failed:", e); return []; }),
+        base44.entities.Order.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 50).catch((e) => { console.error("[Dashboard] orders fetch failed:", e); return []; }),
+        base44.entities.InventoryItem.filter({ shop_owner: shopScope(currentUser) }).catch((e) => { console.error("[Dashboard] inventory fetch failed:", e); return []; }),
         base44.entities.User.list().catch((e) => { console.error("[Dashboard] users fetch failed:", e); return []; }),
-        base44.entities.Customer.filter({ shop_owner: currentUser.email }).catch((e) => { console.error("[Dashboard] customers fetch failed:", e); return []; }),
-        base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-created_date", 1000).catch((e) => { console.error("[Dashboard] invoices fetch failed:", e); return []; }),
+        base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }).catch((e) => { console.error("[Dashboard] customers fetch failed:", e); return []; }),
+        base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 1000).catch((e) => { console.error("[Dashboard] invoices fetch failed:", e); return []; }),
       ]);
 
       setQuotes(q);

@@ -17,6 +17,7 @@ import { notify } from "@/lib/notify";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
 import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
+import { shopScope } from "@/lib/shopScope";
 
 // Calendar status colors. Mirrors O_STATUSES — 5 stages — plus the
 // pre-order quote lifecycle chips (Quote Sent, Quote Approved). Keep this
@@ -103,11 +104,11 @@ export default function Calendar() {
         const u = await base44.auth.me();
         setUser(u);
         const [o, c, q] = await Promise.all([
-          base44.entities.Order.filter({ shop_owner: u.email }, "-created_date", 200),
-          base44.entities.Customer.filter({ shop_owner: u.email }),
+          base44.entities.Order.filter({ shop_owner: shopScope(u) }, "-created_date", 200),
+          base44.entities.Customer.filter({ shop_owner: shopScope(u) }),
           // All quotes — surfaces "Quote Sent" / "Quote Approved" chips even
           // before a quote is converted to an order.
-          base44.entities.Quote.filter({ shop_owner: u.email }, "-created_date", 500).catch(() => []),
+          base44.entities.Quote.filter({ shop_owner: shopScope(u) }, "-created_date", 500).catch(() => []),
         ]);
         setOrders(o || []);
         const map = {};
@@ -323,27 +324,27 @@ export default function Calendar() {
     let existingInvoice = null;
     try {
       const byOrderId = await base44.entities.Invoice.filter({
-        shop_owner: user.email,
+        shop_owner: shopScope(user),
         order_id: order.order_id,
       });
       if (byOrderId.length > 0) {
         existingInvoice = byOrderId[0];
       } else if (order.quote_id) {
         const byQuoteId = await base44.entities.Invoice.filter({
-          shop_owner: user.email,
+          shop_owner: shopScope(user),
           invoice_id: order.quote_id,
         });
         if (byQuoteId.length > 0) existingInvoice = byQuoteId[0];
       }
       if (!existingInvoice) {
         const originatingQuotes = await base44.entities.Quote.filter({
-          shop_owner: user.email,
+          shop_owner: shopScope(user),
           converted_order_id: order.order_id,
         });
         const qId = originatingQuotes?.[0]?.quote_id;
         if (qId) {
           const byReversedQuoteId = await base44.entities.Invoice.filter({
-            shop_owner: user.email,
+            shop_owner: shopScope(user),
             invoice_id: qId,
           });
           if (byReversedQuoteId.length > 0) existingInvoice = byReversedQuoteId[0];

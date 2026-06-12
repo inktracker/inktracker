@@ -21,6 +21,7 @@ import AddItemsPanel from "@/components/purchaseOrders/AddItemsPanel";
 import { buildPOCsv, buildPOCsvFilename } from "@/lib/orders/poCsv";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download } from "lucide-react";
 import { notify } from "@/lib/notify";
+import { shopScope } from "@/lib/shopScope";
 
 const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", cancelled: "Cancelled" };
 
@@ -55,7 +56,7 @@ export default function PurchaseOrders() {
     base44.auth.me().then(async (u) => {
       setUser(u);
       try {
-        const rows = await base44.entities.PurchaseOrder.filter({ shop_owner: u.email });
+        const rows = await base44.entities.PurchaseOrder.filter({ shop_owner: shopScope(u) });
         setPos([...rows].sort((a, b) => (b.created_at || "").localeCompare(a.created_at || "")));
       } catch (err) {
         notify.error("Couldn't load purchase orders", err);
@@ -144,7 +145,7 @@ export default function PurchaseOrders() {
     setCreating(true);
     try {
       const defaults = {
-        shop_owner: user.email,
+        shop_owner: shopScope(user),
         supplier: SUPPLIERS.AC,
         status: "draft",
         reference: `PO-${new Date().toISOString().slice(0, 10)}`,

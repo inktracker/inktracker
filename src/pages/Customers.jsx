@@ -20,6 +20,7 @@ import {
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { isValidEmail } from "@/lib/email";
+import { shopScope } from "@/lib/shopScope";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -87,13 +88,13 @@ export default function Customers() {
         setUser(currentUser);
 
         const [c, docs, invs] = await Promise.all([
-          base44.entities.Customer.filter({ shop_owner: currentUser.email }),
+          base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }),
           base44.entities.BrokerDocument.filter(
-            { shop_owner: currentUser.email },
+            { shop_owner: shopScope(currentUser) },
             "-created_date",
             500
           ),
-          base44.entities.Invoice.filter({ shop_owner: currentUser.email }),
+          base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }),
         ]);
         // Profile-card stats come from OUR invoices table so the card
         // always matches the Invoices tab. Previously QB-sourced, which
@@ -354,7 +355,7 @@ export default function Customers() {
     try {
       created = await base44.entities.Customer.create({
         ...form,
-        shop_owner: user.email,
+        shop_owner: shopScope(user),
         orders: 0,
       });
     } catch (err) {
@@ -418,7 +419,7 @@ export default function Customers() {
 
       const createdDoc = await base44.entities.BrokerDocument.create({
         broker_id: getClientArtworkKey(editing.id),
-        shop_owner: user.email,
+        shop_owner: shopScope(user),
         name: file.name,
         file_url,
         file_type: file.type || "",

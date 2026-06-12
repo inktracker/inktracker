@@ -9,6 +9,7 @@ const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
+import { shopScope } from "@/lib/shopScope";
 
 function getThisMonth() {
   const now = new Date();
@@ -44,13 +45,13 @@ export default function Invoices() {
       const currentUser = await base44.auth.me();
       setUser(currentUser);
 
-      const c = await base44.entities.Customer.filter({ shop_owner: currentUser.email });
+      const c = await base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) });
       const custMap = {};
       c.forEach(cust => custMap[cust.id] = cust);
       setCustomers(custMap);
 
       // Load local invoices first, then sync with QB in background
-      const inv = await base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-date", 1000);
+      const inv = await base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }, "-date", 1000);
       setInvoices(inv);
       setLoading(false);
 
@@ -64,7 +65,7 @@ export default function Invoices() {
             accessToken: session.access_token,
           });
           // Reload with fresh data + recompute outstanding from local rows.
-          const freshInv = await base44.entities.Invoice.filter({ shop_owner: currentUser.email }, "-date", 1000);
+          const freshInv = await base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }, "-date", 1000);
           setInvoices(freshInv);
           const stats = computeOutstanding(freshInv);
           setQbOutstanding({ total: stats.total, count: stats.count });

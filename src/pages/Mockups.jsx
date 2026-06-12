@@ -5,6 +5,7 @@ import { base44 } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
 import { getShopPricingConfig } from "../components/shared/pricing";
+import { shopScope } from "@/lib/shopScope";
 // jspdf loaded on demand inside generateProofPDF below
 
 export default function Mockups() {
@@ -68,8 +69,8 @@ export default function Mockups() {
         if (!me?.email || cancelled) return;
         setUser(me);
         const [ordersRes, quotesRes, shopsRes] = await Promise.all([
-          base44.entities.Order.filter({ shop_owner: me.email }, "-created_date", 200),
-          base44.entities.Quote.filter({ shop_owner: me.email }, "-created_date", 200),
+          base44.entities.Order.filter({ shop_owner: shopScope(me) }, "-created_date", 200),
+          base44.entities.Quote.filter({ shop_owner: shopScope(me) }, "-created_date", 200),
           base44.entities.Shop.filter({ owner_email: me.email }),
         ]);
         if (cancelled) return;
