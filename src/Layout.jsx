@@ -183,7 +183,7 @@ export default function Layout({ children, currentPageName }) {
   // must NOT trigger its role-based redirect here — otherwise a user landing
   // on /ResetPassword from a reset email gets bounced to BrokerDashboard /
   // ShopFloor before they can type a new password.
-  const PUBLIC_PAGES = ["BrokerDashboard", "BrokerOnboarding", "EmployeeOnboarding", "QuotePayment", "QuotePaymentSuccess", "QuotePaymentCancel", "QuoteRequest", "ShopFloor", "ResetPassword"];
+  const PUBLIC_PAGES = ["BrokerDashboard", "BrokerOnboarding", "EmployeeOnboarding", "ManagerOnboarding", "QuotePayment", "QuotePaymentSuccess", "QuotePaymentCancel", "QuoteRequest", "ShopFloor", "ResetPassword"];
 
   useEffect(() => {
     if (PUBLIC_PAGES.includes(currentPageName)) return;

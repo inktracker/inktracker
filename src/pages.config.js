@@ -19,6 +19,7 @@ import ArtApproval from './pages/ArtApproval';
 import OrderStatus from './pages/OrderStatus';
 import BrokerOnboarding from './pages/BrokerOnboarding';
 import EmployeeOnboarding from './pages/EmployeeOnboarding';
+import ManagerOnboarding from './pages/ManagerOnboarding';
 import QuotesRoute from './pages/QuotesRoute';
 import OrdersRoute from './pages/OrdersRoute';
 import CustomersRoute from './pages/CustomersRoute';
@@ -58,6 +59,7 @@ export const PAGES = {
     "OrderStatus": OrderStatus,
     "BrokerOnboarding": BrokerOnboarding,
     "EmployeeOnboarding": EmployeeOnboarding,
+    "ManagerOnboarding": ManagerOnboarding,
     "Mockups": Mockups,
     "Production": Production,
     "PurchaseOrders": PurchaseOrders,
