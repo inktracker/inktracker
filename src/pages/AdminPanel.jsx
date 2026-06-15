@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
+import { MANAGER_SECTIONS } from "@/lib/managerPermissions";
 import { supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { useAuth } from "@/lib/AuthContext";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { Users, CheckCircle, Clock, Store, Trash2, RefreshCw, ShieldCheck, UserX, Mail, X } from "lucide-react";
+import { Users, CheckCircle, Clock, Store, Trash2, RefreshCw, ShieldCheck, UserX, Mail, X, ChevronDown, SlidersHorizontal } from "lucide-react";
 import BrokerManager from "@/components/broker/BrokerManager";
 import { notify } from "@/lib/notify";
 
@@ -98,6 +99,25 @@ export default function AdminPanel() {
   useEffect(() => {
     if (user?.role === "admin" || user?.role === "shop") loadUsers();
   }, [user, loadUsers]);
+
+  async function saveManagerPermissions(profileId, permissions) {
+    setActionLoading(prev => ({ ...prev, [`perm-${profileId}`]: true }));
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session?.data?.session?.access_token;
+      const { data, error: fnError } = await supabase.functions.invoke("adminAction", {
+        body: { action: "setManagerPermissions", profileId, permissions },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (fnError) throw new Error(await extractFnErrorMessage(fnError));
+      if (data?.error) throw new Error(data.error);
+      setUsers(prev => prev.map(u => (u.id === profileId ? { ...u, manager_permissions: permissions } : u)));
+    } catch (e) {
+      notify.error("Couldn't update permissions", e?.message || String(e));
+    } finally {
+      setActionLoading(prev => ({ ...prev, [`perm-${profileId}`]: false }));
+    }
+  }
 
   async function setRole(profileId, authId, role) {
     const key = profileId || authId;
@@ -307,7 +327,8 @@ export default function AdminPanel() {
             {displayed.map(u => {
               const key = u.id || u.auth_id;
               return (
-              <div key={key} className="flex items-center gap-4 px-5 py-4">
+              <div key={key} className="px-5 py-4">
+                <div className="flex items-center gap-4">
                 {/* Avatar */}
                 <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center text-teal-600 font-bold text-sm shrink-0">
                   {(u.email || u.shop_name || "?")[0].toUpperCase()}
@@ -397,6 +418,11 @@ export default function AdminPanel() {
                     </button>
                   )}
                 </div>
+                </div>
+
+                {u.role === "manager" && (
+                  <ManagerPermissions u={u} busy={!!actionLoading[`perm-${u.id}`]} onSave={(perms) => saveManagerPermissions(u.id, perms)} />
+                )}
               </div>
               );
             })}
@@ -538,6 +564,61 @@ export default function AdminPanel() {
             </div>
           </div>
         </ModalBackdrop>
+      )}
+    </div>
+  );
+}
+
+
+// Owner-facing per-manager section access. Renders a toggle per
+// MANAGER_SECTIONS reflecting the manager's manager_permissions
+// (null = full access — every box checked). Toggling builds the next
+// permissions map and persists via onSave (adminAction
+// setManagerPermissions). Backward-compatible: an unset manager shows
+// all-on and stays all-on until the owner restricts something.
+function ManagerPermissions({ u, busy, onSave }) {
+  const [open, setOpen] = useState(false);
+  const perms = u.manager_permissions && typeof u.manager_permissions === "object" ? u.manager_permissions : {};
+  const allowed = (key) => perms[key] !== false;
+
+  function toggle(key) {
+    const next = { ...perms, [key]: !allowed(key) };
+    // Collapse back to null (full access) when nothing is denied, so the
+    // common case stays clean in the DB.
+    const anyDenied = MANAGER_SECTIONS.some((s) => next[s.key] === false);
+    onSave(anyDenied ? next : null);
+  }
+
+  const deniedCount = MANAGER_SECTIONS.filter((s) => !allowed(s.key)).length;
+
+  return (
+    <div className="mt-3 ml-13 border border-slate-100 rounded-xl bg-slate-50/60">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 text-left"
+      >
+        <SlidersHorizontal className="w-4 h-4 text-slate-400" />
+        <span className="text-xs font-semibold text-slate-600">Page access</span>
+        <span className="text-[11px] text-slate-400">
+          {deniedCount === 0 ? "Full access" : `${deniedCount} section${deniedCount === 1 ? "" : "s"} hidden`}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-slate-400 ml-auto transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="px-4 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          {MANAGER_SECTIONS.map((sec) => (
+            <label key={sec.key} className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg cursor-pointer hover:bg-white ${busy ? "opacity-50 pointer-events-none" : ""}`}>
+              <input
+                type="checkbox"
+                checked={allowed(sec.key)}
+                onChange={() => toggle(sec.key)}
+                className="rounded border-slate-300 text-teal-600 focus:ring-teal-300"
+              />
+              <span className="text-slate-600">{sec.label}</span>
+            </label>
+          ))}
+        </div>
       )}
     </div>
   );

@@ -14,6 +14,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import { pagesConfig } from "./pages.config";
 import { BrowserRouter as Router, Route, Routes, useLocation } from "react-router-dom";
+import { managerCanAccess, firstAllowedPage } from "@/lib/managerPermissions";
 import PageNotFound from "./lib/PageNotFound";
 import CookieConsent from "@/components/CookieConsent";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
@@ -1391,6 +1392,21 @@ const AuthenticatedApp = () => {
       return <FullScreenSpinner />;
     }
     return <AppRoutes />;
+  }
+
+  // Managers: enforce owner-set section permissions. Hidden nav is the
+  // first line; this stops a denied page being reached by typing the
+  // URL. Ungated pages (Account, public routes) pass through. No-op for
+  // a full-access manager (permissions null).
+  if (user.role === "manager") {
+    const page = (location.pathname || "/").replace(/^\//, "").split("/")[0];
+    if (page && !managerCanAccess(user, page)) {
+      const dest = firstAllowedPage(user);
+      if (location.pathname.replace(/^\//, "").split("/")[0] !== dest) {
+        window.location.replace("/" + dest);
+        return <FullScreenSpinner />;
+      }
+    }
   }
 
   // Check trial expiry. Admins (founder / staff) bypass billing
