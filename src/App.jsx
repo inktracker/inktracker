@@ -46,6 +46,7 @@ const PUBLIC_PAGE_NAMES = [
   "BrokerDashboard",
   "BrokerOnboarding",
   "EmployeeOnboarding",
+  "ManagerOnboarding",
   "QuotePayment",
   "QuotePaymentSuccess",
   "QuotePaymentCancel",

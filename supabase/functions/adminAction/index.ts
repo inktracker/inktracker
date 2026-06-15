@@ -269,7 +269,7 @@ serve(async (req) => {
       // link sign-in invalidated as soon as the page rejected them).
       // Route them through EmployeeOnboarding to set a password first,
       // then it forwards to /ShopFloor.
-      const redirectPage = assignRole === "broker" ? "BrokerOnboarding" : assignRole === "employee" ? "EmployeeOnboarding" : assignRole === "manager" ? "Dashboard" : "Dashboard";
+      const redirectPage = assignRole === "broker" ? "BrokerOnboarding" : assignRole === "employee" ? "EmployeeOnboarding" : assignRole === "manager" ? "ManagerOnboarding" : "Dashboard";
       const redirectTo = appUrl ? `${appUrl}/${redirectPage}` : undefined;
       const { data: inviteData, error: inviteErr } = await adminClient.auth.admin.inviteUserByEmail(
         cleanEmail,
