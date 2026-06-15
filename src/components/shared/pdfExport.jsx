@@ -1028,7 +1028,7 @@ export async function exportQuoteToPDF(
   return finalizePdf(doc, quote, output, fileName);
 }
 
-export async function exportOrderToPDF(order, shopName, logoUrl, output) {
+export async function exportOrderToPDF(order, shopName, logoUrl, output, customerCompany) {
   const jsPDF = await loadJsPDF();
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -1054,8 +1054,14 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output) {
     headerSecondary = clientName ? `Reference: ${clientName}` : "";
     headerEmail = order.broker_email || order.broker_id || "";
   } else {
-    headerPrimary = getOrderPdfClientName(order);
-    headerSecondary = displayJobTitle ? `Job: ${displayJobTitle}` : "";
+    // Match the quote header: company is the big-bold primary line, the
+    // contact name sits underneath. Falls back to the contact name as
+    // primary when no company is known (e.g. an individual customer or a
+    // caller that didn't pass one).
+    headerPrimary = customerCompany || getOrderPdfClientName(order);
+    headerSecondary = customerCompany && order.customer_name
+      ? order.customer_name
+      : (displayJobTitle ? `Job: ${displayJobTitle}` : "");
     headerEmail = order.customer_email || "";
   }
 
