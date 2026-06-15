@@ -1844,7 +1844,7 @@ export default function OrderDetailModal({
                 Quote + Invoice modals). */}
             <button
               onClick={async () => {
-                const url = await exportOrderToPDF(order, shopName, logoUrl, "blob");
+                const url = await exportOrderToPDF(order, shopName, logoUrl, "blob", customer?.company);
                 if (url) window.open(url, "_blank");
               }}
               title="Preview PDF"
