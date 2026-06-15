@@ -9,6 +9,7 @@ import NotificationBell from "./components/NotificationBell";
 import OnboardingAssistant from "./components/onboarding/OnboardingAssistant";
 import { canAccess, getEffectiveTier } from "@/lib/billing";
 import { managerCanAccess } from "@/lib/managerPermissions";
+import { shopScope } from "@/lib/shopScope";
 import { resolveRoleRedirect } from "@/lib/broker/roleRedirect";
 import TrialStatusBanner from "@/components/TrialStatusBanner";
 
@@ -213,6 +214,24 @@ export default function Layout({ children, currentPageName }) {
         setUser(currentUser);
         setShopName(currentUser.shop_name || "My Shop");
         setLogoUrl(currentUser.logo_url || "");
+
+        // Managers (and any team member whose tenant key isn't their own
+        // email) should show the OWNER's branding, not their personal
+        // profile's. Their own logo_url is usually empty, so without this
+        // they'd see the generic InkTracker logo instead of the shop's.
+        const ownerEmail = shopScope(currentUser);
+        if (ownerEmail && ownerEmail !== currentUser.email) {
+          try {
+            const owners = await base44.entities.User.filter({ email: ownerEmail });
+            const owner = Array.isArray(owners) ? owners[0] : null;
+            if (owner) {
+              if (owner.shop_name) setShopName(owner.shop_name);
+              setLogoUrl(owner.logo_url || "");
+            }
+          } catch {
+            // Best-effort branding — fall back to whatever was set above.
+          }
+        }
       } catch (error) {
         await base44.auth.redirectToLogin();
       }
