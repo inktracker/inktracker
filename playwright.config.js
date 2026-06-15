@@ -10,7 +10,9 @@
 // a layout regression that only repros on Safari we add WebKit then.
 
 import { defineConfig, devices } from "@playwright/test";
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config(); // fall back to .env
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || "http://localhost:5173";
 
