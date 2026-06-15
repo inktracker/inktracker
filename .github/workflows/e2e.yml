@@ -1,0 +1,34 @@
+name: e2e
+
+# End-to-end Playwright tests (auth + tenant scoping + manager
+# permissions). Runs post-merge on main and on demand. NOT a required
+# PR check — it touches the live Supabase project (creates + tears down
+# throwaway test users/shops) and needs secrets, so we keep it off the
+# per-PR fast path.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   VITE_SUPABASE_URL          — the project URL
+#   SUPABASE_SERVICE_ROLE_KEY  — used by e2e/_helpers to create/delete
+#                                test fixtures (never reaches the browser)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run e2e
+        run: npm run e2e
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

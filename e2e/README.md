@@ -27,7 +27,7 @@ point at localhost.
 
 ## Required env vars
 
-Both come out of the existing `.env.local`:
+Both come out of `.env.local` (loaded by `playwright.config.js` via dotenv):
 
 - `SUPABASE_URL` (or `VITE_SUPABASE_URL`) — the project's URL
 - `SUPABASE_SERVICE_ROLE_KEY` — used by `e2e/_helpers/testUser.js` to
@@ -48,7 +48,14 @@ Each test that needs auth creates its own user in `beforeAll`:
 `mfa_recovery_codes`, `mfa_audit_log`, and `mfa_trusted_devices`
 cleans up the related rows automatically.
 
-## CI wiring (not done yet)
+## Coverage
+
+- `smoke.spec.js` — landing page renders (no auth)
+- `authScope.spec.js` — owner signs in, sees their own shop's customer + quote (auth + tenant scoping)
+- `managerPermissions.spec.js` — owner restricts a section; manager can't see it in nav or reach it by URL, but still sees the owner's data
+- `mfa.spec.js` — full MFA lifecycle (currently `.skip()`, selector tuning pending)
+
+## CI
 
 A future PR will add a GitHub Actions job that:
 
