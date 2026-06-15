@@ -12,9 +12,9 @@ name: e2e
 #                                test fixtures (never reaches the browser)
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+  # Flip on push:main once VITE_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
+  # repo secrets are set (Settings -> Secrets -> Actions), else main runs red.
 
 jobs:
   e2e:
