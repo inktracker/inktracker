@@ -117,10 +117,9 @@ async function findUserProfile(supabase: any, authId: string, email: string | nu
   // Use service role to read profile_secrets (RLS blocks user client)
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   let profile = await loadProfileWithSecrets(admin, { auth_id: authId });
-  if (profile) return profile;
 
   // Fallback: match by email (profile may pre-date the auth user; auth_id still NULL)
-  if (email) {
+  if (!profile && email) {
     const byEmail = await loadProfileWithSecrets(admin, { email });
     if (byEmail) {
       // Backfill auth_id so future lookups are fast
@@ -128,11 +127,25 @@ async function findUserProfile(supabase: any, authId: string, email: string | nu
         await supabase.from("profiles").update({ auth_id: authId }).eq("id", byEmail.id);
         byEmail.auth_id = authId;
       }
-      return byEmail;
+      profile = byEmail;
     }
   }
 
-  return null;
+  if (!profile) return null;
+
+  // Team members (manager/employee) have no QuickBooks connection of their own —
+  // the shop's QB connection lives on the OWNER's profile_secrets. Resolve the
+  // owner so a team member's checkConnection / dashboard metrics / invoicing use
+  // the SHOP's connection (a manager-partner is a full operator, minus billing).
+  // ADDITIVE + safe: an owner has their own qb_access_token and never reaches
+  // this branch, so owner behavior is byte-for-byte unchanged. Only a profile
+  // WITHOUT its own token AND with a shop_owner (i.e. a team member) falls back.
+  if (!profile.qb_access_token && profile.shop_owner) {
+    const owner = await loadProfileWithSecrets(admin, { email: profile.shop_owner });
+    if (owner?.qb_access_token) return owner;
+  }
+
+  return profile;
 }
 
 async function getValidTokens(supabase: any, authId: string, email: string | null) {
