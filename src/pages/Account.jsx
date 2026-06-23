@@ -152,7 +152,7 @@ export default function Account() {
         setTaxRate(currentUser.default_tax_rate || "");
         // Load addons from Shop entity
         try {
-          const shops = await base44.entities.Shop.filter({ owner_email: currentUser.email });
+          const shops = await base44.entities.Shop.filter({ owner_email: shopScope(currentUser) });
           setShopRecord(shops?.[0] || null);
           setTimezone(shops?.[0]?.timezone || "");
           setBrandColor(shops?.[0]?.brand_color || "");
@@ -267,7 +267,7 @@ export default function Account() {
       // this shop, not just whoever saved last). Best-effort — failing this
       // shouldn't undo the profile save above.
       try {
-        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+        const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
         const payload = {
           timezone: timezone || null,
           brand_color: normalizeBrandColor(brandColor),
@@ -276,7 +276,7 @@ export default function Account() {
           await base44.entities.Shop.update(shops[0].id, payload);
         } else {
           await base44.entities.Shop.create({
-            owner_email: user.email,
+            owner_email: shopScope(user),
             shop_name: shopName || user.email,
             ...payload,
           });
@@ -349,13 +349,13 @@ export default function Account() {
   async function handleSaveTemplate() {
     setSavingTemplate(true);
     try {
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
       const payload = { quote_email_subject: emailSubject, quote_email_body: emailBody };
       if (shops?.length) {
         await base44.entities.Shop.update(shops[0].id, payload);
       } else {
         await base44.entities.Shop.create({
-          owner_email: user.email,
+          owner_email: shopScope(user),
           shop_name: shopName || user.email,
           ...payload,
         });
@@ -373,12 +373,12 @@ export default function Account() {
     setSavingAddons(true);
     try {
       // Save to Shop entity so brokers can read it
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
       if (shops?.length) {
         await base44.entities.Shop.update(shops[0].id, { addons });
       } else {
         await base44.entities.Shop.create({
-          owner_email: user.email,
+          owner_email: shopScope(user),
           shop_name: shopName || user.shop_name || user.email,
           addons,
         });
@@ -1104,7 +1104,7 @@ function QbItemMapEditor({ user }) {
     setLoading(true);
     setError(null);
     try {
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
       setMap(shops?.[0]?.pricing_config?.qb_item_map || {});
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
@@ -1127,7 +1127,7 @@ function QbItemMapEditor({ user }) {
     setSaved(false);
     setError(null);
     try {
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
       // Drop empty selections so an unset category falls back to default behavior.
       const cleanMap = Object.fromEntries(
         Object.entries(map).filter(([, v]) => v && String(v).trim()),
@@ -1537,7 +1537,7 @@ function ProductionTasksSection({ user }) {
       setDefaults(mod.DEFAULT_TASKS);
 
       try {
-        const shopOwner = user?.email;
+        const shopOwner = shopScope(user);
         if (!shopOwner) return;
         const { data: shop } = await supabase
           .from("shops")
@@ -1610,7 +1610,7 @@ function ProductionTasksSection({ user }) {
       const { error } = await supabase
         .from("shops")
         .update({ production_tasks: cleaned })
-        .eq("owner_email", user?.email);
+        .eq("owner_email", shopScope(user));
       if (error) throw error;
       // Push into the module-level cache so live ShopFloor / OrderDetail
       // views pick up the change without a full reload.
@@ -1901,7 +1901,7 @@ function ExportDataSection({ user }) {
       );
       const data = Object.fromEntries(results);
       const payload = JSON.stringify(
-        { exportedAt: new Date().toISOString(), shopOwner: user.email, ...data },
+        { exportedAt: new Date().toISOString(), shopOwner: shopScope(user), ...data },
         null,
         2,
       );
@@ -1965,7 +1965,7 @@ function PressesSection({ user }) {
         const { data: shop } = await supabase
           .from("shops")
           .select("presses")
-          .eq("owner_email", user.email)
+          .eq("owner_email", shopScope(user))
           .maybeSingle();
         if (alive) setPresses(normalizePresses(shop?.presses));
       } catch {
@@ -2004,7 +2004,7 @@ function PressesSection({ user }) {
       const { error } = await supabase
         .from("shops")
         .update({ presses: cleaned })
-        .eq("owner_email", user?.email);
+        .eq("owner_email", shopScope(user));
       if (error) throw error;
       setPresses(cleaned);
       setSaved(true);
@@ -2506,7 +2506,7 @@ function PricingConfigSection({ user }) {
   useEffect(() => {
     async function load() {
       try {
-        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+        const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
         const pc = shops?.[0]?.pricing_config || {};
         setConfig({ ...DEFAULTS, ...pc });
       } catch {
@@ -2531,7 +2531,7 @@ function PricingConfigSection({ user }) {
 
     setSaving(true);
     try {
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
       if (shops?.[0]) {
         await base44.entities.Shop.update(shops[0].id, { pricing_config: config });
       }
