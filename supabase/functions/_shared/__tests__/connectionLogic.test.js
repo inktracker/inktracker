@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SECRET_KEYS,
+  partitionSecretUpdates,
   mergeProfileSecrets,
   decideTokenRefresh,
   extractConnectionStatus,
@@ -184,5 +185,43 @@ describe("buildRefreshedTokenFields", () => {
     );
     expect(fields).not.toHaveProperty("qb_realm_id");
     expect(fields).not.toHaveProperty("qb_oauth_state");
+  });
+});
+
+describe("partitionSecretUpdates", () => {
+  it("routes stripe ids to secrets and billing fields to profiles", () => {
+    const { profileUpdates, secretUpdates } = partitionSecretUpdates({
+      subscription_tier: "shop",
+      subscription_status: "active",
+      stripe_subscription_id: "sub_123",
+    });
+    expect(profileUpdates).toEqual({ subscription_tier: "shop", subscription_status: "active" });
+    expect(secretUpdates).toEqual({ stripe_subscription_id: "sub_123" });
+  });
+
+  it("keeps null values (so a cancel can clear stripe_subscription_id)", () => {
+    const { profileUpdates, secretUpdates } = partitionSecretUpdates({
+      subscription_tier: "expired",
+      subscription_status: "canceled",
+      stripe_subscription_id: null,
+    });
+    expect(profileUpdates).toEqual({ subscription_tier: "expired", subscription_status: "canceled" });
+    expect(secretUpdates).toEqual({ stripe_subscription_id: null });
+  });
+
+  it("handles profiles-only and secrets-only update shapes", () => {
+    expect(partitionSecretUpdates({ subscription_status: "past_due" })).toEqual({
+      profileUpdates: { subscription_status: "past_due" },
+      secretUpdates: {},
+    });
+    expect(partitionSecretUpdates({ stripe_customer_id: "cus_1" })).toEqual({
+      profileUpdates: {},
+      secretUpdates: { stripe_customer_id: "cus_1" },
+    });
+  });
+
+  it("tolerates null/empty input", () => {
+    expect(partitionSecretUpdates(null)).toEqual({ profileUpdates: {}, secretUpdates: {} });
+    expect(partitionSecretUpdates({})).toEqual({ profileUpdates: {}, secretUpdates: {} });
   });
 });

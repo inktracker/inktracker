@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
 import { uploadFile } from "@/lib/uploadFile";
 import { fmtMoney } from "../components/shared/pricing";
@@ -87,14 +88,12 @@ export default function Customers() {
         const currentUser = await base44.auth.me();
         setUser(currentUser);
 
+        // Cached mount-load reads — see lib/queries/cachedEntity. Merge/detail
+        // lookups below stay direct (freshness-critical for the merge path).
         const [c, docs, invs] = await Promise.all([
-          base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }),
-          base44.entities.BrokerDocument.filter(
-            { shop_owner: shopScope(currentUser) },
-            "-created_date",
-            500
-          ),
-          base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }),
+          cachedFilter("Customer", { filters: { shop_owner: shopScope(currentUser) } }),
+          cachedFilter("BrokerDocument", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 500 }),
+          cachedFilter("Invoice", { filters: { shop_owner: shopScope(currentUser) } }),
         ]);
         // Profile-card stats come from OUR invoices table so the card
         // always matches the Invoices tab. Previously QB-sourced, which

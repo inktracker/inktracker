@@ -3,7 +3,7 @@ export default function Privacy() {
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-6">
         <h1 className="text-3xl font-bold text-slate-900">Privacy Policy</h1>
-        <p className="text-sm text-slate-500">Last updated: June 10, 2026</p>
+        <p className="text-sm text-slate-500">Last updated: June 16, 2026</p>
 
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">1. Who We Are</h2>
@@ -127,6 +127,12 @@ export default function Privacy() {
             transit and at rest. Each shop's data is isolated using row-level security policies — no
             other shop can access your data. We do not sell your data to any third party.
           </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            We rely on a small set of trusted service providers (sub-processors) to operate
+            InkTracker — including cloud hosting and database (Supabase, Vercel), email delivery
+            (Resend), subscription billing (Stripe), and the integrations you connect (e.g.,
+            Intuit / QuickBooks). They process data only to provide their service to us.
+          </p>
         </section>
 
         <section className="space-y-2">
@@ -135,7 +141,10 @@ export default function Privacy() {
             We retain your data for as long as your account is active. On cancellation, your data
             remains available in a read-only state until the end of your billing period. You may
             request deletion of your account and all associated data at any time — verified
-            deletion requests are completed within 30 days. Contact{" "}
+            deletion requests are completed within 30 days. We may retain limited information after a
+            deletion request where retention is required by law or for legitimate business purposes
+            (such as tax, accounting, security, fraud-prevention, or dispute-resolution records); we
+            delete or de-identify the remainder. Contact{" "}
             <a href="mailto:support@inktracker.app" className="text-teal-600 underline">
               support@inktracker.app
             </a>.
@@ -151,7 +160,27 @@ export default function Privacy() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-800">8. Changes to This Policy</h2>
+          <h2 className="text-lg font-semibold text-slate-800">8. Your Privacy Rights</h2>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            Depending on where you live (for example, California under the CCPA/CPRA, and similar laws
+            in other U.S. states), you may have the right to access, correct, or delete the personal
+            information we hold about you, to receive a copy of it, and to not be discriminated
+            against for exercising these rights. <span className="font-semibold">We do not sell your
+            personal information, and we do not "share" it for cross-context behavioral advertising</span>
+            {" "}as those terms are defined under California law. To exercise a right, email{" "}
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">support@inktracker.app</a>;
+            we will verify your request and respond within the time required by law.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            If you are an end customer of a shop that uses InkTracker (for example, you received a
+            quote or invoice), that shop controls your data and InkTracker processes it on the shop's
+            behalf. Please direct access or deletion requests to the shop; we will assist the shop in
+            responding.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold text-slate-800">9. Changes to This Policy</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
             We may update this policy from time to time. We will notify you of significant changes by
             email or by posting a notice in the application.
@@ -159,7 +188,7 @@ export default function Privacy() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-800">9. Contact</h2>
+          <h2 className="text-lg font-semibold text-slate-800">10. Contact</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
             InkTracker is operated by Biota LLC (doing business as Biota MFG), a Nevada limited liability company based in Reno, Nevada, USA.
             For any privacy-related questions or requests, contact us at{" "}

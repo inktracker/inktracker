@@ -12,6 +12,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import Stripe from "npm:stripe@14";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { claimWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
+import { insertShopNotification } from "../_shared/notifications.js";
 import {
   renderEmailLayout,
   renderEmailHighlight,
@@ -20,6 +21,14 @@ import {
   EMAIL_HAIRLINE,
   EMAIL_FOREST,
 } from "../_shared/emailLayout.ts";
+import { escapeQbStringLiteral } from "../_shared/qbInvoice.js";
+
+// HTML-escape user-controlled fields (customer_name comes from the public
+// wizard) before interpolating into email HTML, so a crafted name can't inject
+// markup/scripts/links into the shop owner's or customer's inbox.
+const escapeHtml = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (ch) => ({
+  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+}[ch] || ch));
 
 const STRIPE_SECRET_KEY      = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const STRIPE_WEBHOOK_SECRET  = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
@@ -95,7 +104,7 @@ async function recordQbPayment(
   // Look up the invoice's CustomerRef — QB Payment requires it
   const q = await fetch(
     `${QB_BASE}/${realmId}/query?query=${encodeURIComponent(
-      `SELECT Id, CustomerRef FROM Invoice WHERE Id = '${qbInvoiceId}'`
+      `SELECT Id, CustomerRef FROM Invoice WHERE Id = '${escapeQbStringLiteral(qbInvoiceId)}'`
     )}&minorversion=65`,
     { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } },
   );
@@ -157,15 +166,15 @@ async function sendOwnerNotification(quote: any, amountPaid: number, isDeposit: 
   const valueStyle = `color:${EMAIL_INK};font-weight:600;text-align:right;`;
   const tableHtml = `
     <table style="width:100%;border-collapse:collapse;margin:0 0 20px;">
-      <tr><td style="${rowStyle}${labelStyle}">Quote #</td><td style="${rowStyle}${valueStyle}">${quote.quote_id}</td></tr>
-      <tr><td style="${rowStyle}${labelStyle}">Customer</td><td style="${rowStyle}${valueStyle}">${quote.customer_name}</td></tr>
-      <tr><td style="${rowStyle}${labelStyle}">Type</td><td style="${rowStyle}${valueStyle}">${paymentType}</td></tr>
-      ${quote.due_date ? `<tr><td style="${rowStyle}${labelStyle}">In-Hands Date</td><td style="${rowStyle}${valueStyle}">${quote.due_date}</td></tr>` : ""}
+      <tr><td style="${rowStyle}${labelStyle}">Quote #</td><td style="${rowStyle}${valueStyle}">${escapeHtml(quote.quote_id)}</td></tr>
+      <tr><td style="${rowStyle}${labelStyle}">Customer</td><td style="${rowStyle}${valueStyle}">${escapeHtml(quote.customer_name)}</td></tr>
+      <tr><td style="${rowStyle}${labelStyle}">Type</td><td style="${rowStyle}${valueStyle}">${escapeHtml(paymentType)}</td></tr>
+      ${quote.due_date ? `<tr><td style="${rowStyle}${labelStyle}">In-Hands Date</td><td style="${rowStyle}${valueStyle}">${escapeHtml(quote.due_date)}</td></tr>` : ""}
     </table>
   `;
   const bodyHtml = `
     <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 20px;">
-      <strong>${quote.customer_name}</strong> has completed their payment.
+      <strong>${escapeHtml(quote.customer_name)}</strong> has completed their payment.
     </p>
     ${renderEmailHighlight("Amount Received", fmtMoney(amountPaid))}
     ${tableHtml}
@@ -209,7 +218,7 @@ async function sendCustomerConfirmation(quote: any, amountPaid: number, isDeposi
     : `<p style="color:#065f46;font-size:13px;background:#f0fdf4;border:1px solid #bbf7d0;padding:12px;margin:0 0 16px;"><strong>Payment complete.</strong> We'll be in touch once your order is ready.</p>`;
   const bodyHtml = `
     <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 20px;">
-      Hi ${quote.customer_name || "there"}, thank you for your payment to <strong>${shopName}</strong>.
+      Hi ${escapeHtml(quote.customer_name || "there")}, thank you for your payment to <strong>${escapeHtml(shopName)}</strong>.
     </p>
     ${renderEmailHighlight("Amount Paid", fmtMoney(amountPaid))}
     ${tableHtml}
@@ -367,6 +376,28 @@ Deno.serve(async (req) => {
         sendOwnerNotification(quote, amountPaid, isDeposit),
         sendCustomerConfirmation(quote, amountPaid, isDeposit, shopName),
       ]);
+
+      // In-app bell notification (distinct from the emails above). Links to the
+      // quote, which the Quotes page accepts for ?id= deep-links.
+      //
+      // NOTE: dormant in v1. This is the CUSTOMER-payment Stripe webhook
+      // (STRIPE_WEBHOOK_SECRET), not the subscription/billing one
+      // (STRIPE_BILLING_WEBHOOK_SECRET). Stripe Connect for customer payments
+      // was removed from the UI in PR #201 — QuickBooks is the sole customer-
+      // payment path — so this handler doesn't process payments today and this
+      // notification won't fire. It's kept ready for if Stripe customer pay
+      // ever returns. The live "paid" signal in v1 is the convertQuoteToOrder
+      // notification (QB payment → conversion). Not a pending to-do.
+      await insertShopNotification(supabase, {
+        shopOwner: quote.shop_owner,
+        eventType: "quote_paid",
+        severity: "info",
+        title: isDeposit ? "Deposit received" : "Payment received",
+        body: `${quote.customer_name || "A customer"} paid ${fmtMoney(amountPaid)} on quote ${quote.quote_id}.`,
+        relatedEntity: "quote",
+        relatedId: quote.id,
+        metadata: { quote_id: quote.quote_id, amount: amountPaid, deposit: isDeposit },
+      });
 
       console.log(`[stripeWebhook] Processed payment for quote ${quote.quote_id}, amount: $${amountPaid}, deposit: ${isDeposit}`);
     }

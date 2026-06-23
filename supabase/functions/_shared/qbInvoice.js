@@ -60,8 +60,22 @@ export function isLikelyEmail(value) {
 
 // ── QB Customer body ────────────────────────────────────────────────────────
 // Only emits fields with real values — never sends empty strings or null
-// (QB returns 400 on some null fields). Tax-exempt customers get
-// Taxable=false + TaxExemptionReasonId=16 (Other) per QB's enum.
+// (QB returns 400 on some null fields).
+//
+// We do NOT send any tax fields on the CUSTOMER (no Taxable, no
+// TaxExemptionReasonId). Two separate QB gotchas converged here:
+//   1. TaxExemptionReasonId — QB's valid enum is 1–15. We previously
+//      hardcoded 16, which QB rejected (400 code 2030, "Id should be a
+//      valid number. Supplied value:16").
+//   2. Taxable=false — in QBO companies with Automated Sales Tax (every
+//      modern US company file), customer-level Taxable is NOT settable via
+//      the API and QB rejects it with a business-validation 400, blocking
+//      customer creation entirely for every tax-exempt customer.
+// Exemption is enforced where it actually drives the math: on the invoice
+// LINES, which get TaxCodeRef "NON" whenever the customer is tax-exempt or
+// the quote's tax rate is 0 (see handleCreateInvoice). That yields a $0-tax
+// invoice without poking the AST-protected customer fields. We still don't
+// capture a reason code from the shop, so there's nothing valid to send.
 //
 // Email is gated by isLikelyEmail so junk values (names, phone numbers,
 // stray text) don't crash QB customer creation with a ValidationFault.
@@ -77,10 +91,6 @@ export function buildQBCustomerBody(customer, displayName) {
   if (customer?.phone)   body.PrimaryPhone     = { FreeFormNumber: customer.phone };
   if (customer?.address) body.BillAddr         = { Line1: customer.address };
   if (customer?.tax_id)  body.ResaleNum        = customer.tax_id;
-  if (customer?.tax_exempt) {
-    body.Taxable = false;
-    body.TaxExemptionReasonId = 16;
-  }
   return body;
 }
 
@@ -186,7 +196,6 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
   const lines = [];
   const safeMap = itemIdMap instanceof Map ? itemIdMap : new Map();
   const fallbackId = safeMap.get(defaultItemName);
-  const taxCode = taxExempt ? "NON" : "TAX";
 
   for (const line of payload?.lines ?? []) {
     const qty       = Number(line?.qty)       || 0;
@@ -198,15 +207,25 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
     const itemId   = safeMap.get(itemName) ?? fallbackId;
     if (!itemId) continue;
 
+    // Per-line taxability: a line is taxed unless it's explicitly taxable:false
+    // (e.g. non-taxable shipping). Tax-exempt customers get NON on everything.
+    // _taxable / _isFee are transient hints for the caller (qbSync) to finalize
+    // the tax code and exclude fees from discount spreading; they are deleted
+    // before the invoice is sent to QuickBooks.
+    const isTaxable = line?.taxable !== false;
+    const lineTaxCode = taxExempt || !isTaxable ? "NON" : "TAX";
+
     lines.push({
       DetailType: "SalesItemLineDetail",
       Amount: Number(amount.toFixed(2)),
       Description: line?.description ?? "",
+      _taxable: isTaxable,
+      _isFee: !!line?.isFee,
       SalesItemLineDetail: {
         ItemRef:     { value: itemId },
         UnitPrice:   unitPrice,
         Qty:         qty,
-        TaxCodeRef:  { value: taxCode },
+        TaxCodeRef:  { value: lineTaxCode },
       },
     });
   }
@@ -218,8 +237,10 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
   const isFlat       = payload?.discountType === "flat" || discountFlat > 0;
 
   if ((isFlat && discountFlat > 0) || discountPct > 0) {
+    // Discounts apply to garment lines only — NOT setup/additional fees
+    // (mirrors calcQuoteTotals, where setup + fees are added post-discount).
     const subtotal = lines.reduce(
-      (s, l) => s + (l.DetailType === "SalesItemLineDetail" ? l.Amount : 0),
+      (s, l) => s + (l.DetailType === "SalesItemLineDetail" && !l._isFee ? l.Amount : 0),
       0,
     );
     const discountTotal = isFlat
@@ -231,7 +252,7 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
 
     if (subtotal > 0 && discountTotal > 0) {
       let remaining = discountTotal;
-      const salesLines = lines.filter((l) => l.DetailType === "SalesItemLineDetail");
+      const salesLines = lines.filter((l) => l.DetailType === "SalesItemLineDetail" && !l._isFee);
       salesLines.forEach((line, i) => {
         const share = i === salesLines.length - 1
           ? remaining

@@ -10,8 +10,14 @@
 // Whitelist mirrors the file input's `accept` attribute on the wizard
 // + quote editor. Centralizing here so a bypass through the upload
 // helper (e.g. via DevTools or a custom embed) can't sneak through.
+//
+// SVG is intentionally EXCLUDED: an SVG served inline from the public storage
+// origin can execute embedded scripts (stored XSS). The real guard is the
+// bucket's server-side allowed_mime_types (migration 20260710030000), which
+// rejects image/svg+xml regardless of the client; dropping it here just gives
+// the user a clean "not allowed" message instead of a storage error.
 export const ALLOWED_UPLOAD_EXTS = Object.freeze(new Set([
-  "ai", "eps", "pdf", "png", "jpg", "jpeg", "svg", "psd",
+  "ai", "eps", "pdf", "png", "jpg", "jpeg", "psd",
 ]));
 
 // 25 MB ceiling. Real-world artwork rarely exceeds 10 MB; this caps
@@ -29,7 +35,7 @@ export function validateUploadCandidate(file) {
   const ext = (file.name?.split(".").pop() || "").toLowerCase();
   if (!ALLOWED_UPLOAD_EXTS.has(ext)) {
     throw new Error(
-      `File type ".${ext}" isn't allowed. Use AI, EPS, PDF, PNG, JPG, SVG, or PSD.`
+      `File type ".${ext}" isn't allowed. Use AI, EPS, PDF, PNG, JPG, or PSD.`
     );
   }
   if (typeof file.size === "number" && file.size > MAX_UPLOAD_BYTES) {

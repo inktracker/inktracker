@@ -31,6 +31,7 @@ export {
   getLineExtras,
 } from "@/lib/pricing/extras";
 import { resolveExtraRatePerPiece as _resolveExtraRatePerPiece, getLineExtras as _getLineExtras } from "@/lib/pricing/extras";
+import { sumAdditionalCharges as _sumAdditionalCharges, normalizeAdditionalCharges as _normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 
 export const EXTRA_RATES = {
   colorMatch: 1.0,
@@ -89,6 +90,19 @@ export function getEnabledTechniques(configOverride) {
     }
   }
   return enabled;
+}
+
+// Technique dropdown options for a line that ALREADY has `currentTechnique`
+// selected. Returns the shop's enabled techniques, but ALWAYS includes the
+// current one even if the shop's config no longer enables it (stale/absent
+// pricing config, or the technique was toggled off after the quote was saved).
+// Without this, editing a saved Embroidery quote could drop "Embroidery" from
+// the dropdown, making the saved technique impossible to keep or re-select.
+export function getTechniqueOptions(currentTechnique, configOverride) {
+  const opts = getEnabledTechniques(configOverride);
+  const cur = (currentTechnique == null ? "" : String(currentTechnique)).trim();
+  if (cur && !opts.includes(cur)) return [...opts, cur];
+  return opts;
 }
 
 // Resolve the firstPrint/addlPrint/tiers/maxColors table set to use for
@@ -477,7 +491,10 @@ export function getOrderDisplayClient(order, fallbackCustomer = null) {
     return order?.customer_name || order?.broker_name || order?.broker_company || order?.broker_id || "Unknown";
   }
 
-  return getDisplayName(fallbackCustomer || order?.customer_name);
+  // Company-first: prefer the denormalized order.company (added 2026-06-18),
+  // then the customer record, then the contact name. See
+  // feedback_company_name_first.
+  return (order?.company && order.company.trim()) || getDisplayName(fallbackCustomer || order?.customer_name);
 }
 
 export function getOrderDisplayJobTitle(order, fallbackCustomer = null) {
@@ -954,8 +971,23 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
   const sub = subtotal + rushTotal;
   const discVal = parseFloat(q.discount) || 0;
   const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
-  const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
-  const tax = afterDisc * ((parseFloat(q.tax_rate) || 0) / 100);
+  // Clamp the discount both ways: a flat discount can't push below $0, and a
+  // PERCENT discount is bounded to 0..100 — without this, discount:150 yields a
+  // NEGATIVE subtotal that flows into tax/total (and into the QB invoice). The
+  // save-time helper (roundedQuoteTotals) already clamps; this matches it so the
+  // displayed/emailed/QB numbers can't diverge or go negative.
+  const pct = Math.min(Math.max(discVal, 0), 100);
+  const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - pct / 100);
+
+  // One-off additional fees: taxable charges join the taxed base; non-taxable
+  // are added to the total after tax. (Setup fees are NOT folded in here — they
+  // depend on shop config and are layered + snapshotted by the editor.) When a
+  // quote has no additional_charges this is a no-op: tax/total are identical to
+  // the legacy afterDisc+tax result, so existing snapshots are unaffected.
+  const addl = _sumAdditionalCharges(q.additional_charges);
+  const taxBase = afterDisc + addl.taxable;
+  const tax = taxBase * ((parseFloat(q.tax_rate) || 0) / 100);
+  const total = taxBase + tax + addl.nonTaxable;
 
   return {
     subtotal,
@@ -963,9 +995,12 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
     sub,
     subBeforeRush: subtotal, // deprecated alias
     afterDisc,
+    additionalTaxable: addl.taxable,
+    additionalNonTaxable: addl.nonTaxable,
+    additionalTotal: addl.total,
     tax,
-    total: afterDisc + tax,
-    deposit: (afterDisc + tax) * ((parseFloat(q.deposit_pct) || 0) / 100),
+    total,
+    deposit: total * ((parseFloat(q.deposit_pct) || 0) / 100),
   };
 }
 
@@ -988,6 +1023,21 @@ export const GARMENT_CATEGORIES = [
   "Customer Supplied",
   "Other",
 ];
+
+// Translate an InkTracker line itemName (garment category, "Setup Fee", a fee
+// label, "Embroidery", etc.) into the QuickBooks product/service item the shop
+// wants it booked under. `qbItemMap` is a per-shop { inktrackerName: qbItemName }
+// object stored in pricing_config.qb_item_map. When there's no mapping for a
+// name, we return it unchanged — so behavior is IDENTICAL to today until a shop
+// configures a mapping. This is what stops InkTracker from creating duplicate
+// QB items (e.g. its "Hoodies & Sweatshirts" alongside the shop's existing
+// "Sweatshirts") — point the category at the shop's real item and invoices land
+// on it instead of spawning a new one.
+export function mapQbItemName(name, qbItemMap) {
+  if (!name || !qbItemMap || typeof qbItemMap !== "object") return name;
+  const mapped = qbItemMap[name];
+  return (typeof mapped === "string" && mapped.trim()) ? mapped.trim() : name;
+}
 
 // Map S&S data to one of our GARMENT_CATEGORIES.
 // S&S's styleCategory is often empty, so we also scan the product description/title
@@ -1061,7 +1111,10 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
       .map((imp) => [imp.title, imp.location, imp.technique].filter(Boolean).join(" / "))
       .filter(Boolean)
       .join("; ");
-    const description = [styleLabel, sizeBreakdown, imprintDesc].filter(Boolean).join(" | ");
+    // Add-on labels appear here only when the shop opted in (snapshotted onto
+    // li._addon_labels at save time — empty otherwise).
+    const addonLabels = Array.isArray(li._addon_labels) ? li._addon_labels.filter(Boolean) : [];
+    const description = [styleLabel, sizeBreakdown, imprintDesc, addonLabels.join(", ")].filter(Boolean).join(" | ");
 
     const itemName = resolveLineCategory(li);
 
@@ -1091,6 +1144,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
         unitPrice: Number(unitPriceWithRush.toFixed(4)),
         amount: Number(lineTotalWithRush.toFixed(2)),
         itemName,
+        taxable: true,
       });
     } else {
       // Legacy fallback for line items predating the per-line stamping.
@@ -1120,9 +1174,41 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
         unitPrice: Number(unitPriceForQb.toFixed(4)),
         amount: Number(lineTotalForQb.toFixed(2)),
         itemName,
+        taxable: true,
       });
     }
   });
+
+  // Setup / screen fees as their own QB line (taxable; part of the taxed base).
+  // isFee=true keeps the discount-spread logic off it (discounts apply to
+  // garments only, mirroring calcQuoteTotals where setup is added post-discount).
+  const setupTotalForQb = Number(quote.setup_total) || 0;
+  if (setupTotalForQb > 0) {
+    lines.push({
+      description: "Setup & Screen Fees",
+      qty: 1,
+      unitPrice: Number(setupTotalForQb.toFixed(2)),
+      amount: Number(setupTotalForQb.toFixed(2)),
+      itemName: "Setup Fee",
+      taxable: true,
+      isFee: true,
+    });
+  }
+
+  // One-off additional fees (shipping, rush, …). Each carries its own taxable
+  // flag so QB taxes only what the quote taxed.
+  for (const c of _normalizeAdditionalCharges(quote.additional_charges)) {
+    if (!(c.amount > 0)) continue;
+    lines.push({
+      description: c.label || "Additional fee",
+      qty: 1,
+      unitPrice: Number(c.amount.toFixed(2)),
+      amount: Number(c.amount.toFixed(2)),
+      itemName: c.label || "Additional Fee",
+      taxable: !!c.taxable,
+      isFee: true,
+    });
+  }
 
   // Use saved totals when available (calculate-once), fall back to live calc
   const hasSavedTotal = Number.isFinite(quote.total) && quote.total > 0;
@@ -1135,6 +1221,13 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
 
   const discVal = parseFloat(quote.discount) || 0;
   const isFlat = quote.discount_type === "flat" || (discVal > 100 && quote.discount_type !== "percent");
+
+  // Apply the shop's QB item-name mapping (if any) to every line. No-op when
+  // the shop hasn't configured one — so this is fully non-breaking.
+  const qbItemMap = getShopPricingConfig()?.qb_item_map || null;
+  if (qbItemMap) {
+    for (const l of lines) l.itemName = mapQbItemName(l.itemName, qbItemMap);
+  }
 
   return {
     lines,

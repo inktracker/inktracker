@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { fmtMoney } from "../components/shared/pricing";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { Loader2, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Trash2, ShoppingCart } from "lucide-react";
@@ -71,7 +72,7 @@ export default function Inventory() {
     base44.auth.me().then(async (u) => {
       setUser(u);
       try {
-        const i = await base44.entities.InventoryItem.filter({ shop_owner: shopScope(u) });
+        const i = await cachedFilter("InventoryItem", { filters: { shop_owner: shopScope(u) } });
         setItems([...i].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
       } catch (err) {
         notify.error("Couldn't load inventory", err);

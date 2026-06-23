@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { cachedFilter, cachedList } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { Loader2, Mail, Trash2 } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
@@ -90,9 +91,9 @@ export default function Quotes() {
         setUser(currentUser);
 
         const [allQuotes, c, allUsers] = await Promise.all([
-          base44.entities.Quote.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 500),
-          base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }),
-          base44.entities.User.list(),
+          cachedFilter("Quote", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 500 }),
+          cachedFilter("Customer", { filters: { shop_owner: shopScope(currentUser) } }),
+          cachedList("User"),
         ]);
 
         // Exclude quotes already converted to orders — those live under Orders now.

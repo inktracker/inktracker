@@ -1,0 +1,21 @@
+-- ============================================================================
+-- SECURITY FIX (CRITICAL): remove the anon UPDATE path on quotes entirely.
+-- ============================================================================
+-- `quotes_anon_update` (20260630000000) scoped anon UPDATEs to callers
+-- presenting the row's public_token in an x-public-token header. That closed
+-- the blind cross-tenant write, but RLS still cannot restrict WHICH COLUMNS are
+-- written — so a customer holding their own quote link can PATCH the REST API
+-- directly with the bundled anon key:
+--
+--   PATCH /rest/v1/quotes?id=eq.<their-quote>
+--   x-public-token: <their token>
+--   { "paid": true, "deposit_paid": true, "status": "Approved and Paid" }
+--
+-- i.e. mark their own quote paid without paying. The legitimate public flows
+-- (approve / pay / art-approval) do NOT use this policy — they all run through
+-- the createCheckoutSession edge function on the service role (verified: no
+-- client code sends x-public-token or calls Quote.update as anon). So this
+-- policy has zero legitimate use and is pure attack surface. Drop it.
+-- ============================================================================
+
+DROP POLICY IF EXISTS quotes_anon_update ON public.quotes;

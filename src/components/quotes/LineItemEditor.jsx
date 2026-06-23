@@ -3,7 +3,7 @@ import {
   SIZES,
   BIG_SIZES,
   LOCATIONS,
-  getEnabledTechniques,
+  getTechniqueOptions,
   getShopPricingConfig,
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
@@ -1307,7 +1307,7 @@ export default function LineItemEditor({
                               </div>
                             </div>
                             <div className="flex-1 min-w-28">
-                              <label className="block text-xs text-slate-400 mb-0.5">Pantone(s)</label>
+                              <label className="block text-xs text-slate-400 mb-0.5">Ink Color(s)</label>
                               <input
                                 value={imp.pantones || ""}
                                 onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
@@ -1325,7 +1325,12 @@ export default function LineItemEditor({
                             onChange={(e) => updateImprint(idx, { technique: e.target.value })}
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                           >
-                            {getEnabledTechniques().map((t) => (
+                            {/* getTechniqueOptions always includes the technique
+                                already saved on this imprint, even if the shop's
+                                config no longer enables it — so editing a saved
+                                Embroidery quote can never lose the Embroidery
+                                option. */}
+                            {getTechniqueOptions(imp.technique).map((t) => (
                               <option key={t}>{t}</option>
                             ))}
                           </select>

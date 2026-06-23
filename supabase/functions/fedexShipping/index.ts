@@ -221,7 +221,10 @@ Deno.serve(async (req) => {
         try {
           const labelBytes = Uint8Array.from(atob(encodedLabel), (c) => c.charCodeAt(0));
           const admin = adminClient();
-          const filename = `${orderId || "label"}-${trackingNumber}.pdf`;
+          // Sanitize the storage key — orderId/trackingNumber come from the
+          // request, so strip anything that could steer the path (../, slashes).
+          const safe = (s: unknown) => String(s ?? "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "label";
+          const filename = `${safe(orderId)}-${safe(trackingNumber)}.pdf`;
 
           const { error: uploadErr } = await admin.storage
             .from("shipping-labels")

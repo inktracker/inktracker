@@ -27,6 +27,33 @@ export default function QuoteRequest() {
   // load is better than that flicker.
   const [shopLoading, setShopLoading] = useState(true);
 
+  // reCAPTCHA v3 — the wizard is the highest-volume anonymous write surface, so
+  // its submission is gated server-side (wizardSubmit edge function). We obtain
+  // a token here and hand it to submitWizardQuote. Same site key as the
+  // payment page.
+  const RECAPTCHA_SITE_KEY = "6LdFgbIsAAAAAKlrO8Sv9y-3HUJv4f-1hjHEjsi9";
+  const [recaptchaReady, setRecaptchaReady] = useState(false);
+
+  useEffect(() => {
+    if (window.grecaptcha) { setRecaptchaReady(true); return; }
+    const existing = document.querySelector(`script[src*="recaptcha/api.js"]`);
+    if (existing) { existing.addEventListener("load", () => setRecaptchaReady(true)); return; }
+    const script = document.createElement("script");
+    script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
+    script.async = true;
+    script.onload = () => setRecaptchaReady(true);
+    document.head.appendChild(script);
+  }, []);
+
+  async function getRecaptchaToken() {
+    if (!recaptchaReady || !window.grecaptcha) return "";
+    try {
+      return await window.grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: "wizard_submit" });
+    } catch {
+      return "";
+    }
+  }
+
   useEffect(() => {
     async function loadShop() {
       try {
@@ -38,8 +65,17 @@ export default function QuoteRequest() {
         }
         if (!ownerEmail) return;
         setShopOwner(ownerEmail);
-        const shops = await base44.entities.Shop.filter({ owner_email: ownerEmail });
-        const s = shops?.[0];
+        // Fetch the shop's wizard config through a scoped edge function rather
+        // than reading the `shops` table directly. The anon `shops` SELECT
+        // policy was dropped (it leaked every shop's owner email, Stripe ids,
+        // and email templates — Finding A, 2026-06 review). getPublicShopConfig
+        // returns ONLY the wizard-safe column subset.
+        const { data: cfg, error: cfgErr } = await supabase.functions.invoke(
+          "getPublicShopConfig",
+          { body: { ownerEmail } }
+        );
+        if (cfgErr) console.error("[QuoteRequest] shop config error:", cfgErr);
+        const s = cfg?.shop || null;
         if (s) {
           setShop(s);
           if (s.wizard_styles?.length) setWizardStyles(s.wizard_styles);
@@ -70,7 +106,8 @@ export default function QuoteRequest() {
     // the RLS policies on quotes are locked down so anon clients
     // can't read or write the table directly.
     const { submitWizardQuote } = await import("@/lib/wizardSubmit");
-    await submitWizardQuote(supabase, quote, shopOwner);
+    const recaptchaToken = await getRecaptchaToken();
+    await submitWizardQuote(supabase, quote, shopOwner, recaptchaToken);
 
     // Send notification emails — failures don't block the submission
     try {

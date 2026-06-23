@@ -44,6 +44,43 @@ export function relativeDueLabel(dueDate, baseDate) {
 }
 
 /**
+ * An order is "open" (still needs work) when it isn't Completed or
+ * Cancelled. Centralized so the overdue selector and any future caller
+ * agree on what "finished" means.
+ */
+export function isOrderOpen(order) {
+  const s = order?.status;
+  return s !== "Completed" && s !== "Cancelled";
+}
+
+/**
+ * Past-due, still-open orders — anchored to ACTUAL today (not the agenda's
+ * selected day) so an overdue job keeps surfacing in the panel every day
+ * until it's finished, no matter which date the operator clicks.
+ *
+ *   orders     — all orders
+ *   today      — YYYY-MM-DD ISO of the real current day
+ *   excludeIds — Set of order ids already shown in another section
+ *                (e.g. "scheduled today"), so a job never double-lists
+ *
+ * Returns the matching orders sorted by due date ascending — the most
+ * overdue (oldest due date) first. Pure; no DB, no React.
+ */
+export function selectOverdueOrders(orders, today, excludeIds = new Set()) {
+  if (!Array.isArray(orders) || !today) return [];
+  const cutoff = String(today).slice(0, 10);
+  const skip = excludeIds instanceof Set ? excludeIds : new Set(excludeIds || []);
+  return orders
+    .filter((o) => {
+      if (!o || skip.has(o.id)) return false;
+      if (!isOrderOpen(o)) return false;
+      if (!o.due_date) return false;
+      return String(o.due_date).slice(0, 10) < cutoff;
+    })
+    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
+}
+
+/**
  * Returns a short string describing the most immediate action this
  * order needs, or null if no specific hint applies. Drives the
  * "Order goods pending" / "Receive blanks" / "Get art approved" copy

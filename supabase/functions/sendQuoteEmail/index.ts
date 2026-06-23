@@ -37,6 +37,7 @@ Deno.serve(async (req) => {
     // verified quotes@inktracker.app domain.
     const authHeader = req.headers.get("authorization") || "";
     let isAuthed = false;
+    let caller: { email: string; shop_owner: string; assigned_shops: string[] } | null = null;
     if (authHeader.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "");
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -46,9 +47,18 @@ Deno.serve(async (req) => {
       if (user) {
         isAuthed = true;
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const { data: profile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+        const { data: profile } = await admin.from("profiles")
+          .select("email, shop_owner, assigned_shops, subscription_tier, subscription_status, trial_ends_at")
+          .eq("auth_id", user.id).maybeSingle();
         const blocked = requireActiveSubscription(profile);
         if (blocked) return blocked;
+        caller = {
+          email: String(profile?.email || user.email || "").toLowerCase(),
+          shop_owner: String(profile?.shop_owner || "").toLowerCase(),
+          assigned_shops: Array.isArray(profile?.assigned_shops)
+            ? profile.assigned_shops.map((e: any) => String(e || "").toLowerCase())
+            : [],
+        };
       }
     }
 
@@ -70,6 +80,7 @@ Deno.serve(async (req) => {
       pdfFilename,
       buttonLabel,
       shopOwnerEmail,
+      proofImages,
     } = payload;
 
     if (!customerEmails?.length) {
@@ -106,12 +117,29 @@ Deno.serve(async (req) => {
           { status: 403, headers: CORS },
         );
       }
+      // Rate-limit the anon path: at most 10 sends/hour per quote. The
+      // wizard fires 1–2 legit emails per submission, so this is generous for
+      // real use but stops an attacker replaying one created quote to
+      // email-bomb the customer/owner from the verified domain.
+      const { data: underLimit, error: rateErr } = await admin.rpc("check_anon_email_rate", {
+        p_key: `quote:${quoteId}`,
+        p_limit_per_hr: 10,
+      });
+      if (rateErr) {
+        // Fail open on a counter error (don't drop legit sends), but log it.
+        console.error("[sendQuoteEmail] anon rate check failed (allowing):", rateErr.message);
+      } else if (underLimit === false) {
+        return Response.json(
+          { error: "Too many emails for this quote right now. Please try again later." },
+          { status: 429, headers: CORS },
+        );
+      }
       // No payment links, PDFs, or broker fields on the anonymous path —
       // the wizard never passes them; an attacker would use them to dress
       // up a phishing email.
-      if (paymentLink || approveLink || pdfBase64 || brokerName || brokerEmail) {
+      if (paymentLink || approveLink || pdfBase64 || brokerName || brokerEmail || (Array.isArray(proofImages) && proofImages.length)) {
         return Response.json(
-          { error: "Anonymous callers may not include payment links, attachments, or broker fields" },
+          { error: "Anonymous callers may not include payment links, attachments, proof images, or broker fields" },
           { status: 403, headers: CORS },
         );
       }
@@ -132,6 +160,53 @@ Deno.serve(async (req) => {
       shopLogoUrl = ownerProfile?.logo_url || null;
       // Force Reply-To / Bcc target to the legitimate shop owner.
       shopOwnerEmail = quote.shop_owner;
+    }
+
+    // ── Authenticated-caller authorization ────────────────────────────
+    // Without this, ANY subscribed account (shop, manager, employee, broker,
+    // trial) could send arbitrary email — custom subject/body/payment link, to
+    // arbitrary recipients, with a spoofed shop name — from the verified
+    // quotes@inktracker.app domain. Require that the caller's shop actually owns
+    // the quote, and force the merchant-of-record brand fields from the DB so
+    // the sender identity can't be spoofed.
+    if (isAuthed) {
+      if (!quoteId) {
+        return Response.json({ error: "quoteId required" }, { status: 400, headers: CORS });
+      }
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const { data: q } = await admin
+        .from("quotes")
+        .select("shop_owner, broker_id, broker_name, broker_company, broker_email")
+        .eq("quote_id", quoteId)
+        .maybeSingle();
+      if (!q) {
+        return Response.json({ error: "Quote not found" }, { status: 404, headers: CORS });
+      }
+      const qShopOwner = String(q.shop_owner || "").toLowerCase();
+      const email = caller?.email || "";
+      const ownsQuote =
+        (!!qShopOwner && (
+          qShopOwner === email ||                                   // shop owner
+          (!!caller?.shop_owner && caller.shop_owner === qShopOwner) || // member of that shop
+          caller?.assigned_shops.includes(qShopOwner)               // manager/employee/broker assigned
+        )) ||
+        (!!q.broker_id && String(q.broker_id).toLowerCase() === email); // broker who submitted it
+      if (!ownsQuote) {
+        return Response.json({ error: "You don't have access to this quote." }, { status: 403, headers: CORS });
+      }
+      // Force brand / merchant-of-record from the DB (never the payload). Mirrors
+      // getCustomerFacingBrandName: broker quotes show the broker; otherwise the shop.
+      if (q.broker_id) {
+        brokerName  = q.broker_name || "";
+        brokerEmail = q.broker_email || "";
+      } else {
+        brokerName = "";
+        brokerEmail = "";
+      }
+      const { data: shopRow } = await admin.from("shops").select("shop_name").eq("owner_email", q.shop_owner).maybeSingle();
+      shopName = (q.broker_id ? (q.broker_company || q.broker_name) : "") || shopRow?.shop_name || shopName || "InkTracker";
+      const { data: ownerProf } = await admin.from("profiles").select("logo_url").eq("email", q.shop_owner).maybeSingle();
+      shopLogoUrl = ownerProf?.logo_url || null;
     }
 
     const emailSubject = subject || `Your Quote from ${shopName} - Quote #${quoteId}`;
@@ -158,6 +233,24 @@ Deno.serve(async (req) => {
     const customBody = body ? body
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") : "";
 
+    // Inline art proof(s). Strictly allowlisted: https + our public storage
+    // path only, so a crafted payload can't smuggle a tracking pixel or a
+    // javascript:/data: URL into the recipient's inbox. (The anon path already
+    // rejects proofImages entirely above.)
+    const safeProofImages = (Array.isArray(proofImages) ? proofImages : [])
+      .filter((p: any) =>
+        p && typeof p.url === "string" &&
+        /^https:\/\//i.test(p.url) &&
+        p.url.includes("/storage/v1/object/public/"))
+      .slice(0, 6);
+    const proofHtml = safeProofImages.length
+      ? `<div style="margin:4px 0 24px;">
+           <p style="color:${EMAIL_MUTED};font-size:13px;font-weight:600;margin:0 0 8px;">Art Proof</p>
+           ${safeProofImages.map((p: any) =>
+             `<img src="${escapeHtml(p.url)}" alt="${escapeHtml(p.name || "Art proof")}" style="display:block;max-width:100%;border:1px solid #e5e7eb;border-radius:8px;margin:0 0 10px;" />`).join("")}
+         </div>`
+      : "";
+
     const bodyHtml = `
       ${customBody
         ? `<p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 20px;">${customBody}</p>`
@@ -166,6 +259,7 @@ Deno.serve(async (req) => {
           <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 24px;">Your quote is ready for review. Click below to view, approve, or pay online.</p>
         `
       }
+      ${proofHtml}
       ${renderEmailHighlight("Quote Total", `$${total}`)}
       ${(paymentLink || approveLink) ? renderEmailButton(buttonLabel || "View Quote & Pay Online", paymentLink || approveLink) : ""}
       ${brokerName ? `<p style="color:${EMAIL_MUTED};font-size:13px;margin:8px 0 0;">Submitted by ${safeBrokerName}${brokerEmail ? ` &middot; ${safeBrokerEmail}` : ""}</p>` : ""}

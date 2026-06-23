@@ -23,6 +23,7 @@ import { MessageSquare, Paperclip} from "lucide-react";
 import {
   calcLinkedLinePrice,
   buildLinkedQtyMap,
+  getLineExtras,
   fmtDate,
   fmtMoney,
   getQty,
@@ -144,6 +145,10 @@ export default function OrderDetailModal({
   // Orders / Invoices / Calendar page) handles the modal display so we
   // avoid a circular import with InvoiceDetailModal.
   onShowInvoice,
+  // Notifies the parent list of an in-place order update (e.g. attachment
+  // add/remove) so reopening the modal doesn't re-seed from a stale order —
+  // the "removed attachment comes back" bug.
+  onUpdated,
 }) {
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -569,6 +574,7 @@ export default function OrderDetailModal({
 
       await base44.entities.Order.update(order.id, { selected_artwork: newArtwork });
       setLocalArtwork(newArtwork);
+      onUpdated?.({ ...order, selected_artwork: newArtwork });
     } catch (err) {
       setUploadError(err.message || "Upload failed");
     } finally {
@@ -583,6 +589,7 @@ export default function OrderDetailModal({
     try {
       await base44.entities.Order.update(order.id, { selected_artwork: next });
       setLocalArtwork(next);
+      onUpdated?.({ ...order, selected_artwork: next });
     } catch (err) {
       setUploadError(err?.message || "Couldn't remove attachment.");
     }
@@ -880,7 +887,7 @@ export default function OrderDetailModal({
                   record={{ ...liveOrder, selected_artwork: localArtwork }}
                   title={null}
                   backLabel="Back to order"
-                  accept="image/*,.pdf,.ai,.eps,.svg,.psd"
+                  accept=".png,.jpg,.jpeg,.pdf,.ai,.eps,.psd"
                   onUpload={handleArtworkUpload}
                   onRemove={removeArtwork}
                   uploading={uploading}
@@ -905,7 +912,7 @@ export default function OrderDetailModal({
                   ? { lineTotal: li._lineTotal, ppp: li._ppp, regularPpp: li._ppp, oversizePpp: li._ppp }
                   : useClientPpp
                     ? { lineTotal: clientPppOverride * qty, ppp: clientPppOverride, regularPpp: clientPppOverride, oversizePpp: clientPppOverride, overridden: true }
-                    : calcLinkedLinePrice(li, order.rush_rate, order.extras, markup, linkedQtyMap);
+                    : calcLinkedLinePrice(li, order.rush_rate, getLineExtras(li, order), markup, linkedQtyMap);
                 const activeSizes = SIZES.filter(
                   (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
                 );

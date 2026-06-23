@@ -1,14 +1,15 @@
 // ─────────────────────────────────────────────────────────────────────────
-// ATTORNEY REVIEW PENDING (drafted 2026-06-14).
-// These Terms were expanded from a thin v1 to close real gaps: liability
-// cap, content/IP warranty, indemnification, DMCA safe harbor, disclaimers
-// (incl. "not accounting/tax advice"), refunds, and governing-law/venue/
-// dispute resolution. They are a strong first draft in standard SaaS shape
-// — NOT a substitute for a licensed attorney's review. Before charging
-// paying customers, have a Nevada-qualified attorney verify enforceability
-// (esp. the liability cap, arbitration, and class-action waiver) and file
-// the DMCA designated-agent registration ($6, copyright.gov). See
-// docs/legal-review-notes.md for the reviewer handoff.
+// ATTORNEY REVIEW PENDING (drafted 2026-06-14; self-review revisions 2026-06-16).
+// 2026-06-16 pass closed self-identified red flags before the attorney review:
+// liability-cap carve-outs (§11), a General/boilerplate section incl.
+// severability (§14), named-administrator arbitration + FAA + 30-day opt-out +
+// class-waiver poison pill (§13), Stripe-vs-QuickBooks accuracy (§2/§5), and a
+// sub-processor/de-identified-data license grant (§6). STILL a draft in
+// standard SaaS shape — NOT a substitute for a licensed attorney's review.
+// Before charging paying customers, have a Nevada-qualified attorney verify
+// enforceability (esp. the liability cap + carve-outs, arbitration, and class
+// waiver), confirm auto-renewal-law compliance, and file the DMCA designated-
+// agent registration ($6, copyright.gov). See docs/attorney-review-packet.md.
 // ─────────────────────────────────────────────────────────────────────────
 
 export default function Terms() {
@@ -16,7 +17,7 @@ export default function Terms() {
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-6">
         <h1 className="text-3xl font-bold text-slate-900">Terms of Service</h1>
-        <p className="text-sm text-slate-500">Last updated: June 14, 2026</p>
+        <p className="text-sm text-slate-500">Last updated: June 16, 2026</p>
 
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">1. Acceptance of Terms</h2>
@@ -35,8 +36,9 @@ export default function Terms() {
           <p className="text-sm text-slate-600 leading-relaxed">
             InkTracker is a print shop management platform that helps decorators manage quotes,
             orders, production, invoicing, and customer relationships. The platform integrates with
-            third-party services including QuickBooks, Stripe, and garment suppliers. We may add,
-            change, or remove features at any time.
+            QuickBooks (including QuickBooks Payments, used to collect your customers' payments,
+            where your shop is the merchant of record) and garment suppliers. We separately use
+            Stripe to bill your subscription to us. We may add, change, or remove features at any time.
           </p>
         </section>
 
@@ -55,10 +57,13 @@ export default function Terms() {
           <p className="text-sm text-slate-600 leading-relaxed">
             New accounts receive a 14-day free trial with full access; no credit card is required to
             start. After the trial, continued use requires a paid subscription, billed monthly in
-            advance through Stripe. Subscriptions renew automatically each billing period until
-            cancelled. You may cancel anytime from the Account settings page; cancellation stops
-            future renewals and your account remains accessible through the end of the period you
-            have already paid for, after which it enters read-only mode.
+            advance through Stripe. <span className="font-semibold">Your subscription renews
+            automatically:</span> by starting a paid subscription you authorize us to charge your
+            payment method the then-current fee at the start of each billing period until you cancel.
+            You may cancel at any time from the Account settings page (or by emailing{" "}
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">support@inktracker.app</a>);
+            cancellation stops future renewals and takes effect at the end of the current paid
+            period, after which your account remains accessible in read-only mode.
           </p>
           <p className="text-sm text-slate-600 leading-relaxed">
             Except where required by law, fees are non-refundable and we do not provide refunds or
@@ -70,12 +75,14 @@ export default function Terms() {
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">5. Third-Party Integrations</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
-            InkTracker integrates with QuickBooks, Stripe, and garment suppliers. By connecting
-            these services, you authorize InkTracker to access and act within the scope of those
-            integrations on your behalf. Your use of those services is also governed by their own
-            terms. We are not responsible for third-party services, their availability, or the
-            accuracy of data they return, and we are not liable for actions you direct us to take
-            within them (for example, creating an invoice in your QuickBooks account).
+            You connect QuickBooks (including QuickBooks Payments) and garment-supplier accounts to
+            InkTracker; by connecting them, you authorize InkTracker to access and act within the
+            scope of those integrations on your behalf. We separately use Stripe to process your
+            subscription payments to us — you do not connect a Stripe account. Your use of any
+            third-party service is also governed by its own terms. We are not responsible for
+            third-party services, their availability, or the accuracy of data they return, and we
+            are not liable for actions you direct us to take within them (for example, creating an
+            invoice in your QuickBooks account).
           </p>
         </section>
 
@@ -87,7 +94,11 @@ export default function Terms() {
             Your Content. You grant us a limited, non-exclusive license to host, store, process,
             transmit, and display Your Content solely to operate and provide the service to you
             (including generating proofs, sending quote and invoice emails at your direction, and
-            syncing to services you connect).
+            syncing to services you connect). This license includes the right to use trusted service
+            providers (sub-processors) acting on our behalf — such as our hosting, database, and
+            email-delivery vendors — and to make backups, in each case to provide the service. We
+            may also create and use aggregated or de-identified data that does not identify you or
+            any individual to operate, secure, and improve the service.
           </p>
           <p className="text-sm text-slate-600 leading-relaxed">
             <span className="font-semibold">You are solely responsible for Your Content.</span> You
@@ -174,6 +185,14 @@ export default function Terms() {
             and do not reset per claim. Some jurisdictions do not allow certain limitations, so parts
             of this section may not apply to you.
           </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            The exclusions and limitations above do not apply to: (a) your indemnification
+            obligations under Section 10; (b) a party's breach of its confidentiality obligations;
+            (c) a party's infringement or misappropriation of the other party's intellectual
+            property; (d) amounts you owe us for the service; or (e) any liability that cannot be
+            excluded or limited under applicable law (which may include liability for fraud, gross
+            negligence, or willful misconduct).
+          </p>
         </section>
 
         <section className="space-y-2">
@@ -200,18 +219,66 @@ export default function Terms() {
             County, Nevada, and you consent to their jurisdiction.
           </p>
           <p className="text-sm text-slate-600 leading-relaxed">
-            Any dispute arising out of or relating to these Terms or the service will be resolved by
-            binding individual arbitration administered under the rules of a recognized arbitration
-            body, rather than in court, except that either party may bring an individual claim in
-            small-claims court or seek injunctive relief for misuse of intellectual property.{" "}
+            This arbitration agreement is governed by the Federal Arbitration Act. Any dispute
+            arising out of or relating to these Terms or the service will be resolved by binding
+            individual arbitration administered by the American Arbitration Association (AAA) under
+            its Commercial Arbitration Rules, before a single arbitrator, rather than in court. The
+            arbitration will take place in Washoe County, Nevada, or by videoconference at the
+            parties' election; arbitration fees are governed by the AAA rules, and each party bears
+            its own attorneys' fees except as those rules or the arbitrator allow. As exceptions,
+            either party may bring an individual claim in small-claims court, and either party may
+            seek injunctive or other equitable relief in court to protect its intellectual property
+            or confidential information.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
             <span className="font-semibold">You and Biota LLC agree to bring claims only in an
-            individual capacity, and not as a plaintiff or class member in any class or
-            representative action.</span>
+            individual capacity, and not as a plaintiff or class member in any class, consolidated,
+            or representative action.</span> If this class-action waiver is found unenforceable as to
+            a particular claim, then that claim (and only that claim) will be severed and proceed in
+            the courts identified above rather than in arbitration.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Opt-out.</span> You may opt out of this arbitration
+            agreement by emailing{" "}
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">support@inktracker.app</a>{" "}
+            within 30 days of first accepting these Terms, stating your account email and that you
+            opt out of arbitration. Opting out does not affect any other provision of these Terms.
           </p>
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-800">14. Changes to Terms</h2>
+          <h2 className="text-lg font-semibold text-slate-800">14. General</h2>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Severability.</span> If any provision of these Terms is
+            held invalid or unenforceable, it will be limited or severed to the minimum extent
+            necessary, and the remaining provisions will remain in full force and effect.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Entire agreement.</span> These Terms, together with the{" "}
+            <a href="/privacy" className="text-teal-600 underline">Privacy Policy</a> and any order or
+            pricing page you agree to, are the entire agreement between you and Biota LLC regarding the
+            service and supersede all prior agreements on that subject.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Assignment.</span> You may not assign or transfer these
+            Terms without our prior written consent. We may assign them to an affiliate or in
+            connection with a merger, acquisition, reorganization, or sale of assets.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Force majeure.</span> Neither party is liable for any
+            delay or failure to perform caused by events beyond its reasonable control.
+          </p>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            <span className="font-semibold">Waiver, notices &amp; beneficiaries.</span> Our failure to
+            enforce any provision is not a waiver of it. Notices to you may be given by email or
+            in-app notice; notices to us must be sent to{" "}
+            <a href="mailto:support@inktracker.app" className="text-teal-600 underline">support@inktracker.app</a>.
+            These Terms create no third-party beneficiaries.
+          </p>
+        </section>
+
+        <section className="space-y-2">
+          <h2 className="text-lg font-semibold text-slate-800">15. Changes to Terms</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
             We may update these Terms from time to time. For material changes we will provide notice
             by email or an in-app notice before they take effect. Continued use of the service after
@@ -220,7 +287,7 @@ export default function Terms() {
         </section>
 
         <section className="space-y-2">
-          <h2 className="text-lg font-semibold text-slate-800">15. Contact</h2>
+          <h2 className="text-lg font-semibold text-slate-800">16. Contact</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
             Questions about these Terms? Contact Biota LLC at{" "}
             <a href="mailto:support@inktracker.app" className="text-teal-600 underline">

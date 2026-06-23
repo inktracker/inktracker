@@ -55,19 +55,6 @@ export function addRefTag(subject, refId, shopOwnerEmail) {
   return `${subject} ${tag}`;
 }
 
-// Pulls the ref id out of an inbound subject so we can route to the right thread.
-// Returns { shopCode, refId } where shopCode is null for legacy tags.
-//
-// Format examples:
-//   [Ref: a3f7-Q-2026-115]   → { shopCode: "a3f7", refId: "Q-2026-115" }
-//   [Ref: Q-2026-115]        → { shopCode: null,   refId: "Q-2026-115" }   (legacy)
-const REF_RE = /\[Ref:\s*(?:([a-z0-9]{4})-)?([A-Z0-9][A-Z0-9-]*)\]/i;
-export function parseRefTag(subject) {
-  const match = REF_RE.exec(subject || "");
-  if (!match) return null;
-  return { shopCode: match[1] || null, refId: match[2] };
-}
-
 // Insert a Message row recording an outbound email. Best-effort — never throws.
 // Call this AFTER the email send returns success.
 //

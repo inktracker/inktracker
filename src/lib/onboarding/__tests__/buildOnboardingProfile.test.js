@@ -86,36 +86,16 @@ describe("buildOnboardingProfile — defaults", () => {
     expect(p.shop_name).toBe("owner@example.com");
   });
 
-  it("uses 'trial' / 'trialing' when the user has no subscription set", () => {
+  it("does NOT emit governance columns (server-owned; blocked by the profiles guard trigger)", () => {
+    // subscription_tier / subscription_status / trial_ends_at are set by
+    // handle_new_user + activate_trial on the server. This client payload goes
+    // through the authenticated updateMe, which may not write those columns.
     const p = buildOnboardingProfile({ user: NEW_USER }, { now: NOW });
-    expect(p.subscription_tier).toBe("trial");
-    expect(p.subscription_status).toBe("trialing");
-  });
-
-  it("preserves existing subscription tier/status (don't downgrade re-onboarders)", () => {
-    const existing = {
-      ...NEW_USER,
-      subscription_tier: "shop",
-      subscription_status: "active",
-    };
-    const p = buildOnboardingProfile({ user: existing }, { now: NOW });
-    expect(p.subscription_tier).toBe("shop");
-    expect(p.subscription_status).toBe("active");
-  });
-
-  it("sets trial_ends_at to exactly NOW + 14 days when missing", () => {
-    const p = buildOnboardingProfile({ user: NEW_USER }, { now: NOW });
-    const expected = new Date(NOW + ONBOARDING_TRIAL_DAYS * 86_400_000).toISOString();
-    expect(p.trial_ends_at).toBe(expected);
-  });
-
-  it("preserves an existing trial_ends_at instead of resetting it", () => {
-    const existing = {
-      ...NEW_USER,
-      trial_ends_at: "2026-06-01T00:00:00.000Z",
-    };
-    const p = buildOnboardingProfile({ user: existing }, { now: NOW });
-    expect(p.trial_ends_at).toBe("2026-06-01T00:00:00.000Z");
+    expect(p).not.toHaveProperty("subscription_tier");
+    expect(p).not.toHaveProperty("subscription_status");
+    expect(p).not.toHaveProperty("trial_ends_at");
+    expect(p).not.toHaveProperty("role");
+    expect(p).not.toHaveProperty("shop_owner");
   });
 
   it("emits empty strings (not undefined) for blank optional fields", () => {
@@ -156,9 +136,6 @@ describe("buildOnboardingProfile — full happy path", () => {
       zip: "78701",
       website: "https://biotamfg.com",
       default_tax_rate: 8.25,
-      subscription_tier: "trial",
-      subscription_status: "trialing",
-      trial_ends_at: new Date(NOW + 14 * 86_400_000).toISOString(),
     });
   });
 });
@@ -172,13 +149,13 @@ describe("buildOnboardingProfile — robustness", () => {
     expect(p.shop_name).toBe("owner@example.com");
   });
 
-  it("preserves existing trial_ends_at even when it's in the past (don't reset paid users)", () => {
+  it("never writes trial_ends_at, even if the user object carries one (server owns it)", () => {
     const existing = {
       ...NEW_USER,
-      trial_ends_at: "2026-01-01T00:00:00.000Z", // already past
+      trial_ends_at: "2026-01-01T00:00:00.000Z",
     };
     const p = buildOnboardingProfile({ user: existing }, { now: NOW });
-    expect(p.trial_ends_at).toBe("2026-01-01T00:00:00.000Z");
+    expect(p).not.toHaveProperty("trial_ends_at");
   });
 
   it("survives a user object with no email (shop_name becomes empty string)", () => {
@@ -190,14 +167,13 @@ describe("buildOnboardingProfile — robustness", () => {
   it("survives a missing user (no crash, sane defaults)", () => {
     const p = buildOnboardingProfile({}, { now: NOW });
     expect(p.shop_name).toBe("");
-    expect(p.subscription_tier).toBe("trial");
-    expect(p.subscription_status).toBe("trialing");
+    expect(p.default_tax_rate).toBe(0);
   });
 
   it("survives a fully-undefined input (no crash)", () => {
     const p = buildOnboardingProfile(undefined, { now: NOW });
-    expect(p.subscription_tier).toBe("trial");
-    expect(p.trial_ends_at).toBe(new Date(NOW + 14 * 86_400_000).toISOString());
+    expect(p.shop_name).toBe("");
+    expect(p).not.toHaveProperty("trial_ends_at");
   });
 
   it("does not strip leading 0s from a US zip code", () => {

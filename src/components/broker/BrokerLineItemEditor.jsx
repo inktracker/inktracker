@@ -959,7 +959,7 @@ export default function BrokerLineItemEditor({
                       </div>
 
                       <div className="flex-1 min-w-28">
-                        <label className="block text-xs text-slate-400 mb-0.5">Pantone(s)</label>
+                        <label className="block text-xs text-slate-400 mb-0.5">Ink Color(s)</label>
                         <input
                           value={imp.pantones || ""}
                           onChange={(e) => updateImprint(idx, { pantones: e.target.value })}

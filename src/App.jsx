@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef, Suspense } from "react";
 import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
@@ -71,11 +71,21 @@ const PUBLIC_PATHS = new Set(
   ])
 );
 
+// Content-area fallback shown while a lazy route chunk loads. Rendered inside
+// Layout, so the sidebar/shell stays put and only the page body swaps.
+const PageFallback = () => (
+  <div className="flex items-center justify-center py-24" role="status" aria-label="Loading">
+    <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+  </div>
+);
+
 const LayoutWrapper = ({ children, currentPageName }) =>
   Layout ? (
-    <Layout currentPageName={currentPageName}>{children}</Layout>
+    <Layout currentPageName={currentPageName}>
+      <Suspense fallback={<PageFallback />}>{children}</Suspense>
+    </Layout>
   ) : (
-    <>{children}</>
+    <Suspense fallback={<PageFallback />}>{children}</Suspense>
   );
 
 // Feature catalog with optional media for the preview modal.

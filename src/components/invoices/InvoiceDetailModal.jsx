@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getQty, SIZES, buildQBInvoicePayload } from "../shared/pricing";
+import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload } from "../shared/pricing";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
@@ -311,7 +311,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                 ? { ppp: override, lineTotal: override * qty, rushFee: 0 }
                 : hasDirectTotal
                   ? { ppp: qty > 0 ? directLineTotal / qty : directLineTotal, lineTotal: directLineTotal, rushFee: 0 }
-                  : calcLinkedLinePrice(li, invoice.rush_rate || 0, invoice.extras || {}, undefined, linkedQtyMap);
+                  : calcLinkedLinePrice(li, invoice.rush_rate || 0, getLineExtras(li, invoice), undefined, linkedQtyMap);
             const activeSizes = SIZES.filter(sz => (parseInt((li.sizes||{})[sz]) || 0) > 0);
             const garmentCostNum = Number(li.garmentCost);
             const hasGarmentCost = Number.isFinite(garmentCostNum) && garmentCostNum > 0;

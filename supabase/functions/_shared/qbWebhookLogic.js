@@ -278,6 +278,9 @@ export function buildOrderInsertFromQuote(quote, orderId) {
     broker_company:     quote.broker_company || "",
     customer_id:        quote.customer_id,
     customer_name:      quote.customer_name,
+    // Denormalize company so order surfaces render company-first (matches the
+    // frontend buildOrderFromQuote). See feedback_company_name_first.
+    company:            quote.company || "",
     broker_client_name: isBroker ? (quote.customer_name || "") : "",
     job_title:          quote.job_title || "",
     date:               quote.date,

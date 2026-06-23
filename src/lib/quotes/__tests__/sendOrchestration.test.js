@@ -6,7 +6,46 @@ import {
   nextStatusOnSend,
   buildSendQuoteEmailRequest,
   buildPostSendQuotePatch,
+  extractProofImageUrls,
 } from "../sendOrchestration.js";
+
+describe("extractProofImageUrls", () => {
+  const base = "https://x.supabase.co/storage/v1/object/public/artwork";
+  it("returns [] when no artwork", () => {
+    expect(extractProofImageUrls({})).toEqual([]);
+    expect(extractProofImageUrls({ selected_artwork: null })).toEqual([]);
+  });
+  it("keeps image urls, drops PDFs and non-https", () => {
+    const out = extractProofImageUrls({
+      selected_artwork: [
+        { url: `${base}/a.png`, name: "Front" },
+        { url: `${base}/b.pdf`, name: "Spec" },        // pdf dropped
+        { file_url: `${base}/c.jpg` },                  // file_url fallback
+        { url: "http://insecure/d.png" },               // non-https dropped
+        { url: "javascript:alert(1)" },                 // dropped
+      ],
+    });
+    expect(out).toEqual([
+      { url: `${base}/a.png`, name: "Front" },
+      { url: `${base}/c.jpg`, name: "Art proof" },
+    ]);
+  });
+  it("caps at 6", () => {
+    const many = Array.from({ length: 9 }, (_, i) => ({ url: `${base}/${i}.png` }));
+    expect(extractProofImageUrls({ selected_artwork: many })).toHaveLength(6);
+  });
+  it("buildSendQuoteEmailRequest includes proofImages", () => {
+    const req = buildSendQuoteEmailRequest({
+      quote: { quote_id: "Q1", selected_artwork: [{ url: `${base}/a.png`, name: "Front" }] },
+      recipients: ["c@x.test"],
+      taggedSubject: "s",
+      body: "b",
+      paymentLink: "https://pay",
+      shopName: "Shop",
+    });
+    expect(req.proofImages).toEqual([{ url: `${base}/a.png`, name: "Front" }]);
+  });
+});
 
 // ─────────────────────────────────────────────────────────────────────
 // parseRecipients
@@ -431,5 +470,28 @@ describe("buildPostSendQuotePatch (P1–P7)", () => {
     expect(patch.subtotal).toBe(null);
     expect(patch.tax).toBe(null);
     expect(patch.total).toBe(null);
+  });
+});
+
+describe("extractProofImageUrls — edge cases", () => {
+  const base = "https://x.supabase.co/storage/v1/object/public/artwork";
+  it("accepts uppercase extensions and ignores query strings", () => {
+    const out = extractProofImageUrls({ selected_artwork: [
+      { url: `${base}/A.PNG` },
+      { url: `${base}/b.JPG?token=abc&v=2` },
+    ] });
+    expect(out.map((p) => p.url)).toEqual([`${base}/A.PNG`, `${base}/b.JPG?token=abc&v=2`]);
+  });
+  it("excludes SVG and other non-raster types", () => {
+    expect(extractProofImageUrls({ selected_artwork: [{ url: `${base}/logo.svg` }] })).toEqual([]);
+    expect(extractProofImageUrls({ selected_artwork: [{ url: `${base}/doc.pdf` }] })).toEqual([]);
+  });
+  it("skips items with no usable url and non-string urls", () => {
+    const out = extractProofImageUrls({ selected_artwork: [
+      { name: "no url" },
+      { url: 12345 },
+      { url: `${base}/ok.png`, name: "Front" },
+    ] });
+    expect(out).toEqual([{ url: `${base}/ok.png`, name: "Front" }]);
   });
 });

@@ -65,6 +65,10 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now() } 
     broker_company: q.broker_company || "",
     customer_id: q.customer_id,
     customer_name: brokerOrder ? brokerDisplayName : q.customer_name,
+    // Denormalize the customer's company so order surfaces (status page, art
+    // approval, broker views) can render company-first without a customer
+    // lookup — matching how quotes carry it. See feedback_company_name_first.
+    company: q.company || "",
     customer_email: q.customer_email || "",
     broker_client_name: brokerOrder ? brokerClientName : "",
     job_title: q.job_title || "",

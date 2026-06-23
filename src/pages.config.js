@@ -1,35 +1,42 @@
-import Account from './pages/Account';
-import BrokerDashboard from './pages/BrokerDashboard';
-// Shop pages for shared routes (Customers, Orders, Invoices,
-// Performance, Quotes) are imported inside their *Route dispatchers
-// — not here — so this file stays focused on the route → component
-// map. Dashboard, Embed, Inventory, etc. are still imported below
-// because they aren't behind a dispatcher.
-import Dashboard from './pages/Dashboard';
-import Embed from './pages/Embed';
-import Inventory from './pages/Inventory';
-import QuotePayment from './pages/QuotePayment';
-import QuotePaymentCancel from './pages/QuotePaymentCancel';
-import QuotePaymentSuccess from './pages/QuotePaymentSuccess';
-import QuoteRequest from './pages/QuoteRequest';
-import ResetPassword from './pages/ResetPassword';
-import Wizard from './pages/Wizard';
-import AdminPanel from './pages/AdminPanel';
-import ArtApproval from './pages/ArtApproval';
-import OrderStatus from './pages/OrderStatus';
-import BrokerOnboarding from './pages/BrokerOnboarding';
-import EmployeeOnboarding from './pages/EmployeeOnboarding';
-import ManagerOnboarding from './pages/ManagerOnboarding';
-import QuotesRoute from './pages/QuotesRoute';
-import OrdersRoute from './pages/OrdersRoute';
-import CustomersRoute from './pages/CustomersRoute';
-import InvoicesRoute from './pages/InvoicesRoute';
-import PerformanceRoute from './pages/PerformanceRoute';
-import Mockups from './pages/Mockups';
-import Production from './pages/Production';
-import PurchaseOrders from './pages/PurchaseOrders';
-import ShopFloor from './pages/ShopFloor';
+import { lazy } from 'react';
 import __Layout from './Layout.jsx';
+
+// Route components are lazy-loaded so the initial bundle ships only the shell
+// (Layout + AuthContext + the landing/login path). Each page — and its heavy
+// deps like recharts on Performance — splits into its own chunk fetched on
+// navigation. Layout itself stays eager: it's the persistent shell and must
+// never flash a Suspense fallback. See the perf analysis (route-level
+// code-splitting, fix #1).
+//
+// `React.lazy` requires a default export from each module (all pages have one).
+// The Suspense boundary lives inside LayoutWrapper in App.jsx, so the sidebar
+// stays mounted and only the content area shows the loader while a chunk loads.
+const Account = lazy(() => import('./pages/Account'));
+const BrokerDashboard = lazy(() => import('./pages/BrokerDashboard'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Embed = lazy(() => import('./pages/Embed'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const QuotePayment = lazy(() => import('./pages/QuotePayment'));
+const QuotePaymentCancel = lazy(() => import('./pages/QuotePaymentCancel'));
+const QuotePaymentSuccess = lazy(() => import('./pages/QuotePaymentSuccess'));
+const QuoteRequest = lazy(() => import('./pages/QuoteRequest'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const Wizard = lazy(() => import('./pages/Wizard'));
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const ArtApproval = lazy(() => import('./pages/ArtApproval'));
+const OrderStatus = lazy(() => import('./pages/OrderStatus'));
+const BrokerOnboarding = lazy(() => import('./pages/BrokerOnboarding'));
+const EmployeeOnboarding = lazy(() => import('./pages/EmployeeOnboarding'));
+const ManagerOnboarding = lazy(() => import('./pages/ManagerOnboarding'));
+const QuotesRoute = lazy(() => import('./pages/QuotesRoute'));
+const OrdersRoute = lazy(() => import('./pages/OrdersRoute'));
+const CustomersRoute = lazy(() => import('./pages/CustomersRoute'));
+const InvoicesRoute = lazy(() => import('./pages/InvoicesRoute'));
+const PerformanceRoute = lazy(() => import('./pages/PerformanceRoute'));
+const Mockups = lazy(() => import('./pages/Mockups'));
+const Production = lazy(() => import('./pages/Production'));
+const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
+const ShopFloor = lazy(() => import('./pages/ShopFloor'));
 
 export const PAGES = {
     "Account": Account,

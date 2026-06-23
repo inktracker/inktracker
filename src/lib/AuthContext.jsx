@@ -5,6 +5,7 @@ import { loadShopTimezone } from "@/lib/shopTimezone";
 import { loadShopProductionTasks } from "@/lib/productionTasks";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
 import { setSentryUser, clearSentryUser } from "@/lib/sentry";
+import { clearMetricsCache } from "@/lib/qbMetricsCache";
 import { checkLocalTrustedDevice } from "@/lib/mfa";
 import {
   isMfaSessionVerified,
@@ -116,6 +117,9 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     setNeedsMfaChallenge(false);
     clearAllMfaSessionFlags();
+    // Clear cached shop financials so they don't sit in localStorage for the
+    // next person on a shared back-office machine.
+    clearMetricsCache();
     setAuthError({ type: "auth_required", message: "Authentication required" });
     clearSentryUser();
   }, []);
@@ -229,6 +233,7 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     setNeedsMfaChallenge(false);
     clearAllMfaSessionFlags();
+    clearMetricsCache();
     setAuthError({ type: "auth_required", message: "Authentication required" });
     await supabase.auth.signOut();
     if (shouldRedirect) window.location.href = "/";

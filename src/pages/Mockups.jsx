@@ -4,7 +4,7 @@ import MockupCanvas from "../components/mockups/MockupCanvas";
 import { base44 } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
-import { getShopPricingConfig } from "../components/shared/pricing";
+import { getShopPricingConfig, getDisplayName } from "../components/shared/pricing";
 import { shopScope } from "@/lib/shopScope";
 // jspdf loaded on demand inside generateProofPDF below
 
@@ -31,6 +31,9 @@ export default function Mockups() {
   // Declined/Voided don't need proofs).
   const [orders, setOrders] = useState([]);
   const [quotes, setQuotes] = useState([]);
+  // id → customer, so the picker can show COMPANY first (orders carry no
+  // denormalized company; we resolve it from the customer record).
+  const [customersById, setCustomersById] = useState({});
   // Composite selection key: "order:<uuid>" or "quote:<uuid>". Empty
   // string = standalone (no link).
   const [selectedTargetKey, setSelectedTargetKey] = useState("");
@@ -68,16 +71,18 @@ export default function Mockups() {
         const me = await base44.auth.me();
         if (!me?.email || cancelled) return;
         setUser(me);
-        const [ordersRes, quotesRes, shopsRes] = await Promise.all([
+        const [ordersRes, quotesRes, shopsRes, customersRes] = await Promise.all([
           base44.entities.Order.filter({ shop_owner: shopScope(me) }, "-created_date", 200),
           base44.entities.Quote.filter({ shop_owner: shopScope(me) }, "-created_date", 200),
           base44.entities.Shop.filter({ owner_email: me.email }),
+          base44.entities.Customer.filter({ shop_owner: shopScope(me) }, "", 1000),
         ]);
         if (cancelled) return;
         setOrders((ordersRes || []).filter(o => o.status !== "Completed"));
         const TERMINAL_QUOTE_STATUSES = new Set(["Converted to Order", "Declined", "Voided"]);
         setQuotes((quotesRes || []).filter(q => !TERMINAL_QUOTE_STATUSES.has(q.status)));
         setShop((shopsRes || [])[0] || null);
+        setCustomersById(Object.fromEntries((customersRes || []).map((c) => [c.id, c])));
       } catch {
         // Best-effort — the rest of the page still works without the picker.
       }
@@ -784,7 +789,7 @@ export default function Mockups() {
                   <optgroup label="Orders">
                     {orders.map(o => (
                       <option key={o.id} value={`order:${o.id}`}>
-                        {(o.order_id || o.quote_id || o.id.slice(0, 8))} · {o.customer_name || "Unknown"}
+                        {(o.order_id || o.quote_id || o.id.slice(0, 8))} · {(customersById[o.customer_id] ? getDisplayName(customersById[o.customer_id]) : (o.company || o.customer_name)) || "Unknown"}
                         {o.status ? ` · ${o.status}` : ""}
                       </option>
                     ))}
@@ -794,7 +799,7 @@ export default function Mockups() {
                   <optgroup label="Quotes">
                     {quotes.map(q => (
                       <option key={q.id} value={`quote:${q.id}`}>
-                        {(q.quote_id || q.id.slice(0, 8))} · {q.customer_name || "Unknown"}
+                        {(q.quote_id || q.id.slice(0, 8))} · {(customersById[q.customer_id] ? getDisplayName(customersById[q.customer_id]) : (q.company || q.customer_name)) || "Unknown"}
                         {q.status ? ` · ${q.status}` : ""}
                       </option>
                     ))}

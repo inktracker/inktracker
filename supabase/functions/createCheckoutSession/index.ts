@@ -10,6 +10,32 @@ import {
   buildArtworkApprovalEmail,
   sendAndLogApprovalNotification,
 } from "../_shared/approvalNotificationEmail.js";
+import { toCustomerFacingQuote } from "../_shared/customerFacingQuote.js";
+import { insertShopNotification } from "../_shared/notifications.js";
+
+// The quote/customer rows returned to the UNauthenticated payment page must
+// not leak broker wholesale pricing or shop-internal customer PII. We:
+//   • run the quote through toCustomerFacingQuote (overwrites broker-side
+//     subtotal/total/_ppp with the client-facing values) and drop the
+//     public_token from the response body, and
+//   • return only an allowlist of customer fields the page actually uses.
+function publicSafeQuote(quote: any) {
+  if (!quote) return quote;
+  const safe = toCustomerFacingQuote(quote);
+  // Don't echo the secret token back in the response body.
+  const { public_token: _drop, ...rest } = safe;
+  return rest;
+}
+
+const PUBLIC_CUSTOMER_FIELDS = ["name", "company", "email", "default_deposit_pct"];
+function publicSafeCustomer(customer: any) {
+  if (!customer) return customer;
+  const out: Record<string, any> = {};
+  for (const k of PUBLIC_CUSTOMER_FIELDS) {
+    if (customer[k] !== undefined) out[k] = customer[k];
+  }
+  return out;
+}
 
 const STRIPE_SECRET_KEY    = Deno.env.get("STRIPE_SECRET_KEY") ?? "";
 const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;
@@ -31,6 +57,34 @@ function safeEquals(a: string, b: string): boolean {
   let mismatch = 0;
   for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return mismatch === 0;
+}
+
+// The shops table only carries shop_name + stripe_account_*. The shop's brand
+// + contact fields (logo_url, phone, email, address, city, state, zip, website)
+// all live on profiles. Selecting any of those from shops errors (42703) and,
+// because the error is swallowed, silently nulls the WHOLE shop object — which
+// is why customer quote/order pages fell back to the "Shop"/"S" placeholder.
+// This merges the owner's profile fields onto the shop row.
+async function withOwnerProfile(supabase: any, shop: any, ownerEmail: string) {
+  if (!shop) return shop;
+  const { data: prof } = await supabase
+    .from("profiles")
+    .select("logo_url, phone, email, address, city, state, zip, website, shop_name")
+    .eq("email", ownerEmail)
+    .maybeSingle();
+  if (!prof) return shop;
+  return {
+    ...shop,
+    shop_name: shop.shop_name || prof.shop_name || "",
+    logo_url: prof.logo_url ?? null,
+    phone: prof.phone ?? null,
+    email: prof.email ?? null,
+    address: prof.address ?? null,
+    city: prof.city ?? null,
+    state: prof.state ?? null,
+    zip: prof.zip ?? null,
+    website: prof.website ?? null,
+  };
 }
 
 // ── getQuote ─────────────────────────────────────────────────────────────────
@@ -58,11 +112,11 @@ async function handleGetQuote(quoteId: string, token?: string) {
   // won't leak unless they're added here intentionally.
   const { data: shops } = await supabase
     .from("shops")
-    .select("owner_email, shop_name, logo_url, phone, email, address, city, state, zip, website, terms_and_conditions, stripe_account_id, stripe_account_status")
+    .select("owner_email, shop_name, stripe_account_id, stripe_account_status")
     .eq("owner_email", quote.shop_owner)
     .limit(1);
 
-  const shop = shops?.[0] ?? null;
+  const shop = await withOwnerProfile(supabase, shops?.[0] ?? null, quote.shop_owner);
 
   let customer = null;
   if (quote.customer_id) {
@@ -74,7 +128,7 @@ async function handleGetQuote(quoteId: string, token?: string) {
     customer = c ?? null;
   }
 
-  return { quote, shop, customer };
+  return { quote: publicSafeQuote(quote), shop, customer: publicSafeCustomer(customer) };
 }
 
 // ── approveQuote ─────────────────────────────────────────────────────────────
@@ -99,9 +153,14 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // first select was just for the token verification.
   const { data: pre } = await supabase
     .from("quotes")
-    .select("broker_id, broker_email")
+    .select("broker_id, broker_email, status, client_status")
     .eq("id", quoteId)
     .single();
+
+  // Only the FIRST approve transition should send an email. Re-clicking the
+  // emailed link (or a script looping the action) must NOT re-fire notifications
+  // — otherwise it's an email-bomb vector from the verified domain.
+  const alreadyApproved = pre?.status === "Approved" || pre?.status === "Client Approved" || pre?.client_status === "Approved";
 
   // Broker quotes follow client-first workflow: the customer clicking
   // Approve is the broker's END CLIENT, NOT the shop. Setting status
@@ -136,11 +195,11 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // won't leak unless they're added here intentionally.
   const { data: shops } = await supabase
     .from("shops")
-    .select("owner_email, shop_name, logo_url, phone, email, address, city, state, zip, website, terms_and_conditions, stripe_account_id, stripe_account_status")
+    .select("owner_email, shop_name, stripe_account_id, stripe_account_status")
     .eq("owner_email", quote.shop_owner)
     .limit(1);
 
-  const shop = shops?.[0] ?? null;
+  const shop = await withOwnerProfile(supabase, shops?.[0] ?? null, quote.shop_owner);
 
   let customer = null;
   if (quote.customer_id) {
@@ -163,6 +222,30 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // chooseQuoteApprovalRecipient encodes that decision and is
   // unit-tested separately.
   try {
+    if (alreadyApproved) {
+      // Re-approval (link re-clicked / replayed) — already notified; skip.
+    } else {
+    // In-app bell notification for the shop owner — DIRECT shop quotes only.
+    // Broker quotes go to "Client Approved" and route to the broker's own feed
+    // (the shop isn't involved until the broker hits "Submit to Shop"), so no
+    // shop-owner bell here. Best-effort; never blocks the approval response.
+    if (!isBrokerQuote) {
+      await insertShopNotification(supabase, {
+        shopOwner: quote.shop_owner,
+        eventType: "quote_approved",
+        severity: "info",
+        title: "Quote approved",
+        body: `${quote.customer_name || "A customer"} approved quote ${quote.quote_id || ""}.`.replace(/\s+/g, " ").trim(),
+        relatedEntity: "quote",
+        relatedId: quote.id,
+        metadata: { quote_id: quote.quote_id },
+      });
+    }
+    // Rate-limit backstop: at most 5 approval emails/hour per quote.
+    const { data: underLimit } = await supabase.rpc("check_request_rate", {
+      p_key: `approve_quote:${quoteId}`, p_limit_per_hr: 5,
+    });
+    if (underLimit !== false) {
     const recipient = chooseQuoteApprovalRecipient(quote);
     const email = recipient ? buildQuoteApprovalEmail({ quote, shop, customer, recipient }) : null;
     // sendAndLog handles the "no recipient" case by logging a
@@ -179,11 +262,13 @@ async function handleApproveQuote(quoteId: string, token?: string) {
       html:     email?.html,
       reply_to: email?.reply_to,
     });
+    } // end rate-limit gate
+    } // end !alreadyApproved gate
   } catch (notifyErr) {
     console.error("[approveQuote] notification build/send failed:", notifyErr);
   }
 
-  return { quote, shop, customer };
+  return { quote: publicSafeQuote(quote), shop, customer: publicSafeCustomer(customer) };
 }
 
 // ── getOrder ──────────────────────────────────────────────────────────────────
@@ -213,11 +298,11 @@ async function handleGetOrder(orderId: string, token?: string) {
 
   const { data: shops } = await supabase
     .from("shops")
-    .select("shop_name,logo_url,phone,email")
+    .select("shop_name")
     .eq("owner_email", order.shop_owner)
     .limit(1);
 
-  const shop = shops?.[0] ?? null;
+  const shop = await withOwnerProfile(supabase, shops?.[0] ?? null, order.shop_owner);
   return { order, shop };
 }
 
@@ -229,13 +314,15 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
   // Token gate before write.
   const { data: existing } = await supabase
     .from("orders")
-    .select("public_token")
+    .select("public_token, art_approved")
     .eq("id", orderId)
     .single();
 
   if (!existing?.public_token || !token || !safeEquals(token, existing.public_token)) {
     return { error: "Order not found." };
   }
+  // Only the first approval transition notifies — replays must not re-email.
+  const alreadyApproved = existing.art_approved === true;
 
   const { data: order, error } = await supabase
     .from("orders")
@@ -253,6 +340,13 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
   // Best-effort notification. Mirrors the quote-approval pattern;
   // see the comment on handleApproveQuote for rationale.
   try {
+    if (alreadyApproved) {
+      // already notified on first approval — skip
+    } else {
+    const { data: underLimit } = await supabase.rpc("check_request_rate", {
+      p_key: `approve_artwork:${orderId}`, p_limit_per_hr: 5,
+    });
+    if (underLimit !== false) {
     const recipient = chooseArtworkApprovalRecipient(order);
     let email: any = null;
     if (recipient) {
@@ -276,6 +370,8 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
       html:     email?.html,
       reply_to: email?.reply_to,
     });
+    } // end rate-limit gate
+    } // end !alreadyApproved gate
   } catch (notifyErr) {
     console.error("[approveArtwork] notification build/send failed:", notifyErr);
   }
@@ -295,7 +391,7 @@ async function handleCreateSession(params: any) {
   // create Stripe checkout sessions for any quote ID.
   const { data: existing } = await supabase
     .from("quotes")
-    .select("public_token, shop_owner")
+    .select("public_token, shop_owner, quote_id, total, client_total, deposit_pct, customer_id")
     .eq("id", params.quoteId)
     .single();
   if (!existing?.public_token || !params.token || !safeEquals(params.token, existing.public_token)) {
@@ -318,8 +414,27 @@ async function handleCreateSession(params: any) {
     };
   }
 
+  // Compute the charge amount SERVER-SIDE from the saved quote. Never trust the
+  // client's lineItems/unit_amount/amountPaid — otherwise a token-holder could
+  // pay $1 for a $600 quote. The customer-facing total is client_total for
+  // broker quotes (falls back to total). Deposit % comes from the customer
+  // record (preferred) or the quote, mirroring the QuotePayment page math.
+  const fullCents = Math.round(Number(existing.client_total ?? existing.total ?? 0) * 100);
+  let depositPct = Number(existing.deposit_pct) || 0;
+  if (params.isDeposit && existing.customer_id) {
+    const { data: cust } = await supabase
+      .from("customers").select("default_deposit_pct").eq("id", existing.customer_id).maybeSingle();
+    if (cust?.default_deposit_pct != null) depositPct = Number(cust.default_deposit_pct) || 0;
+  }
+  const chargeCents = params.isDeposit ? Math.round(fullCents * (depositPct / 100)) : fullCents;
+  if (!Number.isFinite(chargeCents) || chargeCents <= 0) {
+    return { error: "Nothing to charge on this quote." };
+  }
+  const chargeLabel = `Quote ${existing.quote_id || params.quoteId}${params.isDeposit ? ` — ${depositPct}% deposit` : ""}`;
+  const amountDollars = (chargeCents / 100).toFixed(2);
+
   const origin = params.origin ?? "https://www.inktracker.app";
-  const successUrl = `${origin}/quotepaymentSuccess?session_id={CHECKOUT_SESSION_ID}&quote_id=${params.quoteId}&is_deposit=${params.isDeposit ? "1" : "0"}&amount=${params.amountPaid || 0}&shop_owner=${encodeURIComponent(params.shopOwnerEmail || "")}`;
+  const successUrl = `${origin}/quotepaymentSuccess?session_id={CHECKOUT_SESSION_ID}&quote_id=${params.quoteId}&is_deposit=${params.isDeposit ? "1" : "0"}&amount=${amountDollars}&shop_owner=${encodeURIComponent(params.shopOwnerEmail || "")}`;
   // Carry quote_id + token so the cancel page can offer "Return to Quote".
   // Without the token, /quotepayment refuses to load (security gate), so a
   // customer who hits cancel would otherwise land on a dead end.
@@ -329,14 +444,17 @@ async function handleCreateSession(params: any) {
     {
       mode: "payment",
       customer_email: params.customerEmail || undefined,
-      line_items: (params.lineItems ?? []).map((li: any) => ({
+      // Single server-computed line. We deliberately ignore params.lineItems —
+      // the amount is derived from the saved quote above so the client can't
+      // tamper with what they're charged.
+      line_items: [{
         price_data: {
           currency: "usd",
-          unit_amount: li.unit_amount,
-          product_data: { name: li.name, description: li.description ?? undefined },
+          unit_amount: chargeCents,
+          product_data: { name: chargeLabel },
         },
-        quantity: li.quantity ?? 1,
-      })),
+        quantity: 1,
+      }],
       success_url: successUrl,
       cancel_url:  cancelUrl,
       metadata: {

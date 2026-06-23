@@ -102,7 +102,9 @@ async function refreshToken(refreshTok: string) {
   const fresh = await res.json();
   const check = validateQbTokenResponse(fresh);
   if (!check.ok) {
-    console.error(`[qbSync] Token refresh returned malformed body (${check.reason}):`, fresh);
+    // Log only the shape, never the values — `fresh` can carry a live
+    // access/refresh token even when "malformed" (e.g. missing expires_in).
+    console.error(`[qbSync] Token refresh returned malformed body (${check.reason}); keys:`, fresh && typeof fresh === "object" ? Object.keys(fresh) : typeof fresh);
     throw new UserFacingError(
       USER_FACING_CODES.QB_MALFORMED_TOKEN,
       "QuickBooks token refresh returned an unexpected response. Please reconnect in Account settings.",
@@ -489,8 +491,35 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
   // Create customer if not found
   if (!qbCustomerId) {
     const newCustomer = buildQBCustomerBody(customer, displayName);
-    const created = await qbCreate(token, realmId, "customer", newCustomer);
-    qbCustomerId = created?.Customer?.Id;
+    try {
+      const created = await qbCreate(token, realmId, "customer", newCustomer);
+      qbCustomerId = created?.Customer?.Id;
+    } catch (createErr: any) {
+      // Safety net: a single QB-rejected field on the customer must never
+      // block the entire invoice. QBO's customer validation is fussy and
+      // varies by company config (Automated Sales Tax, locale, etc.) — e.g.
+      // it rejects customer-level Taxable in AST files, and has rejected
+      // odd ResaleNum/Notes values. Rather than fail the whole "Create QB
+      // Invoice & Send Quote" flow, retry once with the bare-minimum
+      // identity fields (name + email), which QB always accepts. The
+      // invoice's own line-level tax codes still produce the correct total.
+      const msg = String(createErr?.message || "");
+      const isValidation = msg.includes(" 400 ") || /ValidationFault|Business Validation|2030|6240/i.test(msg);
+      if (!isValidation) throw createErr;
+      const minimalCustomer: any = {
+        DisplayName: displayName,
+        PrintOnCheckName: customer?.company || customer?.name || displayName,
+      };
+      if (customer?.company) minimalCustomer.CompanyName = customer.company;
+      if (customer?.name)    minimalCustomer.GivenName   = customer.name;
+      if (isLikelyEmail(customer?.email)) minimalCustomer.PrimaryEmailAddr = { Address: customer.email.trim() };
+      console.error(
+        `[QB] customer create rejected (${msg}); retrying with minimal identity body ` +
+        `for DisplayName="${displayName}". Dropped optional fields (notes/phone/address/tax).`,
+      );
+      const created = await qbCreate(token, realmId, "customer", minimalCustomer);
+      qbCustomerId = created?.Customer?.Id;
+    }
   }
 
   // Save QB customer ID back to InkTracker
@@ -634,15 +663,22 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
 
   // Tax handling: let QB auto-calculate tax using its own tax codes/rates.
   const taxPercent = parseFloat(invoicePayload?.taxPercent) || 0;
-  const taxCode = (isTaxExempt || taxPercent === 0) ? "NON" : "TAX";
 
+  // Per-line tax: garments + setup + taxable fees → TAX; non-taxable fees
+  // (e.g. shipping) → NON. Tax-exempt customers or a 0% rate force NON on all.
+  // Strip the transient _taxable/_isFee hints (set by buildInvoiceLinesFromPayload)
+  // so they never reach QuickBooks.
   lines.forEach((l: any) => {
     if (l.SalesItemLineDetail) {
-      l.SalesItemLineDetail.TaxCodeRef = { value: taxCode };
+      const lineTaxable = l._taxable !== false;
+      const code = (isTaxExempt || taxPercent === 0 || !lineTaxable) ? "NON" : "TAX";
+      l.SalesItemLineDetail.TaxCodeRef = { value: code };
     }
+    delete l._taxable;
+    delete l._isFee;
   });
 
-  console.error(`[createInvoice] Tax: rate=${taxPercent}%, taxCode=${taxCode}, isTaxExempt=${isTaxExempt}`);
+  console.error(`[createInvoice] Tax: rate=${taxPercent}%, isTaxExempt=${isTaxExempt}, lines=${lines.length}`);
 
   let created: any;
   let qbInvoiceId: string = quote.qb_invoice_id || "";
@@ -869,11 +905,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // in the Supabase function logs. Tax drift alone is informational
   // (QB's tax setup is authoritative). Pure helper + tests live in
   // ../_shared/qbWriteContracts.js.
-  const sentSubtotalForReconcile = lines.reduce(
-    (s: number, l: any) => s + (Number(l?.Amount) || 0),
+  // Expected tax applies only to TAX-coded lines (non-taxable shipping etc.
+  // are excluded), matching how QB itself computes it.
+  const taxableSubtotalForReconcile = lines.reduce(
+    (s: number, l: any) =>
+      s + (l?.SalesItemLineDetail?.TaxCodeRef?.value === "TAX" ? (Number(l?.Amount) || 0) : 0),
     0,
   );
-  const expectedTax = Number((sentSubtotalForReconcile * (taxPercent / 100)).toFixed(2));
+  const expectedTax = Number((taxableSubtotalForReconcile * (taxPercent / 100)).toFixed(2));
   const reconciliation = reconcileQbInvoice({
     sentLines: lines,
     sentTax: expectedTax,
@@ -1781,6 +1820,26 @@ Deno.serve(async (req) => {
       const shopOwnerEmail = shopProfile?.shop_owner || shopProfile?.email || user.email || "";
       const result = await handleGetQbEvents(adminClient, params?.quote_id, shopOwnerEmail, params?.limit);
       return Response.json({ success: true, ...result }, { headers: CORS });
+    }
+
+    // Read-only: list the shop's active QB product/service items so the Account
+    // UI can map InkTracker garment categories to the shop's real items. No
+    // subscription gate — it's a read, not a billable QB write.
+    if (action === "listQbItems") {
+      try {
+        const { accessToken, realmId } = await getValidTokens(supabase, user.id, user.email ?? null);
+        const res = await qbQuery(accessToken, realmId, "SELECT Id, Name FROM Item WHERE Active = true MAXRESULTS 1000");
+        const items = (res?.QueryResponse?.Item ?? [])
+          .map((i: any) => ({ id: String(i.Id), name: i.Name }))
+          .filter((i: any) => i.name)
+          .sort((a: any, b: any) => a.name.localeCompare(b.name));
+        return Response.json({ success: true, items }, { headers: CORS });
+      } catch (err) {
+        return Response.json(
+          { success: false, error: (err as Error)?.message || "Failed to list QuickBooks items" },
+          { headers: CORS },
+        );
+      }
     }
 
     if (action === "disconnect") {

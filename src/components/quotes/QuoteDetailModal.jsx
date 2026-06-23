@@ -4,6 +4,7 @@ import {
   calcQuoteTotals,
   calcLinkedLinePrice,
   buildLinkedQtyMap,
+  getLineExtras,
   buildQBInvoicePayload,
   fmtDate,
   fmtMoney,
@@ -15,6 +16,9 @@ import {
   STANDARD_MARKUP,
 } from "../shared/pricing";
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
+import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { isQbStale } from "@/lib/quotes/qbStale";
+import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -118,7 +122,7 @@ function getLinePrice(li, quote) {
     return { sub: override * qty, ppp: override, gCost: 0, printCost: 0, rushFee: 0, tier: getTier(qty), garment: 0, imprint: 0, overridden: true };
   }
 
-  const r = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, markup, linkedQtyMap);
+  const r = calcLinkedLinePrice(li, quote.rush_rate, getLineExtras(li, quote), markup, linkedQtyMap);
   if (!r) return null;
   return { ...r, garment: r.gCost, imprint: r.printCost };
 }
@@ -449,6 +453,9 @@ export default function QuoteDetailModal({
       }
       await base44.entities.Quote.update(quote.id, { selected_artwork: newArtwork });
       setLocalArtwork(newArtwork);
+      // Propagate to the parent list so reopening the modal doesn't re-seed
+      // from a stale quote object (the "removed attachment comes back" bug).
+      onUpdated?.({ ...quote, selected_artwork: newArtwork });
     } catch (err) {
       setUploadError(err?.message || "Upload failed.");
     } finally {
@@ -458,9 +465,14 @@ export default function QuoteDetailModal({
   }
 
   async function removeArtwork(artId) {
-    const newArtwork = localArtwork.filter((a) => a.id !== artId);
+    // Match the same key collectAttachments/removableIds use (id, then url /
+    // file_url / name) so items stored without an `id` still remove cleanly.
+    const newArtwork = localArtwork.filter((a) => (a.id || a.url || a.file_url || a.name) !== artId);
     await base44.entities.Quote.update(quote.id, { selected_artwork: newArtwork });
     setLocalArtwork(newArtwork);
+    // Keep the parent list in sync — otherwise reopening re-seeds localArtwork
+    // from the stale quote and the removed attachment reappears.
+    onUpdated?.({ ...quote, selected_artwork: newArtwork });
   }
 
   async function callAction(fn, ...args) {
@@ -707,7 +719,7 @@ export default function QuoteDetailModal({
         sub: Number(quote.subtotal),
         subtotal: Number(quote.subtotal) - (Number(quote.rushTotal) || 0),
         rushTotal: Number(quote.rushTotal) || 0,
-        afterDisc: Number(quote.total) - Number(quote.tax || 0),
+        afterDisc: savedAfterDiscount(quote),
         tax: Number(quote.tax || 0),
         total: Number(quote.total),
       };
@@ -960,7 +972,7 @@ export default function QuoteDetailModal({
                                             {imp.colors && <span>Colors: {imp.colors}</span>}
                                             {imp.pantones && (
                                               <span className="font-medium text-teal-600">
-                                                Pantones: {imp.pantones}
+                                                Ink Colors: {imp.pantones}
                                               </span>
                                             )}
                                             {imp.details && (
@@ -1066,10 +1078,32 @@ export default function QuoteDetailModal({
                     );
                   })()}
 
+                  {/* Setup / screen fees + one-off additional fees, itemized so
+                      the total isn't an unexplained jump. Read from the saved
+                      snapshot fields. */}
+                  {(parseFloat(quote.setup_total) || 0) > 0 && (
+                    <div className="flex justify-between text-sm text-slate-500">
+                      <span>Setup &amp; Screen Fees</span>
+                      <span>{fmtMoney(Number(quote.setup_total))}</span>
+                    </div>
+                  )}
+                  {normalizeAdditionalCharges(quote.additional_charges).map((c) => (
+                    <div key={c.id || c.label} className="flex justify-between text-sm text-slate-500">
+                      <span>{c.label || "Additional fee"}</span>
+                      <span>{fmtMoney(c.amount)}</span>
+                    </div>
+                  ))}
+
                   {(() => {
-                    const hasQb = quote.qb_total != null && Number(quote.qb_tax_amount || 0) > 0;
-                    const taxVal = hasQb ? Number(quote.qb_tax_amount) : totals.tax;
-                    const totalVal = hasQb ? Number(quote.qb_total) : totals.total;
+                    // If the quote was edited after the QB invoice was created
+                    // (e.g. a fee added), qb_total is stale — trust the quote's
+                    // real saved total instead, and warn the shop to regenerate.
+                    const stale = isQbStale(quote);
+                    const hasQb = quote.qb_total != null && Number(quote.qb_tax_amount || 0) > 0 && !stale;
+                    const savedTotal = quote.total != null ? Number(quote.total) : totals.total;
+                    const savedTax = quote.tax != null ? Number(quote.tax) : totals.tax;
+                    const taxVal = hasQb ? Number(quote.qb_tax_amount) : savedTax;
+                    const totalVal = hasQb ? Number(quote.qb_total) : savedTotal;
                     return (
                       <>
                         <div className="flex justify-between text-sm text-slate-500">
@@ -1080,9 +1114,17 @@ export default function QuoteDetailModal({
                           <span>{hasQb ? "Total" : "Est. Total"}</span>
                           <span className="text-xl">{fmtMoney(totalVal)}</span>
                         </div>
-                        {!hasQb && (
+                        {!hasQb && !stale && (
                           <div className="text-[11px] text-slate-400 -mt-1">
                             Final tax calculated based on ship-to address at checkout.
+                          </div>
+                        )}
+                        {stale && (
+                          <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mt-1">
+                            This quote was edited after its QuickBooks invoice was created. The
+                            customer total shown is the updated amount ({fmtMoney(savedTotal)}); the
+                            QB invoice still has {fmtMoney(Number(quote.qb_total))}. Regenerate the QB
+                            invoice so the customer is charged the correct amount.
                           </div>
                         )}
                       </>

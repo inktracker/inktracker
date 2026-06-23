@@ -134,15 +134,21 @@ describe("buildQBCustomerBody", () => {
     expect(buildQBCustomerBody({},                                "Fallback").PrintOnCheckName).toBe("Fallback");
   });
 
-  it("sets Taxable=false + reason 16 when tax_exempt is truthy", () => {
+  it("never sends customer-level tax fields, even when tax_exempt is truthy", () => {
+    // Two QB gotchas: TaxExemptionReasonId's valid enum is 1–15 (we sent 16
+    // → 400 code 2030), AND in Automated-Sales-Tax companies customer-level
+    // Taxable is not API-settable and QB rejects it with a business-validation
+    // 400 that blocked creation for every exempt customer. Exemption is
+    // enforced on the invoice LINES (TaxCodeRef "NON") instead.
     const body = buildQBCustomerBody({ name: "Gov", tax_exempt: true }, "Gov");
-    expect(body.Taxable).toBe(false);
-    expect(body.TaxExemptionReasonId).toBe(16);
+    expect(body).not.toHaveProperty("Taxable");
+    expect(body).not.toHaveProperty("TaxExemptionReasonId");
   });
 
-  it("does NOT set Taxable when tax_exempt is false/missing", () => {
+  it("never sets Taxable regardless of tax_exempt flag", () => {
     expect(buildQBCustomerBody({ name: "John" }, "John")).not.toHaveProperty("Taxable");
     expect(buildQBCustomerBody({ name: "John", tax_exempt: false }, "John")).not.toHaveProperty("Taxable");
+    expect(buildQBCustomerBody({ name: "John", tax_exempt: true }, "John")).not.toHaveProperty("Taxable");
   });
 
   it("survives null/undefined customer without throwing", () => {
@@ -735,5 +741,58 @@ describe("resolveInvoiceCustomerFields", () => {
   it("never returns an empty customer_name", () => {
     expect(resolveInvoiceCustomerFields(null, null, "").customer_name).toBe("Unknown");
     expect(resolveInvoiceCustomerFields({ id: "c", name: "" }, null, "").customer_name).toBe("Unknown");
+  });
+});
+
+// ── per-line tax + fee handling (additional fees feature, 2026-06-15) ────────
+
+describe("buildInvoiceLinesFromPayload — per-line tax + fees", () => {
+  const itemIdMap = new Map([
+    ["Screen Printing", "1"],
+    ["Shipping", "2"],
+    ["Setup Fee", "3"],
+  ]);
+
+  it("non-taxable fee line gets NON; taxable lines get TAX", () => {
+    const payload = { lines: [
+      { description: "Tee", qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Printing", taxable: true },
+      { description: "Shipping", qty: 1, unitPrice: 15, amount: 15, itemName: "Shipping", taxable: false, isFee: true },
+    ], taxPercent: 8 };
+    const lines = buildInvoiceLinesFromPayload(payload, itemIdMap, "Screen Printing", false);
+    const tee = lines.find((l) => l.Description === "Tee");
+    const ship = lines.find((l) => l.Description === "Shipping");
+    expect(tee.SalesItemLineDetail.TaxCodeRef.value).toBe("TAX");
+    expect(ship.SalesItemLineDetail.TaxCodeRef.value).toBe("NON");
+  });
+
+  it("tax-exempt customer forces NON on every line", () => {
+    const payload = { lines: [
+      { description: "Tee", qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Printing", taxable: true },
+    ] };
+    const lines = buildInvoiceLinesFromPayload(payload, itemIdMap, "Screen Printing", true);
+    expect(lines[0].SalesItemLineDetail.TaxCodeRef.value).toBe("NON");
+  });
+
+  it("discount spreads over garment lines only, leaving fees untouched", () => {
+    const payload = { lines: [
+      { description: "Tee", qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Printing", taxable: true },
+      { description: "Shipping", qty: 1, unitPrice: 15, amount: 15, itemName: "Shipping", taxable: false, isFee: true },
+    ], discountPercent: 10 };
+    const lines = buildInvoiceLinesFromPayload(payload, itemIdMap, "Screen Printing", false);
+    const tee = lines.find((l) => l.Description.startsWith("Tee"));
+    const ship = lines.find((l) => l.Description === "Shipping");
+    expect(tee.Amount).toBeCloseTo(90, 2);
+    expect(ship.Amount).toBeCloseTo(15, 2);
+  });
+
+  it("strips transient _taxable/_isFee from emitted lines", () => {
+    const payload = { lines: [
+      { description: "Tee", qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Printing", taxable: true },
+    ] };
+    const lines = buildInvoiceLinesFromPayload(payload, itemIdMap, "Screen Printing", false);
+    // builder sets the hints; qbSync deletes them before send. The builder
+    // output carries them for qbSync to read — assert they exist here so the
+    // contract with qbSync is pinned.
+    expect(lines[0]).toHaveProperty("_taxable", true);
   });
 });

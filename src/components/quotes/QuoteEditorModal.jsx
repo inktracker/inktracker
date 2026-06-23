@@ -6,8 +6,10 @@ import {
   calcQuoteTotals,
   calcLinkedLinePrice,
   buildLinkedQtyMap,
+  getLineExtras,
   calcSetupFees,
   getShopPricingConfig,
+  loadShopPricingConfig,
   getQty,
   fmtMoney,
   tod,
@@ -17,7 +19,9 @@ import {
   getRushTiers,
   getRushRateForDaysOut,
 } from "../shared/pricing";
-import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
+import { buildAddonsByScope, getActiveAddonLabels } from "@/lib/pricing/extrasScopes";
+import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
 
@@ -30,7 +34,7 @@ const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 const DEFAULT_ADDONS = [
   { key: "tags",           label: "Custom Tags",      rate: 1.5, mode: "flat" },
   { key: "difficultPrint", label: "Difficult Print",  rate: 0.5, mode: "flat" },
-  { key: "colorMatch",     label: "Pantone Match",    rate: 1.0, mode: "flat" },
+  { key: "colorMatch",     label: "Ink Color Match",  rate: 1.0, mode: "flat" },
   { key: "waterbased",     label: "Water-Based Ink",  rate: 1.0, mode: "flat" },
 ];
 
@@ -39,7 +43,7 @@ const DEFAULT_ADDONS = [
 const DEFAULT_LABELS = {
   tags:           "Custom Tags",
   difficultPrint: "Difficult Print",
-  colorMatch:     "Pantone Match",
+  colorMatch:     "Ink Color Match",
   waterbased:     "Water-Based Ink",
 };
 
@@ -203,11 +207,25 @@ export default function QuoteEditorModal({
   const autoScreenCount = setupFees.enabled ? (
     Number.isInteger(q.setup_screens_override) ? q.setup_screens_override : setupFees.screens
   ) : 0;
-  // Tax base = (subtotal − discount) + setup. Discounts don't apply to
-  // setup (it's pass-through cost), but setup is part of the taxable sale.
-  const taxableBaseWithSetup = totals.afterDisc + setupFees.total;
-  const taxWithSetup = Math.round(taxableBaseWithSetup * ((parseFloat(q.tax_rate) || 0) / 100) * 100) / 100;
-  const totalWithSetup = Math.round((taxableBaseWithSetup + taxWithSetup) * 100) / 100;
+  // Additional fees — one-off named charges (shipping, rush, etc). Taxable
+  // charges join the taxed base; non-taxable charges are added after tax.
+  const addl = sumAdditionalCharges(q.additional_charges);
+  // Single rounding contract (shared with the save path) so the previewed
+  // total is exactly what gets stored and the column foots. Discounts apply to
+  // the line subtotal only; setup + taxable fees join the taxed base;
+  // non-taxable fees are added after tax.
+  const _rt = roundedQuoteTotals({
+    sub: totals.sub,
+    discount: q.discount,
+    discountType: q.discount_type,
+    setup: setupFees.total,
+    addlTaxable: addl.taxable,
+    addlNonTax: addl.nonTaxable,
+    taxRate: q.tax_rate,
+  });
+  const taxableBaseWithSetup = _rt.taxableBase;
+  const taxWithSetup = _rt.tax;
+  const totalWithSetup = _rt.total;
 
   useEffect(() => {
     async function loadUser() {
@@ -223,6 +241,14 @@ export default function QuoteEditorModal({
         try {
           const shops = await base44.entities.Shop.filter({ owner_email: shopScope(currentUser) });
           const cfg = shops?.[0]?.pricing_config;
+          // Hydrate the module-level pricing config for THIS shop so
+          // getEnabledTechniques() (technique dropdown) reflects the shop's
+          // real enabled methods — including Embroidery — when editing. Without
+          // this the editor relied on login-time hydration, which is stale/absent
+          // for brokers, hard refreshes, or any path that skipped AuthContext.
+          // A shop that enabled embroidery would otherwise see it vanish from the
+          // dropdown on edit. Mirrors QuoteRequest.jsx's anon-wizard hydration.
+          if (cfg) loadShopPricingConfig(cfg);
           if (cfg && (cfg.extras || cfg.embroidery?.extras || cfg.custom_techniques)) {
             setAddonsByScope(buildAddonsByScope(cfg, DEFAULT_LABELS));
           } else if (shops?.[0]?.addons?.length) {
@@ -454,9 +480,20 @@ export default function QuoteEditorModal({
 
       // Stamp each line item with computed pricing so every view reads saved numbers
       const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
+      // Add-on label display is a shop-wide opt-in (Account → Pricing). Snapshot
+      // the active add-on labels onto each line at save so EVERY view — including
+      // the anon customer page, which has no pricing_config — can render them
+      // without a live config lookup. Off → empty array (hidden, the default).
+      const savePc = getShopPricingConfig();
+      const showAddonLabels = !!savePc?.show_addons_in_description;
       const stampedItems = (q.line_items || []).map(li => {
         const qty = getQty(li);
-        const r = calcLinkedLinePrice(li, q.rush_rate, q.extras, undefined, linkedQtyMap);
+        // Per-line add-ons (li.extras) — NOT q.extras. The 2026-06-04 per-line
+        // extras move left this stamp on the legacy quote-level field, so
+        // per-line add-ons (Pantone Match, Water-Based Ink, …) toggled on in the
+        // editor were silently dropped from the SAVED line total ("not sticking"):
+        // the live preview uses getLineExtras, but the snapshot read q.extras.
+        const r = calcLinkedLinePrice(li, q.rush_rate, getLineExtras(li, q), undefined, linkedQtyMap);
         if (!r || !qty) return li;
         // Respect clientPpp override if set
         const override = Number(li?.clientPpp);
@@ -464,15 +501,18 @@ export default function QuoteEditorModal({
         const ppp = hasOverride ? override : r.ppp;
         const lineTotal = ppp * qty;
         const rushFee = hasOverride ? 0 : r.rushFee;
-        return { ...li, _ppp: ppp, _lineTotal: lineTotal, _rushFee: rushFee };
+        return {
+          ...li,
+          _ppp: ppp,
+          _lineTotal: lineTotal,
+          _rushFee: rushFee,
+          _addon_labels: showAddonLabels ? getActiveAddonLabels(li, q, savePc) : [],
+        };
       });
       // Compute totals from stamped line items — one source of truth
       const lineSubtotal = stampedItems.reduce((s, li) => s + (li._lineTotal || 0), 0);
       const rushTotal = stampedItems.reduce((s, li) => s + (li._rushFee || 0), 0);
       const sub = Math.round((lineSubtotal + rushTotal) * 100) / 100;
-      const discVal = parseFloat(q.discount) || 0;
-      const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
-      const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
 
       // Setup fees — snapshotted onto the quote at save time so all
       // downstream viewers (customer, broker, invoice, QB sync) read
@@ -486,11 +526,24 @@ export default function QuoteEditorModal({
       });
       const setupTotalSnap = Math.round(setupSnap.total * 100) / 100;
 
-      // Setup is added AFTER discount, BEFORE tax — discounts don't
-      // apply to setup, but setup is part of the taxable base.
-      const taxableBase = afterDisc + setupTotalSnap;
-      const tax = Math.round(taxableBase * ((parseFloat(q.tax_rate) || 0) / 100) * 100) / 100;
-      const total = Math.round((taxableBase + tax) * 100) / 100;
+      // Additional fees snapshot — drop half-typed rows, split by taxable.
+      const addlSnap = sumAdditionalCharges(q.additional_charges);
+
+      // Round once per component via the shared contract (same one the live
+      // preview uses) so the stored total matches the true math and the
+      // displayed lines foot. Discounts apply to the line subtotal only; setup
+      // + taxable fees join the taxed base; non-taxable fees are added post-tax.
+      const _rt = roundedQuoteTotals({
+        sub,
+        discount: q.discount,
+        discountType: q.discount_type,
+        setup: setupTotalSnap,
+        addlTaxable: addlSnap.taxable,
+        addlNonTax: addlSnap.nonTaxable,
+        taxRate: q.tax_rate,
+      });
+      const tax = _rt.tax;
+      const total = _rt.total;
 
       const stampedQuote = { ...q, line_items: stampedItems };
       await onSave({
@@ -504,6 +557,9 @@ export default function QuoteEditorModal({
         // itemized lines without re-resolving against shop config that
         // might have drifted since the quote was sent.
         setup_fee_breakdown: { screens: setupSnap.screens, items: setupSnap.items },
+        // Normalized one-off charges so customer/PDF views render the same
+        // itemized lines without recomputing.
+        additional_charges: normalizeAdditionalCharges(q.additional_charges),
         tax,
         total,
       });
@@ -1107,6 +1163,85 @@ export default function QuoteEditorModal({
                   </div>
                 </div>
               )}
+
+              {/* Additional fees — one-off named charges (shipping, rush, …)
+                  with a custom amount and a taxable toggle. Taxable charges
+                  join the taxed base; non-taxable are added after tax. */}
+              {(() => {
+                const charges = Array.isArray(q.additional_charges) ? q.additional_charges : [];
+                const updateCharge = (idx, patch) =>
+                  setQ({ ...q, additional_charges: charges.map((c, i) => (i === idx ? { ...c, ...patch } : c)) });
+                const addCharge = () =>
+                  setQ({ ...q, additional_charges: [...charges, { id: `ac-${Date.now()}`, label: "", amount: "", taxable: false }] });
+                const removeCharge = (idx) =>
+                  setQ({ ...q, additional_charges: charges.filter((_, i) => i !== idx) });
+                return (
+                  <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-slate-500 font-semibold">Additional Fees</span>
+                      <button
+                        type="button"
+                        onClick={addCharge}
+                        className="text-xs text-teal-600 font-semibold hover:text-teal-800"
+                      >
+                        + Add fee
+                      </button>
+                    </div>
+                    {charges.length === 0 && (
+                      <p className="text-xs text-slate-400">Add shipping, rush, or other one-off charges.</p>
+                    )}
+                    {charges.map((c, idx) => (
+                      <div key={c.id || idx} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          placeholder="e.g. Estimated shipping"
+                          value={c.label ?? ""}
+                          onChange={(e) => updateCharge(idx, { label: e.target.value })}
+                          className="flex-1 min-w-0 text-xs border border-slate-200 dark:border-slate-700 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                        />
+                        <div className="flex items-center gap-0.5">
+                          <span className="text-slate-400 text-xs">$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={c.amount ?? ""}
+                            onChange={(e) => updateCharge(idx, { amount: e.target.value })}
+                            className="w-20 text-right text-xs border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                          />
+                        </div>
+                        <label
+                          className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer select-none"
+                          title="Apply sales tax to this charge"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!c.taxable}
+                            onChange={(e) => updateCharge(idx, { taxable: e.target.checked })}
+                            className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600"
+                          />
+                          Tax
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removeCharge(idx)}
+                          className="text-slate-300 hover:text-rose-500 text-lg leading-none px-1"
+                          title="Remove fee"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    {addl.total > 0 && (
+                      <div className="flex items-center justify-between text-xs border-t border-slate-100 dark:border-slate-700 pt-1.5">
+                        <span className="text-slate-400">Fees subtotal</span>
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">{fmtMoney(addl.total)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="flex justify-between text-sm">
                 <span className="text-slate-500">Tax</span>

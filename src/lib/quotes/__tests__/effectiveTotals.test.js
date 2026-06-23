@@ -196,3 +196,32 @@ describe("effectiveQuoteTotals — saved wins, live is fallback", () => {
     });
   });
 });
+
+// ── footing: afterDisc derives from SAVED total/tax/setup/fees (no recompute) ──
+describe("effectiveQuoteTotals — afterDisc footing (saved snapshot)", () => {
+  it("reported case: 15% discount foots to the saved total ($429.49), discount = $70.00 not $70.01", () => {
+    // subtotal 466.70, saved total 429.49, saved tax 32.79, no setup/fees
+    const t = effectiveQuoteTotals({ subtotal: 466.70, tax: 32.79, total: 429.49, discount: 15, discount_type: "percent" });
+    expect(t.source).toBe("saved");
+    const discount = +(t.sub - t.afterDisc).toFixed(2);
+    expect(discount).toBe(70.00); // NOT 70.01 (the live-recompute value)
+    // column foots: subtotal − discount + tax === total
+    expect(+(t.sub - discount + t.tax).toFixed(2)).toBe(429.49);
+  });
+
+  it("foots with setup + additional fees (afterDisc excludes them)", () => {
+    // subtotal 100, setup 25, taxable shipping 0 / nontax shipping 15,
+    // 10% discount → afterDisc 90, taxable base 115, tax (10%) 11.50,
+    // total = 90 + 25 + 11.50 + 15 = 141.50
+    const q = {
+      subtotal: 100, setup_total: 25,
+      additional_charges: [{ label: "Shipping", amount: 15, taxable: false }],
+      tax: 11.50, total: 141.50, discount: 10, discount_type: "percent",
+    };
+    const t = effectiveQuoteTotals(q);
+    expect(+(t.sub - t.afterDisc).toFixed(2)).toBe(10.00); // real discount, not absorbing setup/fees
+    // subtotal − discount + setup + additional + tax === total
+    const discount = +(t.sub - t.afterDisc).toFixed(2);
+    expect(+(t.sub - discount + 25 + 15 + t.tax).toFixed(2)).toBe(141.50);
+  });
+});

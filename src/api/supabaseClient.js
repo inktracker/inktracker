@@ -1,9 +1,40 @@
 import { createClient } from "@supabase/supabase-js";
+import { queryClientInstance } from "@/lib/query-client";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Bust any cached reads (cachedFilter/cachedList in lib/queries/cachedEntity)
+// for a table after a write, so a freshly created/updated/deleted row never
+// hides behind a stale cache entry. Keyed by ["entity", <table>] — the same
+// prefix cachedEntity builds. Wrapped so a cache hiccup never fails a mutation.
+function invalidateTable(tableName) {
+  try {
+    queryClientInstance.invalidateQueries({ queryKey: ["entity", tableName] });
+    // A profiles write can change the current user's own row (role, settings),
+    // so also bust the deduped auth.me() cache below.
+    if (tableName === "profiles") {
+      queryClientInstance.invalidateQueries({ queryKey: ["auth", "me"] });
+    }
+  } catch {
+    /* cache invalidation is best-effort; the write already succeeded */
+  }
+}
+
+// Any auth-state change (sign-in, sign-out, token refresh, user update) makes a
+// previously cached auth.me() result obsolete — a stale negative cache would
+// otherwise make a just-logged-in user look signed-out. Registered at module
+// load (before AuthContext mounts) so it runs first and the cache is fresh by
+// the time AuthContext's own listener calls me().
+supabase.auth.onAuthStateChange(() => {
+  try {
+    queryClientInstance.invalidateQueries({ queryKey: ["auth", "me"] });
+  } catch {
+    /* best-effort */
+  }
+});
 
 // ─── Entity name → Supabase table name ──────────────────────────────────────
 const TABLE_MAP = {
@@ -43,9 +74,14 @@ function parseSort(sort) {
 
 function createEntityProxy(tableName) {
   return {
-    /** List all rows, optional sort + limit */
-    async list(sort, limit) {
-      let q = supabase.from(tableName).select("*");
+    /**
+     * List all rows, optional sort + limit.
+     * `columns` (optional) projects a column subset, e.g. "id,total,paid" —
+     * defaults to "*" so existing callers are unchanged. Project columns on
+     * hot/wide reads to avoid detoasting jsonb you don't render.
+     */
+    async list(sort, limit, columns) {
+      let q = supabase.from(tableName).select(columns || "*");
       const s = parseSort(sort);
       if (s) q = q.order(s.column, { ascending: s.ascending });
       if (limit) q = q.limit(limit);
@@ -54,9 +90,12 @@ function createEntityProxy(tableName) {
       return data ?? [];
     },
 
-    /** Filter rows by equality on every key in `filters` */
-    async filter(filters, sort, limit) {
-      let q = supabase.from(tableName).select("*");
+    /**
+     * Filter rows by equality on every key in `filters`.
+     * `columns` (optional) projects a column subset; defaults to "*".
+     */
+    async filter(filters, sort, limit, columns) {
+      let q = supabase.from(tableName).select(columns || "*");
       if (filters) {
         for (const [key, value] of Object.entries(filters)) {
           if (value != null) q = q.eq(key, value);
@@ -89,6 +128,7 @@ function createEntityProxy(tableName) {
         .select()
         .single();
       if (error) throw error;
+      invalidateTable(tableName);
       return data;
     },
 
@@ -101,6 +141,7 @@ function createEntityProxy(tableName) {
         .select()
         .single();
       if (error) throw error;
+      invalidateTable(tableName);
       return data;
     },
 
@@ -108,6 +149,7 @@ function createEntityProxy(tableName) {
     async delete(id) {
       const { error } = await supabase.from(tableName).delete().eq("id", id);
       if (error) throw error;
+      invalidateTable(tableName);
     },
 
     /** Subscribe to realtime changes. Returns an unsubscribe function. */
@@ -127,22 +169,33 @@ function createEntityProxy(tableName) {
 
 // ─── Auth compatibility layer ────────────────────────────────────────────────
 const auth = {
-  /** Returns the current user merged with their profile, or null */
+  /** Returns the current user merged with their profile, or null.
+   *  Deduped through the shared query cache: the burst of me() calls on a page
+   *  mount (the Dashboard fired ~4 across its effects) collapses to a single
+   *  getUser()+profiles round-trip within staleTime. Kept fresh by the
+   *  onAuthStateChange invalidation above, by updateMe(), and by any profiles
+   *  write, so role/subscription changes are never served stale. */
   async me() {
-    const {
-      data: { user },
-      error,
-    } = await supabase.auth.getUser();
-    if (error || !user) return null;
+    return queryClientInstance.fetchQuery({
+      queryKey: ["auth", "me"],
+      staleTime: 10_000,
+      queryFn: async () => {
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser();
+        if (error || !user) return null;
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("auth_id", user.id)
-      .maybeSingle();
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("auth_id", user.id)
+          .maybeSingle();
 
-    if (!profile) return null;
-    return { ...profile, email: user.email };
+        if (!profile) return null;
+        return { ...profile, email: user.email };
+      },
+    });
   },
 
   /** Update the current user's profile */
@@ -160,12 +213,18 @@ const auth = {
       .select()
       .single();
     if (error) throw error;
+    // This updates the caller's own profile row directly (bypassing the entity
+    // proxy), so bust the deduped auth.me() cache explicitly.
+    try { queryClientInstance.invalidateQueries({ queryKey: ["auth", "me"] }); } catch { /* best-effort */ }
     return { ...data, email: user.email };
   },
 
   /** Sign out and optionally redirect */
   async logout(redirectUrl) {
     await supabase.auth.signOut();
+    // Drop every cached query so the next user on a shared device can't see the
+    // previous user's cached profile or entity lists.
+    try { queryClientInstance.clear(); } catch { /* best-effort */ }
     if (redirectUrl) window.location.href = redirectUrl;
   },
 
@@ -177,14 +236,20 @@ const auth = {
   redirectToLogin(_redirectUrl) {},
 };
 
+// Entity name → table name. Exported so the cache layer
+// (lib/queries/cachedEntity) keys reads by the same table the proxy and the
+// mutation-invalidation use, keeping cache keys and invalidation in lockstep.
+export function resolveTable(prop) {
+  return TABLE_MAP[prop] ?? prop.toLowerCase() + "s";
+}
+
 // ─── Dynamic entity proxy ────────────────────────────────────────────────────
 // base44.entities.Quote  →  createEntityProxy("quotes")
 const entities = new Proxy(
   {},
   {
     get(_, prop) {
-      const tableName = TABLE_MAP[prop] ?? prop.toLowerCase() + "s";
-      return createEntityProxy(tableName);
+      return createEntityProxy(resolveTable(prop));
     },
   }
 );
