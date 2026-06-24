@@ -548,6 +548,22 @@ export default function LineItemEditor({
   // back to the root (Screen Print) scope for unknown or empty techniques.
   const lineTechnique = (li.imprints || [])[0]?.technique;
   const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
+  // Header label that follows the decoration type. Techniques are per
+  // imprint, so a line can mix them — show the shared technique's label
+  // when they all match, else a neutral "Decoration Locations". "Screen
+  // Print" keeps the familiar "Print Locations" wording.
+  const locationsHeader = (() => {
+    const techs = [
+      ...new Set(
+        (li.imprints || [])
+          .map((im) => (im?.technique || "").trim())
+          .filter(Boolean)
+      ),
+    ];
+    if (techs.length !== 1) return "Decoration Locations";
+    const t = techs[0];
+    return t === "Screen Print" ? "Print Locations" : `${t} Locations`;
+  })();
   // Per-line extras as of 2026-06-04. li.extras wins when set;
   // `extras` is the legacy quote-level fallback so old quotes
   // (which only have quote.extras and no li.extras yet) keep
@@ -1160,7 +1176,7 @@ export default function LineItemEditor({
             <div>
               <div className="flex justify-between items-center mb-3">
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  Print Locations
+                  {locationsHeader}
                 </div>
                 <div className="flex items-center gap-2">
                   <button

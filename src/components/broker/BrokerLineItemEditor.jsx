@@ -390,6 +390,19 @@ export default function BrokerLineItemEditor({
 }) {
   const lineTechnique = (li.imprints || [])[0]?.technique;
   const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
+  // Header label that follows the decoration type (see LineItemEditor).
+  const locationsHeader = (() => {
+    const techs = [
+      ...new Set(
+        (li.imprints || [])
+          .map((im) => (im?.technique || "").trim())
+          .filter(Boolean)
+      ),
+    ];
+    if (techs.length !== 1) return "Decoration Locations";
+    const t = techs[0];
+    return t === "Screen Print" ? "Print Locations" : `${t} Locations`;
+  })();
   // sizePrices stored in a ref (synchronous) so it survives every onChange call.
   const sizePricesRef = useRef(li.sizePrices || null);
   const onChange = (updated) => {
@@ -841,7 +854,7 @@ export default function BrokerLineItemEditor({
             <div>
               <div className="flex justify-between items-center mb-3">
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  Print Locations
+                  {locationsHeader}
                 </div>
                 <div className="flex gap-2 items-center">
                   <button
