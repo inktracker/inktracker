@@ -197,8 +197,8 @@ export default function Quotes() {
   filtered = [...filtered].sort((a, b) => {
     let av, bv;
     if (sortKey === "customer") {
-      av = (getDisplayName(customerMap[a.customer_id] || a.customer_name) || "").toLowerCase();
-      bv = (getDisplayName(customerMap[b.customer_id] || b.customer_name) || "").toLowerCase();
+      av = (getDisplayName(customerMap[a.customer_id] || { company: a.company, name: a.customer_name }) || "").toLowerCase();
+      bv = (getDisplayName(customerMap[b.customer_id] || { company: b.company, name: b.customer_name }) || "").toLowerCase();
     } else if (sortKey === "total") {
       av = getQuoteTotalsForDisplay(a).total; bv = getQuoteTotalsForDisplay(b).total;
     } else if (sortKey === "date") {
@@ -663,7 +663,7 @@ export default function Quotes() {
                       </div>
                     ) : (
                       <span className="font-semibold">
-                        {getDisplayName(customerMap[q.customer_id] || q.customer_name) || "—"}
+                        {getDisplayName(customerMap[q.customer_id] || { company: q.company, name: q.customer_name }) || "—"}
                       </span>
                     )}
                   </td>
@@ -733,7 +733,7 @@ export default function Quotes() {
                       </>
                     ) : (
                       <div className="font-semibold text-slate-800 dark:text-slate-200">
-                        {getDisplayName(customerMap[q.customer_id] || q.customer_name) || "—"}
+                        {getDisplayName(customerMap[q.customer_id] || { company: q.company, name: q.customer_name }) || "—"}
                       </div>
                     )}
                   </div>

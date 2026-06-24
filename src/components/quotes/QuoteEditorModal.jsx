@@ -437,6 +437,7 @@ export default function QuoteEditorModal({
       ...prev,
       customer_id: saved.id,
       customer_name: saved.name,
+      company: saved.company || "",
       tax_rate: saved.tax_exempt ? 0 : prev.tax_rate || defaultTaxRate || 8.265,
     }));
 
@@ -628,6 +629,13 @@ export default function QuoteEditorModal({
                         ...q,
                         customer_id: e.target.value,
                         customer_name: c ? c.name : "",
+                        // Denormalize company onto the quote so the list/email/
+                        // payment views show the shop name even when the viewer
+                        // can't read the full customer record (e.g. a manager
+                        // with the Customers section turned off) or it was later
+                        // deleted/merged. getDisplayName still prefers the live
+                        // customer record when available.
+                        company: c ? (c.company || "") : "",
                         tax_rate: c?.tax_exempt ? 0 : q.tax_rate || defaultTaxRate || 8.265,
                         // Apply the client's default payment terms to this new quote
                         deposit_pct: c ? Number(c.default_deposit_pct ?? 0) : q.deposit_pct,
