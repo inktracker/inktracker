@@ -750,6 +750,14 @@ export default function OrderDetailModal({
 
   const discVal = parseFloat(order.discount) || 0;
   const isFlat = order.discount_type === "flat" || (discVal > 100 && order.discount_type !== "percent");
+  // A FLAT discount applies to the order once. Per line, prorate it by the
+  // line's share of the subtotal so the "After Discount" rows sum to the
+  // order discount — not N× the full amount (the bug where every line showed
+  // the entire flat discount deducted). Percent already distributes evenly.
+  const orderSub = parseFloat(order.subtotal) || 0;
+  const lineDiscountFactor = isFlat
+    ? (orderSub > 0 ? Math.max(0, 1 - discVal / orderSub) : 1)
+    : (1 - discVal / 100);
   const totals = order.line_items
     ? {
         sub: order.subtotal,
@@ -1093,7 +1101,7 @@ export default function OrderDetailModal({
                           </div>
                           {parseFloat(order.discount) > 0 && (() => {
                             const lineSub = r.lineTotal;
-                            const lineAfterDisc = isFlat ? Math.max(0, lineSub - discVal) : lineSub * (1 - discVal / 100);
+                            const lineAfterDisc = lineSub * lineDiscountFactor;
                             return (
                               <div className="flex justify-between text-xs text-emerald-600">
                                 <span>After Discount</span>
@@ -1107,7 +1115,7 @@ export default function OrderDetailModal({
                             <span>Final Cost (incl. tax)</span>
                             <span className="font-bold text-teal-700">
                               {fmtMoney(
-                                (isFlat ? Math.max(0, r.lineTotal - discVal) : r.lineTotal * (1 - discVal / 100)) *
+                                r.lineTotal * lineDiscountFactor *
                                   (1 + parseFloat(order.tax_rate) / 100)
                               )}
                             </span>
