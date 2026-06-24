@@ -269,6 +269,10 @@ export default function Account() {
       try {
         const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
         const payload = {
+          // Keep the shops mirror of shop_name in sync with the profile.
+          // It was previously only set at shop-create, so a later rename
+          // left shops.shop_name stale (consumed by the quote email).
+          shop_name: shopName,
           timezone: timezone || null,
           brand_color: normalizeBrandColor(brandColor),
         };

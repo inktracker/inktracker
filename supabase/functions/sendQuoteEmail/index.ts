@@ -151,12 +151,15 @@ Deno.serve(async (req) => {
         .select("shop_name")
         .eq("owner_email", quote.shop_owner)
         .maybeSingle();
-      shopName = shop?.shop_name || "InkTracker";
       const { data: ownerProfile } = await admin
         .from("profiles")
-        .select("logo_url")
+        .select("shop_name, logo_url")
         .eq("email", quote.shop_owner)
         .maybeSingle();
+      // profiles.shop_name is the canonical name the owner edits on Account;
+      // shops.shop_name is a mirror that can lag (renames didn't sync it).
+      // Prefer the profile so the email brand never shows a stale shop name.
+      shopName = ownerProfile?.shop_name || shop?.shop_name || "InkTracker";
       shopLogoUrl = ownerProfile?.logo_url || null;
       // Force Reply-To / Bcc target to the legitimate shop owner.
       shopOwnerEmail = quote.shop_owner;
@@ -204,8 +207,9 @@ Deno.serve(async (req) => {
         brokerEmail = "";
       }
       const { data: shopRow } = await admin.from("shops").select("shop_name").eq("owner_email", q.shop_owner).maybeSingle();
-      shopName = (q.broker_id ? (q.broker_company || q.broker_name) : "") || shopRow?.shop_name || shopName || "InkTracker";
-      const { data: ownerProf } = await admin.from("profiles").select("logo_url").eq("email", q.shop_owner).maybeSingle();
+      const { data: ownerProf } = await admin.from("profiles").select("shop_name, logo_url").eq("email", q.shop_owner).maybeSingle();
+      // Prefer the owner's canonical profiles.shop_name over the shops mirror.
+      shopName = (q.broker_id ? (q.broker_company || q.broker_name) : "") || ownerProf?.shop_name || shopRow?.shop_name || shopName || "InkTracker";
       shopLogoUrl = ownerProf?.logo_url || null;
     }
 
