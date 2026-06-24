@@ -22,6 +22,7 @@ import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { isValidEmail } from "@/lib/email";
 import { shopScope } from "@/lib/shopScope";
+import { hasOwnerAccess } from "@/lib/managerPermissions";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -147,7 +148,10 @@ export default function Customers() {
         // after the fact. Only SUSPECTED duplicates (the Merge
         // Duplicates flow) still ask first. Non-owners fall back to
         // the review banner since the merge path is owner-gated.
-        const isOwner = user?.role === "admin" || user?.role === "shop";
+        // Full-partner managers (with Customers permission) get the same
+        // auto-merge path as the owner; restricted managers fall back to the
+        // review banner.
+        const isOwner = hasOwnerAccess(user, "Customers");
         if (!isOwner) {
           setReconcileNeeded(pairs);
           return;
@@ -286,9 +290,9 @@ export default function Customers() {
   function canDelete() {
     // Customer deletion is a destructive accounting-adjacent action — it
     // orphans quote/order/invoice history if the dependent-count guard
-    // below misses anything (id+name combos). Shop-owner only, matching
-    // the gate Production/Orders/Calendar use for completion + delete.
-    return user?.role === "admin" || user?.role === "shop";
+    // below misses anything (id+name combos). Owner OR a full-partner manager
+    // with Customers permission (managerCanAccess gates it per-manager).
+    return hasOwnerAccess(user, "Customers");
   }
 
   async function handleDelete(id) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { MANAGER_SECTIONS } from "@/lib/managerPermissions";
+import { MANAGER_SECTIONS, hasOwnerAccess } from "@/lib/managerPermissions";
 import { supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { useAuth } from "@/lib/AuthContext";
@@ -69,7 +69,7 @@ export default function AdminPanel() {
 
   // Redirect non-admins immediately
   useEffect(() => {
-    if (user && user.role !== "admin" && user.role !== "shop") {
+    if (user && !hasOwnerAccess(user, "Team")) {
       navigate(createPageUrl("Dashboard"), { replace: true });
     }
   }, [user, navigate]);
@@ -97,7 +97,7 @@ export default function AdminPanel() {
   }, []);
 
   useEffect(() => {
-    if (user?.role === "admin" || user?.role === "shop") loadUsers();
+    if (hasOwnerAccess(user, "Team")) loadUsers();
   }, [user, loadUsers]);
 
   async function saveManagerPermissions(profileId, permissions) {
@@ -227,7 +227,12 @@ export default function AdminPanel() {
     }
   }
 
-  if (!user || (user.role !== "admin" && user.role !== "shop")) return null;
+  if (!hasOwnerAccess(user, "Team")) return null;
+
+  // A manager can VIEW the roster (full-partner visibility) but never mutate it —
+  // role changes, invites, deletes, and permission editing stay owner/admin-only so
+  // a manager can't escalate their own (or a teammate's) access.
+  const canMutateTeam = user.role === "admin" || user.role === "shop";
 
   const pending = users.filter(u => u.role === "user");
   const approved = users.filter(u => u.role === "shop");
@@ -246,13 +251,15 @@ export default function AdminPanel() {
           <p className="text-sm text-slate-500 mt-0.5">Manage user access and shop accounts</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setShowInvite(true); setInviteError(""); setInviteSuccess(""); }}
-            className="flex items-center gap-1.5 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-3 py-1.5 transition"
-          >
-            <Mail className="w-4 h-4" />
-            Invite User
-          </button>
+          {canMutateTeam && (
+            <button
+              onClick={() => { setShowInvite(true); setInviteError(""); setInviteSuccess(""); }}
+              className="flex items-center gap-1.5 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-3 py-1.5 transition"
+            >
+              <Mail className="w-4 h-4" />
+              Invite User
+            </button>
+          )}
           <button
             onClick={loadUsers}
             disabled={loading}
@@ -358,7 +365,8 @@ export default function AdminPanel() {
                   {roleBadge(u.role)}
                 </div>
 
-                {/* Actions */}
+                {/* Actions — owner/admin only. Managers see the roster read-only. */}
+                {canMutateTeam && (
                 <div className="flex items-center gap-2 shrink-0">
                   {u.role === "user" && (
                     <>
@@ -418,9 +426,11 @@ export default function AdminPanel() {
                     </button>
                   )}
                 </div>
+                )}
                 </div>
 
-                {u.role === "manager" && (
+                {/* Permission editor is the self-escalation surface — owner/admin only. */}
+                {canMutateTeam && u.role === "manager" && (
                   <ManagerPermissions u={u} busy={!!actionLoading[`perm-${u.id}`]} onSave={(perms) => saveManagerPermissions(u.id, perms)} />
                 )}
               </div>
@@ -430,10 +440,12 @@ export default function AdminPanel() {
         )}
       </div>
 
-      {/* Broker management */}
-      <div className="pt-4">
-        <BrokerManager />
-      </div>
+      {/* Broker management — owner/admin only (invites + assignment changes). */}
+      {canMutateTeam && (
+        <div className="pt-4">
+          <BrokerManager />
+        </div>
+      )}
 
       {/* Delete confirm modal */}
       {confirmDelete && (

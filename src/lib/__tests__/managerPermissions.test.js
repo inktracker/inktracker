@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { managerCanAccess, firstAllowedPage, sectionForPage } from "../managerPermissions";
+import { managerCanAccess, firstAllowedPage, sectionForPage, hasOwnerAccess } from "../managerPermissions";
 
 const owner = { role: "shop" };
 const adminU = { role: "admin" };
@@ -52,5 +52,24 @@ describe("sectionForPage", () => {
   });
   it("returns null for ungated pages", () => {
     expect(sectionForPage("Account")).toBe(null);
+  });
+});
+
+describe("hasOwnerAccess — owner-level access for full-partner managers", () => {
+  it("owners and admins always have it", () => {
+    expect(hasOwnerAccess({ role: "shop" }, "Customers")).toBe(true);
+    expect(hasOwnerAccess({ role: "admin" }, "Customers")).toBe(true);
+  });
+  it("a manager has it when their permission allows the section (null = full)", () => {
+    expect(hasOwnerAccess({ role: "manager", manager_permissions: null }, "Customers")).toBe(true);
+    expect(hasOwnerAccess({ role: "manager", manager_permissions: { Customers: true } }, "Customers")).toBe(true);
+  });
+  it("a manager is denied when the owner switched that section off", () => {
+    expect(hasOwnerAccess({ role: "manager", manager_permissions: { Customers: false } }, "Customers")).toBe(false);
+  });
+  it("brokers/employees/null never get owner-level access", () => {
+    expect(hasOwnerAccess({ role: "broker" }, "Customers")).toBe(false);
+    expect(hasOwnerAccess({ role: "employee" }, "Customers")).toBe(false);
+    expect(hasOwnerAccess(null, "Customers")).toBe(false);
   });
 });
