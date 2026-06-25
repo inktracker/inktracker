@@ -71,6 +71,7 @@ describe("buildSSPOFromOrder", () => {
   const user = { email: "shop@x.com", shop_name: "My Shop", address: "1 Main", city: "Reno", state: "NV", zip: "89501" };
   it("buckets only S&S line items, expanding sizes into items", () => {
     const order = {
+      id: "11111111-1111-1111-1111-111111111111",
       order_id: "ORD-9",
       line_items: [
         { style: "3001", supplier: SUPPLIER_SS, garmentColor: "Black", sizes: { S: 2, M: 3 } },
@@ -79,7 +80,10 @@ describe("buildSSPOFromOrder", () => {
     };
     const po = buildSSPOFromOrder(order, user);
     expect(po.supplier).toBe(SUPPLIER_SS);
-    expect(po.source_order_id).toBe("ORD-9");
+    // source_order_id MUST be the uuid id (not the human order_id) — it's a
+    // uuid column and the key Production matches for button state.
+    expect(po.source_order_id).toBe("11111111-1111-1111-1111-111111111111");
+    expect(po.reference).toBe("Order ORD-9");
     expect(po.items).toEqual([
       { sku: "3001BLACK-S", styleCode: "3001", color: "Black", size: "S", quantity: 2 },
       { sku: "3001BLACK-M", styleCode: "3001", color: "Black", size: "M", quantity: 3 },

@@ -489,6 +489,7 @@ export function buildSSPOFromOrder(order, user) {
     }
   }
   if (items.length === 0) return null;
+  // Reference is human-facing → use the readable order number.
   const orderRef = order?.order_id || order?.id || "Order";
   return {
     shop_owner: shopScope(user),
@@ -498,6 +499,9 @@ export function buildSSPOFromOrder(order, user) {
     ship_to: defaultPOShipTo(user),
     shipping_method: "Ground",
     items,
-    source_order_id: order?.order_id || order?.id || null,
+    // source_order_id is a uuid column AND the key Production matches against
+    // the order's id for button state — so it MUST be order.id, never the
+    // human-readable order_id ("ORD-2026-…").
+    source_order_id: order?.id || null,
   };
 }
