@@ -1,3 +1,5 @@
+import { shopScope } from "@/lib/shopScope";
+
 // Purchase Order pure logic — kept out of the page component so it's
 // unit-testable. The page is just a thin shell over these helpers.
 //
@@ -130,23 +132,49 @@ export function updateItemQty(items, index, quantity) {
 // without a round-trip.
 export const AC_REFERENCE_MAX = 20;
 
+// Supplier identifiers — match SUPPLIERS in src/api/suppliers.js. Kept as
+// local literals so this module stays pure (no supabaseClient import) and
+// trivially unit-testable.
+export const SUPPLIER_SS = "S&S Activewear";
+export const SUPPLIER_AC = "AS Colour";
+
 // Client-side mirror of supabase/functions/_shared/acOrderLogic.js
-// validateOrderPayload. Returns array of human-readable errors.
-// The server re-validates — this is for UX, not security.
+// validateOrderPayload (AS Colour) and supabase/functions/ssPlaceOrder
+// (S&S). Returns array of human-readable errors. The server re-validates —
+// this is for UX, not security.
+//
+// The two suppliers have different requirements:
+//   AS Colour — explicit shipping method, full first/last name, country code,
+//               per-item SKU + warehouse, 20-char reference cap.
+//   S&S       — defaults shipping to Ground server-side, resolves SKUs from
+//               style+color+size at submit, auto-routes warehouses, and needs
+//               STATE (not just country). Name can fall back to the company.
 export function validateForSubmit(po) {
   const errors = [];
   if (!po) return ["nothing to submit"];
+  const isSS = po.supplier === SUPPLIER_SS;
+
   if (!po.reference || !String(po.reference).trim()) {
     errors.push("PO reference is required");
-  } else if (String(po.reference).trim().length > AC_REFERENCE_MAX) {
+  } else if (!isSS && String(po.reference).trim().length > AC_REFERENCE_MAX) {
     errors.push(`PO reference must be ${AC_REFERENCE_MAX} characters or fewer (AS Colour limit) — yours is ${String(po.reference).trim().length}`);
   }
-  if (!po.shipping_method || !String(po.shipping_method).trim()) {
+
+  if (!isSS && (!po.shipping_method || !String(po.shipping_method).trim())) {
     errors.push("Shipping method is required");
   }
+
   const sa = po.ship_to;
   if (!sa || typeof sa !== "object") {
     errors.push("Shipping address is required");
+  } else if (isSS) {
+    if (!sa.address1) errors.push("Shipping address: street is required");
+    if (!sa.city) errors.push("Shipping address: city is required");
+    if (!sa.state) errors.push("Shipping address: state is required");
+    if (!sa.zip) errors.push("Shipping address: zip is required");
+    if (!(sa.company || sa.firstName || sa.lastName)) {
+      errors.push("Shipping address: a recipient name or company is required");
+    }
   } else {
     if (!sa.firstName) errors.push("Shipping address: first name is required");
     if (!sa.lastName) errors.push("Shipping address: last name is required");
@@ -155,19 +183,27 @@ export function validateForSubmit(po) {
     if (!sa.zip) errors.push("Shipping address: zip is required");
     if (!sa.countryCode) errors.push("Shipping address: country code is required");
   }
+
   if (!Array.isArray(po.items) || po.items.length === 0) {
     errors.push("At least one item is required");
   } else {
     for (let i = 0; i < po.items.length; i++) {
       const it = po.items[i];
-      if (!it?.sku) errors.push(`Item ${i + 1}: SKU is missing`);
+      if (isSS) {
+        // S&S resolves the real SKU at submit from style+color+size, so an
+        // explicit SKU isn't required as long as the garment is identifiable.
+        if (!it?.sku && !((it?.styleCode || it?.style) && it?.size)) {
+          errors.push(`Item ${i + 1}: needs a SKU or style + size to look up at S&S`);
+        }
+      } else if (!it?.sku) {
+        errors.push(`Item ${i + 1}: SKU is missing`);
+      }
       const qty = Number(it?.quantity);
       if (!Number.isFinite(qty) || qty <= 0) {
         errors.push(`Item ${i + 1}: quantity must be positive`);
       }
-      // Warehouse is set at the PO level via the dropdown; only flag
-      // if neither po.warehouse nor a per-item warehouse is present.
-      if (!po.warehouse && !it?.warehouse) {
+      // Warehouse — AS Colour requires it; S&S auto-routes across warehouses.
+      if (!isSS && !po.warehouse && !it?.warehouse) {
         errors.push(`Item ${i + 1}: warehouse is required (set it on the PO)`);
       }
     }
@@ -359,7 +395,10 @@ export function applyPOItemsToGoodsProgress(order, poItems, supplierOrderId, now
 // via auto-routing on add). Falls back to po.warehouse for legacy
 // rows, then "CA" as a final default. AS Colour requires non-empty
 // per-item warehouse — values are state codes "CA" / "NC".
-export function buildSubmitPayload(po) {
+export function buildSubmitPayload(po, { testOrder = false } = {}) {
+  if (po?.supplier === SUPPLIER_SS) return buildSSSubmitPayload(po, { testOrder });
+  // AS Colour (default) — shape consumed by acPlaceOrder. testOrder is a
+  // no-op here (AS Colour has no dry-run endpoint).
   const fallback = String(po.warehouse || "CA").trim() || "CA";
   return {
     reference: String(po.reference),
@@ -372,5 +411,93 @@ export function buildSubmitPayload(po) {
       warehouse: String(it.warehouse || fallback),
       quantity: Number(it.quantity),
     })),
+  };
+}
+
+// Maps a PO to the shape ssPlaceOrder expects:
+//   { poNumber, shipTo, lines, shippingMethod, testOrder, warehouse }
+// S&S resolves real SKUs from style+color+size at submit, so lines carry
+// those alongside the best-guess sku. testOrder:true asks S&S to VALIDATE the
+// order (incl. stock) without committing or charging.
+export function buildSSSubmitPayload(po, { testOrder = false } = {}) {
+  const sa = po?.ship_to || {};
+  const name = [sa.firstName, sa.lastName].filter(Boolean).join(" ").trim() || sa.company || "";
+  return {
+    poNumber: String(po?.reference || ""),
+    shippingMethod: String(po?.shipping_method || "Ground") || "Ground",
+    testOrder: !!testOrder,
+    warehouse: String(po?.warehouse || ""),
+    shipTo: {
+      name,
+      address1: sa.address1 || "",
+      address2: sa.address2 || "",
+      city: sa.city || "",
+      state: sa.state || "",
+      zip: sa.zip || "",
+      country: sa.countryCode || "US",
+      phone: sa.phone || "",
+      email: sa.email || "",
+    },
+    lines: (po?.items || []).map((it) => ({
+      sku: it.sku ? String(it.sku) : "",
+      qty: Number(it.quantity),
+      style: it.styleCode || it.style || "",
+      color: it.color || "",
+      size: it.size || "",
+    })),
+  };
+}
+
+// Default ship-to for a new PO — pre-fills the shop's own address so an
+// order-driven PO is one click away from submit. Mirrors the local copies in
+// PurchaseOrders.jsx / ACOrderModal.jsx; exported so the order→PO builders
+// share one definition.
+export function defaultPOShipTo(user) {
+  return {
+    company: user?.shop_name || "",
+    firstName: "",
+    lastName: "",
+    address1: user?.address || "",
+    address2: "",
+    city: user?.city || "",
+    state: user?.state || "",
+    zip: user?.zip || "",
+    countryCode: "US",
+    email: user?.email || "",
+    phone: user?.phone || "",
+  };
+}
+
+// Build a draft S&S PurchaseOrder from an order's S&S line items (full ordered
+// quantities). Returns null when the order has no S&S garments. Items use the
+// canonical PO item shape { sku, styleCode, color, size, quantity } so the
+// existing display / submit / CSV paths all consume them unchanged. SKU is a
+// best guess (style+colorClean-size) — S&S resolves the real SKU at submit.
+export function buildSSPOFromOrder(order, user) {
+  const items = [];
+  for (const li of order?.line_items || []) {
+    if ((li?.supplier || SUPPLIER_AC) !== SUPPLIER_SS) continue;
+    const style = li.style || "";
+    const color = li.garmentColor || li.color || "";
+    const colorClean = String(color).replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    const sizes = li.sizes || {};
+    for (const [size, raw] of Object.entries(sizes)) {
+      const quantity = parseInt(raw, 10) || 0;
+      if (quantity <= 0) continue;
+      const sku = li.sku || (style ? `${style}${colorClean}-${size}` : "");
+      items.push({ sku, styleCode: style, color, size, quantity });
+    }
+  }
+  if (items.length === 0) return null;
+  const orderRef = order?.order_id || order?.id || "Order";
+  return {
+    shop_owner: shopScope(user),
+    supplier: SUPPLIER_SS,
+    status: "draft",
+    reference: `Order ${orderRef}`.slice(0, 40),
+    ship_to: defaultPOShipTo(user),
+    shipping_method: "Ground",
+    items,
+    source_order_id: order?.order_id || order?.id || null,
   };
 }

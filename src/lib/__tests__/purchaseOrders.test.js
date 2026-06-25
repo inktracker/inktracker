@@ -13,7 +13,95 @@ import {
   combinedReference,
   routeWarehouseForSku,
   applyPOItemsToGoodsProgress,
+  buildSSSubmitPayload,
+  buildSSPOFromOrder,
+  defaultPOShipTo,
+  SUPPLIER_SS,
+  SUPPLIER_AC,
 } from "../purchaseOrders.js";
+
+const SS_SHIP_TO = { company: "My Shop", address1: "1 Main", city: "Reno", state: "NV", zip: "89501", countryCode: "US" };
+const ssDraft = (over = {}) => ({
+  supplier: SUPPLIER_SS,
+  reference: "Order ORD-1",
+  ship_to: SS_SHIP_TO,
+  items: [{ sku: "3001BLACK-M", styleCode: "3001", color: "Black", size: "M", quantity: 6 }],
+  ...over,
+});
+
+describe("validateForSubmit — S&S", () => {
+  it("passes with a routable address + items (no shipping method / SKU required)", () => {
+    expect(validateForSubmit(ssDraft({ shipping_method: "" }))).toEqual([]);
+  });
+  it("requires state (S&S needs it; AS Colour didn't)", () => {
+    const errs = validateForSubmit(ssDraft({ ship_to: { ...SS_SHIP_TO, state: "" } }));
+    expect(errs.some((e) => /state/i.test(e))).toBe(true);
+  });
+  it("accepts an item with style+size but no explicit SKU (resolved at submit)", () => {
+    expect(validateForSubmit(ssDraft({ items: [{ styleCode: "3001", color: "Black", size: "L", quantity: 2 }] }))).toEqual([]);
+  });
+  it("does NOT enforce the 20-char AS Colour reference cap", () => {
+    const longRef = "Order ORD-2026-VERY-LONG-REFERENCE-NAME";
+    expect(validateForSubmit(ssDraft({ reference: longRef }))).toEqual([]);
+  });
+  it("falls back to company when no contact name is present", () => {
+    expect(validateForSubmit(ssDraft())).toEqual([]);
+  });
+});
+
+describe("buildSSSubmitPayload", () => {
+  it("maps a PO to ssPlaceOrder's shape", () => {
+    const p = buildSSSubmitPayload(ssDraft());
+    expect(p.poNumber).toBe("Order ORD-1");
+    expect(p.shippingMethod).toBe("Ground");
+    expect(p.testOrder).toBe(false);
+    expect(p.shipTo).toMatchObject({ name: "My Shop", state: "NV", country: "US" });
+    expect(p.lines).toEqual([{ sku: "3001BLACK-M", qty: 6, style: "3001", color: "Black", size: "M" }]);
+  });
+  it("passes testOrder through for the dry-run validate", () => {
+    expect(buildSSSubmitPayload(ssDraft(), { testOrder: true }).testOrder).toBe(true);
+  });
+  it("buildSubmitPayload routes S&S POs to the S&S shape", () => {
+    expect(buildSubmitPayload(ssDraft()).poNumber).toBe("Order ORD-1");
+    expect(buildSubmitPayload(ssDraft()).lines).toHaveLength(1);
+  });
+});
+
+describe("buildSSPOFromOrder", () => {
+  const user = { email: "shop@x.com", shop_name: "My Shop", address: "1 Main", city: "Reno", state: "NV", zip: "89501" };
+  it("buckets only S&S line items, expanding sizes into items", () => {
+    const order = {
+      order_id: "ORD-9",
+      line_items: [
+        { style: "3001", supplier: SUPPLIER_SS, garmentColor: "Black", sizes: { S: 2, M: 3 } },
+        { style: "5001", supplier: SUPPLIER_AC, garmentColor: "White", sizes: { L: 4 } },
+      ],
+    };
+    const po = buildSSPOFromOrder(order, user);
+    expect(po.supplier).toBe(SUPPLIER_SS);
+    expect(po.source_order_id).toBe("ORD-9");
+    expect(po.items).toEqual([
+      { sku: "3001BLACK-S", styleCode: "3001", color: "Black", size: "S", quantity: 2 },
+      { sku: "3001BLACK-M", styleCode: "3001", color: "Black", size: "M", quantity: 3 },
+    ]);
+    expect(po.ship_to).toMatchObject({ company: "My Shop", state: "NV" });
+  });
+  it("returns null when the order has no S&S items", () => {
+    const order = { line_items: [{ style: "5001", supplier: SUPPLIER_AC, sizes: { M: 1 } }] };
+    expect(buildSSPOFromOrder(order, user)).toBe(null);
+  });
+  it("treats an untagged line as AS Colour (not S&S)", () => {
+    const order = { line_items: [{ style: "5001", sizes: { M: 1 } }] };
+    expect(buildSSPOFromOrder(order, user)).toBe(null);
+  });
+});
+
+describe("defaultPOShipTo", () => {
+  it("pre-fills from the shop profile", () => {
+    expect(defaultPOShipTo({ shop_name: "S", address: "A", city: "C", state: "NV", zip: "1", email: "e" }))
+      .toMatchObject({ company: "S", address1: "A", city: "C", state: "NV", countryCode: "US" });
+  });
+});
 
 describe("routeWarehouseForSku", () => {
   it("returns default when default has any stock", () => {

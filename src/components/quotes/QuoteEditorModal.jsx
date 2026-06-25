@@ -120,7 +120,12 @@ export default function QuoteEditorModal({
         productNumber: prefillLineItem.productNumber || prefillLineItem.id || "",
         resolvedTitle: prefillLineItem.resolvedTitle || prefillLineItem.title || "",
         productTitle: prefillLineItem.resolvedTitle || prefillLineItem.title || "",
-        supplier: "S&S Activewear",
+        // Derive supplier from the catalog brand, not a hardcoded guess —
+        // every downstream PO supplier-detection depends on this being right.
+        // Mirrors LineItemEditor's applySelectedMatch.
+        supplier: (prefillLineItem.brandName || prefillLineItem.brand) === "AS Colour"
+          ? "AS Colour"
+          : "S&S Activewear",
       }];
     }
     return base;

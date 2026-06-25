@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtMoney } from "@/components/shared/pricing";
-import { placeOrder, getShippingMethods, SUPPLIERS } from "@/api/suppliers";
+import { placeOrder, getShippingMethods, lookupStyle, SUPPLIERS } from "@/api/suppliers";
 import {
   poSubtotal,
   freightProgress,
@@ -251,6 +251,13 @@ export default function PurchaseOrders() {
     setSubmitting(true);
     setSubmitError(null);
     try {
+      // S&S: dry-run validate first (testOrder) — confirms SKUs, address, and
+      // STOCK without committing or charging. If something's short/invalid the
+      // wrapper throws with S&S's line-level details, surfaced below, and we
+      // never place the real order. AS Colour has no dry-run endpoint.
+      if (selected.supplier === SUPPLIERS.SS) {
+        await placeOrder(selected.supplier, buildSubmitPayload(selected, { testOrder: true }));
+      }
       const payload = buildSubmitPayload(selected);
       const result = await placeOrder(selected.supplier, payload);
       const supplierOrderId = result?.order?.id ? String(result.order.id) : null;
@@ -561,10 +568,63 @@ function defaultShipTo(user) {
   };
 }
 
+// Fetch live S&S stock for the styles on a PO. Returns { loading, map } where
+// map is keyed by `${style}::${COLOR}::${SIZE}` → available qty. Best-effort:
+// a style we can't resolve (or a color/size name that doesn't line up) simply
+// renders no badge — the authoritative check is the test-order validate on
+// submit. Pulled from ssLookupStyle's inventoryMap (no new edge function).
+function useSSStock(po, enabled) {
+  const [stock, setStock] = useState({ loading: false, map: null });
+  const styleKey = enabled
+    ? [...new Set((po.items || []).map((it) => it.styleCode || it.style).filter(Boolean))].sort().join(",")
+    : "";
+  useEffect(() => {
+    if (!enabled || !styleKey) { setStock({ loading: false, map: null }); return; }
+    let cancelled = false;
+    setStock({ loading: true, map: null });
+    (async () => {
+      const styles = styleKey.split(",");
+      const map = {};
+      await Promise.all(styles.map(async (style) => {
+        try {
+          const res = await lookupStyle(SUPPLIERS.SS, { styleNumber: style });
+          const matches = res?.matches || [];
+          const match = matches.find((m) => String(m.styleNumber || "").toUpperCase() === style.toUpperCase()) || matches[0];
+          const inv = match?.inventoryMap || {};
+          for (const [color, sizes] of Object.entries(inv)) {
+            for (const [size, qty] of Object.entries(sizes || {})) {
+              map[`${style}::${String(color).toUpperCase()}::${String(size).toUpperCase()}`] = Number(qty) || 0;
+            }
+          }
+        } catch { /* leave missing → no badge */ }
+      }));
+      if (!cancelled) setStock({ loading: false, map });
+    })();
+    return () => { cancelled = true; };
+  }, [enabled, styleKey]);
+  return stock;
+}
+
+function StockBadge({ stock, item }) {
+  if (!stock) return null;
+  if (!stock.map) return stock.loading ? <span className="text-[10px] text-slate-400">checking…</span> : null;
+  const style = item.styleCode || item.style || "";
+  const avail = stock.map[`${style}::${String(item.color || "").toUpperCase()}::${String(item.size || "").toUpperCase()}`];
+  if (avail == null) return null; // unknown — don't imply anything
+  const ordered = Number(item.quantity) || 0;
+  const base = "text-[10px] font-bold px-1.5 py-0.5 rounded-full border";
+  if (avail <= 0) return <span className={`${base} bg-red-50 border-red-200 text-red-700`} title="Out of stock at S&S">Out</span>;
+  if (avail < ordered) return <span className={`${base} bg-amber-50 border-amber-200 text-amber-700`} title={`Only ${avail} available at S&S`}>{`Only ${avail}`}</span>;
+  return <span className={`${base} bg-emerald-50 border-emerald-200 text-emerald-700`} title={`${avail} in stock at S&S`}>In stock</span>;
+}
+
 function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
+  const isSS = po.supplier === SUPPLIERS.SS;
+  // Live S&S stock for the badges — only fetched for an editable S&S PO.
+  const ssStock = useSSStock(po, isSS && !isLocked);
 
   return (
     <div className="bg-white border border-slate-100 rounded-xl p-5 space-y-5">
@@ -652,7 +712,9 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Items</div>
         {!po.items?.length ? (
           <div className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-lg p-6 text-center">
-            No items yet. Add them from the AS Colour catalog or inventory.
+            {isSS
+              ? "No items yet. S&S POs are usually created from an order (Production → open an order → Order from S&S)."
+              : "No items yet. Add them from the AS Colour catalog or inventory."}
           </div>
         ) : (
           <div className="border border-slate-100 rounded-lg overflow-hidden">
@@ -661,7 +723,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                 <tr>
                   <th className="text-left px-3 py-2">SKU</th>
                   <th className="text-left px-3 py-2">Color / Size</th>
-                  <th className="text-center px-2 py-2">WH</th>
+                  {!isSS && <th className="text-center px-2 py-2">WH</th>}
                   <th className="text-right px-3 py-2">Qty</th>
                   <th className="text-right px-3 py-2">Unit</th>
                   <th className="text-right px-3 py-2">Line</th>
@@ -683,7 +745,13 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                         />
                       )}
                     </td>
-                    <td className="px-3 py-2 text-slate-600">{[it.color, it.size].filter(Boolean).join(" · ")}</td>
+                    <td className="px-3 py-2 text-slate-600">
+                      <div className="flex items-center gap-2">
+                        <span>{[it.color, it.size].filter(Boolean).join(" · ")}</span>
+                        {isSS && !isLocked && <StockBadge stock={ssStock} item={it} />}
+                      </div>
+                    </td>
+                    {!isSS && (
                     <td className="px-2 py-2 text-center">
                       {isLocked ? (
                         <span className="text-[10px] font-bold text-slate-600">{it.warehouse || defaultWarehouse}</span>
@@ -711,6 +779,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                         </select>
                       )}
                     </td>
+                    )}
                     <td className="px-3 py-2 text-right">
                       {isLocked ? (
                         it.quantity

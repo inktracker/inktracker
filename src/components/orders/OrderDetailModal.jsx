@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
+import { SUPPLIERS } from "@/api/suppliers";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
@@ -135,11 +136,15 @@ export default function OrderDetailModal({
   onRevert,
   onTogglePaid,
   onOrderFromAC,
+  // Create a draft S&S PO from this order's S&S line items (parent handler).
+  onOrderFromSS,
   // PO that was created from this order, if any. Drives the button's
   // tri-state: no PO → "Order from AS Colour"; draft PO → "View Pending PO";
   // submitted PO → "✓ Ordered". Parent fetches it (cheap lookup, scoped by
-  // shop_owner + source_order_id index added in 20260526).
+  // shop_owner + source_order_id index added in 20260526). Now per-supplier:
+  // sourcePO is the AS Colour PO, sourceSSPO the S&S one.
   sourcePO,
+  sourceSSPO,
   // Called when the user clicks "Preview Invoice" for the already-
   // invoiced order. Receives the invoice row. The parent (Production /
   // Orders / Invoices / Calendar page) handles the modal display so we
@@ -1867,14 +1872,26 @@ export default function OrderDetailModal({
             >
               <Eye className="w-3.5 h-3.5" /> Preview
             </button>
-            {/* The Create PO button only makes sense while the order is
-                actively at the Order Goods stage — once blanks are in,
-                placing a new PO from the same order is noise. Limits
-                the footer to actions that are relevant to the current
-                stage. */}
-            {onOrderFromAC && liveOrder.status === "Order Goods" && (
-              <ACOrderButton order={order} sourcePO={sourcePO} onOrderFromAC={onOrderFromAC} disabled={saving} />
-            )}
+            {/* Create-PO buttons only make sense while the order is actively at
+                the Order Goods stage — once blanks are in, placing a new PO
+                from the same order is noise. We show one button PER SUPPLIER
+                present on the order (auto-detected from each line's supplier),
+                so a mixed AS Colour + S&S order surfaces both — no picker. */}
+            {liveOrder.status === "Order Goods" && (() => {
+              const lis = liveOrder.line_items || [];
+              const hasAC = lis.some((li) => (li.supplier || SUPPLIERS.AC) === SUPPLIERS.AC);
+              const hasSS = lis.some((li) => li.supplier === SUPPLIERS.SS);
+              return (
+                <>
+                  {onOrderFromAC && hasAC && (
+                    <ACOrderButton order={order} sourcePO={sourcePO} onOrderFromAC={onOrderFromAC} disabled={saving} />
+                  )}
+                  {onOrderFromSS && hasSS && (
+                    <SSOrderButton order={order} sourceSSPO={sourceSSPO} onOrderFromSS={onOrderFromSS} disabled={saving} />
+                  )}
+                </>
+              );
+            })()}
             {onDelete && (
               <button
                 onClick={() => callAction(onDelete, order.id)}
@@ -1940,6 +1957,44 @@ function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled }) {
       className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-600 border border-teal-200 rounded-lg hover:bg-teal-50 transition disabled:opacity-50"
     >
       <Truck className="w-3.5 h-3.5" /> Create PO
+    </button>
+  );
+}
+
+// S&S counterpart of ACOrderButton. Same tri-state, but the "create" action
+// makes the draft PO immediately (no SKU-resolution modal — S&S resolves SKUs
+// at submit), then flips to "View Pending S&S PO" linking to Purchase Orders.
+function SSOrderButton({ order, sourceSSPO, onOrderFromSS, disabled }) {
+  if (sourceSSPO?.status === "submitted") {
+    return (
+      <Link
+        to={createPageUrl("PurchaseOrders")}
+        title={`Already ordered from S&S${sourceSSPO.supplier_order_id ? ` · ${sourceSSPO.supplier_order_id}` : ""}`}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition"
+      >
+        <CheckCircle2 className="w-3.5 h-3.5" /> S&amp;S Ordered
+      </Link>
+    );
+  }
+  if (sourceSSPO?.status === "draft") {
+    return (
+      <Link
+        to={createPageUrl("PurchaseOrders")}
+        title="A draft S&S PO exists for this order — open Purchase Orders to confirm stock and submit"
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 border border-amber-200 bg-amber-50 rounded-lg hover:bg-amber-100 transition"
+      >
+        <Truck className="w-3.5 h-3.5" /> View Pending S&amp;S PO
+      </Link>
+    );
+  }
+  return (
+    <button
+      onClick={() => onOrderFromSS(order)}
+      disabled={disabled}
+      title="Create a draft S&S Activewear PO from this order's S&S line items"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-indigo-600 border border-indigo-200 rounded-lg hover:bg-indigo-50 transition disabled:opacity-50"
+    >
+      <Truck className="w-3.5 h-3.5" /> Order from S&amp;S
     </button>
   );
 }

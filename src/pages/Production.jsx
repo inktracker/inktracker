@@ -16,6 +16,8 @@ import {
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import ACOrderModal from "../components/orders/ACOrderModal";
+import { SUPPLIERS } from "@/api/suppliers";
+import { buildSSPOFromOrder } from "@/lib/purchaseOrders";
 import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List, LayoutGrid } from "lucide-react";
@@ -179,12 +181,14 @@ export default function Production() {
         (c || []).forEach((cust) => (map[cust.id] = cust));
         setCustomers(map);
         setQuotes(q || []);
-        // Last-write-wins per source_order_id; if a shop genuinely has
-        // multiple POs for the same order, the latest one drives the
-        // button state (cleanest single-PO assumption for v1).
+        // Keyed by order id → { [supplier]: po } so an order can have BOTH an
+        // AS Colour and an S&S PO (mixed-supplier orders) without the buttons
+        // clobbering each other. Last-write-wins per supplier.
         const poMap = {};
         for (const po of pos || []) {
-          if (po.source_order_id) poMap[po.source_order_id] = po;
+          if (!po.source_order_id) continue;
+          const bySupplier = poMap[po.source_order_id] || (poMap[po.source_order_id] = {});
+          bySupplier[po.supplier || SUPPLIERS.AC] = po;
         }
         setPoByOrderId(poMap);
       } catch (err) {
@@ -385,6 +389,28 @@ export default function Production() {
     // If the deleted order originated from a broker quote, roll the quote
     // back to "Client Approved" and notify the broker via ShopActionFeed.
     handleBrokerOrderDeletion(order);
+  }
+
+  // Create a draft S&S PO straight from the order's S&S line items. No upfront
+  // SKU resolution / review modal (unlike AS Colour) — S&S resolves SKUs at
+  // submit and the operator reviews stock + submits on the Purchase Orders
+  // page. The order button then flips to "View Pending S&S PO".
+  async function handleOrderFromSS(order) {
+    const payload = buildSSPOFromOrder(order, user);
+    if (!payload) {
+      notify.error("No S&S items", "This order has no S&S Activewear garments to order.");
+      return;
+    }
+    try {
+      const created = await base44.entities.PurchaseOrder.create(payload);
+      setPoByOrderId((prev) => ({
+        ...prev,
+        [order.id]: { ...(prev[order.id] || {}), [SUPPLIERS.SS]: created },
+      }));
+      notify.success("Draft S&S PO created", "Review stock and submit it on the Purchase Orders page.");
+    } catch (err) {
+      notify.error("Couldn't create S&S PO", err);
+    }
   }
 
   async function handleTogglePaid(order) {
@@ -1423,7 +1449,9 @@ export default function Production() {
           onDelete={handleDelete}
           onTogglePaid={handleTogglePaid}
           onOrderFromAC={(order) => setAcOrderTarget(order)}
-          sourcePO={poByOrderId[viewing.id]}
+          onOrderFromSS={handleOrderFromSS}
+          sourcePO={poByOrderId[viewing.id]?.[SUPPLIERS.AC]}
+          sourceSSPO={poByOrderId[viewing.id]?.[SUPPLIERS.SS]}
           onShowInvoice={(invoice) => setViewingInvoice(invoice)}
           onUpdated={(u) => setOrders((prev) => prev.map((o) => (o.id === u.id ? { ...o, ...u } : o)))}
         />
@@ -1450,7 +1478,10 @@ export default function Production() {
           user={user}
           onClose={() => setAcOrderTarget(null)}
           onPOCreated={(po) => {
-            setPoByOrderId((prev) => ({ ...prev, [acOrderTarget.id]: po }));
+            setPoByOrderId((prev) => ({
+              ...prev,
+              [acOrderTarget.id]: { ...(prev[acOrderTarget.id] || {}), [SUPPLIERS.AC]: po },
+            }));
           }}
         />
       )}
