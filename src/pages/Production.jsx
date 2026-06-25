@@ -125,6 +125,8 @@ export default function Production() {
   );
   const [filter, setFilter] = useState("All");
   const [originFilter, setOriginFilter] = useState("All");
+  // Hide finished work so the table focuses on what still needs doing.
+  const [hideCompleted, setHideCompleted] = useState(false);
   const [advFilters, setAdvFilters] = useState({});
   const [dragOverDate, setDragOverDate] = useState(null);
   const [user, setUser] = useState(null);
@@ -271,6 +273,7 @@ export default function Production() {
 
   // Table view filtering
   let filteredTable = filter === "All" ? orders : orders.filter((o) => o.status === filter);
+  if (hideCompleted) filteredTable = filteredTable.filter((o) => o.status !== "Completed");
   filteredTable = filteredTable.filter((o) => {
     if (originFilter === "Internal" && o.broker_id) return false;
     if (originFilter === "Broker" && !o.broker_id) return false;
@@ -575,7 +578,7 @@ export default function Production() {
               </button>
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             {["All", "Internal", "Broker"].map((o) => (
               <button
                 key={o}
@@ -585,6 +588,13 @@ export default function Production() {
                 {o}
               </button>
             ))}
+            <button
+              onClick={() => setHideCompleted((v) => !v)}
+              className={`ml-auto text-xs font-semibold px-3 py-1.5 rounded-full border transition ${hideCompleted ? "bg-emerald-600 text-white border-emerald-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-emerald-300"}`}
+              title="Hide orders marked Completed so you only see active work"
+            >
+              {hideCompleted ? "Show Completed" : "Hide Completed"}
+            </button>
           </div>
           <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />
 
