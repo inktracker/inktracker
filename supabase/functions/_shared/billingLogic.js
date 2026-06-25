@@ -79,6 +79,44 @@ export function computeTrialMeta(profile, now = Date.now()) {
   };
 }
 
+// ── Self-heal: reconcile a profile from live Stripe subscriptions ───
+//
+// The billing webhook can miss events (not configured in Stripe, a dropped
+// delivery, or — the bug this was written for — a handler that wrote to the
+// wrong table). When that happens a paying customer stays stuck on "trial
+// ended" even though Stripe has their active subscription. To recover without
+// depending on the webhook, getSubscription pulls the customer's live
+// subscriptions from Stripe and reconciles the profile from THIS pure mapper.
+
+// Stripe subscription statuses that should grant in-app access. `past_due`
+// is included so a customer with a failed payment retry keeps their data
+// (read-only, enforced by isReadOnly in billing.js) instead of being locked
+// out as "expired".
+export const ACCESS_GRANTING_SUB_STATUSES = Object.freeze(["active", "trialing", "past_due"]);
+
+/**
+ * Given a list of Stripe subscription objects (each {id, status}), return the
+ * profile fields to persist so the app reflects live Stripe state, or null if
+ * no subscription grants access (caller leaves the profile untouched).
+ *
+ * Picks the "best" access-granting sub: active > trialing > past_due. Maps to
+ * subscription_tier "shop" (the only paid tier) and mirrors the Stripe status.
+ */
+export function reconcileFieldsFromSubscriptions(subs) {
+  const list = Array.isArray(subs) ? subs : [];
+  const granting = list.filter((s) => s && ACCESS_GRANTING_SUB_STATUSES.includes(s.status));
+  if (granting.length === 0) return null;
+  const chosen =
+    granting.find((s) => s.status === "active") ||
+    granting.find((s) => s.status === "trialing") ||
+    granting[0];
+  return {
+    subscription_tier: "shop",
+    subscription_status: chosen.status, // "active" | "trialing" | "past_due"
+    stripe_subscription_id: chosen.id,
+  };
+}
+
 // ── Stripe checkout payload builders ────────────────────────────────
 
 // trial_period_days field on subscription_data. Returns the number of

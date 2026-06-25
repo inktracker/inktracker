@@ -223,7 +223,8 @@ serve(async (req) => {
 
       if (error) {
         console.error("setRole error:", JSON.stringify(error));
-        return new Response(JSON.stringify({ error: error.message || "Failed to set role", detail: JSON.stringify(error) }), {
+        // Don't return the raw DB error (leaks schema/internals). Message only.
+        return new Response(JSON.stringify({ error: error.message || "Failed to set role" }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -237,6 +238,16 @@ serve(async (req) => {
     if (action === "inviteBroker") {
       const { email, fullName, role: inviteRole } = body;
       const assignRole = inviteRole || "broker";
+      // Allowlist the invitee role. Without this, a shop owner could invite a
+      // user with role:"admin" (the platform-staff role that bypasses gates) or
+      // any arbitrary string. Only the three tenant-scoped roles are invitable.
+      const INVITABLE_ROLES = new Set(["broker", "employee", "manager"]);
+      if (!INVITABLE_ROLES.has(assignRole)) {
+        return new Response(JSON.stringify({ error: "Invalid role. You can invite a broker, employee, or manager." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       const cleanEmail = (email ?? "").trim().toLowerCase();
       if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
         return new Response(JSON.stringify({ error: "Valid email required" }), {

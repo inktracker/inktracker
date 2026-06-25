@@ -10,6 +10,7 @@
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { claimWebhookEventDetailed, CLAIM_OUTCOMES, extractQbEventId } from "../_shared/webhookIdempotency.js";
 import { logEvent } from "../_shared/qbAudit.js";
+import { verifyQbSignature } from "../_shared/qbWebhookSignature.js";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
 import {
   chooseQuotePaymentRecipient,
@@ -56,37 +57,10 @@ const CORS = {
 };
 
 // ── Signature verification ───────────────────────────────────────────────────
-
-// Constant-time string comparison. Standard practice for any verifier check
-// where a length-prefix short-circuit could leak timing info about which
-// position the comparison diverged at.
-function timingSafeEqual(a: string, b: string): boolean {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return mismatch === 0;
-}
-
-async function verifySignature(rawBody: string, signature: string): Promise<boolean> {
-  // Fail closed — refuse events without verifier token configured or without a
-  // signature header. Previous behavior returned true when no token was set,
-  // which let unsigned events through.
-  if (!QB_VERIFIER_TOKEN || !signature) return false;
-  try {
-    const key = await crypto.subtle.importKey(
-      "raw",
-      new TextEncoder().encode(QB_VERIFIER_TOKEN),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"],
-    );
-    const computed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
-    const expectedB64 = btoa(String.fromCharCode(...new Uint8Array(computed)));
-    return timingSafeEqual(expectedB64, signature);
-  } catch {
-    return false;
-  }
+// Logic lives in ../_shared/qbWebhookSignature.js (unit-tested + reused by the
+// smoke script). This thin wrapper binds it to the configured verifier token.
+function verifySignature(rawBody: string, signature: string): Promise<boolean> {
+  return verifyQbSignature(rawBody, signature, QB_VERIFIER_TOKEN);
 }
 
 // ── QB API helpers ───────────────────────────────────────────────────────────
@@ -304,25 +278,35 @@ async function processNotification(supabase: any, notification: any) {
   const { realmId, dataChangeEvent } = notification;
   if (!realmId || !dataChangeEvent?.entities) return;
 
-  // Look up the shop's QB tokens by realm ID — find profile first, then load secrets
-  const { data: profileRow } = await supabase
-    .from("profiles")
-    .select("id, shop_owner")
+  // Look up the shop by realm ID. CRITICAL: qb_realm_id lives in
+  // `profile_secrets` (moved off `profiles` in the secrets migration), so we
+  // MUST query it there. Querying `profiles.qb_realm_id` raises 42703 (column
+  // does not exist); the error was swallowed, profileRow came back null, and
+  // EVERY real webhook returned "No profile found" — so no paid invoice ever
+  // converted, even though QB was delivering Payment/Invoice events correctly.
+  // Same bug class as the billing webhook fix.
+  const { data: secretRow } = await supabase
+    .from("profile_secrets")
+    .select("profile_id")
     .eq("qb_realm_id", realmId)
     .maybeSingle();
-  const profile = profileRow ? await loadProfileWithSecrets(supabase, { id: profileRow.id }) : null;
+  const profile = secretRow ? await loadProfileWithSecrets(supabase, { id: secretRow.profile_id }) : null;
 
   if (!profile?.qb_access_token) {
     console.error(`[qbWebhook] No profile found for realmId ${realmId}`);
     return;
   }
-  // Defensive: a profile WITHOUT shop_owner should never exist (NOT
-  // NULL in the schema), but if one ever does we MUST refuse to
-  // process — otherwise handlePaidInvoice's tenant filter degenerates
-  // and the cross-tenant bug returns.
-  const shopOwner: string = profile.shop_owner;
+  // Resolve the shop-owner KEY the quotes/orders are scoped by. For an OWNER
+  // (role shop/admin) `profiles.shop_owner` is NULL — they're identified by
+  // their own email, and their rows carry `shop_owner = their email`. Only
+  // employees/brokers have shop_owner pointing at the owner. So the canonical
+  // key is `shop_owner || email`. Reading the bare `shop_owner` here made the
+  // handler refuse EVERY owner's payment (shop_owner null) even after the
+  // realm→profile lookup was fixed — so nothing converted. We still refuse if
+  // BOTH are somehow null (can't safely scope a tenant query).
+  const shopOwner: string = profile.shop_owner || profile.email;
   if (!shopOwner) {
-    console.error(`[qbWebhook] Profile for realmId ${realmId} has no shop_owner — refusing to process`);
+    console.error(`[qbWebhook] Profile for realmId ${realmId} has no shop_owner or email — refusing to process`);
     return;
   }
 

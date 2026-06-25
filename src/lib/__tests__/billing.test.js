@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getEffectiveTier, canAccess } from "../billing";
+import { getEffectiveTier, canAccess, resolveTeamSubscription } from "../billing";
 
 // Fixed reference time so trial-expiry tests are deterministic.
 const NOW = new Date("2026-05-12T07:00:00.000Z");
@@ -158,5 +158,35 @@ describe("canAccess + getEffectiveTier composition — the full gating contract"
     for (const f of ["quotes", "orders", "qb_sync", "reports"]) {
       expect(canAccess(tier, f), `active trial should keep ${f}`).toBe(true);
     }
+  });
+});
+
+describe("resolveTeamSubscription — team members inherit the owner's plan", () => {
+  // The real-world bug: Adam (manager) had subscription_tier 'trial' with a
+  // past trial_ends_at, so getEffectiveTier collapsed to 'expired' and locked
+  // him out — even though owner Kato is on an active 'shop' plan.
+  const expiredManager = {
+    role: "manager",
+    subscription_tier: "trial",
+    trial_ends_at: new Date(NOW_MS - 24 * ONE_HOUR).toISOString(), // expired
+  };
+
+  it("a manager on an expired trial inherits the owner's active 'shop' plan", () => {
+    const ownerSub = { subscription_tier: "shop", subscription_status: "active", trial_ends_at: null };
+    const effective = resolveTeamSubscription(expiredManager, ownerSub);
+    expect(getEffectiveTier(effective, NOW)).toBe("shop");
+    for (const f of ["reports", "mockups", "wizard"]) {
+      expect(canAccess(getEffectiveTier(effective, NOW), f), `manager should regain ${f}`).toBe(true);
+    }
+  });
+
+  it("with no owner sub (an owner), the profile is unchanged", () => {
+    expect(resolveTeamSubscription(expiredManager, null)).toBe(expiredManager);
+  });
+
+  it("if the OWNER is genuinely expired, the team member is correctly expired too", () => {
+    const ownerSub = { subscription_tier: "expired", subscription_status: "canceled", trial_ends_at: null };
+    const effective = resolveTeamSubscription(expiredManager, ownerSub);
+    expect(getEffectiveTier(effective, NOW)).toBe("expired");
   });
 });

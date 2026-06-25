@@ -3,6 +3,8 @@ import {
   addDaysISO,
   relativeDueLabel,
   getOrderActionHint,
+  isOrderOpen,
+  selectOverdueOrders,
 } from "../agendaHints";
 
 describe("addDaysISO", () => {
@@ -133,5 +135,78 @@ describe("getOrderActionHint", () => {
 
   it("Order Goods, no line items → no hint (no sizes to act on)", () => {
     expect(getOrderActionHint(order("Order Goods", { line_items: [] }))).toBe(null);
+  });
+});
+
+describe("isOrderOpen", () => {
+  it("open for in-progress statuses", () => {
+    expect(isOrderOpen({ status: "Printing" })).toBe(true);
+    expect(isOrderOpen({ status: "Order Goods" })).toBe(true);
+  });
+  it("closed for Completed / Cancelled", () => {
+    expect(isOrderOpen({ status: "Completed" })).toBe(false);
+    expect(isOrderOpen({ status: "Cancelled" })).toBe(false);
+  });
+  it("missing order/status counts as open (don't hide unknowns)", () => {
+    expect(isOrderOpen(undefined)).toBe(true);
+    expect(isOrderOpen({})).toBe(true);
+  });
+});
+
+describe("selectOverdueOrders", () => {
+  const TODAY = "2026-06-18";
+
+  it("returns open orders whose due date is strictly before today, oldest first", () => {
+    const orders = [
+      { id: "a", status: "Printing",    due_date: "2026-06-10" },
+      { id: "b", status: "Order Goods", due_date: "2026-05-31" },
+      { id: "c", status: "Pre-Press",   due_date: "2026-06-17" },
+    ];
+    expect(selectOverdueOrders(orders, TODAY).map((o) => o.id)).toEqual(["b", "a", "c"]);
+  });
+
+  it("excludes orders due today or in the future", () => {
+    const orders = [
+      { id: "today",  status: "Printing", due_date: "2026-06-18" },
+      { id: "future", status: "Printing", due_date: "2026-06-25" },
+    ];
+    expect(selectOverdueOrders(orders, TODAY)).toEqual([]);
+  });
+
+  it("excludes Completed / Cancelled even when past due ('until it's finished')", () => {
+    const orders = [
+      { id: "done",     status: "Completed", due_date: "2026-05-01" },
+      { id: "killed",   status: "Cancelled", due_date: "2026-05-01" },
+      { id: "stillopen", status: "Printing", due_date: "2026-05-01" },
+    ];
+    expect(selectOverdueOrders(orders, TODAY).map((o) => o.id)).toEqual(["stillopen"]);
+  });
+
+  it("skips orders with no due date", () => {
+    const orders = [
+      { id: "nodue", status: "Printing", due_date: null },
+      { id: "overdue", status: "Printing", due_date: "2026-06-01" },
+    ];
+    expect(selectOverdueOrders(orders, TODAY).map((o) => o.id)).toEqual(["overdue"]);
+  });
+
+  it("honors the excludeIds set so a job never double-lists with 'scheduled'", () => {
+    const orders = [
+      { id: "a", status: "Printing", due_date: "2026-06-01" },
+      { id: "b", status: "Printing", due_date: "2026-06-02" },
+    ];
+    const out = selectOverdueOrders(orders, TODAY, new Set(["a"]));
+    expect(out.map((o) => o.id)).toEqual(["b"]);
+  });
+
+  it("handles datetime due_date strings (slices to date)", () => {
+    const orders = [{ id: "a", status: "Printing", due_date: "2026-06-01T12:00:00Z" }];
+    expect(selectOverdueOrders(orders, TODAY).map((o) => o.id)).toEqual(["a"]);
+  });
+
+  it("returns [] for bad input", () => {
+    expect(selectOverdueOrders(null, TODAY)).toEqual([]);
+    expect(selectOverdueOrders([], TODAY)).toEqual([]);
+    expect(selectOverdueOrders([{ id: "a", status: "Printing", due_date: "2026-01-01" }], null)).toEqual([]);
   });
 });

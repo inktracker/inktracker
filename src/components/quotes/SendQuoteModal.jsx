@@ -276,7 +276,19 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         invoicePayload,
         idempotencyKey,
       });
-      if (invErr) throw new Error(invErr.message || "Couldn't reach QuickBooks. Please try again.");
+      if (invErr) {
+        // supabase-js wraps any non-2xx in a FunctionsHttpError whose
+        // .message is the useless "Edge Function returned a non-2xx status
+        // code". The function's REAL error ({ error: "..." }) lives in the
+        // unread Response on err.context. Pull it out so the operator sees
+        // the actual QuickBooks rejection instead of an opaque shell.
+        let realMessage = "";
+        try {
+          const body = await invErr.context?.json?.();
+          realMessage = body?.error || body?.message || "";
+        } catch { /* body unreadable / already consumed — fall back below */ }
+        throw new Error(realMessage || invErr.message || "Couldn't reach QuickBooks. Please try again.");
+      }
       if (data?.error) throw new Error(data.error);
       // Another in-flight request with the same key is still running
       // (rare — happens if the operator double-clicks Send before the

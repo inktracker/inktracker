@@ -14,6 +14,7 @@ import {
   resolveShopOwnerKey,
   isCustomerStaleError,
   isCustomerDeleted,
+  reconcileFieldsFromSubscriptions,
 } from "../_shared/billingLogic.js";
 
 // Prefer the prod key when both are configured. The previous order
@@ -118,6 +119,49 @@ Deno.serve(async (req) => {
 
     // ── getSubscription ─────────────────────────────────────────────
     if (action === "getSubscription") {
+      // Self-heal. The billing webhook can miss the checkout event (not
+      // configured in Stripe, dropped delivery, or a handler bug) — leaving a
+      // paying customer stuck on "trial ended" while Stripe holds their active
+      // subscription. So when the in-app record doesn't already reflect a paid
+      // plan but the customer DOES have a Stripe customer id, ask Stripe for
+      // the live subscription and reconcile. Only hits Stripe when needed —
+      // the already-paid happy path (tier "shop") skips the call.
+      const looksUnpaid =
+        profile.subscription_tier !== "shop" && profile.subscription_status !== "active";
+      if (looksUnpaid && profile.stripe_customer_id) {
+        try {
+          const subs = await stripe.subscriptions.list({
+            customer: profile.stripe_customer_id,
+            status: "all",
+            limit: 10,
+          });
+          const fields = reconcileFieldsFromSubscriptions(subs.data);
+          if (fields) {
+            const admin = adminClient();
+            const { error: profErr } = await admin
+              .from("profiles")
+              .update({
+                subscription_tier: fields.subscription_tier,
+                subscription_status: fields.subscription_status,
+              })
+              .eq("id", profile.id);
+            if (profErr) console.error("[billing] self-heal profiles update failed:", profErr.message);
+            try {
+              await updateProfileSecrets(admin, profile.id, {
+                stripe_subscription_id: fields.stripe_subscription_id,
+              });
+            } catch (e) {
+              console.error("[billing] self-heal secrets update failed:", e);
+            }
+            console.log(`[billing] self-healed ${profile.id} → ${fields.subscription_tier}/${fields.subscription_status} from Stripe`);
+            return json(computeTrialMeta({ ...profile, ...fields }));
+          }
+        } catch (e) {
+          // Non-fatal — fall through to the un-reconciled meta. Better to show
+          // stale state than to 500 the whole billing panel.
+          console.error("[billing] getSubscription self-heal failed (non-fatal):", e);
+        }
+      }
       return json(computeTrialMeta(profile));
     }
 

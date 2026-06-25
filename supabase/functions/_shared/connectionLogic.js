@@ -34,6 +34,30 @@ export const SECRET_KEYS = [
 ];
 
 /**
+ * Split an update object into the fields that belong on the `profiles`
+ * table vs the `profile_secrets` table. Stripe ids (stripe_customer_id,
+ * stripe_subscription_id) and all OAuth/credential fields live in
+ * profile_secrets now; everything else (subscription_tier,
+ * subscription_status, trial_ends_at, …) stays on `profiles`.
+ *
+ * Why this exists: billingWebhook used to `.from("profiles").update({…})`
+ * with stripe_subscription_id mixed in — but those columns were moved to
+ * profile_secrets, so the whole update silently matched zero rows and
+ * subscriptions never unlocked. Callers must route each half to the
+ * correct table; this keeps that split in one tested place.
+ */
+export function partitionSecretUpdates(updates, secretKeys = SECRET_KEYS) {
+  const secretSet = new Set(secretKeys);
+  const profileUpdates = {};
+  const secretUpdates = {};
+  for (const [k, v] of Object.entries(updates || {})) {
+    if (secretSet.has(k)) secretUpdates[k] = v;
+    else profileUpdates[k] = v;
+  }
+  return { profileUpdates, secretUpdates };
+}
+
+/**
  * Merge a `profiles` row with a `profile_secrets` row.
  *
  * Precedence: `secrets` wins per-key when present (non-null/undefined),

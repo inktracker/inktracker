@@ -825,13 +825,20 @@ describe("calcQuoteTotalsWithLinking", () => {
       expect(t.afterDisc).toBeCloseTo(t.sub - 150, 2);
     });
 
-    it("respects explicit percent even when > 100", () => {
-      // Edge case: discount_type explicitly "percent" should NOT be auto-flat
+    it("clamps a percent discount > 100 to 100% (afterDisc floored at 0, never negative)", () => {
+      // discount_type explicitly "percent" stays percent (not auto-flat), and a
+      // 150% discount is clamped to 100% → afterDisc = $0, NOT a negative total.
+      // (Regression guard: an earlier version left the percent path unclamped,
+      // producing a negative subtotal that flowed into tax/total + the QB invoice.)
       const q = makeQuote({ discount: 150, discount_type: "percent" });
       const t = calcQuoteTotalsWithLinking(q);
-      // 150% discount → afterDisc = sub * (1 - 1.5) = negative → but Math.max not applied here
-      // Actually the code doesn't clamp percent, only flat uses Math.max(0, ...)
-      expect(t.afterDisc).toBeLessThan(0);
+      expect(t.afterDisc).toBe(0);
+    });
+
+    it("ignores a negative percent discount (clamped to 0)", () => {
+      const q = makeQuote({ discount: -50, discount_type: "percent" });
+      const t = calcQuoteTotalsWithLinking(q);
+      expect(t.afterDisc).toBeCloseTo(t.sub, 2);
     });
 
     it("flat discount does not go below zero", () => {
@@ -920,6 +927,26 @@ describe("calcQuoteTotalsWithLinking", () => {
   });
 });
 
+// ── Per-line add-ons (li.extras) must affect totals ────────────────────────
+// Regression guard for the "add-ons not sticking" bug: the editor stamped line
+// totals using quote-level q.extras instead of per-line getLineExtras(li,q), so
+// per-line add-ons were dropped from the saved price. calcQuoteTotals uses the
+// per-line helper; this pins that a $1/pc add-on on ONE line raises the total
+// even when quote.extras is empty.
+describe("per-line extras affect totals", () => {
+  beforeEach(() => loadShopPricingConfig(null));
+
+  it("a $1/pc add-on on the line raises the total by $1 × qty", () => {
+    const base = makeLineItem();
+    const qty = getQty(base);
+    expect(qty).toBeGreaterThan(0);
+    const withExtra = { ...makeLineItem(), extras: { colorMatch: 1 } };
+    const totalBase = calcQuoteTotals(makeQuote({ line_items: [base], extras: {} })).total;
+    const totalExtra = calcQuoteTotals(makeQuote({ line_items: [withExtra], extras: {} })).total;
+    expect(totalExtra).toBeCloseTo(totalBase + 1 * qty, 2);
+  });
+});
+
 // ── Group 4: buildQBInvoicePayload ─────────────────────────────────────────
 
 describe("buildQBInvoicePayload", () => {
@@ -943,6 +970,28 @@ describe("buildQBInvoicePayload", () => {
     expect(payload.lines).toHaveLength(1);
     expect(payload.lines[0].unitPrice).toBeGreaterThan(0);
     expect(payload.lines[0].amount).toBeGreaterThan(0);
+  });
+
+  it("emits setup + additional fee lines with correct taxable/isFee flags", () => {
+    const li = makeLineItem({ _ppp: 10, _lineTotal: 100 });
+    const q = makeQuote({
+      line_items: [li],
+      setup_total: 25,
+      additional_charges: [
+        { id: "a", label: "Shipping", amount: 15, taxable: false },
+        { id: "b", label: "Rush", amount: 20, taxable: true },
+      ],
+    });
+    const payload = buildQBInvoicePayload(q);
+    const byDesc = Object.fromEntries(payload.lines.map((l) => [l.description, l]));
+    expect(byDesc["Setup & Screen Fees"]).toMatchObject({ amount: 25, taxable: true, isFee: true });
+    expect(byDesc["Shipping"]).toMatchObject({ amount: 15, taxable: false, isFee: true });
+    expect(byDesc["Rush"]).toMatchObject({ amount: 20, taxable: true, isFee: true });
+    // garment line stays taxable and is NOT a fee
+    const garment = payload.lines.find((l) => !l.isFee);
+    expect(garment.taxable).toBe(true);
+    // sum of all line amounts = garment + setup + fees = 160
+    expect(payload.lines.reduce((s, l) => s + l.amount, 0)).toBeCloseTo(160, 2);
   });
 
   it("broker quotes USE saved per-line values (quote-snapshot invariant)", () => {
@@ -1568,5 +1617,31 @@ describe("calcSetupFees", () => {
     const r = calcSetupFees({ lineItems, config: { enabled: true } });
     expect(r.items).toEqual([]);
     expect(r.total).toBe(0);
+  });
+});
+
+// ── add-on labels in QB line description (shop opt-in, snapshotted) ──────────
+describe("buildQBInvoicePayload — add-on labels & zero-amount fees", () => {
+  beforeEach(() => loadShopPricingConfig(null));
+
+  it("appends snapshotted _addon_labels to the line description", () => {
+    const li = makeLineItem({ _ppp: 10, _lineTotal: 100, _addon_labels: ["Pantone Match", "Water-Based Ink"] });
+    const payload = buildQBInvoicePayload(makeQuote({ line_items: [li] }));
+    expect(payload.lines[0].description).toContain("Pantone Match, Water-Based Ink");
+  });
+
+  it("omits add-on text when _addon_labels is empty/absent", () => {
+    const li = makeLineItem({ _ppp: 10, _lineTotal: 100 });
+    const payload = buildQBInvoicePayload(makeQuote({ line_items: [li] }));
+    expect(payload.lines[0].description).not.toMatch(/Pantone|Water-Based/);
+  });
+
+  it("skips additional_charges with a zero amount (no QB line)", () => {
+    const li = makeLineItem({ _ppp: 10, _lineTotal: 100 });
+    const payload = buildQBInvoicePayload(makeQuote({
+      line_items: [li],
+      additional_charges: [{ id: "z", label: "Empty Fee", amount: 0, taxable: false }],
+    }));
+    expect(payload.lines.find((l) => l.description === "Empty Fee")).toBeUndefined();
   });
 });

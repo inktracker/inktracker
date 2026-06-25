@@ -13,6 +13,7 @@ import {
   calcQuoteTotals,
   calcLinkedLinePrice,
   buildLinkedQtyMap,
+  getLineExtras,
   fmtMoney,
   fmtDate,
   getQty,
@@ -21,6 +22,10 @@ import {
 } from "../components/shared/pricing";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
 import { toCustomerFacingQuote, customerFacingShopName } from "@/lib/quotes/customerFacingQuote";
+import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { isQbStale } from "@/lib/quotes/qbStale";
+import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
+import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -141,7 +146,7 @@ function getLineItemPricing(li, quote) {
 
   // Legacy fallback
   const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
-  const pricing = calcLinkedLinePrice(li, quote.rush_rate, quote.extras, undefined, linkedQtyMap);
+  const pricing = calcLinkedLinePrice(li, quote.rush_rate, getLineExtras(li, quote), undefined, linkedQtyMap);
   const lineTotal = pricing ? pricing.lineTotal : 0;
   const perPiece = qty > 0 ? lineTotal / qty : 0;
 
@@ -171,6 +176,7 @@ export default function QuotePayment() {
   const [approveLoading, setApproveLoading] = useState(false);
   const [approveError, setApproveError] = useState("");
   const [approveSuccess, setApproveSuccess] = useState(false);
+  const [previewArt, setPreviewArt] = useState(null);
 
   const RECAPTCHA_SITE_KEY = "6LdFgbIsAAAAAKlrO8Sv9y-3HUJv4f-1hjHEjsi9";
   const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -255,8 +261,13 @@ export default function QuotePayment() {
   // link or the page falls back to Approve-only ("pay out-of-band").
   // resolveCheckoutTarget already rejects legacy login-required Intuit
   // URLs so qbAvailable here means a real customer-facing share link.
+  // If the quote was edited after its QB invoice was created (e.g. a fee added),
+  // qb_total is stale and the QB payment link would charge the OLD lower amount.
+  // Block QB payment until the shop regenerates — better the customer approves
+  // and waits for a correct link than underpays.
+  const qbStaleFlag = isQbStale(quote);
   const qbCheckoutTarget = resolveCheckoutTarget(quote);
-  const qbAvailable = qbCheckoutTarget.provider === "qb" && Boolean(qbCheckoutTarget.url);
+  const qbAvailable = qbCheckoutTarget.provider === "qb" && Boolean(qbCheckoutTarget.url) && !qbStaleFlag;
   const canCollectPayment = qbAvailable;
 
   async function handleApprove() {
@@ -389,7 +400,7 @@ export default function QuotePayment() {
         sub: Number(displayQuote.subtotal),
         subtotal: Number(displayQuote.subtotal),
         rushTotal: 0,
-        afterDisc: Number(displayQuote.total) - Number(displayQuote.tax || 0),
+        afterDisc: savedAfterDiscount(displayQuote),
         tax: Number(displayQuote.tax || 0),
         total: Number(displayQuote.total),
       }
@@ -479,6 +490,55 @@ export default function QuotePayment() {
             </div>
           </div>
         </div>
+
+        {/* Art proof / mockups — so the customer can review the proof before
+            approving. Reads selected_artwork (the shop's attached proofs). The
+            bucket is public, so public URLs render; the overlay's signed-URL
+            sign falls back to the public URL for anon viewers. */}
+        {(() => {
+          const proofs = (displayQuote.selected_artwork || []).filter((a) => a && (a.url || a.file_url));
+          if (proofs.length === 0) return null;
+          const isPdf = (a) => /\.pdf(\?|$)/i.test(a.url || a.file_url || a.name || "");
+          return (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 sm:px-8 py-6">
+              <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 mb-4">
+                Art Proof
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {proofs.map((a, i) => (
+                  <button
+                    key={a.id || a.url || i}
+                    type="button"
+                    onClick={() => setPreviewArt(a)}
+                    className="group relative aspect-square rounded-xl border border-slate-200 bg-slate-50 overflow-hidden hover:border-teal-400 hover:shadow-md transition"
+                    title={`${a.name || "Artwork"} — click to enlarge`}
+                  >
+                    {isPdf(a) ? (
+                      <object
+                        data={`${a.url || a.file_url}#toolbar=0&navpanes=0&view=FitH`}
+                        type="application/pdf"
+                        className="w-full h-full pointer-events-none"
+                        aria-label={a.name || "PDF proof"}
+                      />
+                    ) : (
+                      <img
+                        src={a.url || a.file_url}
+                        alt={a.name || "Art proof"}
+                        className="w-full h-full object-contain"
+                      />
+                    )}
+                    <span className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[10px] px-1.5 py-1 truncate opacity-0 group-hover:opacity-100 transition">
+                      {a.name || "Artwork"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-3">
+                Click any proof to enlarge. Approved proofs are final.
+              </p>
+            </div>
+          );
+        })()}
 
         {(displayQuote.line_items || []).length > 0 && (
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 sm:px-8 py-6 space-y-5">
@@ -618,6 +678,12 @@ export default function QuotePayment() {
                           )}
                         </div>
                       ))}
+                    {Array.isArray(li._addon_labels) && li._addon_labels.filter(Boolean).length > 0 && (
+                      <div className="text-xs text-slate-500 border-t border-slate-50 pt-2">
+                        <span className="font-semibold text-slate-600">Add-ons: </span>
+                        {li._addon_labels.filter(Boolean).join(", ")}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -645,8 +711,32 @@ export default function QuotePayment() {
               </div>
             )}
 
+            {/* Setup / screen fees — itemized so the jump from subtotal to
+                total isn't a mystery charge. Reads the saved setup_total
+                (snapshot invariant). */}
+            {(parseFloat(displayQuote.setup_total) || 0) > 0 && (
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-500">Setup &amp; Screen Fees</span>
+                <span className="font-semibold text-slate-800">
+                  {fmtMoney(Number(displayQuote.setup_total))}
+                </span>
+              </div>
+            )}
+
+            {/* Additional fees — each one-off charge as its own labeled line.
+                Lines (subtotal − disc + setup + these + tax) sum to the total. */}
+            {normalizeAdditionalCharges(displayQuote.additional_charges).map((c) => (
+              <div key={c.id || c.label} className="flex justify-between text-sm">
+                <span className="text-slate-500">{c.label || "Additional fee"}</span>
+                <span className="font-semibold text-slate-800">{fmtMoney(c.amount)}</span>
+              </div>
+            ))}
+
             {(() => {
-              const hasQb = quote.qb_total != null;
+              // Stale QB total (quote edited after invoice created) → fall back
+              // to the quote's real saved total so the customer sees the right
+              // amount; payment is also gated off above until regenerated.
+              const hasQb = quote.qb_total != null && !qbStaleFlag;
               const taxLabel = hasQb ? "Tax" : `Est. Tax (${displayQuote.tax_rate}%)`;
               const totalLabel = hasQb ? "Total Due" : "Est. Total";
               const taxValue = hasQb ? Number(quote.qb_tax_amount || 0) : totals.tax;
@@ -819,6 +909,14 @@ export default function QuotePayment() {
           })()}
         </div>
       </div>
+
+      {previewArt && (
+        <ArtworkPreviewOverlay
+          art={previewArt}
+          onClose={() => setPreviewArt(null)}
+          backLabel="Back to quote"
+        />
+      )}
     </div>
   );
 }

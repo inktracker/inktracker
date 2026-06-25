@@ -73,8 +73,23 @@ export function renderEmailLayout({
   const safeSubhead = subhead ? subhead.replace(/[<>]/g, "") : "";
   const headerLogo = logoUrl && /^https?:\/\//.test(logoUrl) ? logoUrl : EMAIL_LOGO_URL;
 
-  return `
+  // Full HTML document (not a bare fragment): the DOCTYPE forces standards
+  // mode and `x-apple-disable-message-reformatting` stops Apple Mail / iOS
+  // Mail from auto-scaling the message — without these, Apple Mail renders
+  // the whole email soft/blurry on Retina. viewport + text-size-adjust keep
+  // it crisp and prevent mobile font inflation.
+  return `<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="x-apple-disable-message-reformatting" />
+<meta name="color-scheme" content="light only" />
+<meta name="supported-color-schemes" content="light" />
 ${FONT_IMPORT_BLOCK}
+</head>
+<body style="margin:0;padding:0;background-color:${EMAIL_BG_SOFT};-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 <div style="background-color:${EMAIL_BG_SOFT};padding:24px 16px;margin:0;font-family:${BODY_FONT};">
   <div style="max-width:560px;margin:0 auto;background-color:#ffffff;border:1px solid ${EMAIL_HAIRLINE};">
 
@@ -109,6 +124,8 @@ ${FONT_IMPORT_BLOCK}
 
   </div>
 </div>
+</body>
+</html>
 `;
 }
 

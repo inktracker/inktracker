@@ -51,6 +51,13 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
     taxRate = "",
   } = input || {};
 
+  // NOTE: subscription_tier / subscription_status / trial_ends_at are NOT set
+  // here. They're governance columns owned by the server — `handle_new_user`
+  // sets them at signup and `activate_trial` backfills them. Writing them from
+  // the client (this payload goes through the authenticated `updateMe`) is both
+  // redundant and a downgrade risk, and is now rejected by the
+  // guard_profiles_privileged_columns trigger. Onboarding only writes brand /
+  // contact fields.
   return {
     shop_name:           trimStr(shopName) || user.email || "",
     logo_url:            logoUrl || "",
@@ -61,9 +68,6 @@ export function buildOnboardingProfile(input, { now = Date.now() } = {}) {
     zip:                 trimStr(zip),
     website:             trimStr(website) || null,
     default_tax_rate:    parseTaxRate(taxRate),
-    subscription_tier:   user.subscription_tier   || "trial",
-    subscription_status: user.subscription_status || "trialing",
-    trial_ends_at:       user.trial_ends_at       || new Date(now + TRIAL_MS).toISOString(),
   };
 }
 

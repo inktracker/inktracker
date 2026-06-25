@@ -20,6 +20,7 @@ export const MANAGER_SECTIONS = [
   { key: "Invoices",    label: "Invoices" },
   { key: "Performance", label: "Performance & Reports" },
   { key: "Mockups",     label: "Mockups" },
+  { key: "Team",        label: "Team roster (Admin panel — view only)" },
   { key: "Pricing",     label: "Pricing settings (Account → Pricing)" },
 ];
 
@@ -30,6 +31,7 @@ const PAGE_TO_SECTION = {
   PurchaseOrders: "Inventory",
   Orders: "Production",
   Calendar: "Production",
+  AdminPanel: "Team",
 };
 
 export function sectionForPage(page) {
@@ -46,6 +48,22 @@ export function managerCanAccess(user, page) {
   const section = sectionForPage(page);
   if (!section) return true; // ungated page (e.g. Account profile, ShopFloor)
   return perms[section] !== false;
+}
+
+// Owner-level access to a section, for actions that were previously gated to
+// owners (delete, merge, admin/team management) but should open to a FULL-
+// PARTNER manager. Owners/admins always pass; a manager passes only if their
+// manager_permissions allow that section (so the owner can still dial it back).
+// Brokers/employees never get owner-level access here.
+//
+// NOTE: this deliberately does NOT cover the two hard owner-only lines —
+// managing the subscription and editing manager_permissions themselves — so a
+// manager can never use it to escalate their own access.
+export function hasOwnerAccess(user, section) {
+  if (!user) return false;
+  if (user.role === "admin" || user.role === "shop") return true;
+  if (user.role === "manager") return managerCanAccess(user, section);
+  return false;
 }
 
 // First section a manager IS allowed to see — where to land them when

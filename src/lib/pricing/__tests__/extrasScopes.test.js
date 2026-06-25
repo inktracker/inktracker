@@ -12,7 +12,36 @@ import {
   buildAddonsByScope,
   getAddonsForTechnique,
   pruneExtrasForTechnique,
+  getActiveAddonLabels,
 } from "../extrasScopes";
+
+describe("getActiveAddonLabels", () => {
+  const cfg = {
+    extras: { colorMatch: 1, tags: 1.5 },
+    extraLabels: { colorMatch: "Pantone Match", tags: "Custom Tags" },
+  };
+
+  it("returns labels for ON add-ons only (skips false)", () => {
+    const li = { imprints: [{ technique: "Screen Print" }], extras: { colorMatch: 1, tags: false } };
+    expect(getActiveAddonLabels(li, {}, cfg)).toEqual(["Pantone Match"]);
+  });
+
+  it("returns [] when nothing is toggled on", () => {
+    const li = { imprints: [{ technique: "Screen Print" }], extras: { colorMatch: false } };
+    expect(getActiveAddonLabels(li, {}, cfg)).toEqual([]);
+  });
+
+  it("falls back to an auto-label when the key has no configured label", () => {
+    const li = { imprints: [{ technique: "Screen Print" }], extras: { puffEmbroidery: 1 } };
+    expect(getActiveAddonLabels(li, {}, cfg)).toEqual(["Puff Embroidery"]);
+  });
+
+  it("uses the quote-level extras fallback for legacy quotes (no li.extras)", () => {
+    const li = { imprints: [{ technique: "Screen Print" }] }; // no own extras
+    const quote = { extras: { colorMatch: 1 } };
+    expect(getActiveAddonLabels(li, quote, cfg)).toEqual(["Pantone Match"]);
+  });
+});
 
 describe("sliceToAddons", () => {
   it("returns [] when slice or slice.extras is missing", () => {
@@ -261,5 +290,39 @@ describe("pruneExtrasForTechnique", () => {
   it("custom technique scope: keeps that scope's keys, drops everything else", () => {
     const extras = { tags: 1.5, rush: 3, puff: false };
     expect(pruneExtrasForTechnique(extras, byScope, "DTG")).toEqual({ rush: 3 });
+  });
+});
+
+describe("getActiveAddonLabels — edge cases", () => {
+  it("resolves an Embroidery-scope add-on label (technique-scoped)", () => {
+    const cfg = {
+      extras: { colorMatch: 1 }, extraLabels: { colorMatch: "Pantone Match" },
+      embroidery: { extras: { puff: 1 }, extraLabels: { puff: "Puff / 3D" } },
+    };
+    const li = { imprints: [{ technique: "Embroidery" }], extras: { puff: 1 } };
+    expect(getActiveAddonLabels(li, {}, cfg)).toEqual(["Puff / 3D"]);
+  });
+
+  it("labels a percent-mode add-on (object snapshot is still 'on')", () => {
+    const cfg = { extras: { rush: 10 }, extraModes: { rush: "percent" }, extraLabels: { rush: "Rush" } };
+    const li = { imprints: [{ technique: "Screen Print" }], extras: { rush: { mode: "percent", rate: 10 } } };
+    expect(getActiveAddonLabels(li, {}, cfg)).toEqual(["Rush"]);
+  });
+
+  it("auto-labels when config is null/empty", () => {
+    const li = { imprints: [{ technique: "Screen Print" }], extras: { colorMatch: 1 } };
+    expect(getActiveAddonLabels(li, {}, null)).toEqual(["Color Match"]);
+  });
+
+  it("returns multiple active labels", () => {
+    const cfg = { extras: { colorMatch: 1, waterbased: 1 }, extraLabels: { colorMatch: "Pantone Match", waterbased: "Water-Based Ink" } };
+    const li = { imprints: [{ technique: "Screen Print" }], extras: { colorMatch: 1, waterbased: 1, tags: false } };
+    expect(getActiveAddonLabels(li, {}, cfg).sort()).toEqual(["Pantone Match", "Water-Based Ink"]);
+  });
+
+  it("no imprints → falls back to root scope, still labels", () => {
+    const cfg = { extras: { colorMatch: 1 }, extraLabels: { colorMatch: "Pantone Match" } };
+    const li = { extras: { colorMatch: 1 } };
+    expect(getActiveAddonLabels(li, {}, cfg)).toEqual(["Pantone Match"]);
   });
 });

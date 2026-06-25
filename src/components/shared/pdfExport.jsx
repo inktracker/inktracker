@@ -14,6 +14,7 @@ import {
   getLineExtras,
 } from './pricing';
 import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
+import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -637,7 +638,7 @@ function renderLineItems(
         if (imp.pantones) {
           doc.setFontSize(7);
           doc.setTextColor(100, 60, 160);
-          doc.text(`  Pantones: ${imp.pantones}`, margin + 5, yPos);
+          doc.text(`  Ink Colors: ${imp.pantones}`, margin + 5, yPos);
           yPos += 3;
         }
 
@@ -678,6 +679,15 @@ function renderLineItems(
       });
     }
 
+    // Add-on labels (shop opted in — snapshotted onto li._addon_labels).
+    const pdfAddonLabels = Array.isArray(li._addon_labels) ? li._addon_labels.filter(Boolean) : [];
+    if (pdfAddonLabels.length > 0) {
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(100, 100, 120);
+      doc.text(`  Add-ons: ${pdfAddonLabels.join(', ')}`, margin + 5, yPos);
+      yPos += 5;
+    }
 
     pdfLineTotals.push(lineTotal);
     yPos += 8;
@@ -686,7 +696,7 @@ function renderLineItems(
   return { yPos, pdfLineTotals };
 }
 
-function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null) {
+function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null, extraFeeLines = []) {
   doc.setDrawColor(180, 180, 200);
   doc.setLineWidth(0.4);
   doc.line(margin, yPos, pageWidth - margin, yPos);
@@ -730,6 +740,19 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
     doc.text(moneyNoWeirdMinus(-discountAmount), pageWidth - margin - 2, yPos, {
       align: 'right'
     });
+    yPos += 5;
+  }
+
+  // Setup / screen fees + one-off additional charges — itemized so the jump
+  // from subtotal to total isn't an unexplained number on the customer's PDF.
+  for (const line of (extraFeeLines || [])) {
+    if (!line || !(Number(line.amount) > 0)) continue;
+    doc.setFontSize(9);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100, 100, 120);
+    doc.text(`${line.label || 'Fee'}:`, margin, yPos);
+    doc.setTextColor(30, 30, 40);
+    doc.text(fmtMoney(Number(line.amount)), pageWidth - margin - 2, yPos, { align: 'right' });
     yPos += 5;
   }
 
@@ -1018,7 +1041,16 @@ export async function exportQuoteToPDF(
     isClientMode,
     quoteDiscType,
     parseFloat(quote.rush_rate) || 0,
-    quotePdfLineTotals.length > 0 ? quotePdfLineTotals.reduce((s, v) => s + v, 0) : null
+    quotePdfLineTotals.length > 0 ? quotePdfLineTotals.reduce((s, v) => s + v, 0) : null,
+    [
+      ...((parseFloat(quote.setup_total) || 0) > 0
+        ? [{ label: 'Setup & Screen Fees', amount: Number(quote.setup_total) }]
+        : []),
+      ...normalizeAdditionalCharges(quote.additional_charges).map((c) => ({
+        label: c.label || 'Additional fee',
+        amount: c.amount,
+      })),
+    ]
   );
 
   await appendArtworkPages(doc, quote);

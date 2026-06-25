@@ -80,6 +80,33 @@ export function getEffectiveTier(user, nowOverride) {
   return tier || "trial";
 }
 
+/**
+ * A team member (manager / employee / broker) has NO real subscription of
+ * their own — their profile sits at 'trial' from signup and then "expires",
+ * which would wrongly lock them out even while the SHOP OWNER is paying. So a
+ * team member's effective subscription must come from the owner.
+ *
+ * Given the member's profile and the owner's subscription fields (fetched
+ * separately, RLS-permitted via profiles_select_shop_owner), return a profile
+ * object with the owner's subscription fields applied. Owners pass ownerSub =
+ * null and keep their own.
+ *
+ * Pure + unit-tested. The fetch happens in AuthContext.fetchUserWithProfile.
+ *
+ * @param {object} profile   the signed-in user's own profile
+ * @param {object|null} ownerSub  { subscription_tier, subscription_status, trial_ends_at } or null
+ * @returns {object}         profile with effective subscription fields
+ */
+export function resolveTeamSubscription(profile, ownerSub) {
+  if (!profile || !ownerSub) return profile;
+  return {
+    ...profile,
+    subscription_tier:   ownerSub.subscription_tier,
+    subscription_status: ownerSub.subscription_status,
+    trial_ends_at:       ownerSub.trial_ends_at,
+  };
+}
+
 export function getTierLabel(tier) {
   const labels = { trial: "Free Trial", shop: "Shop", expired: "Expired" };
   return labels[tier] || tier;

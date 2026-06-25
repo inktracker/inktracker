@@ -45,5 +45,20 @@ export default defineConfig({
     // filesToDeleteAfterUpload above, they don't end up in the public
     // bundle — only Sentry sees them.
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // Split the stable, already-eager vendor libs into their own chunks so
+        // an app-code-only deploy doesn't invalidate them in returning users'
+        // browser cache. Only names libs that are already in the eager entry —
+        // lazy-only libs (recharts, pdf-lib, jspdf) keep their natural async
+        // chunks and must NOT be listed here or they'd become eager.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) return "react-vendor";
+          if (id.includes("@supabase")) return "supabase-vendor";
+          if (id.includes("@sentry")) return "sentry-vendor";
+        },
+      },
+    },
   },
 });

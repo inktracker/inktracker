@@ -64,7 +64,9 @@ Deno.serve(async (req) => {
     }
 
     if (!RESEND_API_KEY) {
-      console.log("[sendMfaSignInCode] No RESEND_API_KEY — would have emailed", user.email, "code:", rpcData.code);
+      // Never log the code — it would land in Supabase logs and be a second-
+      // factor bypass for anyone with log access.
+      console.log("[sendMfaSignInCode] No RESEND_API_KEY — would have emailed a sign-in code to", user.email);
       return Response.json({ status: "ok" }, { headers: CORS });
     }
 

@@ -74,16 +74,6 @@ async function invoke(fn, body) {
   return data;
 }
 
-export function supportsOrdering(supplier) {
-  return Boolean(FN[supplier]?.placeOrder);
-}
-
-export async function searchCatalog(supplier, { query, category, limit = 48, page = 1 } = {}) {
-  const fn = FN[supplier]?.search;
-  if (!fn) throw new Error(`No search function for supplier ${supplier}`);
-  return invoke(fn, { query, category, limit, page });
-}
-
 export async function lookupStyle(supplier, { styleNumber, styleCode, ...rest } = {}) {
   const fn = FN[supplier]?.lookup;
   if (!fn) throw new Error(`No lookup function for supplier ${supplier}`);
@@ -92,18 +82,6 @@ export async function lookupStyle(supplier, { styleNumber, styleCode, ...rest } 
     return invoke(fn, { styleCode: styleCode ?? styleNumber, ...rest });
   }
   return invoke(fn, { styleNumber: styleNumber ?? styleCode, ...rest });
-}
-
-export async function getInventory(supplier, params = {}) {
-  const fn = FN[supplier]?.inventory;
-  if (!fn) throw new Error(`No inventory function for supplier ${supplier}`);
-  return invoke(fn, params);
-}
-
-export async function getPricelist(supplier, params = {}) {
-  const fn = FN[supplier]?.pricelist;
-  if (!fn) throw new Error(`No pricelist function for supplier ${supplier}`);
-  return invoke(fn, params);
 }
 
 export async function getShippingMethods(supplier) {

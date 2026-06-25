@@ -61,8 +61,16 @@ import { customerFacingShopName } from "./customerFacingQuote";
 //     P6  For non-broker quotes, tax_rate is preserved as-is
 //     P7  customer_email is the FIRST recipient (canonical address)
 
-const DEFAULT_TOKEN_GENERATOR = () =>
-  (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/-/g, "");
+// public_token gates anonymous access to a quote's payment/approval page, so it
+// MUST be cryptographically unguessable. Never fall back to Math.random — a
+// Date.now()+Math.random() token is predictable, letting an attacker enumerate
+// other shops' quote links. crypto.randomUUID exists in every supported
+// browser/runtime; if it's missing, fail loudly rather than mint a weak token.
+const DEFAULT_TOKEN_GENERATOR = () => {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (!uuid) throw new Error("Secure random unavailable — cannot mint a quote access token.");
+  return uuid.replace(/-/g, "");
+};
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -151,6 +159,32 @@ export function nextStatusOnSend(currentStatus) {
   return s;
 }
 
+// ── extractProofImageUrls ───────────────────────────────────────────
+
+/**
+ * Pull customer-facing proof IMAGE urls off a quote's selected_artwork for
+ * inline embedding in the quote email. Images only (png/jpg/gif/webp) — PDFs
+ * can't render inline in email, so they're skipped (the customer still sees
+ * them on the linked QuotePayment page). Capped to keep the email lean.
+ *
+ * @param {object} quote
+ * @returns {Array<{url:string,name:string}>}
+ */
+export function extractProofImageUrls(quote) {
+  const art = Array.isArray(quote?.selected_artwork) ? quote.selected_artwork : [];
+  const out = [];
+  for (const a of art) {
+    const url = a?.url || a?.file_url;
+    if (!url || typeof url !== "string") continue;
+    if (!/^https:\/\//i.test(url)) continue; // only https, no data:/javascript:
+    const clean = url.split("?")[0].toLowerCase();
+    if (!/\.(png|jpe?g|gif|webp)$/.test(clean)) continue; // images only
+    out.push({ url, name: a?.name || "Art proof" });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
 // ── buildSendQuoteEmailRequest ──────────────────────────────────────
 
 /**
@@ -207,6 +241,7 @@ export function buildSendQuoteEmailRequest({
     pdfBase64,
     pdfFilename: `Quote-${quote?.quote_id || "draft"}.pdf`,
     shopOwnerEmail: quote?.shop_owner ?? "",
+    proofImages: extractProofImageUrls(quote),
   };
 }
 

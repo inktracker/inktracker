@@ -71,7 +71,9 @@ Deno.serve(async (req) => {
     const recoveryUrl = `${APP_ORIGIN}/MfaRecovery?token=${encodeURIComponent(rpcData.token)}`;
 
     if (!RESEND_API_KEY) {
-      console.log("[sendMfaRecoveryEmail] No RESEND_API_KEY — would have emailed", user.email, "→", recoveryUrl);
+      // Never log the recovery URL — it contains a token that disables MFA and
+      // signs the user in. Logging it would be a 2FA bypass for anyone with log access.
+      console.log("[sendMfaRecoveryEmail] No RESEND_API_KEY — would have emailed a recovery link to", user.email);
       return Response.json({ status: "ok" }, { headers: CORS });
     }
 

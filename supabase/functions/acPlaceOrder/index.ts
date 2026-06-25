@@ -115,7 +115,9 @@ Deno.serve(async (req) => {
 
     // ── POST the order ──────────────────────────────────────────────
     const orderPayload = buildOrderRequestBody(body);
-    console.error("[acPlaceOrder] POST /v1/orders payload:", JSON.stringify(orderPayload));
+    // Don't log the full payload — it carries customer shipping PII. Log only a
+    // non-PII summary for debugging supplier rejections.
+    console.error("[acPlaceOrder] POST /v1/orders:", Array.isArray(orderPayload?.lines) ? orderPayload.lines.length : 0, "line(s)");
 
     const res = await fetch(`${AC_BASE}/orders`, {
       method: "POST",

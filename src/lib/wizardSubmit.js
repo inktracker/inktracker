@@ -69,17 +69,33 @@ export function buildWizardQuotePayload(quote, shopOwner) {
 }
 
 /**
- * Submit a wizard quote via the locked-down RPC. Returns the inserted
- * quote's UUID on success.
+ * Submit a wizard quote. Goes through the `wizardSubmit` edge function so the
+ * reCAPTCHA token is verified SERVER-SIDE before the insert — a client-only
+ * captcha check would be trivially skipped by calling the RPC directly with the
+ * bundled anon key. The edge function then runs the same locked-down
+ * `submit_wizard_quote` RPC via the service role.
  *
- * @param {object} supabaseClient — pass the project's supabase client
+ * @param {object} supabaseClient — the project's supabase client
  * @param {object} quote          — the wizard's quote object
  * @param {string} shopOwner      — owner email from the wizard URL
+ * @param {string} recaptchaToken — reCAPTCHA v3 token from the page
  * @returns {Promise<string>}     — inserted quote's UUID
  */
-export async function submitWizardQuote(supabaseClient, quote, shopOwner) {
+export async function submitWizardQuote(supabaseClient, quote, shopOwner, recaptchaToken) {
   const payload = buildWizardQuotePayload(quote, shopOwner);
-  const { data, error } = await supabaseClient.rpc("submit_wizard_quote", { payload });
-  if (error) throw error;
-  return data;
+  const { data, error } = await supabaseClient.functions.invoke("wizardSubmit", {
+    body: { payload, recaptchaToken },
+  });
+  if (error) {
+    // Surface the function's real error body (supabase-js hides it behind a
+    // generic "non-2xx" message otherwise).
+    let msg = error.message;
+    try {
+      const body = await error.context?.json?.();
+      msg = body?.error || msg;
+    } catch { /* ignore */ }
+    throw new Error(msg || "Submission failed.");
+  }
+  if (data?.error) throw new Error(data.error);
+  return data?.id;
 }

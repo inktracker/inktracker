@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
@@ -45,13 +46,14 @@ export default function Invoices() {
       const currentUser = await base44.auth.me();
       setUser(currentUser);
 
-      const c = await base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) });
+      const c = await cachedFilter("Customer", { filters: { shop_owner: shopScope(currentUser) } });
       const custMap = {};
       c.forEach(cust => custMap[cust.id] = cust);
       setCustomers(custMap);
 
-      // Load local invoices first, then sync with QB in background
-      const inv = await base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }, "-date", 1000);
+      // Load local invoices first, then sync with QB in background. Cached for
+      // fast nav; the post-QB-sync refetch below stays direct (must be fresh).
+      const inv = await cachedFilter("Invoice", { filters: { shop_owner: shopScope(currentUser) }, sort: "-date", limit: 1000 });
       setInvoices(inv);
       setLoading(false);
 

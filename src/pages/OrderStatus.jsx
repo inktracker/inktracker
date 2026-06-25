@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
-import { fmtDate, getQty, O_STATUSES } from "../components/shared/pricing";
+import { fmtDate, getQty, O_STATUSES, getOrderDisplayClient } from "../components/shared/pricing";
 
 export default function OrderStatus() {
   const [order, setOrder] = useState(null);
@@ -71,7 +71,7 @@ export default function OrderStatus() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 sm:px-8 py-6">
           <div className="flex flex-wrap justify-between gap-3">
             <div>
-              <div className="text-xl font-black text-slate-900">{order.customer_name}</div>
+              <div className="text-xl font-black text-slate-900">{getOrderDisplayClient(order)}</div>
               {order.job_title && <div className="text-slate-500 text-sm mt-0.5">{order.job_title}</div>}
               {totalQty > 0 && (
                 <div className="text-sm text-slate-400 mt-1">{totalQty} pieces</div>

@@ -28,6 +28,28 @@
 // shared so the contract is enforced everywhere.
 
 import { calcQuoteTotals } from "../../components/shared/pricing";
+import { sumAdditionalCharges } from "../pricing/additionalCharges";
+
+/**
+ * The discounted line-item subtotal ("after discount, before setup/fees/tax"),
+ * derived PURELY from a quote's SAVED fields — no live recompute. This is the
+ * single source of truth for the displayed discount amount: every viewer shows
+ * discount = subtotal − afterDiscount, and the column foots because
+ * subtotal − discount + setup + additional fees + tax === total.
+ *
+ *   afterDiscount = total − tax − setup_total − additional_charges
+ *
+ * Using saved total/tax (rather than re-deriving discount from the % and
+ * re-rounding) is what keeps the PDF, customer page, and detail view identical
+ * and penny-consistent. See project_quote_immutability.
+ */
+export function savedAfterDiscount(quote) {
+  const total = Number(quote?.total) || 0;
+  const tax = Number(quote?.tax) || 0;
+  const setup = Number(quote?.setup_total) || 0;
+  const additional = sumAdditionalCharges(quote?.additional_charges).total;
+  return total - tax - setup - additional;
+}
 
 /**
  * Resolve the effective totals for a quote — saved values win, fall
@@ -59,12 +81,20 @@ export function effectiveQuoteTotals(quote, markup = undefined) {
     // and matches the legacy display path for rush>0 (Subtotal line
     // includes rush, separate Rush Fee line shown alongside).
     const savedSubtotal = Number.isFinite(quote.subtotal) ? quote.subtotal : null;
+    const effTax = quote.tax != null ? quote.tax : live.tax;
+    const setup = Number(quote.setup_total) || 0;
+    const additional = sumAdditionalCharges(quote.additional_charges).total;
     return {
       ...live,
       subtotal: savedSubtotal != null ? savedSubtotal : live.subtotal,
       sub:   savedSubtotal != null ? savedSubtotal : live.sub,
-      tax:   quote.tax != null ? quote.tax : live.tax,
+      tax:   effTax,
       total: quote.total,
+      // Derive afterDisc from SAVED total/tax/setup/fees — NOT the live calc —
+      // so the discount the PDF prints matches the saved snapshot and the
+      // column foots. (Previously left as the live `...live` value, which
+      // produced a 1-cent discount discrepancy vs. the saved total.)
+      afterDisc: quote.total - effTax - setup - additional,
       source: "saved",
     };
   }

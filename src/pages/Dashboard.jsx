@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { cachedFilter, cachedList } from "@/lib/queries/cachedEntity";
 import { DashboardSkeleton } from "@/components/shared/Skeletons";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
@@ -396,13 +397,22 @@ export default function Dashboard() {
       // blip. base44.entities.User.list() is also explicitly scoped to
       // brokers assigned to this shop's email so the "All users" call
       // can't accidentally enumerate other shops if RLS ever loosens.
+      // Reads go through the react-query cache (cachedFilter/cachedList): a
+      // remount within staleTime (30s) serves these instantly with no network,
+      // killing refetch-on-every-navigation. None of these lists are realtime
+      // here (only Messages is, below), so caching is safe. Writes elsewhere
+      // invalidate the table, so a freshly created quote/order/etc. still shows.
       const [q, o, invItems, allUsers, custs, localInvoices] = await Promise.all([
-        base44.entities.Quote.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 100).catch((e) => { console.error("[Dashboard] quotes fetch failed:", e); return []; }),
-        base44.entities.Order.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 50).catch((e) => { console.error("[Dashboard] orders fetch failed:", e); return []; }),
-        base44.entities.InventoryItem.filter({ shop_owner: shopScope(currentUser) }).catch((e) => { console.error("[Dashboard] inventory fetch failed:", e); return []; }),
-        base44.entities.User.list().catch((e) => { console.error("[Dashboard] users fetch failed:", e); return []; }),
-        base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }).catch((e) => { console.error("[Dashboard] customers fetch failed:", e); return []; }),
-        base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 1000).catch((e) => { console.error("[Dashboard] invoices fetch failed:", e); return []; }),
+        cachedFilter("Quote", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 100 }).catch((e) => { console.error("[Dashboard] quotes fetch failed:", e); return []; }),
+        cachedFilter("Order", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 50 }).catch((e) => { console.error("[Dashboard] orders fetch failed:", e); return []; }),
+        cachedFilter("InventoryItem", { filters: { shop_owner: shopScope(currentUser) } }).catch((e) => { console.error("[Dashboard] inventory fetch failed:", e); return []; }),
+        cachedList("User").catch((e) => { console.error("[Dashboard] users fetch failed:", e); return []; }),
+        cachedFilter("Customer", { filters: { shop_owner: shopScope(currentUser) } }).catch((e) => { console.error("[Dashboard] customers fetch failed:", e); return []; }),
+        // Project only the fields computeOutstanding() reads — the invoices
+        // table is wide (jsonb line snapshots) and select * detoasted every
+        // row (~180ms / ~600KB for one shop). id/date/total/paid is all the
+        // Dashboard needs. See perf analysis fix #3.
+        cachedFilter("Invoice", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 1000, columns: "id,date,total,paid" }).catch((e) => { console.error("[Dashboard] invoices fetch failed:", e); return []; }),
       ]);
 
       setQuotes(q);

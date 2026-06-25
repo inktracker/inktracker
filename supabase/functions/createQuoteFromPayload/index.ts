@@ -111,6 +111,14 @@ Deno.serve(async (req) => {
     if (!Array.isArray(payload.line_items) || payload.line_items.length === 0) {
       return json({ error: "line_items must be a non-empty array" }, 400);
     }
+    // Bound the write so a (compromised/abusive) authed caller can't OOM the
+    // function or bloat the quotes table with a giant payload.
+    if (payload.line_items.length > 200) {
+      return json({ error: "Too many line items (max 200)" }, 400);
+    }
+    if (JSON.stringify(body).length > 512 * 1024) {
+      return json({ error: "Payload too large" }, 413);
+    }
 
     // Authenticate the calling user
     const supaUser = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -121,6 +129,17 @@ Deno.serve(async (req) => {
 
     // Resolve the user's profile to get shop_owner email + defaults
     const admin = adminClient();
+
+    // Per-user rate limit — this is the one authed write endpoint that lacked
+    // one. 120 quote-creates/hour is generous for legit use (email scanner,
+    // bulk import) and stops a trial account from spamming the table.
+    const { data: underLimit } = await admin.rpc("check_request_rate", {
+      p_key: `create_quote:${user.id}`, p_limit_per_hr: 120,
+    });
+    if (underLimit === false) {
+      return json({ error: "Too many quote creations — please slow down and try again shortly." }, 429);
+    }
+
     const { data: profile, error: profErr } = await admin
       .from("profiles")
       .select("id, email, default_tax_rate")
@@ -175,6 +194,13 @@ Deno.serve(async (req) => {
 
     const quoteId = payload.quote_id || generateQuoteId();
 
+    // Status allowlist — a caller must NOT be able to create a quote already in
+    // a privileged/terminal state (Approved, Approved and Paid, Converted to
+    // Order) and thereby skip the approval→payment→conversion state machine.
+    // Only the safe creation states are accepted; anything else → Draft.
+    const CREATABLE_STATUSES = new Set(["Draft", "Sent", "Pending"]);
+    const safeStatus = CREATABLE_STATUSES.has(payload.status) ? payload.status : "Draft";
+
     const insertPayload: Record<string, unknown> = {
       quote_id: quoteId,
       shop_owner: profile.email,
@@ -182,17 +208,17 @@ Deno.serve(async (req) => {
       customer_name: customerName,
       customer_email: customerEmail,
       job_title: payload.job_title || "",
-      status: payload.status || "Draft",
+      status: safeStatus,
       date: today,
       due_date: inHands,
       expires_date: expires,
-      tax_rate: payload.tax_rate ?? profile.default_tax_rate ?? 0,
+      tax_rate: Math.max(0, Number(payload.tax_rate ?? profile.default_tax_rate ?? 0) || 0),
       line_items: lineItems,
-      discount: Number(payload.discount) || 0,
-      discount_type: payload.discount_type || "percent",
-      rush_rate: Number(payload.rush_rate) || 0,
+      discount: Math.max(0, Number(payload.discount) || 0),
+      discount_type: payload.discount_type === "flat" ? "flat" : "percent",
+      rush_rate: Math.max(0, Number(payload.rush_rate) || 0),
       extras: payload.extras || {},
-      deposit_pct: Number(payload.deposit_pct) || 0,
+      deposit_pct: Math.min(100, Math.max(0, Number(payload.deposit_pct) || 0)),
       deposit_paid: !!payload.deposit_paid,
       notes: payload.notes || "",
       source: payload.source || "api",

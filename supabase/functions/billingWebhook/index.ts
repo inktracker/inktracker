@@ -3,6 +3,8 @@ import Stripe from "npm:stripe@14";
 import { claimWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
 import { sendApprovalNotification } from "../_shared/approvalNotificationEmail.js";
 import { buildTrialWillEndEmail } from "../_shared/trialWillEndEmail.js";
+import { partitionSecretUpdates } from "../_shared/connectionLogic.js";
+import { updateProfileSecrets } from "../_shared/profileSecrets.ts";
 
 // Prefer prod key over test — matches `billing/index.ts`. If both are set
 // (during local testing), prod wins. Previously this preferred test, which
@@ -23,20 +25,58 @@ function adminClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 }
 
-// Single plan — all prices resolve to "shop"
+// Single plan — every price resolves to "shop". Includes the current
+// standard/annual prices used by billing/index.ts plus the older IDs kept
+// for in-flight subscriptions. Unknown prices fall back to the session/sub
+// metadata tier, so a new price won't silently break the unlock.
 const PRICE_TO_TIER: Record<string, string> = {
+  "price_1TXDFwI4m9BGT2cwXHD6gVXZ": "shop", // $99/mo standard (current)
+  "price_1TXDIZI4m9BGT2cwL3Xp2Vo9": "shop", // $999/yr annual (current)
   "price_1TR4wvI4m9BGT2cwt1kQ0fY3": "shop",
   "price_1TR508I4m9BGT2cwQt5bbznP": "shop",
   "price_1TR50AI4m9BGT2cwXUsKF6Ul": "shop",
 };
 
+// Resolve the profile id linked to a Stripe customer. stripe_customer_id
+// lives in profile_secrets (moved off `profiles` in the secrets migration),
+// so we must look it up there — NOT with `.from("profiles").eq("stripe_customer_id")`,
+// which silently matched zero rows and left every subscriber stuck on "trial".
+async function profileIdForCustomer(supabase: any, customerId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("profile_secrets")
+    .select("profile_id")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+  if (error) {
+    console.error(`[billingWebhook] profile_secrets lookup failed for ${customerId}:`, error.message);
+    return null;
+  }
+  return data?.profile_id ?? null;
+}
+
+// Apply an update to the right tables: subscription_tier/status/trial_ends_at
+// → profiles; stripe_subscription_id/stripe_customer_id → profile_secrets.
 async function updateProfileByCustomer(customerId: string, updates: Record<string, any>) {
   const supabase = adminClient();
-  const { error } = await supabase
-    .from("profiles")
-    .update(updates)
-    .eq("stripe_customer_id", customerId);
-  if (error) console.error("Profile update failed:", error);
+  const profileId = await profileIdForCustomer(supabase, customerId);
+  if (!profileId) {
+    console.error(`[billingWebhook] no profile linked to stripe_customer_id ${customerId} — cannot apply ${JSON.stringify(updates)}`);
+    return;
+  }
+
+  const { profileUpdates, secretUpdates } = partitionSecretUpdates(updates);
+
+  if (Object.keys(profileUpdates).length > 0) {
+    const { error } = await supabase.from("profiles").update(profileUpdates).eq("id", profileId);
+    if (error) console.error("[billingWebhook] profiles update failed:", error.message);
+  }
+  if (Object.keys(secretUpdates).length > 0) {
+    try {
+      await updateProfileSecrets(supabase, profileId, secretUpdates);
+    } catch (e: any) {
+      console.error("[billingWebhook] profile_secrets update failed:", e?.message || e);
+    }
+  }
 }
 
 Deno.serve(async (req) => {
@@ -150,11 +190,16 @@ Deno.serve(async (req) => {
         const customerId = sub.customer as string;
         try {
           const supabase = adminClient();
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("shop_owner, shop_name, trial_ends_at")
-            .eq("stripe_customer_id", customerId)
-            .maybeSingle();
+          // stripe_customer_id lives in profile_secrets — resolve the
+          // profile id there, then read the notification fields off profiles.
+          const profileId = await profileIdForCustomer(supabase, customerId);
+          const { data: profile } = profileId
+            ? await supabase
+                .from("profiles")
+                .select("shop_owner, shop_name, trial_ends_at")
+                .eq("id", profileId)
+                .maybeSingle()
+            : { data: null };
           const recipient = profile?.shop_owner;
           if (recipient) {
             const trialEnd = sub.trial_end

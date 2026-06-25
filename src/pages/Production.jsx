@@ -5,7 +5,7 @@ import { CalendarGridSkeleton } from "@/components/shared/Skeletons";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
-import { addDaysISO, relativeDueLabel, getOrderActionHint } from "@/lib/calendar/agendaHints";
+import { addDaysISO, relativeDueLabel, getOrderActionHint, selectOverdueOrders } from "@/lib/calendar/agendaHints";
 import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 import {
   dayIndex as schedulerDayIndex,
@@ -125,6 +125,8 @@ export default function Production() {
   );
   const [filter, setFilter] = useState("All");
   const [originFilter, setOriginFilter] = useState("All");
+  // Hide finished work so the table focuses on what still needs doing.
+  const [hideCompleted, setHideCompleted] = useState(false);
   const [advFilters, setAdvFilters] = useState({});
   const [dragOverDate, setDragOverDate] = useState(null);
   const [user, setUser] = useState(null);
@@ -271,6 +273,7 @@ export default function Production() {
 
   // Table view filtering
   let filteredTable = filter === "All" ? orders : orders.filter((o) => o.status === filter);
+  if (hideCompleted) filteredTable = filteredTable.filter((o) => o.status !== "Completed");
   filteredTable = filteredTable.filter((o) => {
     if (originFilter === "Internal" && o.broker_id) return false;
     if (originFilter === "Broker" && !o.broker_id) return false;
@@ -575,7 +578,7 @@ export default function Production() {
               </button>
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
             {["All", "Internal", "Broker"].map((o) => (
               <button
                 key={o}
@@ -585,6 +588,13 @@ export default function Production() {
                 {o}
               </button>
             ))}
+            <button
+              onClick={() => setHideCompleted((v) => !v)}
+              className={`ml-auto text-xs font-semibold px-3 py-1.5 rounded-full border transition ${hideCompleted ? "bg-emerald-600 text-white border-emerald-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-emerald-300"}`}
+              title="Hide orders marked Completed so you only see active work"
+            >
+              {hideCompleted ? "Show Completed" : "Hide Completed"}
+            </button>
           </div>
           <AdvancedFilters filters={advFilters} onFilterChange={handleAdvFilterChange} filterOptions={advFilterOptions} />
 
@@ -1241,11 +1251,19 @@ export default function Production() {
           scheduled.push(subject);
         }
 
+        // OVERDUE — past-due, still-open orders. Anchored to ACTUAL today
+        // (not the clicked day) so they persist in the agenda every day
+        // until finished, which is the whole point: "if there are past due
+        // jobs it should show up until it's done." Listed first (most
+        // urgent) and excluded from the other sections so nothing double-lists.
+        const overdue = selectOverdueOrders(orders, today, seen);
+        const overdueSeen = new Set([...seen, ...overdue.map((o) => o.id)]);
+
         // DUE SOON — orders due after the selected day, within the
-        // 14-day window, not completed, and not already in scheduled.
+        // 14-day window, not completed, and not already shown above.
         const dueSoon = orders
           .filter((o) => {
-            if (seen.has(o.id)) return false;
+            if (overdueSeen.has(o.id)) return false;
             if (o.status === "Completed") return false;
             if (!o.due_date) return false;
             const due = String(o.due_date).slice(0, 10);
@@ -1253,7 +1271,7 @@ export default function Production() {
           })
           .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)));
 
-        const inWorks = [...scheduled, ...dueSoon];
+        const inWorks = [...overdue, ...scheduled, ...dueSoon];
 
         const fmtDateLong = (s) => {
           const [yr, mo, dy] = String(s).split("-").map(Number);
@@ -1275,15 +1293,17 @@ export default function Production() {
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">Agenda</div>
                   <h3 className="text-lg font-bold text-slate-900 mt-0.5">{fmtDateLong(selectedDate)}</h3>
-                  <div className="text-xs text-slate-400 mt-0.5">
-                    {scheduled.length === 0 && dueSoon.length === 0
-                      ? "Nothing scheduled or due in the next 14 days."
+                  <div className="text-xs mt-0.5">
+                    {overdue.length === 0 && scheduled.length === 0 && dueSoon.length === 0
+                      ? <span className="text-slate-400">Nothing overdue, scheduled, or due in the next 14 days.</span>
                       : (
-                        <>
+                        <span className="text-slate-400">
+                          {overdue.length > 0 && <span className="text-red-600 font-semibold">{overdue.length} overdue</span>}
+                          {overdue.length > 0 && (scheduled.length > 0 || dueSoon.length > 0) && " · "}
                           {scheduled.length > 0 && `${scheduled.length} scheduled`}
                           {scheduled.length > 0 && dueSoon.length > 0 && " · "}
                           {dueSoon.length > 0 && `${dueSoon.length} due in the next 14 days`}
-                        </>
+                        </span>
                       )}
                   </div>
                 </div>
@@ -1300,17 +1320,18 @@ export default function Production() {
               <div className="p-5 space-y-5">
                 {inWorks.length === 0 && (
                   <div className="text-sm text-slate-400 italic text-center py-10">
-                    Nothing scheduled and nothing due in the next 14 days.
+                    Nothing overdue, scheduled, or due in the next 14 days.
                   </div>
                 )}
 
                 {[
+                  { key: "overdue",   title: "Overdue",         rows: overdue   },
                   { key: "scheduled", title: "Scheduled today", rows: scheduled },
                   { key: "dueSoon",   title: "Due soon",        rows: dueSoon   },
                 ].map(({ key, title, rows }) => rows.length === 0 ? null : (
                   <div key={key}>
-                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 mb-2">
-                      {title} <span className="text-slate-300 ml-1">{rows.length}</span>
+                    <div className={`text-[10px] font-bold uppercase tracking-[0.18em] mb-2 ${key === "overdue" ? "text-red-600" : "text-slate-500"}`}>
+                      {title} <span className={`ml-1 ${key === "overdue" ? "text-red-300" : "text-slate-300"}`}>{rows.length}</span>
                     </div>
                     <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
                       {rows.map((o) => {
@@ -1322,7 +1343,13 @@ export default function Production() {
                           o.status === "Completed" &&
                           o.completed_date &&
                           String(o.completed_date).slice(0, 10) === selectedDate;
-                        const dueRel = key === "dueSoon" && end ? relativeDueLabel(end, selectedDate) : "";
+                        // Overdue rows count from REAL today ("Overdue N days");
+                        // due-soon rows count from the clicked day ("Due in N days").
+                        const dueRel = end
+                          ? (key === "overdue" ? relativeDueLabel(end, today)
+                            : key === "dueSoon" ? relativeDueLabel(end, selectedDate)
+                            : "")
+                          : "";
                         const actionHint = getOrderActionHint(o);
                         return (
                           <button
@@ -1340,11 +1367,16 @@ export default function Production() {
                               </div>
                               <div className="text-xs text-slate-400 mt-0.5 truncate">
                                 {o.order_id}
-                                {dueRel && <span className="ml-2">· {dueRel}</span>}
+                                {dueRel && <span className={`ml-2 ${key === "overdue" ? "text-red-600 font-semibold" : ""}`}>· {dueRel}</span>}
                                 {!dueRel && end && <span className="ml-2">· Due {end}</span>}
                               </div>
                               <div className="mt-1.5 flex flex-wrap items-center gap-1">
                                 <Badge s={o.status} />
+                                {key === "overdue" && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-widest bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded">
+                                    Past due
+                                  </span>
+                                )}
                                 {actionHint && (
                                   <span className="text-[10px] font-semibold uppercase tracking-widest bg-orange-50 text-orange-700 border border-orange-200 px-1.5 py-0.5 rounded">
                                     {actionHint}
@@ -1393,6 +1425,7 @@ export default function Production() {
           onOrderFromAC={(order) => setAcOrderTarget(order)}
           sourcePO={poByOrderId[viewing.id]}
           onShowInvoice={(invoice) => setViewingInvoice(invoice)}
+          onUpdated={(u) => setOrders((prev) => prev.map((o) => (o.id === u.id ? { ...o, ...u } : o)))}
         />
       )}
 

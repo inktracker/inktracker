@@ -9,12 +9,14 @@ function makeSupabase(initialQuote) {
   const state = {
     quote: { ...initialQuote },
     orders: [],
+    notifications: [],
   };
   const sb = {
     state,
     from(table) {
       if (table === "quotes") return quotesTable(state);
       if (table === "orders") return ordersTable(state);
+      if (table === "notifications") return notificationsTable(state);
       throw new Error(`unexpected table: ${table}`);
     },
   };
@@ -73,6 +75,15 @@ function ordersTable(state) {
   };
 }
 
+function notificationsTable(state) {
+  return {
+    insert(row) {
+      state.notifications.push(row);
+      return Promise.resolve({ error: null });
+    },
+  };
+}
+
 const baseQuote = {
   id: "q-1",
   shop_owner: "shop@x.com",
@@ -98,6 +109,14 @@ describe("convertQuoteToOrder — claim-then-insert (CQO)", () => {
     expect(sb.state.orders[0].order_id).toBe(orderId);
     expect(sb.state.quote.status).toBe("Converted to Order");
     expect(sb.state.quote.converted_order_id).toBe(orderId);
+    // Emits exactly one bell notification, linked to the new order.
+    expect(sb.state.notifications.length).toBe(1);
+    expect(sb.state.notifications[0]).toMatchObject({
+      shop_owner: "shop@x.com",
+      event_type: "quote_converted",
+      related_entity: "order",
+      related_id: orderId,
+    });
   });
 
   it("CQO2 — already-converted quote: returns existing order_id, inserts NO new orders row", async () => {
@@ -107,6 +126,7 @@ describe("convertQuoteToOrder — claim-then-insert (CQO)", () => {
     expect(orderId).toBe("EXISTING-99");
     expect(sb.state.orders.length).toBe(0);
     expect(sb.state.quote.converted_order_id).toBe("EXISTING-99");
+    expect(sb.state.notifications.length).toBe(0); // no re-notify on a no-op
   });
 
   it("CQO3 — concurrent callers: only one inserts an orders row, both return same id", async () => {
@@ -120,6 +140,7 @@ describe("convertQuoteToOrder — claim-then-insert (CQO)", () => {
 
     expect(a).toBe(b);                   // both callers see the same final order_id
     expect(sb.state.orders.length).toBe(1); // exactly one orders row written
+    expect(sb.state.notifications.length).toBe(1); // and exactly one notification
   });
 
   it("CQO4 — claim error propagates (DB outage)", async () => {

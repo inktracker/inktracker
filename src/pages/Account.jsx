@@ -8,7 +8,7 @@ import { DEFAULT_BRAND, BRAND_PRESETS, normalizeBrandColor } from "@/lib/brandin
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2, CheckSquare, Shield } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
-import { loadShopPricingConfig } from "@/components/shared/pricing";
+import { loadShopPricingConfig, GARMENT_CATEGORIES } from "@/components/shared/pricing";
 import { normalizePresses, serializePresses } from "@/lib/presses/normalizePresses";
 import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
@@ -16,6 +16,7 @@ import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 import SecuritySection from "../components/account/SecuritySection";
 import StepUpConfirmModal from "@/components/StepUpConfirmModal";
 import { notify } from "@/lib/notify";
+import { useAuth } from "@/lib/AuthContext";
 import { qbOAuthErrorMessage } from "@/lib/qb/oauthErrorMessage";
 import { getMissingAutoDerivedTasks } from "@/lib/productionTasks";
 import { shopScope } from "@/lib/shopScope";
@@ -65,7 +66,7 @@ function buildQBAuthUrl(state) {
 const DEFAULT_ADDONS = [
   { key: "tags", label: "Custom Tags", rate: 1.5 },
   { key: "difficultPrint", label: "Difficult Print", rate: 0.5 },
-  { key: "colorMatch", label: "Pantone Match", rate: 1.0 },
+  { key: "colorMatch", label: "Ink Color Match", rate: 1.0 },
   { key: "waterbased", label: "Water-Based Ink", rate: 1.0 },
 ];
 
@@ -110,6 +111,8 @@ export default function Account() {
   const [qbMigrateResult, setQbMigrateResult] = useState(null);
   const [qbMigratingInv, setQbMigratingInv] = useState(false);
   const [qbMigrateInvResult, setQbMigrateInvResult] = useState(null);
+  const [qbSyncingAll, setQbSyncingAll] = useState(null); // null | "customers" | "invoices"
+  const [qbSyncAllError, setQbSyncAllError] = useState(null);
   const [qbRealmId, setQbRealmId] = useState(null);
   const [qbExpiresAt, setQbExpiresAt] = useState(null);
   const [qbConnecting, setQbConnecting] = useState(false);
@@ -149,7 +152,7 @@ export default function Account() {
         setTaxRate(currentUser.default_tax_rate || "");
         // Load addons from Shop entity
         try {
-          const shops = await base44.entities.Shop.filter({ owner_email: currentUser.email });
+          const shops = await base44.entities.Shop.filter({ owner_email: shopScope(currentUser) });
           setShopRecord(shops?.[0] || null);
           setTimezone(shops?.[0]?.timezone || "");
           setBrandColor(shops?.[0]?.brand_color || "");
@@ -264,8 +267,12 @@ export default function Account() {
       // this shop, not just whoever saved last). Best-effort — failing this
       // shouldn't undo the profile save above.
       try {
-        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+        const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
         const payload = {
+          // Keep the shops mirror of shop_name in sync with the profile.
+          // It was previously only set at shop-create, so a later rename
+          // left shops.shop_name stale (consumed by the quote email).
+          shop_name: shopName,
           timezone: timezone || null,
           brand_color: normalizeBrandColor(brandColor),
         };
@@ -273,7 +280,7 @@ export default function Account() {
           await base44.entities.Shop.update(shops[0].id, payload);
         } else {
           await base44.entities.Shop.create({
-            owner_email: user.email,
+            owner_email: shopScope(user),
             shop_name: shopName || user.email,
             ...payload,
           });
@@ -346,13 +353,13 @@ export default function Account() {
   async function handleSaveTemplate() {
     setSavingTemplate(true);
     try {
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
       const payload = { quote_email_subject: emailSubject, quote_email_body: emailBody };
       if (shops?.length) {
         await base44.entities.Shop.update(shops[0].id, payload);
       } else {
         await base44.entities.Shop.create({
-          owner_email: user.email,
+          owner_email: shopScope(user),
           shop_name: shopName || user.email,
           ...payload,
         });
@@ -370,12 +377,12 @@ export default function Account() {
     setSavingAddons(true);
     try {
       // Save to Shop entity so brokers can read it
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
       if (shops?.length) {
         await base44.entities.Shop.update(shops[0].id, { addons });
       } else {
         await base44.entities.Shop.create({
-          owner_email: user.email,
+          owner_email: shopScope(user),
           shop_name: shopName || user.shop_name || user.email,
           addons,
         });
@@ -505,6 +512,42 @@ export default function Account() {
       setQbMigrateInvResult({ error: err.message });
     } finally {
       setQbMigratingInv(false);
+    }
+  }
+
+  // One-click sync: customers FIRST, then invoices — the correct order, so the
+  // invoice pull can link each invoice to its just-imported customer. Doing
+  // invoices first (or alone) leaves invoices with no customer link, which is
+  // exactly the gap a shop hit when they ran only the invoice sync.
+  async function handleSyncAll() {
+    setQbSyncAllError(null);
+    setQbMigrateResult(null);
+    setQbMigrateInvResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      // 1. Customers
+      setQbSyncingAll("customers");
+      const { data: custData, error: custErr } = await base44.functions.invoke("qbSync", {
+        action: "pullCustomers",
+        accessToken: session?.access_token,
+      });
+      if (custErr) throw new Error(custErr.message || "Customer sync failed");
+      if (custData?.error) throw new Error(custData.error);
+      setQbMigrateResult(custData);
+      // 2. Invoices (now they can link to the customers just imported)
+      setQbSyncingAll("invoices");
+      const { data: invData, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "pullInvoices",
+        accessToken: session?.access_token,
+      });
+      if (invErr) throw new Error(invErr.message || "Invoice sync failed");
+      if (invData?.error) throw new Error(invData.error);
+      setQbMigrateInvResult(invData);
+    } catch (err) {
+      console.error("QB full sync failed:", err);
+      setQbSyncAllError(err.message);
+    } finally {
+      setQbSyncingAll(null);
     }
   }
 
@@ -853,9 +896,38 @@ export default function Account() {
                     "Sync" reflects that better than "Import", which
                     sounds like a one-shot copy. */}
                 <div className="text-sm font-semibold text-slate-700 mb-2">Data Sync</div>
+
+                {/* One-click: customers then invoices, in the correct order. */}
+                <button
+                  onClick={handleSyncAll}
+                  disabled={qbSyncingAll !== null || qbMigrating || qbMigratingInv}
+                  className="w-full flex items-center justify-center gap-2 text-sm font-bold text-white bg-emerald-600 px-3 py-2.5 rounded-xl hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  {qbSyncingAll ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      {qbSyncingAll === "customers" ? "Syncing customers…" : "Syncing invoices…"}
+                    </>
+                  ) : (
+                    <>
+                      <DownloadCloud className="w-4 h-4" />
+                      Sync everything from QuickBooks
+                    </>
+                  )}
+                </button>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Imports your QuickBooks customers, then your invoices (in that order so invoices link to the right customer). Safe to re-run anytime — it updates existing records, never duplicates.
+                </p>
+                {qbSyncAllError && (
+                  <div className="mt-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    Sync failed: {qbSyncAllError}
+                  </div>
+                )}
+
+                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mt-4 mb-2">Or sync individually</div>
                 <button
                   onClick={handleMigrateCustomers}
-                  disabled={qbMigrating}
+                  disabled={qbMigrating || qbSyncingAll !== null}
                   className="flex items-center gap-2 text-sm font-semibold text-emerald-700 border border-emerald-300 px-3 py-2 rounded-xl hover:bg-emerald-100 transition disabled:opacity-50"
                 >
                   {qbMigrating ? (
@@ -891,7 +963,7 @@ export default function Account() {
                 )}
                 <button
                   onClick={handleMigrateInvoices}
-                  disabled={qbMigratingInv}
+                  disabled={qbMigratingInv || qbSyncingAll !== null}
                   className="flex items-center gap-2 text-sm font-semibold text-emerald-700 border border-emerald-300 px-3 py-2 rounded-xl hover:bg-emerald-100 transition disabled:opacity-50 mt-2"
                 >
                   {qbMigratingInv ? (
@@ -926,6 +998,7 @@ export default function Account() {
                   </div>
                 )}
               </div>
+              <QbItemMapEditor user={user} />
               <button
                 onClick={handleDisconnectQB}
                 disabled={qbDisconnecting}
@@ -1015,10 +1088,131 @@ export default function Account() {
   );
 }
 
+// Map InkTracker garment categories → the shop's real QuickBooks items, so
+// invoices land on the shop's existing items instead of creating duplicates
+// (e.g. InkTracker's "Hoodies & Sweatshirts" vs the shop's "Sweatshirts").
+// Saves to pricing_config.qb_item_map; buildQBInvoicePayload applies it. Only
+// affects FUTURE invoices — existing duplicate items must be merged in QB.
+function QbItemMapEditor({ user }) {
+  const [open, setOpen] = useState(false);
+  const [qbItems, setQbItems] = useState(null); // null = not loaded yet
+  const [map, setMap] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function openEditor() {
+    setOpen(true);
+    if (qbItems !== null) return; // already loaded once
+    setLoading(true);
+    setError(null);
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      setMap(shops?.[0]?.pricing_config?.qb_item_map || {});
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "listQbItems",
+        accessToken: session?.access_token,
+      });
+      if (invErr) throw new Error(invErr.message || "Couldn't load QuickBooks items");
+      if (data?.error) throw new Error(data.error);
+      setQbItems(Array.isArray(data?.items) ? data.items : []);
+    } catch (err) {
+      setError(err.message);
+      setQbItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    setSaved(false);
+    setError(null);
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      // Drop empty selections so an unset category falls back to default behavior.
+      const cleanMap = Object.fromEntries(
+        Object.entries(map).filter(([, v]) => v && String(v).trim()),
+      );
+      const pc = { ...(shops?.[0]?.pricing_config || {}), qb_item_map: cleanMap };
+      if (shops?.[0]) await base44.entities.Shop.update(shops[0].id, { pricing_config: pc });
+      loadShopPricingConfig(pc);
+      setMap(cleanMap);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-emerald-200 pt-3 mt-3">
+      {!open ? (
+        <button
+          onClick={openEditor}
+          className="flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition"
+        >
+          <Link2 className="w-4 h-4" />
+          Map garment types to your QuickBooks items
+        </button>
+      ) : (
+        <div>
+          <div className="text-sm font-semibold text-slate-700 mb-1">Map garment types to QuickBooks items</div>
+          <p className="text-xs text-slate-500 mb-3">
+            Point each InkTracker garment type at the QuickBooks product/service you want it booked under, so sales don't get split across duplicate items. Leave a row on "Default" to keep current behavior. Affects future invoices only.
+          </p>
+          {loading && <div className="text-sm text-slate-500">Loading your QuickBooks items…</div>}
+          {error && (
+            <div className="mb-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>
+          )}
+          {!loading && qbItems !== null && (
+            <>
+              <div className="space-y-1.5">
+                {GARMENT_CATEGORIES.map((cat) => (
+                  <div key={cat} className="flex items-center gap-2">
+                    <div className="w-40 text-sm text-slate-700 shrink-0">{cat}</div>
+                    <span className="text-slate-300">→</span>
+                    <select
+                      value={map[cat] || ""}
+                      onChange={(e) => setMap((m) => ({ ...m, [cat]: e.target.value }))}
+                      className="flex-1 text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                    >
+                      <option value="">Default (InkTracker creates/uses "{cat}")</option>
+                      {qbItems.map((it) => (
+                        <option key={it.id} value={it.name}>{it.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-3 mt-3">
+                <button
+                  onClick={save}
+                  disabled={saving}
+                  className="text-sm font-bold text-white bg-emerald-600 px-4 py-2 rounded-xl hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save mapping"}
+                </button>
+                <button onClick={() => setOpen(false)} className="text-sm text-slate-500 hover:text-slate-700">Close</button>
+                {saved && <span className="text-sm text-emerald-700 font-semibold">Saved ✓</span>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BillingSection({ user }) {
   const [sub, setSub] = useState(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(null);
+  const { checkAppState } = useAuth();
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -1030,11 +1224,24 @@ function BillingSection({ user }) {
           action: "getSubscription",
           accessToken: session?.access_token,
         });
-        if (data) setSub(data);
+        if (data) {
+          setSub(data);
+          // The backend self-heals a stuck-on-trial profile against live
+          // Stripe state here. If it just promoted us to a paid plan but the
+          // cached auth user still says "trial", refresh the user so the
+          // global feature gate + "trial ended" banner clear without a manual
+          // page reload.
+          const healedToPaid = data.tier === "shop" || data.status === "active" || data.status === "trialing";
+          const cachedSaysExpired = user?.subscription_tier !== "shop" && user?.subscription_status !== "active";
+          if (healedToPaid && cachedSaysExpired) {
+            checkAppState?.({ silent: true });
+          }
+        }
       } catch {}
       setLoading(false);
     }
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleCheckout(billing) {
@@ -1334,7 +1541,7 @@ function ProductionTasksSection({ user }) {
       setDefaults(mod.DEFAULT_TASKS);
 
       try {
-        const shopOwner = user?.email;
+        const shopOwner = shopScope(user);
         if (!shopOwner) return;
         const { data: shop } = await supabase
           .from("shops")
@@ -1407,7 +1614,7 @@ function ProductionTasksSection({ user }) {
       const { error } = await supabase
         .from("shops")
         .update({ production_tasks: cleaned })
-        .eq("owner_email", user?.email);
+        .eq("owner_email", shopScope(user));
       if (error) throw error;
       // Push into the module-level cache so live ShopFloor / OrderDetail
       // views pick up the change without a full reload.
@@ -1698,7 +1905,7 @@ function ExportDataSection({ user }) {
       );
       const data = Object.fromEntries(results);
       const payload = JSON.stringify(
-        { exportedAt: new Date().toISOString(), shopOwner: user.email, ...data },
+        { exportedAt: new Date().toISOString(), shopOwner: shopScope(user), ...data },
         null,
         2,
       );
@@ -1762,7 +1969,7 @@ function PressesSection({ user }) {
         const { data: shop } = await supabase
           .from("shops")
           .select("presses")
-          .eq("owner_email", user.email)
+          .eq("owner_email", shopScope(user))
           .maybeSingle();
         if (alive) setPresses(normalizePresses(shop?.presses));
       } catch {
@@ -1801,7 +2008,7 @@ function PressesSection({ user }) {
       const { error } = await supabase
         .from("shops")
         .update({ presses: cleaned })
-        .eq("owner_email", user?.email);
+        .eq("owner_email", shopScope(user));
       if (error) throw error;
       setPresses(cleaned);
       setSaved(true);
@@ -2303,7 +2510,7 @@ function PricingConfigSection({ user }) {
   useEffect(() => {
     async function load() {
       try {
-        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+        const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
         const pc = shops?.[0]?.pricing_config || {};
         setConfig({ ...DEFAULTS, ...pc });
       } catch {
@@ -2328,7 +2535,7 @@ function PricingConfigSection({ user }) {
 
     setSaving(true);
     try {
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
       if (shops?.[0]) {
         await base44.entities.Shop.update(shops[0].id, { pricing_config: config });
       }
@@ -3040,6 +3247,23 @@ function PricingConfigSection({ user }) {
 
       {/* Extras & Fees — same editor used by Embroidery + each custom
           method so the layout never drifts between tabs. */}
+      {/* Global preference: show add-on names on line descriptions everywhere
+          (quote page, PDF, QuickBooks invoice) vs. baking them silently into
+          the price. Default off preserves the prior hidden behavior. Snapshotted
+          per-line at quote save, so it only affects quotes saved while it's on. */}
+      <label className="flex items-start gap-2 text-xs text-slate-600 mb-3 cursor-pointer select-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+        <input
+          type="checkbox"
+          checked={!!config.show_addons_in_description}
+          onChange={(e) => setConfig(prev => ({ ...prev, show_addons_in_description: e.target.checked }))}
+          className="w-4 h-4 mt-0.5 rounded border-slate-300 text-teal-600"
+        />
+        <span>
+          <span className="font-semibold text-slate-700">Show add-on names on line items</span>
+          {" — "}list each line's active add-ons (e.g. "Ink Color Match") on the quote, PDF, and
+          QuickBooks invoice. When off, add-ons are still charged but not itemized.
+        </span>
+      </label>
       {renderExtrasEditor(null)}
 
       {/* Setup Fees — per-screen multiplier (list) */}

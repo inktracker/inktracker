@@ -83,7 +83,8 @@ Deno.serve(async (req) => {
     // intact and surfaces a clear error to the operator.
     const check = validateQbTokenResponse(tokens);
     if (!check.ok) {
-      console.error(`[qbOAuthCallback] Initial token exchange returned malformed body (${check.reason}):`, tokens);
+      // Log only the shape — `tokens` can contain a live token even when malformed.
+      console.error(`[qbOAuthCallback] Initial token exchange returned malformed body (${check.reason}); keys:`, tokens && typeof tokens === "object" ? Object.keys(tokens) : typeof tokens);
       return Response.redirect(`${appBaseUrl}/Account?qb_error=malformed_token_response`);
     }
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();

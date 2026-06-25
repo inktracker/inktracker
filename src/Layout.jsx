@@ -8,7 +8,7 @@ import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
 import OnboardingAssistant from "./components/onboarding/OnboardingAssistant";
 import { canAccess, getEffectiveTier } from "@/lib/billing";
-import { managerCanAccess } from "@/lib/managerPermissions";
+import { managerCanAccess, hasOwnerAccess } from "@/lib/managerPermissions";
 import { shopScope } from "@/lib/shopScope";
 import { resolveRoleRedirect } from "@/lib/broker/roleRedirect";
 import TrialStatusBanner from "@/components/TrialStatusBanner";
@@ -265,7 +265,7 @@ export default function Layout({ children, currentPageName }) {
         </div>
         <nav className="flex-1 py-4 space-y-0.5 px-2">
           {NAV.map(n => renderNavItem(n))}
-          {(user?.role === "admin" || user?.role === "shop") && (
+          {hasOwnerAccess(user, "Team") && (
             <Link to={createPageUrl("AdminPanel")}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-teal-600 text-white" : "text-green-600 hover:bg-green-50"}`}>
               <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-green-500"}`} />
@@ -323,7 +323,7 @@ export default function Layout({ children, currentPageName }) {
               </div>
               <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
                 {NAV.map(n => renderNavItem(n, { mobile: true }))}
-                {(user?.role === "admin" || user?.role === "shop") && (
+                {hasOwnerAccess(user, "Team") && (
                   <Link to={createPageUrl("AdminPanel")} onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition mt-2 border-t border-slate-100 pt-3 ${currentPageName === "AdminPanel" ? "bg-teal-600 text-white" : "text-green-600 hover:bg-green-50"}`}>
                     <ShieldCheck className={`w-5 h-5 ${currentPageName === "AdminPanel" ? "" : "text-green-500"}`} />

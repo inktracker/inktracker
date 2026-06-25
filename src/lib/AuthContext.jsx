@@ -3,8 +3,10 @@ import { supabase } from "@/api/supabaseClient";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import { loadShopTimezone } from "@/lib/shopTimezone";
 import { loadShopProductionTasks } from "@/lib/productionTasks";
+import { resolveTeamSubscription } from "@/lib/billing";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
 import { setSentryUser, clearSentryUser } from "@/lib/sentry";
+import { clearMetricsCache } from "@/lib/qbMetricsCache";
 import { checkLocalTrustedDevice } from "@/lib/mfa";
 import {
   isMfaSessionVerified,
@@ -69,15 +71,16 @@ async function fetchUserWithProfile() {
   // they'd silently fall back to default pricing config. That defaulting
   // made broker-side broker prices diverge from shop-side numbers
   // because the shop's customized `brokerMarkupShare` was ignored.
+  const assignedShop = Array.isArray(profile.assigned_shops)
+    ? profile.assigned_shops[0]
+    : null;
+  const ownEmail = profile.email || user.email;
+  const shopOwner = profile.shop_owner || assignedShop || ownEmail;
+  // A team member is anyone whose shop belongs to someone else. Owners resolve
+  // shopOwner to their own email.
+  const isTeamMember = !!shopOwner && shopOwner !== ownEmail;
+
   try {
-    const assignedShop = Array.isArray(profile.assigned_shops)
-      ? profile.assigned_shops[0]
-      : null;
-    const shopOwner =
-      profile.shop_owner ||
-      assignedShop ||
-      profile.email ||
-      user.email;
     const { data: shop } = await supabase
       .from("shops")
       .select("pricing_config, timezone, production_tasks")
@@ -92,7 +95,28 @@ async function fetchUserWithProfile() {
     loadShopProductionTasks(null);
   }
 
-  return { ...profile, email: user.email };
+  // Team members (manager/employee/broker) inherit the OWNER's subscription
+  // for feature + trial gating. Their own profile sits at 'trial' and
+  // "expires", which previously locked managers out of a shop the owner is
+  // actively paying for (Adam @ Thunder House, 2026-06-23) and showed them a
+  // bogus "trial expired" banner. RLS (profiles_select_shop_owner) lets a team
+  // member read their owner's row. Best-effort: a failed lookup leaves them on
+  // their own tier rather than crashing auth.
+  let ownerSub = null;
+  if (isTeamMember) {
+    try {
+      const { data } = await supabase
+        .from("profiles")
+        .select("subscription_tier, subscription_status, trial_ends_at")
+        .eq("email", shopOwner)
+        .maybeSingle();
+      ownerSub = data || null;
+    } catch {
+      ownerSub = null;
+    }
+  }
+
+  return resolveTeamSubscription({ ...profile, email: user.email }, ownerSub);
 }
 
 export const AuthProvider = ({ children }) => {
@@ -116,6 +140,9 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     setNeedsMfaChallenge(false);
     clearAllMfaSessionFlags();
+    // Clear cached shop financials so they don't sit in localStorage for the
+    // next person on a shared back-office machine.
+    clearMetricsCache();
     setAuthError({ type: "auth_required", message: "Authentication required" });
     clearSentryUser();
   }, []);
@@ -229,6 +256,7 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
     setNeedsMfaChallenge(false);
     clearAllMfaSessionFlags();
+    clearMetricsCache();
     setAuthError({ type: "auth_required", message: "Authentication required" });
     await supabase.auth.signOut();
     if (shouldRedirect) window.location.href = "/";

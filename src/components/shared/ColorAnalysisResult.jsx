@@ -73,7 +73,7 @@ function EyedropperPicker({ imageUrl, onPick }) {
         <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2">
           <div className="w-6 h-6 rounded-md border border-slate-300" style={{ backgroundColor: pickedColor }} />
           <span className="text-xs font-semibold text-slate-700">{pickedPantone.name}</span>
-          <div className="w-4 h-4 rounded-sm border border-slate-200" style={{ backgroundColor: pickedPantone.hex }} title="Pantone ref" />
+          <div className="w-4 h-4 rounded-sm border border-slate-200" style={{ backgroundColor: pickedPantone.hex }} title="Ink color ref" />
           <span className="text-[10px] text-slate-400">{pickedColor}</span>
         </div>
       )}

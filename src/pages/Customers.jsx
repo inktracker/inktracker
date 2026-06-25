@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
 import { uploadFile } from "@/lib/uploadFile";
 import { fmtMoney } from "../components/shared/pricing";
@@ -21,6 +22,7 @@ import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { isValidEmail } from "@/lib/email";
 import { shopScope } from "@/lib/shopScope";
+import { hasOwnerAccess } from "@/lib/managerPermissions";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -87,14 +89,12 @@ export default function Customers() {
         const currentUser = await base44.auth.me();
         setUser(currentUser);
 
+        // Cached mount-load reads — see lib/queries/cachedEntity. Merge/detail
+        // lookups below stay direct (freshness-critical for the merge path).
         const [c, docs, invs] = await Promise.all([
-          base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }),
-          base44.entities.BrokerDocument.filter(
-            { shop_owner: shopScope(currentUser) },
-            "-created_date",
-            500
-          ),
-          base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }),
+          cachedFilter("Customer", { filters: { shop_owner: shopScope(currentUser) } }),
+          cachedFilter("BrokerDocument", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 500 }),
+          cachedFilter("Invoice", { filters: { shop_owner: shopScope(currentUser) } }),
         ]);
         // Profile-card stats come from OUR invoices table so the card
         // always matches the Invoices tab. Previously QB-sourced, which
@@ -148,7 +148,10 @@ export default function Customers() {
         // after the fact. Only SUSPECTED duplicates (the Merge
         // Duplicates flow) still ask first. Non-owners fall back to
         // the review banner since the merge path is owner-gated.
-        const isOwner = user?.role === "admin" || user?.role === "shop";
+        // Full-partner managers (with Customers permission) get the same
+        // auto-merge path as the owner; restricted managers fall back to the
+        // review banner.
+        const isOwner = hasOwnerAccess(user, "Customers");
         if (!isOwner) {
           setReconcileNeeded(pairs);
           return;
@@ -287,9 +290,9 @@ export default function Customers() {
   function canDelete() {
     // Customer deletion is a destructive accounting-adjacent action — it
     // orphans quote/order/invoice history if the dependent-count guard
-    // below misses anything (id+name combos). Shop-owner only, matching
-    // the gate Production/Orders/Calendar use for completion + delete.
-    return user?.role === "admin" || user?.role === "shop";
+    // below misses anything (id+name combos). Owner OR a full-partner manager
+    // with Customers permission (managerCanAccess gates it per-manager).
+    return hasOwnerAccess(user, "Customers");
   }
 
   async function handleDelete(id) {

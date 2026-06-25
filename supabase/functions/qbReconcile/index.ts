@@ -151,8 +151,11 @@ async function qbQuery(token: string, realmId: string, q: string) {
 // ── One-shop reconciliation pass ─────────────────────────────────────
 
 async function reconcileShop(adminClient: any, profile: any) {
-  const shopOwner = profile.shop_owner;
-  if (!shopOwner) throw new Error(`profile ${profile.id} has no shop_owner`);
+  // Owners (role shop/admin) have profiles.shop_owner = NULL; their quotes are
+  // keyed by their own email. Canonical key = shop_owner || email. Using the
+  // bare shop_owner skipped every owner's shop (the reason reconcile found 0).
+  const shopOwner = profile.shop_owner || profile.email;
+  if (!shopOwner) throw new Error(`profile ${profile.id} has no shop_owner or email`);
 
   let accessToken: string;
   try {
@@ -168,7 +171,7 @@ async function reconcileShop(adminClient: any, profile: any) {
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
   const { data: candidates, error } = await adminClient
     .from("quotes")
-    .select("id, quote_id, shop_owner, qb_invoice_id, qb_total, paid, status, converted_order_id, customer_id, customer_name, customer_email, job_title, date, due_date, line_items, notes, rush_rate, extras, discount, discount_type, tax_rate, subtotal, tax, total, broker_id, broker_email, broker_name, broker_company, selected_artwork")
+    .select("id, quote_id, shop_owner, qb_invoice_id, qb_total, status, converted_order_id, customer_id, customer_name, customer_email, job_title, date, due_date, line_items, notes, rush_rate, extras, discount, discount_type, tax_rate, subtotal, tax, total, broker_id, broker_email, broker_name, broker_company, selected_artwork")
     .eq("shop_owner", shopOwner)
     .not("qb_invoice_id", "is", null)
     .neq("status", "Converted to Order")
@@ -205,11 +208,15 @@ async function reconcileShop(adminClient: any, profile: any) {
   // a missed webhook for the user's "approved → converted → paid later"
   // scenario stays uncaught until month-end manual reconciliation.
   // Matches the new MARK_LINKED_PAID branch in qbWebhook.
+  // NOTE: `quotes` has no `paid` column (orders/invoices do, not quotes).
+  // The old `.select("…paid…")` + `.eq("paid", false)` here raised 42703 and
+  // failed the whole pass. The "is it already paid?" check is done inside
+  // reconcileCascadeQuote by walking quote → order → invoice, so we don't
+  // need a quote-level paid filter — just feed it the converted quotes.
   const { data: cascadeCandidates, error: cascadeErr } = await adminClient
     .from("quotes")
-    .select("id, quote_id, shop_owner, qb_invoice_id, paid, status, converted_order_id, customer_id, customer_name, customer_email, broker_id, broker_email, broker_name, broker_company, total")
+    .select("id, quote_id, shop_owner, qb_invoice_id, status, converted_order_id, customer_id, customer_name, customer_email, broker_id, broker_email, broker_name, broker_company, total")
     .eq("shop_owner", shopOwner)
-    .eq("paid", false)
     .not("qb_invoice_id", "is", null)
     .or("status.eq.Converted to Order,converted_order_id.not.is.null")
     .gte("date", sixtyDaysAgo.slice(0, 10))
@@ -565,6 +572,21 @@ async function scanAndAlertDataIntegrity(adminClient: any): Promise<{ violations
     if (!shouldSendIntegrityAlert(rows)) {
       return { violations: 0, alerted: false };
     }
+    // Once-per-day dedup. The integrity scan runs on EVERY reconcile call, so
+    // multiple runs in a day (manual testing, or a future per-hour cron) would
+    // otherwise email the same finding repeatedly — which is exactly what
+    // spammed the operator's inbox during cron debugging. Only send if no
+    // integrity alert was already logged in the last 24h.
+    const { data: recentAlert } = await adminClient
+      .from("qb_event_log")
+      .select("id")
+      .eq("action", "integrity_alert")
+      .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (recentAlert) {
+      return { violations: 0, alerted: false };
+    }
     const text = buildIntegrityAlertText(rows);
     const total = (rows ?? []).reduce(
       (s: number, r: any) => s + Number(r.missing_link || 0) + Number(r.dangling_link || 0),
@@ -587,6 +609,14 @@ async function scanAndAlertDataIntegrity(adminClient: any): Promise<{ violations
       console.warn(`[qbReconcile] integrity alert send failed: ${res.status} ${await res.text()}`);
       return { violations: total, alerted: false };
     }
+    // Record the send so the 24h dedup above suppresses repeats today.
+    await logEvent(adminClient, {
+      shop_owner:    "__system__",
+      action:        "integrity_alert",
+      direction:     "outbound",
+      status:        "success",
+      response_body: { total },
+    });
     return { violations: total, alerted: true };
   } catch (err) {
     console.warn("[qbReconcile] integrity scan exception:", (err as Error)?.message);
@@ -638,7 +668,8 @@ Deno.serve(async (req) => {
     for (const profileId of profileIds) {
       try {
         const profile = await loadProfileWithSecrets(adminClient, { id: profileId });
-        if (!profile?.qb_access_token || !profile?.shop_owner) continue;
+        // Owners have shop_owner=NULL (keyed by email) — accept shop_owner || email.
+        if (!profile?.qb_access_token || !(profile?.shop_owner || profile?.email)) continue;
         // Skip non-shop roles (brokers can have personal QB tokens but
         // their quotes flow through the shop's tenant).
         if (profile.role && !["shop", "admin", "manager"].includes(profile.role)) continue;

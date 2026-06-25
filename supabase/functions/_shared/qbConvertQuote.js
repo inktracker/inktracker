@@ -15,6 +15,7 @@
 
 import { buildOrderInsertFromQuote } from "./qbWebhookLogic.js";
 import { makeOrderId } from "./qbInvoice.js";
+import { insertShopNotification, fmtMoneyShort } from "./notifications.js";
 
 /**
  * Insert an `orders` row from the quote and flip the quote to
@@ -76,6 +77,22 @@ export async function convertQuoteToOrder(supabase, quote) {
   // We won the claim. Insert the order row now.
   const orderRow = buildOrderInsertFromQuote(quote, orderId);
   await supabase.from("orders").insert(orderRow);
+
+  // Surface it on the shop's notification bell. convertQuoteToOrder is only
+  // reached when the quote's invoice has been PAID (QB payment webhook, or a
+  // "Refresh from QB" that discovers the payment), so this is the "quote
+  // paid → converted" signal. Best-effort: never block the conversion on it.
+  // Links by order_id, which the Orders page accepts for ?id= deep-links.
+  await insertShopNotification(supabase, {
+    shopOwner: quote.shop_owner,
+    eventType: "quote_converted",
+    severity: "info",
+    title: "Payment received — quote converted to order",
+    body: `${quote.customer_name || "A customer"} paid quote ${quote.quote_id || ""} (${fmtMoneyShort(quote.total)}). It's now order ${orderId}.`.replace(/\s+/g, " ").trim(),
+    relatedEntity: "order",
+    relatedId: orderId,
+    metadata: { quote_id: quote.quote_id, order_id: orderId },
+  });
 
   return orderId;
 }

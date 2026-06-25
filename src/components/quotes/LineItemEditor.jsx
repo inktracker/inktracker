@@ -3,7 +3,7 @@ import {
   SIZES,
   BIG_SIZES,
   LOCATIONS,
-  getEnabledTechniques,
+  getTechniqueOptions,
   getShopPricingConfig,
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
@@ -548,6 +548,22 @@ export default function LineItemEditor({
   // back to the root (Screen Print) scope for unknown or empty techniques.
   const lineTechnique = (li.imprints || [])[0]?.technique;
   const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
+  // Header label that follows the decoration type. Techniques are per
+  // imprint, so a line can mix them — show the shared technique's label
+  // when they all match, else a neutral "Decoration Locations". "Screen
+  // Print" keeps the familiar "Print Locations" wording.
+  const locationsHeader = (() => {
+    const techs = [
+      ...new Set(
+        (li.imprints || [])
+          .map((im) => (im?.technique || "").trim())
+          .filter(Boolean)
+      ),
+    ];
+    if (techs.length !== 1) return "Decoration Locations";
+    const t = techs[0];
+    return t === "Screen Print" ? "Print Locations" : `${t} Locations`;
+  })();
   // Per-line extras as of 2026-06-04. li.extras wins when set;
   // `extras` is the legacy quote-level fallback so old quotes
   // (which only have quote.extras and no li.extras yet) keep
@@ -1160,7 +1176,7 @@ export default function LineItemEditor({
             <div>
               <div className="flex justify-between items-center mb-3">
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  Print Locations
+                  {locationsHeader}
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -1307,7 +1323,7 @@ export default function LineItemEditor({
                               </div>
                             </div>
                             <div className="flex-1 min-w-28">
-                              <label className="block text-xs text-slate-400 mb-0.5">Pantone(s)</label>
+                              <label className="block text-xs text-slate-400 mb-0.5">Ink Color(s)</label>
                               <input
                                 value={imp.pantones || ""}
                                 onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
@@ -1325,7 +1341,12 @@ export default function LineItemEditor({
                             onChange={(e) => updateImprint(idx, { technique: e.target.value })}
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                           >
-                            {getEnabledTechniques().map((t) => (
+                            {/* getTechniqueOptions always includes the technique
+                                already saved on this imprint, even if the shop's
+                                config no longer enables it — so editing a saved
+                                Embroidery quote can never lose the Embroidery
+                                option. */}
+                            {getTechniqueOptions(imp.technique).map((t) => (
                               <option key={t}>{t}</option>
                             ))}
                           </select>

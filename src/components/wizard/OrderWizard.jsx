@@ -1449,7 +1449,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                       </div>
                     ) : (
                       <label className={`flex items-center gap-2 border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer transition text-xs ${uploading[idx]?"border-[var(--brand)] bg-[var(--brand-tint)]":"border-slate-200 hover:border-[var(--brand)] hover:bg-slate-50"}`}>
-                        <input type="file" accept=".ai,.eps,.pdf,.png,.jpg,.jpeg,.svg,.psd" className="hidden"
+                        <input type="file" accept=".ai,.eps,.pdf,.png,.jpg,.jpeg,.psd" className="hidden"
                           onChange={e=>e.target.files[0]&&handleArtUpload(idx,e.target.files[0])} />
                         {uploading[idx] ? <span className="text-[var(--brand)]">Uploading…</span> : <span className="text-slate-400">Upload artwork</span>}
                       </label>
@@ -1542,7 +1542,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
               <div>
                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Art / Special Notes</label>
                 <textarea rows={3} value={contact.notes} onChange={e=>setContact(c=>({...c,notes:e.target.value}))}
-                  placeholder="File format, special instructions, Pantone refs…"
+                  placeholder="File format, special instructions, ink color refs…"
                   className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] resize-none" />
               </div>
             </div>

@@ -118,43 +118,52 @@ describe("buildWizardQuotePayload", () => {
 });
 
 describe("submitWizardQuote", () => {
-  function makeMockClient(rpcResult) {
+  function makeMockClient(invokeResult) {
     return {
-      rpc: vi.fn().mockResolvedValue(rpcResult),
+      functions: { invoke: vi.fn().mockResolvedValue(invokeResult) },
     };
   }
 
-  it("calls supabase.rpc('submit_wizard_quote', ...) with the built payload", async () => {
-    const client = makeMockClient({ data: "new-quote-uuid", error: null });
-    await submitWizardQuote(client, { quote_id: "Q-1" }, "shop@example.test");
-    expect(client.rpc).toHaveBeenCalledWith(
-      "submit_wizard_quote",
+  it("invokes the wizardSubmit edge function with the built payload + recaptcha token (server-verified gate)", async () => {
+    const client = makeMockClient({ data: { id: "new-quote-uuid" }, error: null });
+    await submitWizardQuote(client, { quote_id: "Q-1" }, "shop@example.test", "tok-123");
+    expect(client.functions.invoke).toHaveBeenCalledWith(
+      "wizardSubmit",
       expect.objectContaining({
-        payload: expect.objectContaining({
-          shop_owner: "shop@example.test",
-          status: "Pending",
-          source: "wizard",
-          quote_id: "Q-1",
+        body: expect.objectContaining({
+          recaptchaToken: "tok-123",
+          payload: expect.objectContaining({
+            shop_owner: "shop@example.test",
+            status: "Pending",
+            source: "wizard",
+            quote_id: "Q-1",
+          }),
         }),
       }),
     );
   });
 
   it("returns the inserted UUID on success", async () => {
-    const client = makeMockClient({ data: "abc-123", error: null });
-    const id = await submitWizardQuote(client, {}, "shop@example.test");
+    const client = makeMockClient({ data: { id: "abc-123" }, error: null });
+    const id = await submitWizardQuote(client, {}, "shop@example.test", "tok");
     expect(id).toBe("abc-123");
   });
 
-  it("throws when the RPC returns an error", async () => {
-    const client = makeMockClient({ data: null, error: { message: "shop_owner is required" } });
-    await expect(submitWizardQuote(client, {}, "shop@example.test"))
-      .rejects.toMatchObject({ message: "shop_owner is required" });
+  it("throws when the function returns a transport error", async () => {
+    const client = makeMockClient({ data: null, error: { message: "Could not verify the submission. Please try again." } });
+    await expect(submitWizardQuote(client, {}, "shop@example.test", "bad"))
+      .rejects.toThrow("Could not verify the submission. Please try again.");
   });
 
-  it("propagates buildWizardQuotePayload's validation throws BEFORE calling supabase", async () => {
+  it("throws when the function returns a body-level error", async () => {
+    const client = makeMockClient({ data: { error: "Too many requests. Please try again later." }, error: null });
+    await expect(submitWizardQuote(client, {}, "shop@example.test", "tok"))
+      .rejects.toThrow("Too many requests. Please try again later.");
+  });
+
+  it("propagates buildWizardQuotePayload's validation throws BEFORE calling the function", async () => {
     const client = makeMockClient({ data: null, error: null });
     await expect(submitWizardQuote(client, {}, "")).rejects.toThrow("shopOwner is required");
-    expect(client.rpc).not.toHaveBeenCalled();
+    expect(client.functions.invoke).not.toHaveBeenCalled();
   });
 });

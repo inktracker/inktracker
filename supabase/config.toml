@@ -1,3 +1,6 @@
+[functions.getPublicShopConfig]
+verify_jwt = false
+
 [functions.createCheckoutSession]
 verify_jwt = false
 
@@ -59,6 +62,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.createQuoteFromPayload]
+verify_jwt = false
+
+[functions.wizardSubmit]
 verify_jwt = false
 
 [functions.fedexShipping]

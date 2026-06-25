@@ -21,7 +21,7 @@ import BrokerLineItemEditor from "./BrokerLineItemEditor";
 import { Eye } from "lucide-react";
 
 const DEFAULT_EXTRAS_META = [
-  { key: "colorMatch", label: "Pantone Match", rate: 1.0 },
+  { key: "colorMatch", label: "Ink Color Match", rate: 1.0 },
   { key: "difficultPrint", label: "Difficult Print", rate: 0.5 },
   { key: "waterbased", label: "Water-Based Ink", rate: 1.0 },
   { key: "tags", label: "Custom Tags", rate: 1.5 },

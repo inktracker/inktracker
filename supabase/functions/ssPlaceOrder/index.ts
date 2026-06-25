@@ -151,7 +151,9 @@ Deno.serve(async (req) => {
       Lines: resolvedLines.map(l => warehouse ? { ...l, Warehouse: warehouse } : l),
     };
 
-    console.log("S&S order payload:", JSON.stringify(ssOrder));
+    // Don't log the full payload — it carries customer shipping PII (name,
+    // address, phone, email) that would sit in plaintext in function logs.
+    console.log("S&S order: placing", Array.isArray(ssOrder?.Lines) ? ssOrder.Lines.length : 0, "line(s), PO", ssOrder?.PoNumber ?? "(none)");
 
     const res = await fetch(`${SS_BASE}/orders/`, {
       method: "POST",

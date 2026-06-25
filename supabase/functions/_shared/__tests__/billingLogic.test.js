@@ -6,6 +6,8 @@ import {
   isBillingOwner,
   resolveBillingChoice,
   computeTrialMeta,
+  reconcileFieldsFromSubscriptions,
+  ACCESS_GRANTING_SUB_STATUSES,
   trialPeriodDaysForCheckout,
   buildSubscriptionMetadata,
   deriveStripeAccountStatus,
@@ -436,5 +438,53 @@ describe("resolveShopOwnerKey", () => {
   it("returns null when nothing is resolvable (caller short-circuits)", () => {
     expect(resolveShopOwnerKey({}, {})).toBe(null);
     expect(resolveShopOwnerKey(null, null)).toBe(null);
+  });
+});
+
+describe("reconcileFieldsFromSubscriptions", () => {
+  it("returns shop/active for an active subscription", () => {
+    expect(reconcileFieldsFromSubscriptions([{ id: "sub_1", status: "active" }])).toEqual({
+      subscription_tier: "shop",
+      subscription_status: "active",
+      stripe_subscription_id: "sub_1",
+    });
+  });
+
+  it("maps a Stripe trial to trialing (still grants access)", () => {
+    expect(reconcileFieldsFromSubscriptions([{ id: "sub_t", status: "trialing" }])).toEqual({
+      subscription_tier: "shop",
+      subscription_status: "trialing",
+      stripe_subscription_id: "sub_t",
+    });
+  });
+
+  it("keeps a past_due customer in (read-only handled elsewhere)", () => {
+    expect(reconcileFieldsFromSubscriptions([{ id: "sub_p", status: "past_due" }])).toEqual({
+      subscription_tier: "shop",
+      subscription_status: "past_due",
+      stripe_subscription_id: "sub_p",
+    });
+  });
+
+  it("prefers active over trialing/past_due when several exist", () => {
+    const subs = [
+      { id: "sub_old", status: "past_due" },
+      { id: "sub_trial", status: "trialing" },
+      { id: "sub_live", status: "active" },
+    ];
+    expect(reconcileFieldsFromSubscriptions(subs).stripe_subscription_id).toBe("sub_live");
+  });
+
+  it("returns null when no subscription grants access", () => {
+    expect(reconcileFieldsFromSubscriptions([{ id: "x", status: "canceled" }])).toBe(null);
+    expect(reconcileFieldsFromSubscriptions([{ id: "y", status: "incomplete_expired" }])).toBe(null);
+    expect(reconcileFieldsFromSubscriptions([])).toBe(null);
+    expect(reconcileFieldsFromSubscriptions(null)).toBe(null);
+  });
+
+  it("exposes the access-granting status set", () => {
+    expect(ACCESS_GRANTING_SUB_STATUSES).toContain("active");
+    expect(ACCESS_GRANTING_SUB_STATUSES).toContain("trialing");
+    expect(ACCESS_GRANTING_SUB_STATUSES).not.toContain("canceled");
   });
 });

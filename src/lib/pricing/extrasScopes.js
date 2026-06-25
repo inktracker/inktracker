@@ -19,6 +19,8 @@
 // is unchanged — once a fee is snapshotted onto li.extras it
 // computes identically regardless of which scope it came from.
 
+import { getLineExtras } from "./extras";
+
 const TECHNIQUE_EMBROIDERY = "Embroidery";
 
 /**
@@ -136,6 +138,30 @@ export function getAddonsForTechnique(byScope, technique) {
  * @param {string|undefined} technique     the line's new technique
  * @returns {object}                       pruned extras map
  */
+/**
+ * Human-readable labels for a line's ACTIVE add-ons, for display in line
+ * descriptions (QB invoice, quote/PDF, detail views) when the shop opts in via
+ * pricing_config.show_addons_in_description. Resolves each toggled-on key to its
+ * configured label (technique-scoped), falling back to an auto-label.
+ *
+ * @param {object} li     line item
+ * @param {object} quote  parent quote (for the legacy quote-level extras fallback)
+ * @param {object} cfg    shop pricing_config
+ * @returns {string[]}
+ */
+export function getActiveAddonLabels(li, quote, cfg) {
+  const lineExtras = getLineExtras(li, quote || {});
+  const activeKeys = Object.keys(lineExtras || {}).filter((k) => !!lineExtras[k]);
+  if (!activeKeys.length) return [];
+  const byScope = buildAddonsByScope(cfg || {});
+  const technique = (li?.imprints || [])[0]?.technique;
+  const labelByKey = {};
+  for (const a of getAddonsForTechnique(byScope, technique)) {
+    if (a && a.key) labelByKey[a.key] = a.label;
+  }
+  return activeKeys.map((k) => labelByKey[k] || autoLabel(k));
+}
+
 export function pruneExtrasForTechnique(extras, byScope, technique) {
   if (!extras || typeof extras !== "object") return {};
   const list = getAddonsForTechnique(byScope, technique);

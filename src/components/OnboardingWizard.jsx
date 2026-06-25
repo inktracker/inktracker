@@ -83,7 +83,9 @@ export default function OnboardingWizard({ user, onComplete }) {
     if (!file) return;
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop();
+      // Sanitize the extension — file.name is user-controlled; don't let it
+      // inject characters into the storage key.
+      const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "png";
       const path = `logos/${user.id}_${Date.now()}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("public")

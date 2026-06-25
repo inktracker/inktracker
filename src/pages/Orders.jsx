@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { base44 } from "@/api/supabaseClient";
+import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
@@ -74,8 +75,8 @@ export default function Orders() {
         }
         setUser(currentUser);
         const [o, c] = await Promise.all([
-          base44.entities.Order.filter({ shop_owner: shopScope(currentUser) }, "-created_date", 100),
-          base44.entities.Customer.filter({ shop_owner: shopScope(currentUser) }),
+          cachedFilter("Order", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 100 }),
+          cachedFilter("Customer", { filters: { shop_owner: shopScope(currentUser) } }),
         ]);
         setOrders(o);
         const custMap = {};
@@ -382,6 +383,7 @@ export default function Orders() {
           onDelete={handleDelete}
           onTogglePaid={handleTogglePaid}
           onShowInvoice={(invoice) => setViewingInvoice(invoice)}
+          onUpdated={(u) => setOrders((prev) => prev.map((o) => (o.id === u.id ? { ...o, ...u } : o)))}
         />
       )}
 

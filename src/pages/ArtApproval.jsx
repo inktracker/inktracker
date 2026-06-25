@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2 } from "lucide-react";
-import { fmtDate } from "../components/shared/pricing";
+import { fmtDate, getOrderDisplayClient } from "../components/shared/pricing";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 
 function getOrderArtwork(order) {
@@ -174,7 +174,7 @@ export default function ArtApproval() {
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 sm:px-8 py-5">
           <div className="flex flex-wrap justify-between gap-3 text-sm">
             <div>
-              <div className="text-xl font-black text-slate-900">{order.customer_name}</div>
+              <div className="text-xl font-black text-slate-900">{getOrderDisplayClient(order)}</div>
               {order.job_title && <div className="text-slate-500 mt-0.5">{order.job_title}</div>}
             </div>
             <div className="text-right space-y-1">
@@ -306,7 +306,7 @@ export default function ArtApproval() {
                             </div>
                             {imp.pantones && (
                               <div className="mt-1 text-xs text-teal-700 font-medium">
-                                Pantones: {imp.pantones}
+                                Ink Colors: {imp.pantones}
                               </div>
                             )}
                             {imp.details && (
