@@ -245,7 +245,13 @@ export default function PurchaseOrders() {
       setSubmitError(errors.join("\n"));
       return;
     }
-    if (!confirm(`Submit "${selected.reference}" to ${selected.supplier}?\n\nThis places a real order. Subtotal: ${fmtMoney(poSubtotal(selected.items))}.`)) {
+    const pieces = (selected.items || []).reduce((n, it) => n + (Number(it.quantity) || 0), 0);
+    const confirmMsg =
+      `Submit "${selected.reference}" to ${selected.supplier}?\n\n` +
+      `⚠️ This PLACES A REAL ORDER with ${selected.supplier} right now — it ships and ` +
+      `bills the account. It can't be undone from here.\n\n` +
+      `${pieces} pc${pieces === 1 ? "" : "s"} · Subtotal ${fmtMoney(poSubtotal(selected.items))}`;
+    if (!confirm(confirmMsg)) {
       return;
     }
     setSubmitting(true);
