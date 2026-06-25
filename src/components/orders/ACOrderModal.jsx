@@ -182,7 +182,10 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
 
   if (createdPO) {
     return (
-      <ModalBackdrop onClose={onClose} z="z-50">
+      /* z-[70] sits ABOVE the OrderDetailModal (z-[60]) it launches from —
+       otherwise the Create-PO window opens behind the order and looks like
+       nothing happened until you close the order. */
+    <ModalBackdrop onClose={onClose} z="z-[70]">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 text-center">
           <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <CheckCircle className="w-8 h-8 text-emerald-600" />
@@ -208,7 +211,10 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
   }
 
   return (
-    <ModalBackdrop onClose={onClose} z="z-50">
+    /* z-[70] sits ABOVE the OrderDetailModal (z-[60]) it launches from —
+       otherwise the Create-PO window opens behind the order and looks like
+       nothing happened until you close the order. */
+    <ModalBackdrop onClose={onClose} z="z-[70]">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-2xl flex-shrink-0">
           <div>

@@ -37,20 +37,26 @@ function csvCell(value) {
  * Build the CSV string for a PurchaseOrder. Returns "" when the PO
  * has no items so callers can short-circuit the download.
  *
- * Item shape expected: { style, color, size, qty, sku }. Matches
- * what AddItemsPanel + shortfallReorder both produce, so PO items
- * created either way export cleanly.
+ * Two producers feed this with DIFFERENT field names for the same data:
+ *   - shortfallReorder (reorder-from-order button) → { style, qty }
+ *   - AddItemsPanel / purchaseOrders.js (manual add) → { styleCode, quantity }
+ * Read both so the Style and Quantity columns are populated either way.
+ * Previously only the shortfall shape was read, so a manually-built PO
+ * exported with empty Style + Quantity cells — the AS Colour assistant
+ * got the SKU but no quantity.
  */
 export function buildPOCsv(po) {
   const items = Array.isArray(po?.items) ? po.items : [];
   if (items.length === 0) return "";
   const rows = [HEADERS.join(",")];
   for (const item of items) {
+    const style = item.style ?? item.styleCode;
+    const qty = item.qty ?? item.quantity;
     rows.push([
-      csvCell(item.style),
+      csvCell(style),
       csvCell(item.color),
       csvCell(item.size),
-      csvCell(item.qty),
+      csvCell(qty),
       csvCell(item.sku),
     ].join(","));
   }
