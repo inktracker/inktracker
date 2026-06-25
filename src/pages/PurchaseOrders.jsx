@@ -580,17 +580,18 @@ function defaultShipTo(user) {
 // renders no badge — the authoritative check is the test-order validate on
 // submit. Pulled from ssLookupStyle's inventoryMap (no new edge function).
 function useSSStock(po, enabled) {
-  const [stock, setStock] = useState({ loading: false, map: null });
+  const [stock, setStock] = useState({ loading: false, map: null, priceMap: null });
   const styleKey = enabled
     ? [...new Set((po.items || []).map((it) => it.styleCode || it.style).filter(Boolean))].sort().join(",")
     : "";
   useEffect(() => {
-    if (!enabled || !styleKey) { setStock({ loading: false, map: null }); return; }
+    if (!enabled || !styleKey) { setStock({ loading: false, map: null, priceMap: null }); return; }
     let cancelled = false;
-    setStock({ loading: true, map: null });
+    setStock({ loading: true, map: null, priceMap: null });
     (async () => {
       const styles = styleKey.split(",");
       const map = {};
+      const priceMap = {};
       await Promise.all(styles.map(async (style) => {
         try {
           const res = await lookupStyle(SUPPLIERS.SS, { styleNumber: style });
@@ -602,9 +603,17 @@ function useSSStock(po, enabled) {
               map[`${style}::${String(color).toUpperCase()}::${String(size).toUpperCase()}`] = Number(qty) || 0;
             }
           }
-        } catch { /* leave missing → no badge */ }
+          // Sale-aware effective price ("what we actually pay") per size.
+          const sp = match?.sizeSalePriceMap || {};
+          for (const [color, sizes] of Object.entries(sp)) {
+            for (const [size, price] of Object.entries(sizes || {})) {
+              const p = Number(price) || 0;
+              if (p > 0) priceMap[`${style}::${String(color).toUpperCase()}::${String(size).toUpperCase()}`] = p;
+            }
+          }
+        } catch { /* leave missing → no badge / keep blank-cost price */ }
       }));
-      if (!cancelled) setStock({ loading: false, map });
+      if (!cancelled) setStock({ loading: false, map, priceMap });
     })();
     return () => { cancelled = true; };
   }, [enabled, styleKey]);
@@ -629,8 +638,24 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
   const isSS = po.supplier === SUPPLIERS.SS;
-  // Live S&S stock for the badges — only fetched for an editable S&S PO.
+  // Live S&S stock + sale-aware pricing — only fetched for an editable S&S PO.
   const ssStock = useSSStock(po, isSS && !isLocked);
+
+  // Refine the draft's unit prices to the live S&S "what we actually pay"
+  // price (sale-aware, per size) once it loads. One-time stable: after items
+  // match the live prices the diff check is false, so it doesn't loop. The
+  // quote/wizard are untouched — only this PO reflects the supplier sale.
+  useEffect(() => {
+    if (!isSS || isLocked || !ssStock.priceMap) return;
+    let changed = false;
+    const next = (po.items || []).map((it) => {
+      const style = it.styleCode || it.style || "";
+      const live = ssStock.priceMap[`${style}::${String(it.color || "").toUpperCase()}::${String(it.size || "").toUpperCase()}`];
+      if (live != null && Number(it.unitPrice) !== live) { changed = true; return { ...it, unitPrice: live }; }
+      return it;
+    });
+    if (changed) onPatch({ items: next });
+  }, [isSS, isLocked, ssStock.priceMap, po.items, onPatch]);
 
   return (
     <div className="bg-white border border-slate-100 rounded-xl p-5 space-y-5">

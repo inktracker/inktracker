@@ -149,6 +149,11 @@ function groupRowsByBrand(rows: any[]): any[] {
           backImageUrl: backRaw ? (backRaw.startsWith("http") ? backRaw : `https://www.ssactivewear.com/${backRaw}`) : "",
           sizeQuantities: {},
           sizePrices: {} as Record<string, number>,
+          // Sale-aware "what we actually pay" price per size. Kept SEPARATE
+          // from sizePrices so the quote/wizard keep using the regular piece
+          // price (we don't want quotes to swing with supplier sales) while a
+          // Purchase Order can show the real, current cost.
+          sizeSalePrices: {} as Record<string, number>,
         };
       }
 
@@ -157,6 +162,14 @@ function groupRowsByBrand(rows: any[]): any[] {
         colorMap[colorName].sizeQuantities[sizeName] = Number(row.qty ?? 0);
         const rowPrice = Number(row.piecePrice ?? row.piece_price ?? 0);
         if (rowPrice > 0) colorMap[colorName].sizePrices[sizeName] = rowPrice;
+        // Effective price: the account's customerPrice if S&S returns one,
+        // overridden by an active salePrice when it's lower. Falls back to the
+        // regular piece price.
+        const cust = Number(row.customerPrice ?? row.customer_price ?? 0);
+        const sale = Number(row.salePrice ?? row.sale_price ?? 0);
+        const base = cust > 0 ? cust : rowPrice;
+        const effective = (sale > 0 && sale < base) ? sale : base;
+        if (effective > 0) colorMap[colorName].sizeSalePrices[sizeName] = effective;
       }
     }
 
@@ -165,11 +178,15 @@ function groupRowsByBrand(rows: any[]): any[] {
     const inventoryMap: Record<string, Record<string, number>> = {};
     const priceMap: Record<string, { piecePrice: number; casePrice: number }> = {};
     const sizePriceMap: Record<string, Record<string, number>> = {};
+    const sizeSalePriceMap: Record<string, Record<string, number>> = {};
     for (const c of colors) {
       inventoryMap[c.colorName] = c.sizeQuantities;
       priceMap[c.colorName]     = { piecePrice: c.piecePrice, casePrice: c.casePrice };
       if (c.sizePrices && Object.keys(c.sizePrices).length > 0) {
         sizePriceMap[c.colorName] = c.sizePrices;
+      }
+      if (c.sizeSalePrices && Object.keys(c.sizeSalePrices).length > 0) {
+        sizeSalePriceMap[c.colorName] = c.sizeSalePrices;
       }
     }
 
@@ -203,6 +220,7 @@ function groupRowsByBrand(rows: any[]): any[] {
       inventoryMap,
       priceMap,
       sizePriceMap,
+      sizeSalePriceMap,
       piecePrice: prices.length     ? Math.min(...prices)     : 0,
       casePrice:  casePrices.length ? Math.min(...casePrices) : 0,
     });
