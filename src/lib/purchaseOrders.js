@@ -480,12 +480,16 @@ export function buildSSPOFromOrder(order, user) {
     const style = li.style || "";
     const color = li.garmentColor || li.color || "";
     const colorClean = String(color).replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    // Per-piece wholesale blank cost already captured on the order line — use
+    // it as the PO unit price so the draft shows a real subtotal (live S&S
+    // pricing per size can refine it later).
+    const unitPrice = Number(li.garmentCost) || 0;
     const sizes = li.sizes || {};
     for (const [size, raw] of Object.entries(sizes)) {
       const quantity = parseInt(raw, 10) || 0;
       if (quantity <= 0) continue;
       const sku = li.sku || (style ? `${style}${colorClean}-${size}` : "");
-      items.push({ sku, styleCode: style, color, size, quantity });
+      items.push({ sku, styleCode: style, color, size, quantity, unitPrice });
     }
   }
   if (items.length === 0) return null;

@@ -74,7 +74,7 @@ describe("buildSSPOFromOrder", () => {
       id: "11111111-1111-1111-1111-111111111111",
       order_id: "ORD-9",
       line_items: [
-        { style: "3001", supplier: SUPPLIER_SS, garmentColor: "Black", sizes: { S: 2, M: 3 } },
+        { style: "3001", supplier: SUPPLIER_SS, garmentColor: "Black", garmentCost: 5.5, sizes: { S: 2, M: 3 } },
         { style: "5001", supplier: SUPPLIER_AC, garmentColor: "White", sizes: { L: 4 } },
       ],
     };
@@ -85,8 +85,8 @@ describe("buildSSPOFromOrder", () => {
     expect(po.source_order_id).toBe("11111111-1111-1111-1111-111111111111");
     expect(po.reference).toBe("Order ORD-9");
     expect(po.items).toEqual([
-      { sku: "3001BLACK-S", styleCode: "3001", color: "Black", size: "S", quantity: 2 },
-      { sku: "3001BLACK-M", styleCode: "3001", color: "Black", size: "M", quantity: 3 },
+      { sku: "3001BLACK-S", styleCode: "3001", color: "Black", size: "S", quantity: 2, unitPrice: 5.5 },
+      { sku: "3001BLACK-M", styleCode: "3001", color: "Black", size: "M", quantity: 3, unitPrice: 5.5 },
     ]);
     expect(po.ship_to).toMatchObject({ company: "My Shop", state: "NV" });
   });
