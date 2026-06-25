@@ -285,6 +285,47 @@ export default function PurchaseOrders() {
     }
   }
 
+  // Mark a PO submitted WITHOUT calling the supplier API — for when the
+  // operator placed the order themselves (e.g. downloaded the CSV and pasted
+  // it into AS Colour's Order Assistant). Only requires items; skips the
+  // shipping-method / ship-to validation that the API submit needs, since
+  // those were handled in the supplier's tool. Still runs the source-order
+  // goods auto-mark so the Floor panel reflects the order.
+  async function markSubmittedManually() {
+    if (!selected) return;
+    if (!Array.isArray(selected.items) || selected.items.length === 0) {
+      setSubmitError("Add at least one item before marking this PO submitted.");
+      return;
+    }
+    if (!confirm(`Mark "${selected.reference}" as submitted?\n\nUse this when you've already placed this order yourself (e.g. via the downloaded CSV / Order Assistant). Nothing is sent to ${selected.supplier} — it just marks the PO complete.`)) {
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await patchSelected({
+        status: "submitted",
+        submitted_at: new Date().toISOString(),
+        submit_response: { manual: true },
+      });
+      if (selected.source_order_id) {
+        try {
+          const sourceOrder = await base44.entities.Order.get(selected.source_order_id);
+          if (sourceOrder) {
+            const newChecklist = applyPOItemsToGoodsProgress(sourceOrder, selected.items, null);
+            await base44.entities.Order.update(selected.source_order_id, { checklist: newChecklist });
+          }
+        } catch (autoMarkErr) {
+          console.warn("[PO manual submit] goods auto-mark failed:", autoMarkErr);
+        }
+      }
+    } catch (err) {
+      setSubmitError(err?.message || "Couldn't mark as submitted");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (loading) {
     return <ListCardsSkeleton rows={6} />;
   }
@@ -467,6 +508,7 @@ export default function PurchaseOrders() {
               }}
               onDelete={deleteSelected}
               onSubmit={submitSelected}
+              onMarkSubmitted={markSubmittedManually}
               onDismissError={() => setSubmitError(null)}
             />
           )}
@@ -519,7 +561,7 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onDismissError }) {
+function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
@@ -807,6 +849,18 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
           >
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
             Submit to {po.supplier}
+          </button>
+          {/* Manual completion path — for operators who placed the order
+              themselves (CSV / Order Assistant) and just need the PO marked
+              done. No API call. */}
+          <button
+            onClick={onMarkSubmitted}
+            disabled={submitting}
+            title="Already placed this order yourself (CSV / Order Assistant)? Mark it submitted without sending anything to the supplier."
+            className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 px-4 py-2 rounded-xl transition disabled:opacity-60"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Mark as Submitted (ordered manually)
           </button>
         </div>
       )}
