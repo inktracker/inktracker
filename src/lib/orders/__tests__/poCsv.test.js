@@ -22,6 +22,25 @@ describe("buildPOCsv", () => {
     expect(lines[2]).toBe("5001,Black,L,8,5001BLACK-L");
   });
 
+  it("reads the AddItemsPanel shape (styleCode / quantity), not just shortfall (style / qty)", () => {
+    // Manually-added PO items use styleCode + quantity. Before the fix the
+    // CSV only read style + qty, so these exported with empty Style and
+    // Quantity cells — the AS Colour assistant got the SKU but no quantity.
+    const po = {
+      items: [
+        { styleCode: "5001", color: "Black", size: "M", quantity: 12, sku: "5001BLACK-M" },
+      ],
+    };
+    const lines = buildPOCsv(po).trim().split("\n");
+    expect(lines[1]).toBe("5001,Black,M,12,5001BLACK-M");
+  });
+
+  it("uses quantity 0 rather than falling through to the other field", () => {
+    const po = { items: [{ styleCode: "5001", size: "M", quantity: 0, sku: "S-M" }] };
+    const lines = buildPOCsv(po).trim().split("\n");
+    expect(lines[1]).toBe("5001,,M,0,S-M");
+  });
+
   it("escapes commas / quotes / newlines in any column", () => {
     const po = {
       items: [
