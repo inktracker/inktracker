@@ -63,6 +63,7 @@ import {
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
 const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
+const QB_REVOKE_URL    = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke";
 const QB_BASE          = "https://quickbooks.api.intuit.com/v3/company";
 
 const CORS = {
@@ -84,7 +85,11 @@ async function refreshToken(refreshTok: string) {
   });
   if (!res.ok) {
     const body = await res.text();
-    console.error(`[qbSync] Token refresh failed: ${res.status} ${body}`);
+    // Log the status + parsed `error` only — never the raw body (defensive:
+    // avoid persisting any token material Intuit might echo into logs).
+    let errCode = "";
+    try { errCode = JSON.parse(body)?.error || ""; } catch { /* not JSON */ }
+    console.error(`[qbSync] Token refresh failed: ${res.status} ${errCode}`);
     if (body.includes("invalid_grant")) {
       throw new UserFacingError(
         USER_FACING_CODES.QB_DISCONNECTED,
@@ -112,6 +117,32 @@ async function refreshToken(refreshTok: string) {
     );
   }
   return fresh;
+}
+
+// Best-effort revocation of the OAuth grant at Intuit. Disconnecting should
+// invalidate the grant on Intuit's side, not just forget the tokens locally —
+// otherwise the grant lingers and old refresh tokens stay usable if our app
+// secret ever leaked. Revoking the refresh token kills the whole grant. Never
+// throws: if Intuit is down or the token's already invalid, we still clear
+// locally (the caller proceeds regardless).
+async function revokeQbToken(token: string | null): Promise<void> {
+  if (!token) return;
+  try {
+    const res = await fetch(QB_REVOKE_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${btoa(`${QB_CLIENT_ID}:${QB_CLIENT_SECRET}`)}`,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+      },
+      body: JSON.stringify({ token }),
+    });
+    if (!res.ok && res.status !== 200) {
+      console.error(`[qbSync] Token revoke returned ${res.status} (continuing; tokens cleared locally)`);
+    }
+  } catch (err) {
+    console.error("[qbSync] Token revoke request failed (continuing; tokens cleared locally):", (err as Error)?.message);
+  }
 }
 
 async function findUserProfile(supabase: any, authId: string, email: string | null) {
@@ -1875,6 +1906,10 @@ Deno.serve(async (req) => {
       if (!profile) {
         return Response.json({ error: "Profile not found" }, { status: 404, headers: CORS });
       }
+      // Revoke the grant at Intuit FIRST (best-effort) so "disconnect" actually
+      // ends the authorization, not just our copy of the tokens. Revoking the
+      // refresh token invalidates the whole grant. Never blocks the local clear.
+      await revokeQbToken(profile.qb_refresh_token || profile.qb_access_token);
       await updateProfileSecrets(
         adminClient,
         profile.id,
@@ -1883,6 +1918,9 @@ Deno.serve(async (req) => {
           qb_refresh_token: null,
           qb_realm_id: null,
           qb_token_expires_at: null,
+          // Clear the newer bookkeeping columns too so nothing stale lingers.
+          qb_refresh_token_expires_at: null,
+          qb_token_refresh_lock: null,
         },
       );
       return Response.json({ ok: true }, { headers: CORS });

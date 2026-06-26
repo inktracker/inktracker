@@ -49,6 +49,13 @@ Deno.serve(async (req) => {
   if (!code || !state || !realmId) {
     return Response.redirect(`${appBaseUrl}/Account?qb_error=missing_params`);
   }
+  // QB realm IDs are always numeric. Reject anything else before we persist it —
+  // a malformed realmId would silently break every later API call (every QB URL
+  // is /company/{realmId}/...).
+  if (!/^\d+$/.test(realmId)) {
+    console.error(`[qbOAuthCallback] Rejecting non-numeric realmId: ${JSON.stringify(realmId).slice(0, 40)}`);
+    return Response.redirect(`${appBaseUrl}/Account?qb_error=invalid_realm_id`);
+  }
 
   try {
     // Exchange auth code for tokens

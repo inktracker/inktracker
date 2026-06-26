@@ -27,6 +27,8 @@ const MESSAGES = {
     "Your connection request took too long. Please click Connect QuickBooks again — the consent flow needs to finish within 30 minutes.",
   missing_params:
     "QuickBooks did not return the expected data. Please try connecting again.",
+  invalid_realm_id:
+    "QuickBooks returned an unexpected company ID. Please try connecting again — if it keeps happening, contact support.",
   token_exchange_failed:
     "Could not connect to QuickBooks. Please try again — if the issue persists, contact support.",
   malformed_token_response:
