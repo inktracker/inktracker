@@ -24,6 +24,7 @@ import {
   isQbInvoicePaid,
   buildUpdateFailureResponse,
   resolveInvoiceCustomerFields,
+  pickIncomeAccountId,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -581,19 +582,16 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
 
 const DEFAULT_ITEM_NAME = "Custom Apparel";
 
-async function findIncomeAccountId(token: string, realmId: string) {
-  // Prefer "Sales" / "Services" / generic income; fall back to the first Income account.
-  const preferred = ["Sales of Product Income", "Services", "Sales", "Income"];
+async function findIncomeAccountId(token: string, realmId: string, configuredId: string | null = null) {
+  // Use the shop's explicitly chosen account when set + still present; else
+  // guess by name, else the first Income account (pure picker — tested).
   try {
     const res = await qbQuery(token, realmId,
       "SELECT Id, Name, AccountType FROM Account WHERE AccountType = 'Income' MAXRESULTS 100"
     );
     const accts: any[] = res?.QueryResponse?.Account ?? [];
-    for (const name of preferred) {
-      const hit = accts.find((a) => a.Name === name);
-      if (hit) return hit.Id;
-    }
-    if (accts.length > 0) return accts[0].Id;
+    const { id } = pickIncomeAccountId(accts, configuredId);
+    if (id) return id;
   } catch {}
 
   // Create a fallback Income account if none exists
@@ -633,6 +631,7 @@ async function resolveItemIdMap(
   token: string,
   realmId: string,
   invoicePayload: any,
+  configuredIncomeAccountId: string | null = null,
 ): Promise<Map<string, string>> {
   const names = new Set<string>();
   for (const line of invoicePayload?.lines ?? []) {
@@ -640,7 +639,7 @@ async function resolveItemIdMap(
   }
   names.add(DEFAULT_ITEM_NAME);
 
-  const incomeAccountId = await findIncomeAccountId(token, realmId);
+  const incomeAccountId = await findIncomeAccountId(token, realmId, configuredIncomeAccountId);
   if (!incomeAccountId) throw new Error("No QB Income account found; cannot create service items");
 
   const map = new Map<string, string>();
@@ -675,8 +674,26 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const qbCustomerId = await findOrCreateCustomer(token, realmId, customer, supabase);
   if (!qbCustomerId) throw new Error("Could not find or create QuickBooks customer");
 
-  // 2. Resolve every QB item referenced by the payload (one per technique)
-  const itemIdMap = await resolveItemIdMap(token, realmId, invoicePayload);
+  // 2. Resolve every QB item referenced by the payload (one per technique).
+  //    Use the shop's chosen income account when set (default-until-set: a
+  //    null lookup falls back to qbSync's guess, so existing shops are
+  //    unaffected). Lookup failure is non-fatal — also falls back to guessing.
+  let configuredIncomeAccountId: string | null = null;
+  try {
+    const shopOwnerForAcct = quote?.shop_owner;
+    if (shopOwnerForAcct) {
+      const acctClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const { data: shopRow } = await acctClient
+        .from("shops")
+        .select("qb_income_account_id")
+        .eq("owner_email", shopOwnerForAcct)
+        .maybeSingle();
+      configuredIncomeAccountId = shopRow?.qb_income_account_id || null;
+    }
+  } catch (e) {
+    console.error("[createInvoice] income-account lookup failed (using default):", (e as Error)?.message);
+  }
+  const itemIdMap = await resolveItemIdMap(token, realmId, invoicePayload, configuredIncomeAccountId);
 
   // 3. Check QB customer's tax status
   let isTaxExempt = !!customer?.tax_exempt;
@@ -1821,6 +1838,18 @@ async function handleRecordPayment(
   return idemp.result;
 }
 
+// ── Action: listIncomeAccounts ──────────────────────────────────────────────
+// Read-only: the shop's QB Income accounts, for the Account → QuickBooks
+// income-account picker. Lets the shop choose where InkTracker revenue posts
+// instead of qbSync guessing.
+async function handleListIncomeAccounts(token: string, realmId: string) {
+  const res = await qbQuery(token, realmId,
+    "SELECT Id, Name FROM Account WHERE AccountType = 'Income' MAXRESULTS 100"
+  );
+  const accts: any[] = res?.QueryResponse?.Account ?? [];
+  return { accounts: accts.map((a) => ({ id: String(a.Id), name: a.Name })) };
+}
+
 // ── Action: getQbEvents ─────────────────────────────────────────────────────
 // Returns the qb_event_log timeline for one quote, scoped by the
 // caller's shop_owner. Powers the "QB Events" tab in QuoteDetailModal.
@@ -2226,6 +2255,10 @@ Deno.serve(async (req) => {
         result = await withQbAudit(adminClient, auditCtx, () =>
           handleRecordPayment(qbToken, realmId, params, adminClient, shopOwnerEmail),
         );
+        break;
+      }
+      case "listIncomeAccounts": {
+        result = await handleListIncomeAccounts(qbToken, realmId);
         break;
       }
       default:

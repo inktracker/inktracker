@@ -14,7 +14,33 @@ import {
   isRevisionDocNumber,
   isQbInvoicePaid,
   buildUpdateFailureResponse,
+  pickIncomeAccountId,
 } from "../qbInvoice";
+
+describe("pickIncomeAccountId", () => {
+  const accts = [
+    { Id: "10", Name: "Uncategorized Income" },
+    { Id: "20", Name: "Sales" },
+    { Id: "30", Name: "Services" },
+  ];
+  it("prefers the shop's chosen account when it still exists", () => {
+    expect(pickIncomeAccountId(accts, "30")).toEqual({ id: "30", source: "configured" });
+  });
+  it("falls back to a preferred name when the chosen id is gone (deleted in QB)", () => {
+    // "Services" precedes "Sales" in PREFERRED_INCOME_NAMES, so it wins.
+    expect(pickIncomeAccountId(accts, "999")).toEqual({ id: "30", source: "preferred" });
+  });
+  it("guesses by preferred name when nothing is configured", () => {
+    expect(pickIncomeAccountId(accts, null)).toEqual({ id: "30", source: "preferred" });
+  });
+  it("uses the first account when no preferred name matches", () => {
+    const odd = [{ Id: "7", Name: "Consulting Income" }, { Id: "8", Name: "Misc" }];
+    expect(pickIncomeAccountId(odd, null)).toEqual({ id: "7", source: "first" });
+  });
+  it("returns null id when there are no income accounts", () => {
+    expect(pickIncomeAccountId([], "30")).toEqual({ id: null, source: null });
+  });
+});
 
 // ── nextAvailableDocNumber ──────────────────────────────────────────────────
 

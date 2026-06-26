@@ -5,6 +5,36 @@
 // the Vitest suite at __tests__/qbInvoice.test.js is the canonical
 // behavior contract. Drift in the edge function = test failure.
 
+// ── Income account selection ────────────────────────────────────────────────
+// Where InkTracker invoice revenue posts in QB. The shop can pick an account
+// explicitly (Account → QuickBooks); when unset we guess by name, then take the
+// first Income account, so existing shops keep working (default-until-set).
+export const PREFERRED_INCOME_NAMES = ["Sales of Product Income", "Services", "Sales", "Income"];
+
+/**
+ * @param {Array<{Id:any,Name:string}>} accounts  Income accounts from QB.
+ * @param {string|null} configuredId               The shop's chosen account id.
+ * @param {string[]} preferred                     Ordered name fallbacks.
+ * @returns {{id: string|null, source: 'configured'|'preferred'|'first'|null}}
+ *   `configured` only when the chosen id STILL exists in QB (deleted accounts
+ *   fall back to the guess rather than erroring later).
+ */
+export function pickIncomeAccountId(accounts, configuredId, preferred = PREFERRED_INCOME_NAMES) {
+  const list = Array.isArray(accounts) ? accounts : [];
+  if (configuredId) {
+    const hit = list.find((a) => a && String(a.Id) === String(configuredId));
+    if (hit) return { id: String(hit.Id), source: "configured" };
+  }
+  for (const name of preferred) {
+    const hit = list.find((a) => a && a.Name === name);
+    if (hit) return { id: String(hit.Id), source: "preferred" };
+  }
+  if (list.length > 0 && list[0] && list[0].Id != null) {
+    return { id: String(list[0].Id), source: "first" };
+  }
+  return { id: null, source: null };
+}
+
 // ── DocNumber selection ─────────────────────────────────────────────────────
 // QB rejects duplicate DocNumber on Invoice creation. When we re-sync a
 // quote that already has an invoice in QB, we either UPDATE the existing

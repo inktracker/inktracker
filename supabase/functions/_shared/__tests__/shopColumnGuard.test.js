@@ -23,6 +23,7 @@ const SHOP_COLUMNS = new Set([
   "brand_color", "pricing_config", "wizard_styles", "wizard_setups",
   "decoration_types", "addons", "presses", "production_tasks",
   "quote_email_subject", "quote_email_body", "timezone", "id", "created_at",
+  "qb_income_account_id", "qb_income_account_name",
 ]);
 
 const FUNCTIONS_DIR = fileURLToPath(new URL("../../", import.meta.url));
