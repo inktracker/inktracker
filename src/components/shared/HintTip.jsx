@@ -13,10 +13,11 @@ export default function HintTip({ text, side = "top", className = "" }) {
         <TooltipTrigger asChild>
           <button
             type="button"
+            aria-label="More information"
             className={`inline-flex items-center justify-center text-slate-300 hover:text-slate-500 transition focus:outline-none ${className}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <HelpCircle className="w-3.5 h-3.5" />
+            <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
           </button>
         </TooltipTrigger>
         <TooltipContent
