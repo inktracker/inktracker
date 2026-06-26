@@ -616,7 +616,7 @@ export default function Customers() {
                     }}
                     className="w-14 text-xs text-center border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1"
                   />
-                  <span className="text-slate-400">%</span>
+                  <span className="text-slate-500">%</span>
                 </div>
               )}
             </div>
@@ -660,20 +660,20 @@ export default function Customers() {
                   </div>
                   <div>
                     <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">{c.company || c.name}</div>
-                    {c.company && c.name && <div className="text-xs text-slate-400">{c.name}</div>}
+                    {c.company && c.name && <div className="text-xs text-slate-500">{c.name}</div>}
                   </div>
                 </div>
 
                 <div className="text-xs text-slate-500 space-y-1.5 mb-4">
                   {c.email && (
                     <div className="flex items-center gap-2">
-                      <Icon name="mail" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      <Icon name="mail" className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
                       {c.email}
                     </div>
                   )}
                   {c.phone && (
                     <div className="flex items-center gap-2">
-                      <Icon name="phone" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                      <Icon name="phone" className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
                       {c.phone}
                     </div>
                   )}
@@ -681,7 +681,7 @@ export default function Customers() {
                     <div className="flex items-center gap-2">
                       <Icon
                         name="location"
-                        className="w-3.5 h-3.5 text-slate-400 flex-shrink-0"
+                        className="w-3.5 h-3.5 text-slate-500 flex-shrink-0"
                       />
                       {c.address}
                     </div>
@@ -704,12 +704,12 @@ export default function Customers() {
                       if (orderCount > 0) navigate(`/Invoices?customer=${encodeURIComponent(c.company || c.name)}`);
                     }}>
                     <div className={`text-lg font-bold ${orderCount > 0 ? "text-teal-600" : "text-slate-800 dark:text-slate-200"}`}>{orderCount}</div>
-                    <div className="text-xs text-slate-400">invoices</div>
+                    <div className="text-xs text-slate-500">invoices</div>
                   </div>
 
                   <div className="text-center flex-1">
                     <div className="text-lg font-bold text-emerald-600">{fmtMoney(spent)}</div>
-                    <div className="text-xs text-slate-400">collected</div>
+                    <div className="text-xs text-slate-500">collected</div>
                   </div>
 
                   {c.tax_exempt && (
@@ -725,7 +725,7 @@ export default function Customers() {
                       setArtworkNote("");
                       setArtworkColorCount("");
                     }}
-                    className="text-xs text-slate-400 hover:text-slate-600 border border-slate-200 dark:border-slate-700 hover:border-slate-300 px-2.5 py-1 rounded-lg transition"
+                    className="text-xs text-slate-500 hover:text-slate-600 border border-slate-200 dark:border-slate-700 hover:border-slate-300 px-2.5 py-1 rounded-lg transition"
                   >
                     Edit
                   </button>
@@ -759,7 +759,7 @@ export default function Customers() {
                   setArtworkNote("");
                   setArtworkColorCount("");
                 }}
-                className="text-slate-400 hover:text-slate-600 text-lg"
+                className="text-slate-500 hover:text-slate-600 text-lg"
               >
                 ✕
               </button>
@@ -838,7 +838,7 @@ export default function Customers() {
                       }}
                       className="w-14 text-xs text-center border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1"
                     />
-                    <span className="text-slate-400">%</span>
+                    <span className="text-slate-500">%</span>
                   </div>
                 )}
               </div>
@@ -860,7 +860,7 @@ export default function Customers() {
               </div>
 
               {(editing.saved_imprints || []).length === 0 ? (
-                <div className="text-sm text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-4 text-center">
+                <div className="text-sm text-slate-500 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-4 text-center">
                   No saved imprints yet. They are added automatically when saving quotes.
                 </div>
               ) : (
@@ -869,7 +869,7 @@ export default function Customers() {
                     <div key={i} className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-2">
                       <div className="flex gap-2 flex-wrap">
                         <div className="flex-1 min-w-28">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Title</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Title</label>
                           <input
                             value={imp.title || ""}
                             onChange={(e) => {
@@ -882,7 +882,7 @@ export default function Customers() {
                           />
                         </div>
                         <div className="w-28">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Location</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Location</label>
                           <select
                             value={imp.location || "Front"}
                             onChange={(e) => {
@@ -896,7 +896,7 @@ export default function Customers() {
                           </select>
                         </div>
                         <div className="w-16">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Width</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Width</label>
                           <input
                             value={imp.width || ""}
                             onChange={(e) => {
@@ -909,7 +909,7 @@ export default function Customers() {
                           />
                         </div>
                         <div className="w-16">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Height</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Height</label>
                           <input
                             value={imp.height || ""}
                             onChange={(e) => {
@@ -922,7 +922,7 @@ export default function Customers() {
                           />
                         </div>
                         <div className="w-16">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Colors</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Colors</label>
                           <input
                             type="number"
                             min="1"
@@ -937,7 +937,7 @@ export default function Customers() {
                           />
                         </div>
                         <div className="w-28">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Technique</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Technique</label>
                           <select
                             value={imp.technique || "Screen Print"}
                             onChange={(e) => {
@@ -971,7 +971,7 @@ export default function Customers() {
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                   Customer Artwork Library
                 </div>
-                <div className="text-sm text-slate-400 mt-1">
+                <div className="text-sm text-slate-500 mt-1">
                   These files are stored in BrokerDocument so they survive page reloads.
                 </div>
               </div>
@@ -1002,7 +1002,7 @@ export default function Customers() {
                 <label
                   className={`flex items-center gap-2 cursor-pointer w-fit text-sm font-semibold px-4 py-2 rounded-xl border transition ${
                     uploadingArtwork
-                      ? "bg-slate-100 text-slate-400 border-slate-200 dark:border-slate-700"
+                      ? "bg-slate-100 text-slate-500 border-slate-200 dark:border-slate-700"
                       : "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
                   }`}
                 >
@@ -1017,7 +1017,7 @@ export default function Customers() {
               </div>
 
               {currentEditingArtwork.length === 0 ? (
-                <div className="text-sm text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 text-center">
+                <div className="text-sm text-slate-500 border border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-6 text-center">
                   No artwork saved for this client yet.
                 </div>
               ) : (
@@ -1032,7 +1032,7 @@ export default function Customers() {
                           {art.name}
                         </div>
                         {art.note && (
-                          <div className="text-xs text-slate-400 truncate">{art.note}</div>
+                          <div className="text-xs text-slate-500 truncate">{art.note}</div>
                         )}
                         <div className="flex flex-wrap gap-2 mt-1">
                           {art.colors ? (
@@ -1040,7 +1040,7 @@ export default function Customers() {
                               {art.colors} color{String(art.colors) === "1" ? "" : "s"}
                             </span>
                           ) : (
-                            <span className="text-[11px] text-slate-400">
+                            <span className="text-[11px] text-slate-500">
                               No color count set
                             </span>
                           )}
@@ -1302,14 +1302,14 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <GitMerge className="w-5 h-5 text-teal-600" /> Customer Duplicates
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             {duplicateGroups.length} potential duplicate group{duplicateGroups.length !== 1 ? "s" : ""} found
           </p>
         </div>
 
         <div className="flex-1 overflow-y-auto">
           {duplicateGroups.length === 0 && (
-            <div className="px-6 py-12 text-center text-sm text-slate-400">No duplicates detected.</div>
+            <div className="px-6 py-12 text-center text-sm text-slate-500">No duplicates detected.</div>
           )}
 
           {duplicateGroups.map((group, gi) => {
@@ -1324,7 +1324,7 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
 
             return (
               <div key={gi} className="px-6 py-4 border-b border-slate-100">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
                   Group {gi + 1} — {group.length} records
                 </div>
                 <div className="space-y-2">
@@ -1341,7 +1341,7 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
                         )}
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-sm text-slate-800">{c.name}</div>
-                          <div className="text-xs text-slate-400 flex items-center gap-2 flex-wrap">
+                          <div className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
                             <span>{[c.company, c.email, c.phone].filter(Boolean).join(" · ") || "No details"}</span>
                             {c.qb_customer_id && <span className="text-emerald-600 font-semibold">QB linked</span>}
                             {recRow?.qbStatus === "active" && <span className="text-emerald-600 font-semibold bg-emerald-50 px-1.5 rounded">QB · Active</span>}
@@ -1429,7 +1429,7 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
 
         <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
           <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Close</button>
-          <div className="text-xs text-slate-400">Select the record to keep, others will be merged into it</div>
+          <div className="text-xs text-slate-500">Select the record to keep, others will be merged into it</div>
         </div>
       </div>
 
@@ -1453,7 +1453,7 @@ function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncU
                     Merging in: <span className="text-slate-800 normal-case">{dup.name}</span>
                   </div>
                   {items.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic">No new fields to copy — survivor already has everything this record had.</p>
+                    <p className="text-xs text-slate-500 italic">No new fields to copy — survivor already has everything this record had.</p>
                   ) : (
                     <ul className="text-xs space-y-1 list-disc list-inside text-slate-600">
                       {items.map((it, idx) => {
@@ -1540,7 +1540,7 @@ function QbReconcileReviewModal({ pairs, onMerge, onClose }) {
             <RefreshCw className="w-5 h-5 text-amber-600" />
             Finish QuickBooks Merges
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-600 text-xl leading-none">&times;</button>
         </div>
 
         <p className="text-xs text-slate-500 mb-4">
@@ -1573,7 +1573,7 @@ function QbReconcileReviewModal({ pairs, onMerge, onClose }) {
                     const items = describeMergeFor(p.survivor, p.inactive);
                     if (!items?.length) return null;
                     return (
-                      <ul className="text-[10px] text-slate-400 mt-1 ml-3 list-disc">
+                      <ul className="text-[10px] text-slate-500 mt-1 ml-3 list-disc">
                         {items.slice(0, 4).map((line, i) => <li key={i}>{line}</li>)}
                         {items.length > 4 && <li>+ {items.length - 4} more</li>}
                       </ul>
@@ -1598,7 +1598,7 @@ function QbReconcileReviewModal({ pairs, onMerge, onClose }) {
             <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
               Need QB pull first
             </div>
-            <p className="text-[10px] text-slate-400 mb-2">
+            <p className="text-[10px] text-slate-500 mb-2">
               These were merged in QuickBooks but the survivor isn't in InkTracker yet. Run your QuickBooks customer pull to bring it in, then revisit this banner.
             </p>
             <div className="space-y-1">

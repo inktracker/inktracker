@@ -549,7 +549,7 @@ export default function Production() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Production</h2>
-          <p className="text-slate-400 text-sm mt-0.5">View and manage orders in calendar or table view</p>
+          <p className="text-slate-500 text-sm mt-0.5">View and manage orders in calendar or table view</p>
         </div>
         <div className="flex gap-2">
           {[
@@ -618,7 +618,7 @@ export default function Production() {
               </button>
               <button
                 onClick={() => setSelectedIds(new Set())}
-                className="text-sm text-slate-400 hover:text-slate-600 transition ml-auto"
+                className="text-sm text-slate-500 hover:text-slate-600 transition ml-auto"
               >
                 Clear
               </button>
@@ -639,7 +639,7 @@ export default function Production() {
                       />
                     </th>
                     {["Order ID", "Customer", "Due", "Press", "Status", ""].map((h) => (
-                      <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                      <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest">
                         {h}
                       </th>
                     ))}
@@ -668,13 +668,13 @@ export default function Production() {
                             className="w-4 h-4 rounded border-slate-300 text-teal-600 cursor-pointer"
                           />
                         </td>
-                        <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{o.order_id}</td>
+                        <td className="px-5 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
                         <td className="px-5 py-3.5">
                           <div className="font-semibold text-slate-800 dark:text-slate-200">
                             {getOrderDisplayClient(o, customers[o.customer_id])}
                           </div>
                           {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
-                            <div className="text-xs text-slate-400 mt-0.5">
+                            <div className="text-xs text-slate-500 mt-0.5">
                               Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
                             </div>
                           )}
@@ -709,10 +709,10 @@ export default function Production() {
                   <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(o)}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
-                        <div className="font-mono text-xs text-slate-400">{o.order_id}</div>
+                        <div className="font-mono text-xs text-slate-500">{o.order_id}</div>
                         <div className="font-semibold text-slate-800 dark:text-slate-200">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
                         {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
-                          <div className="text-xs text-slate-400 mt-0.5">
+                          <div className="text-xs text-slate-500 mt-0.5">
                             Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
                           </div>
                         )}
@@ -777,7 +777,7 @@ export default function Production() {
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-sm">
                 <div className="grid grid-cols-7 border-b border-slate-100 dark:border-slate-700">
                   {DAY_LABELS.map((d) => (
-                    <div key={d} className="py-2 text-center text-xs font-semibold text-slate-400 uppercase tracking-widest">{d}</div>
+                    <div key={d} className="py-2 text-center text-xs font-semibold text-slate-500 uppercase tracking-widest">{d}</div>
                   ))}
                 </div>
 
@@ -820,7 +820,7 @@ export default function Production() {
                               <div className={`text-xs font-bold mb-1 w-6 h-6 flex items-center justify-center rounded-full ${
                                 isToday
                                   ? "bg-teal-600 text-white"
-                                  : inMonth ? "text-slate-400" : "text-slate-300"
+                                  : inMonth ? "text-slate-500" : "text-slate-300"
                               }`}>
                                 {day}
                               </div>
@@ -884,7 +884,7 @@ export default function Production() {
                                   );
                                 })}
                                 {events.length > 4 && (
-                                  <div className="text-[10px] text-slate-400 font-semibold px-1">+{events.length - 4} more</div>
+                                  <div className="text-[10px] text-slate-500 font-semibold px-1">+{events.length - 4} more</div>
                                 )}
                               </div>
                             </div>
@@ -1102,10 +1102,10 @@ export default function Production() {
                 <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
                   Unscheduled · {unscheduled.length}
                 </div>
-                <div className="text-[11px] text-slate-400">Drag onto a press lane to schedule</div>
+                <div className="text-[11px] text-slate-500">Drag onto a press lane to schedule</div>
               </div>
               {unscheduled.length === 0 ? (
-                <div className="text-xs text-slate-400 italic px-1 py-1">Everything's scheduled.</div>
+                <div className="text-xs text-slate-500 italic px-1 py-1">Everything's scheduled.</div>
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {unscheduled.map(o => (
@@ -1151,7 +1151,7 @@ export default function Production() {
                             {press.colors}-color
                           </div>
                         ) : (
-                          <div className="text-[10px] text-slate-400 mt-1">Set colors on Account</div>
+                          <div className="text-[10px] text-slate-500 mt-1">Set colors on Account</div>
                         )}
                       </div>
 
@@ -1177,7 +1177,7 @@ export default function Production() {
                                 className={`border-l border-slate-100 dark:border-slate-700 transition relative ${over ? "bg-teal-50/60" : isToday(d) ? "bg-teal-50/20" : ""}`}
                               >
                                 {hrs > 0 && (
-                                  <div className={`absolute bottom-1 left-1.5 text-[10px] font-semibold tabular-nums ${overCap ? "text-rose-600" : over80 ? "text-amber-600" : "text-slate-400"}`}>
+                                  <div className={`absolute bottom-1 left-1.5 text-[10px] font-semibold tabular-nums ${overCap ? "text-rose-600" : over80 ? "text-amber-600" : "text-slate-500"}`}>
                                     {hrs}/{cap}h
                                   </div>
                                 )}
@@ -1218,7 +1218,7 @@ export default function Production() {
               </div>
             </div>
 
-            <div className="text-[11px] text-slate-400 leading-snug">
+            <div className="text-[11px] text-slate-500 leading-snug">
               Capacity assumes {PRESS_CAPACITY_HOURS} hrs/day per press. Multi-day jobs split their estimated hours evenly across the span. Drag the right edge of a chip to extend the span; drag the body to move it. Click a chip to open the order.
             </div>
           </div>
@@ -1291,13 +1291,13 @@ export default function Production() {
             >
               <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">Agenda</div>
+                  <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">Agenda</div>
                   <h3 className="text-lg font-bold text-slate-900 mt-0.5">{fmtDateLong(selectedDate)}</h3>
                   <div className="text-xs mt-0.5">
                     {overdue.length === 0 && scheduled.length === 0 && dueSoon.length === 0
-                      ? <span className="text-slate-400">Nothing overdue, scheduled, or due in the next 14 days.</span>
+                      ? <span className="text-slate-500">Nothing overdue, scheduled, or due in the next 14 days.</span>
                       : (
-                        <span className="text-slate-400">
+                        <span className="text-slate-500">
                           {overdue.length > 0 && <span className="text-red-600 font-semibold">{overdue.length} overdue</span>}
                           {overdue.length > 0 && (scheduled.length > 0 || dueSoon.length > 0) && " · "}
                           {scheduled.length > 0 && `${scheduled.length} scheduled`}
@@ -1310,7 +1310,7 @@ export default function Production() {
                 <button
                   type="button"
                   onClick={() => setSelectedDate(null)}
-                  className="text-slate-400 hover:text-slate-700 text-lg leading-none px-2"
+                  className="text-slate-500 hover:text-slate-700 text-lg leading-none px-2"
                   aria-label="Close agenda"
                 >
                   ×
@@ -1319,7 +1319,7 @@ export default function Production() {
 
               <div className="p-5 space-y-5">
                 {inWorks.length === 0 && (
-                  <div className="text-sm text-slate-400 italic text-center py-10">
+                  <div className="text-sm text-slate-500 italic text-center py-10">
                     Nothing overdue, scheduled, or due in the next 14 days.
                   </div>
                 )}
@@ -1365,7 +1365,7 @@ export default function Production() {
                               <div className="font-semibold text-slate-800 text-sm truncate">
                                 {companyName(o)}
                               </div>
-                              <div className="text-xs text-slate-400 mt-0.5 truncate">
+                              <div className="text-xs text-slate-500 mt-0.5 truncate">
                                 {o.order_id}
                                 {dueRel && <span className={`ml-2 ${key === "overdue" ? "text-red-600 font-semibold" : ""}`}>· {dueRel}</span>}
                                 {!dueRel && end && <span className="ml-2">· Due {end}</span>}

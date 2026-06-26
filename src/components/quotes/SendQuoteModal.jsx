@@ -581,7 +581,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           <h2 className="text-base font-semibold text-slate-900">Send Quote Email</h2>
           <button
             onClick={onClose}
-            className="ml-auto text-slate-400 hover:text-slate-600"
+            className="ml-auto text-slate-500 hover:text-slate-600"
           >
             <X className="w-5 h-5" />
           </button>
@@ -653,7 +653,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   rows={3}
                   className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 disabled:bg-slate-50 resize-none"
                 />
-                <p className="text-xs text-slate-400 mt-1">
+                <p className="text-xs text-slate-500 mt-1">
                   Full quote details plus review, approval, and payment actions will be included automatically.
                 </p>
               </div>
@@ -701,7 +701,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                 <div className={`flex items-start gap-2 p-3 border rounded-xl ${qbConnected ? "border-[#2CA01C] bg-green-50/50" : "border-slate-200 bg-slate-50"}`}>
                   {qbConnected
                     ? <CheckCircle2 className="w-4 h-4 text-[#2CA01C] shrink-0 mt-0.5" />
-                    : <AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />}
+                    : <AlertCircle className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />}
                   <span className="text-sm">
                     <span className="block font-semibold text-slate-800">QuickBooks (optional)</span>
                     <span className="block text-xs text-slate-500 mt-0.5">

@@ -37,7 +37,7 @@ export default function QbSetup() {
             behave the way you expect. Run through this once before (or right after) you
             connect — most items take under a minute.
           </p>
-          <p className="text-xs text-slate-400">Last updated: June 10, 2026</p>
+          <p className="text-xs text-slate-500">Last updated: June 10, 2026</p>
         </header>
 
         <Section title="Before you connect">
@@ -217,7 +217,7 @@ export default function QbSetup() {
           </p>
         </Section>
 
-        <footer className="pt-4 border-t border-slate-100 text-xs text-slate-400">
+        <footer className="pt-4 border-t border-slate-100 text-xs text-slate-500">
           Questions about how we handle your QuickBooks data?{" "}
           <a href="/security" className="text-teal-600 hover:underline">Security &amp; Trust</a>
           {" · "}

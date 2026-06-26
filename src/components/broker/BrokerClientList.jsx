@@ -142,7 +142,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
       <div className="flex flex-wrap items-center gap-3 justify-between">
         <div className="flex items-center gap-3 flex-wrap">
           <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -233,7 +233,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
       {filtered.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-100 py-16 text-center">
           <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-          <p className="text-slate-400 text-sm">
+          <p className="text-slate-500 text-sm">
             {search
               ? "No clients match your search."
               : "No clients yet. Add your first client above."}
@@ -252,20 +252,20 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                 </div>
                 <div>
                   <div className="font-bold text-slate-800 text-sm">{c.name}</div>
-                  {c.company && <div className="text-xs text-slate-400">{c.company}</div>}
+                  {c.company && <div className="text-xs text-slate-500">{c.company}</div>}
                 </div>
               </div>
 
               <div className="text-xs text-slate-500 space-y-1.5 mb-4">
                 {c.email && (
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-400">✉</span>
+                    <span className="text-slate-500">✉</span>
                     {c.email}
                   </div>
                 )}
                 {c.phone && (
                   <div className="flex items-center gap-2">
-                    <span className="text-slate-400">☎</span>
+                    <span className="text-slate-500">☎</span>
                     {c.phone}
                   </div>
                 )}
@@ -291,7 +291,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                     setConfirmDel(false);
                     setArtNote("");
                   }}
-                  className="ml-auto text-xs text-slate-400 hover:text-slate-600 border border-slate-200 hover:border-slate-300 px-2.5 py-1 rounded-lg transition"
+                  className="ml-auto text-xs text-slate-500 hover:text-slate-600 border border-slate-200 hover:border-slate-300 px-2.5 py-1 rounded-lg transition"
                 >
                   Edit
                 </button>
@@ -315,7 +315,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                   setConfirmDel(false);
                   setArtNote("");
                 }}
-                className="text-slate-400 hover:text-slate-600 text-lg"
+                className="text-slate-500 hover:text-slate-600 text-lg"
               >
                 ✕
               </button>
@@ -374,7 +374,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
               </div>
 
               {(editing.saved_imprints || []).length === 0 ? (
-                <div className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl p-4 text-center">
+                <div className="text-sm text-slate-500 border border-dashed border-slate-200 rounded-xl p-4 text-center">
                   No saved imprints yet. They are added automatically when saving quotes.
                 </div>
               ) : (
@@ -383,7 +383,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                     <div key={i} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
                       <div className="flex gap-2 flex-wrap">
                         <div className="flex-1 min-w-28">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Title</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Title</label>
                           <input
                             value={imp.title || ""}
                             onChange={(e) => {
@@ -396,7 +396,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                           />
                         </div>
                         <div className="w-28">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Location</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Location</label>
                           <select
                             value={imp.location || "Front"}
                             onChange={(e) => {
@@ -410,7 +410,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                           </select>
                         </div>
                         <div className="w-16">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Width</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Width</label>
                           <input
                             value={imp.width || ""}
                             onChange={(e) => {
@@ -423,7 +423,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                           />
                         </div>
                         <div className="w-16">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Height</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Height</label>
                           <input
                             value={imp.height || ""}
                             onChange={(e) => {
@@ -436,7 +436,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                           />
                         </div>
                         <div className="w-16">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Colors</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Colors</label>
                           <input
                             type="number"
                             min="1"
@@ -451,7 +451,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                           />
                         </div>
                         <div className="w-28">
-                          <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Technique</label>
+                          <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Technique</label>
                           <select
                             value={imp.technique || "Screen Print"}
                             onChange={(e) => {
@@ -502,7 +502,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                 <label
                   className={`inline-flex items-center gap-2 cursor-pointer text-sm font-semibold px-4 py-2 rounded-xl border transition ${
                     uploadingArtwork
-                      ? "bg-slate-100 text-slate-400 border-slate-200"
+                      ? "bg-slate-100 text-slate-500 border-slate-200"
                       : "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
                   }`}
                 >
@@ -520,7 +520,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
               {(editing.artwork_files || []).length === 0 ? (
                 <div className="bg-white border border-slate-200 rounded-2xl py-10 text-center">
                   <Paperclip className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400">
+                  <p className="text-sm text-slate-500">
                     No artwork files saved yet.
                   </p>
                 </div>
@@ -536,7 +536,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                           {art.name}
                         </div>
                         {art.note && (
-                          <div className="text-xs text-slate-400 truncate">
+                          <div className="text-xs text-slate-500 truncate">
                             {art.note}
                           </div>
                         )}
@@ -547,7 +547,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                           href={art.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
+                          className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
                           title="Open artwork"
                         >
                           <ExternalLink className="w-4 h-4" />
@@ -555,7 +555,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
 
                         <button
                           onClick={() => handleRemoveArtwork(art.id)}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
+                          className="p-1.5 text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-lg transition"
                           title="Remove artwork"
                         >
                           <Trash2 className="w-4 h-4" />

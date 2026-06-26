@@ -62,7 +62,7 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
           <div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
               {job.order_id || job.quote_id || "Job"}
             </div>
             <div className="font-bold text-slate-900 text-lg">
@@ -73,7 +73,7 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
             <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700">
               <CheckCircle2 className="w-3 h-3" /> Completed
             </span>
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-600 p-1">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -84,23 +84,23 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
               <div className="flex items-center gap-1.5 mb-0.5">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Job Date</div>
+                <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Job Date</div>
               </div>
               <div className="font-semibold text-slate-800">{fmtDate(job.date)}</div>
             </div>
             <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
               <div className="flex items-center gap-1.5 mb-0.5">
-                <Hash className="w-3.5 h-3.5 text-slate-400" />
-                <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Job ID</div>
+                <Hash className="w-3.5 h-3.5 text-slate-500" />
+                <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Job ID</div>
               </div>
               <div className="font-semibold text-slate-800 font-mono text-sm">{job.order_id || job.quote_id || "—"}</div>
             </div>
             {job.due_date && (
               <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
                 <div className="flex items-center gap-1.5 mb-0.5">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Due / In-Hands</div>
+                  <Clock className="w-3.5 h-3.5 text-slate-500" />
+                  <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Due / In-Hands</div>
                 </div>
                 <div className="font-semibold text-slate-800">{fmtDate(job.due_date)}</div>
               </div>
@@ -108,8 +108,8 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
             {job.customer_name && (
               <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
                 <div className="flex items-center gap-1.5 mb-0.5">
-                  <User className="w-3.5 h-3.5 text-slate-400" />
-                  <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Client</div>
+                  <User className="w-3.5 h-3.5 text-slate-500" />
+                  <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Client</div>
                 </div>
                 <div className="font-semibold text-slate-800">{job.customer_name}</div>
               </div>
@@ -128,8 +128,8 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
                       <div className="flex justify-between items-start">
                         <div>
                           <div className="font-semibold text-slate-800 text-sm">{li.style || "Garment"}</div>
-                          {li.brand && <div className="text-xs text-slate-400">{li.brand}</div>}
-                          {li.garmentColor && <div className="text-xs text-slate-400">{li.garmentColor}</div>}
+                          {li.brand && <div className="text-xs text-slate-500">{li.brand}</div>}
+                          {li.garmentColor && <div className="text-xs text-slate-500">{li.garmentColor}</div>}
                         </div>
                         <div className="text-xs font-semibold text-slate-600 bg-slate-200 rounded-full px-2 py-0.5">Qty: {qty}</div>
                       </div>
@@ -165,7 +165,7 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
 
           {/* Financials */}
           <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Financials</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Financials</div>
             <div className="flex justify-between font-bold text-slate-900 text-lg">
               <span>Your Broker Price</span>
               <span>{fmtMoney(brokerTotals)}</span>
@@ -409,7 +409,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
       <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -443,7 +443,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
         {displayJobs.length === 0 ? (
           <div className="py-16 text-center">
             <FileText className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-            <p className="text-slate-400 text-sm font-medium">
+            <p className="text-slate-500 text-sm font-medium">
               {completedJobs.length === 0
                 ? "No completed jobs yet. Jobs will appear here once orders are finished."
                 : "No results match your search."}
@@ -452,7 +452,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
         ) : (
           <div className="divide-y divide-slate-100">
             {/* Header row */}
-            <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-2 text-xs font-semibold text-slate-400 uppercase tracking-widest">
+            <div className="hidden sm:grid grid-cols-12 gap-2 px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-widest">
               <div className="col-span-4">Client</div>
               <div className="col-span-3">Job ID</div>
               <div className="col-span-2">Date</div>
@@ -470,7 +470,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
                 <div className="flex items-center justify-between sm:hidden">
                   <div>
                     <div className="font-semibold text-slate-800 text-sm">{job.customer_name || "—"}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">{job.order_id || job.quote_id} · {fmtDate(job.date)}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{job.order_id || job.quote_id} · {fmtDate(job.date)}</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-slate-800">{fmtMoney(job._brokerTotal)}</span>
@@ -507,7 +507,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
         )}
 
         {displayJobs.length > 0 && (
-          <div className="pt-2 border-t border-slate-100 flex justify-between items-center text-xs text-slate-400">
+          <div className="pt-2 border-t border-slate-100 flex justify-between items-center text-xs text-slate-500">
             <span>{displayJobs.length} job{displayJobs.length !== 1 ? "s" : ""}</span>
             <span className="font-semibold text-slate-600">
               Total: {fmtMoney(displayJobs.reduce((s, j) => s + j._brokerTotal, 0))}

@@ -71,7 +71,7 @@ export default function Changelog() {
             <article key={entry.date} className="space-y-2 border-l-2 border-teal-100 pl-5">
               <div className="flex items-baseline gap-3">
                 <h2 className="text-lg font-semibold text-slate-800">{entry.title}</h2>
-                <time className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                <time className="text-xs font-medium text-slate-500 uppercase tracking-wider">
                   {formatDate(entry.date)}
                 </time>
               </div>

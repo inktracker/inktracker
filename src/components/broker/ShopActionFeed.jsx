@@ -116,7 +116,7 @@ export default function ShopActionFeed({ brokerId, onUnreadCountChange }) {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   }
 
-  if (loading) return <div className="text-sm text-slate-400 py-6 text-center">Loading notifications…</div>;
+  if (loading) return <div className="text-sm text-slate-500 py-6 text-center">Loading notifications…</div>;
 
   // Hide entirely when empty — the Overview already shows quote rows; an
   // empty feed panel is just noise.
@@ -136,7 +136,7 @@ export default function ShopActionFeed({ brokerId, onUnreadCountChange }) {
           {unread > 0 && (
             <span className="bg-teal-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unread} new</span>
           )}
-          {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+          {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
         </button>
         {unread > 0 && expanded && (
           <button
@@ -173,7 +173,7 @@ export default function ShopActionFeed({ brokerId, onUnreadCountChange }) {
                     )}
                   </div>
                   <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-xs text-slate-400">{timeAgo(n.created_date)}</span>
+                    <span className="text-xs text-slate-500">{timeAgo(n.created_date)}</span>
                   </div>
                 </div>
 

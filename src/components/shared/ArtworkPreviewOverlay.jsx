@@ -95,7 +95,7 @@ export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back"
       </div>
       <div className="flex-1 bg-slate-100 flex items-center justify-center overflow-auto min-h-0 p-2 sm:p-4">
         {!ready ? (
-          <Loader2 className="w-8 h-8 text-slate-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-slate-500 animate-spin" />
         ) : isImage ? (
           <img src={url} alt={name} className="max-w-full max-h-full object-contain" />
         ) : isPdf ? (

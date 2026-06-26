@@ -202,13 +202,13 @@ function FeaturePreviewModal({ feature, onClose }) {
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
           <div>
-            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Preview</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Preview</div>
             <h3 className="text-lg font-bold text-white">{feature.title}</h3>
           </div>
           <button
             onClick={onClose}
             aria-label="Close preview"
-            className="text-slate-400 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 transition"
+            className="text-slate-500 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 transition"
           >
             ×
           </button>
@@ -428,7 +428,10 @@ function PublicLandingPage() {
                 squeeze it. Width-capped on mobile (max-w-[58%]) so that even
                 with the absolute positioning, the wordmark stays inside the
                 lane between hamburger and Start-trial button. */}
-            <a href="#top" className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto" aria-label="InkTracker home">
+            {/* No aria-label — the visible "INKTRACKER · Print Shop Software"
+                wordmark IS the accessible name. An aria-label that omitted the
+                tagline tripped label-content-name-mismatch. */}
+            <a href="#top" className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center pointer-events-auto">
               <span
                 className="leading-none whitespace-nowrap"
                 style={{
@@ -550,12 +553,15 @@ function PublicLandingPage() {
             />
             <div className="relative max-w-5xl">
               <p className={eyebrow} style={{ color: 'rgba(255,255,255,0.7)' }}>Print-shop management software</p>
-              <h1
+              {/* h2, not h1 — the hero typewriter above is the page's single
+                  h1; this section headline sits a level below so the heading
+                  outline stays sequential (a11y: heading-order). */}
+              <h2
                 className="text-white mt-7 uppercase tracking-[0.01em] whitespace-pre-line"
                 style={{ fontFamily: H_FONT, fontSize: 'clamp(3.75rem, 13vw, 8rem)', lineHeight: 1.0 }}
               >
                 By printers,{'\n'}for printers.
-              </h1>
+              </h2>
               <p className="text-white/85 mt-8 text-base md:text-lg leading-[1.65] max-w-xl mx-auto">
                 Quotes, production, invoicing — built after years of using
                 software that never quite fit.
@@ -1282,7 +1288,7 @@ function PostConfirmSpinner() {
       {attempt > 0 && (
         <button
           onClick={() => { setPhase("error"); setErrorMessage("Cancelled the retry loop. Try again to resume."); setErrorRetryable(true); }}
-          className="mt-2 px-4 py-2 text-sm font-semibold text-slate-400 hover:text-slate-700"
+          className="mt-2 px-4 py-2 text-sm font-semibold text-slate-500 hover:text-slate-700"
         >
           Taking too long? Click to refresh
         </button>

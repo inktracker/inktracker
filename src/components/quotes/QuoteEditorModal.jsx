@@ -585,7 +585,7 @@ export default function QuoteEditorModal({
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl my-4">
         <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-t-2xl">
           <div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
               {q.quote_id}
             </div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Quote Builder</h2>
@@ -604,7 +604,7 @@ export default function QuoteEditorModal({
 
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 text-lg leading-none"
+              className="text-slate-500 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 text-lg leading-none"
             >
               ✕
             </button>
@@ -918,7 +918,7 @@ export default function QuoteEditorModal({
                     >
                       {opt.label}
                     </div>
-                    <div className="text-xs text-slate-400">{opt.sub}</div>
+                    <div className="text-xs text-slate-500">{opt.sub}</div>
                   </button>
                 ))}
               </div>
@@ -1032,7 +1032,7 @@ export default function QuoteEditorModal({
               <div className="flex justify-between items-center text-sm gap-2">
                 <span className="text-slate-500 whitespace-nowrap">Discount</span>
                 <div className="flex items-center gap-1">
-                  {q.discount_type === "flat" && <span className="text-slate-400 text-xs">$</span>}
+                  {q.discount_type === "flat" && <span className="text-slate-500 text-xs">$</span>}
                   <input
                     type="number"
                     min="0"
@@ -1041,7 +1041,7 @@ export default function QuoteEditorModal({
                     onChange={(e) => setQ({ ...q, discount: e.target.value })}
                     className="w-24 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
-                  {q.discount_type !== "flat" && <span className="text-slate-400 text-xs">%</span>}
+                  {q.discount_type !== "flat" && <span className="text-slate-500 text-xs">%</span>}
                   <button
                     onClick={() => setQ({ ...q, discount_type: q.discount_type === "flat" ? "percent" : "flat", discount: 0 })}
                     className="text-[10px] font-semibold text-teal-600 border border-teal-200 px-1.5 py-0.5 rounded hover:bg-teal-50 ml-1"
@@ -1082,7 +1082,7 @@ export default function QuoteEditorModal({
                     onChange={(e) => setQ({ ...q, tax_rate: e.target.value })}
                     className="w-20 text-sm text-right border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
-                  <span className="text-slate-400 text-xs">%</span>
+                  <span className="text-slate-500 text-xs">%</span>
                 </div>
               </div>
 
@@ -1122,7 +1122,7 @@ export default function QuoteEditorModal({
                             className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600"
                           />
                           <span className={`flex-1 ${skipped ? "line-through" : ""}`}>
-                            {fee.label} <span className="text-slate-400">({autoScreenCount} × {fmtMoney(rate)})</span>
+                            {fee.label} <span className="text-slate-500">({autoScreenCount} × {fmtMoney(rate)})</span>
                           </span>
                           <span className={`font-semibold tabular-nums ${skipped ? "" : "text-slate-700"}`}>
                             {fmtMoney(lineTotal)}
@@ -1196,7 +1196,7 @@ export default function QuoteEditorModal({
                       </button>
                     </div>
                     {charges.length === 0 && (
-                      <p className="text-xs text-slate-400">Add shipping, rush, or other one-off charges.</p>
+                      <p className="text-xs text-slate-500">Add shipping, rush, or other one-off charges.</p>
                     )}
                     {charges.map((c, idx) => (
                       <div key={c.id || idx} className="flex items-center gap-2">
@@ -1208,7 +1208,7 @@ export default function QuoteEditorModal({
                           className="flex-1 min-w-0 text-xs border border-slate-200 dark:border-slate-700 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300"
                         />
                         <div className="flex items-center gap-0.5">
-                          <span className="text-slate-400 text-xs">$</span>
+                          <span className="text-slate-500 text-xs">$</span>
                           <input
                             type="number"
                             step="0.01"
@@ -1243,7 +1243,7 @@ export default function QuoteEditorModal({
                     ))}
                     {addl.total > 0 && (
                       <div className="flex items-center justify-between text-xs border-t border-slate-100 dark:border-slate-700 pt-1.5">
-                        <span className="text-slate-400">Fees subtotal</span>
+                        <span className="text-slate-500">Fees subtotal</span>
                         <span className="font-semibold text-slate-600 dark:text-slate-300">{fmtMoney(addl.total)}</span>
                       </div>
                     )}

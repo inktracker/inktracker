@@ -53,7 +53,7 @@ function StepDateRow({ step, value, onSave, onDragStart }) {
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-slate-700">{step}</div>
         {hasDate && !editing && (
-          <div className="text-xs text-slate-400 mt-0.5">
+          <div className="text-xs text-slate-500 mt-0.5">
             {new Date(value + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
           </div>
         )}
@@ -69,10 +69,10 @@ function StepDateRow({ step, value, onSave, onDragStart }) {
               className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
               autoFocus
             />
-            <button onClick={handleSave} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
+            <button onClick={handleSave} aria-label="Save" className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
               <Check className="w-4 h-4" />
             </button>
-            <button onClick={handleCancel} className="p-1 text-slate-400 hover:bg-slate-100 rounded-lg transition">
+            <button onClick={handleCancel} aria-label="Cancel" className="p-1 text-slate-500 hover:bg-slate-100 rounded-lg transition">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -82,7 +82,7 @@ function StepDateRow({ step, value, onSave, onDragStart }) {
             className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
               hasDate
                 ? STATUS_COLORS[step] || "bg-slate-100 border-slate-200 text-slate-600"
-                : "border-dashed border-slate-300 text-slate-400 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50"
+                : "border-dashed border-slate-300 text-slate-500 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50"
             }`}
           >
             {hasDate ? <><Pencil className="w-3 h-3" /> Edit</> : <><CalendarDays className="w-3 h-3" /> Set date</>}
@@ -121,7 +121,7 @@ function DueDateRow({ value, onSave }) {
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-rose-700">In-Hands Due Date</div>
         {value && !editing && (
-          <div className="text-xs text-slate-400 mt-0.5">
+          <div className="text-xs text-slate-500 mt-0.5">
             {new Date(value + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
           </div>
         )}
@@ -137,10 +137,10 @@ function DueDateRow({ value, onSave }) {
               className="text-sm border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
               autoFocus
             />
-            <button onClick={handleSave} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
+            <button onClick={handleSave} aria-label="Save" className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition">
               <Check className="w-4 h-4" />
             </button>
-            <button onClick={() => { setVal(value || ""); setEditing(false); }} className="p-1 text-slate-400 hover:bg-slate-100 rounded-lg transition">
+            <button onClick={() => { setVal(value || ""); setEditing(false); }} aria-label="Cancel" className="p-1 text-slate-500 hover:bg-slate-100 rounded-lg transition">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -150,7 +150,7 @@ function DueDateRow({ value, onSave }) {
             className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${
               value
                 ? "bg-rose-50 border-rose-300 text-rose-700"
-                : "border-dashed border-slate-300 text-slate-400 hover:border-rose-400 hover:text-rose-600 hover:bg-rose-50"
+                : "border-dashed border-slate-300 text-slate-500 hover:border-rose-400 hover:text-rose-600 hover:bg-rose-50"
             }`}
           >
             {value
@@ -183,7 +183,7 @@ export default function OrderScheduleRow({ order, companyName, onUpdateStepDate,
         className="flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition cursor-pointer"
         onClick={() => setExpanded((e) => !e)}
       >
-        <span className="text-slate-400 shrink-0">
+        <span className="text-slate-500 shrink-0">
           {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </span>
 
@@ -194,21 +194,21 @@ export default function OrderScheduleRow({ order, companyName, onUpdateStepDate,
           </div>
         ) : (
           <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
-            <CalendarDays className="w-4 h-4 text-slate-400" />
+            <CalendarDays className="w-4 h-4 text-slate-500" />
           </div>
         )}
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="font-semibold text-slate-800 text-sm">{companyName}</div>
-            <div className="text-xs text-slate-400 font-mono">{order.order_id}</div>
+            <div className="text-xs text-slate-500 font-mono">{order.order_id}</div>
             {isPast && !isToday && (
               <span className="text-[10px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full border border-red-200">Overdue</span>
             )}
           </div>
           <div className="flex items-center gap-2 mt-0.5">
             <Badge s={order.status} />
-            <span className={`text-[10px] font-semibold ${scheduledCount === 0 ? "text-amber-500" : "text-slate-400"}`}>
+            <span className={`text-[10px] font-semibold ${scheduledCount === 0 ? "text-amber-500" : "text-slate-500"}`}>
               {scheduledCount === 0 ? "No steps scheduled" : `${scheduledCount}/${O_STATUSES.length} steps scheduled`}
             </span>
           </div>
@@ -226,14 +226,14 @@ export default function OrderScheduleRow({ order, companyName, onUpdateStepDate,
       {expanded && (
         <div className="mx-5 mb-4 bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-4 pt-3 pb-1">
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pb-1">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pb-1">
               Click to edit · Drag to reschedule
             </div>
             <DueDateRow
               value={order.due_date}
               onSave={(d) => onUpdateDueDate(order.id, d)}
             />
-            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pt-3 pb-1">Production Steps</div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pt-3 pb-1">Production Steps</div>
             <StepDateRow
               step="Artwork"
               value={stepDates["Artwork"]}

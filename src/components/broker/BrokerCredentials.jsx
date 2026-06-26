@@ -133,7 +133,7 @@ export default function BrokerCredentials({ user, onUpdate }) {
             <div key={c.type} className="bg-white border border-slate-200 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <FileText className="w-5 h-5 text-slate-400" />
+                  <FileText className="w-5 h-5 text-slate-500" />
                   <div>
                     <div className="font-semibold text-slate-900">{c.title}</div>
                     {c.file_name && (
@@ -193,7 +193,7 @@ export default function BrokerCredentials({ user, onUpdate }) {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <label className={`flex items-center gap-2 cursor-pointer text-sm font-semibold px-3 py-2 rounded-lg border transition ${uploading ? "bg-slate-100 text-slate-400 border-slate-200" : "border-teal-200 text-teal-600 hover:bg-teal-50"}`}>
+                <label className={`flex items-center gap-2 cursor-pointer text-sm font-semibold px-3 py-2 rounded-lg border transition ${uploading ? "bg-slate-100 text-slate-500 border-slate-200" : "border-teal-200 text-teal-600 hover:bg-teal-50"}`}>
                   <Upload className="w-4 h-4" />
                   {uploading ? "Uploading…" : (c.file ? "Replace File" : "Upload File")}
                   <input type="file" className="hidden" onChange={(e) => handleFileUpload(idx, e)} disabled={uploading} />

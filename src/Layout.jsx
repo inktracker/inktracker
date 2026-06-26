@@ -117,7 +117,7 @@ export default function Layout({ children, currentPageName }) {
         <button
           key={n.page}
           onClick={() => { if (mobile) setMobileMenuOpen(false); setShowUpgrade(n.feature); }}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition w-full text-left ${mobile ? "text-slate-300" : "text-slate-300 dark:text-slate-600 hover:text-slate-400"}`}
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition w-full text-left ${mobile ? "text-slate-300" : "text-slate-300 dark:text-slate-600 hover:text-slate-500"}`}
         >
           <IconComponent className="w-5 h-5 text-slate-300" />
           {n.label}
@@ -140,13 +140,13 @@ export default function Layout({ children, currentPageName }) {
               onClick={onLinkClick}
               className={`flex items-center gap-3 ${indentCls} py-2.5 text-[11px] font-bold uppercase tracking-[0.16em] transition flex-1 min-w-0 ${active ? "text-white" : `${baseTextCls} ${hoverCls}`}`}
             >
-              <IconComponent className={`${iconSize} ${active ? "" : "text-slate-400"}`} />
+              <IconComponent className={`${iconSize} ${active ? "" : "text-slate-500"}`} />
               <span className="flex-1 truncate">{n.label}</span>
             </Link>
             <button
               onClick={(e) => { e.preventDefault(); toggleGroup(n.page); }}
               aria-label={expanded ? `Collapse ${n.label}` : `Expand ${n.label}`}
-              className={`px-2 transition ${active ? "text-white/80 hover:text-white" : "text-slate-400 hover:text-slate-600"}`}
+              className={`px-2 transition ${active ? "text-white/80 hover:text-white" : "text-slate-500 hover:text-slate-600"}`}
             >
               <Chevron className="w-4 h-4" />
             </button>
@@ -167,7 +167,7 @@ export default function Layout({ children, currentPageName }) {
         onClick={onLinkClick}
         className={`flex items-center gap-3 ${indentCls} pr-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition ${active ? "bg-teal-600 text-white" : `${baseTextCls} ${hoverCls}`}`}
       >
-        <IconComponent className={`${iconSize} ${active ? "" : "text-slate-400"}`} />
+        <IconComponent className={`${iconSize} ${active ? "" : "text-slate-500"}`} />
         <span className="flex-1">{n.label}</span>
       </Link>
     );
@@ -261,7 +261,7 @@ export default function Layout({ children, currentPageName }) {
             )}
             <div className="font-display uppercase text-lg text-slate-900 dark:text-slate-100 truncate leading-none">{shopName}</div>
           </div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400 dark:text-slate-500 mt-2 font-bold">Shop Manager</div>
+          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-500 dark:text-slate-500 mt-2 font-bold">Shop Manager</div>
         </div>
         <nav className="flex-1 py-4 space-y-0.5 px-2">
           {NAV.map(n => renderNavItem(n))}

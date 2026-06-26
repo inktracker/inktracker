@@ -33,9 +33,9 @@ function MetricCard({ label, value, sub, color = "text-teal-600", onClick }) {
       onClick={onClick}
       className="w-full bg-white dark:bg-slate-900 rounded-xl sm:rounded-2xl border border-slate-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition text-left"
     >
-      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">{label}</div>
+      <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1.5">{label}</div>
       <div className={`text-xl sm:text-2xl font-bold ${color} truncate`}>{value}</div>
-      {sub && <div className="text-[10px] text-slate-400 mt-1">{sub}</div>}
+      {sub && <div className="text-[10px] text-slate-500 mt-1">{sub}</div>}
     </button>
   );
 }
@@ -128,7 +128,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 flex-wrap">
             <div className="font-semibold text-slate-800 dark:text-slate-200 text-sm">{broker.display_name || broker.full_name || broker.email}</div>
-            {broker.company_name && <span className="text-xs text-slate-400">{broker.company_name}</span>}
+            {broker.company_name && <span className="text-xs text-slate-500">{broker.company_name}</span>}
             {assignedShopNames.length > 0 && assignedShopNames.map((name, i) => (
               <span key={i} className="text-xs bg-teal-50 text-teal-700 font-semibold px-2 py-0.5 rounded-full">{name}</span>
             ))}
@@ -141,23 +141,23 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
               </span>
             )}
           </div>
-          <div className="text-xs text-slate-400 mt-0.5">{broker.email}</div>
+          <div className="text-xs text-slate-500 mt-0.5">{broker.email}</div>
         </div>
         {/* Quick stats */}
         <div className="flex items-center gap-4 shrink-0 ml-4">
           <div className="text-right hidden sm:block">
-            <div className="text-xs text-slate-400">Clients</div>
+            <div className="text-xs text-slate-500">Clients</div>
             <div className="font-bold text-green-700 text-sm">{loadingClients ? "…" : clients.length}</div>
           </div>
           <div className="text-right hidden sm:block">
-            <div className="text-xs text-slate-400">Orders</div>
+            <div className="text-xs text-slate-500">Orders</div>
             <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">{brokerOrders.length}</div>
           </div>
           <div className="text-right hidden sm:block">
-            <div className="text-xs text-slate-400">Revenue</div>
+            <div className="text-xs text-slate-500">Revenue</div>
             <div className="font-bold text-teal-700 text-sm">{fmtMoney(totalRevenue)}</div>
           </div>
-          {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+          {open ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
         </div>
       </button>
 
@@ -172,7 +172,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
               <button
                 key={id}
                 onClick={() => handleSubTab(id)}
-                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition ${subTab === id ? "border-teal-600 text-teal-700" : "border-transparent text-slate-400 hover:text-slate-700"}`}
+                className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold border-b-2 -mb-px transition ${subTab === id ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
               >
                 <Icon className="w-3.5 h-3.5" />{label}
                 {badge > 0 && (
@@ -190,19 +190,19 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
               <div className="space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-center">
-                    <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Total Orders</div>
+                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Total Orders</div>
                     <div className="text-2xl font-bold text-slate-800 dark:text-slate-200">{brokerOrders.length}</div>
                   </div>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-center">
-                    <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Revenue</div>
+                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Revenue</div>
                     <div className="text-lg font-bold text-teal-700">{fmtMoney(totalRevenue)}</div>
                   </div>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 text-center">
-                    <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1">Avg. Order</div>
+                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1">Avg. Order</div>
                     <div className="text-lg font-bold text-slate-700">{fmtMoney(avgOrderValue)}</div>
                   </div>
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3">
-                    <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-1.5">Status</div>
+                    <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-1.5">Status</div>
                     <div className="flex flex-wrap gap-1">
                       <span className="text-xs font-semibold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">{pending} Pending</span>
                       <span className="text-xs font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">{production} In Prod</span>
@@ -226,7 +226,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div className="text-sm text-slate-400 text-center py-6">No order history yet.</div>
+                  <div className="text-sm text-slate-500 text-center py-6">No order history yet.</div>
                 )}
               </div>
             )}
@@ -236,9 +236,9 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
               <>
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-3">Clients ({loadingClients ? "…" : clients.length})</div>
                 {loadingClients ? (
-                  <div className="text-xs text-slate-400">Loading clients…</div>
+                  <div className="text-xs text-slate-500">Loading clients…</div>
                 ) : clients.length === 0 ? (
-                  <div className="text-xs text-slate-400">No clients added yet.</div>
+                  <div className="text-xs text-slate-500">No clients added yet.</div>
                 ) : (
                   <div className="space-y-2">
                     {clients.map(c => (
@@ -247,7 +247,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
                           <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{c.name}</div>
                           {c.company && <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5"><Building2 className="w-3 h-3" /> {c.company}</div>}
                         </div>
-                        <div className="text-right text-xs text-slate-400 space-y-0.5">
+                        <div className="text-right text-xs text-slate-500 space-y-0.5">
                           {c.email && <div className="flex items-center gap-1 justify-end"><Mail className="w-3 h-3" />{c.email}</div>}
                           {c.phone && <div className="flex items-center gap-1 justify-end"><Phone className="w-3 h-3" />{c.phone}</div>}
                         </div>
@@ -703,12 +703,12 @@ export default function Dashboard() {
                   <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-green-600" onClick={() => navigate(createPageUrl("Performance"))} />
                 </div>
                 {qbConnected && !qbMetrics && (
-                  <p className="text-[11px] text-slate-400 -mt-3">
+                  <p className="text-[11px] text-slate-500 -mt-3">
                     Loading authoritative numbers from QuickBooks…
                   </p>
                 )}
                 {qbReady && (
-                  <div className="-mt-3 flex items-center gap-2 text-[11px] text-slate-400">
+                  <div className="-mt-3 flex items-center gap-2 text-[11px] text-slate-500">
                     <span>
                       Open Invoices + Revenue sourced from QuickBooks · as of {new Date(qbMetrics.asOf || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </span>
@@ -778,7 +778,7 @@ export default function Dashboard() {
                           className="w-full text-left text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700 hover:bg-teal-50 hover:border-teal-200 transition"
                         >
                           <div className="font-display uppercase tracking-[0.04em] text-slate-900 dark:text-slate-100 text-sm truncate leading-tight">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
-                          <div className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-400 mt-0.5">{o.order_id}</div>
+                          <div className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-500 mt-0.5">{o.order_id}</div>
                         </button>
                       ))}
                     </div>
@@ -796,12 +796,12 @@ export default function Dashboard() {
                 className="w-full bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-5 py-3 flex items-center justify-between hover:bg-slate-100 transition"
               >
                 <h3 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Recent Quotes</h3>
-                <span className="text-xs font-semibold text-slate-400">{quotes.length} total</span>
+                <span className="text-xs font-semibold text-slate-500">{quotes.length} total</span>
               </button>
               {quotes.length === 0 ? (
                 <div className="py-12 text-center">
                   <FileText className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400 mb-3">No quotes yet</p>
+                  <p className="text-sm text-slate-500 mb-3">No quotes yet</p>
                   <button onClick={() => navigate(createPageUrl("Quotes"))} className="text-xs font-semibold text-teal-600 hover:text-teal-700 transition">
                     Create your first quote &rarr;
                   </button>
@@ -832,13 +832,13 @@ export default function Dashboard() {
                     >
                       <div>
                         <div className="font-display uppercase tracking-[0.04em] text-slate-900 dark:text-slate-100 text-base leading-tight">{getDisplayName(customers[q.customer_id] || q.customer_name) || "—"}</div>
-                        <div className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-400 mt-1">
+                        <div className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-500 mt-1">
                           {q.quote_id}
                           {q.broker_id && <span className="ml-2 text-teal-500">via broker</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
-                        {q.date && <span className="font-display uppercase tracking-[0.1em] text-[10px] text-slate-400">{fmtDate(q.date)}</span>}
+                        {q.date && <span className="font-display uppercase tracking-[0.1em] text-[10px] text-slate-500">{fmtDate(q.date)}</span>}
                         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${STATUS_COLORS[q.status] || "bg-slate-100 text-slate-600"}`}>
                           {q.status}
                         </span>
@@ -855,10 +855,10 @@ export default function Dashboard() {
                 className="w-full bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-5 py-3 flex items-center justify-between hover:bg-slate-100 transition text-left"
               >
                 <h3 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Low Stock Items</h3>
-                <span className="text-xs font-semibold text-slate-400">{lowStockItems.length} flagged</span>
+                <span className="text-xs font-semibold text-slate-500">{lowStockItems.length} flagged</span>
               </button>
               {lowStockItems.length === 0 ? (
-                <div className="py-12 text-center text-slate-400 text-sm">All items are well stocked.</div>
+                <div className="py-12 text-center text-slate-500 text-sm">All items are well stocked.</div>
               ) : (
                 <div className="divide-y divide-slate-100">
                   {lowStockItems.slice(0, 6).map(item => (
@@ -869,7 +869,7 @@ export default function Dashboard() {
                     >
                       <div className="flex justify-between items-start mb-1 gap-3">
                         <div className="font-display uppercase tracking-[0.04em] text-slate-900 dark:text-slate-100 text-base leading-tight">{item.item}</div>
-                        <span className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-400 shrink-0 mt-0.5">{item.sku}</span>
+                        <span className="font-display uppercase tracking-[0.12em] text-[10px] text-slate-500 shrink-0 mt-0.5">{item.sku}</span>
                       </div>
                       <div className="flex justify-between text-xs text-slate-500">
                         <span>Stock: {item.qty} {item.unit}</span>
@@ -936,7 +936,7 @@ export default function Dashboard() {
           {brokers.length === 0 ? (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl py-16 text-center">
               <Users className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-              <p className="text-slate-400 text-sm">Brokers can be assigned to your shop from the <strong>Account</strong> page by an admin.</p>
+              <p className="text-slate-500 text-sm">Brokers can be assigned to your shop from the <strong>Account</strong> page by an admin.</p>
             </div>
           ) : (
             <div className="space-y-3">

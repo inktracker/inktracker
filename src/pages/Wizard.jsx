@@ -70,7 +70,7 @@ export default function Wizard() {
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold text-slate-900">Order Wizard</h2>
-        <p className="text-slate-400 text-sm mt-1">Step-by-step quote builder for walk-in or phone customers</p>
+        <p className="text-slate-500 text-sm mt-1">Step-by-step quote builder for walk-in or phone customers</p>
       </div>
       <OrderWizard onSubmit={handleSubmit} styles={styles} shopOwner={shopOwner} />
 
@@ -84,15 +84,15 @@ export default function Wizard() {
           className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 transition"
         >
           <div className="flex items-center gap-3">
-            <Code2 className="w-5 h-5 text-slate-400" />
+            <Code2 className="w-5 h-5 text-slate-500" />
             <div>
               <div className="font-bold text-slate-800">Embed on your website</div>
-              <div className="text-xs text-slate-400 mt-0.5">
+              <div className="text-xs text-slate-500 mt-0.5">
                 Paste a snippet on Wix, Squarespace, or any website — customers submit quote requests directly to your Quotes page.
               </div>
             </div>
           </div>
-          {embedOpen ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />}
+          {embedOpen ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />}
         </button>
         {embedOpen && (
           <div className="px-5 pb-5 border-t border-slate-100">

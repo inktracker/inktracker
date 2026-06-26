@@ -30,7 +30,7 @@ function Section({ icon: IconComp, title, defaultOpen = false, children }) {
           {IconComp && <IconComp className="w-5 h-5 text-teal-600" />}
           <h3 className="text-sm sm:text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
         </div>
-        <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`w-5 h-5 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && <div className="pt-3">{children}</div>}
     </div>
@@ -668,7 +668,7 @@ export default function Account() {
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Default Tax Rate %</label>
                 <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)} placeholder="8.265"
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
-                <p className="text-xs text-slate-400 mt-1">Enter the percentage (8.265 means 8.265%), not a decimal.</p>
+                <p className="text-xs text-slate-500 mt-1">Enter the percentage (8.265 means 8.265%), not a decimal.</p>
               </div>
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Shop Timezone</label>
@@ -683,7 +683,7 @@ export default function Account() {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-slate-400 mt-1">Used by the calendar to know what "today" means for your shop. Lets employees logging in from another state still see the right "today."</p>
+                <p className="text-xs text-slate-500 mt-1">Used by the calendar to know what "today" means for your shop. Lets employees logging in from another state still see the right "today."</p>
               </div>
             </div>
 
@@ -715,7 +715,7 @@ export default function Account() {
               <label className="block text-sm font-semibold text-slate-700 mb-2">Website</label>
               <input type="url" value={website} onChange={e => setWebsite(e.target.value)} placeholder="https://yourshop.com"
                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-500" />
-              <p className="text-xs text-slate-400 mt-1">Shown on art proofs in place of the platform footer.</p>
+              <p className="text-xs text-slate-500 mt-1">Shown on art proofs in place of the platform footer.</p>
             </div>
 
             <div>
@@ -842,11 +842,11 @@ export default function Account() {
           <div className="space-y-5">
             <div className="space-y-3">
               <div>
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Email</div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Email</div>
                 <div className="text-sm text-slate-700 font-semibold">{user?.email}</div>
               </div>
               <div>
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Role</div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Role</div>
                 <div className="text-sm text-slate-700 font-semibold capitalize">{user?.role || "user"}</div>
               </div>
             </div>
@@ -866,7 +866,7 @@ export default function Account() {
 
         {user && (
           <Section icon={Wand2} title="Quote Wizard">
-            <p className="text-sm text-slate-400 mb-3">
+            <p className="text-sm text-slate-500 mb-3">
               Curate the styles and print setups walk-in customers see on the Wizard page.
             </p>
             <WizardConfigEditor user={user} shop={shopRecord} onSaved={() => {}} />
@@ -874,7 +874,7 @@ export default function Account() {
         )}
 
         <Section icon={Mail} title="Quote Email Template">
-          <p className="text-sm text-slate-400 mb-4">
+          <p className="text-sm text-slate-500 mb-4">
             Customize the subject and message sent with every quote. Use <code className="bg-slate-100 px-1 rounded text-xs">{"{{customer_name}}"}</code>, <code className="bg-slate-100 px-1 rounded text-xs">{"{{quote_id}}"}</code>, <code className="bg-slate-100 px-1 rounded text-xs">{"{{total}}"}</code>, and <code className="bg-slate-100 px-1 rounded text-xs">{"{{payment_link}}"}</code> as placeholders.
           </p>
           <div className="space-y-3">
@@ -963,9 +963,9 @@ export default function Account() {
                   Income account for InkTracker sales
                 </label>
                 {qbAccountsLoading ? (
-                  <div className="text-xs text-slate-400">Loading your QuickBooks accounts…</div>
+                  <div className="text-xs text-slate-500">Loading your QuickBooks accounts…</div>
                 ) : qbIncomeAccounts === null ? (
-                  <div className="text-xs text-slate-400">Couldn’t load accounts — InkTracker will choose automatically.</div>
+                  <div className="text-xs text-slate-500">Couldn’t load accounts — InkTracker will choose automatically.</div>
                 ) : (
                   <select
                     value={qbIncomeAccountId}
@@ -979,7 +979,7 @@ export default function Account() {
                     ))}
                   </select>
                 )}
-                <p className="text-[11px] text-slate-400 mt-1">
+                <p className="text-[11px] text-slate-500 mt-1">
                   Where InkTracker invoices post revenue in QuickBooks. Pick your sales account so it lands in the right place on your P&amp;L; leave on Auto to let InkTracker choose.
                 </p>
               </div>
@@ -1026,7 +1026,7 @@ export default function Account() {
                   </div>
                 )}
 
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wide mt-4 mb-2">Or sync individually</div>
+                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-4 mb-2">Or sync individually</div>
                 <button
                   onClick={handleMigrateCustomers}
                   disabled={qbMigrating || qbSyncingAll !== null}
@@ -1154,7 +1154,7 @@ export default function Account() {
                 />
                 {qbConnecting ? "Redirecting to QuickBooks…" : (qbNeedsReconnect ? "Reconnect to QuickBooks" : "Connect to QuickBooks")}
               </button>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 You'll be redirected to Intuit to authorize InkTracker. QuickBooks Payments account required for payment links.
               </p>
             </div>
@@ -1316,15 +1316,15 @@ function QbItemMapEditor({ user }) {
                 </span>
               </label>
 
-              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Garment types</div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">Garment types</div>
               <div className="space-y-1.5">{GARMENT_CATEGORIES.map((cat) => renderRow(cat, cat))}</div>
 
-              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mt-3 mb-1">Fees</div>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mt-3 mb-1">Fees</div>
               <div className="space-y-1.5">{renderRow("Setup Fee", "Setup Fee")}</div>
 
               {split && (
                 <>
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mt-3 mb-1">Decoration techniques</div>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mt-3 mb-1">Decoration techniques</div>
                   <div className="space-y-1.5">{techniques.map((t) => renderRow(t, t))}</div>
                 </>
               )}
@@ -1447,7 +1447,7 @@ function BillingSection({ user }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4">
         <div>
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Current Plan</div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Current Plan</div>
           <div className="flex items-center gap-2">
             <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${getTierColor(tier)}`}>
               {getTierLabel(tier)}
@@ -1473,11 +1473,11 @@ function BillingSection({ user }) {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <div className="text-sm font-bold text-slate-800">{plan.name}</div>
-                <div className="text-xs text-slate-400">Everything included</div>
+                <div className="text-xs text-slate-500">Everything included</div>
               </div>
               <div className="text-right">
                 <span className="text-2xl font-bold text-slate-900">${plan.price}</span>
-                <span className="text-xs text-slate-400">{plan.period}</span>
+                <span className="text-xs text-slate-500">{plan.period}</span>
               </div>
             </div>
             {plan.foundingNote && (
@@ -1501,7 +1501,7 @@ function BillingSection({ user }) {
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-slate-400 mt-3 max-w-2xl">
+      <p className="text-[11px] text-slate-500 mt-3 max-w-2xl">
         Have a beta promo code? Enter it on the Stripe checkout page after clicking Subscribe.
       </p>
     </div>
@@ -1790,7 +1790,7 @@ function ProductionTasksSection({ user }) {
             <button
               type="button"
               onClick={() => resetStage(stage)}
-              className="text-[10px] font-semibold text-slate-400 hover:text-teal-600 transition"
+              className="text-[10px] font-semibold text-slate-500 hover:text-teal-600 transition"
               title={`Reset ${stage} tasks to InkTracker defaults`}
             >
               Reset to defaults
@@ -1802,7 +1802,7 @@ function ProductionTasksSection({ user }) {
             </div>
           )}
           {(tasks[stage] || []).length === 0 ? (
-            <div className="text-xs text-slate-400 italic">No tasks — this stage will fall back to defaults.</div>
+            <div className="text-xs text-slate-500 italic">No tasks — this stage will fall back to defaults.</div>
           ) : (
             <div className="space-y-1.5">
               {(tasks[stage] || []).map((task, idx) => (
@@ -2073,7 +2073,7 @@ function ExportDataSection({ user }) {
               <DownloadCloud className="w-4 h-4 text-teal-500" />
               {item.label} (CSV)
             </span>
-            {busy === item.key && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />}
+            {busy === item.key && <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />}
           </button>
         ))}
       </div>
@@ -2170,7 +2170,7 @@ function PressesSection({ user }) {
 
       <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 space-y-2">
         {presses.length === 0 ? (
-          <div className="text-xs text-slate-400 italic">No presses yet — add one below.</div>
+          <div className="text-xs text-slate-500 italic">No presses yet — add one below.</div>
         ) : (
           <div className="space-y-1.5">
             {presses.map((press, idx) => (
@@ -2193,7 +2193,7 @@ function PressesSection({ user }) {
                     title="Number of color stations (heads). Leave blank if unknown."
                     className="w-16 text-sm border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300 text-center"
                   />
-                  <span className="text-[10px] text-slate-400 uppercase tracking-wider">colors</span>
+                  <span className="text-[10px] text-slate-500 uppercase tracking-wider">colors</span>
                 </div>
                 <button
                   type="button"
@@ -2426,7 +2426,7 @@ function SupplierKeysSection({ user }) {
               <button onClick={() => { setSsEditing(true); setSsAccount(""); setSsKey(""); }}
                 className="text-xs font-semibold text-teal-600 hover:text-teal-700">Edit</button>
               <button onClick={() => handleDisconnect("ss")}
-                className="text-xs font-semibold text-slate-400 hover:text-red-500">Disconnect</button>
+                className="text-xs font-semibold text-slate-500 hover:text-red-500">Disconnect</button>
             </div>
           )}
         </div>
@@ -2442,14 +2442,14 @@ function SupplierKeysSection({ user }) {
                 <input type="password" value={ssKey} onChange={e => setSsKey(e.target.value)} className={inputCls} />
               </div>
             </div>
-            <p className="text-[10px] text-slate-400">Find these in your S&S Activewear account under API settings.</p>
+            <p className="text-[10px] text-slate-500">Find these in your S&S Activewear account under API settings.</p>
           </>
         ) : ssHasKey ? (
           <div className="text-xs text-slate-500">
             Credentials saved. Click <span className="font-semibold">Edit</span> to replace.
           </div>
         ) : (
-          <p className="text-xs text-slate-400">No S&S credentials configured. Enter your account details to connect.</p>
+          <p className="text-xs text-slate-500">No S&S credentials configured. Enter your account details to connect.</p>
         )}
       </div>
 
@@ -2465,7 +2465,7 @@ function SupplierKeysSection({ user }) {
               <button onClick={() => { setAcEditing(true); setAcSubKey(""); setAcEmail(""); setAcPassword(""); }}
                 className="text-xs font-semibold text-teal-600 hover:text-teal-700">Edit</button>
               <button onClick={() => handleDisconnect("ac")}
-                className="text-xs font-semibold text-slate-400 hover:text-red-500">Disconnect</button>
+                className="text-xs font-semibold text-slate-500 hover:text-red-500">Disconnect</button>
             </div>
           )}
         </div>
@@ -2485,7 +2485,7 @@ function SupplierKeysSection({ user }) {
                 <input type="password" value={acPassword} onChange={e => setAcPassword(e.target.value)} className={inputCls} />
               </div>
             </div>
-            <p className="text-[10px] text-slate-400">Contact api@ascolour.com to get your API credentials.</p>
+            <p className="text-[10px] text-slate-500">Contact api@ascolour.com to get your API credentials.</p>
           </>
         ) : acHasKey ? (
           <div className="text-xs text-slate-500 space-y-1">
@@ -2493,7 +2493,7 @@ function SupplierKeysSection({ user }) {
             {acEmailFromServer && <div>Email: {acEmailFromServer}</div>}
           </div>
         ) : (
-          <p className="text-xs text-slate-400">No AS Colour credentials configured. Enter your account details to connect.</p>
+          <p className="text-xs text-slate-500">No AS Colour credentials configured. Enter your account details to connect.</p>
         )}
 
         <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-[11px] text-amber-800 leading-relaxed">
@@ -2524,7 +2524,7 @@ function SupplierKeysSection({ user }) {
       <div className="border border-slate-200 rounded-xl p-4 space-y-3">
         <div>
           <div className="text-sm font-bold text-slate-700">Free-freight thresholds</div>
-          <p className="text-[11px] text-slate-400 mt-0.5">
+          <p className="text-[11px] text-slate-500 mt-0.5">
             Order subtotal at which each supplier ships free. Drives the progress bar
             on Purchase Orders so you can pair jobs to hit it.
           </p>
@@ -2551,7 +2551,7 @@ function SupplierKeysSection({ user }) {
       <div className="border border-slate-200 rounded-xl p-4 space-y-3">
         <div>
           <div className="text-sm font-bold text-slate-700">Default AS Colour warehouse</div>
-          <p className="text-[11px] text-slate-400 mt-0.5">
+          <p className="text-[11px] text-slate-500 mt-0.5">
             Items on a PO ship from here when in stock. If the SKU is out of stock at your default,
             it auto-routes to the other US warehouse silently — no per-PO decision needed.
           </p>
@@ -2820,7 +2820,7 @@ function PricingConfigSection({ user }) {
     return (
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">{title}</h4>
-        <p className="text-[10px] text-slate-400 mb-2">{description}</p>
+        <p className="text-[10px] text-slate-500 mb-2">{description}</p>
         <div className="space-y-2">
           {Object.entries(extras).map(([key, val]) => {
             const mode = extraModes[key] === "percent" ? "percent" : "flat";
@@ -2837,18 +2837,18 @@ function PricingConfigSection({ user }) {
                   <button
                     type="button"
                     onClick={() => setExtraMode(key, "flat", scope)}
-                    className={`text-xs font-semibold w-7 py-1.5 transition ${!isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}
+                    className={`text-xs font-semibold w-7 py-1.5 transition ${!isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
                     title="Flat dollar amount per piece"
                   >$</button>
                   <button
                     type="button"
                     onClick={() => setExtraMode(key, "percent", scope)}
-                    className={`text-xs font-semibold w-7 py-1.5 transition border-l border-slate-200 ${isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-400 hover:bg-slate-50"}`}
+                    className={`text-xs font-semibold w-7 py-1.5 transition border-l border-slate-200 ${isPercent ? "bg-teal-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
                     title="Percent of the line's per-piece decoration cost"
                   >%</button>
                 </div>
                 <div className="relative w-24 shrink-0">
-                  {!isPercent && <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>}
+                  {!isPercent && <span className="absolute left-2 top-1.5 text-xs text-slate-500">$</span>}
                   <NumericInput
                     value={val}
                     onChange={(n) => updateExtra(key, n, scope)}
@@ -2857,7 +2857,7 @@ function PricingConfigSection({ user }) {
                     label={`Extras → ${key}`}
                     className={`w-full text-xs border border-slate-200 rounded py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300 ${isPercent ? "pl-2 pr-6" : "pl-5 pr-2"}`}
                   />
-                  {isPercent && <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>}
+                  {isPercent && <span className="absolute right-2 top-1.5 text-xs text-slate-500">%</span>}
                 </div>
                 <button
                   onClick={() => removeExtra(key, scope)}
@@ -3026,7 +3026,7 @@ function PricingConfigSection({ user }) {
   }
 
 
-  if (loading || !config) return <div className="text-sm text-slate-400 py-4">Loading pricing config...</div>;
+  if (loading || !config) return <div className="text-sm text-slate-500 py-4">Loading pricing config...</div>;
 
   const tiers = config.tiers || DEFAULT_TIERS;
   const maxColors = config.maxColors || DEFAULT_COLORS;
@@ -3054,14 +3054,14 @@ function PricingConfigSection({ user }) {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-slate-400">
+              <tr className="text-slate-500">
                 <th className="text-left py-1 pr-2">Colors</th>
                 {t_iers.map(t => (
                   <th key={t} className="text-center py-1">
                     <div className="inline-flex items-center gap-1">
                       <input type="number" value={t}
                         onChange={e => updateTierValue(t, e.target.value, scope)}
-                        className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-400 font-semibold" />
+                        className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-500 font-semibold" />
                       <span className="text-slate-300">+</span>
                       {/* Remove this tier column. Hidden when there's
                           only one tier left (can't remove the last). */}
@@ -3113,11 +3113,11 @@ function PricingConfigSection({ user }) {
       {/* Garment Markup — applies to all decoration types */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Garment Markup</h4>
-        <p className="text-[10px] text-slate-400 mb-2">Percentage added to wholesale garment cost. Higher markup for cheaper garments.</p>
+        <p className="text-[10px] text-slate-500 mb-2">Percentage added to wholesale garment cost. Higher markup for cheaper garments.</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {config.garmentMarkup.map((tier, i) => (
             <div key={i} className="border border-slate-200 rounded-lg p-2">
-              <label className="text-[10px] text-slate-400 block mb-1">
+              <label className="text-[10px] text-slate-500 block mb-1">
                 {tier.above > 0 ? `Above $${tier.above}` : "Default"}
               </label>
               <div className="relative">
@@ -3130,7 +3130,7 @@ function PricingConfigSection({ user }) {
                   label={`Markup tier ${i + 1} %`}
                   className={inputCls}
                 />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">%</span>
               </div>
             </div>
           ))}
@@ -3140,7 +3140,7 @@ function PricingConfigSection({ user }) {
       {/* Broker Markup Share */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Broker Markup Share</h4>
-        <p className="text-[10px] text-slate-400 mb-2">Discount off your garment markup that brokers receive on every quote. Higher = lower wholesale price for brokers (they earn margin by reselling above it).</p>
+        <p className="text-[10px] text-slate-500 mb-2">Discount off your garment markup that brokers receive on every quote. Higher = lower wholesale price for brokers (they earn margin by reselling above it).</p>
         <div className="flex items-center gap-3">
           <div className="relative w-28">
             <NumericInput
@@ -3152,9 +3152,9 @@ function PricingConfigSection({ user }) {
               label="Broker markup share %"
               className={inputCls}
             />
-            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-400 pointer-events-none">%</span>
+            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">%</span>
           </div>
-          <span className="text-xs text-slate-400">off garment markup for brokers</span>
+          <span className="text-xs text-slate-500">off garment markup for brokers</span>
         </div>
       </div>
 
@@ -3162,7 +3162,7 @@ function PricingConfigSection({ user }) {
           tabs because the default due date and rush surcharge are not
           decoration-specific. */}
       <div>
-        <label className="text-[10px] text-slate-400 block mb-1">Standard Turnaround</label>
+        <label className="text-[10px] text-slate-500 block mb-1">Standard Turnaround</label>
         <div className="relative w-40">
           <NumericInput
             value={config.standardTurnaroundDays ?? 10}
@@ -3173,20 +3173,20 @@ function PricingConfigSection({ user }) {
             label="Standard turnaround days"
             className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
           />
-          <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">days</span>
+          <span className="absolute right-2 top-1.5 text-[10px] text-slate-500">days</span>
         </div>
-        <p className="text-[10px] text-slate-400 mt-1">Default due-date offset on new quotes. Anything sooner than this triggers the rush rate below.</p>
+        <p className="text-[10px] text-slate-500 mt-1">Default due-date offset on new quotes. Anything sooner than this triggers the rush rate below.</p>
       </div>
 
       {/* Variable Rush Surcharge — shop-wide tier list. */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-1">Rush Surcharge Tiers</h4>
-        <p className="text-[10px] text-slate-400 mb-2">
+        <p className="text-[10px] text-slate-500 mb-2">
           Variable rush rate based on how soon the order is due. Add a tier per "cliff": e.g. less than 3 days = +50%, less than 6 days = +25%. The tightest matching tier wins.
           {" "}Tier days can't be longer than Standard Turnaround above — rush is faster than standard, by definition.
         </p>
         <div className="border border-slate-200 rounded-xl p-3 space-y-2">
-          <div className="grid grid-cols-[1fr_120px_120px_32px] gap-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider px-1">
+          <div className="grid grid-cols-[1fr_120px_120px_32px] gap-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider px-1">
             <div>If due in less than</div>
             <div>Surcharge</div>
             <div />
@@ -3199,7 +3199,7 @@ function PricingConfigSection({ user }) {
               .sort((a, b) => (Number(a.maxDays) || 0) - (Number(b.maxDays) || 0));
             if (sorted.length === 0) {
               return (
-                <div className="text-xs text-slate-400 italic px-1 py-1">No rush tiers — your shop won't charge any rush surcharge until you add at least one.</div>
+                <div className="text-xs text-slate-500 italic px-1 py-1">No rush tiers — your shop won't charge any rush surcharge until you add at least one.</div>
               );
             }
             return sorted.map((tier, idx) => (
@@ -3221,7 +3221,7 @@ function PricingConfigSection({ user }) {
                     label={`Rush tier ${idx + 1} max days`}
                     className="w-full text-xs border border-slate-200 rounded pl-3 pr-12 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                   />
-                  <span className="absolute right-2 top-1.5 text-[10px] text-slate-400">days</span>
+                  <span className="absolute right-2 top-1.5 text-[10px] text-slate-500">days</span>
                 </div>
                 <div className="relative">
                   <NumericInput
@@ -3237,7 +3237,7 @@ function PricingConfigSection({ user }) {
                     label={`Rush tier ${idx + 1} rate %`}
                     className="w-full text-xs border border-slate-200 rounded px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                   />
-                  <span className="absolute right-2 top-1.5 text-xs text-slate-400">%</span>
+                  <span className="absolute right-2 top-1.5 text-xs text-slate-500">%</span>
                 </div>
                 <div />
                 <button
@@ -3276,7 +3276,7 @@ function PricingConfigSection({ user }) {
           it's clear it isn't a per-technique knob. */}
       <div>
         <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">First-Location Ordering</h4>
-        <p className="text-[10px] text-slate-400 mb-2">
+        <p className="text-[10px] text-slate-500 mb-2">
           When a job has multiple imprint locations with different color counts, which one absorbs the "first" rate (where you&apos;ve baked in setup)? Applies to all decoration methods.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -3411,7 +3411,7 @@ function PricingConfigSection({ user }) {
         <div className="flex items-center justify-between mb-3">
           <div>
             <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Setup Fees</div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <p className="text-[11px] text-slate-500 mt-0.5">
               Per-screen charges added to each quote (e.g. Screens, Film, Color Match). Each fee multiplies by the screen count. Linked artwork shared between line items only counts once. Editable per-quote.
             </p>
           </div>
@@ -3431,7 +3431,7 @@ function PricingConfigSection({ user }) {
 
         <div className={config.setupFees?.enabled ? "" : "opacity-50 pointer-events-none"}>
           {/* Column headers */}
-          <div className="grid grid-cols-[1fr_120px_120px_32px] gap-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5 px-1">
+          <div className="grid grid-cols-[1fr_120px_120px_32px] gap-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 px-1">
             <div>Fee Name</div>
             <div>Per-Screen Rate</div>
             <div>Reorder Rate</div>
@@ -3452,7 +3452,7 @@ function PricingConfigSection({ user }) {
                 className="text-xs border border-slate-200 rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
               />
               <div className="relative">
-                <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
+                <span className="absolute left-2 top-1.5 text-xs text-slate-500">$</span>
                 <NumericInput
                   value={Number(fee.rate || 0)}
                   onChange={(v) => setConfig(prev => {
@@ -3466,7 +3466,7 @@ function PricingConfigSection({ user }) {
                 />
               </div>
               <div className="relative">
-                <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
+                <span className="absolute left-2 top-1.5 text-xs text-slate-500">$</span>
                 <NumericInput
                   value={Number(fee.reorderRate || 0)}
                   onChange={(v) => setConfig(prev => {
@@ -3509,7 +3509,7 @@ function PricingConfigSection({ user }) {
             + Add fee
           </button>
 
-          <p className="text-[10px] text-slate-400 mt-3">
+          <p className="text-[10px] text-slate-500 mt-3">
             Reorder rate is used when "Reorder" is checked on the quote — screens already exist from the first run, so film/burn can be skipped.
           </p>
         </div>
@@ -3536,7 +3536,7 @@ function PricingConfigSection({ user }) {
               <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">Digitizing / Setup Fee</h4>
               <div className="w-40">
                 <div className="relative">
-                  <span className="absolute left-2 top-1.5 text-xs text-slate-400">$</span>
+                  <span className="absolute left-2 top-1.5 text-xs text-slate-500">$</span>
                   <NumericInput
                     value={emb.digitizingFee}
                     onChange={(n) => setConfig(prev => ({ ...prev, embroidery: { ...prev.embroidery, digitizingFee: n } }))}
@@ -3546,7 +3546,7 @@ function PricingConfigSection({ user }) {
                     className="w-full text-xs border border-slate-200 rounded px-5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
                   />
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1">One-time fee per new design</p>
+                <p className="text-[10px] text-slate-500 mt-1">One-time fee per new design</p>
               </div>
             </div>
 
@@ -3562,14 +3562,14 @@ function PricingConfigSection({ user }) {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="text-slate-400">
+                    <tr className="text-slate-500">
                       <th className="text-left py-1 pr-2">Stitch Count</th>
                       {(emb.qtyTiers || []).map(t => (
                         <th key={t} className="text-center py-1">
                           <div className="inline-flex items-center gap-1">
                             <input type="number" value={t}
                               onChange={e => updateEmbTierValue(t, e.target.value)}
-                              className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-400 font-semibold" />
+                              className="w-14 text-xs text-center border border-transparent hover:border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 bg-transparent text-slate-500 font-semibold" />
                             <span className="text-slate-300">+</span>
                             {(emb.qtyTiers || []).length > 1 && (
                               <button
@@ -3633,7 +3633,7 @@ function PricingConfigSection({ user }) {
         const tech = config.custom_techniques?.[name];
         if (!tech) {
           return (
-            <div className="text-xs text-slate-400 italic py-4">
+            <div className="text-xs text-slate-500 italic py-4">
               This method no longer exists.
               <button
                 onClick={() => setPricingTab("screen_print")}

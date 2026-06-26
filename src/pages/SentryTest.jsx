@@ -48,7 +48,7 @@ export default function SentryTest() {
             Sentry SDK not initialized (no VITE_SENTRY_DSN at build time). Nothing was sent.
           </div>
         )}
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           Reload the page to send another event. Each visit generates a unique tag so duplicates can't collapse them into one issue.
         </p>
       </div>

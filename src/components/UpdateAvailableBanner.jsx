@@ -51,7 +51,7 @@ export default function UpdateAvailableBanner() {
         </button>
         <button
           onClick={dismiss}
-          className="px-3 py-1 text-xs text-slate-400 hover:text-slate-200 transition"
+          className="px-3 py-1 text-xs text-slate-500 hover:text-slate-200 transition"
         >
           Dismiss
         </button>

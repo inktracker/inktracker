@@ -259,7 +259,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
       <div className="bg-white w-full max-w-lg h-full overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 sticky top-0 z-10">
           <div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
               {quote.quote_id}
             </div>
             <div className="font-bold text-slate-900 text-lg">
@@ -269,7 +269,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
 
           <div className="flex items-center gap-3">
             <QuoteStatusBadge status={quote.status} />
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-600 p-1">
               <X className="w-5 h-5" />
             </button>
           </div>
@@ -278,13 +278,13 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
         <div className="p-6 space-y-5">
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-slate-50 rounded-xl px-4 py-3 border border-slate-100">
-              <div className="text-xs text-slate-400 font-semibold uppercase tracking-wide mb-0.5">Quote Date</div>
+              <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide mb-0.5">Quote Date</div>
               <div className="font-semibold text-slate-800">{fmtDate(quote.date)}</div>
             </div>
 
             {quote.due_date && (
               <div className={`rounded-xl px-4 py-3 border ${quote.rush_rate > 0 ? "bg-orange-50 border-orange-200" : "bg-slate-50 border-slate-100"}`}>
-                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5 text-slate-400">In-Hands Date</div>
+                <div className="text-xs font-semibold uppercase tracking-wide mb-0.5 text-slate-500">In-Hands Date</div>
                 <div className={`font-semibold ${quote.rush_rate > 0 ? "text-orange-700" : "text-slate-800"}`}>
                   {fmtDate(quote.due_date)} {quote.rush_rate > 0 && "⚡ Rush"}
                 </div>
@@ -361,7 +361,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
                       <div className="flex justify-between items-start">
                         <div>
                           <div className="font-semibold text-slate-800 text-sm">{li.style || "Garment"}</div>
-                          {li.garmentColor && <div className="text-xs text-slate-400">{li.garmentColor}</div>}
+                          {li.garmentColor && <div className="text-xs text-slate-500">{li.garmentColor}</div>}
                         </div>
                         <div className="text-xs font-semibold text-slate-600 bg-slate-200 rounded-full px-2 py-0.5">Qty: {qty}</div>
                       </div>
@@ -405,7 +405,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
 
           {/* Pricing */}
           <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 space-y-2">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Your Broker Price</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Your Broker Price</div>
             <div className="flex justify-between text-sm text-slate-500">
               <span>Subtotal</span><span>{fmtMoney(brokerTotals.sub)}</span>
             </div>
@@ -428,7 +428,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
               </div>
             )}
             <div className="border-t border-slate-200 pt-2 mt-1">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">Client Sees</div>
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">Client Sees</div>
               <div className="flex justify-between font-bold text-green-700">
                 <span>Client Total</span><span>{fmtMoney(clientTotals.total)}</span>
               </div>
@@ -450,7 +450,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
               ))}
               <button
                 onClick={() => setShowPaymentPicker(false)}
-                className="w-full text-sm text-slate-400 py-1.5"
+                className="w-full text-sm text-slate-500 py-1.5"
               >
                 Cancel
               </button>
@@ -1198,7 +1198,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
               {filteredQuotes.length === 0 ? (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl py-16 text-center">
                   <Clock className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm font-medium">
+                  <p className="text-slate-500 text-sm font-medium">
                     No quotes found.
                   </p>
                 </div>
@@ -1224,7 +1224,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
                               <div className="font-semibold text-slate-800 text-sm truncate">
                                 {q.customer_name || "—"}
                               </div>
-                              <div className="text-xs text-slate-400 mt-0.5">
+                              <div className="text-xs text-slate-500 mt-0.5">
                                 {q.quote_id}
                                 {q.due_date && (
                                   <span className="ml-2">
@@ -1241,7 +1241,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
                           </div>
 
                           <div className="flex items-center gap-3 shrink-0 ml-4">
-                            <span className="text-xs text-slate-400 hidden sm:block">
+                            <span className="text-xs text-slate-500 hidden sm:block">
                               {fmtDate(q.date)}
                             </span>
                             <span className="text-sm font-semibold text-slate-700 hidden md:block">
@@ -1290,7 +1290,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
             {orders.length === 0 ? (
               <div className="bg-white border border-slate-200 rounded-2xl py-20 text-center">
                 <Package className="w-12 h-12 text-slate-200 mx-auto mb-3" />
-                <p className="text-slate-400 text-sm font-medium">
+                <p className="text-slate-500 text-sm font-medium">
                   No orders yet. Orders appear here once a quote is approved and
                   converted.
                 </p>
@@ -1315,7 +1315,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
                           <div className="font-bold text-slate-900">
                             {order.customer_name || "—"}
                           </div>
-                          <div className="text-xs text-slate-400 mt-0.5">
+                          <div className="text-xs text-slate-500 mt-0.5">
                             {order.order_id}
                             {order.due_date && (
                               <span className="ml-2">
@@ -1342,7 +1342,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
                       </div>
 
                       <div>
-                        <div className="flex justify-between text-xs text-slate-400 mb-1.5">
+                        <div className="flex justify-between text-xs text-slate-500 mb-1.5">
                           <span>Production Progress</span>
                           <span>{pct}%</span>
                         </div>
@@ -1376,7 +1376,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
                                   ? "bg-teal-600 text-white border-teal-600"
                                   : done
                                   ? "bg-emerald-100 text-emerald-700 border-emerald-200"
-                                  : "bg-slate-50 text-slate-400 border-slate-200"
+                                  : "bg-slate-50 text-slate-500 border-slate-200"
                               }`}
                             >
                               {done && "✓ "}
@@ -1427,14 +1427,14 @@ export default function BrokerDashboard({ initialTab } = {}) {
             </div>
 
             {(user.assigned_shops || []).length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl py-16 text-center text-slate-400 text-sm">
+              <div className="bg-white border border-slate-200 rounded-2xl py-16 text-center text-slate-500 text-sm">
                 You are not assigned to a shop yet. Contact your administrator.
               </div>
             ) : (
               <div className="space-y-4">
                 {user.assigned_shops.map((shopEmail) => (
                   <div key={shopEmail}>
-                    <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">
                       {shopEmail}
                     </div>
                     <BrokerMessaging

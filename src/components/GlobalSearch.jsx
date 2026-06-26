@@ -83,7 +83,7 @@ export default function GlobalSearch() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mt-4 max-h-[90vh] overflow-y-auto">
             {/* Search Input */}
             <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
-              <Search className="w-5 h-5 text-slate-400" />
+              <Search className="w-5 h-5 text-slate-500" />
               <input
                 autoFocus
                 type="text"
@@ -92,21 +92,21 @@ export default function GlobalSearch() {
                 onChange={(e) => setQuery(e.target.value)}
                 className="flex-1 outline-none text-slate-700"
               />
-              <button onClick={() => { setOpen(false); setQuery(""); }} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => { setOpen(false); setQuery(""); }} aria-label="Close search" className="text-slate-500 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Results */}
             <div className="max-h-96 overflow-y-auto">
-              {loading && <div className="px-4 py-8 text-center text-slate-400">Searching...</div>}
-              {!loading && !hasResults && query && <div className="px-4 py-8 text-center text-slate-400">No results found</div>}
+              {loading && <div className="px-4 py-8 text-center text-slate-500">Searching...</div>}
+              {!loading && !hasResults && query && <div className="px-4 py-8 text-center text-slate-500">No results found</div>}
 
               {!loading && hasResults && (
                 <div className="divide-y divide-slate-100">
                   {results.customers.length > 0 && (
                     <div className="p-4">
-                      <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Customers</div>
+                      <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Customers</div>
                       {results.customers.map(c => (
                         <a key={c.id} href={createPageUrl("Customers")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{c.company || c.name}</div>
@@ -118,7 +118,7 @@ export default function GlobalSearch() {
 
                   {results.orders.length > 0 && (
                     <div className="p-4">
-                      <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Orders</div>
+                      <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Orders</div>
                       {results.orders.map(o => (
                         <a key={o.id} href={createPageUrl("Orders")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{o.order_id}</div>
@@ -130,7 +130,7 @@ export default function GlobalSearch() {
 
                   {results.quotes.length > 0 && (
                     <div className="p-4">
-                      <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Quotes</div>
+                      <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Quotes</div>
                       {results.quotes.map(q => (
                         <a key={q.id} href={createPageUrl("Quotes")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{q.quote_id}</div>
@@ -142,7 +142,7 @@ export default function GlobalSearch() {
 
                   {results.invoices.length > 0 && (
                     <div className="p-4">
-                      <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Invoices</div>
+                      <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Invoices</div>
                       {results.invoices.map(i => (
                         <a key={i.id} href={createPageUrl("Invoices")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{i.invoice_id}</div>
@@ -154,7 +154,7 @@ export default function GlobalSearch() {
 
                   {results.inventory.length > 0 && (
                     <div className="p-4">
-                      <div className="text-xs font-semibold text-slate-400 uppercase mb-2">Inventory</div>
+                      <div className="text-xs font-semibold text-slate-500 uppercase mb-2">Inventory</div>
                       {results.inventory.map(it => (
                         <a key={it.id} href={createPageUrl("Inventory")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{it.item}</div>

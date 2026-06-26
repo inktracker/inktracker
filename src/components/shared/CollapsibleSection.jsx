@@ -55,7 +55,7 @@ export default function CollapsibleSection({
           {title}
         </h3>
         <ChevronDown
-          className={`w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-transform duration-200 ${
+          className={`w-4 h-4 text-slate-500 group-hover:text-slate-600 transition-transform duration-200 ${
             collapsed ? "-rotate-90" : "rotate-0"
           }`}
           aria-hidden="true"

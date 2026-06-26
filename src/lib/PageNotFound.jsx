@@ -31,7 +31,7 @@ export default function PageNotFound() {
                         >
                             Back to InkTracker
                         </button>
-                        <p className="text-xs text-slate-400">
+                        <p className="text-xs text-slate-500">
                             Something broken? Email <a href="mailto:support@inktracker.app" className="text-teal-600 hover:text-teal-700 font-semibold">support@inktracker.app</a>.
                         </p>
                     </div>

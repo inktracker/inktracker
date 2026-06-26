@@ -250,33 +250,33 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         {/* Header */}
         <div className="px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-start">
           <div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">{invoice.invoice_id} · {fmtDate(invoice.date)}</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{invoice.invoice_id} · {fmtDate(invoice.date)}</div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{customer?.company || invoice.customer_name}</h2>
-            {invoice.due && <div className="text-sm text-slate-400 mt-0.5">Due: {fmtDate(invoice.due)}</div>}
+            {invoice.due && <div className="text-sm text-slate-500 mt-0.5">Due: {fmtDate(invoice.due)}</div>}
           </div>
           <div className="flex items-center gap-3">
             {invoice.status && <span className="text-xs font-semibold text-slate-600 bg-slate-100 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-full">{invoice.status}</span>}
             {invoice.paid
               ? <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Paid</span>
               : <span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">Unpaid</span>}
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+            <button onClick={onClose} className="text-slate-500 hover:text-slate-600 text-lg leading-none">✕</button>
           </div>
         </div>
 
         {/* Dates */}
         <div className="px-4 sm:px-6 py-4 grid grid-cols-2 sm:grid-cols-4 gap-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
           <div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Issued</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Issued</div>
             <div className="text-sm font-semibold text-slate-700">{fmtDate(invoice.date) || "—"}</div>
           </div>
           <div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Due</div>
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Due</div>
             <div className="text-sm font-semibold text-slate-700">{fmtDate(invoice.due) || "—"}</div>
           </div>
 
           {invoice.paid && invoice.paid_date && (
             <div>
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Paid On</div>
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Paid On</div>
               <div className="text-sm font-semibold text-emerald-600">{fmtDate(invoice.paid_date)}</div>
             </div>
           )}
@@ -321,7 +321,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                   <div className="min-w-0 flex-1">
                     <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">{li.style || "Item"}</span>
                     {li.garmentColor && <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>}
-                    {hasGarmentCost && <span className="ml-2 text-xs text-slate-400">Wholesale: {fmtMoney(garmentCostNum)}</span>}
+                    {hasGarmentCost && <span className="ml-2 text-xs text-slate-500">Wholesale: {fmtMoney(garmentCostNum)}</span>}
                   </div>
                   {r && r.lineTotal !== 0 && <span className="font-bold text-slate-700 text-sm whitespace-nowrap">{fmtMoney(r.lineTotal)}</span>}
                 </div>
@@ -330,7 +330,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead><tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                        <td className="px-4 py-2 text-xs text-slate-400 font-semibold">Size</td>
+                        <td className="px-4 py-2 text-xs text-slate-500 font-semibold">Size</td>
                         {activeSizes.map(sz => <td key={sz} className="px-3 py-2 text-center text-xs font-semibold text-slate-600">{sz}</td>)}
                         <td className="px-4 py-2 text-center text-xs font-semibold text-slate-600">Total</td>
                       </tr></thead>
@@ -342,7 +342,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                         </tr>
                         {r && (
                           <tr>
-                            <td className="px-4 py-2 text-xs text-slate-400">Price/ea</td>
+                            <td className="px-4 py-2 text-xs text-slate-500">Price/ea</td>
                             {activeSizes.map(sz => (
                               <td key={sz} className="px-3 py-2 text-center text-xs text-slate-500">
                                 {fmtMoney(r.ppp)}
@@ -375,7 +375,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                           <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
                           <span className="text-slate-500">{imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}</span>
                           {imp.pantones && <span className="text-teal-600 font-medium">{imp.pantones}</span>}
-                          {imp.details && <span className="text-slate-400 italic">{imp.details}</span>}
+                          {imp.details && <span className="text-slate-500 italic">{imp.details}</span>}
                         </div>
                         {(imp.width || imp.height) && (
                           <div className="flex gap-2 text-xs text-slate-500">
@@ -394,7 +394,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           {/* Extras / Add-ons */}
           {invoice.extras && Object.values(invoice.extras).some(Boolean) && (
             <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Add-ons</div>
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-2">Add-ons</div>
               <div className="flex flex-wrap gap-2">
                 {Object.entries(invoice.extras).filter(([,v])=>v).map(([k])=>(
                   <span key={k} className="text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 px-2.5 py-1 rounded-full capitalize">{k.replace(/([A-Z])/g,' $1')}</span>
@@ -534,7 +534,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             className="text-xs font-semibold text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition">
             Delete
           </button>}
-          <button onClick={onClose} className="ml-auto text-xs font-semibold text-slate-400 hover:text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">Close</button>
+          <button onClick={onClose} className="ml-auto text-xs font-semibold text-slate-500 hover:text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">Close</button>
         </div>
         {qbStatus && (
           <div className={`px-4 sm:px-6 py-2 text-sm border-t ${

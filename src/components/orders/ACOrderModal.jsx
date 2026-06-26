@@ -221,7 +221,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
             <h2 className="text-lg font-bold text-slate-900">Create AS Colour PO</h2>
             <p className="text-xs text-slate-500 mt-0.5">From order {order.order_id || order.id}</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 transition">
+          <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 transition">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -231,7 +231,7 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
             <div className="text-center py-10">
               <Package className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <div className="text-slate-500 font-semibold">No AS Colour items in this order</div>
-              <div className="text-xs text-slate-400 mt-1">
+              <div className="text-xs text-slate-500 mt-1">
                 Only line items with supplier = "AS Colour" can be ordered through this flow.
               </div>
             </div>
@@ -276,12 +276,12 @@ export default function ACOrderModal({ order, user, onClose, onPOCreated }) {
                         <div className="text-sm font-bold text-slate-800">
                           {li.brand || "AS Colour"} {li.supplierStyleNumber || li.resolvedStyleNumber || li.style} — {li.garmentColor}
                         </div>
-                        <div className="text-xs text-slate-400 mt-0.5">Size {line.size} · qty {line.qty}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">Size {line.size} · qty {line.qty}</div>
                       </div>
                       <div className="text-sm font-bold text-slate-700">{fmtMoney(lineTotal)}</div>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
                         SKU
                         {resolvedSkus[`${i}-${line.size}`] && skuOverrides[`${i}-${line.size}`] === undefined && (
                           <span className="ml-1.5 text-emerald-600 normal-case font-normal tracking-normal">✓ AS Colour canonical</span>

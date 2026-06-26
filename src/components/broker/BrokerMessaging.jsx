@@ -156,7 +156,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
   }
 
   if (!threadId) return (
-    <div className="py-16 text-center text-slate-400 text-sm">Select a broker to open a conversation.</div>
+    <div className="py-16 text-center text-slate-500 text-sm">Select a broker to open a conversation.</div>
   );
 
   return (
@@ -196,7 +196,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
                     <Download className="w-3.5 h-3.5 shrink-0 opacity-70" />
                   </a>
                 )}
-                <div className={`text-xs mt-1 ${isMine ? "text-teal-200" : "text-slate-400"}`}>
+                <div className={`text-xs mt-1 ${isMine ? "text-teal-200" : "text-slate-500"}`}>
                   {m.from_name || m.from_email} · {m.created_date ? new Date(m.created_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
                 </div>
               </div>

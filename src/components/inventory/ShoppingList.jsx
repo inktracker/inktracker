@@ -150,7 +150,7 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
       <div className="bg-white rounded-2xl border border-slate-100 p-6 mb-6 text-center">
         <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
         <div className="text-sm font-semibold text-slate-700">Everything's stocked</div>
-        <div className="text-xs text-slate-400 mt-1">
+        <div className="text-xs text-slate-500 mt-1">
           Items will appear here automatically when their quantity drops below the reorder threshold.
         </div>
       </div>
@@ -201,7 +201,7 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
                 }`}
               >
                 {s}
-                <span className={`ml-1.5 ${active ? "text-slate-300" : "text-slate-400"}`}>{count}</span>
+                <span className={`ml-1.5 ${active ? "text-slate-300" : "text-slate-500"}`}>{count}</span>
               </button>
             );
           })}
@@ -215,11 +215,11 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
             <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Needs ordering</div>
             <div className="flex items-center gap-3">
               {checkedCount > 0 ? (
-                <button onClick={clearChecked} className="text-[11px] font-semibold text-slate-400 hover:text-slate-600">
+                <button onClick={clearChecked} className="text-[11px] font-semibold text-slate-500 hover:text-slate-600">
                   Clear selection
                 </button>
               ) : (
-                <button onClick={checkAllVisible} className="text-[11px] font-semibold text-slate-400 hover:text-slate-600">
+                <button onClick={checkAllVisible} className="text-[11px] font-semibold text-slate-500 hover:text-slate-600">
                   Select all
                 </button>
               )}
@@ -257,7 +257,7 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
       )}
 
       {visiblePending.length === 0 && visibleOrdered.length === 0 && supplierFilter !== ALL && (
-        <div className="px-5 py-6 text-center text-xs text-slate-400">
+        <div className="px-5 py-6 text-center text-xs text-slate-500">
           No items to order from {supplierFilter}.
         </div>
       )}
@@ -284,7 +284,7 @@ function PendingRow({ item, checked, onToggle }) {
         <div className={`text-sm font-semibold text-slate-900 truncate ${checked ? "line-through text-slate-500" : ""}`}>
           {item.item}
         </div>
-        <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+        <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
           {item.sku && <span className="font-mono">{item.sku}</span>}
           {item.sku && item.supplier && <span>·</span>}
           {item.supplier && <span>{item.supplier}</span>}
@@ -292,9 +292,9 @@ function PendingRow({ item, checked, onToggle }) {
       </div>
       <div className="text-right flex-shrink-0">
         <div className="text-sm font-bold text-orange-600">
-          {item.qty} <span className="text-slate-400 text-xs font-normal">{item.unit}</span>
+          {item.qty} <span className="text-slate-500 text-xs font-normal">{item.unit}</span>
         </div>
-        <div className="text-[10px] text-slate-400">need ~{need} more</div>
+        <div className="text-[10px] text-slate-500">need ~{need} more</div>
       </div>
     </label>
   );
@@ -306,7 +306,7 @@ function OrderedRow({ item, busy, onReceive, onCancel }) {
       <CheckCircle2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold text-slate-700 truncate">{item.item}</div>
-        <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+        <div className="text-[11px] text-slate-500 flex items-center gap-1.5">
           {item.supplier && <span>{item.supplier}</span>}
           {item.supplier && <span>·</span>}
           <span>ordered {Number(item.ordered_qty || 0)} {item.unit}</span>
@@ -315,7 +315,7 @@ function OrderedRow({ item, busy, onReceive, onCancel }) {
       <button
         onClick={onCancel}
         disabled={busy}
-        className="text-xs font-semibold text-slate-400 hover:text-red-500 transition px-2"
+        className="text-xs font-semibold text-slate-500 hover:text-red-500 transition px-2"
       >
         Cancel
       </button>

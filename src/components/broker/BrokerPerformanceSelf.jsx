@@ -111,7 +111,7 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
               <Clock className="w-3 h-3 text-yellow-500" />
               <span className="text-xs font-semibold text-yellow-600">Pending</span>
             </div>
-            <div className="text-xs text-slate-400 mt-0.5">Art Approval / Pre-Press</div>
+            <div className="text-xs text-slate-500 mt-0.5">Art Approval / Pre-Press</div>
           </div>
           <div className="text-center border-x border-slate-100">
             <div className="text-3xl font-bold text-blue-600">{production}</div>
@@ -119,7 +119,7 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
               <Package className="w-3 h-3 text-blue-500" />
               <span className="text-xs font-semibold text-blue-600">In Production</span>
             </div>
-            <div className="text-xs text-slate-400 mt-0.5">Printing</div>
+            <div className="text-xs text-slate-500 mt-0.5">Printing</div>
           </div>
           <div className="text-center">
             <div className="text-3xl font-bold text-emerald-600">{completed}</div>
@@ -127,7 +127,7 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
               <CheckCircle2 className="w-3 h-3 text-emerald-500" />
               <span className="text-xs font-semibold text-emerald-600">Completed</span>
             </div>
-            <div className="text-xs text-slate-400 mt-0.5">Pickup / Done</div>
+            <div className="text-xs text-slate-500 mt-0.5">Pickup / Done</div>
           </div>
         </div>
 
@@ -153,7 +153,7 @@ export default function BrokerPerformanceSelf({ orders, brokerEmail }) {
           <TrendingUp className="w-4 h-4" /> Monthly Activity (Last 12 Months)
         </div>
         {monthlyData.length === 0 ? (
-          <div className="text-sm text-slate-400 text-center py-10">
+          <div className="text-sm text-slate-500 text-center py-10">
             No order history yet — your activity will appear here as you submit orders.
           </div>
         ) : (

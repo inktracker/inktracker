@@ -15,7 +15,7 @@ export default function QuotePaymentCancel() {
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-10 max-w-md w-full text-center">
-        <XCircle className="w-12 h-12 text-slate-400 mx-auto mb-5" />
+        <XCircle className="w-12 h-12 text-slate-500 mx-auto mb-5" />
         <h1 className="text-xl font-bold text-slate-900 mb-2">Payment Cancelled</h1>
         <p className="text-slate-500 text-sm mb-7">
           Your payment was not processed and no charges were made. You can go back and try again.
@@ -28,7 +28,7 @@ export default function QuotePaymentCancel() {
             Return to Quote
           </a>
         )}
-        <p className="text-xs text-slate-400">If you need help, please contact the shop directly.</p>
+        <p className="text-xs text-slate-500">If you need help, please contact the shop directly.</p>
       </div>
     </div>
   );

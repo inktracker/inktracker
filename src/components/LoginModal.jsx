@@ -249,7 +249,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               ? "Reset Password"
               : "Sign In"}
           </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition">
+          <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-600 transition">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -415,13 +415,13 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {mode === "signup" && (
-                <p className="text-xs text-slate-400 mt-1">Minimum 9 characters</p>
+                <p className="text-xs text-slate-500 mt-1">Minimum 9 characters</p>
               )}
             </div>
 
@@ -490,7 +490,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
 
           {mode === "signin" && (
             <>
-              <div className="flex items-center gap-3 text-xs text-slate-400">
+              <div className="flex items-center gap-3 text-xs text-slate-500">
                 <div className="flex-1 border-t border-slate-200" />
                 or
                 <div className="flex-1 border-t border-slate-200" />
@@ -504,7 +504,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
                 <Mail className="w-4 h-4" />
                 {magicLoading ? "Sending…" : "Email me a sign-in link"}
               </button>
-              <p className="text-xs text-slate-400 text-center">
+              <p className="text-xs text-slate-500 text-center">
                 No password yet? Use this if you were invited.
               </p>
             </>

@@ -221,7 +221,7 @@ export default function OnboardingWizard({ user, onComplete }) {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-semibold text-teal-300 uppercase tracking-widest">Setup</span>
-            <span className="text-xs text-slate-400">{step + 1} of {totalSteps}</span>
+            <span className="text-xs text-slate-500">{step + 1} of {totalSteps}</span>
           </div>
           <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
             <div
@@ -305,7 +305,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                     <input type="number" step="0.001" value={taxRate} onChange={e => setTaxRate(e.target.value)}
                       placeholder="e.g. 8.25"
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900" />
-                    <p className="text-xs text-slate-400 mt-1">Enter the percentage (8.25 means 8.25%), not a decimal.</p>
+                    <p className="text-xs text-slate-500 mt-1">Enter the percentage (8.25 means 8.25%), not a decimal.</p>
                   </div>
                 </div>
                 <div>
@@ -341,7 +341,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                     placeholder="https://yourshop.com"
                     className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 text-slate-900"
                   />
-                  <p className="text-xs text-slate-400 mt-1.5">Shown on art proofs in place of the platform footer.</p>
+                  <p className="text-xs text-slate-500 mt-1.5">Shown on art proofs in place of the platform footer.</p>
                 </div>
 
                 <div>
@@ -357,13 +357,13 @@ export default function OnboardingWizard({ user, onComplete }) {
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Used by the calendar so employees logging in from another state still see your shop's "today." You can change this later in Account.
                   </p>
                 </div>
 
                 <div className="pt-3 mt-1 border-t border-slate-100">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Services Offered</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Services Offered</p>
                   <label className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition">
                     <input
                       type="checkbox"
@@ -378,7 +378,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                       </span>
                     </span>
                   </label>
-                  <p className="text-xs text-slate-400 mt-2">Screen printing is enabled by default.</p>
+                  <p className="text-xs text-slate-500 mt-2">Screen printing is enabled by default.</p>
                 </div>
               </div>
             )}
@@ -399,7 +399,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                       </button>
                     </div>
                   ) : (
-                    <div className="w-28 h-28 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center gap-2 text-slate-400">
+                    <div className="w-28 h-28 border-2 border-dashed border-slate-300 rounded-2xl flex flex-col items-center justify-center gap-2 text-slate-500">
                       <Image className="w-8 h-8" />
                       <span className="text-xs">No logo</span>
                     </div>
@@ -431,7 +431,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                 </div>
 
                 <div className="space-y-2">
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Optional Integrations</p>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Optional Integrations</p>
 
                   {/* QuickBooks */}
                   <div className="border border-slate-200 rounded-xl p-4 flex items-center gap-3">
@@ -513,7 +513,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                       {mfaBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                       Turn on 2FA — email me a code
                     </button>
-                    <p className="text-xs text-slate-400 text-center">
+                    <p className="text-xs text-slate-500 text-center">
                       You can also do this later under Account → Security.
                     </p>
                   </>
@@ -654,7 +654,7 @@ export default function OnboardingWizard({ user, onComplete }) {
                 {step > 0 && step !== 1 && (
                   <button
                     onClick={next}
-                    className="px-4 py-2.5 text-sm font-semibold text-slate-400 hover:text-slate-600 transition ml-auto"
+                    className="px-4 py-2.5 text-sm font-semibold text-slate-500 hover:text-slate-600 transition ml-auto"
                   >
                     Skip
                   </button>

@@ -31,7 +31,7 @@ function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
         <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{label}</div>
       </div>
       <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{value}</div>
-      {sub && <div className="text-xs text-slate-400 mt-1">{sub}</div>}
+      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
     </div>
   );
 }
@@ -316,12 +316,12 @@ export default function Performance() {
             </div>
 
             {qbConnected && !qbMetrics && (
-              <p className="text-xs text-slate-400 -mt-4">
+              <p className="text-xs text-slate-500 -mt-4">
                 Loading authoritative numbers from QuickBooks…
               </p>
             )}
             {qbReady && (
-              <div className="-mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+              <div className="-mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                 <span>
                   Total Sales + Outstanding Invoices sourced from QuickBooks. Avg. Order Value remains a local estimate. As of {new Date(qbMetrics.asOf || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.
                 </span>
@@ -361,7 +361,7 @@ export default function Performance() {
                 className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 hover:border-teal-300 hover:bg-teal-50 dark:hover:bg-slate-800 transition"
               >
                 <span className="truncate">{r.label}</span>
-                <ExternalLink className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <ExternalLink className="w-3.5 h-3.5 text-slate-500 shrink-0" />
               </a>
             ))}
           </div>

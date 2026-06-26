@@ -52,7 +52,7 @@ export default function EmbedSnippets() {
         <div className="flex justify-between items-center mb-2">
           <div>
             <h3 className="font-bold text-slate-800">Direct Link</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Share this URL anywhere — email, social, bio link</p>
+            <p className="text-xs text-slate-500 mt-0.5">Share this URL anywhere — email, social, bio link</p>
           </div>
           <button onClick={() => copy(WIZARD_URL, "link")}
             className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${copied==="link" ? "border-emerald-300 text-emerald-600 bg-emerald-50" : "border-slate-200 text-slate-500 hover:border-teal-300 hover:text-teal-600"}`}>
@@ -67,7 +67,7 @@ export default function EmbedSnippets() {
         <div className="flex justify-between items-center mb-2">
           <div>
             <h3 className="font-bold text-slate-800">Generic iframe (any website)</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Works on Wix, Squarespace, WordPress, and any custom site</p>
+            <p className="text-xs text-slate-500 mt-0.5">Works on Wix, Squarespace, WordPress, and any custom site</p>
           </div>
           <button onClick={() => copy(iframeSnippet, "iframe")}
             className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition ${copied==="iframe" ? "border-emerald-300 text-emerald-600 bg-emerald-50" : "border-slate-200 text-slate-500 hover:border-teal-300 hover:text-teal-600"}`}>
