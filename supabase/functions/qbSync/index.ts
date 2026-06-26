@@ -3,6 +3,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import { parseRetryAfterMs, QbRateLimitError } from "../_shared/qbRateLimit.ts";
 import {
@@ -158,24 +159,26 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
     );
   }
 
-  // Pure refresh-decision lives in ../_shared/connectionLogic.js (tested).
-  if (!decideTokenRefresh(profile.qb_token_expires_at)) {
-    return { accessToken: profile.qb_access_token, realmId: profile.qb_realm_id };
-  }
-
-  const fresh = await refreshToken(profile.qb_refresh_token);
-  const refreshedFields = buildRefreshedTokenFields(fresh, profile.qb_refresh_token, Date.now(), profile.qb_refresh_token_expires_at);
-
-  // Write rotated tokens — use service role client for profile_secrets (RLS blocks user client)
+  // Refresh (when near expiry) under a DB lease lock so two concurrent QB
+  // actions don't both refresh and clobber Intuit's rotating refresh token.
+  // Pure refresh-decision + lease logic live in ../_shared (unit-tested).
+  const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   try {
-    const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    await updateProfileSecrets(adminClient, profile.id, refreshedFields);
+    return await refreshQbTokenSerialized(adminClient, profile, {
+      decideRefresh: decideTokenRefresh,
+      refreshFn: refreshToken,
+      buildFields: buildRefreshedTokenFields,
+      persist: (id: string, fields: any) => updateProfileSecrets(adminClient, id, fields),
+      reload: (id: string) => loadProfileWithSecrets(adminClient, { id }),
+    });
   } catch (err) {
+    // refreshToken throws tagged UserFacingErrors (invalid_grant → QB_DISCONNECTED,
+    // etc.) — let those through untouched. Only a persistence/lease failure is
+    // wrapped into the generic save error.
+    if (err instanceof UserFacingError) throw err;
     console.error("[qbSync] CRITICAL: failed to persist refreshed QB tokens:", err);
     throw new Error("Could not save refreshed QuickBooks tokens. Please try again.");
   }
-
-  return { accessToken: fresh.access_token, realmId: profile.qb_realm_id };
 }
 
 // ── QB API helpers ──────────────────────────────────────────────────────────
