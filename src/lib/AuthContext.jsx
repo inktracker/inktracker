@@ -5,8 +5,12 @@ import { loadShopTimezone } from "@/lib/shopTimezone";
 import { loadShopProductionTasks } from "@/lib/productionTasks";
 import { resolveTeamSubscription } from "@/lib/billing";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
-import { setSentryUser, clearSentryUser } from "@/lib/sentry";
 import { clearMetricsCache } from "@/lib/qbMetricsCache";
+
+// Sentry is loaded lazily (kept off the critical path). Fire-and-forget so
+// importing @sentry never blocks auth — these run post-boot on login/logout.
+const lazySentry = (fn, ...args) =>
+  import("@/lib/sentry").then((m) => m[fn]?.(...args)).catch(() => {});
 import { checkLocalTrustedDevice } from "@/lib/mfa";
 import {
   isMfaSessionVerified,
@@ -144,7 +148,7 @@ export const AuthProvider = ({ children }) => {
     // next person on a shared back-office machine.
     clearMetricsCache();
     setAuthError({ type: "auth_required", message: "Authentication required" });
-    clearSentryUser();
+    lazySentry("clearSentryUser");
   }, []);
 
   // Named so it can be called with or without showing the loading spinner.
@@ -168,7 +172,7 @@ export const AuthProvider = ({ children }) => {
         // shop_name (used as Sentry "username" + a filterable tag).
         // Triage shows "Biota Mfg" directly instead of needing a
         // Supabase lookup on the auth_id. No email / person name sent.
-        setSentryUser(fullUser.auth_id || fullUser.id, { shopName: fullUser.shop_name });
+        lazySentry("setSentryUser", fullUser.auth_id || fullUser.id, { shopName: fullUser.shop_name });
 
         // ── MFA gate decision ─────────────────────────────────────────
         // The session is technically valid at this point (Supabase has
