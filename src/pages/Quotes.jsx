@@ -636,9 +636,9 @@ export default function Quotes() {
                       }}
                       className="rounded border-slate-300 accent-teal-600" />
                   </td>
-                  <td className="px-5 py-3.5 font-mono text-xs text-slate-400">
+                  <td className="px-5 py-3.5 font-mono text-xs text-slate-500">
                     {q.quote_id}
-                    {q.source === "email" && <span className="ml-1 text-teal-500" title="From email">✉</span>}
+                    {q.source === "email" && <span className="ml-1 text-teal-600" title="From email">✉</span>}
                   </td>
 
                   {/* Customer column. For broker quotes the broker IS the
@@ -716,7 +716,7 @@ export default function Quotes() {
               <div key={q.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(q)}>
                 <div className="flex justify-between items-start mb-2">
                   <div className="min-w-0">
-                    <div className="font-mono text-xs text-slate-400">{q.quote_id}</div>
+                    <div className="font-mono text-xs text-slate-500">{q.quote_id}</div>
                     {q.broker_id ? (
                       <>
                         <div className="font-semibold text-slate-800 dark:text-slate-200 truncate">
