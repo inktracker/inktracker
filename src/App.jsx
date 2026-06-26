@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState, useRef, Suspense } from "react";
+import { useEffect, useMemo, useState, useRef, Suspense, lazy } from "react";
 import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { Toaster } from "@/components/ui/toaster";
-import Privacy from "./pages/Privacy.jsx";
-import Terms from "./pages/Terms.jsx";
-import Changelog from "./pages/Changelog.jsx";
-import Security from "./pages/Security.jsx";
-import QbSetup from "./pages/QbSetup.jsx";
-import Support from "./pages/Support.jsx";
-import SentryTest from "./pages/SentryTest.jsx";
+// Static legal/marketing/setup pages — lazy so they don't sit in the eager
+// app shell (they were ~part of the "270 KB unused JS on Quotes" Lighthouse
+// flagged). Each is its own route, rendered under the Suspense in AppRoutes.
+const Privacy = lazy(() => import("./pages/Privacy.jsx"));
+const Terms = lazy(() => import("./pages/Terms.jsx"));
+const Changelog = lazy(() => import("./pages/Changelog.jsx"));
+const Security = lazy(() => import("./pages/Security.jsx"));
+const QbSetup = lazy(() => import("./pages/QbSetup.jsx"));
+const Support = lazy(() => import("./pages/Support.jsx"));
+const SentryTest = lazy(() => import("./pages/SentryTest.jsx"));
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClientInstance } from "@/lib/query-client";
 import { pagesConfig } from "./pages.config";
@@ -21,7 +24,9 @@ import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
 import MfaGate from "@/components/MfaGate";
-import OnboardingWizard from "@/components/OnboardingWizard";
+// Lazy — the onboarding wizard is large and only rendered for brand-new users,
+// so it should never sit in the eager bundle every page downloads.
+const OnboardingWizard = lazy(() => import("@/components/OnboardingWizard"));
 import {
   TYPEWRITER_LINES,
   INITIAL_STATE as TYPEWRITER_INITIAL_STATE,
@@ -1288,7 +1293,8 @@ function PostConfirmSpinner() {
 
 function AppRoutes() {
   return (
-    <Routes>
+    <Suspense fallback={null}>
+      <Routes>
         <Route
           path="/"
           element={
@@ -1320,6 +1326,7 @@ function AppRoutes() {
 
         <Route path="*" element={<PageNotFound />} />
       </Routes>
+    </Suspense>
   );
 }
 
@@ -1431,7 +1438,11 @@ const AuthenticatedApp = () => {
   const needsOnboarding = !user?.shop_name && user?.role !== "manager" && user?.role !== "employee";
 
   if (needsOnboarding) {
-    return <OnboardingWizard user={user} onComplete={() => window.location.href = "/"} />;
+    return (
+      <Suspense fallback={null}>
+        <OnboardingWizard user={user} onComplete={() => window.location.href = "/"} />
+      </Suspense>
+    );
   }
 
   return (
