@@ -1039,6 +1039,28 @@ export function mapQbItemName(name, qbItemMap) {
   return (typeof mapped === "string" && mapped.trim()) ? mapped.trim() : name;
 }
 
+// Split a garment line's customer-facing total into garment vs decoration
+// portions, for per-technique QB revenue (the optional qb_split_lines mode).
+// Allocates by COST ratio (garment cost vs print + extras) and returns
+// whole-cent amounts that sum EXACTLY to `total` — the decoration portion
+// absorbs the rounding remainder, so the QB invoice total never drifts from the
+// quote (the line-sum = customer-total invariant holds). Edge cases:
+//   no decoration cost  → all garment (caller emits a single line)
+//   no garment cost     → all decoration (customer-supplied blanks)
+// Returns { garment, decoration }.
+export function allocateGarmentDecoration(total, gCost, printCost, extraCost = 0) {
+  const t = Math.round((Number(total) || 0) * 100) / 100;
+  const g = Math.max(0, Number(gCost) || 0);
+  const p = Math.max(0, Number(printCost) || 0);
+  const e = Math.max(0, Number(extraCost) || 0);
+  const base = g + p + e;
+  if (p + e <= 0 || base <= 0) return { garment: t, decoration: 0 };
+  if (g <= 0) return { garment: 0, decoration: t };
+  const garment = Math.round(t * (g / base) * 100) / 100;
+  const decoration = Math.round((t - garment) * 100) / 100;
+  return { garment, decoration };
+}
+
 // Map S&S data to one of our GARMENT_CATEGORIES.
 // S&S's styleCategory is often empty, so we also scan the product description/title
 // for keywords. Returns "" if we can't confidently classify (caller should leave the
@@ -1097,6 +1119,9 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
   const lines = [];
 
   const isBroker = markup !== STANDARD_MARKUP;
+  // Opt-in per-technique revenue: split each garment line into a garment line
+  // + a decoration line (by technique). Off → identical single-line behavior.
+  const splitEnabled = !!getShopPricingConfig()?.qb_split_lines;
 
   (quote.line_items || []).forEach((li) => {
     const qty = getQty(li);
@@ -1118,6 +1143,44 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
 
     const itemName = resolveLineCategory(li);
 
+    // Emit this garment line as a single line (default) or, when the shop
+    // opted into per-technique revenue, a garment line + a decoration line that
+    // sum EXACTLY to `amount` (allocateGarmentDecoration preserves the total,
+    // so the customer-facing total / line-sum invariant never changes).
+    const emitGarmentLines = (amount) => {
+      const amt = Number(Number(amount).toFixed(2));
+      if (!splitEnabled) {
+        lines.push({
+          description, qty,
+          unitPrice: Number((qty > 0 ? amt / qty : 0).toFixed(4)),
+          amount: amt, itemName, taxable: true,
+        });
+        return;
+      }
+      let gCost = 0, printCost = 0, extraCost = 0;
+      try {
+        const br = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap);
+        if (br) { gCost = br.gCost || 0; printCost = br.printCost || 0; extraCost = br.extraCost || 0; }
+      } catch { /* fall back to all-garment */ }
+      const { garment, decoration } = allocateGarmentDecoration(amt, gCost, printCost, extraCost);
+      const garmentDesc = [styleLabel, sizeBreakdown, addonLabels.join(", ")].filter(Boolean).join(" | ");
+      if (garment > 0 || decoration <= 0) {
+        lines.push({
+          description: garmentDesc, qty,
+          unitPrice: Number((qty > 0 ? garment / qty : 0).toFixed(4)),
+          amount: garment, itemName, taxable: true,
+        });
+      }
+      if (decoration > 0) {
+        const technique = primaryTechniqueForLine(li) || "Decoration";
+        lines.push({
+          description: imprintDesc || technique, qty,
+          unitPrice: Number((qty > 0 ? decoration / qty : 0).toFixed(4)),
+          amount: decoration, itemName: technique, taxable: true,
+        });
+      }
+    };
+
     // Use saved pricing from "calculate once" — fall back to live
     // calc for legacy quotes or broker markup.
     //
@@ -1137,15 +1200,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
     const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
     if (hasSaved) {
       const lineTotalWithRush = li._lineTotal + (Number.isFinite(li._rushFee) ? li._rushFee : 0);
-      const unitPriceWithRush = qty > 0 ? lineTotalWithRush / qty : 0;
-      lines.push({
-        description,
-        qty,
-        unitPrice: Number(unitPriceWithRush.toFixed(4)),
-        amount: Number(lineTotalWithRush.toFixed(2)),
-        itemName,
-        taxable: true,
-      });
+      emitGarmentLines(lineTotalWithRush);
     } else {
       // Legacy fallback for line items predating the per-line stamping.
       // CRITICAL — clientPpp override (customer-negotiated per-piece
@@ -1158,24 +1213,14 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
       const override = Number(li?.clientPpp);
       const hasOverride = !isBroker && Number.isFinite(override) && override > 0;
       let lineTotalForQb;
-      let unitPriceForQb;
       if (hasOverride) {
         lineTotalForQb = override * qty;
-        unitPriceForQb = override;
       } else {
         const r = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap);
         if (!r) return;
         lineTotalForQb = r.lineTotal;
-        unitPriceForQb = qty > 0 ? r.lineTotal / qty : 0;
       }
-      lines.push({
-        description,
-        qty,
-        unitPrice: Number(unitPriceForQb.toFixed(4)),
-        amount: Number(lineTotalForQb.toFixed(2)),
-        itemName,
-        taxable: true,
-      });
+      emitGarmentLines(lineTotalForQb);
     }
   });
 

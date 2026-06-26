@@ -8,7 +8,7 @@ import { DEFAULT_BRAND, BRAND_PRESETS, normalizeBrandColor } from "@/lib/brandin
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2, CheckSquare, Shield } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
-import { loadShopPricingConfig, GARMENT_CATEGORIES } from "@/components/shared/pricing";
+import { loadShopPricingConfig, GARMENT_CATEGORIES, getEnabledTechniques } from "@/components/shared/pricing";
 import { normalizePresses, serializePresses } from "@/lib/presses/normalizePresses";
 import NumericInput from "@/components/shared/NumericInput";
 import { SHOP_TIMEZONE_OPTIONS, loadShopTimezone } from "@/lib/shopTimezone";
@@ -1205,6 +1205,8 @@ function QbItemMapEditor({ user }) {
   const [open, setOpen] = useState(false);
   const [qbItems, setQbItems] = useState(null); // null = not loaded yet
   const [map, setMap] = useState({});
+  const [split, setSplit] = useState(false);
+  const [techniques, setTechniques] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1217,7 +1219,10 @@ function QbItemMapEditor({ user }) {
     setError(null);
     try {
       const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
-      setMap(shops?.[0]?.pricing_config?.qb_item_map || {});
+      const pc = shops?.[0]?.pricing_config || {};
+      setMap(pc.qb_item_map || {});
+      setSplit(!!pc.qb_split_lines);
+      setTechniques(getEnabledTechniques(pc) || []);
       const { data: { session } } = await supabase.auth.getSession();
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
         action: "listQbItems",
@@ -1240,11 +1245,11 @@ function QbItemMapEditor({ user }) {
     setError(null);
     try {
       const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
-      // Drop empty selections so an unset category falls back to default behavior.
+      // Drop empty selections so an unset row falls back to default behavior.
       const cleanMap = Object.fromEntries(
         Object.entries(map).filter(([, v]) => v && String(v).trim()),
       );
-      const pc = { ...(shops?.[0]?.pricing_config || {}), qb_item_map: cleanMap };
+      const pc = { ...(shops?.[0]?.pricing_config || {}), qb_item_map: cleanMap, qb_split_lines: split };
       if (shops?.[0]) await base44.entities.Shop.update(shops[0].id, { pricing_config: pc });
       loadShopPricingConfig(pc);
       setMap(cleanMap);
@@ -1257,6 +1262,23 @@ function QbItemMapEditor({ user }) {
     }
   }
 
+  const renderRow = (key, label) => (
+    <div key={key} className="flex items-center gap-2">
+      <div className="w-40 text-sm text-slate-700 shrink-0">{label}</div>
+      <span className="text-slate-300">→</span>
+      <select
+        value={map[key] || ""}
+        onChange={(e) => setMap((m) => ({ ...m, [key]: e.target.value }))}
+        className="flex-1 text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+      >
+        <option value="">Default (InkTracker creates/uses &quot;{key}&quot;)</option>
+        {qbItems.map((it) => (
+          <option key={it.id} value={it.name}>{it.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+
   return (
     <div className="border-t border-emerald-200 pt-3 mt-3">
       {!open ? (
@@ -1265,13 +1287,13 @@ function QbItemMapEditor({ user }) {
           className="flex items-center gap-2 text-sm font-semibold text-emerald-700 hover:text-emerald-900 transition"
         >
           <Link2 className="w-4 h-4" />
-          Map garment types to your QuickBooks items
+          Map sales to your QuickBooks items
         </button>
       ) : (
         <div>
-          <div className="text-sm font-semibold text-slate-700 mb-1">Map garment types to QuickBooks items</div>
+          <div className="text-sm font-semibold text-slate-700 mb-1">Map sales to QuickBooks items</div>
           <p className="text-xs text-slate-500 mb-3">
-            Point each InkTracker garment type at the QuickBooks product/service you want it booked under, so sales don't get split across duplicate items. Leave a row on "Default" to keep current behavior. Affects future invoices only.
+            Point each InkTracker line at the QuickBooks product/service you want it booked under, so sales don&apos;t spread across duplicate items. Leave a row on &quot;Default&quot; to keep current behavior. Affects future invoices only.
           </p>
           {loading && <div className="text-sm text-slate-500">Loading your QuickBooks items…</div>}
           {error && (
@@ -1279,24 +1301,34 @@ function QbItemMapEditor({ user }) {
           )}
           {!loading && qbItems !== null && (
             <>
-              <div className="space-y-1.5">
-                {GARMENT_CATEGORIES.map((cat) => (
-                  <div key={cat} className="flex items-center gap-2">
-                    <div className="w-40 text-sm text-slate-700 shrink-0">{cat}</div>
-                    <span className="text-slate-300">→</span>
-                    <select
-                      value={map[cat] || ""}
-                      onChange={(e) => setMap((m) => ({ ...m, [cat]: e.target.value }))}
-                      className="flex-1 text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                    >
-                      <option value="">Default (InkTracker creates/uses "{cat}")</option>
-                      {qbItems.map((it) => (
-                        <option key={it.id} value={it.name}>{it.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-              </div>
+              {/* Opt-in per-technique split */}
+              <label className="flex items-start gap-2 mb-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={split}
+                  onChange={(e) => setSplit(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span className="text-xs text-slate-600">
+                  <span className="font-semibold text-slate-700">Split invoice lines by garment + decoration</span>
+                  <br />
+                  Posts the garment portion and each decoration technique (screen print, embroidery…) as separate QuickBooks lines so you can report revenue by technique. The customer total is unchanged.
+                </span>
+              </label>
+
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Garment types</div>
+              <div className="space-y-1.5">{GARMENT_CATEGORIES.map((cat) => renderRow(cat, cat))}</div>
+
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mt-3 mb-1">Fees</div>
+              <div className="space-y-1.5">{renderRow("Setup Fee", "Setup Fee")}</div>
+
+              {split && (
+                <>
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mt-3 mb-1">Decoration techniques</div>
+                  <div className="space-y-1.5">{techniques.map((t) => renderRow(t, t))}</div>
+                </>
+              )}
+
               <div className="flex items-center gap-3 mt-3">
                 <button
                   onClick={save}
