@@ -32,7 +32,11 @@ export async function uploadFile(file) {
 
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(path, file, { upsert: false });
+    // Filenames are unique (timestamp + random) and never overwritten, so the
+    // content at a path is immutable — cache it for a year instead of
+    // Supabase's 1-hour default, so repeat viewers don't re-download artwork
+    // (the "short cache lifetime" Lighthouse flagged).
+    .upload(path, file, { upsert: false, cacheControl: "31536000" });
 
   if (error) throw error;
 

@@ -13,7 +13,12 @@
     <link rel="manifest" href="/manifest.json" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet" />
+    <!-- Load font CSS non-render-blocking: the print-media swap lets the browser
+         paint immediately (system fallback via display=swap), then upgrades to
+         the web fonts once the stylesheet loads. noscript keeps it working with
+         JS off. Removes the >1s render-blocking delay Lighthouse flagged. -->
+    <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" /></noscript>
     <title>InkTracker</title>
     <meta name="description" content="Shop management for screen printers — quotes, production, invoicing. Built after years of using software that never quite fit." />
 
