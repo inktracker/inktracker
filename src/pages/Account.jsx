@@ -121,6 +121,12 @@ export default function Account() {
   // True when an access token lingers but the refresh token has expired — the
   // connection is effectively dead. Shows a "reconnect" prompt, not "connect".
   const [qbNeedsReconnect, setQbNeedsReconnect] = useState(false);
+  // Income-account picker — where InkTracker invoices post revenue in QB.
+  // "" = Auto (let qbSync guess). qbIncomeAccounts: null=not loaded, []=loaded.
+  const [qbIncomeAccountId, setQbIncomeAccountId] = useState("");
+  const [qbIncomeAccounts, setQbIncomeAccounts] = useState(null);
+  const [qbAccountsLoading, setQbAccountsLoading] = useState(false);
+  const [qbAccountSaving, setQbAccountSaving] = useState(false);
   const [qbConnecting, setQbConnecting] = useState(false);
   const [qbMessage, setQbMessage] = useState(null); // { type: "success"|"error", text }
   const [qbDisconnecting, setQbDisconnecting] = useState(false);
@@ -162,6 +168,7 @@ export default function Account() {
           setShopRecord(shops?.[0] || null);
           setTimezone(shops?.[0]?.timezone || "");
           setBrandColor(shops?.[0]?.brand_color || "");
+          setQbIncomeAccountId(shops?.[0]?.qb_income_account_id || "");
           if (shops?.[0]?.addons?.length) {
             setAddons(
               shops[0].addons
@@ -417,6 +424,45 @@ export default function Account() {
   }
 
 
+
+  // Load the shop's QB Income accounts for the picker, once connected.
+  useEffect(() => {
+    if (!qbConnected) { setQbIncomeAccounts(null); return; }
+    let cancelled = false;
+    (async () => {
+      setQbAccountsLoading(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const { data, error } = await base44.functions.invoke("qbSync", {
+          action: "listIncomeAccounts",
+          accessToken: session?.access_token,
+        });
+        if (!cancelled && !error && Array.isArray(data?.accounts)) setQbIncomeAccounts(data.accounts);
+      } catch { /* leave null — the picker shows a soft fallback */ }
+      finally { if (!cancelled) setQbAccountsLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [qbConnected]);
+
+  // Save the chosen income account on the shop (Auto = null → qbSync guesses).
+  async function saveIncomeAccount(id) {
+    setQbAccountSaving(true);
+    try {
+      const name = id ? ((qbIncomeAccounts || []).find((a) => a.id === id)?.name || null) : null;
+      const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+      const payload = { qb_income_account_id: id || null, qb_income_account_name: name };
+      if (shops?.[0]) {
+        await base44.entities.Shop.update(shops[0].id, payload);
+      }
+      setQbIncomeAccountId(id);
+      setQbMessage({ type: "success", text: id ? "Income account saved." : "Set to Auto — InkTracker will choose." });
+      setTimeout(() => setQbMessage(null), 3000);
+    } catch (err) {
+      setQbMessage({ type: "error", text: "Couldn't save the income account. Try again." });
+    } finally {
+      setQbAccountSaving(false);
+    }
+  }
 
   async function handleConnectQB() {
     if (!user) return;
@@ -912,6 +958,31 @@ export default function Account() {
                   </button>
                 </div>
               )}
+              <div className="pt-1 border-t border-emerald-100">
+                <label className="block text-xs font-semibold text-slate-600 mt-2 mb-1">
+                  Income account for InkTracker sales
+                </label>
+                {qbAccountsLoading ? (
+                  <div className="text-xs text-slate-400">Loading your QuickBooks accounts…</div>
+                ) : qbIncomeAccounts === null ? (
+                  <div className="text-xs text-slate-400">Couldn’t load accounts — InkTracker will choose automatically.</div>
+                ) : (
+                  <select
+                    value={qbIncomeAccountId}
+                    onChange={(e) => saveIncomeAccount(e.target.value)}
+                    disabled={qbAccountSaving}
+                    className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-60"
+                  >
+                    <option value="">Auto — let InkTracker choose</option>
+                    {qbIncomeAccounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Where InkTracker invoices post revenue in QuickBooks. Pick your sales account so it lands in the right place on your P&amp;L; leave on Auto to let InkTracker choose.
+                </p>
+              </div>
               <p className="text-sm text-slate-600">
                 Quotes can now be sent as QuickBooks invoices. Once your client pays via the QB payment link, InkTracker automatically converts the quote to an order.
               </p>
