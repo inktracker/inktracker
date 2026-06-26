@@ -90,24 +90,45 @@ describe("decideTokenRefresh", () => {
 });
 
 describe("extractConnectionStatus", () => {
+  const NOW = new Date("2026-05-09T18:00:00.000Z").getTime();
+
   it("reports connected=true with realm + expires when access token is present", () => {
     const profile = {
       qb_access_token: "T",
       qb_realm_id: "R-1",
       qb_token_expires_at: "2026-05-09T20:00:00.000Z",
-      qb_refresh_token_expires_at: "2026-08-17T20:00:00.000Z",
+      qb_refresh_token_expires_at: "2026-08-17T20:00:00.000Z", // future → healthy
     };
-    expect(extractConnectionStatus(profile)).toEqual({
+    expect(extractConnectionStatus(profile, NOW)).toEqual({
       connected: true,
+      needsReconnect: false,
       realmId: "R-1",
       expiresAt: "2026-05-09T20:00:00.000Z",
       refreshTokenExpiresAt: "2026-08-17T20:00:00.000Z",
     });
   });
 
+  it("reports connected=false + needsReconnect when the refresh token has expired", () => {
+    const profile = {
+      qb_access_token: "T",                                    // access token still lingering
+      qb_realm_id: "R-1",
+      qb_refresh_token_expires_at: "2026-01-01T00:00:00.000Z", // past → dead
+    };
+    const out = extractConnectionStatus(profile, NOW);
+    expect(out.connected).toBe(false);
+    expect(out.needsReconnect).toBe(true);
+  });
+
+  it("treats UNKNOWN refresh expiry as healthy (don't disconnect working shops on missing data)", () => {
+    const out = extractConnectionStatus({ qb_access_token: "T" }, NOW);
+    expect(out.connected).toBe(true);
+    expect(out.needsReconnect).toBe(false);
+  });
+
   it("reports connected=false when there's no access token", () => {
-    expect(extractConnectionStatus({ qb_realm_id: "R-1" })).toEqual({
+    expect(extractConnectionStatus({ qb_realm_id: "R-1" }, NOW)).toEqual({
       connected: false,
+      needsReconnect: false,
       realmId: "R-1",
       expiresAt: null,
       refreshTokenExpiresAt: null,
@@ -115,13 +136,14 @@ describe("extractConnectionStatus", () => {
   });
 
   it("reports connected=false when the profile is null/undefined", () => {
-    expect(extractConnectionStatus(null)).toEqual({
+    expect(extractConnectionStatus(null, NOW)).toEqual({
       connected: false,
+      needsReconnect: false,
       realmId: null,
       expiresAt: null,
       refreshTokenExpiresAt: null,
     });
-    expect(extractConnectionStatus(undefined).connected).toBe(false);
+    expect(extractConnectionStatus(undefined, NOW).connected).toBe(false);
   });
 
   it("treats empty string access_token as not connected", () => {

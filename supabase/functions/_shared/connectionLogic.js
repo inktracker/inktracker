@@ -99,17 +99,32 @@ export function decideTokenRefresh(expiresAtIso, nowMs = Date.now(), leadMs = 5 
 /**
  * Shape returned by the `checkConnection` edge function action.
  *
- * `connected` is true iff the profile has a non-empty access token. Realm
- * and expiry are surfaced so the UI can show "expires in N minutes" hints
- * without a second round-trip.
+ * `connected` reflects whether QB calls will actually WORK — not just whether
+ * an access-token string exists. An access token can linger in the DB after
+ * the ~100-day refresh token has expired; the next real action would then fail
+ * with invalid_grant. So a profile whose refresh token is KNOWN to be expired
+ * reports connected=false + needsReconnect=true, letting the UI flip to the
+ * reconnect panel instead of a false "Connected" badge.
+ *
+ * Unknown refresh expiry (older connections not yet repopulated) is treated as
+ * healthy — we never falsely disconnect a working shop on missing data.
  */
-export function extractConnectionStatus(profile) {
+export function extractConnectionStatus(profile, nowMs = Date.now()) {
+  const hasToken = Boolean(profile?.qb_access_token);
+  const refreshTokenExpiresAt = profile?.qb_refresh_token_expires_at ?? null;
+  let refreshExpired = false;
+  if (refreshTokenExpiresAt) {
+    const t = new Date(refreshTokenExpiresAt).getTime();
+    refreshExpired = Number.isFinite(t) && nowMs > t;
+  }
   return {
-    connected: Boolean(profile?.qb_access_token),
+    connected: hasToken && !refreshExpired,
+    // Distinguishes "connection expired, reconnect" from "never connected".
+    needsReconnect: hasToken && refreshExpired,
     realmId: profile?.qb_realm_id ?? null,
     expiresAt: profile?.qb_token_expires_at ?? null,
     // The refresh-token expiry the UI uses to warn "reconnect by X".
-    refreshTokenExpiresAt: profile?.qb_refresh_token_expires_at ?? null,
+    refreshTokenExpiresAt,
   };
 }
 
