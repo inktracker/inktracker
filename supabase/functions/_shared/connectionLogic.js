@@ -16,6 +16,9 @@ export const SECRET_KEYS = [
   // hourly and is invisible to the shop; THIS is the one whose lapse silently
   // kills the connection, so we track it to warn before it does.
   "qb_refresh_token_expires_at",
+  // Lease lock serializing concurrent token refreshes (see qbTokenLock.js).
+  // In SECRET_KEYS so updateProfileSecrets can clear it alongside the token write.
+  "qb_token_refresh_lock",
   "qb_realm_id",
   "qb_oauth_state",
   "qb_oauth_state_at",

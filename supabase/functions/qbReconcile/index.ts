@@ -37,6 +37,7 @@ import {
   buildRefreshedTokenFields,
 } from "../_shared/connectionLogic.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
+import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { escapeQbStringLiteral } from "../_shared/qbInvoice.js";
 import { logEvent } from "../_shared/qbAudit.js";
 import {
@@ -114,22 +115,25 @@ async function refreshTokenViaQB(refreshTok: string) {
 }
 
 async function ensureFreshToken(adminClient: any, profile: any) {
-  // decideTokenRefresh returns true when the current token is too
-  // close to expiry (or missing/unparseable). Refresh in that case.
-  const needsRefresh = decideTokenRefresh(profile.qb_token_expires_at);
-  if (!needsRefresh) return profile.qb_access_token;
-  if (!profile.qb_refresh_token) {
+  if (decideTokenRefresh(profile.qb_token_expires_at) && !profile.qb_refresh_token) {
     throw new Error(`profile ${profile.id} has no qb_refresh_token`);
   }
-  const fresh = await refreshTokenViaQB(profile.qb_refresh_token);
-  const check = validateQbTokenResponse(fresh);
-  if (!check.ok) throw new Error(`QB refresh body malformed: ${check.reason}`);
-  // buildRefreshedTokenFields: (freshTokens, previousRefreshToken, nowMs, prevRefreshExpiresAt).
-  // Preserves the existing refresh_token if Intuit didn't rotate one, and keeps
-  // the refresh-token expiry fresh (preserving the prior value if absent).
-  const patch = buildRefreshedTokenFields(fresh, profile.qb_refresh_token, Date.now(), profile.qb_refresh_token_expires_at);
-  await updateProfileSecrets(adminClient, profile.id, patch);
-  return fresh.access_token;
+  // Refresh (when needed) under the shared DB lease lock so a nightly
+  // reconcile and a live qbSync action don't double-refresh and clobber QB's
+  // rotating refresh token. Validates the refresh response shape before trust.
+  const { accessToken } = await refreshQbTokenSerialized(adminClient, profile, {
+    decideRefresh: decideTokenRefresh,
+    refreshFn: async (refreshTok: string) => {
+      const fresh = await refreshTokenViaQB(refreshTok);
+      const check = validateQbTokenResponse(fresh);
+      if (!check.ok) throw new Error(`QB refresh body malformed: ${check.reason}`);
+      return fresh;
+    },
+    buildFields: buildRefreshedTokenFields,
+    persist: (id: string, fields: any) => updateProfileSecrets(adminClient, id, fields),
+    reload: (id: string) => loadProfileWithSecrets(adminClient, { id }),
+  });
+  return accessToken;
 }
 
 // Minimal QB query — no retries here; one bad invoice doesn't tank
