@@ -3,7 +3,7 @@
 // Exchanges the code for tokens and stores them in the user's profile.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { buildOAuthTokenFields } from "../_shared/connectionLogic.js";
+import { buildOAuthTokenFields, refreshExpiryFromTokens } from "../_shared/connectionLogic.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
@@ -88,6 +88,8 @@ Deno.serve(async (req) => {
       return Response.redirect(`${appBaseUrl}/Account?qb_error=malformed_token_response`);
     }
     const expiresAt = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
+    // ~100-day refresh-token expiry, so the UI can warn before it silently dies.
+    const refreshExpiresAt = refreshExpiryFromTokens(tokens);
 
     // Use service role to find profile by qb_oauth_state and store tokens
     const supabaseAdmin = createClient(
@@ -134,7 +136,7 @@ Deno.serve(async (req) => {
     }
 
     // Pure builder + tests live in ../_shared/connectionLogic.js + __tests__.
-    const tokenFields = buildOAuthTokenFields(tokens, realmId, expiresAt);
+    const tokenFields = buildOAuthTokenFields(tokens, realmId, expiresAt, refreshExpiresAt);
 
     // Single write — profile_secrets is the canonical location for tokens.
     // The legacy `profiles` columns were dropped in the

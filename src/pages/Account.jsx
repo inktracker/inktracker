@@ -115,6 +115,9 @@ export default function Account() {
   const [qbSyncAllError, setQbSyncAllError] = useState(null);
   const [qbRealmId, setQbRealmId] = useState(null);
   const [qbExpiresAt, setQbExpiresAt] = useState(null);
+  // ~100-day refresh-token expiry — the one whose lapse silently kills the
+  // connection. Drives the "reconnect by X" hint + nudge.
+  const [qbRefreshExpiresAt, setQbRefreshExpiresAt] = useState(null);
   const [qbConnecting, setQbConnecting] = useState(false);
   const [qbMessage, setQbMessage] = useState(null); // { type: "success"|"error", text }
   const [qbDisconnecting, setQbDisconnecting] = useState(false);
@@ -186,6 +189,7 @@ export default function Account() {
             setQbConnected(data.connected);
             setQbRealmId(data.realmId);
             setQbExpiresAt(data.expiresAt);
+            setQbRefreshExpiresAt(data.refreshTokenExpiresAt || null);
           }
         } catch {}
       } catch (error) {
@@ -877,8 +881,31 @@ export default function Account() {
               )}
               {qbExpiresAt && (
                 <div className="text-xs text-slate-500">
-                  Token expires: {new Date(qbExpiresAt).toLocaleDateString()}
-                  {" "}(auto-refreshed)
+                  Access token: refreshes automatically every hour
+                </div>
+              )}
+              {qbRefreshExpiresAt && (() => {
+                const daysLeft = Math.floor((new Date(qbRefreshExpiresAt).getTime() - Date.now()) / 86400000);
+                const soon = daysLeft <= 14;
+                return (
+                  <div className={`text-xs ${soon ? "text-amber-700 font-semibold" : "text-slate-500"}`}>
+                    Reconnect by {new Date(qbRefreshExpiresAt).toLocaleDateString()}
+                    {daysLeft >= 0 ? ` (${daysLeft} day${daysLeft === 1 ? "" : "s"} left)` : " (expired)"}
+                  </div>
+                );
+              })()}
+              {qbRefreshExpiresAt && Math.floor((new Date(qbRefreshExpiresAt).getTime() - Date.now()) / 86400000) <= 14 && (
+                <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <span className="text-xs text-amber-800">
+                    Your QuickBooks connection expires soon. Reconnect now to avoid an interruption to invoicing.
+                  </span>
+                  <button
+                    onClick={handleConnectQB}
+                    disabled={qbConnecting}
+                    className="shrink-0 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg px-3 py-1.5 transition disabled:opacity-50"
+                  >
+                    {qbConnecting ? "…" : "Reconnect"}
+                  </button>
                 </div>
               )}
               <p className="text-sm text-slate-600">

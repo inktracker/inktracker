@@ -124,9 +124,10 @@ async function ensureFreshToken(adminClient: any, profile: any) {
   const fresh = await refreshTokenViaQB(profile.qb_refresh_token);
   const check = validateQbTokenResponse(fresh);
   if (!check.ok) throw new Error(`QB refresh body malformed: ${check.reason}`);
-  // buildRefreshedTokenFields signature: (freshTokens, previousRefreshToken, nowMs).
-  // It preserves the existing refresh_token if Intuit didn't rotate one.
-  const patch = buildRefreshedTokenFields(fresh, profile.qb_refresh_token);
+  // buildRefreshedTokenFields: (freshTokens, previousRefreshToken, nowMs, prevRefreshExpiresAt).
+  // Preserves the existing refresh_token if Intuit didn't rotate one, and keeps
+  // the refresh-token expiry fresh (preserving the prior value if absent).
+  const patch = buildRefreshedTokenFields(fresh, profile.qb_refresh_token, Date.now(), profile.qb_refresh_token_expires_at);
   await updateProfileSecrets(adminClient, profile.id, patch);
   return fresh.access_token;
 }

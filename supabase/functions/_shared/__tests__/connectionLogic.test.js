@@ -7,6 +7,8 @@ import {
   extractConnectionStatus,
   buildOAuthTokenFields,
   buildRefreshedTokenFields,
+  refreshExpiryFromTokens,
+  refreshTokenDaysLeft,
 } from "../connectionLogic.js";
 
 describe("mergeProfileSecrets", () => {
@@ -93,11 +95,13 @@ describe("extractConnectionStatus", () => {
       qb_access_token: "T",
       qb_realm_id: "R-1",
       qb_token_expires_at: "2026-05-09T20:00:00.000Z",
+      qb_refresh_token_expires_at: "2026-08-17T20:00:00.000Z",
     };
     expect(extractConnectionStatus(profile)).toEqual({
       connected: true,
       realmId: "R-1",
       expiresAt: "2026-05-09T20:00:00.000Z",
+      refreshTokenExpiresAt: "2026-08-17T20:00:00.000Z",
     });
   });
 
@@ -106,6 +110,7 @@ describe("extractConnectionStatus", () => {
       connected: false,
       realmId: "R-1",
       expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
   });
 
@@ -114,6 +119,7 @@ describe("extractConnectionStatus", () => {
       connected: false,
       realmId: null,
       expiresAt: null,
+      refreshTokenExpiresAt: null,
     });
     expect(extractConnectionStatus(undefined).connected).toBe(false);
   });
@@ -137,6 +143,7 @@ describe("buildOAuthTokenFields", () => {
       qb_refresh_token: "REF",
       qb_realm_id: "REALM-42",
       qb_token_expires_at: "2026-05-09T20:00:00.000Z",
+      qb_refresh_token_expires_at: null,
       qb_oauth_state: null,
     });
   });
@@ -144,6 +151,40 @@ describe("buildOAuthTokenFields", () => {
   it("always clears qb_oauth_state (one-time consumption)", () => {
     const fields = buildOAuthTokenFields({ access_token: "A", refresh_token: "R" }, "R-1", "2026-05-09T20:00:00.000Z");
     expect(fields.qb_oauth_state).toBeNull();
+  });
+
+  it("stores the refresh-token expiry when passed", () => {
+    const fields = buildOAuthTokenFields({ access_token: "A", refresh_token: "R" }, "R-1", "2026-05-09T20:00:00.000Z", "2026-08-17T20:00:00.000Z");
+    expect(fields.qb_refresh_token_expires_at).toBe("2026-08-17T20:00:00.000Z");
+  });
+});
+
+describe("refreshExpiryFromTokens", () => {
+  const NOW = new Date("2026-05-09T18:00:00.000Z").getTime();
+  it("computes ISO expiry from x_refresh_token_expires_in (seconds)", () => {
+    const out = refreshExpiryFromTokens({ x_refresh_token_expires_in: 8640000 }, NOW);
+    expect(out).toBe(new Date(NOW + 8640000 * 1000).toISOString()); // +100 days
+  });
+  it("falls back to the provided value when the field is absent", () => {
+    expect(refreshExpiryFromTokens({}, NOW, "PREV")).toBe("PREV");
+    expect(refreshExpiryFromTokens({ x_refresh_token_expires_in: 0 }, NOW, "PREV")).toBe("PREV");
+  });
+  it("defaults the fallback to null", () => {
+    expect(refreshExpiryFromTokens({}, NOW)).toBeNull();
+  });
+});
+
+describe("refreshTokenDaysLeft", () => {
+  const NOW = new Date("2026-05-09T18:00:00.000Z").getTime();
+  it("returns whole days remaining", () => {
+    expect(refreshTokenDaysLeft(new Date(NOW + 10 * 86400000).toISOString(), NOW)).toBe(10);
+  });
+  it("is negative once expired", () => {
+    expect(refreshTokenDaysLeft(new Date(NOW - 2 * 86400000).toISOString(), NOW)).toBe(-2);
+  });
+  it("returns null when unknown", () => {
+    expect(refreshTokenDaysLeft(null, NOW)).toBeNull();
+    expect(refreshTokenDaysLeft("not-a-date", NOW)).toBeNull();
   });
 });
 
@@ -175,6 +216,26 @@ describe("buildRefreshedTokenFields", () => {
       NOW,
     );
     expect(fields.qb_token_expires_at).toBe(new Date(NOW + 3600 * 1000).toISOString());
+  });
+
+  it("refreshes the refresh-token expiry from the response when present", () => {
+    const fields = buildRefreshedTokenFields(
+      { access_token: "ACC", expires_in: 3600, x_refresh_token_expires_in: 8640000 },
+      "OLD-REF",
+      NOW,
+      "2026-01-01T00:00:00.000Z",
+    );
+    expect(fields.qb_refresh_token_expires_at).toBe(new Date(NOW + 8640000 * 1000).toISOString());
+  });
+
+  it("preserves the prior refresh-token expiry when the response omits it", () => {
+    const fields = buildRefreshedTokenFields(
+      { access_token: "ACC", expires_in: 3600 },
+      "OLD-REF",
+      NOW,
+      "2026-08-17T20:00:00.000Z",
+    );
+    expect(fields.qb_refresh_token_expires_at).toBe("2026-08-17T20:00:00.000Z");
   });
 
   it("does NOT include realm_id or oauth_state (refresh shouldn't touch those)", () => {

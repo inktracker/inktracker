@@ -23,6 +23,7 @@ export type ProfileWithSecrets = {
   qb_access_token?: string | null;
   qb_refresh_token?: string | null;
   qb_token_expires_at?: string | null;
+  qb_refresh_token_expires_at?: string | null;
   qb_realm_id?: string | null;
   qb_oauth_state?: string | null;
   gmail_access_token?: string | null;
