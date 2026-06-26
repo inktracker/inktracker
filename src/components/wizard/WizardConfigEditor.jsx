@@ -257,7 +257,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
 
         <form onSubmit={handleSSSearch} className="flex gap-2 mb-3">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-500" />
             <input value={ssSearch} onChange={e => setSsSearch(e.target.value)}
               placeholder="Search by style # (e.g. 5000, 1717, IND4000)"
               className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
@@ -350,19 +350,19 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
               </div>
               <div className="grid gap-2 sm:grid-cols-3 items-end">
                 <div>
-                  <label className="text-[10px] font-semibold text-slate-400 uppercase">Category</label>
+                  <label className="text-[10px] font-semibold text-slate-500 uppercase">Category</label>
                   <select value={s.garment || "T-Shirts"} onChange={(e) => updateStyle(idx, { garment: e.target.value })}
                     className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5">
                     {CATEGORIES.map(g => <option key={g} value={g}>{g}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] font-semibold text-slate-400 uppercase">Tag</label>
+                  <label className="text-[10px] font-semibold text-slate-500 uppercase">Tag</label>
                   <input value={s.tag || ""} onChange={(e) => updateStyle(idx, { tag: e.target.value })}
                     placeholder="Best Value, Shop Pick, etc." className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                 </div>
                 <div>
-                  <label className="text-[10px] font-semibold text-slate-400 uppercase">Tagline (hover)</label>
+                  <label className="text-[10px] font-semibold text-slate-500 uppercase">Tagline (hover)</label>
                   <input value={s.hoverDescription || ""} onChange={(e) => updateStyle(idx, { hoverDescription: e.target.value })}
                     placeholder="100% cotton, great for screen printing"
                     className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
@@ -371,7 +371,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
             </div>
           ))}
           {styles.length === 0 && (
-            <div className="text-sm text-slate-400 text-center py-4">No styles configured.</div>
+            <div className="text-sm text-slate-500 text-center py-4">No styles configured.</div>
           )}
         </div>
       </div>

@@ -15,7 +15,7 @@ export default function Support() {
           <p className="text-sm text-slate-500">
             Quick answers to common questions and how to reach us if you need more.
           </p>
-          <p className="text-xs text-slate-400">Last updated: May 31, 2026</p>
+          <p className="text-xs text-slate-500">Last updated: May 31, 2026</p>
         </header>
 
         {/* Contact card — front and center so the obvious case is one click away. */}

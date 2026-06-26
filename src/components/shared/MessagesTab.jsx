@@ -99,7 +99,7 @@ export default function MessagesTab({ threadId, currentUserEmail, replyContext }
 function MessageList({ messages, loading, currentUserEmail }) {
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-10 text-slate-400">
+      <div className="flex items-center justify-center py-10 text-slate-500">
         <Loader2 className="w-5 h-5 animate-spin" />
       </div>
     );
@@ -109,7 +109,7 @@ function MessageList({ messages, loading, currentUserEmail }) {
       <div className="py-10 text-center">
         <Mail className="w-8 h-8 text-slate-300 mx-auto mb-2" />
         <p className="text-sm text-slate-500">No messages yet for this job.</p>
-        <p className="text-xs text-slate-400 mt-1">Sent emails and customer replies will appear here.</p>
+        <p className="text-xs text-slate-500 mt-1">Sent emails and customer replies will appear here.</p>
       </div>
     );
   }
@@ -146,16 +146,16 @@ function MessageList({ messages, loading, currentUserEmail }) {
                   <span className="text-[10px] font-bold uppercase bg-emerald-500 text-white px-1.5 py-0.5 rounded">New</span>
                 )}
               </div>
-              <time className="text-xs text-slate-400 shrink-0">{formatStamp(m.created_date)}</time>
+              <time className="text-xs text-slate-500 shrink-0">{formatStamp(m.created_date)}</time>
             </header>
             {subject && (
               <div className="text-xs font-semibold text-slate-600 mb-1 truncate">{subject}</div>
             )}
             <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-              {body || <span className="text-slate-400 italic">No content recorded.</span>}
+              {body || <span className="text-slate-500 italic">No content recorded.</span>}
             </div>
             {!internal && m.to_email && outbound && (
-              <div className="text-xs text-slate-400 mt-2 flex items-center gap-1">
+              <div className="text-xs text-slate-500 mt-2 flex items-center gap-1">
                 <MailOpen className="w-3 h-3" /> to {m.to_email}
               </div>
             )}

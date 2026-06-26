@@ -63,7 +63,7 @@ export default function OrderStatus() {
           )}
           <div>
             <div className="text-white font-bold text-lg">{shop?.shop_name || "Shop"}</div>
-            <div className="text-slate-400 text-sm">Order Status — {order.order_id}</div>
+            <div className="text-slate-500 text-sm">Order Status — {order.order_id}</div>
           </div>
         </div>
 
@@ -74,19 +74,19 @@ export default function OrderStatus() {
               <div className="text-xl font-black text-slate-900">{getOrderDisplayClient(order)}</div>
               {order.job_title && <div className="text-slate-500 text-sm mt-0.5">{order.job_title}</div>}
               {totalQty > 0 && (
-                <div className="text-sm text-slate-400 mt-1">{totalQty} pieces</div>
+                <div className="text-sm text-slate-500 mt-1">{totalQty} pieces</div>
               )}
             </div>
             <div className="text-right text-sm space-y-1">
               {order.date && (
                 <div>
-                  <span className="text-slate-400">Order Date: </span>
+                  <span className="text-slate-500">Order Date: </span>
                   <span className="font-semibold text-slate-700">{fmtDate(order.date)}</span>
                 </div>
               )}
               {order.due_date && (
                 <div>
-                  <span className="text-slate-400">In-Hands: </span>
+                  <span className="text-slate-500">In-Hands: </span>
                   <span className="font-semibold text-teal-700">{fmtDate(order.due_date)}</span>
                 </div>
               )}
@@ -118,12 +118,12 @@ export default function OrderStatus() {
                         ? "bg-emerald-500 text-white"
                         : active
                         ? "bg-teal-600 text-white ring-4 ring-teal-100"
-                        : "bg-slate-100 text-slate-400"
+                        : "bg-slate-100 text-slate-500"
                     }`}>
                       {done ? <CheckCircle2 className="w-4 h-4" /> : idx + 1}
                     </div>
                     <div className={`text-sm font-medium ${
-                      active ? "text-teal-700 font-bold" : done ? "text-slate-500" : "text-slate-400"
+                      active ? "text-teal-700 font-bold" : done ? "text-slate-500" : "text-slate-500"
                     }`}>
                       {step}
                       {active && (
@@ -141,7 +141,7 @@ export default function OrderStatus() {
           {/* Progress bar */}
           {!isComplete && currentIdx >= 0 && (
             <div className="mt-6">
-              <div className="flex justify-between text-xs text-slate-400 mb-1.5">
+              <div className="flex justify-between text-xs text-slate-500 mb-1.5">
                 <span>Progress</span>
                 <span>{Math.round((currentIdx / (O_STATUSES.length - 1)) * 100)}%</span>
               </div>
@@ -171,8 +171,8 @@ export default function OrderStatus() {
                   <div key={li.id || idx} className="flex justify-between text-sm py-1">
                     <div>
                       <span className="font-semibold text-slate-800">{style}</span>
-                      {brand && <span className="text-slate-400"> · {brand}</span>}
-                      {color && <span className="text-slate-400"> · {color}</span>}
+                      {brand && <span className="text-slate-500"> · {brand}</span>}
+                      {color && <span className="text-slate-500"> · {color}</span>}
                     </div>
                     <span className="text-slate-600 font-medium">{qty} pcs</span>
                   </div>

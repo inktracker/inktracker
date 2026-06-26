@@ -174,7 +174,7 @@ export default function StepUpConfirmModal({
             <ShieldCheck className="w-5 h-5 text-teal-600" />
             <h2 className="text-base font-bold text-slate-900">Confirm: {actionLabel}</h2>
           </div>
-          <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
+          <button onClick={onCancel} aria-label="Close" className="text-slate-500 hover:text-slate-600">
             <X className="w-5 h-5" />
           </button>
         </div>

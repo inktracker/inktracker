@@ -124,7 +124,7 @@ export default function ResetPassword() {
         )}
 
         {!recoveryReady && !recoveryError && (
-          <div className="flex items-center justify-center py-6 text-slate-400 text-sm">
+          <div className="flex items-center justify-center py-6 text-slate-500 text-sm">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
             Verifying reset link…
           </div>
@@ -151,12 +151,12 @@ export default function ResetPassword() {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600"
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-xs text-slate-400 mt-1">Minimum 9 characters</p>
+              <p className="text-xs text-slate-500 mt-1">Minimum 9 characters</p>
             </div>
 
             <div>

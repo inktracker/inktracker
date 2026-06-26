@@ -323,7 +323,7 @@ export default function AdminPanel() {
         {loading ? (
           <ListCardsSkeleton rows={4} />
         ) : displayed.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-2">
+          <div className="flex flex-col items-center justify-center py-16 text-slate-500 gap-2">
             <CheckCircle className="w-8 h-8 text-emerald-400" />
             <p className="text-sm font-medium">
               {tab === "pending" ? "No pending approvals — you're all caught up!" : "No users found"}
@@ -344,9 +344,9 @@ export default function AdminPanel() {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-slate-800 text-sm truncate">
-                    {u.full_name || u.shop_name || <span className="text-slate-400 italic">No name</span>}
+                    {u.full_name || u.shop_name || <span className="text-slate-500 italic">No name</span>}
                   </div>
-                  <div className="text-xs text-slate-400 truncate">{u.email || u.auth_id}</div>
+                  <div className="text-xs text-slate-500 truncate">{u.email || u.auth_id}</div>
                   <div className="text-xs text-slate-300 mt-0.5">
                     Joined {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
                   </div>
@@ -499,7 +499,7 @@ export default function AdminPanel() {
               </div>
               <button
                 onClick={() => !inviteSending && setShowInvite(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-500 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -610,12 +610,12 @@ function ManagerPermissions({ u, busy, onSave }) {
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center gap-2 px-4 py-2.5 text-left"
       >
-        <SlidersHorizontal className="w-4 h-4 text-slate-400" />
+        <SlidersHorizontal className="w-4 h-4 text-slate-500" />
         <span className="text-xs font-semibold text-slate-600">Page access</span>
-        <span className="text-[11px] text-slate-400">
+        <span className="text-[11px] text-slate-500">
           {deniedCount === 0 ? "Full access" : `${deniedCount} section${deniedCount === 1 ? "" : "s"} hidden`}
         </span>
-        <ChevronDown className={`w-4 h-4 text-slate-400 ml-auto transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown className={`w-4 h-4 text-slate-500 ml-auto transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
         <div className="px-4 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">

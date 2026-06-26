@@ -209,7 +209,7 @@ export default function BrokerPricePanel({
           {headerLine}
         </div>
         {metaLine && (
-          <div className="text-sm text-slate-400 mt-2">
+          <div className="text-sm text-slate-500 mt-2">
             {metaLine}
           </div>
         )}
@@ -257,7 +257,7 @@ export default function BrokerPricePanel({
 
         {brokerRate.extraCost > 0 && (
           <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Add-ons</span>
+            <span className="text-slate-500">Add-ons</span>
             <span className="text-white font-semibold">{fmtMoney(brokerRate.extraCost)}</span>
           </div>
         )}
@@ -273,11 +273,11 @@ export default function BrokerPricePanel({
       <div className="px-4 py-4 bg-slate-950 border-t border-slate-800 border-b border-slate-800">
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-lg bg-slate-800/80 p-3 border border-slate-700">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-1">
               Your Cost
             </div>
             <div className="text-lg font-bold text-white">{fmtMoney(brokerTotal)}</div>
-            <div className="text-xs text-slate-400">{fmtMoney(brokerAvgPpp)}/pc avg</div>
+            <div className="text-xs text-slate-500">{fmtMoney(brokerAvgPpp)}/pc avg</div>
           </div>
 
           <div className="rounded-lg bg-emerald-950 p-3 border border-emerald-900">

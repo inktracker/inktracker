@@ -96,7 +96,7 @@ export default function BrokerLayout({
             <img src={user?.logo_url || INKTRACKER_LOGO} alt={user?.logo_url ? "Logo" : "InkTracker"} className="w-8 h-8 object-contain rounded" />
             <div className="font-display uppercase text-lg text-slate-900 leading-none">Broker Portal</div>
           </div>
-          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400 mt-2 font-bold truncate">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-500 mt-2 font-bold truncate">
             {displayName}{companyName ? ` · ${companyName}` : ""}
           </div>
         </div>
@@ -114,7 +114,7 @@ export default function BrokerLayout({
                     : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                 }`}
               >
-                <Icon className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
+                <Icon className={`w-5 h-5 ${active ? "" : "text-slate-500"}`} />
                 <span className="flex-1 text-left">{label}</span>
                 {badge > 0 && (
                   <span className={`text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-full ${
@@ -132,7 +132,7 @@ export default function BrokerLayout({
         <div className="px-4 py-3 border-t border-slate-100">
           <button
             onClick={() => base44.auth.logout("/")}
-            className="flex items-center gap-2 text-xs text-slate-400 hover:text-red-500 font-semibold transition w-full px-2 py-2 rounded-lg hover:bg-red-50"
+            className="flex items-center gap-2 text-xs text-slate-500 hover:text-red-500 font-semibold transition w-full px-2 py-2 rounded-lg hover:bg-red-50"
           >
             <LogOut className="w-4 h-4" /> Sign Out
           </button>
@@ -143,7 +143,7 @@ export default function BrokerLayout({
       <main className="flex-1 md:ml-56 min-h-screen max-w-full">
         {/* Mobile header */}
         <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 sticky top-0 z-30">
-          <button onClick={() => setMobileMenuOpen(true)} className="p-1 text-slate-500 hover:text-slate-700">
+          <button onClick={() => setMobileMenuOpen(true)} aria-label="Open menu" className="p-1 text-slate-500 hover:text-slate-700">
             <Menu className="w-6 h-6" />
           </button>
           <div className="flex-1 min-w-0">
@@ -161,7 +161,7 @@ export default function BrokerLayout({
                   <img src={INKTRACKER_LOGO} alt="InkTracker" className="w-8 h-8 object-contain" />
                   <div className="font-display uppercase text-base text-slate-900 truncate leading-none">Broker Portal</div>
                 </div>
-                <button onClick={() => setMobileMenuOpen(false)} className="p-1 text-slate-400 hover:text-slate-600">
+                <button onClick={() => setMobileMenuOpen(false)} aria-label="Close menu" className="p-1 text-slate-500 hover:text-slate-600">
                   <X className="w-5 h-5" />
                 </button>
               </div>
@@ -179,7 +179,7 @@ export default function BrokerLayout({
                           : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
                       }`}
                     >
-                      <Icon className={`w-5 h-5 ${active ? "" : "text-slate-400"}`} />
+                      <Icon className={`w-5 h-5 ${active ? "" : "text-slate-500"}`} />
                       <span className="flex-1 text-left">{label}</span>
                       {badge > 0 && (
                         <span className={`text-[10px] font-bold px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center rounded-full ${
@@ -197,7 +197,7 @@ export default function BrokerLayout({
               <div className="px-4 py-3 border-t border-slate-100">
                 <button
                   onClick={() => base44.auth.logout("/")}
-                  className="flex items-center gap-2 text-xs text-slate-400 hover:text-red-500 font-semibold transition w-full px-2 py-2 rounded-lg hover:bg-red-50"
+                  className="flex items-center gap-2 text-xs text-slate-500 hover:text-red-500 font-semibold transition w-full px-2 py-2 rounded-lg hover:bg-red-50"
                 >
                   <LogOut className="w-4 h-4" /> Sign Out
                 </button>

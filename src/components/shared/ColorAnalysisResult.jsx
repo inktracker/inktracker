@@ -68,13 +68,13 @@ function EyedropperPicker({ imageUrl, onPick }) {
         onClick={handleCanvasClick}
         className={`rounded-lg border border-slate-200 cursor-crosshair max-w-full ${loaded ? "" : "hidden"}`}
       />
-      {!loaded && <div className="text-xs text-slate-400">Loading image…</div>}
+      {!loaded && <div className="text-xs text-slate-500">Loading image…</div>}
       {pickedColor && pickedPantone && (
         <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2">
           <div className="w-6 h-6 rounded-md border border-slate-300" style={{ backgroundColor: pickedColor }} />
           <span className="text-xs font-semibold text-slate-700">{pickedPantone.name}</span>
           <div className="w-4 h-4 rounded-sm border border-slate-200" style={{ backgroundColor: pickedPantone.hex }} title="Ink color ref" />
-          <span className="text-[10px] text-slate-400">{pickedColor}</span>
+          <span className="text-[10px] text-slate-500">{pickedColor}</span>
         </div>
       )}
     </div>
@@ -144,7 +144,7 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
 
   if (result.unsupported) {
     return (
-      <div className="text-xs text-slate-400 italic mt-1">{result.message}</div>
+      <div className="text-xs text-slate-500 italic mt-1">{result.message}</div>
     );
   }
 
@@ -215,7 +215,7 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
                     {adj && (
                       <button
                         onClick={() => setAdjustedColors(prev => { const n = {...prev}; delete n[origIdx]; return n; })}
-                        className="text-[10px] text-slate-400 hover:text-red-500"
+                        className="text-[10px] text-slate-500 hover:text-red-500"
                       >
                         reset
                       </button>
@@ -239,13 +239,13 @@ export default function ColorAnalysisResult({ result, onApplyCount, imageUrl }) 
       {/* Manually picked colors */}
       {manualColors.length > 0 && (
         <div className="space-y-1.5">
-          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Manually selected</div>
+          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Manually selected</div>
           {manualColors.map((c, i) => (
             <div key={i} className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-md border border-slate-300 flex-shrink-0" style={{ backgroundColor: c.hex }} />
               {c.pantone && <span className="text-xs font-semibold text-slate-700">{c.pantone.name}</span>}
               {c.pantone && <div className="w-3 h-3 rounded-sm border border-slate-200 flex-shrink-0" style={{ backgroundColor: c.pantone.hex }} />}
-              <span className="text-[10px] text-slate-400">{c.hex}</span>
+              <span className="text-[10px] text-slate-500">{c.hex}</span>
               <button onClick={() => removeManual(i)} className="text-[10px] text-red-400 hover:text-red-600 ml-auto">Remove</button>
             </div>
           ))}

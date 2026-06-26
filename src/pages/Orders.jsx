@@ -282,7 +282,7 @@ export default function Orders() {
                   { label: "", key: null },
                 ].map((h) => (
                   <th key={h.label || "action"} onClick={h.key ? () => toggleSort(h.key) : undefined}
-                    className={`text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                    className={`text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
                     {h.label}{h.key ? sortArrow(h.key) : ""}
                   </th>
                 ))}
@@ -305,13 +305,13 @@ export default function Orders() {
                     className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition"
                     onClick={() => setViewing(o)}
                   >
-                    <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{o.order_id}</td>
+                    <td className="px-5 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
                     <td className="px-5 py-3.5">
                       <div className="font-semibold text-slate-800 dark:text-slate-200">
                         {getOrderDisplayClient(o, customers[o.customer_id])}
                       </div>
                       {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
-                        <div className="text-xs text-slate-400 mt-0.5">
+                        <div className="text-xs text-slate-500 mt-0.5">
                           Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
                         </div>
                       )}
@@ -345,10 +345,10 @@ export default function Orders() {
               <div key={o.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setViewing(o)}>
                 <div className="flex justify-between items-start mb-2">
                   <div>
-                    <div className="font-mono text-xs text-slate-400">{o.order_id}</div>
+                    <div className="font-mono text-xs text-slate-500">{o.order_id}</div>
                     <div className="font-semibold text-slate-800 dark:text-slate-200">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
                     {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
-                      <div className="text-xs text-slate-400 mt-0.5">
+                      <div className="text-xs text-slate-500 mt-0.5">
                         Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
                       </div>
                     )}

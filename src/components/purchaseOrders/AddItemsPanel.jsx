@@ -134,7 +134,7 @@ function ProductVariantPicker({ product, onAdd }) {
         )}
         <div className="min-w-0">
           <div className="font-semibold text-sm text-slate-800">{product.title || product.styleCode}</div>
-          <div className="text-xs text-slate-400 truncate">{product.styleCode} · {colours.length} colour{colours.length === 1 ? "" : "s"}</div>
+          <div className="text-xs text-slate-500 truncate">{product.styleCode} · {colours.length} colour{colours.length === 1 ? "" : "s"}</div>
         </div>
       </div>
 
@@ -161,7 +161,7 @@ function ProductVariantPicker({ product, onAdd }) {
           <div key={v.sku} className="flex items-center gap-2 text-sm">
             <div className="font-mono text-xs text-slate-500 w-32 truncate">{v.sku}</div>
             <div className="text-xs font-semibold text-slate-700 w-12">{v.size}</div>
-            <div className="text-xs text-slate-400 w-16 text-right">{fmtMoney(v.price || 0)}</div>
+            <div className="text-xs text-slate-500 w-16 text-right">{fmtMoney(v.price || 0)}</div>
             <input
               type="number"
               min="0"

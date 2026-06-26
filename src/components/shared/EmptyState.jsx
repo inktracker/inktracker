@@ -72,7 +72,7 @@ export default function EmptyState({ type, onAction, className = "" }) {
         <Icon className="w-7 h-7 text-slate-300" />
       </div>
       <h3 className="text-base font-bold text-slate-700 mb-2">{config.title}</h3>
-      <p className="text-sm text-slate-400 max-w-md mx-auto leading-relaxed mb-6">
+      <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed mb-6">
         {config.description}
       </p>
       <div className="flex items-center justify-center gap-3 flex-wrap">

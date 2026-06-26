@@ -126,7 +126,7 @@ export default function BrokerProfile({ user, onUpdate }) {
           )}
           <div>
             <div className="font-bold text-slate-900">{user.display_name || user.full_name || "Broker"}</div>
-            <div className="text-xs text-slate-400">{user.email} · Broker account</div>
+            <div className="text-xs text-slate-500">{user.email} · Broker account</div>
           </div>
         </div>
 
@@ -315,7 +315,7 @@ function BrokerQBSection({ user }) {
     <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
       <div>
         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">QuickBooks Integration</h3>
-        <p className="text-xs text-slate-400 mt-1">Connect your QuickBooks to create invoices for your clients.</p>
+        <p className="text-xs text-slate-500 mt-1">Connect your QuickBooks to create invoices for your clients.</p>
       </div>
 
       {qbMessage && (
@@ -329,7 +329,7 @@ function BrokerQBSection({ user }) {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500" />
             <span className="text-sm font-semibold text-emerald-700">Connected</span>
-            {qbRealmId && <span className="text-xs text-slate-400 ml-2">Company ID: {qbRealmId}</span>}
+            {qbRealmId && <span className="text-xs text-slate-500 ml-2">Company ID: {qbRealmId}</span>}
           </div>
           <button onClick={handleDisconnect} className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 font-semibold">
             <Unlink className="w-3.5 h-3.5" /> Disconnect

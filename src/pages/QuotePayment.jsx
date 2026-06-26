@@ -425,12 +425,12 @@ export default function QuotePayment() {
             <div className="text-white font-bold text-lg leading-tight">
               {displayShopName}
             </div>
-            <div className="text-slate-400 text-sm">
+            <div className="text-slate-500 text-sm">
               Quote #{quote.quote_id}
             </div>
           </div>
           <div className="text-right">
-            <div className="text-slate-400 text-xs uppercase tracking-wide mb-0.5">
+            <div className="text-slate-500 text-xs uppercase tracking-wide mb-0.5">
               QUOTE
             </div>
             {quote.date && (
@@ -457,7 +457,7 @@ export default function QuotePayment() {
                 {quote.customer_name}
               </div>
               {(quote.customer_email || quote.sent_to) && (
-                <div className="text-sm text-slate-400 mt-0.5">
+                <div className="text-sm text-slate-500 mt-0.5">
                   {quote.customer_email || quote.sent_to}
                 </div>
               )}
@@ -465,7 +465,7 @@ export default function QuotePayment() {
             <div className="text-right text-sm space-y-1">
               {quote.date && (
                 <div>
-                  <span className="text-slate-400">Date: </span>
+                  <span className="text-slate-500">Date: </span>
                   <span className="font-semibold text-slate-700">
                     {fmtDate(quote.date)}
                   </span>
@@ -473,7 +473,7 @@ export default function QuotePayment() {
               )}
               {quote.due_date && (
                 <div>
-                  <span className="text-slate-400">In-Hands: </span>
+                  <span className="text-slate-500">In-Hands: </span>
                   <span className="font-semibold text-teal-700">
                     {fmtDate(quote.due_date)}
                   </span>
@@ -481,7 +481,7 @@ export default function QuotePayment() {
               )}
               {quote.status && (
                 <div>
-                  <span className="text-slate-400">Status: </span>
+                  <span className="text-slate-500">Status: </span>
                   <span className="font-semibold text-slate-700">
                     {quote.status}
                   </span>
@@ -533,7 +533,7 @@ export default function QuotePayment() {
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-slate-400 mt-3">
+              <p className="text-[11px] text-slate-500 mt-3">
                 Click any proof to enlarge. Approved proofs are final.
               </p>
             </div>
@@ -574,7 +574,7 @@ export default function QuotePayment() {
                         {fmtMoney(lineTotal)}
                       </div>
                       {qty > 0 && (
-                        <div className="text-xs text-slate-400">
+                        <div className="text-xs text-slate-500">
                           {fmtMoney(perPiece)} each
                         </div>
                       )}
@@ -587,11 +587,11 @@ export default function QuotePayment() {
                         <table className="text-xs w-auto">
                           <thead>
                             <tr>
-                              <th className="text-left text-slate-400 font-semibold pr-4 py-1 w-16"></th>
+                              <th className="text-left text-slate-500 font-semibold pr-4 py-1 w-16"></th>
                               {activeSizes.map(([sz]) => (
                                 <th
                                   key={sz}
-                                  className="text-center text-slate-400 font-semibold px-3 py-1"
+                                  className="text-center text-slate-500 font-semibold px-3 py-1"
                                 >
                                   {sz}
                                 </th>
@@ -603,7 +603,7 @@ export default function QuotePayment() {
                           </thead>
                           <tbody>
                             <tr>
-                              <td className="text-slate-400 pr-4 py-1">Qty</td>
+                              <td className="text-slate-500 pr-4 py-1">Qty</td>
                               {activeSizes.map(([sz, v]) => (
                                 <td
                                   key={sz}
@@ -617,7 +617,7 @@ export default function QuotePayment() {
                               </td>
                             </tr>
                             <tr>
-                              <td className="text-slate-400 pr-4 py-1">Price/ea</td>
+                              <td className="text-slate-500 pr-4 py-1">Price/ea</td>
                               {activeSizes.map(([sz]) => {
                                 const isBig = BIG_SIZES.includes(sz);
                                 return (
@@ -661,7 +661,7 @@ export default function QuotePayment() {
                             <span className="text-teal-600">· {imp.pantones}</span>
                           )}
                           {(imp.width || imp.height) && (
-                            <span className="text-slate-400">
+                            <span className="text-slate-500">
                               ·{" "}
                               {[
                                 imp.width && `${imp.width}"W`,
@@ -672,7 +672,7 @@ export default function QuotePayment() {
                             </span>
                           )}
                           {imp.details && (
-                            <span className="italic text-slate-400">
+                            <span className="italic text-slate-500">
                               · {imp.details}
                             </span>
                           )}
@@ -754,14 +754,14 @@ export default function QuotePayment() {
                     <span className="text-2xl font-black text-teal-700">{fmtMoney(totalValue)}</span>
                   </div>
                   {!hasQb && (
-                    <div className="text-[11px] text-slate-400 text-right -mt-1">
+                    <div className="text-[11px] text-slate-500 text-right -mt-1">
                       Final tax calculated based on ship-to address at checkout.
                     </div>
                   )}
                 </>
               );
             })()}
-            <div className="text-[10px] text-slate-400 italic leading-snug pt-2 border-t border-slate-100 mt-1 space-y-2">
+            <div className="text-[10px] text-slate-500 italic leading-snug pt-2 border-t border-slate-100 mt-1 space-y-2">
               <p>
                 Sales tax shown reflects jurisdictions where we are registered to collect.
                 Buyer is responsible for any use tax owed to their home jurisdiction.
@@ -831,7 +831,7 @@ export default function QuotePayment() {
                   <><CheckCircle2 className="w-5 h-5" /> Approve Quote</>
                 )}
               </button>
-              <p className="mt-3 text-center text-xs text-slate-400">
+              <p className="mt-3 text-center text-xs text-slate-500">
                 {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment after you approve.
               </p>
             </>
@@ -897,10 +897,10 @@ export default function QuotePayment() {
                 </button>
 
                 {subLabel && (
-                  <div className="mt-2 text-center text-xs text-slate-400">{subLabel}</div>
+                  <div className="mt-2 text-center text-xs text-slate-500">{subLabel}</div>
                 )}
 
-                <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-slate-400">
+                <div className="mt-3 flex items-center justify-center gap-1.5 text-xs text-slate-500">
                   <Lock className="w-3 h-3" />
                   {securityLabel}
                 </div>

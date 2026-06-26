@@ -625,7 +625,7 @@ export default function Mockups() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Mockup Designer</h2>
-          <p className="text-sm text-slate-400 mt-0.5">Create print mockups and art proofs</p>
+          <p className="text-sm text-slate-500 mt-0.5">Create print mockups and art proofs</p>
         </div>
       </div>
 
@@ -652,7 +652,7 @@ export default function Mockups() {
                 catalog lookup, no color picker. Reading as a data URL
                 keeps it local to the session — the proof PDF embeds it,
                 so nothing is lost when the page is refreshed. */}
-            <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-400">
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-slate-500">
               <div className="flex-1 h-px bg-slate-100" />
               <span>or</span>
               <div className="flex-1 h-px bg-slate-100" />
@@ -702,7 +702,7 @@ export default function Mockups() {
               />
             </label>
             {garment?.isCustomUpload && (
-              <div className="text-[11px] text-slate-400 flex items-center gap-2">
+              <div className="text-[11px] text-slate-500 flex items-center gap-2">
                 <span>Custom:</span>
                 <span className={customGarmentImages.Front ? "text-emerald-600 font-semibold" : ""}>
                   Front {customGarmentImages.Front ? "✓" : "—"}
@@ -730,7 +730,7 @@ export default function Mockups() {
                     )}
                     <div>
                       <div className="font-semibold text-slate-800">{m.brandName} {m.styleNumber || m.resolvedStyleNumber}</div>
-                      <div className="text-xs text-slate-400">{m.resolvedTitle || m.description || ""}</div>
+                      <div className="text-xs text-slate-500">{m.resolvedTitle || m.description || ""}</div>
                     </div>
                   </button>
                 ))}
@@ -762,7 +762,7 @@ export default function Mockups() {
               <Upload className="w-4 h-4" /> {currentArtwork ? `Change ${view} Artwork` : `Upload ${view} Artwork`}
             </button>
             {currentArtwork && (
-              <div className="text-xs text-slate-400">Tools appear below the preview</div>
+              <div className="text-xs text-slate-500">Tools appear below the preview</div>
             )}
           </div>
 
@@ -775,7 +775,7 @@ export default function Mockups() {
                 shows up on the linked record. Orders and quotes are
                 grouped so the user can pick either. */}
             <div>
-              <label className="text-[10px] text-slate-400 block mb-0.5 flex items-center gap-1">
+              <label className="text-[10px] text-slate-500 block mb-0.5 flex items-center gap-1">
                 <Link2 className="w-3 h-3" /> Link to Order or Quote
               </label>
               <select
@@ -810,27 +810,27 @@ export default function Mockups() {
 
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">Customer</label>
+                <label className="text-[10px] text-slate-500 block mb-0.5">Customer</label>
                 <input value={proofDetails.customerName} onChange={e => updateProof({ customerName: e.target.value })}
                   placeholder="Customer name" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">Quote / Order #</label>
+                <label className="text-[10px] text-slate-500 block mb-0.5">Quote / Order #</label>
                 <input value={proofDetails.quoteNumber} onChange={e => updateProof({ quoteNumber: e.target.value })}
                   placeholder="Q-2026-XXX" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">Date</label>
+                <label className="text-[10px] text-slate-500 block mb-0.5">Date</label>
                 <input type="date" value={proofDetails.dateOrdered} onChange={e => updateProof({ dateOrdered: e.target.value })}
                   className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">Due Date</label>
+                <label className="text-[10px] text-slate-500 block mb-0.5">Due Date</label>
                 <input type="date" value={proofDetails.dueDate} onChange={e => updateProof({ dueDate: e.target.value })}
                   className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
               <div>
-                <label className="text-[10px] text-slate-400 block mb-0.5">Quantity</label>
+                <label className="text-[10px] text-slate-500 block mb-0.5">Quantity</label>
                 <input value={proofDetails.quantity} onChange={e => updateProof({ quantity: e.target.value })}
                   placeholder="100" className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
@@ -839,22 +839,22 @@ export default function Mockups() {
             {/* Print dimensions */}
             <div className="border-t border-slate-100 pt-3 space-y-2">
               <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Front Print Size (inches)</label>
+                <label className="text-[10px] text-slate-500 block mb-1">Front Print Size (inches)</label>
                 <div className="flex gap-2">
                   <input value={proofDetails.frontPrintW} onChange={e => updateProof({ frontPrintW: e.target.value })}
                     placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                  <span className="text-xs text-slate-400 self-center">x</span>
+                  <span className="text-xs text-slate-500 self-center">x</span>
                   <input value={proofDetails.frontPrintH} onChange={e => updateProof({ frontPrintH: e.target.value })}
                     placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                 </div>
               </div>
               {backArtwork && (
                 <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Back Print Size (inches)</label>
+                  <label className="text-[10px] text-slate-500 block mb-1">Back Print Size (inches)</label>
                   <div className="flex gap-2">
                     <input value={proofDetails.backPrintW} onChange={e => updateProof({ backPrintW: e.target.value })}
                       placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                    <span className="text-xs text-slate-400 self-center">x</span>
+                    <span className="text-xs text-slate-500 self-center">x</span>
                     <input value={proofDetails.backPrintH} onChange={e => updateProof({ backPrintH: e.target.value })}
                       placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                   </div>
@@ -865,7 +865,7 @@ export default function Mockups() {
             {/* Print colors */}
             <div className={`grid ${backArtwork ? "grid-cols-2" : "grid-cols-1"} gap-3 border-t border-slate-100 pt-3`}>
               <div>
-                <label className="text-[10px] text-slate-400 block mb-1">Front Colors</label>
+                <label className="text-[10px] text-slate-500 block mb-1">Front Colors</label>
                 {proofDetails.frontColors.slice(0, maxColors).map((c, i) => (
                   <input key={i} value={c} onChange={e => updateFrontColor(i, e.target.value)}
                     placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
@@ -873,7 +873,7 @@ export default function Mockups() {
               </div>
               {backArtwork && (
                 <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Back Colors</label>
+                  <label className="text-[10px] text-slate-500 block mb-1">Back Colors</label>
                   {proofDetails.backColors.slice(0, maxColors).map((c, i) => (
                     <input key={i} value={c} onChange={e => updateBackColor(i, e.target.value)}
                       placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
@@ -884,7 +884,7 @@ export default function Mockups() {
 
             {/* Services */}
             <div className="border-t border-slate-100 pt-3 space-y-1.5">
-              <label className="text-[10px] text-slate-400 block">Services</label>
+              <label className="text-[10px] text-slate-500 block">Services</label>
               {[
                 ["neckLabels", "Screen Printed Neck Labels"],
                 ["foldBagLabel", "Fold, Bag, Label"],
@@ -901,7 +901,7 @@ export default function Mockups() {
 
             {/* Notes */}
             <div className="border-t border-slate-100 pt-3">
-              <label className="text-[10px] text-slate-400 block mb-0.5">Notes</label>
+              <label className="text-[10px] text-slate-500 block mb-0.5">Notes</label>
               <textarea value={proofDetails.notes} onChange={e => updateProof({ notes: e.target.value })}
                 rows={2} placeholder="Special instructions..."
                 className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />

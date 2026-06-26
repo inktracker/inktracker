@@ -746,7 +746,7 @@ export default function QuoteDetailModal({
               to recover the top short of closing + reopening. */}
           <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 flex justify-between items-start px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700">
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">
                 {quote.quote_id}
               </div>
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
@@ -754,12 +754,12 @@ export default function QuoteDetailModal({
               </h2>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 {quote.date && (
-                  <div className="text-xs sm:text-sm text-slate-400">
+                  <div className="text-xs sm:text-sm text-slate-500">
                     Quote Date: {fmtDate(quote.date)}
                   </div>
                 )}
                 {quote.due_date && (
-                  <div className="text-xs sm:text-sm text-slate-400">
+                  <div className="text-xs sm:text-sm text-slate-500">
                     · In-Hands: {fmtDate(quote.due_date)}
                   </div>
                 )}
@@ -775,7 +775,7 @@ export default function QuoteDetailModal({
               ) : null}
               <button
                 onClick={onClose}
-                className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+                className="text-slate-500 hover:text-slate-600 text-lg leading-none"
               >
                 ✕
               </button>
@@ -819,7 +819,7 @@ export default function QuoteDetailModal({
             )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
                   Customer
                 </div>
                 <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -838,7 +838,7 @@ export default function QuoteDetailModal({
               </div>
 
               <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
                   Quote Summary
                 </div>
                 <div className="flex justify-between text-sm text-slate-500">
@@ -931,7 +931,7 @@ export default function QuoteDetailModal({
                           <div className="space-y-3">
                             {activeSizes.length > 0 && (
                               <div>
-                                <div className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+                                <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">
                                   Sizes
                                 </div>
                                 <div className="flex flex-wrap gap-2">
@@ -948,7 +948,7 @@ export default function QuoteDetailModal({
                             )}
 
                             <div>
-                              <div className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+                              <div className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">
                                 Imprints
                               </div>
 
@@ -976,7 +976,7 @@ export default function QuoteDetailModal({
                                               </span>
                                             )}
                                             {imp.details && (
-                                              <span className="text-slate-400 italic">
+                                              <span className="text-slate-500 italic">
                                                 {imp.details}
                                               </span>
                                             )}
@@ -1003,7 +1003,7 @@ export default function QuoteDetailModal({
                                                 </div>
 
                                                 {art.note && (
-                                                  <div className="text-xs text-slate-400 truncate mt-0.5">
+                                                  <div className="text-xs text-slate-500 truncate mt-0.5">
                                                     {art.note}
                                                   </div>
                                                 )}
@@ -1115,7 +1115,7 @@ export default function QuoteDetailModal({
                           <span className="text-xl">{fmtMoney(totalVal)}</span>
                         </div>
                         {!hasQb && !stale && (
-                          <div className="text-[11px] text-slate-400 -mt-1">
+                          <div className="text-[11px] text-slate-500 -mt-1">
                             Final tax calculated based on ship-to address at checkout.
                           </div>
                         )}
@@ -1312,7 +1312,7 @@ export default function QuoteDetailModal({
 
             <button
               onClick={onClose}
-              className="ml-auto px-4 py-2 text-sm font-semibold text-slate-400 rounded-xl hover:bg-slate-100 transition"
+              className="ml-auto px-4 py-2 text-sm font-semibold text-slate-500 rounded-xl hover:bg-slate-100 transition"
             >
               Close
             </button>
@@ -1342,7 +1342,7 @@ export default function QuoteDetailModal({
                 <div className="w-7 h-7 rounded-lg bg-[#2CA01C] flex items-center justify-center text-white font-black text-xs">QB</div>
                 <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg">QuickBooks</h3>
               </div>
-              <button onClick={() => setShowQBPanel(false)} className="text-slate-400 hover:text-slate-600 text-xl leading-none">✕</button>
+              <button onClick={() => setShowQBPanel(false)} className="text-slate-500 hover:text-slate-600 text-xl leading-none">✕</button>
             </div>
 
             {/* Tabs */}
@@ -1390,7 +1390,7 @@ export default function QuoteDetailModal({
 
             {/* Invoice status */}
             <div className="space-y-2">
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Invoice</div>
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Invoice</div>
               {qbInvoiceId ? (
                 <div className="flex items-center gap-2 p-3 rounded-xl border border-emerald-200 bg-emerald-50">
                   <span className="text-emerald-600 text-lg">✓</span>
@@ -1409,7 +1409,7 @@ export default function QuoteDetailModal({
             {/* Payment link */}
             {qbPaymentLink && (
               <div className="space-y-2">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Payment Link</div>
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Payment Link</div>
                 <div className="flex items-center gap-2 p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
                   <a
                     href={qbPaymentLink}
@@ -1426,18 +1426,18 @@ export default function QuoteDetailModal({
                     {qbCopied ? "Copied!" : "Copy"}
                   </button>
                 </div>
-                <p className="text-xs text-slate-400">Send this link to your customer so they can pay the QB invoice directly.</p>
+                <p className="text-xs text-slate-500">Send this link to your customer so they can pay the QB invoice directly.</p>
               </div>
             )}
 
             {/* Quote details */}
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                <div className="text-xs text-slate-400 mb-0.5">Quote</div>
+                <div className="text-xs text-slate-500 mb-0.5">Quote</div>
                 <div className="font-bold text-slate-800 dark:text-slate-200">#{quote.quote_id}</div>
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                <div className="text-xs text-slate-400 mb-0.5">Amount</div>
+                <div className="text-xs text-slate-500 mb-0.5">Amount</div>
                 <div className="font-bold text-teal-700">{fmtMoney(getQuoteTotalsForDisplay(quote).total)}</div>
               </div>
             </div>
@@ -1534,14 +1534,14 @@ export default function QuoteDetailModal({
                                "bg-slate-100 text-slate-600")
                             }>{ev.status}</span>
                             <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{ev.action}</span>
-                            <span className="text-[10px] text-slate-400 uppercase">{ev.direction}</span>
+                            <span className="text-[10px] text-slate-500 uppercase">{ev.direction}</span>
                           </div>
-                          <span className="text-[10px] text-slate-400">{formatEventTime(ev.created_at)}</span>
+                          <span className="text-[10px] text-slate-500">{formatEventTime(ev.created_at)}</span>
                         </div>
                         {ev.error_message && (
                           <div className="mt-1 text-xs text-red-700 font-mono break-words">{ev.error_message}</div>
                         )}
-                        <div className="mt-1 text-[10px] text-slate-400 flex items-center gap-2 flex-wrap">
+                        <div className="mt-1 text-[10px] text-slate-500 flex items-center gap-2 flex-wrap">
                           {ev.qb_invoice_id && <span>inv #{ev.qb_invoice_id}</span>}
                           {ev.duration_ms != null && <span>{ev.duration_ms}ms</span>}
                           {ev.idempotency_key && <span title={ev.idempotency_key}>idemp ✓</span>}

@@ -193,7 +193,7 @@ export default function Inventory() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Inventory</h2>
-          <p className="text-sm text-slate-400 mt-0.5">{totalItems} items · {fmtMoney(totalValue)} total value</p>
+          <p className="text-sm text-slate-500 mt-0.5">{totalItems} items · {fmtMoney(totalValue)} total value</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setShowCatEditor(v=>!v)} className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-3 py-2 rounded-xl transition hover:border-teal-300">
@@ -215,19 +215,19 @@ export default function Inventory() {
       {/* Stats row */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white border border-slate-100 rounded-xl p-4">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Products</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Products</div>
           <div className="text-2xl font-bold text-slate-800">{grouped.length}</div>
-          <div className="text-[10px] text-slate-400">{totalItems} variants</div>
+          <div className="text-[10px] text-slate-500">{totalItems} variants</div>
         </div>
         <div className={`border rounded-xl p-4 ${low.length > 0 ? "bg-orange-50 border-orange-200" : "bg-white border-slate-100"}`}>
-          <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${low.length > 0 ? "text-orange-500" : "text-slate-400"}`}>Low Stock</div>
+          <div className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${low.length > 0 ? "text-orange-500" : "text-slate-500"}`}>Low Stock</div>
           <div className={`text-2xl font-bold ${low.length > 0 ? "text-orange-600" : "text-slate-800"}`}>{low.length}</div>
-          <div className={`text-[10px] ${low.length > 0 ? "text-orange-400" : "text-slate-400"}`}>need reorder</div>
+          <div className={`text-[10px] ${low.length > 0 ? "text-orange-400" : "text-slate-500"}`}>need reorder</div>
         </div>
         <div className="bg-white border border-slate-100 rounded-xl p-4">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Inventory Value</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Inventory Value</div>
           <div className="text-2xl font-bold text-slate-800">{fmtMoney(totalValue)}</div>
-          <div className="text-[10px] text-slate-400">at cost</div>
+          <div className="text-[10px] text-slate-500">at cost</div>
         </div>
       </div>
 
@@ -326,7 +326,7 @@ export default function Inventory() {
       {/* Search + filters */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
@@ -371,14 +371,14 @@ export default function Inventory() {
                 {/* Expand toggle */}
                 <div className="w-5 flex-shrink-0">
                   {hasVariants ? (
-                    isExpanded ? <ChevronDown className="w-5 h-5 text-slate-400" /> : <ChevronRight className="w-5 h-5 text-slate-400" />
+                    isExpanded ? <ChevronDown className="w-5 h-5 text-slate-500" /> : <ChevronRight className="w-5 h-5 text-slate-500" />
                   ) : <div className="w-5" />}
                 </div>
 
                 {/* Product info */}
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-slate-800">{group.baseName}</div>
-                  <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400">
+                  <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
                     <span>{firstItem.category}</span>
                     {firstItem._shopifyLive && <span className="text-emerald-500 font-semibold">Live</span>}
                     {hasVariants && <span>{group.items.length} variant{group.items.length !== 1 ? "s" : ""}</span>}
@@ -388,8 +388,8 @@ export default function Inventory() {
 
                 {/* Stock summary */}
                 <div className="text-right flex-shrink-0">
-                  <div className="font-bold text-slate-800">{group.totalQty} <span className="text-xs font-normal text-slate-400">{firstItem.unit || "pcs"}</span></div>
-                  <div className="text-xs text-slate-400">{fmtMoney(group.totalValue)}</div>
+                  <div className="font-bold text-slate-800">{group.totalQty} <span className="text-xs font-normal text-slate-500">{firstItem.unit || "pcs"}</span></div>
+                  <div className="text-xs text-slate-500">{fmtMoney(group.totalValue)}</div>
                 </div>
 
                 {/* Status badge */}
@@ -419,7 +419,7 @@ export default function Inventory() {
               {isExpanded && hasVariants && (
                 <div className="border-t border-slate-100 bg-slate-50/50">
                   {/* Variant header */}
-                  <div className="grid grid-cols-12 gap-2 px-5 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                  <div className="grid grid-cols-12 gap-2 px-5 py-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100">
                     <div className="col-span-4">Variant</div>
                     <div className="col-span-2">SKU</div>
                     <div className="col-span-2 text-center">In Stock</div>
@@ -434,7 +434,7 @@ export default function Inventory() {
                       <div className="col-span-4 text-sm font-medium text-slate-700 truncate">
                         {item.variantName || item.item}
                       </div>
-                      <div className="col-span-2 font-mono text-xs text-slate-400 truncate">{item.sku}</div>
+                      <div className="col-span-2 font-mono text-xs text-slate-500 truncate">{item.sku}</div>
                       <div className="col-span-2 flex justify-center">
                         <input type="number" min="0" defaultValue={item.qty}
                           onBlur={e => updateQty(item.id, e.target.value)}
@@ -499,7 +499,7 @@ export default function Inventory() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-900">Edit Item</h3>
-              <button onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setEditing(null)} className="text-slate-500 hover:text-slate-600">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -643,7 +643,7 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-slate-100">
           <h3 className="text-lg font-bold text-slate-900">{group.baseName}</h3>
-          <p className="text-xs text-slate-400 mt-0.5">S&S restock setup · {group.items.length} sizes</p>
+          <p className="text-xs text-slate-500 mt-0.5">S&S restock setup · {group.items.length} sizes</p>
         </div>
 
         <div className="px-6 py-4 space-y-4">
@@ -699,7 +699,7 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
                 );
               })}
             </div>
-            <div className="text-[10px] text-slate-400 mt-1.5 text-center">Current stock on top · target below · needed in orange</div>
+            <div className="text-[10px] text-slate-500 mt-1.5 text-center">Current stock on top · target below · needed in orange</div>
           </div>
         </div>
 
@@ -851,7 +851,7 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <ShoppingCart className="w-5 h-5 text-orange-500" /> S&S Restock Cart
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5">{totalQty} units · {fmtMoney(totalCost)} estimated</p>
+          <p className="text-xs text-slate-500 mt-0.5">{totalQty} units · {fmtMoney(totalCost)} estimated</p>
         </div>
 
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
@@ -860,7 +860,7 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <div className="font-semibold text-sm text-slate-800">{g.product}</div>
-                  <div className="text-xs text-slate-400">Style {g.style} · {g.color}</div>
+                  <div className="text-xs text-slate-500">Style {g.style} · {g.color}</div>
                 </div>
                 <button onClick={() => openOnSS(g.style)}
                   className="text-xs font-semibold text-orange-600 border border-orange-200 px-2.5 py-1 rounded-lg hover:bg-orange-50 transition">
@@ -879,7 +879,7 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
             </div>
           ))}
           {cart.length === 0 && !orderResult && (
-            <div className="px-6 py-8 text-center text-sm text-slate-400">Cart is empty</div>
+            <div className="px-6 py-8 text-center text-sm text-slate-500">Cart is empty</div>
           )}
 
           {orderResult && (

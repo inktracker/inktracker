@@ -126,7 +126,7 @@ function LoginScreen() {
         <div className="text-center mb-6">
           <Package className="w-12 h-12 text-teal-600 mx-auto mb-3" />
           <h1 className="font-display uppercase text-2xl text-slate-900 leading-none">Shop Floor</h1>
-          <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400 mt-2 font-bold">Sign in to view your orders</p>
+          <p className="text-[10px] uppercase tracking-[0.22em] text-slate-500 mt-2 font-bold">Sign in to view your orders</p>
         </div>
         <form onSubmit={handleLogin} className="space-y-3">
           <input type="email" value={email} onChange={e => setEmail(e.target.value)}
@@ -513,7 +513,7 @@ export default function ShopFloor() {
       <div className="min-h-screen bg-slate-100 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-8 h-8 animate-spin text-teal-500 mx-auto mb-3" />
-          <p className="text-sm text-slate-400">Connecting...</p>
+          <p className="text-sm text-slate-500">Connecting...</p>
         </div>
       </div>
     );
@@ -579,7 +579,7 @@ export default function ShopFloor() {
         {/* Order list */}
         <div className={`${selected ? "hidden md:block" : ""} md:w-96 bg-white border-r border-slate-200 overflow-y-auto`}>
           {filtered.length === 0 && (
-            <div className="p-8 text-center text-slate-400 text-sm">No orders</div>
+            <div className="p-8 text-center text-slate-500 text-sm">No orders</div>
           )}
           {filtered.map(order => {
             const active = selected?.id === order.id;
@@ -594,7 +594,7 @@ export default function ShopFloor() {
                     {order.status || "Pre-Press"}
                   </span>
                 </div>
-                <div className="flex items-center justify-between text-xs text-slate-400">
+                <div className="flex items-center justify-between text-xs text-slate-500">
                   <span>{order.order_id} · {getQty(order)} pcs</span>
                   <span className={overdue ? "text-red-500 font-semibold" : ""}>
                     {overdue && "LATE · "}Due {fmtDate(order.due_date)}
@@ -626,7 +626,7 @@ export default function ShopFloor() {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">{customers[selected.customer_id]?.company || selected.customer_name}</h2>
-                    <p className="text-sm text-slate-400">{selected.order_id} · {getQty(selected)} pieces</p>
+                    <p className="text-sm text-slate-500">{selected.order_id} · {getQty(selected)} pieces</p>
                   </div>
                   {isOverdue(selected) && (
                     <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded-full">
@@ -648,7 +648,7 @@ export default function ShopFloor() {
                   the bars on one row, which wrapped awkwardly on phones. */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5">
                 <div className="flex items-center justify-between gap-3 mb-3">
-                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Production Status</h3>
+                  <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Production Status</h3>
                   <span className={`text-xs font-bold px-2.5 py-1 rounded-lg border whitespace-nowrap ${STEP_COLORS[selected.status]?.light || "bg-slate-50"}`}>
                     {selected.status || "Pre-Press"}
                   </span>
@@ -707,7 +707,7 @@ export default function ShopFloor() {
                 return (
                   <div className="bg-white rounded-2xl border border-slate-200 p-5">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Checklist — {step}</h3>
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Checklist — {step}</h3>
                       <span className="text-xs font-bold text-teal-600">{doneCount}/{tasks.length}</span>
                     </div>
                     <div className="flex gap-1 mb-4">
@@ -746,7 +746,7 @@ export default function ShopFloor() {
                                 <p className="text-[10px] text-emerald-500 mt-0.5">{info.by} · {info.at ? new Date(info.at).toLocaleTimeString() : ""}</p>
                               )}
                               {bulkTarget && !done && (
-                                <p className="text-[10px] text-slate-400 mt-0.5">Tap to mark all sizes</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">Tap to mark all sizes</p>
                               )}
                             </div>
                           </button>
@@ -769,7 +769,7 @@ export default function ShopFloor() {
                 if (!art.length) return null;
                 return (
                   <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">
+                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3">
                       Artwork ({art.length})
                     </h3>
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -783,7 +783,7 @@ export default function ShopFloor() {
                         >
                           <div className="min-w-0 flex-1">
                             <div className="text-sm font-semibold text-slate-800 truncate">{a.name}</div>
-                            <div className="text-[11px] text-slate-400 truncate">
+                            <div className="text-[11px] text-slate-500 truncate">
                               {a.colors ? `${a.colors} color${String(a.colors) === "1" ? "" : "s"} · ` : ""}
                               {a.placements?.length ? a.placements.join(", ") : a.source}
                             </div>
@@ -810,15 +810,15 @@ export default function ShopFloor() {
                 return (
                   <div className="bg-white rounded-2xl border border-slate-200 p-5">
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Job Ticket</h3>
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Job Ticket</h3>
                       {stage === "Order Goods" && goodsTotal > 0 && (
                         <span className="text-xs font-bold text-slate-500">
                           <span className="text-emerald-600">{goodsReceived}</span>
-                          <span className="text-slate-400"> received</span>
+                          <span className="text-slate-500"> received</span>
                           {goodsOrdered > 0 && <>
                             <span className="text-slate-300 mx-1.5">·</span>
                             <span className="text-amber-600">{goodsOrdered}</span>
-                            <span className="text-slate-400"> ordered</span>
+                            <span className="text-slate-500"> ordered</span>
                           </>}
                           <span className="text-slate-300 mx-1.5">·</span>
                           <span className="text-slate-500">{goodsTotal} total</span>
@@ -980,11 +980,11 @@ export default function ShopFloor() {
                       aria-expanded={!updatesCollapsed}
                       className={`w-full flex items-center justify-between text-left ${updatesCollapsed ? "" : "mb-3"}`}
                     >
-                      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                         Updates <span className="text-slate-300 font-semibold">({allNotes.length})</span>
                       </h3>
                       <ChevronDown
-                        className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${updatesCollapsed ? "-rotate-90" : "rotate-0"}`}
+                        className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${updatesCollapsed ? "-rotate-90" : "rotate-0"}`}
                         aria-hidden="true"
                       />
                     </button>
@@ -995,7 +995,7 @@ export default function ShopFloor() {
                             <div className="w-2 h-2 rounded-full bg-teal-400 mt-1.5 flex-shrink-0" />
                             <div>
                               <p className="text-slate-700">{n.text}</p>
-                              <p className="text-xs text-slate-400">{n.by} · {n.step} · {n.at ? new Date(n.at).toLocaleString() : ""}</p>
+                              <p className="text-xs text-slate-500">{n.by} · {n.step} · {n.at ? new Date(n.at).toLocaleString() : ""}</p>
                             </div>
                           </div>
                         ))}
@@ -1007,7 +1007,7 @@ export default function ShopFloor() {
 
               {/* Add note */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Add Update</h3>
+                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Add Update</h3>
                 <div className="flex gap-2">
                   <input value={note} onChange={e => setNote(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && sendNote(selected)}

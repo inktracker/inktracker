@@ -221,7 +221,7 @@ export default function SecuritySection() {
 
   if (step === "loading") {
     return (
-      <div className="flex items-center gap-2 text-sm text-slate-400">
+      <div className="flex items-center gap-2 text-sm text-slate-500">
         <Loader2 className="w-4 h-4 animate-spin" />
         Checking MFA status…
       </div>
@@ -240,10 +240,10 @@ export default function SecuritySection() {
       {step === "off" && (
         <div className="space-y-3">
           <div className="flex items-start gap-3">
-            <Shield className="w-5 h-5 text-slate-400 mt-0.5" />
+            <Shield className="w-5 h-5 text-slate-500 mt-0.5" />
             <div>
               <div className="text-sm font-semibold text-slate-700">Two-factor authentication is off</div>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 mt-1">
                 When on, signing in from a new browser will email you a 6-digit code that you'll enter to finish signing in. Catches phished passwords — attacker needs your email too.
               </p>
             </div>
@@ -319,7 +319,7 @@ export default function SecuritySection() {
             <ShieldCheck className="w-5 h-5 text-emerald-500 mt-0.5" />
             <div>
               <div className="text-sm font-semibold text-slate-700">Two-factor authentication is on</div>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-500 mt-1">
                 Sign-ins from new browsers ask you for a 6-digit code we email you. Trusted browsers below skip the code for 30 days.
               </p>
             </div>
@@ -339,7 +339,7 @@ export default function SecuritySection() {
           <div className="border-t border-slate-200 pt-5 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Monitor className="w-4 h-4 text-slate-400" />
+                <Monitor className="w-4 h-4 text-slate-500" />
                 <div className="text-sm font-semibold text-slate-700">Remembered devices</div>
               </div>
               {trustedDevices.length > 0 && (
@@ -353,11 +353,11 @@ export default function SecuritySection() {
               )}
             </div>
             {devicesLoading ? (
-              <div className="text-xs text-slate-400 flex items-center gap-2">
+              <div className="text-xs text-slate-500 flex items-center gap-2">
                 <Loader2 className="w-3 h-3 animate-spin" /> Loading…
               </div>
             ) : trustedDevices.length === 0 ? (
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 No remembered devices. Check "Remember this browser for 30 days" at sign-in to skip the code on this browser next time.
               </p>
             ) : (
@@ -371,7 +371,7 @@ export default function SecuritySection() {
                       <div className="font-semibold text-slate-700 truncate">
                         {d.device_label || "Unknown device"}
                       </div>
-                      <div className="text-slate-400 mt-0.5">
+                      <div className="text-slate-500 mt-0.5">
                         {d.last_used_at
                           ? `Last used ${new Date(d.last_used_at).toLocaleDateString()}`
                           : "Never used"}
@@ -381,7 +381,7 @@ export default function SecuritySection() {
                     <button
                       onClick={() => handleRevokeDevice(d.id)}
                       disabled={busy}
-                      className="text-slate-400 hover:text-red-600 transition disabled:opacity-50"
+                      className="text-slate-500 hover:text-red-600 transition disabled:opacity-50"
                       title="Revoke this device"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -395,14 +395,14 @@ export default function SecuritySection() {
           {recentEvents.length > 0 && (
             <div className="border-t border-slate-200 pt-5 space-y-2">
               <div className="flex items-center gap-2">
-                <Activity className="w-4 h-4 text-slate-400" />
+                <Activity className="w-4 h-4 text-slate-500" />
                 <div className="text-sm font-semibold text-slate-700">Recent activity</div>
               </div>
               <ul className="text-xs text-slate-500 space-y-1">
                 {recentEvents.map((ev, idx) => (
                   <li key={idx} className="flex items-center justify-between gap-3">
                     <span className="font-mono">{formatAuditEvent(ev.event)}</span>
-                    <span className="text-slate-400">
+                    <span className="text-slate-500">
                       {new Date(ev.created_at).toLocaleString()}
                     </span>
                   </li>

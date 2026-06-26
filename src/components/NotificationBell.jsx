@@ -110,7 +110,7 @@ export default function NotificationBell() {
           </div>
           <div className="max-h-[400px] overflow-y-auto">
             {notifs.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-slate-400">No notifications</div>
+              <div className="px-4 py-8 text-center text-sm text-slate-500">No notifications</div>
             ) : (
               notifs.map((n) => (
                 <NotificationItem
@@ -137,7 +137,7 @@ function NotificationItem({ notification, onMarkRead, onClose }) {
   const iconColor =
     notification.severity === "alert"   ? "text-rose-500"  :
     notification.severity === "warning" ? "text-amber-500" :
-    "text-slate-400";
+    "text-slate-500";
 
   // Deep-link to the related entity's detail view when we know how.
   let href = null;
@@ -159,7 +159,7 @@ function NotificationItem({ notification, onMarkRead, onClose }) {
             {isUnread && <span className="w-2 h-2 rounded-full bg-teal-500 flex-shrink-0 mt-1.5" aria-label="unread" />}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-3">{notification.body}</div>
-          <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
+          <div className="text-[10px] text-slate-500 dark:text-slate-500 mt-1">
             {new Date(notification.created_at).toLocaleString()}
           </div>
         </div>

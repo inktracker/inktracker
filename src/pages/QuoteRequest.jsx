@@ -163,7 +163,7 @@ export default function QuoteRequest() {
               shopOwner={shopOwner}
               shop={shop}
             />
-            <div className="text-center mt-10 text-xs text-slate-400">
+            <div className="text-center mt-10 text-xs text-slate-500">
               Questions? Reach out and we'll get back to you within 1 business day.
             </div>
           </>

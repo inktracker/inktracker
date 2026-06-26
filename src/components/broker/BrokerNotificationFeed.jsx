@@ -103,7 +103,7 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
     });
   }
 
-  if (loading) return <div className="text-sm text-slate-400 py-8 text-center">Loading notifications…</div>;
+  if (loading) return <div className="text-sm text-slate-500 py-8 text-center">Loading notifications…</div>;
 
   const unread = notifications.filter(n => !n.read).length;
 
@@ -120,7 +120,7 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
           {unread > 0 && (
             <span className="bg-teal-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{unread} new</span>
           )}
-          {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-400" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-400" />}
+          {expanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
         </button>
         {unread > 0 && expanded && (
           <button
@@ -139,7 +139,7 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
         {notifications.length === 0 && (
           <div className="py-12 text-center">
             <Bell className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-            <p className="text-slate-400 text-sm">No broker activity yet.</p>
+            <p className="text-slate-500 text-sm">No broker activity yet.</p>
           </div>
         )}
         {notifications.map(n => {
@@ -170,7 +170,7 @@ export default function BrokerNotificationFeed({ shopOwner, onUnreadCountChange 
                   )}
                 </div>
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-xs text-slate-400">{timeAgo(n.created_date)}</span>
+                  <span className="text-xs text-slate-500">{timeAgo(n.created_date)}</span>
                 </div>
               </div>
 

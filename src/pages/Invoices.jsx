@@ -249,9 +249,9 @@ export default function Invoices() {
           <div className="text-[10px] text-emerald-400">{filtered.filter(i=>i.paid).length} paid</div>
         </div>
         <div className="bg-slate-50 border border-slate-100 rounded-xl p-2.5 sm:p-4">
-          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Billed</div>
+          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Total Billed</div>
           <div className="text-lg sm:text-2xl font-bold text-slate-700 truncate">{fmtMoney(filteredTotal)}</div>
-          <div className="text-[10px] text-slate-400">{filtered.length} invoices</div>
+          <div className="text-[10px] text-slate-500">{filtered.length} invoices</div>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -276,7 +276,7 @@ export default function Invoices() {
           ))}
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
             className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300" />
-          <span className="text-xs text-slate-400">to</span>
+          <span className="text-xs text-slate-500">to</span>
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             className="text-xs border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300" />
         </div>
@@ -298,7 +298,7 @@ export default function Invoices() {
               { label: "", key: null },
             ].map(h=>(
               <th key={h.label || "action"} onClick={h.key ? () => toggleSort(h.key) : undefined}
-                className={`text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                className={`text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
                 {h.label}{h.key ? sortArrow(h.key) : ""}
               </th>
             ))}
@@ -310,12 +310,12 @@ export default function Invoices() {
             )}
             {sorted.map(inv=>(
               <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 transition cursor-pointer" onClick={() => setSelected(inv)}>
-                <td className="px-4 py-3.5 font-mono text-xs text-slate-400">{inv.invoice_id}</td>
+                <td className="px-4 py-3.5 font-mono text-xs text-slate-500">{inv.invoice_id}</td>
                 <td className="px-4 py-3.5 font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</td>
                 <td className="px-4 py-3.5 text-slate-500">{fmtDate(inv.date)}</td>
                 <td className="px-4 py-3.5 text-slate-500">{fmtDate(inv.due)}</td>
                 <td className="px-4 py-3.5 text-slate-600">{fmtMoney(inv.subtotal)}</td>
-                <td className="px-4 py-3.5 text-slate-400">{fmtMoney(inv.tax)}</td>
+                <td className="px-4 py-3.5 text-slate-500">{fmtMoney(inv.tax)}</td>
                 <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(inv.total)}</td>
                 <td className="px-4 py-3.5">
                   {inv.paid
@@ -341,7 +341,7 @@ export default function Invoices() {
             <div key={inv.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setSelected(inv)}>
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <div className="font-mono text-xs text-slate-400">{inv.invoice_id}</div>
+                  <div className="font-mono text-xs text-slate-500">{inv.invoice_id}</div>
                   <div className="font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</div>
                 </div>
                 {inv.paid

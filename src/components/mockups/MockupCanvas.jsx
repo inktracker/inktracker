@@ -387,7 +387,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
               <input type="range" min="5" max="80" value={wandTolerance}
                 onChange={e => setWandTolerance(parseInt(e.target.value))}
                 className="flex-1 h-1.5" />
-              <span className="text-[10px] text-slate-400 w-6 text-right">{wandTolerance}</span>
+              <span className="text-[10px] text-slate-500 w-6 text-right">{wandTolerance}</span>
             </div>
           )}
 
@@ -409,7 +409,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
                 <input type="range" min="30" max="230" value={inkThreshold}
                   onChange={e => setInkThreshold(parseInt(e.target.value))}
                   className="flex-1 h-1.5" />
-                <span className="text-[10px] text-slate-400 w-6 text-right">{inkThreshold}</span>
+                <span className="text-[10px] text-slate-500 w-6 text-right">{inkThreshold}</span>
               </div>
             )}
           </div>
@@ -420,7 +420,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
             <input type="range" min="50" max="200" value={contrast}
               onChange={e => setContrast(parseInt(e.target.value))}
               className="flex-1 h-1.5" />
-            <span className="text-[10px] text-slate-400 w-8 text-right">{contrast}%</span>
+            <span className="text-[10px] text-slate-500 w-8 text-right">{contrast}%</span>
           </div>
 
           {/* Rotation */}
@@ -429,7 +429,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
             <input type="range" min="0" max="359" value={rotation}
               onChange={e => setRotation(parseInt(e.target.value))}
               className="flex-1 h-1.5" />
-            <span className="text-[10px] text-slate-400 w-8 text-right">{rotation}°</span>
+            <span className="text-[10px] text-slate-500 w-8 text-right">{rotation}°</span>
           </div>
         </div>
       )}

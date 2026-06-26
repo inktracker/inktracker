@@ -336,7 +336,7 @@ export default function PurchaseOrders() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h2 className="text-2xl font-bold text-slate-900">Purchase Orders</h2>
-          <p className="text-sm text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 mt-0.5">
             Build supplier orders, pair jobs to hit free freight, submit when ready.
           </p>
         </div>
@@ -408,7 +408,7 @@ export default function PurchaseOrders() {
         {/* List */}
         <div className="space-y-2">
           {visible.length === 0 && (
-            <div className="text-sm text-slate-400 bg-white border border-slate-100 rounded-xl p-6 text-center">
+            <div className="text-sm text-slate-500 bg-white border border-slate-100 rounded-xl p-6 text-center">
               {tab === "drafts" ? "No drafts yet. Click New PO to start." : "No submitted orders yet."}
             </div>
           )}
@@ -446,7 +446,7 @@ export default function PurchaseOrders() {
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold text-sm text-slate-800 truncate">{po.reference || "Untitled PO"}</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">
+                      <div className="text-[11px] text-slate-500 mt-0.5">
                         {po.supplier} · {po.items?.length || 0} items · {fmtMoney(subtotal)}
                       </div>
                     </div>
@@ -465,7 +465,7 @@ export default function PurchaseOrders() {
                         style={{ width: `${fp.percentage}%` }}
                       />
                     </div>
-                    <div className="text-[10px] text-slate-400 mt-1">
+                    <div className="text-[10px] text-slate-500 mt-1">
                       {fp.qualifies
                         ? `Free freight ✓ (${fmtMoney(subtotal)} of ${fmtMoney(t)})`
                         : `${fmtMoney(fp.remaining)} to free freight`}
@@ -480,7 +480,7 @@ export default function PurchaseOrders() {
         {/* Detail */}
         <div>
           {!selected ? (
-            <div className="text-sm text-slate-400 bg-white border border-slate-100 rounded-xl p-10 text-center">
+            <div className="text-sm text-slate-500 bg-white border border-slate-100 rounded-xl p-10 text-center">
               Select a PO to view details, or click <strong>New PO</strong>.
             </div>
           ) : (
@@ -534,7 +534,7 @@ export default function PurchaseOrders() {
           <button
             onClick={mergeMultipleSelected}
             disabled={mergeSelection.size < 2 || merging}
-            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 disabled:text-slate-400 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
           >
             {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
             Merge {mergeSelection.size >= 2 ? mergeSelection.size : ""}
@@ -585,7 +585,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
           />
           {!isLocked && po.supplier === "AS Colour" && (
             <div className={`text-[10px] mt-0.5 ${
-              (po.reference || "").length > AC_REFERENCE_MAX ? "text-red-500" : "text-slate-400"
+              (po.reference || "").length > AC_REFERENCE_MAX ? "text-red-500" : "text-slate-500"
             }`}>
               {(po.reference || "").length}/{AC_REFERENCE_MAX} (AS Colour limit)
             </div>
@@ -598,7 +598,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                 <button
                   onClick={onMergeOpen}
                   title="Combine this draft into another draft to hit free freight"
-                  className="text-slate-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50"
+                  className="text-slate-500 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50"
                 >
                   <GitMerge className="w-4 h-4" />
                 </button>
@@ -611,7 +611,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                 )}
               </>
             )}
-            <button onClick={onDelete} className="text-slate-400 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50">
+            <button onClick={onDelete} className="text-slate-500 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50">
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
@@ -649,9 +649,9 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
 
       {/* Items */}
       <div>
-        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Items</div>
+        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Items</div>
         {!po.items?.length ? (
-          <div className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-lg p-6 text-center">
+          <div className="text-sm text-slate-500 border border-dashed border-slate-200 rounded-lg p-6 text-center">
             No items yet. Add them from the AS Colour catalog or inventory.
           </div>
         ) : (
@@ -756,7 +756,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
       {/* Ship-to / shipping method / notes */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Ship to</div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ship to</div>
           <ShipToEditor
             value={po.ship_to || {}}
             disabled={isLocked}
@@ -765,7 +765,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
         </div>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Shipping method</label>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Shipping method</label>
             <select
               value={po.shipping_method || ""}
               onChange={(e) => onPatch({ shipping_method: e.target.value })}
@@ -794,7 +794,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
               Colour warehouse. Items show their routed warehouse next
               to the SKU. */}
           <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Order notes</label>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Order notes</label>
             <textarea
               value={po.notes || ""}
               onChange={(e) => onPatch({ notes: e.target.value })}
@@ -804,7 +804,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
             />
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">Courier instructions</label>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Courier instructions</label>
             <textarea
               value={po.courier_instructions || ""}
               onChange={(e) => onPatch({ courier_instructions: e.target.value })}
@@ -934,7 +934,7 @@ function ShipToEditor({ value, disabled, onChange }) {
         {field("countryCode", "Country (e.g. US)", { required: true })}
         {field("phone", "Phone")}
       </div>
-      <div className="text-[10px] text-slate-400">* required by AS Colour</div>
+      <div className="text-[10px] text-slate-500">* required by AS Colour</div>
     </div>
   );
 }
@@ -1026,7 +1026,7 @@ function MergePicker({ targets, onClose, onPick }) {
                 <div className="text-sm font-semibold text-slate-800 truncate">
                   {t.reference || "Untitled PO"}
                 </div>
-                <div className="text-[11px] text-slate-400">
+                <div className="text-[11px] text-slate-500">
                   {t.items?.length || 0} items · {fmtMoney(subtotal)}
                 </div>
               </button>

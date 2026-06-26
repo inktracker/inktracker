@@ -24,7 +24,7 @@ function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
       <div>
         <div className="text-2xl font-bold text-slate-900">{value}</div>
         <div className="text-sm font-semibold text-slate-500">{label}</div>
-        {sub && <div className="text-xs text-slate-400 mt-0.5">{sub}</div>}
+        {sub && <div className="text-xs text-slate-500 mt-0.5">{sub}</div>}
       </div>
     </div>
   );
@@ -122,13 +122,13 @@ export default function BrokerPerformance({ orders = [] }) {
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
           <div className="text-sm font-bold text-slate-800">Orders in range</div>
-          <div className="text-xs text-slate-400">
+          <div className="text-xs text-slate-500">
             {totals.count} {totals.count === 1 ? "order" : "orders"}
           </div>
         </div>
 
         {rows.length === 0 ? (
-          <div className="px-5 py-10 text-center text-sm text-slate-400">
+          <div className="px-5 py-10 text-center text-sm text-slate-500">
             No orders in this date range.
           </div>
         ) : (

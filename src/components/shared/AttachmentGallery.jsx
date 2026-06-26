@@ -55,7 +55,7 @@ export default function AttachmentGallery({
   return (
     <div className="space-y-2">
       {title && (
-        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+        <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-slate-500">
           <Paperclip className="w-3.5 h-3.5" />
           {title}
           {items.length > 0 && (
@@ -110,11 +110,11 @@ export default function AttachmentGallery({
                 </div>
                 <div className="px-2.5 py-2 space-y-0.5">
                   <div className="flex items-center gap-1 text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
-                    {img ? <ImageIcon className="w-3 h-3 text-slate-400 shrink-0" /> : <FileText className="w-3 h-3 text-slate-400 shrink-0" />}
+                    {img ? <ImageIcon className="w-3 h-3 text-slate-500 shrink-0" /> : <FileText className="w-3 h-3 text-slate-500 shrink-0" />}
                     <span className="truncate">{art.name}</span>
                   </div>
-                  {art.placements?.length > 0 && <div className="text-[10px] text-slate-400 truncate">{art.placements.join(", ")}</div>}
-                  {art.colors && <div className="text-[10px] text-slate-400">{art.colors} {Number(art.colors) === 1 ? "color" : "colors"}</div>}
+                  {art.placements?.length > 0 && <div className="text-[10px] text-slate-500 truncate">{art.placements.join(", ")}</div>}
+                  {art.colors && <div className="text-[10px] text-slate-500">{art.colors} {Number(art.colors) === 1 ? "color" : "colors"}</div>}
                 </div>
               </button>
             </div>
@@ -126,7 +126,7 @@ export default function AttachmentGallery({
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="aspect-[4/3] sm:aspect-auto sm:min-h-[7rem] flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-400 hover:border-teal-300 hover:text-teal-500 transition disabled:opacity-50"
+            className="aspect-[4/3] sm:aspect-auto sm:min-h-[7rem] flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-700 text-slate-500 hover:border-teal-300 hover:text-teal-500 transition disabled:opacity-50"
           >
             {uploading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Plus className="w-6 h-6" />}
             <span className="text-xs font-semibold">{uploading ? "Uploading…" : "Add files"}</span>

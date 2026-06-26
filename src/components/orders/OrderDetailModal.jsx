@@ -789,7 +789,7 @@ export default function OrderDetailModal({
       >
         <div className="flex justify-between items-start px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700">
           <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">
               {order.order_id} {order.quote_id && `· ${order.quote_id}`}
             </div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
@@ -797,10 +797,10 @@ export default function OrderDetailModal({
             </h2>
             <div className="flex flex-wrap items-center gap-2 mt-0.5">
               {displayJobTitle && (
-                <div className="text-sm text-slate-400">Job: {displayJobTitle}</div>
+                <div className="text-sm text-slate-500">Job: {displayJobTitle}</div>
               )}
               {order.due_date && (
-                <div className="text-sm text-slate-400">Due: {fmtDate(order.due_date)}</div>
+                <div className="text-sm text-slate-500">Due: {fmtDate(order.due_date)}</div>
               )}
               {artworkFiles.length > 0 && (
                 <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-full">
@@ -832,7 +832,7 @@ export default function OrderDetailModal({
             )}
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 text-lg leading-none"
+              className="text-slate-500 hover:text-slate-600 text-lg leading-none"
             >
               ✕
             </button>
@@ -934,7 +934,7 @@ export default function OrderDetailModal({
                         {li.garmentColor && (
                           <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>
                         )}
-                        <span className="ml-2 text-xs text-slate-400">
+                        <span className="ml-2 text-xs text-slate-500">
                           Wholesale: {fmtMoney(li.garmentCost)}
                         </span>
                       </div>
@@ -950,7 +950,7 @@ export default function OrderDetailModal({
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                              <td className="px-4 py-2 text-xs text-slate-400 font-semibold">
+                              <td className="px-4 py-2 text-xs text-slate-500 font-semibold">
                                 Size
                               </td>
                               {activeSizes.map((sz) => (
@@ -983,7 +983,7 @@ export default function OrderDetailModal({
                             </tr>
                             {r && (
                               <tr>
-                                <td className="px-4 py-2 text-xs text-slate-400">Price/ea</td>
+                                <td className="px-4 py-2 text-xs text-slate-500">Price/ea</td>
                                 {activeSizes.map((sz) => (
                                   <td
                                     key={sz}
@@ -1043,7 +1043,7 @@ export default function OrderDetailModal({
                                 <span className="text-teal-600 font-medium">{imp.pantones}</span>
                               )}
                               {imp.details && (
-                                <span className="text-slate-400 italic">{imp.details}</span>
+                                <span className="text-slate-500 italic">{imp.details}</span>
                               )}
                             </div>
                             {(imp.width || imp.height) && (
@@ -1064,7 +1064,7 @@ export default function OrderDetailModal({
                                       {art.name}
                                     </div>
                                     {art.note && (
-                                      <div className="text-xs text-slate-400 truncate mt-0.5">
+                                      <div className="text-xs text-slate-500 truncate mt-0.5">
                                         {art.note}
                                       </div>
                                     )}
@@ -1246,7 +1246,7 @@ export default function OrderDetailModal({
                         return (
                           <div>
                             <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Checklist</span>
+                              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Checklist</span>
                               <span className="text-xs font-bold text-teal-600">{doneCount}/{tasks.length}</span>
                             </div>
                             <div className="space-y-1">
@@ -1294,7 +1294,7 @@ export default function OrderDetailModal({
                         if (step === "Printing" && imprints.length === 0) return null;
                         return (
                           <div key={liIdx}>
-                            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">
+                            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
                               {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
                             </div>
                             <div className="flex flex-wrap gap-2">
@@ -1424,14 +1424,14 @@ export default function OrderDetailModal({
                 <button onClick={() => setShowShipping(!showShipping)}
                   className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition text-left">
                   <div className="flex items-center gap-2">
-                    <Truck className="w-4 h-4 text-slate-400" />
+                    <Truck className="w-4 h-4 text-slate-500" />
                     <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Shipping</span>
                   </div>
                   <div className="flex items-center gap-3">
                     {shipTracking && (
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-blue-700 bg-blue-50">{shipTracking}</span>
                     )}
-                    <span className="text-xs text-slate-400">{showShipping ? "▲" : "▼"}</span>
+                    <span className="text-xs text-slate-500">{showShipping ? "▲" : "▼"}</span>
                   </div>
                 </button>
                 {showShipping && (
@@ -1450,7 +1450,7 @@ export default function OrderDetailModal({
                             <div className="text-xs text-slate-500 mt-0.5">
                               Tracking: <span className="font-mono font-semibold text-slate-700">{shipTracking}</span>
                             </div>
-                            {shipStatus && <div className="text-xs text-slate-400 mt-0.5">Status: {shipStatus}</div>}
+                            {shipStatus && <div className="text-xs text-slate-500 mt-0.5">Status: {shipStatus}</div>}
                           </div>
                           <div className="flex gap-2 shrink-0">
                             <a
@@ -1477,7 +1477,7 @@ export default function OrderDetailModal({
                       <>
                         {/* Ship-to Address */}
                         <div>
-                          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Ship To</div>
+                          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Ship To</div>
                           <div className="space-y-2">
                             <input type="text" placeholder="Street address" value={shipStreet} onChange={e => setShipStreet(e.target.value)}
                               className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
@@ -1499,25 +1499,25 @@ export default function OrderDetailModal({
 
                         {/* Package Dimensions */}
                         <div>
-                          <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Package</div>
+                          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Package</div>
                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                             <div>
-                              <label className="text-[10px] text-slate-400">Weight (lbs)</label>
+                              <label className="text-[10px] text-slate-500">Weight (lbs)</label>
                               <input type="number" min="0" step="0.1" value={shipWeight} onChange={e => setShipWeight(e.target.value)}
                                 className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                             </div>
                             <div>
-                              <label className="text-[10px] text-slate-400">Length (in)</label>
+                              <label className="text-[10px] text-slate-500">Length (in)</label>
                               <input type="number" min="0" step="1" value={shipLength} onChange={e => setShipLength(e.target.value)}
                                 className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                             </div>
                             <div>
-                              <label className="text-[10px] text-slate-400">Width (in)</label>
+                              <label className="text-[10px] text-slate-500">Width (in)</label>
                               <input type="number" min="0" step="1" value={shipWidth} onChange={e => setShipWidth(e.target.value)}
                                 className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                             </div>
                             <div>
-                              <label className="text-[10px] text-slate-400">Height (in)</label>
+                              <label className="text-[10px] text-slate-500">Height (in)</label>
                               <input type="number" min="0" step="1" value={shipHeight} onChange={e => setShipHeight(e.target.value)}
                                 className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                             </div>
@@ -1539,7 +1539,7 @@ export default function OrderDetailModal({
                         {/* Rate Results */}
                         {shipRates.length > 0 && (
                           <div>
-                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-2">Select Service</div>
+                            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Select Service</div>
                             <div className="space-y-1.5">
                               {shipRates.map(r => (
                                 <button key={r.serviceType} onClick={() => setShipService(r.serviceType)}
@@ -1550,7 +1550,7 @@ export default function OrderDetailModal({
                                   }`}>
                                   <div>
                                     <span className="font-semibold">{r.serviceName}</span>
-                                    {r.transitDays && <span className="text-xs text-slate-400 ml-2">{r.transitDays}</span>}
+                                    {r.transitDays && <span className="text-xs text-slate-500 ml-2">{r.transitDays}</span>}
                                   </div>
                                   <span className="font-bold">${(Number(r.totalCharge) || 0).toFixed(2)}</span>
                                 </button>
@@ -1588,36 +1588,36 @@ export default function OrderDetailModal({
                         {fmtMoney((order.total || 0) - (parseFloat(actualCost) || order.actual_cost || 0))} margin
                       </span>
                     )}
-                    <span className="text-xs text-slate-400">{showJobCost ? "▲" : "▼"}</span>
+                    <span className="text-xs text-slate-500">{showJobCost ? "▲" : "▼"}</span>
                   </div>
                 </button>
                 {showJobCost && (
                   <div className="p-4 space-y-4">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Estimated Hours</label>
+                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Estimated Hours</label>
                         <input type="number" min="0" step="0.25" value={estimatedHours} onChange={e => setEstimatedHours(e.target.value)}
                           placeholder="planning"
                           className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Actual Hours</label>
+                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Actual Hours</label>
                         <input type="number" min="0" step="0.25" value={laborHours} onChange={e => setLaborHours(e.target.value)}
                           placeholder="after run"
                           className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Material Cost</label>
+                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Material Cost</label>
                         <div className="relative mt-0.5">
-                          <span className="absolute left-2 top-1.5 text-slate-400 text-sm">$</span>
+                          <span className="absolute left-2 top-1.5 text-slate-500 text-sm">$</span>
                           <input type="number" min="0" step="0.01" value={actualCost} onChange={e => setActualCost(e.target.value)}
                             className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                         </div>
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Labor Cost</label>
+                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Labor Cost</label>
                         <div className="relative mt-0.5">
-                          <span className="absolute left-2 top-1.5 text-slate-400 text-sm">$</span>
+                          <span className="absolute left-2 top-1.5 text-slate-500 text-sm">$</span>
                           <input type="number" min="0" step="0.01" value={laborCost} onChange={e => setLaborCost(e.target.value)}
                             className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                         </div>
@@ -1625,7 +1625,7 @@ export default function OrderDetailModal({
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Assigned Press</label>
+                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Assigned Press</label>
                         {presses.length > 0 ? (
                           <select
                             value={assignedPress}
@@ -1652,7 +1652,7 @@ export default function OrderDetailModal({
                         )}
                       </div>
                       <div>
-                        <label className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase">Assigned Operator</label>
+                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Assigned Operator</label>
                         {employees.length > 0 ? (
                           <select
                             value={assignedOperator}
@@ -1687,7 +1687,7 @@ export default function OrderDetailModal({
                       const marginPct = revenue > 0 ? ((margin / revenue) * 100).toFixed(1) : 0;
                       return (
                         <div className="bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-1.5">
-                          <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Job P&L</div>
+                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Job P&L</div>
                           <div className="flex justify-between text-sm"><span className="text-slate-500">Revenue</span><span className="font-semibold text-slate-800 dark:text-slate-200">{fmtMoney(revenue)}</span></div>
                           <div className="flex justify-between text-sm"><span className="text-slate-500">Material Cost</span><span className="font-semibold text-slate-800 dark:text-slate-200">−{fmtMoney(parseFloat(actualCost) || 0)}</span></div>
                           <div className="flex justify-between text-sm"><span className="text-slate-500">Labor Cost</span><span className="font-semibold text-slate-800 dark:text-slate-200">−{fmtMoney(parseFloat(laborCost) || 0)}</span></div>

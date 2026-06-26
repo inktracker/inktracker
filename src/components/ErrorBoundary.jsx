@@ -60,7 +60,7 @@ export default class ErrorBoundary extends Component {
             </button>
           </div>
           {!inline && (
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               Persistent issue? Email <a href="mailto:support@inktracker.app" className="text-teal-600 hover:text-teal-700 font-semibold">support@inktracker.app</a> with the message above.
             </p>
           )}

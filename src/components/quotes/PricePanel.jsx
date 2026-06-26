@@ -80,7 +80,7 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
 
         {r.extraCost > 0 && (
           <div className="flex justify-between text-xs">
-            <span className="text-slate-400">Add-ons</span>
+            <span className="text-slate-500">Add-ons</span>
             <span className="text-white font-semibold">{fmtMoney(r.extraCost)}</span>
           </div>
         )}
@@ -96,20 +96,20 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
       {onChange && (
         <div className="px-4 py-3 bg-slate-950 border-t border-slate-800">
           <div className="flex items-center justify-between mb-1.5">
-            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
               Override price per piece
             </div>
             {hasOverride && (
               <button
                 onClick={() => onChange({ ...li, clientPpp: null })}
-                className="text-[10px] text-slate-400 hover:text-white underline"
+                className="text-[10px] text-slate-500 hover:text-white underline"
               >
                 reset
               </button>
             )}
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-slate-400 text-xs">$</span>
+            <span className="text-slate-500 text-xs">$</span>
             <input
               type="number"
               min="0"
@@ -135,7 +135,7 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
               placeholder={(qty > 0 ? suggestedPpp : 0).toFixed(2)}
               className="w-24 text-xs bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-white focus:outline-none focus:ring-1 focus:ring-teal-400"
             />
-            <span className="text-xs text-slate-400">/pc</span>
+            <span className="text-xs text-slate-500">/pc</span>
             {!hasOverride && (
               <span className="text-[10px] text-slate-500 ml-1">(suggested)</span>
             )}

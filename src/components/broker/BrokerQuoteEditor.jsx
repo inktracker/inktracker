@@ -361,7 +361,7 @@ export default function BrokerQuoteEditor({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-2xl">
           <div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
               {q.quote_id}
             </div>
             <h2 className="text-xl font-bold text-slate-900">Quote Builder</h2>
@@ -370,7 +370,7 @@ export default function BrokerQuoteEditor({
           <div className="flex gap-2 items-center">
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 text-lg leading-none"
+              className="text-slate-500 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 text-lg leading-none"
             >
               ✕
             </button>
@@ -607,7 +607,7 @@ export default function BrokerQuoteEditor({
                     >
                       {opt.label}
                     </div>
-                    <div className="text-xs text-slate-400">{opt.sub}</div>
+                    <div className="text-xs text-slate-500">{opt.sub}</div>
                   </button>
                 ))}
               </div>
@@ -664,7 +664,7 @@ export default function BrokerQuoteEditor({
             </div>
 
             <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-2.5">
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+              <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                 Your Broker Price
               </div>
 
@@ -686,7 +686,7 @@ export default function BrokerQuoteEditor({
                     onChange={(e) => setQ({ ...q, discount: e.target.value })}
                     className="w-24 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-300"
                   />
-                  <span className="text-slate-400 text-xs">%</span>
+                  <span className="text-slate-500 text-xs">%</span>
                 </div>
               </div>
 
@@ -716,13 +716,13 @@ export default function BrokerQuoteEditor({
                     step="0.001"
                     value={0}
                     disabled
-                    className="w-20 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 bg-slate-100 text-slate-400"
+                    className="w-20 text-sm text-right border border-slate-200 rounded-lg px-2 py-1 bg-slate-100 text-slate-500"
                   />
-                  <span className="text-slate-400 text-xs">%</span>
+                  <span className="text-slate-500 text-xs">%</span>
                 </div>
               </div>
 
-              <div className="flex justify-between text-xs text-slate-400 italic">
+              <div className="flex justify-between text-xs text-slate-500 italic">
                 <span>Tax</span>
                 <span>{fmtMoney(0)}</span>
               </div>
@@ -785,7 +785,7 @@ export default function BrokerQuoteEditor({
 
               <div className="mt-3 border-t border-slate-200 pt-3 space-y-1.5">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
                     Shop Rate
                   </div>
                   {isTaxExempt && (
@@ -837,7 +837,7 @@ export default function BrokerQuoteEditor({
                           className="w-12 text-xs text-center border border-slate-200 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-teal-300"
                           title="Tax rate you charge your client (the shop never charges you tax)"
                         />
-                        <span className="text-slate-400">%</span>
+                        <span className="text-slate-500">%</span>
                       </>
                     )}
                   </div>
@@ -852,7 +852,7 @@ export default function BrokerQuoteEditor({
                     {fmtMoney(retailTotals.total)}
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-400 italic">
+                <div className="text-[10px] text-slate-500 italic">
                   Edit the per-piece price on each line to adjust the client total.
                 </div>
 

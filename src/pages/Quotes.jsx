@@ -471,7 +471,7 @@ export default function Quotes() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-slate-100">
               <h3 className="text-lg font-bold text-slate-900">Quote from Email</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Paste the email content and we'll create a draft quote</p>
+              <p className="text-xs text-slate-500 mt-0.5">Paste the email content and we'll create a draft quote</p>
             </div>
             <div className="px-6 py-4">
               <textarea value={emailText} onChange={e => setEmailText(e.target.value)}
@@ -574,7 +574,7 @@ export default function Quotes() {
         />
       </div>
 
-      <div className="text-xs text-slate-400 font-medium">
+      <div className="text-xs text-slate-500 font-medium">
         {totalFiltered} quote{totalFiltered !== 1 ? "s" : ""}
         {totalPages > 1 && ` · page ${page} of ${totalPages}`}
       </div>
@@ -597,7 +597,7 @@ export default function Quotes() {
                 { label: "", key: null },
               ].map((h, idx) => (
                 <th key={h.label || `col-${idx}`} onClick={h.key ? () => toggleSort(h.key) : undefined}
-                  className={`text-left px-5 py-3 text-xs font-semibold text-slate-400 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                  className={`text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
                   {h.label}{h.key ? sortArrow(h.key) : ""}
                 </th>
               ))}
@@ -656,7 +656,7 @@ export default function Quotes() {
                             : ""}
                         </div>
                         {q.customer_name && (
-                          <div className="text-xs text-slate-400 mt-0.5 truncate">
+                          <div className="text-xs text-slate-500 mt-0.5 truncate">
                             Reference: {q.customer_name}
                           </div>
                         )}
@@ -726,7 +726,7 @@ export default function Quotes() {
                             : ""}
                         </div>
                         {q.customer_name && (
-                          <div className="text-xs text-slate-400 truncate">
+                          <div className="text-xs text-slate-500 truncate">
                             Reference: {q.customer_name}
                           </div>
                         )}

@@ -334,9 +334,9 @@ export default function BrokerManager() {
           <h3 className="text-lg font-semibold text-slate-900">Broker Management</h3>
         </div>
         {expanded ? (
-          <ChevronUp className="w-4 h-4 text-slate-400" />
+          <ChevronUp className="w-4 h-4 text-slate-500" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-slate-400" />
+          <ChevronDown className="w-4 h-4 text-slate-500" />
         )}
       </button>
 
@@ -375,7 +375,7 @@ export default function BrokerManager() {
             </div>
 
             <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={query}
@@ -387,9 +387,9 @@ export default function BrokerManager() {
           </div>
 
           {loading ? (
-            <div className="text-slate-400 text-sm">Loading brokers…</div>
+            <div className="text-slate-500 text-sm">Loading brokers…</div>
           ) : filteredBrokers.length === 0 ? (
-            <div className="text-slate-400 text-sm bg-slate-50 rounded-xl px-4 py-6 text-center border border-slate-200">
+            <div className="text-slate-500 text-sm bg-slate-50 rounded-xl px-4 py-6 text-center border border-slate-200">
               No broker accounts found.
             </div>
           ) : (
@@ -459,7 +459,7 @@ export default function BrokerManager() {
                         <div className="flex items-center gap-4">
                           <div className="grid grid-cols-3 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 min-w-[220px] text-center">
                             <div>
-                              <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
                                 Verified
                               </div>
                               <div className="text-lg font-semibold text-slate-900">
@@ -467,7 +467,7 @@ export default function BrokerManager() {
                               </div>
                             </div>
                             <div>
-                              <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
                                 Pending
                               </div>
                               <div className="text-lg font-semibold text-slate-900">
@@ -475,7 +475,7 @@ export default function BrokerManager() {
                               </div>
                             </div>
                             <div>
-                              <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
                                 Issues
                               </div>
                               <div className="text-lg font-semibold text-slate-900">
@@ -489,9 +489,9 @@ export default function BrokerManager() {
                           </div>
 
                           {isOpen ? (
-                            <ChevronUp className="w-5 h-5 text-slate-400" />
+                            <ChevronUp className="w-5 h-5 text-slate-500" />
                           ) : (
-                            <ChevronDown className="w-5 h-5 text-slate-400" />
+                            <ChevronDown className="w-5 h-5 text-slate-500" />
                           )}
                         </div>
                       </div>
@@ -515,7 +515,7 @@ export default function BrokerManager() {
 
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1 flex items-center gap-2">
+                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1 flex items-center gap-2">
                                   <Phone className="w-3.5 h-3.5" />
                                   Phone
                                 </div>
@@ -525,7 +525,7 @@ export default function BrokerManager() {
                               </div>
 
                               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1 flex items-center gap-2">
+                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1 flex items-center gap-2">
                                   <Mail className="w-3.5 h-3.5" />
                                   Email
                                 </div>
@@ -535,7 +535,7 @@ export default function BrokerManager() {
                               </div>
 
                               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1 flex items-center gap-2">
+                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1 flex items-center gap-2">
                                   <Building2 className="w-3.5 h-3.5" />
                                   Company
                                 </div>
@@ -545,7 +545,7 @@ export default function BrokerManager() {
                               </div>
 
                               <div className="rounded-xl border border-slate-200 bg-white p-3">
-                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1 flex items-center gap-2">
+                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1 flex items-center gap-2">
                                   <MapPin className="w-3.5 h-3.5" />
                                   Address
                                 </div>
@@ -555,7 +555,7 @@ export default function BrokerManager() {
                               </div>
 
                               <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white p-3">
-                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">
+                                <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">
                                   Notes
                                 </div>
                                 <div className="text-sm text-slate-700">
@@ -571,7 +571,7 @@ export default function BrokerManager() {
                             </div>
 
                             {shopOwners.length === 0 ? (
-                              <div className="text-sm text-slate-400">No shop owners found.</div>
+                              <div className="text-sm text-slate-500">No shop owners found.</div>
                             ) : (
                               <div className="flex flex-wrap gap-2">
                                 {shopOwners.map((shop) => {
@@ -621,7 +621,7 @@ export default function BrokerManager() {
                                     <div className="text-sm font-semibold text-slate-900">
                                       {cred.title}
                                     </div>
-                                    <div className="text-xs text-slate-400 mt-1">
+                                    <div className="text-xs text-slate-500 mt-1">
                                       {cred.file || "No file uploaded yet"}
                                     </div>
                                   </div>
@@ -638,7 +638,7 @@ export default function BrokerManager() {
 
                                 <div className="grid gap-3 sm:grid-cols-2">
                                   <div className="rounded-lg bg-slate-50 p-3">
-                                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                                    <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
                                       Number
                                     </div>
                                     <div className="text-sm text-slate-700 font-medium mt-1">
@@ -647,7 +647,7 @@ export default function BrokerManager() {
                                   </div>
 
                                   <div className="rounded-lg bg-slate-50 p-3">
-                                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                                    <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
                                       State
                                     </div>
                                     <div className="text-sm text-slate-700 font-medium mt-1">
@@ -656,7 +656,7 @@ export default function BrokerManager() {
                                   </div>
 
                                   <div className="rounded-lg bg-slate-50 p-3">
-                                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                                    <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
                                       Expiration
                                     </div>
                                     <div className="text-sm text-slate-700 font-medium mt-1">
@@ -665,7 +665,7 @@ export default function BrokerManager() {
                                   </div>
 
                                   <div className="rounded-lg bg-slate-50 p-3">
-                                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">
+                                    <div className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
                                       Verified On
                                     </div>
                                     <div className="text-sm text-slate-700 font-medium mt-1">
@@ -787,7 +787,7 @@ export default function BrokerManager() {
                       </div>
 
                       {shopOwners.length === 0 ? (
-                        <div className="text-sm text-slate-400">No shop owners found.</div>
+                        <div className="text-sm text-slate-500">No shop owners found.</div>
                       ) : (
                         <div className="flex flex-wrap gap-2">
                           {shopOwners.map((shop) => {
@@ -836,7 +836,7 @@ export default function BrokerManager() {
                               <div className="font-semibold text-slate-900">
                                 {cred.title}
                               </div>
-                              <div className="text-xs text-slate-400 mt-1">
+                              <div className="text-xs text-slate-500 mt-1">
                                 Track upload, status, expiration, and verification.
                               </div>
                             </div>
@@ -875,7 +875,7 @@ export default function BrokerManager() {
                                 File
                               </label>
                               <div className="relative">
-                                <Upload className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                <Upload className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                                 <input
                                   value={cred.file || ""}
                                   onChange={(e) =>

@@ -568,7 +568,7 @@ export default function BrokerLineItemEditor({
         <div className="flex items-center justify-between">
           <button
             onClick={() => setIsCollapsed(!isCollapsed)}
-            className="text-sm text-slate-400 hover:text-slate-600 font-semibold transition"
+            className="text-sm text-slate-500 hover:text-slate-600 font-semibold transition"
           >
             {isCollapsed ? "▶ Expand" : "▼ Collapse"}
           </button>
@@ -594,7 +594,7 @@ export default function BrokerLineItemEditor({
 
         <div className="grid grid-cols-5 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
               Style #
               {ssLoading && <span className="ml-1 text-teal-400 normal-case font-normal">Looking up…</span>}
             </label>
@@ -614,7 +614,7 @@ export default function BrokerLineItemEditor({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
               Category
             </label>
             <select
@@ -630,7 +630,7 @@ export default function BrokerLineItemEditor({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
               Brand
             </label>
             {brandOptions.length > 1 && !customBrand ? (
@@ -686,7 +686,7 @@ export default function BrokerLineItemEditor({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
               Garment Color
             </label>
             {ssColors.length > 0 && !customColor ? (
@@ -736,11 +736,11 @@ export default function BrokerLineItemEditor({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
               Garment Cost
             </label>
             <div className="relative">
-              <span className="absolute left-3 top-2 text-slate-400 text-sm">$</span>
+              <span className="absolute left-3 top-2 text-slate-500 text-sm">$</span>
               <input
                 type="number"
                 min="0"
@@ -766,7 +766,7 @@ export default function BrokerLineItemEditor({
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-slate-100">
-                      <td className="pb-2 text-slate-400 font-semibold">Size</td>
+                      <td className="pb-2 text-slate-500 font-semibold">Size</td>
                       {SIZES.map((sz) => (
                         <td key={sz} className="pb-2 text-center font-semibold text-slate-500 w-10">
                           {sz}
@@ -894,7 +894,7 @@ export default function BrokerLineItemEditor({
                     )}
                     <div className="flex flex-wrap gap-2 mb-2">
                       <div className="flex-1 min-w-32">
-                        <label className="block text-xs text-slate-400 mb-0.5">Title</label>
+                        <label className="block text-xs text-slate-500 mb-0.5">Title</label>
                         <input
                           value={imp.title || ""}
                           onChange={(e) => updateImprint(idx, { title: e.target.value })}
@@ -904,7 +904,7 @@ export default function BrokerLineItemEditor({
                       </div>
 
                       <div className="w-16">
-                        <label className="block text-xs text-slate-400 mb-0.5">Link Print</label>
+                        <label className="block text-xs text-slate-500 mb-0.5">Link Print</label>
                         <button
                           onClick={() => updateImprint(idx, { linked: !imp.linked })}
                           className={`w-full h-8 text-xs font-semibold rounded-lg border transition ${
@@ -918,7 +918,7 @@ export default function BrokerLineItemEditor({
                       </div>
 
                       <div className="w-20">
-                        <label className="block text-xs text-slate-400 mb-0.5">Width</label>
+                        <label className="block text-xs text-slate-500 mb-0.5">Width</label>
                         <input
                           value={imp.width || ""}
                           onChange={(e) => updateImprint(idx, { width: e.target.value })}
@@ -928,7 +928,7 @@ export default function BrokerLineItemEditor({
                       </div>
 
                       <div className="w-20">
-                        <label className="block text-xs text-slate-400 mb-0.5">Height</label>
+                        <label className="block text-xs text-slate-500 mb-0.5">Height</label>
                         <input
                           value={imp.height || ""}
                           onChange={(e) => updateImprint(idx, { height: e.target.value })}
@@ -938,7 +938,7 @@ export default function BrokerLineItemEditor({
                       </div>
 
                       <div className="w-28">
-                        <label className="block text-xs text-slate-400 mb-0.5">Location</label>
+                        <label className="block text-xs text-slate-500 mb-0.5">Location</label>
                         <select
                           value={imp.location}
                           onChange={(e) => updateImprint(idx, { location: e.target.value })}
@@ -951,7 +951,7 @@ export default function BrokerLineItemEditor({
                       </div>
 
                       <div className="w-20">
-                        <label className="block text-xs text-slate-400 mb-0.5">Colors</label>
+                        <label className="block text-xs text-slate-500 mb-0.5">Colors</label>
                         <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
                           <button
                             onClick={() => updateImprint(idx, { colors: Math.max(1, imp.colors - 1) })}
@@ -972,7 +972,7 @@ export default function BrokerLineItemEditor({
                       </div>
 
                       <div className="flex-1 min-w-28">
-                        <label className="block text-xs text-slate-400 mb-0.5">Ink Color(s)</label>
+                        <label className="block text-xs text-slate-500 mb-0.5">Ink Color(s)</label>
                         <input
                           value={imp.pantones || ""}
                           onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
@@ -982,7 +982,7 @@ export default function BrokerLineItemEditor({
                       </div>
 
                       <div className="w-28">
-                        <label className="block text-xs text-slate-400 mb-0.5">Technique</label>
+                        <label className="block text-xs text-slate-500 mb-0.5">Technique</label>
                         <select
                           value={imp.technique}
                           onChange={(e) => updateImprint(idx, { technique: e.target.value })}
@@ -1005,7 +1005,7 @@ export default function BrokerLineItemEditor({
                     </div>
 
                     <div>
-                      <label className="block text-xs text-slate-400 mb-0.5">Special Instructions</label>
+                      <label className="block text-xs text-slate-500 mb-0.5">Special Instructions</label>
                       <input
                         value={imp.details || ""}
                         onChange={(e) => updateImprint(idx, { details: e.target.value })}
@@ -1018,7 +1018,7 @@ export default function BrokerLineItemEditor({
               </div>
 
               <div className="mt-2 space-y-2">
-                <div className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-100">
+                <div className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-1.5 border border-slate-100">
                   {`Pricing note: First print = location with ${getShopPricingConfig()?.firstPrintOrdering === "most" ? "most" : "fewest"} colors. All pricing includes setup.`}
                 </div>
                 <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 border border-emerald-100">
@@ -1063,7 +1063,7 @@ export default function BrokerLineItemEditor({
                           <div className={`text-[11px] font-semibold leading-tight ${isOn ? "text-teal-700" : "text-slate-700"}`}>
                             {label}
                           </div>
-                          <div className="text-[10px] text-slate-400 leading-tight">
+                          <div className="text-[10px] text-slate-500 leading-tight">
                             {isPercent
                               ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
                               : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}

@@ -11,7 +11,7 @@ export default function Security() {
             Plain-English description of how we protect your shop's data. We update this page when
             anything material changes.
           </p>
-          <p className="text-xs text-slate-400">Last updated: June 10, 2026</p>
+          <p className="text-xs text-slate-500">Last updated: June 10, 2026</p>
         </header>
 
         <Section title="QuickBooks integration">

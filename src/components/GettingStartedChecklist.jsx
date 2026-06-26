@@ -79,7 +79,7 @@ export default function GettingStartedChecklist({ quotes, orders, customers, inv
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
               {allDone ? "You're all set!" : "Getting Started"}
             </h3>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               {allDone ? "Your shop is ready to go." : `${completed} of ${STEPS.length} complete`}
             </p>
           </div>
@@ -93,7 +93,7 @@ export default function GettingStartedChecklist({ quotes, orders, customers, inv
             />
           </div>
           <span className="text-xs font-bold text-teal-600">{progress}%</span>
-          <button onClick={() => setCollapsed(v => !v)} className="p-1 text-slate-300 hover:text-slate-500">
+          <button onClick={() => setCollapsed(v => !v)} aria-label={collapsed ? "Expand checklist" : "Collapse checklist"} className="p-1 text-slate-300 hover:text-slate-500">
             {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
           </button>
           <button onClick={dismiss} className="p-1 text-slate-300 hover:text-slate-500" title="Dismiss checklist">
@@ -118,11 +118,11 @@ export default function GettingStartedChecklist({ quotes, orders, customers, inv
                   : <Circle className="w-5 h-5 text-slate-200 shrink-0" />
                 }
                 <div className="flex-1 min-w-0">
-                  <div className={`text-sm font-semibold ${done ? "text-slate-400 line-through" : "text-slate-700 dark:text-slate-200"}`}>
+                  <div className={`text-sm font-semibold ${done ? "text-slate-500 line-through" : "text-slate-700 dark:text-slate-200"}`}>
                     {step.label}
                   </div>
                   {!done && (
-                    <p className="text-xs text-slate-400 mt-0.5">{step.description}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{step.description}</p>
                   )}
                 </div>
                 {!done && (
