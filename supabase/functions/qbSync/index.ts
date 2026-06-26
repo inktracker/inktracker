@@ -1770,28 +1770,55 @@ async function handleRecordPayment(
   }
 
   const docLabel = row.qb_doc_number || `Id ${qbInvoiceId}`;
-  const payment = await qbCreate(token, realmId, "payment", {
-    CustomerRef: { value: customerRef },
-    TotalAmt: amount,
-    PrivateNote: `InkTracker manual payment recorded for ${docLabel}`,
-    Line: [{
-      Amount: amount,
-      LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: "Invoice" }],
-    }],
-  });
 
-  await adminClient
-    .from(table)
-    .update({ paid: true, paid_date: nowIso, qb_synced_at: nowIso })
-    .eq("id", row.id)
-    .eq("shop_owner", shopOwnerEmail);
+  // Guard the actual QB Payment write against a double-click / retry. Without
+  // this, two near-simultaneous "Mark as Paid" clicks both read Balance > 0
+  // (QB hasn't posted the first payment yet) and each create a Payment, leaving
+  // the invoice overpaid (negative balance) until an operator voids one in QB.
+  // Mirrors createInvoice's protection. Key is deterministic per
+  // invoice+amount so the same intent collides within the TTL; an explicit
+  // idempotencyKey from the caller wins if provided.
+  const idempKey = params?.idempotencyKey ?? `record_payment:${table}:${rowId}:${amount}`;
+  const idemp = await withQbIdempotency(
+    adminClient,
+    idempKey,
+    { shop_owner: shopOwnerEmail, action: "record_payment" },
+    async () => {
+      const payment = await qbCreate(token, realmId, "payment", {
+        CustomerRef: { value: customerRef },
+        TotalAmt: amount,
+        PrivateNote: `InkTracker manual payment recorded for ${docLabel}`,
+        Line: [{
+          Amount: amount,
+          LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: "Invoice" }],
+        }],
+      });
 
-  return {
-    recorded: true,
-    qbPaymentId: payment?.Payment?.Id ?? null,
-    qbDocNumber: row.qb_doc_number || null,
-    amount,
-  };
+      await adminClient
+        .from(table)
+        .update({ paid: true, paid_date: nowIso, qb_synced_at: nowIso })
+        .eq("id", row.id)
+        .eq("shop_owner", shopOwnerEmail);
+
+      return {
+        recorded: true,
+        qbPaymentId: payment?.Payment?.Id ?? null,
+        qbDocNumber: row.qb_doc_number || null,
+        amount,
+      };
+    },
+  );
+
+  // A concurrent click is mid-write — don't fire a second Payment. Report it as
+  // a non-error so the UI can just refresh.
+  if (idemp.inFlight) {
+    return {
+      recorded: false,
+      reason: "in_flight",
+      message: "This payment is already being recorded. Refresh in a moment to see it.",
+    };
+  }
+  return idemp.result;
 }
 
 // ── Action: getQbEvents ─────────────────────────────────────────────────────
