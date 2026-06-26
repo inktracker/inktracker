@@ -164,7 +164,7 @@ async function getValidTokens(supabase: any, authId: string, email: string | nul
   }
 
   const fresh = await refreshToken(profile.qb_refresh_token);
-  const refreshedFields = buildRefreshedTokenFields(fresh, profile.qb_refresh_token);
+  const refreshedFields = buildRefreshedTokenFields(fresh, profile.qb_refresh_token, Date.now(), profile.qb_refresh_token_expires_at);
 
   // Write rotated tokens — use service role client for profile_secrets (RLS blocks user client)
   try {
