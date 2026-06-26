@@ -8,7 +8,7 @@
 // here = customer pays one price, QB records another.
 
 import { describe, it, expect, beforeEach } from "vitest";
-import { buildQBInvoicePayload, loadShopPricingConfig } from "../pricing";
+import { buildQBInvoicePayload, loadShopPricingConfig, allocateGarmentDecoration } from "../pricing";
 import { buildInvoiceLinesFromPayload } from "../../../../supabase/functions/_shared/qbInvoice.js";
 
 const r2 = (n) => Math.round(n * 100) / 100;
@@ -34,6 +34,44 @@ function itemMapFor(payload, defaultName) {
 }
 
 const garmentLine = { category: "T-Shirts", brand: "Comfort Colors", style: "1717", garmentColor: "Banana", sizes: { M: 10 }, _ppp: 10, _lineTotal: 100, _rushFee: 0, imprints: [{ location: "Front", technique: "Screen Print" }] };
+
+describe("allocateGarmentDecoration (per-technique split math)", () => {
+  it("sums exactly to the total (decoration absorbs the remainder)", () => {
+    expect(allocateGarmentDecoration(100, 6, 4, 0)).toEqual({ garment: 60, decoration: 40 });
+  });
+  it("all-garment when there's no decoration cost", () => {
+    expect(allocateGarmentDecoration(100, 6, 0, 0)).toEqual({ garment: 100, decoration: 0 });
+  });
+  it("all-decoration when garment cost is zero (customer-supplied blanks)", () => {
+    expect(allocateGarmentDecoration(80, 0, 5, 1)).toEqual({ garment: 0, decoration: 80 });
+  });
+  it("never loses a penny under awkward ratios", () => {
+    const { garment, decoration } = allocateGarmentDecoration(99.99, 7, 3, 1.5);
+    expect(r2(garment + decoration)).toBe(99.99);
+  });
+});
+
+describe("buildQBInvoicePayload — split mode preserves the customer total", () => {
+  it("split line amounts sum to the same subtotal as single-line", () => {
+    const quote = {
+      line_items: [garmentLine],
+      tax_rate: 0,
+      discount: 0,
+      setup_total: 25,
+      additional_charges: [{ id: "r", label: "Rush", amount: 20, taxable: true }],
+    };
+    loadShopPricingConfig(null);
+    const single = buildQBInvoicePayload(quote);
+    const singleSum = r2(single.lines.reduce((s, l) => s + l.amount, 0));
+
+    loadShopPricingConfig({ qb_split_lines: true });
+    const split = buildQBInvoicePayload(quote);
+    const splitSum = r2(split.lines.reduce((s, l) => s + l.amount, 0));
+
+    expect(splitSum).toBe(singleSum);
+    loadShopPricingConfig(null);
+  });
+});
 
 describe("QB fees — numbers match end to end", () => {
   beforeEach(() => loadShopPricingConfig(null));
