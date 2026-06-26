@@ -118,6 +118,9 @@ export default function Account() {
   // ~100-day refresh-token expiry — the one whose lapse silently kills the
   // connection. Drives the "reconnect by X" hint + nudge.
   const [qbRefreshExpiresAt, setQbRefreshExpiresAt] = useState(null);
+  // True when an access token lingers but the refresh token has expired — the
+  // connection is effectively dead. Shows a "reconnect" prompt, not "connect".
+  const [qbNeedsReconnect, setQbNeedsReconnect] = useState(false);
   const [qbConnecting, setQbConnecting] = useState(false);
   const [qbMessage, setQbMessage] = useState(null); // { type: "success"|"error", text }
   const [qbDisconnecting, setQbDisconnecting] = useState(false);
@@ -190,6 +193,7 @@ export default function Account() {
             setQbRealmId(data.realmId);
             setQbExpiresAt(data.expiresAt);
             setQbRefreshExpiresAt(data.refreshTokenExpiresAt || null);
+            setQbNeedsReconnect(!!data.needsReconnect);
           }
         } catch {}
       } catch (error) {
@@ -1036,6 +1040,12 @@ export default function Account() {
             </div>
           ) : (
             <div className="space-y-3">
+              {qbNeedsReconnect && (
+                <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-sm text-amber-800">
+                  <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>Your QuickBooks connection has expired. Reconnect below to resume sending invoices and syncing payments — your settings are preserved.</span>
+                </div>
+              )}
               <p className="text-sm text-slate-500">
                 Connect QuickBooks to automatically generate payment links when you send quotes. When a client pays, InkTracker converts the quote to an order automatically.
               </p>
@@ -1071,7 +1081,7 @@ export default function Account() {
                   className="h-4"
                   onError={(e) => e.currentTarget.style.display = "none"}
                 />
-                {qbConnecting ? "Redirecting to QuickBooks…" : "Connect to QuickBooks"}
+                {qbConnecting ? "Redirecting to QuickBooks…" : (qbNeedsReconnect ? "Reconnect to QuickBooks" : "Connect to QuickBooks")}
               </button>
               <p className="text-xs text-slate-400">
                 You'll be redirected to Intuit to authorize InkTracker. QuickBooks Payments account required for payment links.
