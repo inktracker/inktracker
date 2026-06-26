@@ -4,6 +4,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
+import { mintPaymentLink } from "../_shared/qbPaymentLink.js";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import { parseRetryAfterMs, QbRateLimitError } from "../_shared/qbRateLimit.ts";
 import {
@@ -423,61 +424,29 @@ async function mintInvoicePaymentLink(
   billEmail: string | null,
   initialInvoice: any,
 ): Promise<{ link: string | null; finalInvoice: any; reason: string | null }> {
-  // Mint the pay link WITHOUT emailing where possible. GET ?include=invoiceLink
-  // returns the SAME CommerceNetwork share link that /send produces (see
-  // extractPaymentLink — it reads the InvoiceLink field), but does NOT trigger
-  // QBO's own email. The customer then gets ONLY our Resend email, which
-  // already carries this exact link — no duplicate "extra" QB email.
-  //
-  // We fall back to /send (which DOES email) only if the no-email path yields
-  // no link, so customer payment never breaks — worst case is the prior
-  // behavior (two emails) instead of a missing link.
-  let invoiceForLink: any = initialInvoice;
-
-  // 0. The create response sometimes already carries the link.
-  let link = sharedExtractPaymentLink(invoiceForLink);
-  if (link) return { link, finalInvoice: invoiceForLink, reason: null };
-
-  // 1. No-email fetch via include=invoiceLink, with one retry for QBO's async
-  //    provisioning. This is the path that avoids the QB email entirely.
-  for (const wait of [0, 1500]) {
-    if (wait) await new Promise((r) => setTimeout(r, wait));
-    const fetched = await qbFetchInvoiceWithLink(token, realmId, invoiceId);
-    if (fetched) {
-      invoiceForLink = fetched?.Invoice || fetched;
-      link = sharedExtractPaymentLink(invoiceForLink);
-      if (link) {
-        console.log("[mintInvoicePaymentLink] link minted via include=invoiceLink (no QB email sent)");
-        return { link, finalInvoice: invoiceForLink, reason: null };
-      }
-    }
+  // Thin wrapper over the pure, unit-tested orchestrator in
+  // ../_shared/qbPaymentLink.js: try include=invoiceLink (no email) first, fall
+  // back to /send (emails) only if it yields no link. Keeps the duplicate QB
+  // email off by default while never breaking payment.
+  const result = await mintPaymentLink({
+    initialInvoice,
+    billEmail,
+    extractLink: sharedExtractPaymentLink,
+    fetchLink: async () => {
+      const r = await qbFetchInvoiceWithLink(token, realmId, invoiceId);
+      return r ? (r.Invoice || r) : null;
+    },
+    sendInvoice: async (email: string) => {
+      const s = await qbSendInvoice(token, realmId, invoiceId, email);
+      return s ? (s.Invoice || s) : null;
+    },
+  });
+  if (result.link) {
+    console.log(`[mintInvoicePaymentLink] link minted (${result.emailed ? "/send fallback — QB email sent" : "include=invoiceLink — no QB email"})`);
+  } else {
+    console.warn(`[mintInvoicePaymentLink] no link (${result.reason}). Most likely the shop hasn't activated QB Payments.`);
   }
-
-  // 2. Fallback: /send mints the link AND sends QBO's email. Needs a billEmail.
-  if (!billEmail) {
-    console.warn("[mintInvoicePaymentLink] no link via include=invoiceLink and no billEmail for /send fallback.");
-    return { link: null, finalInvoice: invoiceForLink, reason: "no_bill_email" };
-  }
-  console.warn("[mintInvoicePaymentLink] no link via include=invoiceLink — falling back to /send (this DOES email the customer).");
-  try {
-    const sent = await qbSendInvoice(token, realmId, invoiceId, billEmail);
-    invoiceForLink = sent?.Invoice || sent || invoiceForLink;
-  } catch (sendErr) {
-    console.warn("[mintInvoicePaymentLink] /send fallback failed after retries:", sendErr instanceof Error ? sendErr.message : String(sendErr));
-  }
-  link = sharedExtractPaymentLink(invoiceForLink);
-  if (link) return { link, finalInvoice: invoiceForLink, reason: null };
-
-  await new Promise((r) => setTimeout(r, 3000));
-  const refetched = await qbFetchInvoiceWithLink(token, realmId, invoiceId);
-  if (refetched) {
-    invoiceForLink = refetched?.Invoice || refetched;
-    link = sharedExtractPaymentLink(invoiceForLink);
-    if (link) return { link, finalInvoice: invoiceForLink, reason: null };
-  }
-
-  console.warn("[mintInvoicePaymentLink] no link after include + /send fallback. Most likely cause: shop hasn't activated QB Payments. Final invoice shape:", JSON.stringify(invoiceForLink));
-  return { link: null, finalInvoice: invoiceForLink, reason: "no_link_after_retry" };
+  return { link: result.link, finalInvoice: result.finalInvoice, reason: result.reason };
 }
 
 // ── Find or create QB Customer ──────────────────────────────────────────────
