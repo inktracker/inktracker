@@ -467,7 +467,7 @@ async function updateQBCustomer(token: string, realmId: string, qbId: string, cu
   const current = existing?.QueryResponse?.Customer?.[0];
   if (!current) return qbId;
 
-  const body = buildQBCustomerBody(customer, displayName);
+  const body: any = buildQBCustomerBody(customer, displayName);
   body.Id = qbId;
   body.SyncToken = current.SyncToken;
   body.sparse = true;
@@ -483,7 +483,7 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
     try {
       await updateQBCustomer(token, realmId, customer.qb_customer_id, customer);
     } catch (err) {
-      console.warn("[QB] customer update failed (non-blocking):", err?.message);
+      console.warn("[QB] customer update failed (non-blocking):", (err as any)?.message);
     }
     return customer.qb_customer_id;
   }
@@ -2014,7 +2014,7 @@ Deno.serve(async (req) => {
       // Revoke the grant at Intuit FIRST (best-effort) so "disconnect" actually
       // ends the authorization, not just our copy of the tokens. Revoking the
       // refresh token invalidates the whole grant. Never blocks the local clear.
-      await revokeQbToken(profile.qb_refresh_token || profile.qb_access_token);
+      await revokeQbToken(profile.qb_refresh_token || profile.qb_access_token || null);
       await updateProfileSecrets(
         adminClient,
         profile.id,
@@ -2341,6 +2341,7 @@ Deno.serve(async (req) => {
       );
     }
     console.error("qbSync error:", err);
-    return Response.json({ error: err.message }, { status: 500, headers: CORS });
+    const message = err instanceof Error ? err.message : String(err);
+    return Response.json({ error: message }, { status: 500, headers: CORS });
   }
 });

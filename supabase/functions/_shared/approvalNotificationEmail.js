@@ -313,7 +313,7 @@ export async function sendApprovalNotification({ to, subject, html, reply_to }, 
  * @property {string} shop_owner       Required. Tenant scope.
  * @property {'quote_approval'|'artwork_approval'|'quote_payment'} event_type
  * @property {string} recipient_email
- * @property {'shop_owner'|'broker'} [recipient_role]
+ * @property {string} [recipient_role]  Free-form log field (e.g. 'shop_owner', 'broker')
  * @property {string} [quote_id]       UUID
  * @property {string} [order_id]       UUID
  * @property {string} [subject]
@@ -364,7 +364,9 @@ export function buildNotificationLogRow(ctx) {
  * logs the attempt. One function per call site instead of two.
  *
  * @param {object} supabase service-role client
- * @param {NotificationLogContext & {to, subject, html, reply_to}} args
+ * @param {Omit<NotificationLogContext, 'status'|'failure_reason'|'resend_id'> & {to: any, subject: any, html: any, reply_to: any}} args
+ *   `status`/`failure_reason`/`resend_id` are set internally per send outcome,
+ *   so callers don't pass them.
  */
 export async function sendAndLogApprovalNotification(supabase, args) {
   // Required for the audit row even if the send is skipped (no
