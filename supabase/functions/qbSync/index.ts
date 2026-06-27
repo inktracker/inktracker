@@ -944,10 +944,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const qbSubtotal  = Number((qbTotal - qbTaxAmount).toFixed(2));
 
   // ── Numbers-match reconciliation guard ─────────────────────────────────────
-  // Compare what we sent vs what QB returned. Any line-amount drift
-  // beyond a 1-cent rounding tolerance is logged loudly so it shows up
-  // in the Supabase function logs. Tax drift alone is informational
-  // (QB's tax setup is authoritative). Pure helper + tests live in
+  // Compare what we sent vs what QB returned. Any non-OK result is logged
+  // loudly so it shows up in the Supabase function logs. Classification
+  // (line-amount integrity DRIFT vs TAX_MISMATCH, plus the missingTax
+  // flag) drives whether we ALSO push a shop notification below — see the
+  // shouldNotify gate. Pure helper + tests live in
   // ../_shared/qbWriteContracts.js.
   // Expected tax applies only to TAX-coded lines (non-taxable shipping etc.
   // are excluded), matching how QB itself computes it.
@@ -975,40 +976,51 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       `  Issues: ${reconciliation.issues.join(" | ")}`,
     );
 
-    // Push an in-app notification to the shop. This should never fire
-    // on a clean integration — only if QB altered our data after we
-    // sent it. Notification insert is best-effort: a failure here
-    // must NOT cause the user-facing invoice send to error out.
-    //
-    // Uses a service-role client because the notifications table is
-    // service-role-only on INSERT (the authenticated user is allowed
-    // to read/update their own notifications, but not forge new ones).
-    try {
-      const notif = buildQbDriftNotification({
-        shopOwner: quote.shop_owner,
-        quoteId: quote.quote_id,
-        quoteRowId: String(quote.id),
-        qbInvoiceId,
-        reconciliation,
-      });
-      const adminClient = createClient(
-        Deno.env.get("SUPABASE_URL")!,
-        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      );
-      // recordShopNotification swallows its own errors, but we wrap
-      // anyway in case the build step throws.
-      await recordShopNotification(adminClient, {
-        shopOwner: notif.shop_owner,
-        eventType: notif.event_type,
-        severity:  notif.severity,
-        title:     notif.title,
-        body:      notif.body,
-        relatedEntity: notif.related_entity,
-        relatedId:     notif.related_id,
-        metadata:      notif.metadata,
-      });
-    } catch (err) {
-      console.error(`[createInvoice] failed to push reconciliation notification: ${err}`);
+    // Decide whether to NOTIFY (vs just log above). Integrity DRIFT (QB
+    // altered our line amounts) and FATAL always notify. A TAX_MISMATCH
+    // only notifies in the dangerous sub-case — QB recorded ~$0 tax when
+    // the quote expected some (under-reported liability / customer
+    // underpays). Benign tax differences (QB's authoritative tax engine
+    // landing on a slightly different number) are logged above but NOT
+    // pushed, so the channel doesn't cry wolf on every AST-shop invoice
+    // and bury the cases that matter.
+    const shouldNotify =
+      reconciliation.severity === RECONCILE_SEVERITY.DRIFT ||
+      reconciliation.severity === RECONCILE_SEVERITY.FATAL ||
+      (reconciliation.severity === RECONCILE_SEVERITY.TAX_MISMATCH && reconciliation.missingTax);
+
+    // Best-effort in-app notification: a failure here must NOT cause the
+    // user-facing invoice send to error out. Uses a service-role client
+    // because the notifications table is service-role-only on INSERT (the
+    // authenticated user can read/update their own, but not forge new ones).
+    if (shouldNotify) {
+      try {
+        const notif = buildQbDriftNotification({
+          shopOwner: quote.shop_owner,
+          quoteId: quote.quote_id,
+          quoteRowId: String(quote.id),
+          qbInvoiceId,
+          reconciliation,
+        });
+        const adminClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        // recordShopNotification swallows its own errors, but we wrap
+        // anyway in case the build step throws.
+        await recordShopNotification(adminClient, {
+          shopOwner: notif.shop_owner,
+          eventType: notif.event_type,
+          severity:  notif.severity,
+          title:     notif.title,
+          body:      notif.body,
+          relatedEntity: notif.related_entity,
+          relatedId:     notif.related_id,
+          metadata:      notif.metadata,
+        });
+      } catch (err) {
+        console.error(`[createInvoice] failed to push reconciliation notification: ${err}`);
+      }
     }
   }
 

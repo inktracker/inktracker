@@ -52,9 +52,13 @@ export function toMoneyOrNull(value) {
 // ── Reconciliation result shape ──────────────────────────────────────────────
 
 export const RECONCILE_SEVERITY = Object.freeze({
-  OK:    "ok",
-  DRIFT: "drift",
-  FATAL: "fatal",
+  OK:           "ok",
+  // Lines are faithful but the invoice TOTAL diverges — QB computed a
+  // different tax than the quote assumed. Expected for AST shops (QB's
+  // tax is authoritative), so kept distinct from the integrity alarm.
+  TAX_MISMATCH: "tax-mismatch",
+  DRIFT:        "drift",
+  FATAL:        "fatal",
 });
 
 /**
@@ -78,13 +82,21 @@ export const RECONCILE_SEVERITY = Object.freeze({
  *           sentTax:      number, qbTax:      number, taxDrift:   number}}
  *
  * severity:
- *   - 'fatal' — qbResponse is missing/garbage. Caller MUST NOT trust
- *               qbTotal as authoritative.
- *   - 'drift' — line-amount or subtotal drift exceeded tolerance. Tax
- *               drift alone is NOT 'drift' because QB applies tax from
- *               the customer's QB tax setup (which can legitimately
- *               differ from our local guess). Caller should log.
- *   - 'ok'    — everything within tolerance.
+ *   - 'fatal'        — qbResponse is missing/garbage. Caller MUST NOT
+ *                      trust qbTotal as authoritative.
+ *   - 'drift'        — line-amount / subtotal drift exceeded tolerance.
+ *                      QB altered the amounts we sent — an integrity
+ *                      violation that should never happen.
+ *   - 'tax-mismatch' — lines are faithful but the TOTAL diverges, i.e.
+ *                      QB computed a different tax than the quote
+ *                      assumed. Expected for AST shops (QB's tax is
+ *                      authoritative). The `missingTax` flag marks the
+ *                      one dangerous sub-case: quote expected tax but QB
+ *                      recorded ~$0 (under-reported liability).
+ *   - 'ok'           — everything within tolerance.
+ *
+ * Result also carries booleans `lineAmountDrift`, `taxMismatch`, and
+ * `missingTax` so the caller can route notifications without re-deriving.
  */
 export function reconcileQbInvoice({ sentLines, sentTax, qbResponse, tolerance = DEFAULT_TOLERANCE }) {
   const tol = Number(tolerance);
@@ -105,6 +117,9 @@ export function reconcileQbInvoice({ sentLines, sentTax, qbResponse, tolerance =
       sentTax:      toMoneyOrNull(sentTax) ?? 0,
       qbTax:        0,
       taxDrift:     NaN,
+      lineAmountDrift: false,
+      taxMismatch:     false,
+      missingTax:      false,
     };
   }
 
@@ -132,37 +147,60 @@ export function reconcileQbInvoice({ sentLines, sentTax, qbResponse, tolerance =
       issues, sentSubtotal, qbSubtotal, subtotalDrift,
       sentTotal, qbTotal: 0, totalDrift: NaN,
       sentTax: sentTaxNum, qbTax, taxDrift,
+      lineAmountDrift: false, taxMismatch: false, missingTax: false,
     };
   }
 
-  // The hard guarantee the user cares about: amounts we sent equal
-  // amounts on the QB invoice. This is the line-item fidelity check.
-  if (Math.abs(subtotalDrift) > safeTol) {
+  // ── Classify ────────────────────────────────────────────────────────────────
+  // Two DISTINCT failure modes, surfaced separately so the caller can
+  // treat them differently:
+  //
+  //   DRIFT — the line amounts we sent don't match what QB stored. QB
+  //     should never alter our line totals. The "should never happen"
+  //     integrity alarm.
+  //
+  //   TAX_MISMATCH — lines are faithful but the invoice TOTAL diverges,
+  //     i.e. QB computed a different tax than the quote assumed. For an
+  //     Automated-Sales-Tax shop this is EXPECTED (QB's tax is
+  //     authoritative), so it is NOT lumped in with the integrity alarm.
+  //     `missingTax` flags the one dangerous sub-case: the quote expected
+  //     tax but QB recorded ~$0 (under-reported liability / customer
+  //     underpays), which the caller escalates to a notification.
+  const lineAmountDrift   = Math.abs(subtotalDrift) > safeTol;
+  const totalDriftExceeds = Math.abs(totalDrift) > safeTol;
+  const taxMismatch       = !lineAmountDrift && totalDriftExceeds;
+  const missingTax        = sentTaxNum > safeTol && Math.abs(qbTax) <= safeTol;
+
+  if (lineAmountDrift) {
     issues.push(
       `Line-amount drift ${subtotalDrift.toFixed(2)} exceeds tolerance ${safeTol.toFixed(2)} ` +
       `(sent subtotal ${sentSubtotal.toFixed(2)}, QB subtotal ${qbSubtotal.toFixed(2)})`,
     );
-  }
-
-  // Total drift beyond the subtotal drift means QB applied a different
-  // tax than we expected. This is *informational* — QB's tax setup is
-  // authoritative — but worth surfacing so the user can investigate.
-  if (Math.abs(totalDrift) > safeTol) {
+    if (totalDriftExceeds) {
+      issues.push(
+        `Total drift ${totalDrift.toFixed(2)} (sent total ${sentTotal.toFixed(2)}, ` +
+        `QB total ${qbTotal.toFixed(2)}; tax drift ${taxDrift.toFixed(2)})`,
+      );
+    }
+  } else if (taxMismatch) {
     issues.push(
-      `Total drift ${totalDrift.toFixed(2)} exceeds tolerance ${safeTol.toFixed(2)} ` +
-      `(sent total ${sentTotal.toFixed(2)}, QB total ${qbTotal.toFixed(2)}; ` +
-      `tax drift ${taxDrift.toFixed(2)})`,
+      missingTax
+        ? `Tax mismatch: quote expected ${sentTaxNum.toFixed(2)} sales tax but QuickBooks recorded ` +
+          `${qbTax.toFixed(2)} (total ${qbTotal.toFixed(2)} vs quoted ${sentTotal.toFixed(2)})`
+        : `Tax mismatch: QuickBooks tax ${qbTax.toFixed(2)} differs from quote tax ${sentTaxNum.toFixed(2)} ` +
+          `(total ${qbTotal.toFixed(2)} vs quoted ${sentTotal.toFixed(2)}, drift ${totalDrift.toFixed(2)})`,
     );
   }
 
-  const severity = issues.length === 0
-    ? RECONCILE_SEVERITY.OK
-    : RECONCILE_SEVERITY.DRIFT;
+  let severity = RECONCILE_SEVERITY.OK;
+  if (lineAmountDrift) severity = RECONCILE_SEVERITY.DRIFT;
+  else if (taxMismatch) severity = RECONCILE_SEVERITY.TAX_MISMATCH;
 
   return {
     severity, issues,
     sentSubtotal, qbSubtotal, subtotalDrift,
     sentTotal, qbTotal, totalDrift,
     sentTax: sentTaxNum, qbTax, taxDrift,
+    lineAmountDrift, taxMismatch, missingTax,
   };
 }

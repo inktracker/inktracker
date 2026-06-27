@@ -67,6 +67,8 @@ export function buildQbDriftNotification({ shopOwner, quoteId, quoteRowId, qbInv
   const sentTotal  = Number.isFinite(reconciliation.sentTotal) ? reconciliation.sentTotal : 0;
   const qbTotal    = Number.isFinite(reconciliation.qbTotal)   ? reconciliation.qbTotal   : 0;
   const totalDrift = Number.isFinite(reconciliation.totalDrift) ? reconciliation.totalDrift : 0;
+  const sentTax    = Number.isFinite(reconciliation.sentTax) ? reconciliation.sentTax : 0;
+  const qbTax      = Number.isFinite(reconciliation.qbTax)   ? reconciliation.qbTax   : 0;
 
   const fmt = (n) => `$${Number(n).toFixed(2)}`;
   // Signed money formatter — places +/- BEFORE the dollar sign so
@@ -76,19 +78,54 @@ export function buildQbDriftNotification({ shopOwner, quoteId, quoteRowId, qbInv
     return `${x >= 0 ? "+" : "-"}$${Math.abs(x).toFixed(2)}`;
   };
 
-  const title = "QuickBooks invoice doesn't match";
-  const body =
-    `Quote ${quoteId}: InkTracker sent ${fmt(sentTotal)} but QuickBooks recorded ${fmt(qbTotal)} ` +
-    `(${fmtSigned(totalDrift)} drift). ` +
-    `This should never happen — please review the invoice in QuickBooks. ` +
-    (reconciliation.issues?.length
-      ? `Details: ${reconciliation.issues.join(" | ")}`
-      : "");
+  // Tax mismatch reads VERY differently from integrity drift, so it gets
+  // its own copy + event type. A tax mismatch is QB's authoritative tax
+  // engine landing on a different number than the quote — NOT "QB altered
+  // our data". Severity 'drift'/'fatal' always falls to the integrity copy.
+  const isTaxMismatch =
+    reconciliation.severity === "tax-mismatch" ||
+    (reconciliation.taxMismatch &&
+      reconciliation.severity !== "drift" &&
+      reconciliation.severity !== "fatal");
+
+  let eventType, severity, title, body;
+  if (isTaxMismatch) {
+    eventType = "qb_tax_mismatch";
+    severity  = "warning";
+    if (reconciliation.missingTax) {
+      // The dangerous case: customer was quoted tax, QB recorded none.
+      title = "QuickBooks recorded no sales tax";
+      body =
+        `Quote ${quoteId}: your quote included ${fmt(sentTax)} sales tax, but QuickBooks recorded ${fmt(qbTax)}. ` +
+        `The customer pays the QuickBooks total (${fmt(qbTotal)}), so this invoice collects no tax and your books ` +
+        `under-report it. Confirm Automated Sales Tax is enabled in QuickBooks and the customer's tax status is ` +
+        `correct, then re-sync the invoice.`;
+    } else {
+      title = "QuickBooks calculated a different sales tax";
+      body =
+        `Quote ${quoteId}: your quote tax was ${fmt(sentTax)} but QuickBooks computed ${fmt(qbTax)} from the ` +
+        `customer's QuickBooks tax setup (invoice total ${fmt(qbTotal)} vs quoted ${fmt(sentTotal)}). ` +
+        `QuickBooks' tax is authoritative — no action needed unless this is unexpected.`;
+    }
+  } else {
+    // Line-amount / total integrity drift (or fatal) — QB altered numbers
+    // we sent. This genuinely should never happen.
+    eventType = "qb_reconciliation_drift";
+    severity  = reconciliation.severity === "fatal" ? "alert" : "warning";
+    title = "QuickBooks invoice doesn't match";
+    body =
+      `Quote ${quoteId}: InkTracker sent ${fmt(sentTotal)} but QuickBooks recorded ${fmt(qbTotal)} ` +
+      `(${fmtSigned(totalDrift)} drift). ` +
+      `This should never happen — please review the invoice in QuickBooks. ` +
+      (reconciliation.issues?.length
+        ? `Details: ${reconciliation.issues.join(" | ")}`
+        : "");
+  }
 
   return buildNotificationRow({
     shopOwner,
-    eventType: "qb_reconciliation_drift",
-    severity:  reconciliation.severity === "fatal" ? "alert" : "warning",
+    eventType,
+    severity,
     title,
     body,
     relatedEntity: "quote",
@@ -105,6 +142,8 @@ export function buildQbDriftNotification({ shopOwner, quoteId, quoteRowId, qbInv
       sent_tax:       reconciliation.sentTax,
       qb_tax:         reconciliation.qbTax,
       tax_drift:      reconciliation.taxDrift,
+      missing_tax:    Boolean(reconciliation.missingTax),
+      tax_mismatch:   Boolean(reconciliation.taxMismatch),
       issues:         reconciliation.issues ?? [],
     },
   });
