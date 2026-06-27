@@ -1206,7 +1206,7 @@ async function handlePullCustomers(token: string, realmId: string, supabase: any
   // Fetch existing InkTracker customers for this shop
   const { data: existing } = await supabase
     .from("customers")
-    .select("id, qb_customer_id, email, name")
+    .select("id, qb_customer_id, email, name, company")
     .eq("shop_owner", shopOwner);
   const byQbId = new Map<string, any>();
   const byEmail = new Map<string, any>();
@@ -1246,10 +1246,18 @@ async function handlePullCustomers(token: string, realmId: string, supabase: any
       qb_customer_id: qbId,
     };
 
-    // Check if already imported (by qb_customer_id or email)
+    // Check if already imported. qb_customer_id and email are the fast,
+    // decisive paths. The third pass is a normalized identity match
+    // (company + contact) so an emailless QB customer links to the
+    // existing InkTracker record instead of importing a DUPLICATE — the
+    // same helper the invoice-create path uses (Increment 1). Only runs
+    // when both fast paths miss, so it stays cheap on re-syncs.
     const existingByQb = byQbId.get(qbId);
     const existingByMail = email ? byEmail.get(email.toLowerCase()) : null;
-    const match = existingByQb || existingByMail;
+    const existingByIdentity = (!existingByQb && !existingByMail)
+      ? (existing ?? []).find((c: any) => customerIdentityMatches(qbCust, c))
+      : null;
+    const match = existingByQb || existingByMail || existingByIdentity;
 
     if (match) {
       // Update existing — pull QB data into fields the shop doesn't
