@@ -79,7 +79,8 @@ export const RECONCILE_SEVERITY = Object.freeze({
  * @returns {{severity, issues: string[],
  *           sentSubtotal: number, qbSubtotal: number, subtotalDrift: number,
  *           sentTotal:    number, qbTotal:    number, totalDrift: number,
- *           sentTax:      number, qbTax:      number, taxDrift:   number}}
+ *           sentTax:      number, qbTax:      number, taxDrift:   number,
+ *           lineAmountDrift: boolean, taxMismatch: boolean, missingTax: boolean}}
  *
  * severity:
  *   - 'fatal'        — qbResponse is missing/garbage. Caller MUST NOT

@@ -69,6 +69,53 @@ export function buildQBDisplayName(customer) {
   return name;
 }
 
+// ── Fuzzy customer matching (duplicate prevention) ───────────────────────────
+// Exact email + exact DisplayName matching misses real duplicates: a
+// QB customer imported/created with a slightly different DisplayName
+// format ("Acme - John"), or cosmetic differences (case, whitespace,
+// trailing punctuation: "Acme Inc" vs "acme, inc."). These helpers let
+// the caller verify a candidate QB row is the SAME logical customer
+// without merging genuinely-distinct contacts at one company.
+
+// Normalize a name for comparison: lowercased, punctuation→space,
+// whitespace collapsed, trimmed.
+export function normalizeForMatch(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// True when a QB customer row is the same logical customer as `customer`.
+// Decisive on email. Otherwise compares normalized company + contact:
+//   - company AND name present → BOTH must match (distinct contacts at the
+//     same company are NOT merged), with a DisplayName-format fallback.
+//   - company only / name only → that single field matches (same behavior
+//     as the existing exact-DisplayName match, just normalized).
+export function customerIdentityMatches(qbRow, customer) {
+  if (!qbRow || !customer) return false;
+
+  const email = isLikelyEmail(customer.email) ? customer.email.trim().toLowerCase() : "";
+  const rowEmail = (qbRow?.PrimaryEmailAddr?.Address || "").trim().toLowerCase();
+  if (email && rowEmail && email === rowEmail) return true;
+
+  const company = normalizeForMatch(customer.company);
+  const name = normalizeForMatch(customer.name);
+  const rowCompany = normalizeForMatch(qbRow.CompanyName);
+  const rowGiven = normalizeForMatch(qbRow.GivenName);
+  const rowDisplay = normalizeForMatch(qbRow.DisplayName);
+
+  if (company && name) {
+    if (rowCompany === company && rowGiven === name) return true;
+    // DisplayName "company (name)" formatting fallback.
+    return rowDisplay === normalizeForMatch(`${customer.company} (${customer.name})`);
+  }
+  if (company) return rowCompany === company || rowDisplay === company;
+  if (name) return rowGiven === name || rowDisplay === name;
+  return false;
+}
+
 // ── Email format guard ──────────────────────────────────────────────────────
 // QB validates email per RFC 822 and returns 400 (ValidationFault) when
 // the value doesn't look like an email. The InkTracker customers table
