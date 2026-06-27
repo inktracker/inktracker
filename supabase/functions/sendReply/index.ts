@@ -144,6 +144,6 @@ Deno.serve(async (req) => {
     return Response.json({ sent: allOk, results }, { headers: CORS });
   } catch (err) {
     console.error("[sendReply] error:", err);
-    return Response.json({ error: String(err.message ?? err) }, { status: 500, headers: CORS });
+    return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
   }
 });

@@ -112,7 +112,7 @@ Deno.serve(async (req) => {
     // fire the trial-activation side effects twice. Tests CW1–CW6
     // in _shared/__tests__/webhookIdempotency.test.js.
     const dedupId = extractBillingEventId(event);
-    const isFirstDelivery = await claimWebhookEvent(adminClient(), "billing", dedupId, event);
+    const isFirstDelivery = await claimWebhookEvent(adminClient(), "billing", dedupId as string, event);
     if (!isFirstDelivery) {
       console.log(`[billingWebhook] Duplicate event ${dedupId} — skipping`);
       return new Response(JSON.stringify({ received: true, deduplicated: true }), { headers: CORS });
@@ -123,7 +123,7 @@ Deno.serve(async (req) => {
         const session = event.data.object as Stripe.Checkout.Session;
         const customerId = session.customer as string;
         const subscriptionId = session.subscription as string;
-        const tier = session.metadata?.tier || session.subscription_data?.metadata?.tier || "shop";
+        const tier = session.metadata?.tier || (session as any).subscription_data?.metadata?.tier || "shop";
 
         // Get subscription to find the tier from price
         if (subscriptionId) {
@@ -211,8 +211,8 @@ Deno.serve(async (req) => {
             const { subject, html } = buildTrialWillEndEmail({
               shopName: profile.shop_name,
               trialEndsOn,
-            });
-            await sendApprovalNotification({ to: recipient, subject, html });
+            } as any);
+            await sendApprovalNotification({ to: recipient, subject, html } as any);
           } else {
             console.warn(`[billingWebhook] trial_will_end: no profile for customer ${customerId}`);
           }
@@ -228,7 +228,8 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error("billingWebhook error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(JSON.stringify({ error: message }), {
       status: 400,
       headers: { ...CORS, "Content-Type": "application/json" },
     });

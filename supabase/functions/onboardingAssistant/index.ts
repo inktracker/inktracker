@@ -395,7 +395,8 @@ function json(payload: unknown, status = 200): Response {
 }
 
 async function countSafe(
-  admin: ReturnType<typeof createClient>,
+  // deno-lint-ignore no-explicit-any
+  admin: any,
   table: string,
   shopOwner: string,
 ): Promise<number> {
@@ -414,7 +415,8 @@ async function countSafe(
 
 // Brokers' rows are keyed by `broker_id` (= their email), not shop_owner.
 async function countBrokerScoped(
-  admin: ReturnType<typeof createClient>,
+  // deno-lint-ignore no-explicit-any
+  admin: any,
   table: string,
   brokerEmail: string,
 ): Promise<number> {

@@ -84,7 +84,7 @@ async function getShopQbTokens(supabase: any, shopOwnerEmail: string) {
     return { accessToken: profile.qb_access_token, realmId: profile.qb_realm_id };
   }
 
-  const fresh = await refreshQbToken(profile.qb_refresh_token);
+  const fresh = await refreshQbToken(profile.qb_refresh_token as string);
   await updateProfileSecrets(supabase, profile.id, {
     qb_access_token:     fresh.access_token,
     qb_refresh_token:    fresh.refresh_token ?? profile.qb_refresh_token,
@@ -184,7 +184,7 @@ async function sendOwnerNotification(quote: any, amountPaid: number, isDeposit: 
     shopName: "Payment Confirmed",
     subhead: "Stripe-verified",
     contentHtml: bodyHtml,
-    logoUrl: shopLogoUrl,
+    logoUrl: shopLogoUrl ?? undefined,
   });
 
   await fetch("https://api.resend.com/emails", {
@@ -232,7 +232,7 @@ async function sendCustomerConfirmation(quote: any, amountPaid: number, isDeposi
     subhead: isDeposit ? "Deposit Received" : "Payment Confirmed",
     contentHtml: bodyHtml,
     footerHtml: `Sent on behalf of ${shopName}.`,
-    logoUrl: shopLogoUrl,
+    logoUrl: shopLogoUrl ?? undefined,
   });
 
   await fetch("https://api.resend.com/emails", {
@@ -252,7 +252,7 @@ Deno.serve(async (req) => {
     return Response.json({ error: "Stripe not configured" }, { status: 500, headers: CORS });
   }
 
-  const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
+  const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as any });
 
   // Fail closed — never process an event without a verified Stripe signature.
   if (!STRIPE_WEBHOOK_SECRET) {
@@ -278,7 +278,7 @@ Deno.serve(async (req) => {
   // customer + shop emails. Pure-logic + tests in
   // _shared/webhookIdempotency.js (CW1–CW6).
   const dedupId = extractStripeEventId(event);
-  const isFirstDelivery = await claimWebhookEvent(supabase, "stripe", dedupId, event);
+  const isFirstDelivery = await claimWebhookEvent(supabase, "stripe", dedupId as string, event);
   if (!isFirstDelivery) {
     console.log(`[stripeWebhook] Duplicate event ${dedupId} — skipping (already processed)`);
     return Response.json({ received: true, deduplicated: true }, { headers: CORS });
@@ -397,7 +397,7 @@ Deno.serve(async (req) => {
         relatedEntity: "quote",
         relatedId: quote.id,
         metadata: { quote_id: quote.quote_id, amount: amountPaid, deposit: isDeposit },
-      });
+      } as any);
 
       console.log(`[stripeWebhook] Processed payment for quote ${quote.quote_id}, amount: $${amountPaid}, deposit: ${isDeposit}`);
     }
@@ -447,6 +447,6 @@ Deno.serve(async (req) => {
     return Response.json({ received: true }, { headers: CORS });
   } catch (err) {
     console.error("[stripeWebhook] Error processing event:", err);
-    return Response.json({ error: String(err.message ?? err) }, { status: 500, headers: CORS });
+    return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
   }
 });

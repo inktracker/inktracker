@@ -143,7 +143,7 @@ Deno.serve(async (req) => {
     }
 
     // Pure builder + tests live in ../_shared/connectionLogic.js + __tests__.
-    const tokenFields = buildOAuthTokenFields(tokens, realmId, expiresAt, refreshExpiresAt);
+    const tokenFields = buildOAuthTokenFields(tokens, realmId, expiresAt, refreshExpiresAt as any);
 
     // Single write — profile_secrets is the canonical location for tokens.
     // The legacy `profiles` columns were dropped in the

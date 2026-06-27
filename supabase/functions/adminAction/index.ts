@@ -125,7 +125,7 @@ serve(async (req) => {
           error: access.reason === "not_found" ? "Target user not found" : "Cannot change permissions on a user from another shop",
         }), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      if (targetProfile.role !== "manager") {
+      if (targetProfile!.role !== "manager") {
         return new Response(JSON.stringify({ error: "Permissions only apply to managers." }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -183,7 +183,7 @@ serve(async (req) => {
         ({ data, error } = await adminClient
           .from("profiles")
           .update({ role })
-          .eq("id", existingForAuth.id)
+          .eq("id", existingForAuth!.id)
           .select()
           .single());
       } else if (profileId) {
@@ -463,7 +463,7 @@ serve(async (req) => {
       // auth_id), so no second roundtrip needed. Fall back to the caller-
       // provided authId only if the profile row had no auth_id (orphan
       // pre-created profile case).
-      const resolvedAuthId = targetProfile.auth_id || authId;
+      const resolvedAuthId = targetProfile!.auth_id || authId;
 
       // Delete the auth user (cascades to profile via ON DELETE CASCADE).
       if (resolvedAuthId) {

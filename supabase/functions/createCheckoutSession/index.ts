@@ -239,7 +239,7 @@ async function handleApproveQuote(quoteId: string, token?: string) {
         relatedEntity: "quote",
         relatedId: quote.id,
         metadata: { quote_id: quote.quote_id },
-      });
+      } as any);
     }
     // Rate-limit backstop: at most 5 approval emails/hour per quote.
     const { data: underLimit } = await supabase.rpc("check_request_rate", {
@@ -384,7 +384,7 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
 async function handleCreateSession(params: any) {
   if (!STRIPE_SECRET_KEY) return { error: "Stripe not configured." };
 
-  const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" });
+  const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2024-06-20" as any });
   const supabase = serviceClient();
 
   // Verify token before generating a checkout URL. Otherwise anyone could
@@ -519,6 +519,6 @@ Deno.serve(async (req) => {
     return Response.json(result, { headers: CORS });
   } catch (err) {
     console.error("[createCheckoutSession] error:", err);
-    return Response.json({ error: String(err.message ?? err) }, { status: 500, headers: CORS });
+    return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
   }
 });

@@ -331,7 +331,7 @@ async function processNotification(supabase: any, notification: any) {
         }
       }
     } catch (err) {
-      console.error(`[qbWebhook] Error processing entity ${entity.name}/${entity.id}:`, err.message);
+      console.error(`[qbWebhook] Error processing entity ${entity.name}/${entity.id}:`, err instanceof Error ? err.message : String(err));
     }
   }
 }
@@ -375,7 +375,7 @@ Deno.serve(async (req) => {
     // unhealthy — same class of "everything looks fine, no events
     // arrive" bug as a missing webhook signing key.
     const dedupId = extractQbEventId(body);
-    const claim = await claimWebhookEventDetailed(supabase, "qb", dedupId, body);
+    const claim = await claimWebhookEventDetailed(supabase, "qb", dedupId as string, body);
     if (claim.status === CLAIM_OUTCOMES.DUPLICATE) {
       console.log(`[qbWebhook] Duplicate event ${dedupId} — skipping`);
       return new Response("ok", { status: 200, headers: CORS });
