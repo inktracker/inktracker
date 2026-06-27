@@ -9,29 +9,58 @@
 // Where InkTracker invoice revenue posts in QB. The shop can pick an account
 // explicitly (Account → QuickBooks); when unset we guess by name, then take the
 // first Income account, so existing shops keep working (default-until-set).
-export const PREFERRED_INCOME_NAMES = ["Sales of Product Income", "Services", "Sales", "Income"];
+export const PREFERRED_INCOME_NAMES = [
+  "Sales of Product Income", "Sales Income", "Product Sales", "Sales",
+  "Services", "Service Income", "Gross Sales", "Revenue", "Income",
+];
+
+// Income accounts that exist in most QB charts but are NOT where a print
+// shop's product revenue belongs. When the shop hasn't chosen an account
+// and no preferred-name match exists, we pick the first income account
+// that ISN'T one of these — so we don't silently post sales to
+// "Uncategorized Income" / "Interest Income" / etc. (substring, lowercased).
+export const NON_SALES_INCOME_NAMES = [
+  "uncategorized income", "other income", "interest income", "interest earned",
+  "billable expense income", "reimbursed expenses", "unapplied cash payment income",
+  "dividend income", "gain on", "miscellaneous income", "refunds", "discounts given",
+];
+
+const normName = (s) => String(s ?? "").trim().toLowerCase();
+
+export function isNonSalesIncomeName(name) {
+  const n = normName(name);
+  if (!n) return false;
+  return NON_SALES_INCOME_NAMES.some((bad) => n.includes(bad));
+}
 
 /**
  * @param {Array<{Id:any,Name:string}>} accounts  Income accounts from QB.
  * @param {string|null} configuredId               The shop's chosen account id.
  * @param {string[]} preferred                     Ordered name fallbacks.
- * @returns {{id: string|null, source: 'configured'|'preferred'|'first'|null}}
+ * @returns {{id: string|null, source: 'configured'|'preferred'|'first'|'fallback'|null}}
  *   `configured` only when the chosen id STILL exists in QB (deleted accounts
- *   fall back to the guess rather than erroring later).
+ *   fall back to the guess rather than erroring later). `first` = first
+ *   real sales account; `fallback` = first account when every income
+ *   account looks non-sales (better than nothing).
  */
 export function pickIncomeAccountId(accounts, configuredId, preferred = PREFERRED_INCOME_NAMES) {
-  const list = Array.isArray(accounts) ? accounts : [];
+  const list = (Array.isArray(accounts) ? accounts : []).filter((a) => a && a.Id != null);
+
+  // 1. The shop's explicit choice, when it still exists.
   if (configuredId) {
-    const hit = list.find((a) => a && String(a.Id) === String(configuredId));
+    const hit = list.find((a) => String(a.Id) === String(configuredId));
     if (hit) return { id: String(hit.Id), source: "configured" };
   }
+  // 2. Preferred sales-account names (case-insensitive).
   for (const name of preferred) {
-    const hit = list.find((a) => a && a.Name === name);
+    const hit = list.find((a) => normName(a.Name) === normName(name));
     if (hit) return { id: String(hit.Id), source: "preferred" };
   }
-  if (list.length > 0 && list[0] && list[0].Id != null) {
-    return { id: String(list[0].Id), source: "first" };
-  }
+  // 3. First income account that ISN'T an obvious non-sales bucket.
+  const realSales = list.find((a) => !isNonSalesIncomeName(a.Name));
+  if (realSales) return { id: String(realSales.Id), source: "first" };
+  // 4. Last resort: the very first income account.
+  if (list.length > 0) return { id: String(list[0].Id), source: "fallback" };
   return { id: null, source: null };
 }
 

@@ -15,6 +15,7 @@ import {
   isQbInvoicePaid,
   buildUpdateFailureResponse,
   pickIncomeAccountId,
+  isNonSalesIncomeName,
   normalizeForMatch,
   customerIdentityMatches,
 } from "../qbInvoice";
@@ -76,18 +77,47 @@ describe("pickIncomeAccountId", () => {
     expect(pickIncomeAccountId(accts, "30")).toEqual({ id: "30", source: "configured" });
   });
   it("falls back to a preferred name when the chosen id is gone (deleted in QB)", () => {
-    // "Services" precedes "Sales" in PREFERRED_INCOME_NAMES, so it wins.
-    expect(pickIncomeAccountId(accts, "999")).toEqual({ id: "30", source: "preferred" });
+    // "Sales" precedes "Services" in PREFERRED_INCOME_NAMES, so it wins.
+    expect(pickIncomeAccountId(accts, "999")).toEqual({ id: "20", source: "preferred" });
   });
   it("guesses by preferred name when nothing is configured", () => {
-    expect(pickIncomeAccountId(accts, null)).toEqual({ id: "30", source: "preferred" });
+    expect(pickIncomeAccountId(accts, null)).toEqual({ id: "20", source: "preferred" });
   });
-  it("uses the first account when no preferred name matches", () => {
+  it("matches preferred names case-insensitively", () => {
+    expect(pickIncomeAccountId([{ Id: "5", Name: "SALES" }], null)).toEqual({ id: "5", source: "preferred" });
+  });
+  it("skips non-sales income buckets when picking the first account", () => {
+    // No preferred-name match; must skip "Uncategorized Income" and land
+    // on the real sales account, not silently post revenue to junk.
+    const odd = [{ Id: "10", Name: "Uncategorized Income" }, { Id: "99", Name: "Custom Apparel Income" }];
+    expect(pickIncomeAccountId(odd, null)).toEqual({ id: "99", source: "first" });
+  });
+  it("uses the first real (non-junk) account when no preferred name matches", () => {
     const odd = [{ Id: "7", Name: "Consulting Income" }, { Id: "8", Name: "Misc" }];
     expect(pickIncomeAccountId(odd, null)).toEqual({ id: "7", source: "first" });
   });
+  it("falls back to the first account only when EVERY income account looks non-sales", () => {
+    const allJunk = [{ Id: "10", Name: "Uncategorized Income" }, { Id: "11", Name: "Other Income" }];
+    expect(pickIncomeAccountId(allJunk, null)).toEqual({ id: "10", source: "fallback" });
+  });
   it("returns null id when there are no income accounts", () => {
     expect(pickIncomeAccountId([], "30")).toEqual({ id: null, source: null });
+  });
+});
+
+describe("isNonSalesIncomeName", () => {
+  it("flags common non-sales income buckets (substring, case-insensitive)", () => {
+    expect(isNonSalesIncomeName("Uncategorized Income")).toBe(true);
+    expect(isNonSalesIncomeName("other income")).toBe(true);
+    expect(isNonSalesIncomeName("Interest Income")).toBe(true);
+    expect(isNonSalesIncomeName("Billable Expense Income")).toBe(true);
+  });
+  it("does NOT flag real sales accounts", () => {
+    expect(isNonSalesIncomeName("Sales")).toBe(false);
+    expect(isNonSalesIncomeName("Sales of Product Income")).toBe(false);
+    expect(isNonSalesIncomeName("Custom Apparel Income")).toBe(false);
+    expect(isNonSalesIncomeName("")).toBe(false);
+    expect(isNonSalesIncomeName(null)).toBe(false);
   });
 });
 
