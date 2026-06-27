@@ -27,6 +27,7 @@ import {
   resolveInvoiceCustomerFields,
   pickIncomeAccountId,
   customerIdentityMatches,
+  normalizeItemName,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -612,30 +613,11 @@ async function findIncomeAccountId(token: string, realmId: string, configuredId:
   return created?.Account?.Id ?? null;
 }
 
-// Find-or-create a QB Service item by exact name, returning its Id.
-// Caches the income account lookup across calls in the same request via a closure arg.
-async function findOrCreateServiceItem(
-  token: string,
-  realmId: string,
-  itemName: string,
-  incomeAccountId: string,
-) {
-  const safe = escapeQbStringLiteral(itemName);
-  const res = await qbQuery(token, realmId,
-    `SELECT Id, Name FROM Item WHERE Name = '${safe}'`
-  );
-  const existing = res?.QueryResponse?.Item?.[0];
-  if (existing) return existing.Id;
-
-  const created = await qbCreate(token, realmId, "item", {
-    Name: itemName,
-    Type: "Service",
-    IncomeAccountRef: { value: incomeAccountId },
-  });
-  return created?.Item?.Id ?? null;
-}
-
 // Resolve every unique item name referenced in a payload to its QB Item Id.
+// Fetches the shop's existing items ONCE and matches by exact name, then by
+// NORMALIZED name (so "T-Shirts" reuses an existing "T-Shirt" instead of
+// creating a duplicate that splits the sales-by-product report). Only
+// creates a Service item when nothing matches.
 async function resolveItemIdMap(
   token: string,
   realmId: string,
@@ -651,9 +633,37 @@ async function resolveItemIdMap(
   const incomeAccountId = await findIncomeAccountId(token, realmId, configuredIncomeAccountId);
   if (!incomeAccountId) throw new Error("No QB Income account found; cannot create service items");
 
+  // One fetch of existing items (any type — we reuse whatever exists with a
+  // matching name, regardless of Service/Inventory). Index by exact AND
+  // normalized name.
+  const itemsRes = await qbQuery(token, realmId, "SELECT Id, Name FROM Item MAXRESULTS 1000");
+  const existingItems: any[] = (itemsRes?.QueryResponse?.Item ?? []).filter((i: any) => i && i.Name);
+  const byExact = new Map<string, string>();
+  const byNorm = new Map<string, string>();
+  for (const it of existingItems) {
+    byExact.set(it.Name, String(it.Id));
+    const n = normalizeItemName(it.Name);
+    if (n && !byNorm.has(n)) byNorm.set(n, String(it.Id));
+  }
+
   const map = new Map<string, string>();
   for (const name of names) {
-    const id = await findOrCreateServiceItem(token, realmId, name, incomeAccountId);
+    let id = byExact.get(name) || byNorm.get(normalizeItemName(name)) || null;
+    if (!id) {
+      const created = await qbCreate(token, realmId, "item", {
+        Name: name,
+        Type: "Service",
+        IncomeAccountRef: { value: incomeAccountId },
+      });
+      id = created?.Item?.Id ?? null;
+      // Index the new item so another name in THIS payload that normalizes
+      // to the same value reuses it instead of creating a second duplicate.
+      if (id) {
+        byExact.set(name, id);
+        const n = normalizeItemName(name);
+        if (n) byNorm.set(n, id);
+      }
+    }
     if (id) map.set(name, id);
   }
   return map;
