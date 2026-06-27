@@ -14,6 +14,7 @@ import {
 } from "../shared/pricing";
 import { getAddonsForTechnique, pruneExtrasForTechnique } from "@/lib/pricing/extrasScopes";
 import PricePanel from "./PricePanel";
+import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 
@@ -1265,15 +1266,13 @@ export default function LineItemEditor({
 
                         <div className="w-28">
                           <label className="block text-xs text-slate-500 mb-0.5">Location</label>
-                          <select
+                          <PlacementSelect
                             value={imp.location}
-                            onChange={(e) => updateImprint(idx, { location: e.target.value })}
+                            onChange={(val) => updateImprint(idx, { location: val })}
+                            options={LOCATIONS}
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
-                          >
-                            {LOCATIONS.map((l) => (
-                              <option key={l}>{l}</option>
-                            ))}
-                          </select>
+                            customPlaceholder="Custom location"
+                          />
                         </div>
 
                         {imp.technique === "Embroidery" ? (
