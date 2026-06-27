@@ -1876,7 +1876,10 @@ async function handleListIncomeAccounts(token: string, realmId: string) {
     "SELECT Id, Name FROM Account WHERE AccountType = 'Income' MAXRESULTS 100"
   );
   const accts: any[] = res?.QueryResponse?.Account ?? [];
-  return { accounts: accts.map((a) => ({ id: String(a.Id), name: a.Name })) };
+  // autoSelectedId = the account "Auto" would post to, so the UI can show
+  // the shop where un-configured revenue lands instead of it being silent.
+  const autoSelectedId = pickIncomeAccountId(accts, null).id;
+  return { accounts: accts.map((a) => ({ id: String(a.Id), name: a.Name })), autoSelectedId };
 }
 
 // ── Action: getQbEvents ─────────────────────────────────────────────────────

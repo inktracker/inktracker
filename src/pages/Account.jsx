@@ -125,6 +125,9 @@ export default function Account() {
   // "" = Auto (let qbSync guess). qbIncomeAccounts: null=not loaded, []=loaded.
   const [qbIncomeAccountId, setQbIncomeAccountId] = useState("");
   const [qbIncomeAccounts, setQbIncomeAccounts] = useState(null);
+  // The account "Auto" currently resolves to (from listIncomeAccounts), so
+  // the picker can show where un-configured revenue actually posts.
+  const [qbAutoAccountId, setQbAutoAccountId] = useState("");
   const [qbAccountsLoading, setQbAccountsLoading] = useState(false);
   const [qbAccountSaving, setQbAccountSaving] = useState(false);
   const [qbConnecting, setQbConnecting] = useState(false);
@@ -437,7 +440,10 @@ export default function Account() {
           action: "listIncomeAccounts",
           accessToken: session?.access_token,
         });
-        if (!cancelled && !error && Array.isArray(data?.accounts)) setQbIncomeAccounts(data.accounts);
+        if (!cancelled && !error && Array.isArray(data?.accounts)) {
+          setQbIncomeAccounts(data.accounts);
+          setQbAutoAccountId(data.autoSelectedId || "");
+        }
       } catch { /* leave null — the picker shows a soft fallback */ }
       finally { if (!cancelled) setQbAccountsLoading(false); }
     })();
@@ -973,7 +979,12 @@ export default function Account() {
                     disabled={qbAccountSaving}
                     className="w-full text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white disabled:opacity-60"
                   >
-                    <option value="">Auto — let InkTracker choose</option>
+                    <option value="">
+                      {(() => {
+                        const auto = (qbIncomeAccounts || []).find((a) => a.id === qbAutoAccountId);
+                        return auto ? `Auto — currently “${auto.name}”` : "Auto — let InkTracker choose";
+                      })()}
+                    </option>
                     {qbIncomeAccounts.map((a) => (
                       <option key={a.id} value={a.id}>{a.name}</option>
                     ))}
