@@ -9,8 +9,13 @@
 // Where InkTracker invoice revenue posts in QB. The shop can pick an account
 // explicitly (Account → QuickBooks); when unset we guess by name, then take the
 // first Income account, so existing shops keep working (default-until-set).
+// "Sales" first: it's the generic account most shops' product revenue
+// already lives in. Used only as the name-based fallback for brand-new
+// shops with no items yet — dominantItemIncomeAccount() (matching the
+// shop's existing items) takes priority so InkTracker doesn't introduce a
+// SECOND income account and split the P&L.
 export const PREFERRED_INCOME_NAMES = [
-  "Sales of Product Income", "Sales Income", "Product Sales", "Sales",
+  "Sales", "Sales Income", "Sales of Product Income", "Product Sales",
   "Services", "Service Income", "Gross Sales", "Revenue", "Income",
 ];
 
@@ -62,6 +67,29 @@ export function pickIncomeAccountId(accounts, configuredId, preferred = PREFERRE
   // 4. Last resort: the very first income account.
   if (list.length > 0) return { id: String(list[0].Id), source: "fallback" };
   return { id: null, source: null };
+}
+
+// The income account the shop's EXISTING items use most. Newly-created
+// items should match this so InkTracker doesn't introduce a DIFFERENT
+// income account than the shop already uses — which splits product
+// revenue across two P&L lines ("Sales" vs "Sales of Product Income").
+// Returns the account id, or null when no item carries an income account.
+//
+// @param {Array<{IncomeAccountRef?: {value?: any}}>} items  QB items.
+export function dominantItemIncomeAccount(items) {
+  const counts = new Map();
+  for (const it of (Array.isArray(items) ? items : [])) {
+    const id = it?.IncomeAccountRef?.value;
+    if (id == null || id === "") continue;
+    const key = String(id);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  let best = null;
+  let bestN = 0;
+  for (const [id, n] of counts) {
+    if (n > bestN) { best = id; bestN = n; }
+  }
+  return best;
 }
 
 // ── DocNumber selection ─────────────────────────────────────────────────────
