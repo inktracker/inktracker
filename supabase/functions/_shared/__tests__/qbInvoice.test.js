@@ -7,6 +7,7 @@ import {
   buildQbShipAddr,
   isAstSourceableShipTo,
   isExemptionActive,
+  buildTaxRecordFromQbInvoice,
   escapeQbStringLiteral,
   buildInvoiceLinesFromPayload,
   extractPaymentLink,
@@ -1084,5 +1085,72 @@ describe("isExemptionActive", () => {
   it("expired beats scope (expiry checked first)", () => {
     const c = { tax_exempt: true, exemption_states: ["NV"], exemption_expires_at: "2020-01-01" };
     expect(isExemptionActive(c, { asOf, destinationState: "NV" })).toBe(false);
+  });
+});
+
+// ── buildTaxRecordFromQbInvoice ─────────────────────────────────────────────
+describe("buildTaxRecordFromQbInvoice", () => {
+  const qbInvoice = {
+    TxnDate: "2026-06-20",
+    TotalAmt: 124.69,
+    TxnTaxDetail: {
+      TotalTax: 9.69,
+      TaxLine: [
+        { Amount: 5.0, DetailType: "TaxLineDetail", TaxLineDetail: { TaxPercent: 4.6, NetAmountTaxable: 115.0 } },
+        { Amount: 4.69, DetailType: "TaxLineDetail", TaxLineDetail: { TaxPercent: 4.078, NetAmountTaxable: 115.0 } },
+      ],
+    },
+  };
+  const ctx = {
+    shopOwner: "shop@example.com",
+    quoteId: "Q-2026-9",
+    qbInvoiceId: "3712",
+    isTaxExempt: false,
+    customer: { id: 42, company: "Acme", ship_to_address: { state: "nv", zip: "89501" } },
+  };
+
+  it("captures totals, taxable base (max of lines, not sum), and effective rate", () => {
+    const rec = buildTaxRecordFromQbInvoice(qbInvoice, ctx);
+    expect(rec.total).toBe(124.69);
+    expect(rec.tax_total).toBe(9.69);
+    expect(rec.subtotal).toBe(115.0);
+    expect(rec.taxable_amount).toBe(115.0);            // max(115,115) — not 230
+    expect(rec.effective_rate).toBeCloseTo(8.4261, 3); // 9.69/115*100
+    expect(rec.tax_lines).toHaveLength(2);
+    expect(rec.tax_lines[0]).toEqual({ rate_percent: 4.6, amount: 5.0, taxable: 115.0 });
+  });
+
+  it("carries context: shop, ids, ship-to state (uppercased), exemption flag", () => {
+    const rec = buildTaxRecordFromQbInvoice(qbInvoice, ctx);
+    expect(rec.shop_owner).toBe("shop@example.com");
+    expect(rec.qb_invoice_id).toBe("3712");
+    expect(rec.quote_id).toBe("Q-2026-9");
+    expect(rec.customer_id).toBe("42");
+    expect(rec.customer_name).toBe("Acme");
+    expect(rec.txn_date).toBe("2026-06-20");
+    expect(rec.ship_to_state).toBe("NV");
+    expect(rec.ship_to_zip).toBe("89501");
+    expect(rec.exempt).toBe(false);
+    expect(rec.authority).toBe("quickbooks_ast");
+  });
+
+  it("handles a no-tax invoice (exempt) — zero taxable, empty lines", () => {
+    const rec = buildTaxRecordFromQbInvoice(
+      { TxnDate: "2026-06-20", TotalAmt: 100, TxnTaxDetail: { TotalTax: 0 } },
+      { ...ctx, isTaxExempt: true },
+    );
+    expect(rec.tax_total).toBe(0);
+    expect(rec.taxable_amount).toBe(0);
+    expect(rec.effective_rate).toBe(0);
+    expect(rec.tax_lines).toEqual([]);
+    expect(rec.exempt).toBe(true);
+  });
+
+  it("falls back to subtotal as taxable when taxed but no line detail", () => {
+    const rec = buildTaxRecordFromQbInvoice(
+      { TxnDate: "2026-06-20", TotalAmt: 108.5, TxnTaxDetail: { TotalTax: 8.5 } },
+      ctx,
+    );
+    expect(rec.taxable_amount).toBe(100.0);
   });
 });

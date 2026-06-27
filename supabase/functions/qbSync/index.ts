@@ -32,6 +32,7 @@ import {
   dominantItemIncomeAccount,
   buildQbShipAddr,
   isExemptionActive,
+  buildTaxRecordFromQbInvoice,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -1187,6 +1188,33 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_doc_number:   qbDocNumber,
       qb_payment_link: paymentLink,
     }).eq("id", quote.id);
+  }
+
+  // Phase 3: immutable tax-audit record. Snapshots QB's authoritative
+  // per-jurisdiction tax (TxnTaxDetail) for the by-state filing report and
+  // audit trail. Upsert on (shop_owner, qb_invoice_id) so a resync refreshes
+  // the one authoritative row. Best-effort — must never fail the invoice.
+  // See docs/qb-multistate-tax-scope.md §10.
+  try {
+    const taxRecord = buildTaxRecordFromQbInvoice(qbInvoiceFinal, {
+      shopOwner:   quote.shop_owner,
+      quoteId:     quote.quote_id,
+      qbInvoiceId,
+      customer,
+      isTaxExempt,
+    });
+    if (taxRecord.shop_owner && taxRecord.qb_invoice_id) {
+      const taxAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const { error: trErr } = await taxAdmin
+        .from("tax_records")
+        .upsert(taxRecord, { onConflict: "shop_owner,qb_invoice_id" });
+      if (trErr) console.error("[createInvoice] tax-record upsert error (non-fatal):", trErr.message);
+    }
+  } catch (err) {
+    console.error("[createInvoice] tax-record write failed (non-fatal):", (err as Error)?.message);
   }
 
   return {

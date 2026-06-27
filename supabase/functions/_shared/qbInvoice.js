@@ -353,6 +353,65 @@ export function isExemptionActive(customer, opts = {}) {
   return true;
 }
 
+/**
+ * Build the immutable tax-audit record (Phase 3) for one QB invoice. Captures
+ * the tax AS CHARGED — taxable base, per-jurisdiction lines, ship-to state,
+ * and exemption basis — from QuickBooks' authoritative TxnTaxDetail. Pure; the
+ * caller persists it (upsert on shop_owner + qb_invoice_id).
+ *
+ * @param {object} qbInvoice  the QB Invoice (with TotalAmt + TxnTaxDetail).
+ * @param {object} ctx        { shopOwner, quoteId, qbInvoiceId, customer, isTaxExempt, txnDate }.
+ */
+export function buildTaxRecordFromQbInvoice(qbInvoice, ctx = {}) {
+  const total    = Number(qbInvoice?.TotalAmt ?? 0);
+  const taxTotal = Number(qbInvoice?.TxnTaxDetail?.TotalTax ?? 0);
+  const subtotal = Number((total - taxTotal).toFixed(2));
+
+  const rawLines = Array.isArray(qbInvoice?.TxnTaxDetail?.TaxLine)
+    ? qbInvoice.TxnTaxDetail.TaxLine
+    : [];
+  const tax_lines = rawLines
+    .filter((l) => l && l.TaxLineDetail)
+    .map((l) => ({
+      rate_percent: Number(l.TaxLineDetail.TaxPercent ?? 0),
+      amount:       Number(l.Amount ?? 0),
+      taxable:      Number(l.TaxLineDetail.NetAmountTaxable ?? 0),
+    }));
+
+  // Taxable base: AST tax lines (state + county + city) each report the SAME
+  // net taxable for a combined rate, so take the max (not the sum) to avoid
+  // double-counting. Fall back to the subtotal when taxed but no line detail.
+  const taxableFromLines = tax_lines.reduce((m, l) => Math.max(m, l.taxable), 0);
+  const taxable_amount = taxTotal > 0
+    ? Number((taxableFromLines > 0 ? taxableFromLines : subtotal).toFixed(2))
+    : 0;
+  const effective_rate = taxable_amount > 0
+    ? Number(((taxTotal / taxable_amount) * 100).toFixed(4))
+    : 0;
+
+  const ship = ctx.customer?.ship_to_address || {};
+  return {
+    shop_owner:    ctx.shopOwner ?? null,
+    qb_invoice_id: ctx.qbInvoiceId != null ? String(ctx.qbInvoiceId) : null,
+    quote_id:      ctx.quoteId ?? null,
+    customer_id:   ctx.customer?.id != null ? String(ctx.customer.id) : null,
+    customer_name: ctx.customer?.company || ctx.customer?.name || null,
+    txn_date:      String(qbInvoice?.TxnDate || ctx.txnDate || "").slice(0, 10) || null,
+    authority:     "quickbooks_ast",
+    subtotal,
+    tax_total:     taxTotal,
+    total,
+    taxable_amount,
+    effective_rate,
+    ship_to_state: String(ship.state ?? "").trim().toUpperCase() || null,
+    ship_to_zip:   String(ship.zip ?? "").trim() || null,
+    exempt:        !!ctx.isTaxExempt,
+    exemption_type:               ctx.customer?.exemption_type || null,
+    exemption_certificate_number: ctx.customer?.exemption_certificate_number || null,
+    tax_lines,
+  };
+}
+
 // ── Single-quote SQL escaping for QB QBO query strings ─────────────────────
 // QB BNF requires '' (two single quotes) to escape a single quote inside
 // a string literal. Anything else (e.g. \') silently breaks the query.
