@@ -15,7 +15,56 @@ import {
   isQbInvoicePaid,
   buildUpdateFailureResponse,
   pickIncomeAccountId,
+  normalizeForMatch,
+  customerIdentityMatches,
 } from "../qbInvoice";
+
+describe("normalizeForMatch", () => {
+  it("lowercases, collapses whitespace, and strips punctuation", () => {
+    expect(normalizeForMatch("Acme  Inc.")).toBe("acme inc");
+    expect(normalizeForMatch("ACME, INC.")).toBe("acme inc");
+    expect(normalizeForMatch("  Acme   Inc  ")).toBe("acme inc");
+    expect(normalizeForMatch("Acme-Co")).toBe("acme co");
+  });
+  it("never throws on null/undefined/numbers", () => {
+    expect(normalizeForMatch(null)).toBe("");
+    expect(normalizeForMatch(undefined)).toBe("");
+    expect(normalizeForMatch(42)).toBe("42");
+  });
+});
+
+describe("customerIdentityMatches", () => {
+  it("matches decisively on email regardless of name format", () => {
+    const row = { DisplayName: "Totally Different", PrimaryEmailAddr: { Address: "JOE@biota.co" } };
+    expect(customerIdentityMatches(row, { email: "joe@biota.co", company: "X" })).toBe(true);
+  });
+
+  it("matches a company+contact even when the QB DisplayName is formatted differently", () => {
+    const row = { DisplayName: "Acme - John", CompanyName: "Acme", GivenName: "John" };
+    expect(customerIdentityMatches(row, { company: "Acme", name: "John" })).toBe(true);
+  });
+
+  it("matches cosmetic differences (case / whitespace / punctuation)", () => {
+    const row = { DisplayName: "acme, inc. (john)", CompanyName: "acme, inc.", GivenName: "john" };
+    expect(customerIdentityMatches(row, { company: "Acme Inc", name: "John" })).toBe(true);
+  });
+
+  it("does NOT merge distinct contacts at the same company", () => {
+    const row = { DisplayName: "Acme (Jane)", CompanyName: "Acme", GivenName: "Jane" };
+    expect(customerIdentityMatches(row, { company: "Acme", name: "John" })).toBe(false);
+  });
+
+  it("matches company-only and name-only via DisplayName fallback", () => {
+    expect(customerIdentityMatches({ DisplayName: "Acme", CompanyName: "Acme" }, { company: "Acme" })).toBe(true);
+    expect(customerIdentityMatches({ DisplayName: "John Doe", GivenName: "John Doe" }, { name: "John Doe" })).toBe(true);
+  });
+
+  it("returns false on null inputs or when nothing identifies the customer", () => {
+    expect(customerIdentityMatches(null, { company: "Acme" })).toBe(false);
+    expect(customerIdentityMatches({ DisplayName: "Acme" }, null)).toBe(false);
+    expect(customerIdentityMatches({ DisplayName: "Acme" }, {})).toBe(false);
+  });
+});
 
 describe("pickIncomeAccountId", () => {
   const accts = [

@@ -26,6 +26,7 @@ import {
   buildUpdateFailureResponse,
   resolveInvoiceCustomerFields,
   pickIncomeAccountId,
+  customerIdentityMatches,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -496,24 +497,52 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
   // after retries, it's a real problem and the caller should hear it.
   let qbCustomerId: string | null = null;
 
-  // Only search by email when it actually looks like an email. Junk
-  // values (names, phone numbers) in the customers.email column would
-  // otherwise blow the query syntax or just return zero results.
-  if (isLikelyEmail(customer.email)) {
+  // Fetch candidate rows with the fields needed to verify identity.
+  const queryCustomers = async (where: string) => {
     const res = await qbQuery(token, realmId,
-      `SELECT Id FROM Customer WHERE PrimaryEmailAddr = '${escapeQbStringLiteral(customer.email.trim())}'`
+      `SELECT Id, DisplayName, CompanyName, GivenName, PrimaryEmailAddr FROM Customer WHERE ${where} MAXRESULTS 20`
     );
-    const rows = res?.QueryResponse?.Customer ?? [];
+    return res?.QueryResponse?.Customer ?? [];
+  };
+
+  // 1. Email — the strongest signal. Only when it actually looks like an
+  // email (junk values in customers.email would blow the query syntax).
+  if (isLikelyEmail(customer.email)) {
+    const rows = await queryCustomers(`PrimaryEmailAddr = '${escapeQbStringLiteral(customer.email.trim())}'`);
     if (rows.length > 0) qbCustomerId = rows[0].Id;
   }
 
+  // 2. Exact DisplayName (our canonical "company (name)" format).
   if (!qbCustomerId) {
-    const safeName = escapeQbStringLiteral(displayName);
-    const res = await qbQuery(token, realmId,
-      `SELECT Id FROM Customer WHERE DisplayName = '${safeName}'`
-    );
-    const rows = res?.QueryResponse?.Customer ?? [];
+    const rows = await queryCustomers(`DisplayName = '${escapeQbStringLiteral(displayName)}'`);
     if (rows.length > 0) qbCustomerId = rows[0].Id;
+  }
+
+  // 3. CompanyName + GivenName — finds the SAME company+contact even when
+  // the existing QB record's DisplayName is formatted differently (e.g. an
+  // imported "Acme - John"). Requires BOTH to match so distinct contacts
+  // at one company are never merged.
+  if (!qbCustomerId && customer?.company && customer?.name) {
+    const rows = await queryCustomers(
+      `CompanyName = '${escapeQbStringLiteral(String(customer.company).trim())}' ` +
+      `AND GivenName = '${escapeQbStringLiteral(String(customer.name).trim())}'`
+    );
+    const hit = rows.find((r: any) => customerIdentityMatches(r, customer));
+    if (hit) qbCustomerId = hit.Id;
+  }
+
+  // 4. Normalized fuzzy match — catches cosmetic duplicates (case /
+  // whitespace / punctuation: "Acme Inc" vs "acme, inc."). Fetch
+  // candidates by the first token via LIKE, then compare normalized in JS
+  // (customerIdentityMatches still requires company+contact to agree).
+  if (!qbCustomerId) {
+    const anchor = String(customer?.company || customer?.name || "").trim();
+    const firstToken = anchor.split(/\s+/)[0] || "";
+    if (firstToken.length >= 2) {
+      const rows = await queryCustomers(`DisplayName LIKE '${escapeQbStringLiteral(firstToken)}%'`);
+      const hit = rows.find((r: any) => customerIdentityMatches(r, customer));
+      if (hit) qbCustomerId = hit.Id;
+    }
   }
 
   // Create customer if not found
