@@ -505,6 +505,22 @@ export function getOrderDisplayJobTitle(order, fallbackCustomer = null) {
   return "";
 }
 
+// Company-first END-CLIENT name for BROKER-FACING surfaces (a broker's own
+// dashboard / invoices / order PDF). On broker ORDERS `customer_name` is
+// swapped to the broker's OWN display name and the end client lives in
+// `broker_client_name`; on broker QUOTES the end client is in `customer_name`.
+// Prefer the denormalized company, then the end-client contact. This is the
+// BROKER's view of their client — distinct from getOrderDisplayClient (the
+// SHOP's view, which shows the broker on broker records).
+export function getBrokerClientDisplay(rec) {
+  const company = rec?.company && String(rec.company).trim();
+  if (company) return company;
+  const brokerClient = rec?.broker_client_name && String(rec.broker_client_name).trim();
+  if (brokerClient) return brokerClient;
+  const name = rec?.customer_name && String(rec.customer_name).trim();
+  return name || "—";
+}
+
 export function newLineItem() {
   return {
     id: uid(),
