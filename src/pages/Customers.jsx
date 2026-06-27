@@ -9,7 +9,7 @@ import ModalBackdrop from "../components/shared/ModalBackdrop";
 import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
-import { normalizeShipTo, isShipToComplete, isShipToEmpty, parseUsAddress, emptyShipTo } from "@/lib/tax/address";
+import { normalizeShipTo, isShipToComplete, isShipToEmpty, parseUsAddress } from "@/lib/tax/address";
 import { buildAdditiveMergePatch, describeMergeFor } from "@/lib/customers/mergeCustomerData";
 import { aggregateInvoiceStatsByCustomer } from "@/lib/customers/invoiceStats";
 import { findReconcileNeeded, partitionReconcilePairs, planReconcileActions } from "@/lib/customers/qbReconcileDetect";
