@@ -629,6 +629,67 @@ async function scanAndAlertDataIntegrity(adminClient: any): Promise<{ violations
   }
 }
 
+// ── Webhook-health alert ────────────────────────────────────────────
+// The recurring blind spot: the QB payment webhook silently stops
+// delivering (token mismatch, Test/Live toggle, deleted endpoint) and
+// nobody knows until a customer says "I paid and nothing happened." The
+// nightly reconcile is the safety net — it converts the missed payments —
+// and the COUNT of what it had to convert IS the signal the webhook is
+// down. This emails the operator so the NEXT drift announces itself
+// instead of festering. 24h dedup; benign one-offs stay quiet.
+const WEBHOOK_MISS_ALERT_THRESHOLD = 1;
+
+async function alertWebhookHealth(adminClient: any, paidNotRecorded: number): Promise<{ alerted: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { alerted: false };
+  if (paidNotRecorded < WEBHOOK_MISS_ALERT_THRESHOLD) return { alerted: false };
+  try {
+    // 24h dedup so a down webhook nudges once/day, not on every run.
+    const { data: recent } = await adminClient
+      .from("qb_event_log")
+      .select("id")
+      .eq("action", "webhook_health_alert")
+      .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (recent) return { alerted: false };
+
+    const subject = `[InkTracker] QuickBooks payment webhook may be down — reconcile cleaned up ${paidNotRecorded} missed payment(s)`;
+    const text =
+      `Last night's reconcile had to auto-convert ${paidNotRecorded} paid invoice(s) that the QuickBooks ` +
+      `payment webhook should have caught in real time.\n\n` +
+      `Customers ARE getting their orders started (the reconcile is the backstop) — just up to ~24h late ` +
+      `instead of instantly. If this recurs night after night, the QB payment webhook is misconfigured. ` +
+      `Verify it in the Intuit Developer portal:\n` +
+      `  • Endpoint:  ${SUPABASE_URL}/functions/v1/qbWebhook\n` +
+      `  • Subscribed to:  Payment (Create) + Invoice (Update)\n` +
+      `  • Verifier token matches the QB_WEBHOOK_VERIFIER_TOKEN secret\n` +
+      `  • Production (not sandbox) mode\n\n` +
+      `(An occasional single conversion can be normal — e.g. a payment recorded directly in QuickBooks ` +
+      `never fires our webhook.)`;
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: `InkTracker <${ALERT_FROM_EMAIL}>`, to: [OPERATOR_ALERT_EMAIL], subject, text }),
+    });
+    if (!res.ok) {
+      console.warn(`[qbReconcile] webhook-health alert send failed: ${res.status} ${await res.text()}`);
+      return { alerted: false };
+    }
+    // Record the send so the 24h dedup above suppresses repeats today.
+    await logEvent(adminClient, {
+      shop_owner:    "__system__",
+      action:        "webhook_health_alert",
+      direction:     "outbound",
+      status:        "success",
+      response_body: { paid_not_recorded: paidNotRecorded },
+    });
+    return { alerted: true };
+  } catch (err) {
+    console.warn("[qbReconcile] webhook-health alert exception:", (err as Error)?.message);
+    return { alerted: false };
+  }
+}
+
 // ── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -689,6 +750,10 @@ Deno.serve(async (req) => {
     const summary = summarizeReconciliation(allClassifications);
     const durationMs = Date.now() - startedAt;
 
+    // If the reconcile had to clean up payments the webhook missed, that's
+    // the signal the QB payment webhook is down — alert the operator.
+    const webhookHealth = await alertWebhookHealth(adminClient, summary.paid_not_recorded);
+
     // Log one rollup row per cron run so operators can see "did
     // reconciliation actually run last night?" without scrolling
     // through per-quote rows. shop_owner='__system__' marks it as
@@ -712,6 +777,7 @@ Deno.serve(async (req) => {
       summary,
       duration_ms: durationMs,
       alert:    alertResult,
+      webhook_health: webhookHealth,
     });
   } catch (err) {
     console.error("[qbReconcile] fatal:", err);
