@@ -4,6 +4,8 @@ import {
   nextAvailableDocNumber,
   buildQBDisplayName,
   buildQBCustomerBody,
+  buildQbShipAddr,
+  isAstSourceableShipTo,
   escapeQbStringLiteral,
   buildInvoiceLinesFromPayload,
   extractPaymentLink,
@@ -308,7 +310,26 @@ describe("buildQBCustomerBody", () => {
       PrimaryEmailAddr: { Address: "john@acme.com" },
       PrimaryPhone: { FreeFormNumber: "555-0100" },
       BillAddr: { Line1: "1 Main St" },
+      // No structured ship_to → ShipAddr falls back to the legacy address line.
+      ShipAddr: { Line1: "1 Main St" },
       ResaleNum: "TX-12345",
+    });
+  });
+
+  it("emits a STRUCTURED ShipAddr when the customer has a state+zip ship-to", () => {
+    const body = buildQBCustomerBody({
+      name: "John",
+      address: "1 Main St",
+      ship_to_address: { street: "500 Market St", city: "Austin", state: "tx", zip: "78701" },
+    }, "John");
+    // BillAddr stays the legacy line; ShipAddr is the AST-sourceable destination.
+    expect(body.BillAddr).toEqual({ Line1: "1 Main St" });
+    expect(body.ShipAddr).toEqual({
+      Line1: "500 Market St",
+      City: "Austin",
+      CountrySubDivisionCode: "TX",
+      PostalCode: "78701",
+      Country: "US",
     });
   });
 
@@ -978,5 +999,49 @@ describe("buildInvoiceLinesFromPayload — per-line tax + fees", () => {
     // output carries them for qbSync to read — assert they exist here so the
     // contract with qbSync is pinned.
     expect(lines[0]).toHaveProperty("_taxable", true);
+  });
+});
+
+// ── buildQbShipAddr / isAstSourceableShipTo ─────────────────────────────────
+describe("buildQbShipAddr", () => {
+  it("builds a structured AST-sourceable address from state+zip", () => {
+    expect(buildQbShipAddr({ street: "1 A St", city: "Reno", state: "NV", zip: "89501" }, "ignored")).toEqual({
+      Line1: "1 A St", City: "Reno", CountrySubDivisionCode: "NV", PostalCode: "89501", Country: "US",
+    });
+  });
+
+  it("uppercases state, defaults country to US, omits empty street/city", () => {
+    expect(buildQbShipAddr({ state: "tx", zip: "78701" })).toEqual({
+      CountrySubDivisionCode: "TX", PostalCode: "78701", Country: "US",
+    });
+  });
+
+  it("honors a provided country", () => {
+    expect(buildQbShipAddr({ state: "ON", zip: "M5V", country: "CA" }).Country).toBe("CA");
+  });
+
+  it("falls back to Line1 from fallbackText when state/zip are incomplete", () => {
+    expect(buildQbShipAddr({ street: "1 A St", city: "Reno" }, "1 A St, Reno NV")).toEqual({ Line1: "1 A St, Reno NV" });
+    expect(buildQbShipAddr(null, "100 Liberty St")).toEqual({ Line1: "100 Liberty St" });
+  });
+
+  it("returns null when there is nothing usable", () => {
+    expect(buildQbShipAddr(null, "")).toBeNull();
+    expect(buildQbShipAddr({}, "")).toBeNull();
+    expect(buildQbShipAddr(undefined, undefined)).toBeNull();
+  });
+
+  it("zip alone (no state) is NOT sourceable — falls back to fallback line", () => {
+    expect(buildQbShipAddr({ zip: "89501" }, "fallback")).toEqual({ Line1: "fallback" });
+  });
+});
+
+describe("isAstSourceableShipTo", () => {
+  it("true only with both state and zip", () => {
+    expect(isAstSourceableShipTo({ state: "NV", zip: "89501" })).toBe(true);
+    expect(isAstSourceableShipTo({ state: "NV" })).toBe(false);
+    expect(isAstSourceableShipTo({ zip: "89501" })).toBe(false);
+    expect(isAstSourceableShipTo(null)).toBe(false);
+    expect(isAstSourceableShipTo({})).toBe(false);
   });
 });

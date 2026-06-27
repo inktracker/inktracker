@@ -146,6 +146,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
             qb_customer_id: customer?.qb_customer_id || "",
             tax_exempt: customer?.tax_exempt || false,
             tax_id: customer?.tax_id || "",
+            ship_to_address: customer?.ship_to_address || null,
           },
         },
       });

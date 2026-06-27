@@ -260,8 +260,59 @@ export function buildQBCustomerBody(customer, displayName) {
   if (isLikelyEmail(customer?.email)) body.PrimaryEmailAddr = { Address: customer.email.trim() };
   if (customer?.phone)   body.PrimaryPhone     = { FreeFormNumber: customer.phone };
   if (customer?.address) body.BillAddr         = { Line1: customer.address };
+  // Structured ship-to drives destination sales tax. Set it on the QB customer
+  // record so QB defaults it onto invoices too (the per-invoice ShipAddr is the
+  // authority, but a clean customer record keeps QB and InkTracker aligned).
+  const shipAddr = buildQbShipAddr(customer?.ship_to_address, customer?.address);
+  if (shipAddr) body.ShipAddr = shipAddr;
   if (customer?.tax_id)  body.ResaleNum        = customer.tax_id;
   return body;
+}
+
+/**
+ * Build a QuickBooks address object from a structured ship-to.
+ *
+ * QB Automated Sales Tax sources the tax jurisdiction from PostalCode +
+ * CountrySubDivisionCode (state). A Line1-only address gives AST nothing to
+ * source from, so it falls back to the company's home address — taxing every
+ * invoice at the shop's local rate regardless of destination.
+ *
+ * Returns a STRUCTURED address (Line1/City/CountrySubDivisionCode/PostalCode/
+ * Country) when the ship-to has at least state + zip (the AST minimum); else
+ * falls back to { Line1: fallbackText } (legacy free-text — NOT AST-sourceable,
+ * which the Phase-0 tax hold will catch); else null.
+ *
+ * Pure — no I/O. `shipTo` shape: { street, city, state, zip, country }.
+ */
+export function buildQbShipAddr(shipTo, fallbackText) {
+  const s = shipTo && typeof shipTo === "object" ? shipTo : null;
+  const street  = String(s?.street ?? "").trim();
+  const city    = String(s?.city ?? "").trim();
+  const state   = String(s?.state ?? "").trim().toUpperCase();
+  const zip     = String(s?.zip ?? "").trim();
+  const country = String(s?.country ?? "").trim().toUpperCase() || "US";
+
+  if (state && zip) {
+    const addr = { PostalCode: zip, CountrySubDivisionCode: state, Country: country };
+    if (street) addr.Line1 = street;
+    if (city)   addr.City  = city;
+    return addr;
+  }
+
+  const fb = String(fallbackText ?? street ?? "").trim();
+  return fb ? { Line1: fb } : null;
+}
+
+/**
+ * True when a ship-to has enough structure (state + zip) for AST to source a
+ * destination jurisdiction. When false, QB falls back to the shop's home rate
+ * and the resulting tax mismatch is caught by the Phase-0 hold.
+ */
+export function isAstSourceableShipTo(shipTo) {
+  const s = shipTo && typeof shipTo === "object" ? shipTo : null;
+  const state = String(s?.state ?? "").trim();
+  const zip   = String(s?.zip ?? "").trim();
+  return Boolean(state && zip);
 }
 
 // ── Single-quote SQL escaping for QB QBO query strings ─────────────────────

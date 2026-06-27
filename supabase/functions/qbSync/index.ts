@@ -30,6 +30,7 @@ import {
   normalizeItemName,
   clampPaymentAmount,
   dominantItemIncomeAccount,
+  buildQbShipAddr,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -750,6 +751,12 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     console.error(`[createInvoice] Dropping invalid email "${quote.customer_email || customer?.email}" — not RFC 822 shaped`);
   }
   const billAddress = customer?.address;
+  // Structured ship-to for QB Automated Sales Tax. When the customer has a
+  // ship-to with state + zip, this carries City/State/ZIP so AST sources the
+  // DESTINATION jurisdiction; otherwise it falls back to a Line1-only address
+  // (AST then uses the shop's home rate, and the Phase-0 tax hold catches any
+  // resulting mismatch). See docs/qb-multistate-tax-scope.md.
+  const shipAddr = buildQbShipAddr(customer?.ship_to_address, billAddress);
 
   const baseDocNumber = String(quote.quote_id || "");
 
@@ -848,7 +855,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         }
         if (billAddress) {
           updateBody.BillAddr = { Line1: billAddress };
-          updateBody.ShipAddr = { Line1: billAddress };
+        }
+        // ShipAddr drives AST destination sourcing — structured when possible.
+        if (shipAddr) {
+          updateBody.ShipAddr = shipAddr;
         }
 
         const updated = await qbUpdate(token, realmId, "invoice", updateBody);
@@ -941,7 +951,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }
     if (billAddress) {
       invoiceBody.BillAddr = { Line1: billAddress };
-      invoiceBody.ShipAddr = { Line1: billAddress };
+    }
+    // ShipAddr drives AST destination sourcing — structured when possible.
+    if (shipAddr) {
+      invoiceBody.ShipAddr = shipAddr;
     }
 
     let attempt = 0;
