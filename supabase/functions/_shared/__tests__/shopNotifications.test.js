@@ -206,7 +206,7 @@ describe("buildQbDriftNotification — formats the user-facing message", () => {
     missingTax: true,
   };
 
-  it("uses the $0-tax copy and qb_tax_mismatch event when QB recorded no tax", () => {
+  it("holds the invoice with an alert + qb_tax_mismatch event when QB recorded no tax", () => {
     const row = buildQbDriftNotification({
       shopOwner: "shop@example.com",
       quoteId: "Q-2026-200",
@@ -215,17 +215,19 @@ describe("buildQbDriftNotification — formats the user-facing message", () => {
       reconciliation: taxMismatchReconciliation,
     });
     expect(row.event_type).toBe("qb_tax_mismatch");
-    expect(row.severity).toBe("warning");
-    expect(row.title).toBe("QuickBooks recorded no sales tax");
+    // A tax mismatch now BLOCKS the customer send, so it's an alert.
+    expect(row.severity).toBe("alert");
+    expect(row.title).toBe("Invoice on hold — QuickBooks recorded no sales tax");
     expect(row.body).toContain("$8.50");
-    expect(row.body).toContain("under-report");
+    expect(row.body).toContain("NOT sent");
+    expect(row.body).toContain("docs/qb-tax-sync.md");
     // Crucially NOT the alarmist integrity copy.
     expect(row.body).not.toContain("This should never happen");
     expect(row.metadata.missing_tax).toBe(true);
     expect(row.metadata.tax_mismatch).toBe(true);
   });
 
-  it("uses the authoritative-tax copy when QB applied a different (nonzero) tax", () => {
+  it("holds the invoice with actionable copy when QB applied a different (nonzero) tax", () => {
     const row = buildQbDriftNotification({
       shopOwner: "shop@example.com",
       quoteId: "Q-201",
@@ -240,8 +242,12 @@ describe("buildQbDriftNotification — formats the user-facing message", () => {
       },
     });
     expect(row.event_type).toBe("qb_tax_mismatch");
-    expect(row.title).toBe("QuickBooks calculated a different sales tax");
-    expect(row.body).toContain("authoritative");
+    expect(row.severity).toBe("alert");
+    expect(row.title).toBe("Invoice on hold — QuickBooks calculated a different sales tax");
+    // No longer the passive "authoritative — no action needed" copy.
+    expect(row.body).toContain("NOT sent");
+    expect(row.body).toContain("docs/qb-tax-sync.md");
+    expect(row.body).not.toContain("no action needed");
     expect(row.body).not.toContain("This should never happen");
     expect(row.metadata.missing_tax).toBe(false);
   });

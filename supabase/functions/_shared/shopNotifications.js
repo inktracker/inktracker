@@ -73,6 +73,7 @@ export function buildQbDriftNotification({ shopOwner, quoteId, quoteRowId, qbInv
   const totalDrift = Number.isFinite(reconciliation.totalDrift) ? reconciliation.totalDrift : 0;
   const sentTax    = Number.isFinite(reconciliation.sentTax) ? reconciliation.sentTax : 0;
   const qbTax      = Number.isFinite(reconciliation.qbTax)   ? reconciliation.qbTax   : 0;
+  const taxDrift   = Number.isFinite(reconciliation.taxDrift) ? reconciliation.taxDrift : Number((qbTax - sentTax).toFixed(2));
 
   const fmt = (n) => `$${Number(n).toFixed(2)}`;
   // Signed money formatter — places +/- BEFORE the dollar sign so
@@ -83,9 +84,11 @@ export function buildQbDriftNotification({ shopOwner, quoteId, quoteRowId, qbInv
   };
 
   // Tax mismatch reads VERY differently from integrity drift, so it gets
-  // its own copy + event type. A tax mismatch is QB's authoritative tax
-  // engine landing on a different number than the quote — NOT "QB altered
-  // our data". Severity 'drift'/'fatal' always falls to the integrity copy.
+  // its own copy + event type. A tax mismatch is QB's tax engine landing on
+  // a different number than the quote — NOT "QB altered our data". As of the
+  // tax-sync hardening it also HOLDS the invoice (no payment link minted, the
+  // customer send is blocked), so the copy is now actionable, not advisory.
+  // Severity 'drift'/'fatal' always falls to the integrity copy.
   const isTaxMismatch =
     reconciliation.severity === "tax-mismatch" ||
     (reconciliation.taxMismatch &&
@@ -95,21 +98,28 @@ export function buildQbDriftNotification({ shopOwner, quoteId, quoteRowId, qbInv
   let eventType, severity, title, body;
   if (isTaxMismatch) {
     eventType = "qb_tax_mismatch";
-    severity  = "warning";
+    // Blocks the customer send, so it's an alert, not a passive warning.
+    severity  = "alert";
+    // Both sub-cases hold the invoice. Shared, concrete fix steps.
+    const fixSteps =
+      `Fix: (1) In QuickBooks, open the customer and confirm their billing/shipping address ` +
+      `and tax status (taxable vs exempt) — Automated Sales Tax picks the rate from the address. ` +
+      `(2) In InkTracker, set this quote's tax rate to match the customer's jurisdiction. ` +
+      `(3) Re-sync the invoice (Send again, or QB panel → Refresh). Full guide: docs/qb-tax-sync.md.`;
     if (reconciliation.missingTax) {
       // The dangerous case: customer was quoted tax, QB recorded none.
-      title = "QuickBooks recorded no sales tax";
+      title = "Invoice on hold — QuickBooks recorded no sales tax";
       body =
-        `Quote ${quoteId}: your quote included ${fmt(sentTax)} sales tax, but QuickBooks recorded ${fmt(qbTax)}. ` +
-        `The customer pays the QuickBooks total (${fmt(qbTotal)}), so this invoice collects no tax and your books ` +
-        `under-report it. Confirm Automated Sales Tax is enabled in QuickBooks and the customer's tax status is ` +
-        `correct, then re-sync the invoice.`;
+        `Quote ${quoteId}: your quote included ${fmt(sentTax)} sales tax but QuickBooks recorded ${fmt(qbTax)}. ` +
+        `The invoice was NOT sent to the customer — sending it would collect no tax and under-report your books. ` +
+        fixSteps;
     } else {
-      title = "QuickBooks calculated a different sales tax";
+      title = "Invoice on hold — QuickBooks calculated a different sales tax";
       body =
-        `Quote ${quoteId}: your quote tax was ${fmt(sentTax)} but QuickBooks computed ${fmt(qbTax)} from the ` +
-        `customer's QuickBooks tax setup (invoice total ${fmt(qbTotal)} vs quoted ${fmt(sentTotal)}). ` +
-        `QuickBooks' tax is authoritative — no action needed unless this is unexpected.`;
+        `Quote ${quoteId}: your quote tax was ${fmt(sentTax)} but QuickBooks computed ${fmt(qbTax)} ` +
+        `(${fmtSigned(taxDrift)} off; invoice total ${fmt(qbTotal)} vs quoted ${fmt(sentTotal)}). ` +
+        `The invoice was NOT sent to the customer, so they can't be charged a tax you didn't quote. ` +
+        fixSteps;
     }
   } else {
     // Line-amount / total integrity drift (or fatal) — QB altered numbers
