@@ -1,7 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
+import { Download } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { fmtMoney } from "../shared/pricing";
 import { summarizeTaxByState, taxReportTotals } from "@/lib/tax/taxReport";
+import { buildTaxSummaryCsv, buildTaxDetailCsv, buildTaxCsvFilename } from "@/lib/tax/taxCsv";
+
+function downloadCsv(filename, csv) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 // Sales-tax-collected, by state, from the immutable tax_records (Phase 3).
 // This is the figure a shop files a return from. RLS scopes rows to the shop,
@@ -19,7 +33,12 @@ export default function SalesTaxReport({ from = null, to = null }) {
       try {
         let q = supabase
           .from("tax_records")
-          .select("ship_to_state,taxable_amount,tax_total,total,exempt,txn_date");
+          .select(
+            "txn_date,qb_invoice_id,quote_id,customer_name,ship_to_state,ship_to_zip," +
+            "authority,subtotal,taxable_amount,tax_total,total,effective_rate," +
+            "exempt,exemption_type,exemption_certificate_number",
+          )
+          .order("txn_date", { ascending: false });
         if (from) q = q.gte("txn_date", from);
         if (to) q = q.lte("txn_date", to);
         const { data, error: e } = await q.limit(5000);
@@ -47,12 +66,34 @@ export default function SalesTaxReport({ from = null, to = null }) {
             What you collected, for filing returns. Tax as recorded by QuickBooks at sale time.
           </div>
         </div>
-        {totals.count > 0 && (
-          <div className="text-right">
-            <div className="text-lg font-bold text-slate-900 dark:text-slate-100">{fmtMoney(totals.tax)}</div>
-            <div className="text-xs text-slate-500">{totals.count} invoice{totals.count === 1 ? "" : "s"}</div>
-          </div>
-        )}
+        <div className="flex items-center gap-4">
+          {totals.count > 0 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => downloadCsv(buildTaxCsvFilename("by-state", { from, to }), buildTaxSummaryCsv(rows))}
+                className="flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-teal-300 hover:bg-teal-50 dark:hover:bg-slate-800 transition"
+                title="By-state summary for filing returns"
+              >
+                <Download className="w-3.5 h-3.5" /> Summary
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadCsv(buildTaxCsvFilename("detail", { from, to }), buildTaxDetailCsv(records))}
+                className="flex items-center gap-1 text-xs font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 hover:border-teal-300 hover:bg-teal-50 dark:hover:bg-slate-800 transition"
+                title="Per-invoice detail for your accountant"
+              >
+                <Download className="w-3.5 h-3.5" /> Detail
+              </button>
+            </div>
+          )}
+          {totals.count > 0 && (
+            <div className="text-right">
+              <div className="text-lg font-bold text-slate-900 dark:text-slate-100">{fmtMoney(totals.tax)}</div>
+              <div className="text-xs text-slate-500">{totals.count} invoice{totals.count === 1 ? "" : "s"}</div>
+            </div>
+          )}
+        </div>
       </div>
 
       {error ? (
