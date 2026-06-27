@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload } from "../shared/pricing";
+import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload, getDisplayName } from "../shared/pricing";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
@@ -251,7 +251,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         <div className="px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-start">
           <div>
             <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{invoice.invoice_id} · {fmtDate(invoice.date)}</div>
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{customer?.company || invoice.customer_name}</h2>
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{getDisplayName(customer || invoice.customer_name)}</h2>
             {invoice.due && <div className="text-sm text-slate-500 mt-0.5">Due: {fmtDate(invoice.due)}</div>}
           </div>
           <div className="flex items-center gap-3">

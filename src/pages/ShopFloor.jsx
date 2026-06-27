@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
-import { fmtDate, sortSizeEntries, O_STATUSES } from "../components/shared/pricing";
+import { fmtDate, sortSizeEntries, O_STATUSES, getDisplayName } from "../components/shared/pricing";
 import { displayFullName } from "@/lib/displayName";
 import {
   countGoodsProgress,
@@ -589,7 +589,7 @@ export default function ShopFloor() {
               <button key={order.id} onClick={() => setSelected(order)}
                 className={`w-full text-left px-5 py-4 border-b border-slate-100 transition ${active ? "bg-teal-50 border-l-4 border-l-teal-600" : "hover:bg-slate-50"} ${overdue ? "bg-red-50" : ""}`}>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="font-bold text-slate-800">{customers[order.customer_id]?.company || order.customer_name || "—"}</span>
+                  <span className="font-bold text-slate-800">{(customers[order.customer_id] ? getDisplayName(customers[order.customer_id]) : order.customer_name) || "—"}</span>
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${colors.light}`}>
                     {order.status || "Pre-Press"}
                   </span>
@@ -625,7 +625,7 @@ export default function ShopFloor() {
               <div className="bg-white rounded-2xl border border-slate-200 p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900">{customers[selected.customer_id]?.company || selected.customer_name}</h2>
+                    <h2 className="text-xl font-bold text-slate-900">{customers[selected.customer_id] ? getDisplayName(customers[selected.customer_id]) : selected.customer_name}</h2>
                     <p className="text-sm text-slate-500">{selected.order_id} · {getQty(selected)} pieces</p>
                   </div>
                   {isOverdue(selected) && (

@@ -244,7 +244,7 @@ function BrokerCard({ broker, shopOwners, currentUser, orders, unreadMessageCoun
                     {clients.map(c => (
                       <div key={c.id} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 flex items-start justify-between">
                         <div>
-                          <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{c.name}</div>
+                          <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(c)}</div>
                           {c.company && <div className="flex items-center gap-1 text-xs text-slate-500 mt-0.5"><Building2 className="w-3 h-3" /> {c.company}</div>}
                         </div>
                         <div className="text-right text-xs text-slate-500 space-y-0.5">
