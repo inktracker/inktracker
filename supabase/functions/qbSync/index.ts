@@ -31,6 +31,7 @@ import {
   clampPaymentAmount,
   dominantItemIncomeAccount,
   buildQbShipAddr,
+  isExemptionActive,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -724,12 +725,22 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   }
   const itemIdMap = await resolveItemIdMap(token, realmId, invoicePayload, configuredIncomeAccountId);
 
-  // 3. Check QB customer's tax status
-  let isTaxExempt = !!customer?.tax_exempt;
+  // 3. Resolve tax-exempt status. InkTracker is the exemption authority:
+  // honor the exemption only when it's ACTIVE — not expired and (for scoped
+  // certs) covering the ship-to state. An expired or out-of-scope cert
+  // collects tax, which is the audit-safe behavior. See
+  // docs/qb-multistate-tax-scope.md.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const destinationState = customer?.ship_to_address?.state;
+  let isTaxExempt = isExemptionActive(customer, { asOf: todayIso, destinationState });
   try {
     const qbCustData = await qbQuery(token, realmId, `SELECT * FROM Customer WHERE Id = '${escapeQbStringLiteral(qbCustomerId)}'`);
     const qbCust = qbCustData?.QueryResponse?.Customer?.[0];
-    if (qbCust?.Taxable === false) isTaxExempt = true;
+    // Fallback: honor QB's own exempt flag ONLY when InkTracker has no
+    // exemption on file. If IT marks the customer exempt but the cert is
+    // expired/out-of-scope, IT's decision (collect tax) must win — a stale
+    // QB Taxable=false can't silently re-exempt them.
+    if (!customer?.tax_exempt && qbCust?.Taxable === false) isTaxExempt = true;
     console.error(`[createInvoice] QB customer ${qbCustomerId} Taxable=${qbCust?.Taxable}, isTaxExempt=${isTaxExempt}`);
   } catch (e) {
     console.error("[createInvoice] QB customer tax check failed (non-fatal):", e);

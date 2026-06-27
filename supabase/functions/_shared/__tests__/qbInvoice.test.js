@@ -6,6 +6,7 @@ import {
   buildQBCustomerBody,
   buildQbShipAddr,
   isAstSourceableShipTo,
+  isExemptionActive,
   escapeQbStringLiteral,
   buildInvoiceLinesFromPayload,
   extractPaymentLink,
@@ -1043,5 +1044,45 @@ describe("isAstSourceableShipTo", () => {
     expect(isAstSourceableShipTo({ zip: "89501" })).toBe(false);
     expect(isAstSourceableShipTo(null)).toBe(false);
     expect(isAstSourceableShipTo({})).toBe(false);
+  });
+});
+
+// ── isExemptionActive ───────────────────────────────────────────────────────
+describe("isExemptionActive", () => {
+  const asOf = "2026-06-27";
+
+  it("false when not tax_exempt", () => {
+    expect(isExemptionActive({ tax_exempt: false }, { asOf })).toBe(false);
+    expect(isExemptionActive({}, { asOf })).toBe(false);
+    expect(isExemptionActive(null, { asOf })).toBe(false);
+  });
+
+  it("true for a blanket exemption with no expiry", () => {
+    expect(isExemptionActive({ tax_exempt: true }, { asOf })).toBe(true);
+  });
+
+  it("honors expiry: valid through the date, inactive strictly after", () => {
+    expect(isExemptionActive({ tax_exempt: true, exemption_expires_at: "2026-06-27" }, { asOf })).toBe(true);  // today = expiry
+    expect(isExemptionActive({ tax_exempt: true, exemption_expires_at: "2026-06-28" }, { asOf })).toBe(true);  // future
+    expect(isExemptionActive({ tax_exempt: true, exemption_expires_at: "2026-06-26" }, { asOf })).toBe(false); // past
+  });
+
+  it("does not expire when asOf is unknown", () => {
+    expect(isExemptionActive({ tax_exempt: true, exemption_expires_at: "2020-01-01" }, {})).toBe(true);
+  });
+
+  it("scoped cert: exempt only for covered destination states", () => {
+    const c = { tax_exempt: true, exemption_states: ["CA", "nv"] };
+    expect(isExemptionActive(c, { asOf, destinationState: "NV" })).toBe(true);
+    expect(isExemptionActive(c, { asOf, destinationState: "tx" })).toBe(false);
+  });
+
+  it("scoped cert with unknown destination falls back to exempt", () => {
+    expect(isExemptionActive({ tax_exempt: true, exemption_states: ["CA"] }, { asOf })).toBe(true);
+  });
+
+  it("expired beats scope (expiry checked first)", () => {
+    const c = { tax_exempt: true, exemption_states: ["NV"], exemption_expires_at: "2020-01-01" };
+    expect(isExemptionActive(c, { asOf, destinationState: "NV" })).toBe(false);
   });
 });

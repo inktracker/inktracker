@@ -315,6 +315,44 @@ export function isAstSourceableShipTo(shipTo) {
   return Boolean(state && zip);
 }
 
+/**
+ * Whether a customer's tax exemption is ACTIVE for a given sale.
+ *
+ * Audit-safe: a `tax_exempt` flag alone isn't enough. An EXPIRED certificate
+ * means tax must be collected, and a certificate scoped to specific states
+ * doesn't exempt a sale shipping elsewhere. Returns false (→ collect tax)
+ * whenever the exemption can't be substantiated for THIS sale.
+ *
+ * Pure — no I/O.
+ *
+ * @param {object} customer   may carry tax_exempt, exemption_expires_at
+ *                            (YYYY-MM-DD), exemption_states (array of 2-letter).
+ * @param {object} [opts]
+ * @param {string} [opts.asOf]             ISO date (YYYY-MM-DD) to evaluate against.
+ * @param {string} [opts.destinationState] ship-to state (2-letter) for scoped certs.
+ */
+export function isExemptionActive(customer, opts = {}) {
+  if (!customer?.tax_exempt) return false;
+
+  // Expiry: the certificate is valid THROUGH exemption_expires_at; inactive
+  // strictly after it. Unknown asOf → don't expire (can't evaluate).
+  const asOf = String(opts.asOf ?? "").slice(0, 10);
+  const exp  = String(customer?.exemption_expires_at ?? "").slice(0, 10);
+  if (exp && asOf && asOf > exp) return false;
+
+  // Per-state scope: a cert listing states exempts only sales into those states.
+  const states = Array.isArray(customer?.exemption_states)
+    ? customer.exemption_states.map((s) => String(s).trim().toUpperCase()).filter(Boolean)
+    : [];
+  if (states.length) {
+    const dest = String(opts.destinationState ?? "").trim().toUpperCase();
+    // Known destination → must be covered. Unknown destination → honor the
+    // exemption (the Phase-0 tax hold catches any resulting mismatch).
+    if (dest) return states.includes(dest);
+  }
+  return true;
+}
+
 // ── Single-quote SQL escaping for QB QBO query strings ─────────────────────
 // QB BNF requires '' (two single quotes) to escape a single quote inside
 // a string literal. Anything else (e.g. \') silently breaks the query.
