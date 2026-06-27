@@ -6,6 +6,7 @@ import {
   fmtDate,
   BROKER_MARKUP,
   STANDARD_MARKUP,
+  getBrokerClientDisplay,
 } from "../shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
 
@@ -151,7 +152,7 @@ export default function BrokerPerformance({ orders = [] }) {
                     <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{order.order_id}</td>
                     <td className="px-4 py-2.5 text-slate-500">{fmtDate(order.date)}</td>
                     <td className="px-4 py-2.5 text-slate-700">
-                      {order.broker_client_name || order.customer_name || "—"}
+                      {getBrokerClientDisplay(order)}
                     </td>
                     <td className="px-4 py-2.5 text-right font-semibold text-emerald-700">{fmtMoney(revenue)}</td>
                     <td className="px-4 py-2.5 text-right text-slate-500">{fmtMoney(cost)}</td>

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
+  getBrokerClientDisplay,
   getQty,
   getShortfallQty,
   getCompletedQty,
@@ -1643,5 +1644,25 @@ describe("buildQBInvoicePayload — add-on labels & zero-amount fees", () => {
       additional_charges: [{ id: "z", label: "Empty Fee", amount: 0, taxable: false }],
     }));
     expect(payload.lines.find((l) => l.description === "Empty Fee")).toBeUndefined();
+  });
+});
+
+describe("getBrokerClientDisplay — broker-facing end-client, company-first", () => {
+  it("prefers the denormalized company", () => {
+    expect(getBrokerClientDisplay({ company: "Acme", broker_client_name: "John", customer_name: "BrokerCo" })).toBe("Acme");
+  });
+  it("falls to broker_client_name on a broker ORDER (customer_name is the broker's own name)", () => {
+    // buildOrderFromQuote swaps customer_name → broker display name; the end
+    // client lives in broker_client_name. No company → show the end client,
+    // NOT the broker's name.
+    expect(getBrokerClientDisplay({ company: "", broker_client_name: "Jane Doe", customer_name: "The Broker LLC" })).toBe("Jane Doe");
+  });
+  it("falls to customer_name on a broker QUOTE (end client in customer_name, no broker_client_name)", () => {
+    expect(getBrokerClientDisplay({ company: "", customer_name: "Jane Doe" })).toBe("Jane Doe");
+  });
+  it("trims and returns a dash when nothing identifies the client", () => {
+    expect(getBrokerClientDisplay({ company: "  Acme  " })).toBe("Acme");
+    expect(getBrokerClientDisplay({})).toBe("—");
+    expect(getBrokerClientDisplay(null)).toBe("—");
   });
 });

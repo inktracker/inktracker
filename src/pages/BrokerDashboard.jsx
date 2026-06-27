@@ -45,7 +45,7 @@ import BrokerLayout from "../components/broker/BrokerLayout";
 import BrokerInvoicesTab from "../components/broker/BrokerInvoicesTab";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { exportQuoteToPDF } from "../components/shared/pdfExport";
-import { STANDARD_MARKUP, O_STATUSES } from "../components/shared/pricing";
+import { STANDARD_MARKUP, O_STATUSES, getBrokerClientDisplay } from "../components/shared/pricing";
 import { normalizeQuoteStatus } from "@/lib/broker/quoteStatus";
 import {
   getQuoteTotalSafe as getQuoteTotalSafeLib,
@@ -263,7 +263,7 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
               {quote.quote_id}
             </div>
             <div className="font-bold text-slate-900 text-lg">
-              {quote.customer_name || "—"}
+              {getBrokerClientDisplay(quote)}
             </div>
           </div>
 
@@ -1222,7 +1222,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
                             />
                             <div className="min-w-0">
                               <div className="font-semibold text-slate-800 text-sm truncate">
-                                {q.customer_name || "—"}
+                                {getBrokerClientDisplay(q)}
                               </div>
                               <div className="text-xs text-slate-500 mt-0.5">
                                 {q.quote_id}
@@ -1313,7 +1313,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-bold text-slate-900">
-                            {order.customer_name || "—"}
+                            {getBrokerClientDisplay(order)}
                           </div>
                           <div className="text-xs text-slate-500 mt-0.5">
                             {order.order_id}

@@ -4,6 +4,7 @@ import { Search, X } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import ModalBackdrop from "./shared/ModalBackdrop";
 import { getDisplayName } from "./shared/pricing";
+import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
 
 export default function GlobalSearch() {
   const [open, setOpen] = useState(false);
@@ -123,7 +124,7 @@ export default function GlobalSearch() {
                       {results.orders.map(o => (
                         <a key={o.id} href={createPageUrl("Orders")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{o.order_id}</div>
-                          <div className="text-xs text-slate-500">{o.customer_name}</div>
+                          <div className="text-xs text-slate-500">{resolveJobLabel(o)}</div>
                         </a>
                       ))}
                     </div>
@@ -135,7 +136,7 @@ export default function GlobalSearch() {
                       {results.quotes.map(q => (
                         <a key={q.id} href={createPageUrl("Quotes")} onClick={() => setOpen(false)} className="block px-3 py-2 rounded hover:bg-slate-50 text-sm">
                           <div className="font-semibold text-slate-900">{q.quote_id}</div>
-                          <div className="text-xs text-slate-500">{q.customer_name}</div>
+                          <div className="text-xs text-slate-500">{resolveJobLabel(q)}</div>
                         </a>
                       ))}
                     </div>

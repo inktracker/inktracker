@@ -5,6 +5,7 @@ import {
   calcQuoteTotals,
   BROKER_MARKUP,
   STANDARD_MARKUP,
+  getBrokerClientDisplay,
 } from "../shared/pricing";
 import {
   FileText,
@@ -66,7 +67,7 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
               {job.order_id || job.quote_id || "Job"}
             </div>
             <div className="font-bold text-slate-900 text-lg">
-              {job.customer_name || "—"}
+              {getBrokerClientDisplay(job)}
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -111,7 +112,7 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
                   <User className="w-3.5 h-3.5 text-slate-500" />
                   <div className="text-xs text-slate-500 font-semibold uppercase tracking-wide">Client</div>
                 </div>
-                <div className="font-semibold text-slate-800">{job.customer_name}</div>
+                <div className="font-semibold text-slate-800">{getBrokerClientDisplay(job)}</div>
               </div>
             )}
           </div>
@@ -469,7 +470,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
                 {/* Mobile layout */}
                 <div className="flex items-center justify-between sm:hidden">
                   <div>
-                    <div className="font-semibold text-slate-800 text-sm">{job.customer_name || "—"}</div>
+                    <div className="font-semibold text-slate-800 text-sm">{getBrokerClientDisplay(job)}</div>
                     <div className="text-xs text-slate-500 mt-0.5">{job.order_id || job.quote_id} · {fmtDate(job.date)}</div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -481,7 +482,7 @@ export default function BrokerInvoicesTab({ orders, quotes, brokerEmail, broker,
                 {/* Desktop layout */}
                 <div className="hidden sm:grid grid-cols-12 gap-2 items-center">
                   <div className="col-span-4">
-                    <div className="font-semibold text-slate-800 text-sm truncate">{job.customer_name || "—"}</div>
+                    <div className="font-semibold text-slate-800 text-sm truncate">{getBrokerClientDisplay(job)}</div>
                   </div>
                   <div className="col-span-3">
                     <div className="text-xs text-slate-500 font-mono">{job.order_id || job.quote_id || "—"}</div>

@@ -1,5 +1,5 @@
 import { X, Download } from "lucide-react";
-import { fmtDate, fmtMoney, getQty, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP } from "../shared/pricing";
+import { fmtDate, fmtMoney, getQty, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP, getOrderDisplayClient } from "../shared/pricing";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
 
@@ -18,9 +18,10 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
 
   const isBrokerOrder = Boolean(order?.broker_id || order?.broker_email || order?.brokerId);
   const linkedQtyMap = buildLinkedQtyMap(order.line_items || []);
-  const displayClient = isBrokerOrder
-    ? (order?.broker_name || order?.broker_company || order?.customer_name || "—")
-    : (order?.customer_name || "—");
+  // Canonical resolver: broker orders → the broker (customer_name carries the
+  // broker display name), direct orders → company-first. Fixes direct-order
+  // PDFs that showed the contact name instead of the company.
+  const displayClient = getOrderDisplayClient(order);
   const displayJobTitle = isBrokerOrder
     ? (order?.job_title || order?.broker_client_name || "")
     : "";
