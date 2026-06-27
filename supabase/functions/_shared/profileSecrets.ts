@@ -73,7 +73,7 @@ export async function loadProfileWithSecrets(
 
   // Merge: secrets (new) wins; fall back to profiles columns (old).
   // Pure logic + tests: ../_shared/connectionLogic.js + __tests__.
-  return mergeProfileSecrets(profile, secrets, SECRET_KEYS) as ProfileWithSecrets;
+  return mergeProfileSecrets(profile, secrets, [...SECRET_KEYS]) as ProfileWithSecrets;
 }
 
 /**
