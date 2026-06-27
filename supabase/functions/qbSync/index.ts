@@ -28,6 +28,7 @@ import {
   pickIncomeAccountId,
   customerIdentityMatches,
   normalizeItemName,
+  clampPaymentAmount,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -1819,9 +1820,12 @@ async function handleRecordPayment(
 
   // Default: pay the remaining QB balance in full. Caller can override
   // with params.amount for partial payments (not used in v1 UI but the
-  // server-side contract supports it).
-  const amount = Number(params?.amount ?? qbBalance);
-  if (!Number.isFinite(amount) || amount <= 0) {
+  // server-side contract supports it). CLAMP to the remaining balance so a
+  // repeated "Mark as Paid" (after the idempotency TTL) or an explicit
+  // amount > balance can NEVER drive the invoice negative — closes the
+  // partial-payment overpay window the 5-min idempotency alone didn't.
+  const { amount, valid, capped } = clampPaymentAmount(params?.amount ?? qbBalance, qbBalance);
+  if (!valid) {
     throw new Error("recordPayment: amount must be a positive number");
   }
 
@@ -1861,6 +1865,9 @@ async function handleRecordPayment(
         qbPaymentId: payment?.Payment?.Id ?? null,
         qbDocNumber: row.qb_doc_number || null,
         amount,
+        ...(capped
+          ? { capped: true, message: `Payment capped to the remaining balance ($${qbBalance.toFixed(2)}) to avoid overpaying.` }
+          : {}),
       };
     },
   );
