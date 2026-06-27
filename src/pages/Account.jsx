@@ -968,6 +968,23 @@ export default function Account() {
                 <label className="block text-xs font-semibold text-slate-600 mt-2 mb-1">
                   Income account for InkTracker sales
                 </label>
+                {/* Onboarding nudge: while on Auto, name where revenue will
+                    land so connecting shops make a conscious choice on day
+                    one (instead of discovering a misposting later). Subtle
+                    teal — NOT a shouty amber banner. Disappears once they
+                    pick an account. */}
+                {!qbAccountsLoading && Array.isArray(qbIncomeAccounts) && !qbIncomeAccountId && (() => {
+                  const auto = qbIncomeAccounts.find((a) => a.id === qbAutoAccountId);
+                  if (!auto) return null;
+                  return (
+                    <div className="text-xs bg-teal-50 border border-teal-100 rounded-lg px-2.5 py-2 mb-2 text-slate-600">
+                      InkTracker will post your sales to{" "}
+                      <span className="font-semibold text-slate-800">“{auto.name}”</span> in QuickBooks.
+                      If that’s your sales account you’re all set — otherwise pick the right one below so
+                      revenue lands in the right place on your P&amp;L.
+                    </div>
+                  );
+                })()}
                 {qbAccountsLoading ? (
                   <div className="text-xs text-slate-500">Loading your QuickBooks accounts…</div>
                 ) : qbIncomeAccounts === null ? (
