@@ -162,6 +162,25 @@ export function normalizeItemName(name) {
   return normalizeForMatch(name).split(" ").filter(Boolean).map(singularizeWord).join(" ");
 }
 
+// ── Payment amount clamp (never overpay) ─────────────────────────────────────
+// A repeated "Mark as Paid" (e.g. after the idempotency TTL) or an explicit
+// amount larger than what's owed must never drive a QB invoice's balance
+// negative. Caps the payment at the remaining balance.
+//
+// @param {number|string} requested  Amount to pay (defaults to the balance).
+// @param {number|string} balance    The invoice's current QB Balance.
+// @returns {{amount:number, valid:boolean, capped:boolean}}
+//   valid=false when the requested amount isn't a positive number or there's
+//   nothing left to pay; capped=true when the request exceeded the balance.
+export function clampPaymentAmount(requested, balance, tolerance = 0.01) {
+  const req = Number(requested);
+  const balNum = Number(balance);
+  const safeBal = Number.isFinite(balNum) && balNum > 0 ? balNum : 0;
+  if (!Number.isFinite(req) || req <= 0) return { amount: 0, valid: false, capped: false };
+  const amount = Number(Math.min(req, safeBal).toFixed(2));
+  return { amount, valid: amount > 0, capped: req > safeBal + tolerance };
+}
+
 // ── Email format guard ──────────────────────────────────────────────────────
 // QB validates email per RFC 822 and returns 400 (ValidationFault) when
 // the value doesn't look like an email. The InkTracker customers table

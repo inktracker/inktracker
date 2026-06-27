@@ -19,6 +19,7 @@ import {
   normalizeForMatch,
   customerIdentityMatches,
   normalizeItemName,
+  clampPaymentAmount,
 } from "../qbInvoice";
 
 describe("normalizeForMatch", () => {
@@ -103,6 +104,33 @@ describe("pickIncomeAccountId", () => {
   });
   it("returns null id when there are no income accounts", () => {
     expect(pickIncomeAccountId([], "30")).toEqual({ id: null, source: null });
+  });
+});
+
+describe("clampPaymentAmount", () => {
+  it("pays the full amount when it's within the balance", () => {
+    expect(clampPaymentAmount(100, 100)).toEqual({ amount: 100, valid: true, capped: false });
+    expect(clampPaymentAmount(60, 100)).toEqual({ amount: 60, valid: true, capped: false }); // partial
+  });
+  it("caps at the remaining balance — never overpays", () => {
+    expect(clampPaymentAmount(60, 40)).toEqual({ amount: 40, valid: true, capped: true });
+    // repeated full payment after balance already partly reduced
+    expect(clampPaymentAmount(100, 0)).toEqual({ amount: 0, valid: false, capped: true });
+  });
+  it("ignores sub-cent rounding (no spurious cap flag)", () => {
+    expect(clampPaymentAmount(100, 99.995)).toMatchObject({ capped: false });
+  });
+  it("rejects non-positive / non-finite requests", () => {
+    expect(clampPaymentAmount(0, 100)).toMatchObject({ valid: false });
+    expect(clampPaymentAmount(-5, 100)).toMatchObject({ valid: false });
+    expect(clampPaymentAmount("abc", 100)).toMatchObject({ valid: false });
+  });
+  it("treats a missing/zero balance as nothing-left-to-pay", () => {
+    expect(clampPaymentAmount(50, 0)).toMatchObject({ amount: 0, valid: false });
+    expect(clampPaymentAmount(50, null)).toMatchObject({ amount: 0, valid: false });
+  });
+  it("coerces string inputs", () => {
+    expect(clampPaymentAmount("50", "100")).toEqual({ amount: 50, valid: true, capped: false });
   });
 });
 
