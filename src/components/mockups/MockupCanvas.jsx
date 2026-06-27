@@ -79,11 +79,51 @@ function floodFillRemove(imgSrc, clickX, clickY, tolerance) {
   });
 }
 
+// Bake a decoration·location caption (e.g. "EMBROIDERY · LEFT CHEST")
+// onto the exported mockup so the final PNG — and the Art Proof PDF that
+// embeds it — show what prints and where. Drawn as a thin accent-colored
+// line at the bottom (tinted to the location's color), with short flanking
+// rules and a white halo so it reads on light OR dark garments without a
+// heavy pill. Self-contained save/restore so it never leaks ctx state.
+function drawCaption(ctx, size, text, color = "#0f172a") {
+  if (!text) return;
+  const label = String(text).toUpperCase();
+  const fontSize = Math.round(size * 0.030); // ~36px at 1200
+  ctx.save();
+  ctx.font = `700 ${fontSize}px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const cx = size / 2;
+  const cy = size - size * 0.045;
+  // White halo first so the text stays legible over any garment.
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(2, fontSize * 0.22);
+  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.strokeText(label, cx, cy);
+  ctx.fillStyle = color;
+  ctx.fillText(label, cx, cy);
+  // Short flanking rules in the accent color.
+  const textW = ctx.measureText(label).width;
+  const gap = fontSize * 0.6;
+  const ruleLen = fontSize * 1.2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(1.5, fontSize * 0.06);
+  ctx.beginPath();
+  ctx.moveTo(cx - textW / 2 - gap - ruleLen, cy);
+  ctx.lineTo(cx - textW / 2 - gap, cy);
+  ctx.moveTo(cx + textW / 2 + gap, cy);
+  ctx.lineTo(cx + textW / 2 + gap + ruleLen, cy);
+  ctx.stroke();
+  ctx.restore();
+}
+
 const MockupCanvas = forwardRef(function MockupCanvas({
   garmentImageUrl,
   artworkUrl: artworkUrlProp,
   initialPosition,
   location = "Front",
+  caption,
+  captionColor,
   onPositionChange,
   onArtworkChange,
   compact = false,
@@ -132,6 +172,11 @@ const MockupCanvas = forwardRef(function MockupCanvas({
     };
     img.src = artworkUrlProp;
   }, [artworkUrlProp]);
+
+  // NOTE: we intentionally do NOT auto-move artwork when the print
+  // location changes. The selector labels/annotates the placement (caption
+  // + color); the user positions the art by dragging. Auto-snapping yanked
+  // already-placed art out from under the user when they just relabeled.
 
   // Apply one-color conversion
   useEffect(() => {
@@ -193,11 +238,13 @@ const MockupCanvas = forwardRef(function MockupCanvas({
               ctx.filter = `contrast(${contrast}%)`;
               ctx.drawImage(aImg, -aw/2, -ah/2, aw, ah);
               ctx.restore();
+              drawCaption(ctx, size, caption, captionColor);
               canvas.toBlob(blob => resolve(blob), "image/png");
             };
-            aImg.onerror = () => canvas.toBlob(blob => resolve(blob), "image/png");
+            aImg.onerror = () => { drawCaption(ctx, size, caption, captionColor); canvas.toBlob(blob => resolve(blob), "image/png"); };
             aImg.src = artworkUrl;
           } else {
+            drawCaption(ctx, size, caption, captionColor);
             canvas.toBlob(blob => resolve(blob), "image/png");
           }
         };
@@ -346,7 +393,16 @@ const MockupCanvas = forwardRef(function MockupCanvas({
         )}
       </div>
 
-      {label && <div className="text-center text-xs text-slate-500">{label}</div>}
+      {(label || caption) && (
+        <div className="text-center space-y-0.5">
+          {label && <div className="text-xs text-slate-400">{label}</div>}
+          {caption && (
+            <div className="text-xs font-bold uppercase tracking-wide" style={{ color: captionColor || "#0f172a" }}>
+              {caption}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Toolbar */}
       {showTools && artworkUrl && garmentImageUrl && (

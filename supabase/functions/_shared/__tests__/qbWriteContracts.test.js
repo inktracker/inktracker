@@ -230,25 +230,44 @@ describe("reconcileQbInvoice — line-amount fidelity", () => {
     expect(result.issues.some((m) => m.includes("Line-amount drift"))).toBe(true);
   });
 
-  it("severity=DRIFT when QB total differs beyond tax-drift accounting", () => {
+  it("severity=TAX_MISMATCH (not DRIFT) when lines match but the total differs via tax", () => {
+    // Lines are faithful (subtotal 150 echoed), but the total diverges
+    // — that's QB's tax engine, NOT an integrity violation.
     const result = reconcileQbInvoice({
       sentLines: sent,
       sentTax,
       qbResponse: {
         Line: sent,
         TotalAmt: 200, // we sent 162
-        TxnTaxDetail: { TotalTax: 12 },
+        TxnTaxDetail: { TotalTax: 50 },
       },
     });
-    expect(result.severity).toBe(RECONCILE_SEVERITY.DRIFT);
+    expect(result.severity).toBe(RECONCILE_SEVERITY.TAX_MISMATCH);
+    expect(result.taxMismatch).toBe(true);
+    expect(result.lineAmountDrift).toBe(false);
+    expect(result.missingTax).toBe(false); // QB recorded tax, just more
     expect(result.totalDrift).toBe(38);
-    expect(result.issues.some((m) => m.includes("Total drift"))).toBe(true);
+    expect(result.issues.some((m) => m.includes("Tax mismatch"))).toBe(true);
+  });
+
+  it("flags missingTax when the quote expected tax but QB recorded $0 (the dangerous case)", () => {
+    const result = reconcileQbInvoice({
+      sentLines: sent,
+      sentTax,
+      qbResponse: {
+        Line: sent,
+        TotalAmt: 150, // subtotal only — QB applied NO tax
+        TxnTaxDetail: { TotalTax: 0 },
+      },
+    });
+    expect(result.severity).toBe(RECONCILE_SEVERITY.TAX_MISMATCH);
+    expect(result.taxMismatch).toBe(true);
+    expect(result.missingTax).toBe(true);
+    expect(result.lineAmountDrift).toBe(false);
+    expect(result.qbTax).toBe(0);
   });
 
   it("does NOT mark severity=DRIFT when only the tax differs (QB tax setup is authoritative)", () => {
-    // Subtotal matches, totals match — the tax delta is just QB's
-    // tax engine vs ours. Caller can still inspect taxDrift if they
-    // want to surface this.
     const result = reconcileQbInvoice({
       sentLines: sent,
       sentTax: 0,
@@ -258,10 +277,30 @@ describe("reconcileQbInvoice — line-amount fidelity", () => {
         TxnTaxDetail: { TotalTax: 13.13 },
       },
     });
-    // Total drift (sent 150, QB 163.13) exceeds tolerance, so this
-    // IS DRIFT — but the issues message clearly attributes to tax.
+    // Lines match; only the total moved (via tax) → TAX_MISMATCH, never DRIFT.
+    expect(result.severity).toBe(RECONCILE_SEVERITY.TAX_MISMATCH);
+    expect(result.lineAmountDrift).toBe(false);
+    expect(result.issues.some((m) => m.includes("Tax mismatch"))).toBe(true);
+  });
+
+  it("line-amount DRIFT takes precedence over tax classification", () => {
+    // Subtotal is wrong AND the total is off — the integrity violation
+    // is the headline; severity must be DRIFT, not TAX_MISMATCH.
+    const result = reconcileQbInvoice({
+      sentLines: sent,
+      sentTax,
+      qbResponse: {
+        Line: [
+          { DetailType: "SalesItemLineDetail", Amount: 100 },
+          { DetailType: "SalesItemLineDetail", Amount: 80 }, // sent 50
+        ],
+        TotalAmt: 999,
+        TxnTaxDetail: { TotalTax: 0 },
+      },
+    });
     expect(result.severity).toBe(RECONCILE_SEVERITY.DRIFT);
-    expect(result.issues.some((m) => m.includes("tax drift"))).toBe(true);
+    expect(result.lineAmountDrift).toBe(true);
+    expect(result.taxMismatch).toBe(false);
   });
 
   it("severity=FATAL when qbResponse is missing — caller must NOT trust qbTotal", () => {
@@ -349,6 +388,9 @@ describe("reconcileQbInvoice — line-amount fidelity", () => {
     expect(result).toHaveProperty("sentTax");
     expect(result).toHaveProperty("qbTax");
     expect(result).toHaveProperty("taxDrift");
+    expect(result).toHaveProperty("lineAmountDrift");
+    expect(result).toHaveProperty("taxMismatch");
+    expect(result).toHaveProperty("missingTax");
   });
 
   it("never throws — no matter how broken the inputs are", () => {

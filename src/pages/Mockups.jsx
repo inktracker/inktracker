@@ -1,12 +1,41 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Search, Download, Upload, RotateCcw, Loader2, FileText, Link2 } from "lucide-react";
 import MockupCanvas from "../components/mockups/MockupCanvas";
+import PlacementSelect from "../components/shared/PlacementSelect";
 import { base44 } from "@/api/supabaseClient";
 import { uploadFile } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
-import { getShopPricingConfig, getDisplayName } from "../components/shared/pricing";
+import { getShopPricingConfig, getDisplayName, getEnabledTechniques } from "../components/shared/pricing";
 import { shopScope } from "@/lib/shopScope";
 // jspdf loaded on demand inside generateProofPDF below
+
+// Print-location options for the mockup. `value` MUST match a PRINT_AREAS
+// key in MockupCanvas so the selection drives where the art snaps; `label`
+// is what shows in the UI and gets baked onto the final mockup.
+const PRINT_LOCATION_OPTIONS = [
+  { value: "Front", label: "Full Front" },
+  { value: "Left Chest", label: "Left Chest" },
+  { value: "Left Sleeve", label: "Left Sleeve" },
+  { value: "Right Sleeve", label: "Right Sleeve" },
+  { value: "Back", label: "Full Back" },
+];
+function printLocationLabel(value) {
+  return PRINT_LOCATION_OPTIONS.find(o => o.value === value)?.label || value;
+}
+
+// Distinct accent color per print location so the active location is
+// visually obvious — drives the location selector's color, the on-screen
+// caption, and the caption baked onto the exported mockup.
+const LOCATION_COLORS = {
+  "Front": "#0d9488",        // teal
+  "Back": "#4f46e5",         // indigo
+  "Left Chest": "#d97706",   // amber
+  "Left Sleeve": "#db2777",  // pink
+  "Right Sleeve": "#7c3aed", // violet
+};
+function locationColor(value) {
+  return LOCATION_COLORS[value] || "#0f172a";
+}
 
 export default function Mockups() {
   const [styleQuery, setStyleQuery] = useState("");
@@ -15,13 +44,26 @@ export default function Mockups() {
   const [colors, setColors] = useState([]);
   const [selectedColor, setSelectedColor] = useState(null);
   const [garmentImg, setGarmentImg] = useState("");
-  const [frontArtwork, setFrontArtwork] = useState(null);
-  const [backArtwork, setBackArtwork] = useState(null);
   const [brandMatches, setBrandMatches] = useState([]);
+  // Views are the mockup angles. Front + Back are the built-in pair
+  // (catalog garments carry images for them); shops can add MORE views
+  // (sleeves, etc.) via "+ More" — those require a custom garment photo.
+  // Each id keys into the per-view maps below. Extra-view ids are unique.
+  const [views, setViews] = useState(["Front", "Back"]);
   const [view, setView] = useState("Front");
+  // Per-view artwork ({ src }), keyed by view id.
+  const [artworks, setArtworks] = useState({});
+  // Per-view print location (drives the baked mockup caption + color).
+  // Defaults: Front → Full Front, Back → Full Back.
+  const [printLocations, setPrintLocations] = useState({ Front: "Front", Back: "Back" });
+  // Per-view decoration type (e.g. Screen Print, Embroidery, DTF). Empty
+  // until set; falls back to the shop's first enabled technique via
+  // decorationFor(). Each view can differ.
+  const [decorationTypes, setDecorationTypes] = useState({ Front: "", Back: "" });
   const [generatingProof, setGeneratingProof] = useState(false);
-  const frontRef = useRef(null);
-  const backRef = useRef(null);
+  // Canvas refs keyed by view id (assigned in the preview map) — replaces
+  // the old fixed frontRef/backRef so any number of views can export.
+  const canvasRefs = useRef({});
   const fileRef = useRef(null);
 
   // Active orders + quotes the user can link a proof to. Loaded once on
@@ -53,6 +95,53 @@ export default function Mockups() {
     () => Number(getShopPricingConfig()?.maxColors) || 8,
     [user] // re-resolves once the user load also hydrates _pc
   );
+
+  // Decoration types the shop actually has enabled (Screen Print always,
+  // plus Embroidery / any custom techniques). Re-resolves once _pc
+  // hydrates after the user loads, same pattern as maxColors above.
+  const techniques = useMemo(
+    () => getEnabledTechniques(getShopPricingConfig()),
+    [user]
+  );
+  // Effective decoration for a view — the explicit pick, else the shop's
+  // first enabled technique, else a hard fallback.
+  const decorationFor = (v) => decorationTypes[v] || techniques[0] || "Screen Print";
+
+  // Front/Back are the built-in pair; any other id is a user-added view.
+  const isPrimaryView = (id) => id === "Front" || id === "Back";
+  // Tab/label for a view: Front/Back stay literal; extra views are named
+  // by their print location (e.g. "Left Sleeve", or a custom placement).
+  const viewLabel = (id) =>
+    isPrimaryView(id) ? id : (printLocationLabel(printLocations[id]) || "Placement");
+
+  // Add an extra view (sleeve, custom angle…). Defaults to Left Sleeve;
+  // it has no catalog image, so the user uploads a custom garment photo.
+  function addView() {
+    const id = `v${Date.now()}`;
+    setViews((prev) => [...prev, id]);
+    setPrintLocations((prev) => ({ ...prev, [id]: "Left Sleeve" }));
+    setDecorationTypes((prev) => ({ ...prev, [id]: "" }));
+    setViewSpecs((prev) => ({ ...prev, [id]: blankSpec() }));
+    setView(id);
+  }
+
+  // Remove an extra view and clean up its per-view state. Front/Back can't
+  // be removed.
+  function removeView(id) {
+    if (isPrimaryView(id)) return;
+    const drop = (obj) => {
+      const next = { ...obj };
+      delete next[id];
+      return next;
+    };
+    setViews((prev) => prev.filter((v) => v !== id));
+    setArtworks(drop);
+    setCustomGarmentImages(drop);
+    setPrintLocations(drop);
+    setDecorationTypes(drop);
+    setViewSpecs(drop);
+    setView((cur) => (cur === id ? "Front" : cur));
+  }
 
   // Per-view custom garment uploads. Catalog garments swap images by
   // view via getGarmentImageForView; custom uploads need their own
@@ -106,15 +195,9 @@ export default function Mockups() {
     dateOrdered: new Date().toISOString().split("T")[0],
     dueDate: "",
     quantity: "",
-    frontPrintW: "13",
-    frontPrintH: "19",
-    backPrintW: "13",
-    backPrintH: "19",
-    // Sized to cover any realistic shop max (typical maxColors is 6–10).
-    // The visible slot count is driven by the shop's pricing config in
-    // the render — see `maxColors` below.
-    frontColors: Array(16).fill(""),
-    backColors: Array(16).fill(""),
+    // Per-view print size + colors now live in `viewSpecs` (keyed by view
+    // id) so sleeves and other added views get their own spec, not just
+    // Front/Back.
     neckLabels: false,
     foldBagLabel: false,
     colorChange: false,
@@ -165,19 +248,24 @@ export default function Mockups() {
     }));
   }
 
-  function updateFrontColor(idx, val) {
-    setProofDetails(prev => {
-      const c = [...prev.frontColors];
-      c[idx] = val;
-      return { ...prev, frontColors: c };
-    });
+  // Per-view print spec (size + colors), keyed by view id. Front/Back seed
+  // the common 13×19 default; added views start blank. 16 color slots — the
+  // visible count is driven by maxColors.
+  const blankSpec = () => ({ w: "", h: "", colors: Array(16).fill("") });
+  const [viewSpecs, setViewSpecs] = useState({
+    Front: { w: "13", h: "19", colors: Array(16).fill("") },
+    Back: { w: "13", h: "19", colors: Array(16).fill("") },
+  });
+  const specFor = (v) => viewSpecs[v] || blankSpec();
+  function updateSpec(v, patch) {
+    setViewSpecs(prev => ({ ...prev, [v]: { ...(prev[v] || blankSpec()), ...patch } }));
   }
-
-  function updateBackColor(idx, val) {
-    setProofDetails(prev => {
-      const c = [...prev.backColors];
-      c[idx] = val;
-      return { ...prev, backColors: c };
+  function updateSpecColor(v, idx, val) {
+    setViewSpecs(prev => {
+      const cur = prev[v] || blankSpec();
+      const colors = [...cur.colors];
+      colors[idx] = val;
+      return { ...prev, [v]: { ...cur, colors } };
     });
   }
 
@@ -249,10 +337,16 @@ export default function Mockups() {
   }
 
   function getGarmentImageForView(v) {
+    // A custom photo uploaded for THIS view always wins — sleeves, custom
+    // angles, or a manual override of the catalog front/back.
+    if (customGarmentImages[v]) return customGarmentImages[v];
+    // Extra (non Front/Back) views have no catalog image — show nothing
+    // until the user uploads one, so they're prompted to.
+    if (!isPrimaryView(v)) return "";
     if (garment?.isCustomUpload) {
       // Fall back to the Front photo if the user hasn't uploaded a
       // Back photo yet — better than showing an empty canvas.
-      return customGarmentImages[v] || customGarmentImages.Front || garmentImg;
+      return customGarmentImages.Front || garmentImg;
     }
     if (!selectedColor || !garment) return garmentImg;
     const colorUpper = (selectedColor.colorName || "").toUpperCase();
@@ -272,20 +366,20 @@ export default function Mockups() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      if (view === "Back") setBackArtwork({ src: ev.target.result });
-      else setFrontArtwork({ src: ev.target.result });
+      setArtworks((prev) => ({ ...prev, [view]: { src: ev.target.result } }));
     };
     reader.readAsDataURL(file);
+    e.target.value = ""; // allow re-selecting the same file
   }
 
   async function exportPNG() {
-    const ref = view === "Back" ? backRef.current : frontRef.current;
+    const ref = canvasRefs.current[view];
     if (!ref) return;
     const blob = await ref.exportPng();
     if (!blob) return;
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.download = `mockup-${garment?.styleNumber || "design"}-${selectedColor?.colorName || ""}-${view}.png`;
+    link.download = `mockup-${garment?.styleNumber || "design"}-${selectedColor?.colorName || ""}-${viewLabel(view)}.png`;
     link.href = url;
     link.click();
     URL.revokeObjectURL(url);
@@ -430,117 +524,134 @@ export default function Mockups() {
 
       y += 10;
 
-      // ── Mockup images ──
-      const hasBack = !!backArtwork;
-      const mockupSize = hasBack ? (cw - 20) / 2 : cw * 0.6;
-      const mockupX = hasBack ? m : m + (cw - mockupSize) / 2;
-      const mockupY = y;
-
-      // Render front mockup
-      if (frontRef.current) {
-        const blob = await frontRef.current.exportPng();
-        if (blob) {
-          const dataUrl = await new Promise(r => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.readAsDataURL(blob); });
-          doc.addImage(dataUrl, "PNG", mockupX, mockupY, mockupSize, mockupSize);
-          doc.setFontSize(8);
-          doc.setFont(undefined, "bold");
-          doc.text("FRONT", mockupX + mockupSize / 2, mockupY + mockupSize + 12, { align: "center" });
-        }
+      // ── Mockup images (every view that has artwork) ──
+      // A single view renders large + centered; two or more tile two per
+      // row (Front, Back, then any extra views like sleeves) with their
+      // label underneath. The decoration · location caption is already
+      // baked into each image by MockupCanvas.
+      const proofViewIds = views.filter(
+        (v) => artworks[v]?.src && canvasRefs.current[v] && getGarmentImageForView(v),
+      );
+      const single = proofViewIds.length === 1;
+      const imgGap = 20;
+      const imgSize = single ? cw * 0.6 : (cw - imgGap) / 2;
+      const rowH = imgSize + 24;
+      const mockupTop = y;
+      let col = 0;
+      let lastRow = 0;
+      for (const v of proofViewIds) {
+        const blob = await canvasRefs.current[v].exportPng();
+        if (!blob) continue;
+        const dataUrl = await new Promise(r => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.readAsDataURL(blob); });
+        const row = Math.floor(col / 2);
+        const ix = single ? m + (cw - imgSize) / 2 : m + (col % 2) * (imgSize + imgGap);
+        const iy = mockupTop + row * rowH;
+        doc.addImage(dataUrl, "PNG", ix, iy, imgSize, imgSize);
+        doc.setFontSize(8);
+        doc.setFont(undefined, "bold");
+        doc.text(viewLabel(v).toUpperCase(), ix + imgSize / 2, iy + imgSize + 12, { align: "center" });
+        lastRow = row;
+        col++;
       }
+      y = mockupTop + (proofViewIds.length ? (lastRow + 1) * rowH : 0) + 8;
 
-      // Render back mockup only if back artwork was added
-      if (hasBack && backRef.current) {
-        const blob = await backRef.current.exportPng();
-        if (blob) {
-          const dataUrl = await new Promise(r => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.readAsDataURL(blob); });
-          doc.addImage(dataUrl, "PNG", m + mockupSize + 20, mockupY, mockupSize, mockupSize);
-          doc.setFontSize(8);
-          doc.setFont(undefined, "bold");
-          doc.text("BACK", m + mockupSize + 20 + mockupSize / 2, mockupY + mockupSize + 12, { align: "center" });
-        }
-      }
+      // ── Per-view print specs (size + colors) ──
+      // One card per view that has artwork, headed "<decoration> —
+      // <placement>" so it reflects what's actually being decorated and
+      // where — no more hardcoded "Print"/"Front". Two cards per row,
+      // wrapping for added views (sleeves, etc.).
+      const specCols = 2;
+      const specGap = 10;
+      const specCardW = (cw - specGap) / specCols;
+      const colorRows = maxColors;
+      const sizeRowH = 16;
+      const colorRowH = 12;
+      const cardH = 12 + sizeRowH + colorRows * colorRowH;
 
-      y = mockupY + mockupSize + 28;
+      // Page-break guard so added views don't silently clip off the page.
+      const estSpecH = Math.ceil(proofViewIds.length / specCols) * (cardH + 10);
+      if (proofViewIds.length && y + estSpecH > ph - 40) { doc.addPage(); y = 40; }
 
-      // ── Print sizes ──
-      const numCols = hasBack ? 3 : 2;
-      const colW = (cw - (numCols - 1) * 10) / numCols;
+      const specTop = y;
       doc.setFontSize(8);
-      const printSections = [
-        { label: "Print Size - Front", w: proofDetails.frontPrintW, h: proofDetails.frontPrintH },
-      ];
-      if (hasBack) printSections.push({ label: "Print Size - Back", w: proofDetails.backPrintW, h: proofDetails.backPrintH });
-      printSections.forEach((sec, i) => {
-        const sx = m + i * (colW + 10);
+      proofViewIds.forEach((v, i) => {
+        const gx = i % specCols;
+        const gyRow = Math.floor(i / specCols);
+        const sx = m + gx * (specCardW + specGap);
+        let cy = specTop + gyRow * (cardH + 10);
+        const spec = specFor(v);
+        // header — decoration + placement
         doc.setFillColor(...brandColor);
         doc.setTextColor(255, 255, 255);
-        doc.rect(sx, y, colW, 12, "F");
+        doc.rect(sx, cy, specCardW, 12, "F");
         doc.setFont(undefined, "bold");
-        doc.text(sec.label, sx + 4, y + 9);
+        doc.text(`${decorationFor(v)} — ${viewLabel(v)}`.toUpperCase(), sx + 4, cy + 9);
         doc.setTextColor(0, 0, 0);
         doc.setFont(undefined, "normal");
-        doc.text(`Width: ${sec.w || "—"}"`, sx + 4, y + 24);
-        doc.text(`Height: ${sec.h || "—"}"`, sx + colW / 2, y + 24);
-        doc.rect(sx, y, colW, 30);
-      });
-
-      y += 40;
-
-      // ── Print colors ──
-      const colorSections = [
-        { label: "Print Colors - Front", colors: proofDetails.frontColors },
-      ];
-      if (hasBack) colorSections.push({ label: "Print Colors - Back", colors: proofDetails.backColors });
-      colorSections.forEach((sec, i) => {
-        const sx = m + i * (colW + 10);
-        doc.setFillColor(...brandColor);
-        doc.setTextColor(255, 255, 255);
-        doc.rect(sx, y, colW, 12, "F");
+        cy += 12;
+        // size
+        doc.rect(sx, cy, specCardW, sizeRowH);
         doc.setFont(undefined, "bold");
-        doc.text(sec.label, sx + 4, y + 9);
-        doc.setTextColor(0, 0, 0);
+        doc.text("Size:", sx + 4, cy + 11);
         doc.setFont(undefined, "normal");
-        for (let ci = 0; ci < maxColors; ci++) {
-          const cy = y + 14 + ci * 13;
+        doc.text(`${spec.w || "—"}" × ${spec.h || "—"}"`, sx + 40, cy + 11);
+        cy += sizeRowH;
+        // colors
+        for (let ci = 0; ci < colorRows; ci++) {
+          doc.rect(sx, cy, specCardW, colorRowH);
           doc.text(`${ci + 1}.`, sx + 4, cy + 9);
-          doc.text(sec.colors[ci] || "", sx + 20, cy + 9);
-          doc.rect(sx, cy, colW, 13);
+          doc.text(spec.colors[ci] || "", sx + 20, cy + 9);
+          cy += colorRowH;
         }
       });
+      const specRows = Math.ceil(proofViewIds.length / specCols);
+      y = specTop + (specRows ? specRows * (cardH + 10) : 0) + 6;
 
-      // Pre-press checklist in last column
-      const checkX = m + colorSections.length * (colW + 10);
+      // ── Pre-press checklist + customer approval (per proof) ──
+      const checklist = ["Check Spelling", "Spot Color Check", "Check Placement", "Registration", "Tape Registration Marks"];
+      const halfW = (cw - specGap) / 2;
+      const blockH = 14 + checklist.length * 13;
+      if (y + blockH + 20 > ph - 30) { doc.addPage(); y = 40; }
+
+      // checklist (left)
       doc.setFillColor(...brandColor);
       doc.setTextColor(255, 255, 255);
-      doc.rect(checkX, y, colW, 12, "F");
+      doc.rect(m, y, halfW, 12, "F");
       doc.setFont(undefined, "bold");
-      doc.text("Pre-press Checklist", checkX + 4, y + 9);
+      doc.text("Pre-press Checklist", m + 4, y + 9);
       doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "normal");
-      const checklist = ["Check Spelling", "Spot Color Check", "Check Placement", "Registration", "Tape Registration Marks"];
       checklist.forEach((item, ci) => {
         const cy = y + 14 + ci * 13;
-        doc.text(item, checkX + 4, cy + 9);
-        doc.rect(checkX + colW - 16, cy + 1, 10, 10);
-        doc.rect(checkX, cy, colW, 13);
+        doc.text(item, m + 4, cy + 9);
+        doc.rect(m + halfW - 16, cy + 1, 10, 10);
+        doc.rect(m, cy, halfW, 13);
       });
 
-      // Customer signature
-      const sigY = y + 14 + checklist.length * 13 + 10;
+      // customer approval (right)
+      const sigX = m + halfW + specGap;
+      doc.setFillColor(...brandColor);
+      doc.setTextColor(255, 255, 255);
+      doc.rect(sigX, y, halfW, 12, "F");
       doc.setFont(undefined, "bold");
-      doc.text("Customer Signature:", checkX + 4, sigY);
+      doc.text("Customer Approval", sigX + 4, y + 9);
+      doc.setTextColor(0, 0, 0);
       doc.setFont(undefined, "normal");
-      doc.line(checkX + 4, sigY + 20, checkX + colW - 4, sigY + 20);
-      doc.text("x.", checkX + 4, sigY + 18);
+      doc.text("Signature:", sigX + 4, y + 32);
+      doc.line(sigX + 50, y + 32, sigX + halfW - 4, y + 32);
+      doc.text("Date:", sigX + 4, y + 56);
+      doc.line(sigX + 50, y + 56, sigX + halfW - 4, y + 56);
+
+      y += blockH + 12;
 
       // Notes
       if (proofDetails.notes) {
-        const notesY = y + 14 + 8 * 13 + 10;
+        if (y + 30 > ph - 30) { doc.addPage(); y = 40; }
         doc.setFontSize(8);
         doc.setFont(undefined, "bold");
-        doc.text("Notes:", m, notesY);
+        doc.text("Notes:", m, y);
         doc.setFont(undefined, "normal");
-        doc.text(proofDetails.notes, m, notesY + 12, { maxWidth: colW * 2 });
+        doc.text(proofDetails.notes, m, y + 12, { maxWidth: cw });
       }
 
       // ── Footer ──
@@ -618,7 +729,7 @@ export default function Mockups() {
     }
   }
 
-  const currentArtwork = view === "Back" ? backArtwork : frontArtwork;
+  const currentArtwork = artworks[view] || null;
 
   return (
     <div className="space-y-6">
@@ -665,8 +776,8 @@ export default function Mockups() {
             <label className="w-full flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-200 rounded-xl py-2.5 text-xs text-slate-500 cursor-pointer transition">
               <Upload className="w-3.5 h-3.5" />
               {customGarmentImages[view]
-                ? `Change Custom ${view} Garment Photo`
-                : `Upload Custom ${view} Garment Photo`}
+                ? `Change Custom ${viewLabel(view)} Garment Photo`
+                : `Upload Custom ${viewLabel(view)} Garment Photo`}
               <input
                 type="file"
                 accept="image/*"
@@ -677,7 +788,11 @@ export default function Mockups() {
                   const reader = new FileReader();
                   reader.onload = () => {
                     const dataUrl = reader.result;
-                    const isFirstUpload = !garment?.isCustomUpload;
+                    // Only bootstrap a "Custom" garment when NOTHING is
+                    // loaded. With a catalog garment loaded, a custom photo
+                    // just augments this view (e.g. a sleeve shot) without
+                    // wiping the catalog selection.
+                    const isFirstUpload = !garment;
                     if (isFirstUpload) {
                       setGarment({
                         brandName: "Custom",
@@ -701,16 +816,17 @@ export default function Mockups() {
                 }}
               />
             </label>
-            {garment?.isCustomUpload && (
-              <div className="text-[11px] text-slate-500 flex items-center gap-2">
-                <span>Custom:</span>
-                <span className={customGarmentImages.Front ? "text-emerald-600 font-semibold" : ""}>
-                  Front {customGarmentImages.Front ? "✓" : "—"}
-                </span>
-                <span>·</span>
-                <span className={customGarmentImages.Back ? "text-emerald-600 font-semibold" : ""}>
-                  Back {customGarmentImages.Back ? "✓" : "—"}
-                </span>
+            {(garment?.isCustomUpload || views.length > 2) && (
+              <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>Photos:</span>
+                {views.map((v, i) => (
+                  <span key={v} className="flex items-center gap-2">
+                    {i > 0 && <span className="text-slate-300">·</span>}
+                    <span className={customGarmentImages[v] ? "text-emerald-600 font-semibold" : ""}>
+                      {viewLabel(v)} {customGarmentImages[v] ? "✓" : "—"}
+                    </span>
+                  </span>
+                ))}
               </div>
             )}
 
@@ -759,7 +875,7 @@ export default function Mockups() {
             <input ref={fileRef} type="file" accept="image/*" onChange={handleArtworkUpload} className="hidden" />
             <button onClick={() => fileRef.current?.click()}
               className="w-full flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 border-2 border-dashed border-slate-200 rounded-xl py-4 text-sm text-slate-500 transition">
-              <Upload className="w-4 h-4" /> {currentArtwork ? `Change ${view} Artwork` : `Upload ${view} Artwork`}
+              <Upload className="w-4 h-4" /> {currentArtwork ? `Change ${viewLabel(view)} Artwork` : `Upload ${viewLabel(view)} Artwork`}
             </button>
             {currentArtwork && (
               <div className="text-xs text-slate-500">Tools appear below the preview</div>
@@ -836,50 +952,31 @@ export default function Mockups() {
               </div>
             </div>
 
-            {/* Print dimensions */}
+            {/* Print spec for the ACTIVE view — labeled with the decoration
+                + placement so it reflects what's decorated and where. Switch
+                views (Front / Back / sleeves…) to edit each one's spec. */}
             <div className="border-t border-slate-100 pt-3 space-y-2">
-              <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Front Print Size (inches)</label>
-                <div className="flex gap-2">
-                  <input value={proofDetails.frontPrintW} onChange={e => updateProof({ frontPrintW: e.target.value })}
-                    placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                  <span className="text-xs text-slate-500 self-center">x</span>
-                  <input value={proofDetails.frontPrintH} onChange={e => updateProof({ frontPrintH: e.target.value })}
-                    placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                </div>
+              <label className="text-[10px] text-slate-500 block mb-1">
+                {decorationFor(view)} Size — {viewLabel(view)} (inches)
+              </label>
+              <div className="flex gap-2">
+                <input value={specFor(view).w} onChange={e => updateSpec(view, { w: e.target.value })}
+                  placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
+                <span className="text-xs text-slate-500 self-center">x</span>
+                <input value={specFor(view).h} onChange={e => updateSpec(view, { h: e.target.value })}
+                  placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
               </div>
-              {backArtwork && (
-                <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">Back Print Size (inches)</label>
-                  <div className="flex gap-2">
-                    <input value={proofDetails.backPrintW} onChange={e => updateProof({ backPrintW: e.target.value })}
-                      placeholder="W" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                    <span className="text-xs text-slate-500 self-center">x</span>
-                    <input value={proofDetails.backPrintH} onChange={e => updateProof({ backPrintH: e.target.value })}
-                      placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                  </div>
-                </div>
-              )}
             </div>
 
-            {/* Print colors */}
-            <div className={`grid ${backArtwork ? "grid-cols-2" : "grid-cols-1"} gap-3 border-t border-slate-100 pt-3`}>
-              <div>
-                <label className="text-[10px] text-slate-500 block mb-1">Front Colors</label>
-                {proofDetails.frontColors.slice(0, maxColors).map((c, i) => (
-                  <input key={i} value={c} onChange={e => updateFrontColor(i, e.target.value)}
-                    placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                ))}
-              </div>
-              {backArtwork && (
-                <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">Back Colors</label>
-                  {proofDetails.backColors.slice(0, maxColors).map((c, i) => (
-                    <input key={i} value={c} onChange={e => updateBackColor(i, e.target.value)}
-                      placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                  ))}
-                </div>
-              )}
+            {/* Colors for the active view */}
+            <div className="border-t border-slate-100 pt-3">
+              <label className="text-[10px] text-slate-500 block mb-1">
+                {decorationFor(view)} Colors — {viewLabel(view)}
+              </label>
+              {specFor(view).colors.slice(0, maxColors).map((c, i) => (
+                <input key={i} value={c} onChange={e => updateSpecColor(view, i, e.target.value)}
+                  placeholder={`Color ${i + 1}`} className="w-full text-xs border border-slate-200 rounded px-2 py-1 mb-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
+              ))}
             </div>
 
             {/* Services */}
@@ -915,9 +1012,9 @@ export default function Mockups() {
                 className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold py-2.5 rounded-xl transition disabled:opacity-40">
                 <Download className="w-4 h-4" /> Download PNG
               </button>
-              <button onClick={() => { if (view === "Back") setBackArtwork(null); else setFrontArtwork(null); }}
+              <button onClick={() => setArtworks(prev => { const n = { ...prev }; delete n[view]; return n; })}
                 className="px-3 py-2.5 bg-white border border-slate-200 text-slate-500 rounded-xl hover:bg-slate-50 transition"
-                title={`Clear ${view} artwork`}>
+                title={`Clear ${viewLabel(view)} artwork`}>
                 <RotateCcw className="w-4 h-4" />
               </button>
             </div>
@@ -940,37 +1037,80 @@ export default function Mockups() {
         {/* Right panel - Preview */}
         <div className="lg:col-span-2">
           <div className="bg-white rounded-2xl border border-slate-100 p-6">
-            {garment && selectedColor && (
-              <div className="flex justify-center gap-1 mb-4">
-                {["Front", "Back"].map(v => {
-                  const hasArt = v === "Back" ? !!backArtwork : !!frontArtwork;
-                  return (
-                    <button key={v} onClick={() => setView(v)}
-                      className={`text-xs font-semibold px-4 py-1.5 rounded-lg transition ${view === v ? "bg-teal-600 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-                      {v} {hasArt && <span className="ml-1 text-emerald-400">*</span>}
-                    </button>
-                  );
-                })}
+            {/* Gate on `garment` only — NOT `selectedColor`. Custom
+                uploads clear selectedColor, which used to hide these
+                tabs and trap the user on Front; gating on garment keeps
+                Front/Back switchable so both views can be uploaded. */}
+            {garment && (
+              <div className="flex flex-col items-center gap-2 mb-4">
+                <div className="flex flex-wrap justify-center items-center gap-1">
+                  {views.map(v => {
+                    const hasArt = !!artworks[v];
+                    const active = view === v;
+                    return (
+                      <span key={v} className="inline-flex items-center">
+                        <button onClick={() => setView(v)}
+                          className={`text-xs font-semibold px-4 py-1.5 rounded-lg transition ${active ? "bg-teal-600 text-white" : "border border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                          {viewLabel(v)} {hasArt && <span className="ml-1 text-emerald-400">*</span>}
+                        </button>
+                        {!isPrimaryView(v) && active && (
+                          <button onClick={() => removeView(v)} title="Remove this view"
+                            className="ml-0.5 text-slate-400 hover:text-rose-500 text-xs px-1">✕</button>
+                        )}
+                      </span>
+                    );
+                  })}
+                  <button onClick={addView} title="Add a view (sleeve, etc.)"
+                    className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-500 hover:bg-slate-50 transition">
+                    + More
+                  </button>
+                </div>
+                {/* Decoration + print-location cells. Decoration options
+                    come from the shop's enabled techniques; the location
+                    selector is tinted to that location's color so the
+                    active location is obvious. Both feed the caption baked
+                    onto the final mockup PNG / Art Proof PDF, per view. */}
+                <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Decoration</span>
+                    <select
+                      value={decorationFor(view)}
+                      onChange={e => setDecorationTypes(prev => ({ ...prev, [view]: e.target.value }))}
+                      className="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
+                    >
+                      {techniques.map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Print Location</span>
+                    <PlacementSelect
+                      value={printLocations[view]}
+                      onChange={val => setPrintLocations(prev => ({ ...prev, [view]: val }))}
+                      options={PRINT_LOCATION_OPTIONS}
+                      selectStyle={{ color: locationColor(printLocations[view]), borderColor: locationColor(printLocations[view]) }}
+                      selectClassName="text-xs font-semibold border rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-offset-1"
+                      inputClassName="text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
+                      customPlaceholder="e.g. Nape, Hem, Pocket"
+                    />
+                  </div>
+                </div>
               </div>
             )}
-            <div className={view === "Front" ? "" : "hidden"}>
-              <MockupCanvas
-                ref={frontRef}
-                garmentImageUrl={getGarmentImageForView("Front")}
-                artworkUrl={frontArtwork?.src || null}
-                location="Front"
-                label={selectedColor ? `${garment?.brandName} ${garment?.styleNumber} — ${selectedColor.colorName} · Front` : null}
-              />
-            </div>
-            <div className={view === "Back" ? "" : "hidden"}>
-              <MockupCanvas
-                ref={backRef}
-                garmentImageUrl={getGarmentImageForView("Back")}
-                artworkUrl={backArtwork?.src || null}
-                location="Back"
-                label={selectedColor ? `${garment?.brandName} ${garment?.styleNumber} — ${selectedColor.colorName} · Back` : null}
-              />
-            </div>
+            {views.map(v => (
+              <div key={v} className={view === v ? "" : "hidden"}>
+                <MockupCanvas
+                  ref={(el) => { canvasRefs.current[v] = el; }}
+                  garmentImageUrl={getGarmentImageForView(v)}
+                  artworkUrl={artworks[v]?.src || null}
+                  location={printLocations[v]}
+                  caption={`${decorationFor(v)} · ${printLocationLabel(printLocations[v]) || "Placement"}`}
+                  captionColor={locationColor(printLocations[v])}
+                  label={garment ? `${garment.brandName || ""} ${garment.styleNumber || garment.resolvedStyleNumber || ""}${selectedColor ? ` — ${selectedColor.colorName}` : ""}`.trim() : null}
+                />
+              </div>
+            ))}
           </div>
         </div>
       </div>

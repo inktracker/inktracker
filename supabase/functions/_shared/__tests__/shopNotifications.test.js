@@ -187,6 +187,76 @@ describe("buildQbDriftNotification — formats the user-facing message", () => {
       }),
     ).toThrow(/reconciliation required/);
   });
+
+  // ── Tax mismatch is a DIFFERENT message from integrity drift ──────────────
+  const taxMismatchReconciliation = {
+    severity: "tax-mismatch",
+    issues: ["Tax mismatch: QuickBooks tax 0.00 differs from quote tax 8.50"],
+    sentSubtotal: 100,
+    qbSubtotal: 100,
+    subtotalDrift: 0,
+    sentTotal: 108.5,
+    qbTotal: 100,
+    totalDrift: -8.5,
+    sentTax: 8.5,
+    qbTax: 0,
+    taxDrift: -8.5,
+    lineAmountDrift: false,
+    taxMismatch: true,
+    missingTax: true,
+  };
+
+  it("uses the $0-tax copy and qb_tax_mismatch event when QB recorded no tax", () => {
+    const row = buildQbDriftNotification({
+      shopOwner: "shop@example.com",
+      quoteId: "Q-2026-200",
+      quoteRowId: "uuid-200",
+      qbInvoiceId: "qb-200",
+      reconciliation: taxMismatchReconciliation,
+    });
+    expect(row.event_type).toBe("qb_tax_mismatch");
+    expect(row.severity).toBe("warning");
+    expect(row.title).toBe("QuickBooks recorded no sales tax");
+    expect(row.body).toContain("$8.50");
+    expect(row.body).toContain("under-report");
+    // Crucially NOT the alarmist integrity copy.
+    expect(row.body).not.toContain("This should never happen");
+    expect(row.metadata.missing_tax).toBe(true);
+    expect(row.metadata.tax_mismatch).toBe(true);
+  });
+
+  it("uses the authoritative-tax copy when QB applied a different (nonzero) tax", () => {
+    const row = buildQbDriftNotification({
+      shopOwner: "shop@example.com",
+      quoteId: "Q-201",
+      quoteRowId: "uuid-201",
+      reconciliation: {
+        ...taxMismatchReconciliation,
+        qbTax: 7.25,
+        qbTotal: 107.25,
+        totalDrift: -1.25,
+        taxDrift: -1.25,
+        missingTax: false,
+      },
+    });
+    expect(row.event_type).toBe("qb_tax_mismatch");
+    expect(row.title).toBe("QuickBooks calculated a different sales tax");
+    expect(row.body).toContain("authoritative");
+    expect(row.body).not.toContain("This should never happen");
+    expect(row.metadata.missing_tax).toBe(false);
+  });
+
+  it("still uses the integrity copy for line-amount drift (taxMismatch flag absent)", () => {
+    const row = buildQbDriftNotification({
+      shopOwner: "shop@example.com",
+      quoteId: "Q-202",
+      quoteRowId: "uuid-202",
+      reconciliation: { ...baseReconciliation, taxMismatch: false },
+    });
+    expect(row.event_type).toBe("qb_reconciliation_drift");
+    expect(row.title).toBe("QuickBooks invoice doesn't match");
+    expect(row.body).toContain("This should never happen");
+  });
 });
 
 describe("recordShopNotification — never throws even when DB fails", () => {
