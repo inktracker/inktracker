@@ -15,6 +15,7 @@ import {
   isQbInvoicePaid,
   buildUpdateFailureResponse,
   pickIncomeAccountId,
+  dominantItemIncomeAccount,
   isNonSalesIncomeName,
   normalizeForMatch,
   customerIdentityMatches,
@@ -88,6 +89,10 @@ describe("pickIncomeAccountId", () => {
   it("matches preferred names case-insensitively", () => {
     expect(pickIncomeAccountId([{ Id: "5", Name: "SALES" }], null)).toEqual({ id: "5", source: "preferred" });
   });
+  it("prefers generic 'Sales' over 'Sales of Product Income'", () => {
+    const both = [{ Id: "70", Name: "Sales of Product Income" }, { Id: "20", Name: "Sales" }];
+    expect(pickIncomeAccountId(both, null)).toEqual({ id: "20", source: "preferred" });
+  });
   it("skips non-sales income buckets when picking the first account", () => {
     // No preferred-name match; must skip "Uncategorized Income" and land
     // on the real sales account, not silently post revenue to junk.
@@ -152,6 +157,30 @@ describe("normalizeItemName", () => {
   it("never throws on null/empty", () => {
     expect(normalizeItemName(null)).toBe("");
     expect(normalizeItemName("")).toBe("");
+  });
+});
+
+describe("dominantItemIncomeAccount", () => {
+  it("returns the income account most existing items use", () => {
+    const items = [
+      { IncomeAccountRef: { value: "20" } }, // Sales
+      { IncomeAccountRef: { value: "20" } },
+      { IncomeAccountRef: { value: "20" } },
+      { IncomeAccountRef: { value: "70" } }, // Sales of Product Income
+    ];
+    expect(dominantItemIncomeAccount(items)).toBe("20");
+  });
+  it("ignores items with no income account", () => {
+    const items = [{ IncomeAccountRef: { value: "20" } }, {}, { IncomeAccountRef: {} }, { IncomeAccountRef: { value: "" } }];
+    expect(dominantItemIncomeAccount(items)).toBe("20");
+  });
+  it("returns null when nothing has an income account / bad input", () => {
+    expect(dominantItemIncomeAccount([])).toBeNull();
+    expect(dominantItemIncomeAccount([{}, {}])).toBeNull();
+    expect(dominantItemIncomeAccount(null)).toBeNull();
+  });
+  it("coerces numeric ids to strings", () => {
+    expect(dominantItemIncomeAccount([{ IncomeAccountRef: { value: 20 } }])).toBe("20");
   });
 });
 

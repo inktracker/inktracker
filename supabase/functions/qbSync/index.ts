@@ -29,6 +29,7 @@ import {
   customerIdentityMatches,
   normalizeItemName,
   clampPaymentAmount,
+  dominantItemIncomeAccount,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -631,13 +632,12 @@ async function resolveItemIdMap(
   }
   names.add(DEFAULT_ITEM_NAME);
 
-  const incomeAccountId = await findIncomeAccountId(token, realmId, configuredIncomeAccountId);
-  if (!incomeAccountId) throw new Error("No QB Income account found; cannot create service items");
-
   // One fetch of existing items (any type — we reuse whatever exists with a
-  // matching name, regardless of Service/Inventory). Index by exact AND
-  // normalized name.
-  const itemsRes = await qbQuery(token, realmId, "SELECT Id, Name FROM Item MAXRESULTS 1000");
+  // matching name, regardless of Service/Inventory). Also grab each item's
+  // income account so a NEW item can inherit the shop's dominant account
+  // instead of introducing a different one (which splits the P&L). Index by
+  // exact AND normalized name.
+  const itemsRes = await qbQuery(token, realmId, "SELECT Id, Name, IncomeAccountRef FROM Item MAXRESULTS 1000");
   const existingItems: any[] = (itemsRes?.QueryResponse?.Item ?? []).filter((i: any) => i && i.Name);
   const byExact = new Map<string, string>();
   const byNorm = new Map<string, string>();
@@ -646,6 +646,14 @@ async function resolveItemIdMap(
     const n = normalizeItemName(it.Name);
     if (n && !byNorm.has(n)) byNorm.set(n, String(it.Id));
   }
+
+  // Income account for any NEW item: the shop's explicit choice → the
+  // account most of their existing items already use → name-based guess.
+  // The dominant-account step is what stops InkTracker splitting revenue
+  // across "Sales" and "Sales of Product Income".
+  const dominantIncome = dominantItemIncomeAccount(existingItems);
+  const incomeAccountId = await findIncomeAccountId(token, realmId, configuredIncomeAccountId || dominantIncome);
+  if (!incomeAccountId) throw new Error("No QB Income account found; cannot create service items");
 
   const map = new Map<string, string>();
   for (const name of names) {
@@ -1893,9 +1901,15 @@ async function handleListIncomeAccounts(token: string, realmId: string) {
     "SELECT Id, Name FROM Account WHERE AccountType = 'Income' MAXRESULTS 100"
   );
   const accts: any[] = res?.QueryResponse?.Account ?? [];
-  // autoSelectedId = the account "Auto" would post to, so the UI can show
-  // the shop where un-configured revenue lands instead of it being silent.
-  const autoSelectedId = pickIncomeAccountId(accts, null).id;
+  // autoSelectedId = where "Auto" actually posts, so the UI shows it (not
+  // silent). Mirror resolveItemIdMap: prefer the account the shop's existing
+  // items use most (dominant), else the name-based guess.
+  let dominantIncome: string | null = null;
+  try {
+    const itemsRes = await qbQuery(token, realmId, "SELECT Id, IncomeAccountRef FROM Item MAXRESULTS 1000");
+    dominantIncome = dominantItemIncomeAccount(itemsRes?.QueryResponse?.Item ?? []);
+  } catch { /* fall back to the name-based pick */ }
+  const autoSelectedId = pickIncomeAccountId(accts, dominantIncome).id;
   return { accounts: accts.map((a) => ({ id: String(a.Id), name: a.Name })), autoSelectedId };
 }
 
