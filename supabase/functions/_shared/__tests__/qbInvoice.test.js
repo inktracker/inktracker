@@ -18,6 +18,7 @@ import {
   isNonSalesIncomeName,
   normalizeForMatch,
   customerIdentityMatches,
+  normalizeItemName,
 } from "../qbInvoice";
 
 describe("normalizeForMatch", () => {
@@ -102,6 +103,27 @@ describe("pickIncomeAccountId", () => {
   });
   it("returns null id when there are no income accounts", () => {
     expect(pickIncomeAccountId([], "30")).toEqual({ id: null, source: null });
+  });
+});
+
+describe("normalizeItemName", () => {
+  it("makes singular/plural + punctuation/case variants match", () => {
+    expect(normalizeItemName("T-Shirts")).toBe(normalizeItemName("T-Shirt"));
+    expect(normalizeItemName("Tank Tops")).toBe(normalizeItemName("tank top"));
+    expect(normalizeItemName("Hoodies & Sweatshirts")).toBe(normalizeItemName("Hoodie & Sweatshirt"));
+    expect(normalizeItemName("Caps")).toBe(normalizeItemName("cap"));
+  });
+  it("keeps genuinely different items distinct", () => {
+    expect(normalizeItemName("Screen Printing")).not.toBe(normalizeItemName("Embroidery"));
+    expect(normalizeItemName("Setup Fee")).not.toBe(normalizeItemName("Custom Apparel"));
+  });
+  it("does not over-strip 'ss' words or short tokens", () => {
+    expect(normalizeItemName("Glass")).toBe("glass");
+    expect(normalizeItemName("Business")).toBe("business");
+  });
+  it("never throws on null/empty", () => {
+    expect(normalizeItemName(null)).toBe("");
+    expect(normalizeItemName("")).toBe("");
   });
 });
 

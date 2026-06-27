@@ -145,6 +145,23 @@ export function customerIdentityMatches(qbRow, customer) {
   return false;
 }
 
+// ── Item-name matching (prevent duplicate QB items) ──────────────────────────
+// findOrCreate of a QB Item is exact-name; "T-Shirts" won't match an existing
+// "T-Shirt", so InkTracker would create a duplicate item — splitting the
+// shop's sales-by-product report (and sometimes income accounts) across two
+// lines. Normalizing (lowercase, punctuation→space, light singularization)
+// lets the caller reuse the existing item instead.
+function singularizeWord(w) {
+  // Strip a trailing plural "s" (not "ss"). Intentionally simple: handles
+  // the garment cases — shirts→shirt, hoodies→hoodie, tops→top, caps→cap —
+  // without the "ies→y" rule that wrongly turns "hoodies" into "hoody".
+  if (w.length > 2 && w.endsWith("s") && !w.endsWith("ss")) return w.slice(0, -1);
+  return w;
+}
+export function normalizeItemName(name) {
+  return normalizeForMatch(name).split(" ").filter(Boolean).map(singularizeWord).join(" ");
+}
+
 // ── Email format guard ──────────────────────────────────────────────────────
 // QB validates email per RFC 822 and returns 400 (ValidationFault) when
 // the value doesn't look like an email. The InkTracker customers table
