@@ -4,11 +4,15 @@ How sales tax *should* work for a shop that prints in one state and ships across
 the country to businesses, and what InkTracker must do to get there. Triggered by
 Thunder House (ships nationwide) seeing wrong tax.
 
-> **One-line answer:** QuickBooks Automated Sales Tax (AST) already does multi-state
-> tax correctly. InkTracker's job is **not** to compute tax — it's to feed QB the
-> right inputs (a structured ship-to address + correct exemption status) and display
-> QB's answer. Today InkTracker does neither well, so AST is blind and falls back to
-> the shop's home rate.
+> **One-line answer:** InkTracker should **never compute tax itself**. It delegates to a
+> tax *authority* — QuickBooks AST for QB-connected shops, a dedicated tax engine (Stripe
+> Tax / Avalara / TaxJar) for shops without QB — feeds it the right inputs (structured
+> ship-to + exemption status), applies its answer, and keeps an immutable audit record of
+> where the number came from. Today IT does neither: it computes a flat rate locally, and
+> on the QB path it starves AST of the address it needs. Both must change.
+>
+> **Two halves:** §1–7 cover the **QB-connected** path. §8–11 cover the **non-QB** path,
+> the **liability stance**, and the **audit-readiness** layer that applies to every shop.
 
 ---
 
@@ -141,20 +145,107 @@ and isn't, that's a QB/accountant conversation, surfaced by QB's own nexus alert
 
 ---
 
-## 8. Phased plan
+## 8. Shops WITHOUT QuickBooks (the other half — was missing)
 
-| Phase | Scope | Outcome |
+QB is an optional integration. A shop can quote, invoice, and run its books entirely
+in InkTracker. For those shops **InkTracker is the system of record for tax** — there
+is no AST behind it. The flat `tax_rate` is *more* dangerous here, not less, because
+nothing downstream corrects it. Three possible models:
+
+| Model | What it is | Audit verdict |
 |---|---|---|
-| **0 — shipped (PR #451)** | Hold any invoice where IT's tax ≠ QB's; mirror QB totals back | No customer is silently mis-charged while the rest is built |
-| **1 — the core fix** | Structured address (DB + UI) → send structured `ShipAddr` to QB | AST computes correct destination tax. Fixes most of Thunder House's problem |
-| **2 — exemptions** | Exemption type + certificate (+ per-state) tracking; line-level `NON` | Defensible B2B/resale/government exemptions |
-| **3 — quote-time accuracy** | Estimate via QB, or "calculated on final invoice" | Quoted tax == charged tax; flat `tax_rate` retired |
-| **4 — product taxability** | Item-category → QB tax-category mapping | Correct in apparel-exemption states |
-| **5 — nexus onboarding** | Docs + onboarding nudge to set nexus states in QB | Shops collect in the right states; correct $0 elsewhere |
+| **A. Flat rate (today)** | Shop sets one % applied to every customer | **Fails** for any multi-state shop. One rate can't be right for 50 destinations. |
+| **B. Manual jurisdiction tables** | Shop maintains per-state/zip rate rows | **Fails in practice** — ~11k jurisdictions, constant changes, human error. An audit-loss machine. |
+| **C. Real tax engine (recommended)** | IT integrates a calculation API as the authority | **Passes** — the engine owns rates, sourcing, nexus, product taxability. |
+
+**Recommendation: every shop must sit behind a real tax authority.** Two clean tiers:
+- **QB-connected → QuickBooks AST** is the authority (Phases 1–5).
+- **Not connected → a dedicated tax engine** is the authority. Candidates:
+  - **Stripe Tax** — already in our stack (billing). Natural pairing if/when IT adds a
+    Stripe customer-payment rail (note: today QB is the *only* customer-payment path —
+    see `project_inktracker_two_stripe_webhooks`). Computes by address incl. nexus.
+  - **TaxJar / Avalara** — standalone tax APIs, address-based, exemption-cert handling,
+    return-filing reports. Heavier, more complete.
+
+Until a shop is behind QB AST or a tax engine, the flat rate must be treated as a
+shop-owned manual override (see §9) — explicitly, not silently.
 
 ---
 
-## 9. Immediate Thunder House triage (before Phase 1 lands)
+## 9. InkTracker is NEVER the tax authority (the liability stance)
+
+The goal — *shops pass audits and never have reason to blame us* — is met by one
+principle: **InkTracker never originates a tax determination. It delegates to an
+authority, faithfully applies that authority's number, and stores an immutable record
+of where the number came from.** Every path has a named authority:
+
+| Path | Tax authority | IT's job |
+|---|---|---|
+| QB-connected | QuickBooks AST | feed structured ship-to + exemption; display + record QB's tax |
+| Tax-engine | Stripe Tax / Avalara / TaxJar | feed address + line categories; display + record the engine's tax |
+| Manual (no integration) | **The shop** (explicit, recorded consent) | apply the rate the shop set; record that the shop set it, when, and that they accepted responsibility |
+
+This must be backed by **Terms language**: the shop is solely responsible for tax
+registration, determination, collection, and remittance; InkTracker provides
+calculation tools/integrations, does not act as a tax advisor, and does not warrant
+tax accuracy. Disclaimer alone is not enough — it only holds up *because* the tool
+actually delegates to a real authority and keeps faithful records. (See
+`project_security_roadmap` lawyer-pass items.)
+
+---
+
+## 10. Audit-readiness layer (ALL shops, both paths)
+
+A shop passes an audit on **records**, not on a correct rate alone. These apply
+regardless of QB/engine/manual:
+
+1. **Immutable per-line tax record** at time of sale: taxable amount, rate, jurisdiction
+   breakdown, taxable/exempt flag, **which authority computed it**, and timestamp. Never
+   recomputed later (mirrors the quote-snapshot invariant, `project_quote_immutability`).
+2. **Exemption certificates** — capture type (resale/entity), certificate number,
+   **a stored PDF**, issuing state, and **expiration**; block/flag expired certs. A
+   `tax_exempt = true` with no cert on file is an audit liability.
+3. **Tax-collected-by-jurisdiction report** — what was collected per state/locality, so
+   the shop can file returns. Without this they can't actually remit correctly.
+4. **Refund / credit tax reversal** — credits must reverse the *same* tax that was
+   charged, recorded as such.
+5. **Charged-vs-remitted reconciliation** — and, for QB shops, the Phase-0 hold already
+   guarantees IT's record == QB's record.
+
+---
+
+## 11. Edge cases / long tail (enumerate so nothing is silently wrong)
+
+- **Deposits & partial payments** — when is tax due: at deposit, or at final payment?
+  (Generally on the full taxable sale; deposits are usually tax-deferred until delivery.)
+- **Tax-inclusive vs tax-exclusive** pricing display.
+- **Shipping/handling taxability** — per-state, and whether separately stated.
+- **Rounding** — line vs invoice rounding; match the authority's method to the cent.
+- **Refunds/voids/re-issues** — tax follows the money both directions.
+- **International** — Canada (GST/PST/HST) and VAT are a different model entirely; AS
+  Colour is AU/NZ-sourced, so flag whether any shop sells outside the US (likely v-next).
+- **Tax holidays** and **thresholds** (e.g. NY clothing < $110) — handled by the engine,
+  not by us, which is the point.
+- **Marketplace facilitator** rules — out of scope unless IT ever collects on shops' behalf.
+
+---
+
+## 12. Phased plan (revised)
+
+| Phase | Scope | Outcome |
+|---|---|---|
+| **0 — shipped (PR #451)** | Hold any QB invoice where IT's tax ≠ QB's; mirror QB totals back | No customer silently mis-charged on the QB path |
+| **1 — structured address** | Address (DB + UI) → structured `ShipAddr` to QB | AST computes correct destination tax. Fixes most of Thunder House's problem |
+| **2 — exemptions + certificates** | Type + cert PDF + state + expiry; line-level `NON` | Defensible B2B/resale/government exemptions (audit §10.2) |
+| **3 — audit records layer** | Immutable per-line tax record + by-jurisdiction report | Any shop can substantiate + file (audit §10.1, §10.3) |
+| **4 — non-QB tax engine** | Integrate Stripe Tax / Avalara / TaxJar as authority for non-QB shops; explicit manual-rate consent UX otherwise | No shop relies on a blind flat rate |
+| **5 — quote-time accuracy** | Estimate via the authority, or "calculated on final invoice" | Quoted tax == charged tax; flat `tax_rate` retired |
+| **6 — product taxability** | Item-category → tax-category mapping | Correct in apparel-exemption states |
+| **7 — nexus onboarding + Terms** | Nexus setup nudge + tax-responsibility ToS language | Shops collect in the right states; liability properly placed |
+
+---
+
+## 13. Immediate Thunder House triage (before Phase 1 lands)
 
 1. **Add structured ship-to (state + ZIP minimum) to each customer in QuickBooks
    directly** — that lets AST source correctly even before InkTracker sends it.
