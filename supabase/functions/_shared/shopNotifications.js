@@ -14,6 +14,10 @@ const VALID_SEVERITIES = Object.freeze(["info", "warning", "alert"]);
  * validates inputs strictly so a bad call here doesn't write garbage
  * to a table that the user will see. Throws on missing required
  * fields rather than silently writing a row with null/empty values.
+ *
+ * @returns {{shop_owner: string, event_type: string, severity: string,
+ *           title: string, body: string, metadata: object,
+ *           related_entity?: string, related_id?: string}}
  */
 export function buildNotificationRow(input) {
   if (!input || typeof input !== "object") {
