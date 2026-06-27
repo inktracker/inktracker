@@ -296,7 +296,7 @@ Deno.serve(async (req) => {
       categories: product.category ? [product.category] : [],
       styleCategory: product.category,
       styleImage: product.primaryImage,
-      colors: product.colours.map((c) => {
+      colors: product.colours.map((c: any) => {
         // Match image by colour name (imageType field) — case-insensitive
         const colImg = product.images.find((i: any) =>
           i.colour && c.name && i.colour.toUpperCase() === c.name.toUpperCase()

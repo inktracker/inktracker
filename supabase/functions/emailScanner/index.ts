@@ -249,7 +249,7 @@ function parseImprintsFromText(text: string): any[] {
   // Pattern A: "{N} color {something} {on}? {LOCATION}"
   // e.g. "5 color graphic on front", "1 color back print"
   const reA = /(\d+)\s*color[^,;.]{0,40}?(front|back|left\s*chest|right\s*chest|chest|left\s*sleeve|right\s*sleeve|sleeve|pocket|hood)/gi;
-  let m;
+  let m: RegExpExecArray | null;
   while ((m = reA.exec(t)) !== null) {
     const loc = locationFor(m[2]);
     if (!loc) continue;
@@ -261,9 +261,10 @@ function parseImprintsFromText(text: string): any[] {
   while ((m = reB.exec(t)) !== null) {
     const loc = locationFor(m[1]);
     if (!loc) continue;
+    const mColors = parseInt(m[2]);
     // De-dupe if Pattern A already picked it up
-    if (found.some((f) => f.location === loc && f.colors === parseInt(m[2]))) continue;
-    found.push({ location: loc, colors: parseInt(m[2]), description: "" });
+    if (found.some((f) => f.location === loc && f.colors === mColors)) continue;
+    found.push({ location: loc, colors: mColors, description: "" });
   }
 
   // Pattern C: "{LOCATION} (logo|graphic|design|print)" with no color count
@@ -591,7 +592,7 @@ Deno.serve(async (req) => {
       // Helper: find the inktracker entity referenced by a [Ref: ID] tag.
       // Returns { type, refId, threadId } if it belongs to this shop_owner.
       async function resolveRef(refId: string) {
-        const owner = profile.email;
+        const owner = profile?.email;
         const candidates = [
           { col: "quote_id",   table: "quotes",   type: "quote" },
           { col: "order_id",   table: "orders",   type: "order" },
@@ -1122,6 +1123,7 @@ Deno.serve(async (req) => {
     return json({ error: "Unknown action" });
   } catch (err) {
     console.error("emailScanner error:", err);
-    return json({ error: err.message }, 500);
+    const message = err instanceof Error ? err.message : String(err);
+    return json({ error: message }, 500);
   }
 });

@@ -351,6 +351,6 @@ Deno.serve(async (req) => {
     return json({ error: "Unknown action" }, 400);
   } catch (err) {
     console.error("billing error:", err);
-    return json({ error: err.message }, 500);
+    return json({ error: (err as any)?.message }, 500);
   }
 });

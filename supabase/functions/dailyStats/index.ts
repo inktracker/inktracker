@@ -160,6 +160,6 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error("dailyStats error:", err);
-    return json({ error: String(err?.message ?? err) }, 500);
+    return json({ error: String((err as any)?.message ?? err) }, 500);
   }
 });

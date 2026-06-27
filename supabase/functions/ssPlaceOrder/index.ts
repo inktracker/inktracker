@@ -153,7 +153,7 @@ Deno.serve(async (req) => {
 
     // Don't log the full payload — it carries customer shipping PII (name,
     // address, phone, email) that would sit in plaintext in function logs.
-    console.log("S&S order: placing", Array.isArray(ssOrder?.Lines) ? ssOrder.Lines.length : 0, "line(s), PO", ssOrder?.PoNumber ?? "(none)");
+    console.log("S&S order: placing", Array.isArray(ssOrder?.Lines) ? ssOrder.Lines.length : 0, "line(s), PO", (ssOrder as any)?.PoNumber ?? "(none)");
 
     const res = await fetch(`${SS_BASE}/orders/`, {
       method: "POST",
@@ -176,6 +176,6 @@ Deno.serve(async (req) => {
     return Response.json({ success: true, order: responseData }, { headers: CORS });
   } catch (err) {
     console.error("ssPlaceOrder error:", err);
-    return Response.json({ error: err.message }, { status: 500, headers: CORS });
+    return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500, headers: CORS });
   }
 });

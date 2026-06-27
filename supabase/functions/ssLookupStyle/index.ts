@@ -89,8 +89,9 @@ async function ssFetch(url: string, auth: string = defaultAuth): Promise<{ ok: b
     }
     return { ok: true, status, data };
   } catch (err) {
-    console.error(`[ssLookupStyle] fetch exception (${url}): ${err.message}`);
-    return { ok: false, status, data: { error: err.message } };
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[ssLookupStyle] fetch exception (${url}): ${message}`);
+    return { ok: false, status, data: { error: message } };
   }
 }
 
@@ -129,7 +130,9 @@ function groupRowsByBrand(rows: any[]): any[] {
     const colorMap: Record<string, {
       colorName: string; colorCode: string; sku: string;
       piecePrice: number; casePrice: number;
-      imageUrl: string; sizeQuantities: Record<string, number>;
+      imageUrl: string; backImageUrl: string;
+      sizeQuantities: Record<string, number>;
+      sizePrices: Record<string, number>;
     }> = {};
 
     for (const row of brandRows) {
@@ -464,6 +467,6 @@ Deno.serve(async (req) => {
     return Response.json(response, { headers: CORS });
   } catch (err) {
     console.error("ssLookupStyle top-level error:", err);
-    return Response.json({ error: String(err.message ?? err) }, { status: 500, headers: CORS });
+    return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
   }
 });

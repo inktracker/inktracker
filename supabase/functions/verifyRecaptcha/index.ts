@@ -40,6 +40,6 @@ Deno.serve(async (req) => {
     return Response.json({ success: true, score: data.score }, { headers: CORS });
   } catch (err) {
     console.error("[verifyRecaptcha] Error:", err);
-    return Response.json({ success: false, error: String(err.message ?? err) }, { status: 500, headers: CORS });
+    return Response.json({ success: false, error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
   }
 });

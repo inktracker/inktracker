@@ -124,6 +124,6 @@ Deno.serve(async (req) => {
     );
   } catch (err) {
     console.error("ssSearchCatalog error:", err);
-    return Response.json({ error: err.message }, { status: 500, headers: CORS });
+    return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500, headers: CORS });
   }
 });
