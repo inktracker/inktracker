@@ -4,7 +4,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
 import { uploadFile } from "@/lib/uploadFile";
-import { fmtMoney } from "../components/shared/pricing";
+import { fmtMoney, getDisplayName } from "../components/shared/pricing";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
@@ -659,7 +659,7 @@ export default function Customers() {
                     {(c.company || c.name || "").split(" ").map((w) => w[0]).filter(Boolean).slice(0, 2).join("")}
                   </div>
                   <div>
-                    <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">{c.company || c.name}</div>
+                    <div className="font-bold text-slate-800 dark:text-slate-200 text-sm">{getDisplayName(c)}</div>
                     {c.company && c.name && <div className="text-xs text-slate-500">{c.name}</div>}
                   </div>
                 </div>
