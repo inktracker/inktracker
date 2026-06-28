@@ -9,6 +9,14 @@ const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/gmailOAuthCallback`;
 
+// KILL SWITCH (audit PRIV-02 / PRIV-05 / PRIV-06). This function read shop
+// Gmail inboxes and sent the message content to Google Gemini for extraction,
+// with no disclosure in the privacy policy and PII landing in error logs.
+// Disabled per owner decision (2026-06-28). Every action no-ops while off.
+// To re-enable: flip to true AND restore the privacy-policy disclosure +
+// scrub PII from Gemini error logging first.
+const EMAIL_SCANNER_ENABLED = false;
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -508,6 +516,11 @@ async function parseEmailForQuote(from: string, subject: string, body: string): 
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+
+  // Disabled: do no work (no Gmail read, no Gemini call) regardless of caller.
+  if (!EMAIL_SCANNER_ENABLED) {
+    return json({ error: "Email scanning is currently disabled.", disabled: true }, 503);
+  }
 
   try {
     const body = await req.json();
