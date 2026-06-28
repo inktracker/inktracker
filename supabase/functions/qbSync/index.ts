@@ -1316,6 +1316,93 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   };
 }
 
+// ── Action: estimateTax (quote-time "Calculate tax") ───────────────────────
+// QuickBooks has no "just calculate tax" endpoint — AST only computes tax on a
+// real transaction. So we create (or reuse) a NON-POSTING Estimate for the
+// quote, read QB's authoritative tax off it, and return it for the editor to
+// fill in. Non-posting = never touches A/R, so pricing a draft quote doesn't
+// litter the books. One Estimate per quote (deduped by DocNumber = quote_id,
+// updated on re-calc). No mint, no send, no email. See docs/qb-multistate-tax-scope.md.
+async function handleEstimateTax(token: string, realmId: string, params: any, supabase: any) {
+  const { quote, customer, invoicePayload } = params;
+  if (!invoicePayload?.lines?.length) {
+    throw new Error("Missing invoicePayload — frontend must compute quote totals first");
+  }
+
+  const qbCustomerId = await findOrCreateCustomer(token, realmId, customer, supabase);
+  if (!qbCustomerId) throw new Error("Could not find or create QuickBooks customer");
+
+  // Item refs (income account doesn't affect tax — pass null, falls back).
+  const itemIdMap = await resolveItemIdMap(token, realmId, invoicePayload, null);
+
+  // Same exemption authority as createInvoice: honor only ACTIVE exemptions.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const destinationState = customer?.ship_to_address?.state;
+  let isTaxExempt = isExemptionActive(customer, { asOf: todayIso, destinationState });
+  try {
+    const qbCustData = await qbQuery(token, realmId, `SELECT * FROM Customer WHERE Id = '${escapeQbStringLiteral(qbCustomerId)}'`);
+    const qbCust = qbCustData?.QueryResponse?.Customer?.[0];
+    if (!customer?.tax_exempt && qbCust?.Taxable === false) isTaxExempt = true;
+  } catch (e) {
+    console.error("[estimateTax] QB customer tax check failed (non-fatal):", (e as Error)?.message);
+  }
+
+  const lines = buildInvoiceLinesFromPayload(invoicePayload, itemIdMap, DEFAULT_ITEM_NAME, isTaxExempt);
+  if (lines.length === 0) throw new Error("No valid lines to estimate");
+
+  // Code taxable lines TAX so AST evaluates the jurisdiction and returns the
+  // real rate (including $0 for a no-nexus destination). Do NOT gate on the
+  // quote's current taxPercent — the whole point is to let QB decide. Only a
+  // genuine exemption or a non-taxable line (e.g. shipping) is NON.
+  lines.forEach((l: any) => {
+    if (l.SalesItemLineDetail) {
+      const lineTaxable = l._taxable !== false;
+      const code = (isTaxExempt || !lineTaxable) ? "NON" : "TAX";
+      l.SalesItemLineDetail.TaxCodeRef = { value: code };
+    }
+    delete l._taxable;
+    delete l._isFee;
+  });
+
+  const shipAddr = buildQbShipAddr(customer?.ship_to_address, customer?.address);
+  const docNumber = String(quote?.quote_id || "").slice(0, 21); // QB DocNumber max 21 chars
+
+  // Reuse one estimate per quote (dedup by DocNumber) so re-calcs don't pile up.
+  let existing: any = null;
+  if (docNumber) {
+    try {
+      const found = await qbQuery(token, realmId, `SELECT * FROM Estimate WHERE DocNumber = '${escapeQbStringLiteral(docNumber)}'`);
+      existing = found?.QueryResponse?.Estimate?.[0] ?? null;
+    } catch (e) {
+      console.error("[estimateTax] estimate lookup failed (will create):", (e as Error)?.message);
+    }
+  }
+
+  const body: any = {
+    CustomerRef: { value: qbCustomerId },
+    Line: lines,
+    TxnTaxDetail: {},  // opt into AST
+  };
+  if (docNumber) body.DocNumber = docNumber;
+  if (shipAddr) body.ShipAddr = shipAddr;
+
+  let est: any;
+  if (existing?.Id) {
+    est = await qbUpdate(token, realmId, "estimate", { ...body, Id: existing.Id, SyncToken: existing.SyncToken });
+  } else {
+    est = await qbCreate(token, realmId, "estimate", body);
+  }
+  const estimate = est?.Estimate ?? est;
+
+  const total    = Number(estimate?.TotalAmt ?? 0);
+  const taxTotal = Number(estimate?.TxnTaxDetail?.TotalTax ?? 0);
+  const subtotal = Number((total - taxTotal).toFixed(2));
+  const effectiveRate = subtotal > 0 ? Number(((taxTotal / subtotal) * 100).toFixed(4)) : 0;
+
+  console.error(`[estimateTax] quote=${quote?.quote_id} subtotal=${subtotal} tax=${taxTotal} rate=${effectiveRate}% exempt=${isTaxExempt}`);
+  return { ok: true, tax: taxTotal, subtotal, total, effectiveRate, exempt: isTaxExempt };
+}
+
 // ── Action: pullCustomers (QB → InkTracker) ────────────────────────────────
 
 async function handlePullCustomers(token: string, realmId: string, supabase: any, shopOwner: string) {
@@ -2301,6 +2388,13 @@ Deno.serve(async (req) => {
         }
         result = idempOutcome.result;
         if (idempOutcome.fromCache) result = { ...result, fromCache: true };
+        break;
+      }
+      case "estimateTax": {
+        // Quote-time "Calculate tax" — non-posting Estimate round-trip to read
+        // QB's authoritative tax. No idempotency/audit envelope: it's a
+        // read-style compute (the Estimate is reused per quote, not a ledger write).
+        result = await handleEstimateTax(qbToken, realmId, params, supabase);
         break;
       }
       case "syncCustomer": {
