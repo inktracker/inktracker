@@ -18,7 +18,9 @@ import {
   getStandardTurnaroundDays,
   getRushTiers,
   getRushRateForDaysOut,
+  buildQBInvoicePayload,
 } from "../shared/pricing";
+import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { buildAddonsByScope, getActiveAddonLabels } from "@/lib/pricing/extrasScopes";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
@@ -151,6 +153,9 @@ export default function QuoteEditorModal({
   });
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  // "Calculate tax" — fetch QB's authoritative tax for the ship-to and fill the
+  // rate, so the quote matches what QB will charge (no send-time hold).
+  const [calcTax, setCalcTax] = useState({ loading: false, error: "", result: null });
 
   // Paste Order: paste an email/spreadsheet and have the parser prefill
   // line_items. Hidden 2026-06-02 for customer-facing release — parser
@@ -452,6 +457,56 @@ export default function QuoteEditorModal({
       tax_id: "",
       tax_exempt: false,
     });
+  }
+
+  // Ask QuickBooks to calculate the real sales tax for this quote's ship-to
+  // (a non-posting Estimate round-trip) and fill the rate, so the quote shows
+  // exactly what QB will charge — no send-time hold. Non-broker only.
+  async function handleCalculateTax() {
+    setCalcTax({ loading: true, error: "", result: null });
+    try {
+      const cust = customers.find((c) => c.id === q.customer_id);
+      if (!cust) throw new Error("Pick a customer first — QuickBooks needs their ship-to address.");
+      const ship = cust.ship_to_address;
+      if (!ship?.state || !ship?.zip) {
+        throw new Error("Add the customer's ship-to state + ZIP (Customers → edit) so QuickBooks can source the right tax.");
+      }
+      if ((q.line_items || []).every((li) => getQty(li) === 0)) {
+        throw new Error("Add at least one line item before calculating tax.");
+      }
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in.");
+      const invoicePayload = buildQBInvoicePayload(q);
+      const { data, error: invErr } = await base44.functions.invoke("qbSync", {
+        action: "estimateTax",
+        accessToken: session.access_token,
+        quote: q,
+        customer: {
+          id: cust.id,
+          name: cust.name,
+          email: cust.email || q.customer_email || "",
+          company: cust.company || "",
+          address: cust.address || "",
+          qb_customer_id: cust.qb_customer_id || "",
+          ship_to_address: ship,
+          tax_exempt: cust.tax_exempt || false,
+          exemption_expires_at: cust.exemption_expires_at || null,
+          exemption_states: cust.exemption_states || null,
+        },
+        invoicePayload,
+      });
+      if (invErr) {
+        let msg = invErr.message;
+        try { const b = await invErr.context?.json?.(); msg = b?.error || msg; } catch { /* fall back */ }
+        throw new Error(msg || "Couldn't reach QuickBooks. Try again.");
+      }
+      if (data?.error) throw new Error(data.error);
+      const rate = Number(data.effectiveRate || 0);
+      setQ((prev) => ({ ...prev, tax_rate: rate }));
+      setCalcTax({ loading: false, error: "", result: { tax: Number(data.tax || 0), rate } });
+    } catch (e) {
+      setCalcTax({ loading: false, error: e.message || "Tax calculation failed.", result: null });
+    }
   }
 
   async function handleSave() {
@@ -1085,6 +1140,30 @@ export default function QuoteEditorModal({
                   <span className="text-slate-500 text-xs">%</span>
                 </div>
               </div>
+
+              {/* Calculate tax from QuickBooks — fills the exact rate QB will
+                  charge for the customer's ship-to (no send-time hold). Direct
+                  shop quotes only; broker quotes use broker_tax_rate. */}
+              {!isBrokerQuote(q) && (
+                <div className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={handleCalculateTax}
+                    disabled={calcTax.loading}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-semibold text-[#2CA01C] border border-[#2CA01C]/40 hover:bg-green-50 dark:hover:bg-slate-800 rounded-lg transition disabled:opacity-50"
+                  >
+                    {calcTax.loading ? "Calculating…" : "Calculate tax from QuickBooks"}
+                  </button>
+                  {calcTax.result && (
+                    <p className="text-[11px] text-emerald-600 text-right">
+                      ✓ QuickBooks tax: {fmtMoney(calcTax.result.tax)} ({calcTax.result.rate}%) — filled above.
+                    </p>
+                  )}
+                  {calcTax.error && (
+                    <p className="text-[11px] text-amber-600">{calcTax.error}</p>
+                  )}
+                </div>
+              )}
 
               {/* Setup fees — per-screen multipliers (one row per shop-
                   configured fee, each toggleable on this quote). Editable
