@@ -225,3 +225,35 @@ describe("effectiveQuoteTotals — afterDisc footing (saved snapshot)", () => {
     expect(+(t.sub - discount + 25 + 15 + t.tax).toFixed(2)).toBe(141.50);
   });
 });
+
+describe("effectiveQuoteTotals — PRICE-01: live (pre-save) total includes setup fees", () => {
+  it("folds setup/screen fees into the live total (a pre-save conversion no longer undercharges)", () => {
+    const cfg = { setupFees: { enabled: true, items: [{ id: "screens", label: "Screens", rate: 25, reorderRate: 15 }] } };
+    const quote = makeQuote();        // 1 line, 1-color front print → 1 screen
+    delete quote.subtotal; delete quote.tax; delete quote.total;
+
+    // Live total WITH setup config loaded.
+    loadShopPricingConfig(cfg);
+    const withSetup = effectiveQuoteTotals(quote);
+    expect(withSetup.source).toBe("live");
+    expect(withSetup.setup_total).toBe(25); // 1 screen × $25
+
+    // Live total with NO setup config (the old buggy behavior).
+    loadShopPricingConfig(null);
+    const noSetup = effectiveQuoteTotals(quote);
+    expect(noSetup.setup_total ?? 0).toBe(0);
+
+    // The fix: setup ($25) plus tax on it ($25 × 8.25%) is now in the total.
+    const delta = +(withSetup.total - noSetup.total).toFixed(2);
+    expect(delta).toBeCloseTo(25 * (1 + 8.25 / 100), 2); // 27.06
+  });
+
+  it("is a no-op when the shop has no setup fees configured", () => {
+    loadShopPricingConfig(null);
+    const quote = makeQuote();
+    delete quote.total;
+    const t = effectiveQuoteTotals(quote);
+    expect(t.source).toBe("live");
+    expect(t.setup_total ?? 0).toBe(0);
+  });
+});

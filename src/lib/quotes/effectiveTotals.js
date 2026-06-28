@@ -27,8 +27,9 @@
 // causing buildOrderFromQuote to diverge silently from it. Now
 // shared so the contract is enforced everywhere.
 
-import { calcQuoteTotals } from "../../components/shared/pricing";
+import { calcQuoteTotals, calcSetupFees, getShopPricingConfig } from "../../components/shared/pricing";
 import { sumAdditionalCharges } from "../pricing/additionalCharges";
+import { roundedQuoteTotals } from "../pricing/quoteRounding";
 
 /**
  * The discounted line-item subtotal ("after discount, before setup/fees/tax"),
@@ -99,5 +100,37 @@ export function effectiveQuoteTotals(quote, markup = undefined) {
     };
   }
 
-  return { ...live, source: "live" };
+  // No saved total (draft / total === 0 / pre-save conversion): recompute live.
+  // calcQuoteTotals EXCLUDES setup/screen fees by design (the editor layers and
+  // snapshots them separately), so without folding them in here a quote
+  // converted before an editor save produces an order whose total drops every
+  // setup fee — commonly $20–$200+ (audit PRICE-01). Fold them the exact way
+  // the editor's save does (calcSetupFees → roundedQuoteTotals) so the live
+  // total and the saved total use ONE formula.
+  const setupFees = calcSetupFees({
+    lineItems: quote?.line_items || [],
+    override: Number.isInteger(quote?.setup_screens_override) ? quote.setup_screens_override : undefined,
+    isReorder: !!quote?.is_reorder,
+    skippedFeeIds: quote?.setup_skipped_fee_ids || [],
+    config: getShopPricingConfig()?.setupFees || {},
+  });
+  const liveAddl = sumAdditionalCharges(quote?.additional_charges);
+  const rt = roundedQuoteTotals({
+    sub: live.sub,
+    discount: quote?.discount,
+    discountType: quote?.discount_type,
+    setup: setupFees.total,
+    addlTaxable: liveAddl.taxable,
+    addlNonTax: liveAddl.nonTaxable,
+    taxRate: quote?.tax_rate,
+  });
+  return {
+    ...live,
+    sub: rt.sub,
+    afterDisc: rt.afterDisc,
+    setup_total: setupFees.total,
+    tax: rt.tax,
+    total: rt.total,
+    source: "live",
+  };
 }
