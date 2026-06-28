@@ -190,3 +190,13 @@ describe("resolveTeamSubscription — team members inherit the owner's plan", ()
     expect(getEffectiveTier(effective, NOW)).toBe("expired");
   });
 });
+
+describe("getEffectiveTier — incomplete (BILL-01: card required at signup)", () => {
+  it("treats 'incomplete' as no-access ('expired') so the paywall shows", () => {
+    expect(getEffectiveTier({ role: "shop", subscription_tier: "incomplete" })).toBe("expired");
+    expect(canAccess(getEffectiveTier({ role: "shop", subscription_tier: "incomplete" }), "quotes")).toBe(false);
+  });
+  it("still lets an admin bypass an incomplete tier", () => {
+    expect(getEffectiveTier({ role: "admin", subscription_tier: "incomplete" })).toBe("shop");
+  });
+});

@@ -574,7 +574,7 @@ function PublicLandingPage() {
                   Take a tour
                 </a>
               </div>
-              <p className="text-white/55 text-xs mt-6 tracking-wide">No credit card · cancel anytime</p>
+              <p className="text-white/55 text-xs mt-6 tracking-wide">14-day free trial · cancel anytime</p>
             </div>
           </div>
         </section>
@@ -968,7 +968,7 @@ function PublicLandingPage() {
               </div>
               <p className="text-[15px] md:text-base" style={{ color: MUTED }}>
                 Or <strong style={{ color: INK }}>$999/year</strong> — saves $189.
-                14-day free trial, no credit card.
+                14-day free trial.
               </p>
 
               <div className="my-10 mx-auto max-w-2xl grid sm:grid-cols-2 gap-x-8 gap-y-3 text-left">
@@ -1028,7 +1028,7 @@ function PublicLandingPage() {
               </button>
             </div>
             <p className="mt-6 text-xs tracking-wide" style={{ color: MUTED }}>
-              No credit card · 90-second signup
+              14-day free trial · cancel anytime
             </p>
           </div>
         </section>
@@ -1438,7 +1438,9 @@ const AuthenticatedApp = () => {
   // of subscription_tier / trial_ends_at state.
   const isAdminBypass = user?.role === "admin";
   const trialExpired = user?.subscription_tier === "trial" && user?.trial_ends_at && new Date(user.trial_ends_at) < new Date();
-  const isExpired = !isAdminBypass && (trialExpired || user?.subscription_tier === "expired" || user?.subscription_status === "canceled");
+  // 'incomplete' = signed up but never added a card / started a trial (BILL-01).
+  const neverSubscribed = user?.subscription_tier === "incomplete";
+  const isExpired = !isAdminBypass && (neverSubscribed || trialExpired || user?.subscription_tier === "expired" || user?.subscription_status === "canceled");
 
   // Show onboarding if the user hasn't set a shop name yet (owners only — managers/employees inherit)
   const needsOnboarding = !user?.shop_name && user?.role !== "manager" && user?.role !== "employee";
@@ -1456,9 +1458,13 @@ const AuthenticatedApp = () => {
       <AppRoutes />
       {isExpired && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-red-600 text-white px-4 py-3 flex items-center justify-center gap-4 shadow-lg">
-          <span className="text-sm font-semibold">Your trial has expired. Upgrade to keep creating quotes and orders.</span>
+          <span className="text-sm font-semibold">
+            {neverSubscribed
+              ? "Add a payment method to start your 14-day free trial and unlock InkTracker."
+              : "Your trial has expired. Upgrade to keep creating quotes and orders."}
+          </span>
           <a href="/Account?billing=1" className="bg-white text-red-700 font-bold text-sm px-4 py-1.5 rounded-lg hover:bg-red-50 transition">
-            View Plans
+            {neverSubscribed ? "Start free trial" : "View Plans"}
           </a>
         </div>
       )}

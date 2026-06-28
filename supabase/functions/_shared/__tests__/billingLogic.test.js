@@ -237,6 +237,12 @@ describe("trialPeriodDaysForCheckout", () => {
     )).toBe(14);
   });
 
+  it("returns 14 for a fresh 'incomplete' signup (BILL-01 first card-backed trial)", () => {
+    expect(trialPeriodDaysForCheckout({ subscription_tier: "incomplete" }, NOW)).toBe(14);
+    // even with no trial_ends_at (the shape handle_new_user writes)
+    expect(trialPeriodDaysForCheckout({ subscription_tier: "incomplete", trial_ends_at: null }, NOW)).toBe(14);
+  });
+
   it("returns undefined for active shop tier (no trial extension on resub)", () => {
     expect(trialPeriodDaysForCheckout({ subscription_tier: "shop" }, NOW)).toBe(undefined);
   });
