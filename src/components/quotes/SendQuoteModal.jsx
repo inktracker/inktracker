@@ -346,6 +346,23 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
           "Open QuickBooks → Receive Payment for this invoice and apply the deposit manually."
         );
       }
+      // TAX HOLD. QuickBooks computed a different sales tax than this quote,
+      // so the edge function did NOT mint a payment link and we must NOT send
+      // the customer email — they'd be charged a tax we never quoted, and the
+      // books would disagree with InkTracker. Block the send and tell the
+      // operator how to reconcile it. See docs/qb-tax-sync.md.
+      if (data.taxBlocked) {
+        autoSendAfter = false;
+        const d = data.taxBlockDetail || {};
+        const quoted = Number(d.quotedTax || 0).toFixed(2);
+        const qb = Number(d.qbTax || 0).toFixed(2);
+        setQbError(
+          `On hold: QuickBooks calculated a different sales tax than your quote ` +
+          `(you quoted $${quoted}, QuickBooks computed $${qb}). The invoice was NOT sent to the customer. ` +
+          `Confirm the customer's address & tax status in QuickBooks, set this quote's tax rate to match, ` +
+          `then Send again. Full guide: docs/qb-tax-sync.md.`
+        );
+      }
       // Translate the structured failure reason from the edge function
       // into a human-readable error. Without a payment link the modal
       // falls through to `send_failed`/`needs_create`; this string

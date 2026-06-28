@@ -1011,6 +1011,19 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     sentTax: expectedTax,
     qbResponse: qbInvoiceFinal,
   });
+
+  // HARD TAX GATE. When QB's computed tax doesn't match what the quote
+  // billed, the customer would pay a tax we never quoted and the books
+  // would disagree with InkTracker. Hold the invoice — do NOT mint or
+  // deliver the customer payment link, and do NOT advance the quote to
+  // "Sent" — until the shop reconciles it (fix the customer's QB tax
+  // setup or the quote's tax rate, then re-sync). `taxMismatch` is the
+  // discount-aware signal from reconcileQbInvoice: the line amounts are
+  // faithful but the total diverges beyond a cent purely via tax. Today
+  // this never fires (the shop's flat rate equals QB's AST rate); it is
+  // the tripwire for the day they diverge. See docs/qb-tax-sync.md.
+  const taxBlocked = reconciliation.taxMismatch === true;
+
   if (reconciliation.severity !== RECONCILE_SEVERITY.OK) {
     console.error(
       `[createInvoice] QB write reconciliation: ${reconciliation.severity} ` +
@@ -1025,17 +1038,16 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     );
 
     // Decide whether to NOTIFY (vs just log above). Integrity DRIFT (QB
-    // altered our line amounts) and FATAL always notify. A TAX_MISMATCH
-    // only notifies in the dangerous sub-case — QB recorded ~$0 tax when
-    // the quote expected some (under-reported liability / customer
-    // underpays). Benign tax differences (QB's authoritative tax engine
-    // landing on a slightly different number) are logged above but NOT
-    // pushed, so the channel doesn't cry wolf on every AST-shop invoice
-    // and bury the cases that matter.
+    // altered our line amounts) and FATAL always notify. As of the tax-sync
+    // hardening, ANY tax mismatch also notifies — because it now also BLOCKS
+    // the customer send (see taxBlocked), so the shop must be told to
+    // reconcile it rather than discovering a held invoice silently. The
+    // notification copy distinguishes the dangerous missingTax sub-case
+    // (QB recorded ~$0) from a plain rate divergence.
     const shouldNotify =
       reconciliation.severity === RECONCILE_SEVERITY.DRIFT ||
       reconciliation.severity === RECONCILE_SEVERITY.FATAL ||
-      (reconciliation.severity === RECONCILE_SEVERITY.TAX_MISMATCH && reconciliation.missingTax);
+      reconciliation.severity === RECONCILE_SEVERITY.TAX_MISMATCH;
 
     // Best-effort in-app notification: a failure here must NOT cause the
     // user-facing invoice send to error out. Uses a service-role client
@@ -1081,10 +1093,24 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // async portal provisioning, then returns a structured reason so the
   // caller can show actionable guidance.
   const initialInvoice: any = qbInvoiceFinal || created;
-  const linkResult = await mintInvoicePaymentLink(token, realmId, qbInvoiceId, billEmail, initialInvoice);
-  const paymentLink = linkResult.link;
-  const linkFailureReason = linkResult.reason;
-  const invoiceForLink = linkResult.finalInvoice;
+  let paymentLink: string | null = null;
+  let linkFailureReason: string | null = null;
+  if (taxBlocked) {
+    // On hold for a tax mismatch — never mint or deliver a customer
+    // payment link. The QB invoice exists (we needed QB to compute the
+    // tax to detect the mismatch), but no portal link is provisioned and
+    // the frontend send is blocked via the taxBlocked flag in the return.
+    linkFailureReason = "tax_mismatch_hold";
+    console.error(
+      `[createInvoice] TAX HOLD: quote=${quote.quote_id} qb_invoice=${qbInvoiceId} ` +
+      `quoted tax $${reconciliation.sentTax.toFixed(2)} vs QB $${reconciliation.qbTax.toFixed(2)} ` +
+      `(drift $${reconciliation.taxDrift.toFixed(2)}) — payment link NOT minted; customer send blocked.`,
+    );
+  } else {
+    const linkResult = await mintInvoicePaymentLink(token, realmId, qbInvoiceId, billEmail, initialInvoice);
+    paymentLink = linkResult.link;
+    linkFailureReason = linkResult.reason;
+  }
 
   // 4b. If the quote's deposit was already paid, record the payment against this invoice.
   // A failure here is REAL money drift: the deposit shows as paid in
@@ -1096,7 +1122,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // sync — but the response will carry depositRecordFailed: true.
   let depositRecordFailed = false;
   const depositAmount = Number(invoicePayload?.depositAmount) || 0;
-  if (quote.deposit_paid && depositAmount > 0) {
+  // Skip while tax-held: a held invoice isn't going out, and recording the
+  // deposit now would double it when the fixed invoice is re-synced (the
+  // resync path records the deposit again). It records on the clean re-sync.
+  if (quote.deposit_paid && depositAmount > 0 && !taxBlocked) {
     try {
       await qbCreate(token, realmId, "payment", {
         CustomerRef: { value: qbCustomerId },
@@ -1154,14 +1183,21 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_subtotal:     qbSubtotal,
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
-      status:          quote.status === "Draft" ? "Sent" : quote.status,
+      // Don't advance a held invoice to "Sent" — it hasn't been sent.
+      status:          (!taxBlocked && quote.status === "Draft") ? "Sent" : quote.status,
     }).eq("id", quote.id);
 
-    // Also try invoices table (invoice-originated, same ID format)
+    // Also try invoices table (invoice-originated, same ID format). Mirror
+    // QB's authoritative subtotal/tax/total so the InkTracker invoice record
+    // reflects QB exactly (the IT-side `tax`/`total` are what the quote
+    // billed; these qb_* fields are what QB recorded — see docs/qb-tax-sync.md).
     await supabase.from("invoices").update({
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
       qb_payment_link: paymentLink,
+      qb_subtotal:     qbSubtotal,
+      qb_tax_amount:   qbTaxAmount,
+      qb_total:        qbTotal,
     }).eq("id", quote.id);
   }
 
@@ -1183,6 +1219,20 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     // the deposit manually in QuickBooks → Receive Payment. A shop
     // notification was also written.
     depositRecordFailed,
+    // True when QB's tax didn't match the quote, so the invoice is on hold:
+    // no payment link was minted and the frontend must NOT send the customer
+    // email. The shop reconciles (see docs/qb-tax-sync.md) and re-syncs.
+    taxBlocked,
+    taxBlockReason: taxBlocked ? "tax_mismatch" : null,
+    taxBlockDetail: taxBlocked
+      ? {
+          quotedTax:   reconciliation.sentTax,
+          qbTax:       reconciliation.qbTax,
+          taxDrift:    reconciliation.taxDrift,
+          quotedTotal: reconciliation.sentTotal,
+          qbTotal:     reconciliation.qbTotal,
+        }
+      : null,
     qbSubtotal,
     qbTaxAmount,
     qbTotal,

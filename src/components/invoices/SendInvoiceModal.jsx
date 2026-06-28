@@ -88,12 +88,12 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
   // Best-effort: any failure here is logged and swallowed so the
   // send still goes out, just without a payment link.
   async function tryMintMissingLink(recipientEmail) {
-    if (!invoice.qb_invoice_id) return null;       // not even in QB yet — Send button is for after Create
-    if (qbPaymentLink) return qbPaymentLink;       // already have one
-    if (!isValidEmail(recipientEmail)) return null; // need a real email to mint with
+    if (!invoice.qb_invoice_id) return { link: null };       // not even in QB yet — Send button is for after Create
+    if (qbPaymentLink) return { link: qbPaymentLink };       // already have one
+    if (!isValidEmail(recipientEmail)) return { link: null }; // need a real email to mint with
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return null;
+      if (!session?.access_token) return { link: null };
       const quoteShape = {
         ...invoice,
         quote_id: invoice.invoice_id,
@@ -149,15 +149,20 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
           },
         },
       });
+      // TAX HOLD: QB computed a different sales tax than the invoice billed,
+      // so qbSync didn't mint a link and the customer send must be blocked.
+      if (data?.taxBlocked) {
+        return { link: null, taxBlocked: true, detail: data.taxBlockDetail || {} };
+      }
       const fresh = data?.paymentLink || data?.qb_payment_link || null;
       if (fresh) {
         setQbPaymentLink(fresh);
-        return fresh;
+        return { link: fresh };
       }
-      return null;
+      return { link: null };
     } catch (err) {
       console.warn("[SendInvoiceModal] payment link mint retry failed:", err?.message);
-      return null;
+      return { link: null };
     }
   }
 
@@ -173,7 +178,21 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       let effectiveLink = usablePaymentLink;
       if (!effectiveLink && invoice.qb_invoice_id) {
         const minted = await tryMintMissingLink(recipientEmails[0]);
-        if (minted) effectiveLink = minted;
+        // Tax hold: QuickBooks calculated a different sales tax than this
+        // invoice. Do NOT send — the customer would be charged a tax we
+        // didn't bill. Surface the fix and stop here. See docs/qb-tax-sync.md.
+        if (minted?.taxBlocked) {
+          const d = minted.detail || {};
+          setError(
+            `On hold: QuickBooks calculated a different sales tax than this invoice ` +
+            `(billed $${Number(d.quotedTax || 0).toFixed(2)}, QuickBooks computed $${Number(d.qbTax || 0).toFixed(2)}). ` +
+            `Not sent. Confirm the customer's address & tax status in QuickBooks, fix this invoice's tax rate to match, ` +
+            `then Send again. Full guide: docs/qb-tax-sync.md.`
+          );
+          setSending(false);
+          return;
+        }
+        if (minted?.link) effectiveLink = minted.link;
       }
 
       // Generate PDF (best-effort; not blocking the send)
