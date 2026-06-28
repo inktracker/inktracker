@@ -136,6 +136,11 @@ export function reconcileFieldsFromSubscriptions(subs) {
 // Stripe rejects trial_period_days < 1, so we Math.max it before
 // returning. The smallest meaningful trial is 1 day.
 export function trialPeriodDaysForCheckout(profile, now = Date.now()) {
+  // Fresh signups (BILL-01) land at 'incomplete' with no trial_ends_at — they
+  // get the full 14-day trial on their FIRST card-backed checkout. Users who
+  // already used (and lost) a trial are tier 'expired' → undefined → charged
+  // today, so there's no second free trial by re-checking-out.
+  if (profile?.subscription_tier === "incomplete") return 14;
   if (profile?.subscription_tier !== "trial") return undefined;
   if (!profile?.trial_ends_at) return 14;
   const endsAt = new Date(profile.trial_ends_at).getTime();

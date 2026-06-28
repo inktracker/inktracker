@@ -55,9 +55,10 @@ export default function Terms() {
         <section className="space-y-2">
           <h2 className="text-lg font-semibold text-slate-800">4. Fees, Billing &amp; Refunds</h2>
           <p className="text-sm text-slate-600 leading-relaxed">
-            New accounts receive a 14-day free trial with full access; no credit card is required to
-            start. After the trial, continued use requires a paid subscription, billed monthly in
-            advance through Stripe. <span className="font-semibold">Your subscription renews
+            New accounts receive a 14-day free trial with full access. A valid payment method is
+            required to start the trial; you will not be charged until the trial ends, and you can
+            cancel any time before then to avoid a charge. After the trial, continued use requires a
+            paid subscription, billed monthly in advance through Stripe. <span className="font-semibold">Your subscription renews
             automatically:</span> by starting a paid subscription you authorize us to charge your
             payment method the then-current fee at the start of each billing period until you cancel.
             You may cancel at any time from the Account settings page (or by emailing{" "}

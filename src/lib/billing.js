@@ -69,6 +69,10 @@ export function getEffectiveTier(user, nowOverride) {
   const tier = user.subscription_tier;
   if (tier === "expired") return "expired";
 
+  // 'incomplete' = signed up but no card/subscription yet (BILL-01). No access
+  // until they complete Stripe Checkout (which flips them to shop/trialing).
+  if (tier === "incomplete") return "expired";
+
   if (tier === "trial" && user.trial_ends_at) {
     const now = nowOverride instanceof Date
       ? nowOverride.getTime()

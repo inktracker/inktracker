@@ -39,6 +39,17 @@ export function requireActiveSubscription(profile: Profile | null): Response | n
     );
   }
 
+  // 'incomplete' = signed up but never added a card / started a subscription
+  // (BILL-01). Block until they complete Stripe Checkout. Without this, the
+  // "any truthy tier" allow below would let a never-paid signup use paid edge
+  // functions.
+  if (tier === "incomplete") {
+    return new Response(
+      JSON.stringify({ error: "Add a payment method to start your free trial." }),
+      { status: 403, headers: { ...CORS, "Content-Type": "application/json" } },
+    );
+  }
+
   // Trial — check if still within the trial window
   if (tier === "trial") {
     const trialEnd = profile.trial_ends_at ? new Date(profile.trial_ends_at) : null;
