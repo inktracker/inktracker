@@ -32,4 +32,11 @@
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
+  <!-- compare-pages:start -->
+  <url>
+    <loc>https://inktracker.app/compare</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <!-- compare-pages:end -->
 </urlset>
