@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { claimSupplierOrder, finishSupplierOrder } from "../_shared/supplierIdempotency.js";
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
 const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
@@ -37,17 +38,43 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
     }
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: profile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+    const { data: profile } = await admin.from("profiles").select("email, subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
     const blocked = requireActiveSubscription(profile);
     if (blocked) return blocked;
 
-    const { poNumber, shipTo, lines, shippingMethod = "Ground", testOrder = false, warehouse = "" } = await req.json();
+    const { poNumber, shipTo, lines, shippingMethod = "Ground", testOrder = false, warehouse = "", idempotencyKey = "" } = await req.json();
 
     if (!poNumber) return Response.json({ error: "poNumber required" }, { status: 400, headers: CORS });
     if (!shipTo?.address1 || !shipTo?.city || !shipTo?.state || !shipTo?.zip) {
       return Response.json({ error: "Complete ship-to address required" }, { status: 400, headers: CORS });
     }
     if (!lines?.length) return Response.json({ error: "At least one order line required" }, { status: 400, headers: CORS });
+
+    // ── Idempotency claim (INT-01) ──────────────────────────────────
+    // Guard against placing the same real-money order twice. Key is a stable
+    // per-submit UUID from the client; shop_owner is derived server-side.
+    const shopOwner = (profile?.email || user.email || "") as string;
+    const idemKey = typeof idempotencyKey === "string" ? idempotencyKey : "";
+    if (idemKey && shopOwner) {
+      let claim;
+      try {
+        claim = await claimSupplierOrder(admin, { shopOwner, key: idemKey, supplier: "S&S Activewear" });
+      } catch (e) {
+        console.error("[ssPlaceOrder] idempotency claim failed:", e instanceof Error ? e.message : String(e));
+        return Response.json({ error: "Couldn't verify this order isn't a duplicate. Please try again." }, { status: 503, headers: CORS });
+      }
+      if (claim.replay) {
+        return Response.json({ success: true, order: claim.response?.order ?? claim.response, idempotentReplay: true }, { headers: CORS });
+      }
+      if (claim.inFlight) {
+        return Response.json({ error: "This order is already being placed. Please wait a moment." }, { status: 409, headers: CORS });
+      }
+    }
+    const recordOutcome = (success: boolean, response: unknown, supplierOrderId?: string | null) => {
+      if (idemKey && shopOwner) {
+        return finishSupplierOrder(admin, { shopOwner, key: idemKey, success, response, supplierOrderId });
+      }
+    };
 
     // Resolve real S&S SKUs — our cart stores style+color+size but S&S needs internal SKU IDs
     const resolvedLines: { Identifier: string; Qty: number }[] = [];
@@ -167,12 +194,16 @@ Deno.serve(async (req) => {
 
     if (!res.ok) {
       console.error("S&S order failed:", res.status, responseText);
+      // Release the idempotency key so the shop can correct + retry.
+      await recordOutcome(false, responseData);
       return Response.json(
         { error: `S&S order failed (${res.status})`, details: responseData },
         { status: res.status, headers: CORS }
       );
     }
 
+    const ssOrderId = responseData?.orderNumber ?? responseData?.OrderNumber ?? responseData?.orderId ?? null;
+    await recordOutcome(true, { order: responseData }, ssOrderId != null ? String(ssOrderId) : null);
     return Response.json({ success: true, order: responseData }, { headers: CORS });
   } catch (err) {
     console.error("ssPlaceOrder error:", err);

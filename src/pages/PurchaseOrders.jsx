@@ -251,7 +251,9 @@ export default function PurchaseOrders() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const payload = buildSubmitPayload(selected);
+      // idempotencyKey = the PO's stable UUID, so a double-submit / retry
+      // can't place a second real order (audit INT-02).
+      const payload = { ...buildSubmitPayload(selected), idempotencyKey: selected.id };
       const result = await placeOrder(selected.supplier, payload);
       const supplierOrderId = result?.order?.id ? String(result.order.id) : null;
       await patchSelected({
