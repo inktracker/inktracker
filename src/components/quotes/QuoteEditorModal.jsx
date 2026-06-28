@@ -21,7 +21,8 @@ import {
   buildQBInvoicePayload,
 } from "../shared/pricing";
 import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
-import { normalizeShipTo, isShipToComplete } from "@/lib/tax/address";
+import { normalizeShipTo, isShipToComplete, parseUsAddress, addressOneLine } from "@/lib/tax/address";
+import AddressFields from "@/components/shared/AddressFields";
 import { buildAddonsByScope, getActiveAddonLabels } from "@/lib/pricing/extrasScopes";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
@@ -161,6 +162,7 @@ export default function QuoteEditorModal({
   // here (it drives the tax), instead of leaving to Customers → edit. Persisted
   // back to the customer on calculate/save.
   const [shipTo, setShipTo] = useState(null);
+  const [billTo, setBillTo] = useState(null);
   const [savingShipTo, setSavingShipTo] = useState(false);
 
   // Paste Order: paste an email/spreadsheet and have the parser prefill
@@ -304,6 +306,11 @@ export default function QuoteEditorModal({
   useEffect(() => {
     const c = customers.find((x) => x.id === q.customer_id);
     setShipTo(c ? normalizeShipTo(c.ship_to_address) : null);
+    // Seed billing from the structured column, falling back to a best-effort
+    // parse of the legacy free-text address for pre-existing customers.
+    setBillTo(
+      c ? normalizeShipTo(c.bill_to_address || parseUsAddress(c.address) || { street: c.address || "" }) : null,
+    );
     setCalcTax({ loading: false, error: "", result: null });
   }, [q.customer_id, customers]);
 
@@ -490,9 +497,18 @@ export default function QuoteEditorModal({
       }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Not signed in.");
-      // Persist the (possibly just-edited) ship-to back to the customer so it
-      // sticks for next time — best-effort, don't block the calc on it.
-      try { await base44.entities.Customer.update(cust.id, { ship_to_address: ship }); } catch { /* non-fatal */ }
+      // Persist the (possibly just-edited) billing + ship-to back to the
+      // customer so they stick for next time — best-effort, don't block the
+      // calc on it. Legacy `address` (QB BillAddr + list display) is derived
+      // from structured billing.
+      const bill = normalizeShipTo(billTo);
+      try {
+        await base44.entities.Customer.update(cust.id, {
+          ship_to_address: ship,
+          bill_to_address: bill,
+          address: addressOneLine(bill) || cust.address || "",
+        });
+      } catch { /* non-fatal */ }
       const invoicePayload = buildQBInvoicePayload(q);
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
         action: "estimateTax",
@@ -1166,42 +1182,22 @@ export default function QuoteEditorModal({
                   charge for the customer's ship-to (no send-time hold). Direct
                   shop quotes only; broker quotes use broker_tax_rate. The
                   ship-to is editable inline (saves back to the customer). */}
-              {!isBrokerQuote(q) && q.customer_id && shipTo && (
-                <div className="space-y-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5">
-                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-                    Ship-To <span className="normal-case font-medium text-slate-400">— used for sales tax · saves to the customer</span>
-                  </div>
-                  <input
-                    type="text"
-                    value={shipTo.street}
-                    onChange={(e) => setShipTo({ ...shipTo, street: e.target.value })}
-                    placeholder="Street"
-                    className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
+              {!isBrokerQuote(q) && q.customer_id && shipTo && billTo && (
+                <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5">
+                  <AddressFields
+                    label="Billing"
+                    sublabel="saves to the customer"
+                    value={billTo}
+                    onChange={setBillTo}
                   />
-                  <div className="grid grid-cols-6 gap-2">
-                    <input
-                      type="text"
-                      value={shipTo.city}
-                      onChange={(e) => setShipTo({ ...shipTo, city: e.target.value })}
-                      placeholder="City"
-                      className="col-span-3 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
-                    />
-                    <input
-                      type="text"
-                      value={shipTo.state}
-                      onChange={(e) => setShipTo({ ...shipTo, state: e.target.value.toUpperCase().slice(0, 2) })}
-                      placeholder="ST"
-                      maxLength={2}
-                      className="col-span-1 text-sm uppercase border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
-                    />
-                    <input
-                      type="text"
-                      value={shipTo.zip}
-                      onChange={(e) => setShipTo({ ...shipTo, zip: e.target.value })}
-                      placeholder="ZIP"
-                      className="col-span-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
-                    />
-                  </div>
+                  <AddressFields
+                    label="Shipping"
+                    sublabel="used for sales tax · saves to the customer"
+                    value={shipTo}
+                    onChange={setShipTo}
+                    taxHint
+                    onSameAsBilling={() => setShipTo(normalizeShipTo(billTo))}
+                  />
                   <button
                     type="button"
                     onClick={handleCalculateTax}

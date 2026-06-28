@@ -33,6 +33,7 @@ import {
   buildQbShipAddr,
   isExemptionActive,
   buildTaxRecordFromQbInvoice,
+  qbJurisdictionRate,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -1403,7 +1404,13 @@ async function handleEstimateTax(token: string, realmId: string, params: any, su
   const total    = Number(estimate?.TotalAmt ?? 0);
   const taxTotal = Number(estimate?.TxnTaxDetail?.TotalTax ?? 0);
   const subtotal = Number((total - taxTotal).toFixed(2));
-  const effectiveRate = subtotal > 0 ? Number(((taxTotal / subtotal) * 100).toFixed(4)) : 0;
+  // Prefer QB's actual jurisdiction rate (summed from the tax lines) over
+  // back-computing tax/subtotal — the latter skews on small orders where the
+  // tax amount is penny-rounded ($0.52 on $6.30 reads as 8.254%, not 8.265%).
+  const jurisdictionRate = qbJurisdictionRate(estimate?.TxnTaxDetail);
+  const effectiveRate = jurisdictionRate > 0
+    ? jurisdictionRate
+    : (subtotal > 0 ? Number(((taxTotal / subtotal) * 100).toFixed(4)) : 0);
 
   console.error(`[estimateTax] quote=${quote?.quote_id} subtotal=${subtotal} tax=${taxTotal} rate=${effectiveRate}% exempt=${isTaxExempt}`);
   return { ok: true, tax: taxTotal, subtotal, total, effectiveRate, exempt: isTaxExempt };
