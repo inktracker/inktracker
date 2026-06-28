@@ -146,6 +146,28 @@ export function trialPeriodDaysForCheckout(profile, now = Date.now()) {
   return Math.max(1, Math.min(days, 14));
 }
 
+// Decision contract for the RLS write gate (BILL-02). This is the JS mirror of
+// the core "is this subscription lapsed?" check inside the SQL function
+// public.has_active_subscription() (see migration 20260726). Kept here so the
+// error-prone status logic is unit-tested; the SQL must stay in lockstep.
+//
+// `gov` is the GOVERNING subscription — the caller's own for an owner, or the
+// shop owner's for a team member (the SQL resolves inheritance before calling
+// this logic). Admin/broker bypass is handled by the caller, not here.
+//
+// Returns true when writes should be BLOCKED (clearly lapsed).
+export function subscriptionBlocksWrites(gov = {}, now = Date.now()) {
+  const tier = gov?.tier ?? gov?.subscription_tier ?? null;
+  const status = gov?.status ?? gov?.subscription_status ?? null;
+  const trial = gov?.trialEndsAt ?? gov?.trial_ends_at ?? null;
+  if (tier === "expired" || tier === "incomplete" || status === "canceled") return true;
+  if (tier === "trial" && trial) {
+    const endsAt = new Date(trial).getTime();
+    if (Number.isFinite(endsAt) && endsAt < now) return true;
+  }
+  return false; // active / trialing / past_due / trial-in-window / unknown → allow
+}
+
 // Subscription metadata we attach to every Stripe checkout. Stripe
 // metadata is string-typed.
 export function buildSubscriptionMetadata({ profile, priceTier, billingChoice }) {
