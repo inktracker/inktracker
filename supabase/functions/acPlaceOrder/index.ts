@@ -37,6 +37,7 @@ import {
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { loadShopProfileForUser, loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { claimSupplierOrder, finishSupplierOrder } from "../_shared/supplierIdempotency.js";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -113,6 +114,36 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ── Idempotency claim (INT-02) ──────────────────────────────────
+    // Guard against placing the same real-money order twice (double-click,
+    // network-timeout retry, two tabs). Key = the purchase_orders UUID;
+    // shop_owner is derived server-side, never trusted from the client.
+    const shopOwner = profile?.email || user.email || "";
+    const idempotencyKey = typeof body?.idempotencyKey === "string" ? body.idempotencyKey : "";
+    if (idempotencyKey && shopOwner) {
+      let claim;
+      try {
+        claim = await claimSupplierOrder(admin, { shopOwner, key: idempotencyKey, supplier: "AS Colour" });
+      } catch (e) {
+        console.error("[acPlaceOrder] idempotency claim failed:", (e as Error).message);
+        return Response.json(
+          { error: "Couldn't verify this order isn't a duplicate. Please try again." },
+          { status: 503, headers: CORS },
+        );
+      }
+      if (claim.replay) {
+        return Response.json({ success: true, order: claim.response?.order ?? claim.response, idempotentReplay: true }, { headers: CORS });
+      }
+      if (claim.inFlight) {
+        return Response.json({ error: "This order is already being placed. Please wait a moment." }, { status: 409, headers: CORS });
+      }
+    }
+    const recordOutcome = (success: boolean, response: unknown, supplierOrderId?: string | null) => {
+      if (idempotencyKey && shopOwner) {
+        return finishSupplierOrder(admin, { shopOwner, key: idempotencyKey, success, response, supplierOrderId });
+      }
+    };
+
     // ── POST the order ──────────────────────────────────────────────
     const orderPayload = buildOrderRequestBody(body);
     // Don't log the full payload — it carries customer shipping PII. Log only a
@@ -135,12 +166,16 @@ Deno.serve(async (req) => {
 
     if (!res.ok) {
       console.error(`[acPlaceOrder] ${res.status} ${text.slice(0, 400)}`);
+      // Release the idempotency key so the shop can correct + retry.
+      await recordOutcome(false, data);
       return Response.json(
         { error: `AS Colour order failed (${res.status})`, details: data },
         { status: res.status || 502, headers: CORS },
       );
     }
 
+    const supplierOrderId = data?.orderId ?? data?.id ?? data?.orderNumber ?? null;
+    await recordOutcome(true, { order: data }, supplierOrderId != null ? String(supplierOrderId) : null);
     return Response.json({ success: true, order: data }, { headers: CORS });
   } catch (err) {
     console.error("acPlaceOrder error:", err);

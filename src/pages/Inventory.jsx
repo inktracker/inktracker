@@ -774,6 +774,10 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
   const [ordering, setOrdering] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
   const [orderError, setOrderError] = useState("");
+  // Stable idempotency key for THIS order attempt — survives retries (so a
+  // network-timeout retry can't place a second real order, audit INT-01),
+  // regenerated only after a confirmed success below.
+  const [idemKey, setIdemKey] = useState(() => crypto.randomUUID());
 
   const grouped = {};
   cart.forEach((item, idx) => {
@@ -801,6 +805,7 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
       const { data, error: fnError } = await supabase.functions.invoke("ssPlaceOrder", {
         body: {
           poNumber,
+          idempotencyKey: idemKey,
           shipTo: {
             name: user?.shop_name || "My Shop",
             address1: user?.address || "",
@@ -816,6 +821,9 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
       if (fnError) throw fnError;
       if (data?.error) throw new Error(data.error);
       setOrderResult(data);
+      // New key for the next distinct order; the just-used key stays "spent"
+      // so an accidental re-submit of this same order replays, not re-orders.
+      setIdemKey(crypto.randomUUID());
       onClear();
     } catch (err) {
       setOrderError(err.message || "Failed to place order");
