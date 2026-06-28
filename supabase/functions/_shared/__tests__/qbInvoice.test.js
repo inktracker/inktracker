@@ -8,6 +8,7 @@ import {
   isAstSourceableShipTo,
   isExemptionActive,
   buildTaxRecordFromQbInvoice,
+  qbJurisdictionRate,
   escapeQbStringLiteral,
   buildInvoiceLinesFromPayload,
   extractPaymentLink,
@@ -377,6 +378,48 @@ describe("buildQBCustomerBody", () => {
 });
 
 // ── escapeQbStringLiteral ───────────────────────────────────────────────────
+
+describe("qbJurisdictionRate", () => {
+  it("sums TaxPercent across per-jurisdiction lines (Reno/Washoe = 8.265)", () => {
+    const detail = {
+      TotalTax: 0.52,
+      TaxLine: [
+        { Amount: 0.43, TaxLineDetail: { PercentBased: true, TaxPercent: 6.85, NetAmountTaxable: 6.3 } },
+        { Amount: 0.09, TaxLineDetail: { PercentBased: true, TaxPercent: 1.415, NetAmountTaxable: 6.3 } },
+      ],
+    };
+    expect(qbJurisdictionRate(detail)).toBe(8.265);
+  });
+
+  it("returns the rate from a single combined line", () => {
+    const detail = { TaxLine: [{ TaxLineDetail: { PercentBased: true, TaxPercent: 8.265, NetAmountTaxable: 6.3 } }] };
+    expect(qbJurisdictionRate(detail)).toBe(8.265);
+  });
+
+  it("does not exhibit the small-order rounding skew of tax/subtotal", () => {
+    // $0.52 / $6.30 back-computes to 8.254% — the true rate is 8.265%.
+    const backComputed = Number(((0.52 / 6.3) * 100).toFixed(4));
+    expect(backComputed).not.toBe(8.265);
+    const detail = { TaxLine: [{ TaxLineDetail: { TaxPercent: 8.265, NetAmountTaxable: 6.3 } }] };
+    expect(qbJurisdictionRate(detail)).toBe(8.265);
+  });
+
+  it("skips amount-based (flat) lines", () => {
+    const detail = {
+      TaxLine: [
+        { TaxLineDetail: { PercentBased: true, TaxPercent: 7 } },
+        { TaxLineDetail: { PercentBased: false, TaxPercent: 0 } },
+      ],
+    };
+    expect(qbJurisdictionRate(detail)).toBe(7);
+  });
+
+  it("returns 0 when there are no tax lines (caller falls back)", () => {
+    expect(qbJurisdictionRate({ TotalTax: 0.52 })).toBe(0);
+    expect(qbJurisdictionRate(null)).toBe(0);
+    expect(qbJurisdictionRate(undefined)).toBe(0);
+  });
+});
 
 describe("escapeQbStringLiteral", () => {
   it("doubles single quotes per QB BNF", () => {

@@ -362,6 +362,28 @@ export function isExemptionActive(customer, opts = {}) {
  * @param {object} qbInvoice  the QB Invoice (with TotalAmt + TxnTaxDetail).
  * @param {object} ctx        { shopOwner, quoteId, qbInvoiceId, customer, isTaxExempt, txnDate }.
  */
+/**
+ * The actual combined jurisdiction tax rate (percent) QuickBooks AST applied,
+ * summed from the per-jurisdiction tax lines (state + county + city). AST
+ * reports each component as a separate PercentBased line over the same net
+ * taxable, so the combined rate is the SUM of their TaxPercent values.
+ *
+ * Prefer this over back-computing tax/subtotal: on small orders penny-rounding
+ * of the tax amount skews the derived rate (e.g. $0.52 on $6.30 reads as
+ * 8.254% instead of the true 8.265%). Returns 0 when no percent-based lines
+ * are present (caller falls back to the back-computed rate).
+ */
+export function qbJurisdictionRate(txnTaxDetail) {
+  const lines = Array.isArray(txnTaxDetail?.TaxLine) ? txnTaxDetail.TaxLine : [];
+  const sum = lines.reduce((acc, l) => {
+    const d = l && l.TaxLineDetail;
+    if (!d || d.PercentBased === false) return acc; // skip amount-based lines
+    const pct = Number(d.TaxPercent ?? 0);
+    return Number.isFinite(pct) ? acc + pct : acc;
+  }, 0);
+  return Number(sum.toFixed(4));
+}
+
 export function buildTaxRecordFromQbInvoice(qbInvoice, ctx = {}) {
   const total    = Number(qbInvoice?.TotalAmt ?? 0);
   const taxTotal = Number(qbInvoice?.TxnTaxDetail?.TotalTax ?? 0);
