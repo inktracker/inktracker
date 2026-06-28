@@ -42,11 +42,12 @@ From a clean `main` checkout with the Supabase CLI linked:
 # one-time, if not already linked:
 npx supabase link --project-ref skmltfbibaqcjddmeqvi
 
-# applies all 4 pending migrations in timestamp order:
+# applies all 5 pending migrations in timestamp order:
 npx supabase db push
 ```
 
-Confirm it applies `20260718…` through `20260721…`. Idempotent — safe to re-run.
+Confirm it applies `20260718…` through `20260722…` (the last creates the private
+`tax-certificates` storage bucket). Idempotent — safe to re-run.
 
 ## Step 3 — Deploy `qbSync` (the only changed function)
 

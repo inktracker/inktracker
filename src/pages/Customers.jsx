@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
-import { uploadFile, signArtworkUrl } from "@/lib/uploadFile";
+import { uploadFile } from "@/lib/uploadFile";
+import { uploadCertificate, signCertificateUrl } from "@/lib/tax/certificateStorage";
 import { fmtMoney, getDisplayName } from "../components/shared/pricing";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import Icon from "../components/shared/Icon";
@@ -155,7 +156,8 @@ function ExemptionFields({ value, onChange }) {
     setUploadErr("");
     setUploading(true);
     try {
-      const { path } = await uploadFile(file);
+      // Private cert bucket (not the public artwork bucket) — certs carry a tax ID.
+      const { path } = await uploadCertificate(file);
       onChange({ exemption_certificate_path: path });
     } catch (err) {
       setUploadErr(err?.message || "Upload failed");
@@ -166,7 +168,7 @@ function ExemptionFields({ value, onChange }) {
   }
 
   async function viewCert() {
-    const url = await signArtworkUrl(v.exemption_certificate_path);
+    const url = await signCertificateUrl(v.exemption_certificate_path);
     if (url) window.open(url, "_blank", "noopener");
   }
 
