@@ -10,7 +10,8 @@ import ModalBackdrop from "../components/shared/ModalBackdrop";
 import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
-import { normalizeShipTo, isShipToComplete, isShipToEmpty, parseUsAddress } from "@/lib/tax/address";
+import { normalizeShipTo, parseUsAddress, addressOneLine } from "@/lib/tax/address";
+import AddressFields from "@/components/shared/AddressFields";
 import {
   EXEMPTION_TYPES, parseStateList,
   isExemptionExpired, isExemptionExpiringSoon, exemptionStatus,
@@ -50,94 +51,6 @@ const emptyCustomerForm = {
   exemption_expires_at: "",
   exemption_states: null,
 };
-
-// Structured ship-to capture (Phase 1 of multi-state tax). State + ZIP are
-// what QuickBooks AST needs to source destination tax; street/city are
-// supporting. Shared by the New and Edit customer forms.
-// One-line billing string kept on `address` for back-compat (QB BillAddr +
-// customer-list display) — derived from the structured billing address on save.
-function billingOneLine(addr) {
-  const v = normalizeShipTo(addr || {});
-  const cityStateZip = [v.city, [v.state, v.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-  return [v.street, cityStateZip].filter(Boolean).join(", ");
-}
-
-// Generic structured address (street / city / state / zip). Used for both
-// Billing and Shipping. `taxHint` shows the sales-tax sourcing hints (shipping
-// only); `onSameAsBilling` renders the "Same as billing" copy button.
-function AddressFields({ value, onChange, label, sublabel, taxHint = false, onSameAsBilling }) {
-  const v = normalizeShipTo(value || {});
-  const set = (k, val) => onChange(normalizeShipTo({ ...v, [k]: val }));
-  const complete = isShipToComplete(v);
-  const empty = isShipToEmpty(v);
-
-  const inputCls =
-    "w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300";
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">
-          {label}
-          {sublabel && <span className="normal-case font-medium text-slate-400"> — {sublabel}</span>}
-        </label>
-        {onSameAsBilling && (
-          <button
-            type="button"
-            onClick={onSameAsBilling}
-            className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 underline"
-          >
-            Same as billing
-          </button>
-        )}
-      </div>
-
-      <input
-        type="text"
-        value={v.street}
-        onChange={(e) => set("street", e.target.value)}
-        placeholder="Street"
-        className={inputCls}
-      />
-      <div className="grid grid-cols-6 gap-2">
-        <input
-          type="text"
-          value={v.city}
-          onChange={(e) => set("city", e.target.value)}
-          placeholder="City"
-          className={`${inputCls} col-span-3`}
-        />
-        <input
-          type="text"
-          value={v.state}
-          onChange={(e) => set("state", e.target.value.toUpperCase().slice(0, 2))}
-          placeholder="ST"
-          maxLength={2}
-          className={`${inputCls} col-span-1 uppercase`}
-        />
-        <input
-          type="text"
-          value={v.zip}
-          onChange={(e) => set("zip", e.target.value)}
-          placeholder="ZIP"
-          className={`${inputCls} col-span-2`}
-        />
-      </div>
-
-      {taxHint && !empty && !complete && (
-        <p className="text-[11px] text-amber-600">
-          Add the <b>state</b> and <b>ZIP</b> so QuickBooks calculates tax for the delivery
-          location. Without them it falls back to your shop's home rate.
-        </p>
-      )}
-      {taxHint && complete && (
-        <p className="text-[11px] text-emerald-600">
-          ✓ Sales tax will be calculated for {v.city ? `${v.city}, ` : ""}{v.state} {v.zip}.
-        </p>
-      )}
-    </div>
-  );
-}
 
 // Exemption certificate capture (Phase 2 of multi-state tax). Shown when a
 // customer is marked tax-exempt. Captures the basis (type), the certificate
@@ -596,7 +509,7 @@ export default function Customers() {
         ...form,
         // Keep the legacy one-line `address` in sync with structured billing
         // (QB BillAddr + customer-list display read it).
-        address: billingOneLine(form.bill_to_address) || form.address || "",
+        address: addressOneLine(form.bill_to_address) || form.address || "",
         shop_owner: shopScope(user),
         orders: 0,
       });
@@ -637,7 +550,7 @@ export default function Customers() {
       // if the policy ever loosens. Send only the editable surface.
       const { id, created_date, updated_date, shop_owner, ...patch } = editing;
       // Keep legacy one-line `address` in sync with structured billing.
-      patch.address = billingOneLine(editing.bill_to_address) || editing.address || "";
+      patch.address = addressOneLine(editing.bill_to_address) || editing.address || "";
       const updated = await base44.entities.Customer.update(editing.id, patch);
       setCustomers((prev) => prev.map((c) => (c.id === editing.id ? updated : c)));
       setEditing(updated);

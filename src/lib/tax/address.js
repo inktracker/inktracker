@@ -12,6 +12,17 @@ export function emptyShipTo() {
   return { ...BLANK_SHIP_TO };
 }
 
+/**
+ * One-line string for a structured address ("street, city, ST zip"). Kept on
+ * the legacy `customers.address` column for back-compat (QB BillAddr + the
+ * customer-list display read it), derived from structured billing on save.
+ */
+export function addressOneLine(obj) {
+  const v = normalizeShipTo(obj || {});
+  const cityStateZip = [v.city, [v.state, v.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  return [v.street, cityStateZip].filter(Boolean).join(", ");
+}
+
 /** Trim/normalize a ship-to: uppercase state + country, default country US. */
 export function normalizeShipTo(obj) {
   const s = obj && typeof obj === "object" ? obj : {};
