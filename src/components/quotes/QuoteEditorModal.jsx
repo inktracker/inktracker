@@ -21,6 +21,7 @@ import {
   buildQBInvoicePayload,
 } from "../shared/pricing";
 import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
+import { normalizeShipTo, isShipToComplete } from "@/lib/tax/address";
 import { buildAddonsByScope, getActiveAddonLabels } from "@/lib/pricing/extrasScopes";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
@@ -156,6 +157,11 @@ export default function QuoteEditorModal({
   // "Calculate tax" — fetch QB's authoritative tax for the ship-to and fill the
   // rate, so the quote matches what QB will charge (no send-time hold).
   const [calcTax, setCalcTax] = useState({ loading: false, error: "", result: null });
+  // Inline ship-to editor — edit the selected customer's ship-to address right
+  // here (it drives the tax), instead of leaving to Customers → edit. Persisted
+  // back to the customer on calculate/save.
+  const [shipTo, setShipTo] = useState(null);
+  const [savingShipTo, setSavingShipTo] = useState(false);
 
   // Paste Order: paste an email/spreadsheet and have the parser prefill
   // line_items. Hidden 2026-06-02 for customer-facing release — parser
@@ -291,6 +297,14 @@ export default function QuoteEditorModal({
       }
     }
     loadSavedImprints();
+  }, [q.customer_id, customers]);
+
+  // Load the selected customer's ship-to into the inline editor when the
+  // customer changes (read-once per customer; user edits are local until saved).
+  useEffect(() => {
+    const c = customers.find((x) => x.id === q.customer_id);
+    setShipTo(c ? normalizeShipTo(c.ship_to_address) : null);
+    setCalcTax({ loading: false, error: "", result: null });
   }, [q.customer_id, customers]);
 
   function updateLineItem(idx, li) {
@@ -467,15 +481,18 @@ export default function QuoteEditorModal({
     try {
       const cust = customers.find((c) => c.id === q.customer_id);
       if (!cust) throw new Error("Pick a customer first — QuickBooks needs their ship-to address.");
-      const ship = cust.ship_to_address;
-      if (!ship?.state || !ship?.zip) {
-        throw new Error("Add the customer's ship-to state + ZIP (Customers → edit) so QuickBooks can source the right tax.");
+      const ship = normalizeShipTo(shipTo);
+      if (!isShipToComplete(ship)) {
+        throw new Error("Enter the ship-to state + ZIP below so QuickBooks can source the right tax.");
       }
       if ((q.line_items || []).every((li) => getQty(li) === 0)) {
         throw new Error("Add at least one line item before calculating tax.");
       }
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Not signed in.");
+      // Persist the (possibly just-edited) ship-to back to the customer so it
+      // sticks for next time — best-effort, don't block the calc on it.
+      try { await base44.entities.Customer.update(cust.id, { ship_to_address: ship }); } catch { /* non-fatal */ }
       const invoicePayload = buildQBInvoicePayload(q);
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
         action: "estimateTax",
@@ -1143,9 +1160,44 @@ export default function QuoteEditorModal({
 
               {/* Calculate tax from QuickBooks — fills the exact rate QB will
                   charge for the customer's ship-to (no send-time hold). Direct
-                  shop quotes only; broker quotes use broker_tax_rate. */}
-              {!isBrokerQuote(q) && (
-                <div className="space-y-1">
+                  shop quotes only; broker quotes use broker_tax_rate. The
+                  ship-to is editable inline (saves back to the customer). */}
+              {!isBrokerQuote(q) && q.customer_id && shipTo && (
+                <div className="space-y-2 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+                    Ship-To <span className="normal-case font-medium text-slate-400">— used for sales tax · saves to the customer</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={shipTo.street}
+                    onChange={(e) => setShipTo({ ...shipTo, street: e.target.value })}
+                    placeholder="Street"
+                    className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                  <div className="grid grid-cols-6 gap-2">
+                    <input
+                      type="text"
+                      value={shipTo.city}
+                      onChange={(e) => setShipTo({ ...shipTo, city: e.target.value })}
+                      placeholder="City"
+                      className="col-span-3 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                    />
+                    <input
+                      type="text"
+                      value={shipTo.state}
+                      onChange={(e) => setShipTo({ ...shipTo, state: e.target.value.toUpperCase().slice(0, 2) })}
+                      placeholder="ST"
+                      maxLength={2}
+                      className="col-span-1 text-sm uppercase border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                    />
+                    <input
+                      type="text"
+                      value={shipTo.zip}
+                      onChange={(e) => setShipTo({ ...shipTo, zip: e.target.value })}
+                      placeholder="ZIP"
+                      className="col-span-2 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={handleCalculateTax}
