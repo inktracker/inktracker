@@ -51,10 +51,21 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // Broker-side totals — used for the post-send patch which writes back
   // to the row (must stay broker-side or we'd corrupt the saved record).
   const totals = getQuoteTotalsForSend(quote);
+  // When the shop accepts QB's tax on a held send, we adopt QB's authoritative
+  // tax/total here so the email body, {{total}}, the displayed summary, and the
+  // send all reflect what QB charges — not the stale flat-rate estimate.
+  const [qbAdopted, setQbAdopted] = useState(null); // { tax, total } | null
+  // Tax-hold detail (set when QB computed a different tax) → drives the
+  // "Use QuickBooks' tax" affordance instead of a dead-end error.
+  const [taxHold, setTaxHold] = useState(null); // { quotedTax, qbTax, qbTotal } | null
+  const [qbNotice, setQbNotice] = useState(""); // positive confirmation (e.g. tax adopted)
   // Client-side totals — what the customer sees in the email body,
   // {{total}} interpolation, and on the /QuotePayment page. Equal to
   // `totals` for non-broker quotes; reads client_* fields for broker.
-  const customerTotals = getCustomerFacingTotals(quote);
+  const baseCustomerTotals = getCustomerFacingTotals(quote);
+  const customerTotals = qbAdopted
+    ? { ...baseCustomerTotals, tax: qbAdopted.tax, total: qbAdopted.total }
+    : baseCustomerTotals;
 
   // ── Customer-facing brand name ───────────────────────────────────────
   // For broker quotes the END CLIENT must see the BROKER as the merchant
@@ -196,7 +207,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // customer can pay with. Only fires when the user picks "QB" as the
   // payment provider and clicks the explicit "Create QB Invoice" button.
   // Send remains disabled until this succeeds.
-  async function handleCreateQbInvoice() {
+  async function handleCreateQbInvoice({ acceptQbTax = false } = {}) {
     // Last-mile confirm. The inline banner above the button warns about
     // this too, but the operator can still click-through if they're
     // scanning fast. QBO's POST /invoice/{id}/send (the only API that
@@ -218,6 +229,8 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     let autoSendAfter = false;
     setCreatingQbInvoice(true);
     setQbError("");
+    setQbNotice("");
+    setTaxHold(null);
     try {
       // Frontend gate so we never even ask the edge function when QB
       // obviously isn't connected. Without this, the edge function
@@ -249,7 +262,14 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
             phone: "",
             company: "",
           };
-      const quoteForQb = { ...quote, customer_email: resolvedEmail };
+      // Carry the QB invoice id from a prior attempt (e.g. the held first
+      // send) so an acceptQbTax retry UPDATES that invoice instead of
+      // creating a duplicate. State `qbInvoiceId` is set after the first call.
+      const quoteForQb = {
+        ...quote,
+        customer_email: resolvedEmail,
+        qb_invoice_id: qbInvoiceId || quote.qb_invoice_id || null,
+      };
       const invoicePayload = buildQBInvoicePayload(
         quoteForQb,
         isBrokerQuote(quote) ? BROKER_MARKUP : undefined,
@@ -275,6 +295,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         customer: customerPayload,
         invoicePayload,
         idempotencyKey,
+        acceptQbTax,
       });
       if (invErr) {
         // supabase-js wraps any non-2xx in a FunctionsHttpError whose
@@ -310,6 +331,23 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // block. Any of the four guards below will flip this off if we
       // hit a state where the operator should review before sending.
       autoSendAfter = Boolean(data.qbInvoiceId);
+
+      // Shop accepted QB's tax on a held send. QB's authoritative tax is now
+      // adopted on the quote; refresh the modal to QB's numbers (totals, email
+      // body, payment link all follow) and let the operator review the
+      // corrected price before sending — don't auto-fire on a changed total.
+      if (acceptQbTax && data.qbInvoiceId && !data.taxBlocked) {
+        autoSendAfter = false;
+        setTaxHold(null);
+        setQbError("");
+        if (data.qbTotal != null) {
+          setQbAdopted({ tax: Number(data.qbTaxAmount || 0), total: Number(data.qbTotal || 0) });
+        }
+        setQbNotice(
+          `Now using QuickBooks' tax — total is ${fmtMoney(Number(data.qbTotal || 0))}. Review below, then Send.`,
+        );
+        return;
+      }
       // UPDATE-on-existing-invoice failed in QB. The edge function
       // refused to silently create a duplicate (-r2). Show the
       // structured guidance so the operator opens the QB panel and
@@ -354,13 +392,16 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       if (data.taxBlocked) {
         autoSendAfter = false;
         const d = data.taxBlockDetail || {};
+        setTaxHold({
+          quotedTax: Number(d.quotedTax || 0),
+          qbTax:     Number(d.qbTax || 0),
+          qbTotal:   Number(d.qbTotal || 0),
+        });
         const quoted = Number(d.quotedTax || 0).toFixed(2);
         const qb = Number(d.qbTax || 0).toFixed(2);
         setQbError(
-          `On hold: QuickBooks calculated a different sales tax than your quote ` +
-          `(you quoted $${quoted}, QuickBooks computed $${qb}). The invoice was NOT sent to the customer. ` +
-          `Confirm the customer's address & tax status in QuickBooks, set this quote's tax rate to match, ` +
-          `then Send again. Full guide: docs/qb-tax-sync.md.`
+          `QuickBooks calculated $${qb} sales tax for this address — your quote estimated $${quoted}. ` +
+          `Use QuickBooks' tax below to send the correct amount, or fix the quote's tax rate.`
         );
       }
       // Translate the structured failure reason from the edge function
@@ -729,6 +770,13 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   </span>
                 </div>
 
+                {qbNotice && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-xs text-emerald-800 leading-relaxed flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                    <span>{qbNotice}</span>
+                  </div>
+                )}
+
                 {/* QB Create / status gate. Branches on qbInvoiceId (NOT
                     qbPaymentLink): once an invoice exists in QB, the
                     Create button must NEVER reappear — re-clicking
@@ -757,14 +805,25 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                         {qbError}
                       </div>
                     )}
+                    {taxHold && (
+                      <button
+                        type="button"
+                        onClick={() => handleCreateQbInvoice({ acceptQbTax: true })}
+                        disabled={creatingQbInvoice || sending}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
+                      >
+                        {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        {creatingQbInvoice ? "Applying…" : `Use QuickBooks' tax (${fmtMoney(taxHold.qbTotal)})`}
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={handleCreateQbInvoice}
+                      onClick={() => handleCreateQbInvoice()}
                       disabled={creatingQbInvoice || sending}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
+                      className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl transition disabled:opacity-50 ${taxHold ? "text-slate-600 bg-slate-100 hover:bg-slate-200" : "text-white bg-[#2CA01C] hover:bg-[#238516]"}`}
                     >
                       {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      {creatingQbInvoice ? "Retrying…" : "Retry — Get Payment Link"}
+                      {creatingQbInvoice ? "Retrying…" : (taxHold ? "I fixed the rate — retry" : "Retry — Get Payment Link")}
                     </button>
                   </div>
                 )}
@@ -773,7 +832,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   <div className="space-y-2">
                     <button
                       type="button"
-                      onClick={handleCreateQbInvoice}
+                      onClick={() => handleCreateQbInvoice()}
                       disabled={creatingQbInvoice || sending}
                       className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
                     >
