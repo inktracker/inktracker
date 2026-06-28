@@ -140,6 +140,11 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           qb_customer_id: customer?.qb_customer_id || "",
           tax_exempt: customer?.tax_exempt || false,
           tax_id: customer?.tax_id || "",
+          ship_to_address: customer?.ship_to_address || null,
+          exemption_expires_at: customer?.exemption_expires_at || null,
+          exemption_states: customer?.exemption_states || null,
+          exemption_type: customer?.exemption_type || null,
+          exemption_certificate_number: customer?.exemption_certificate_number || null,
         },
       });
       if (invErr) {

@@ -30,6 +30,9 @@ import {
   normalizeItemName,
   clampPaymentAmount,
   dominantItemIncomeAccount,
+  buildQbShipAddr,
+  isExemptionActive,
+  buildTaxRecordFromQbInvoice,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -723,12 +726,22 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   }
   const itemIdMap = await resolveItemIdMap(token, realmId, invoicePayload, configuredIncomeAccountId);
 
-  // 3. Check QB customer's tax status
-  let isTaxExempt = !!customer?.tax_exempt;
+  // 3. Resolve tax-exempt status. InkTracker is the exemption authority:
+  // honor the exemption only when it's ACTIVE — not expired and (for scoped
+  // certs) covering the ship-to state. An expired or out-of-scope cert
+  // collects tax, which is the audit-safe behavior. See
+  // docs/qb-multistate-tax-scope.md.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const destinationState = customer?.ship_to_address?.state;
+  let isTaxExempt = isExemptionActive(customer, { asOf: todayIso, destinationState });
   try {
     const qbCustData = await qbQuery(token, realmId, `SELECT * FROM Customer WHERE Id = '${escapeQbStringLiteral(qbCustomerId)}'`);
     const qbCust = qbCustData?.QueryResponse?.Customer?.[0];
-    if (qbCust?.Taxable === false) isTaxExempt = true;
+    // Fallback: honor QB's own exempt flag ONLY when InkTracker has no
+    // exemption on file. If IT marks the customer exempt but the cert is
+    // expired/out-of-scope, IT's decision (collect tax) must win — a stale
+    // QB Taxable=false can't silently re-exempt them.
+    if (!customer?.tax_exempt && qbCust?.Taxable === false) isTaxExempt = true;
     console.error(`[createInvoice] QB customer ${qbCustomerId} Taxable=${qbCust?.Taxable}, isTaxExempt=${isTaxExempt}`);
   } catch (e) {
     console.error("[createInvoice] QB customer tax check failed (non-fatal):", e);
@@ -750,6 +763,12 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     console.error(`[createInvoice] Dropping invalid email "${quote.customer_email || customer?.email}" — not RFC 822 shaped`);
   }
   const billAddress = customer?.address;
+  // Structured ship-to for QB Automated Sales Tax. When the customer has a
+  // ship-to with state + zip, this carries City/State/ZIP so AST sources the
+  // DESTINATION jurisdiction; otherwise it falls back to a Line1-only address
+  // (AST then uses the shop's home rate, and the Phase-0 tax hold catches any
+  // resulting mismatch). See docs/qb-multistate-tax-scope.md.
+  const shipAddr = buildQbShipAddr(customer?.ship_to_address, billAddress);
 
   const baseDocNumber = String(quote.quote_id || "");
 
@@ -848,7 +867,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         }
         if (billAddress) {
           updateBody.BillAddr = { Line1: billAddress };
-          updateBody.ShipAddr = { Line1: billAddress };
+        }
+        // ShipAddr drives AST destination sourcing — structured when possible.
+        if (shipAddr) {
+          updateBody.ShipAddr = shipAddr;
         }
 
         const updated = await qbUpdate(token, realmId, "invoice", updateBody);
@@ -941,7 +963,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }
     if (billAddress) {
       invoiceBody.BillAddr = { Line1: billAddress };
-      invoiceBody.ShipAddr = { Line1: billAddress };
+    }
+    // ShipAddr drives AST destination sourcing — structured when possible.
+    if (shipAddr) {
+      invoiceBody.ShipAddr = shipAddr;
     }
 
     let attempt = 0;
@@ -1201,6 +1226,38 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }).eq("id", quote.id);
   }
 
+  // Phase 3: immutable tax-audit record. Snapshots QB's authoritative
+  // per-jurisdiction tax (TxnTaxDetail) for the by-state filing report and
+  // audit trail. Upsert on (shop_owner, qb_invoice_id) so a resync refreshes
+  // the one authoritative row. Best-effort — must never fail the invoice.
+  // See docs/qb-multistate-tax-scope.md §10.
+  //
+  // Skip when QB's tax doesn't match what the quote billed (taxMismatch): that
+  // invoice is being held for reconciliation (Phase 0) and hasn't been sent, so
+  // recording its tax as charged would put a phantom liability in the filing
+  // report until the shop fixes it. The clean re-sync writes the record.
+  try {
+    const taxRecord = buildTaxRecordFromQbInvoice(qbInvoiceFinal, {
+      shopOwner:   quote.shop_owner,
+      quoteId:     quote.quote_id,
+      qbInvoiceId,
+      customer,
+      isTaxExempt,
+    });
+    if (taxRecord.shop_owner && taxRecord.qb_invoice_id && reconciliation.taxMismatch !== true) {
+      const taxAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const { error: trErr } = await taxAdmin
+        .from("tax_records")
+        .upsert(taxRecord, { onConflict: "shop_owner,qb_invoice_id" });
+      if (trErr) console.error("[createInvoice] tax-record upsert error (non-fatal):", trErr.message);
+    }
+  } catch (err) {
+    console.error("[createInvoice] tax-record write failed (non-fatal):", (err as Error)?.message);
+  }
+
   return {
     qbInvoiceId,
     qbDocNumber,
@@ -1396,10 +1453,12 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
 
   if (all.length === 0) return { imported: 0, skipped: 0, updated: 0, total: 0, truncatedAtCap };
 
-  // Build customer lookup: qb_customer_id → InkTracker customer
+  // Build customer lookup: qb_customer_id → InkTracker customer. Pull the tax
+  // fields too so the tax-record backfill below can attribute ship-to state +
+  // exemption from the current customer record.
   const { data: customers } = await supabase
     .from("customers")
-    .select("id, qb_customer_id, name")
+    .select("id, qb_customer_id, name, company, ship_to_address, tax_exempt, exemption_type, exemption_certificate_number")
     .eq("shop_owner", shopOwner);
   const custByQbId = new Map<string, any>();
   for (const c of customers ?? []) {
@@ -1427,6 +1486,15 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   let imported = 0;
   let skipped = 0;
   let updated = 0;
+  let taxRecords = 0;
+
+  // Service-role client for the tax-audit-record backfill (tax_records is
+  // service-role-write-only). Built once; the per-invoice upsert below
+  // populates history so the by-state report covers existing invoices.
+  const taxAdmin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
 
   for (const qbInv of all) {
     const docNumber = qbInv.DocNumber || `QB-${qbInv.Id}`;
@@ -1518,9 +1586,30 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       if (error) { console.error("[pullInvoices] insert failed:", error.message, docNumber); skipped++; }
       else { imported++; }
     }
+
+    // Tax-audit-record backfill (best-effort). Upsert one record per QB
+    // invoice from its authoritative TxnTaxDetail so the by-state report
+    // covers history. Ship-to + exemption come from the matched customer
+    // (falls back to the QB invoice's ShipAddr). Never fail the pull on this.
+    try {
+      const taxRecord = buildTaxRecordFromQbInvoice(qbInv, {
+        shopOwner,
+        quoteId: docNumber,
+        qbInvoiceId: qbInv.Id,
+        customer: custMatch || undefined,
+        isTaxExempt: !!custMatch?.tax_exempt,
+      });
+      const { error: trErr } = await taxAdmin
+        .from("tax_records")
+        .upsert(taxRecord, { onConflict: "shop_owner,qb_invoice_id" });
+      if (trErr) console.error("[pullInvoices] tax-record upsert error:", trErr.message, docNumber);
+      else taxRecords++;
+    } catch (err) {
+      console.error("[pullInvoices] tax-record build failed:", (err as Error)?.message, docNumber);
+    }
   }
 
-  return { imported, skipped, updated, total: all.length, truncatedAtCap };
+  return { imported, skipped, updated, taxRecords, total: all.length, truncatedAtCap };
 }
 
 // ── Action: getCustomerStats (live from QB) ────────────────────────────────
