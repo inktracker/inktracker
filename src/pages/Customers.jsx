@@ -42,6 +42,7 @@ const emptyCustomerForm = {
   tax_id: "",
   tax_exempt: false,
   default_deposit_pct: 0,
+  bill_to_address: null,
   ship_to_address: null,
   exemption_type: "",
   exemption_certificate_number: "",
@@ -53,12 +54,22 @@ const emptyCustomerForm = {
 // Structured ship-to capture (Phase 1 of multi-state tax). State + ZIP are
 // what QuickBooks AST needs to source destination tax; street/city are
 // supporting. Shared by the New and Edit customer forms.
-function ShipToAddressFields({ value, onChange, legacyAddress }) {
+// One-line billing string kept on `address` for back-compat (QB BillAddr +
+// customer-list display) — derived from the structured billing address on save.
+function billingOneLine(addr) {
+  const v = normalizeShipTo(addr || {});
+  const cityStateZip = [v.city, [v.state, v.zip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+  return [v.street, cityStateZip].filter(Boolean).join(", ");
+}
+
+// Generic structured address (street / city / state / zip). Used for both
+// Billing and Shipping. `taxHint` shows the sales-tax sourcing hints (shipping
+// only); `onSameAsBilling` renders the "Same as billing" copy button.
+function AddressFields({ value, onChange, label, sublabel, taxHint = false, onSameAsBilling }) {
   const v = normalizeShipTo(value || {});
   const set = (k, val) => onChange(normalizeShipTo({ ...v, [k]: val }));
   const complete = isShipToComplete(v);
   const empty = isShipToEmpty(v);
-  const canPrefill = empty && legacyAddress && parseUsAddress(legacyAddress);
 
   const inputCls =
     "w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300";
@@ -67,16 +78,16 @@ function ShipToAddressFields({ value, onChange, legacyAddress }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">
-          Ship-To Address{" "}
-          <span className="normal-case font-medium text-slate-400">— used to calculate sales tax</span>
+          {label}
+          {sublabel && <span className="normal-case font-medium text-slate-400"> — {sublabel}</span>}
         </label>
-        {canPrefill && (
+        {onSameAsBilling && (
           <button
             type="button"
-            onClick={() => onChange(parseUsAddress(legacyAddress))}
+            onClick={onSameAsBilling}
             className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 underline"
           >
-            Fill from address
+            Same as billing
           </button>
         )}
       </div>
@@ -113,13 +124,13 @@ function ShipToAddressFields({ value, onChange, legacyAddress }) {
         />
       </div>
 
-      {!empty && !complete && (
+      {taxHint && !empty && !complete && (
         <p className="text-[11px] text-amber-600">
           Add the <b>state</b> and <b>ZIP</b> so QuickBooks calculates tax for the delivery
           location. Without them it falls back to your shop's home rate.
         </p>
       )}
-      {complete && (
+      {taxHint && complete && (
         <p className="text-[11px] text-emerald-600">
           ✓ Sales tax will be calculated for {v.city ? `${v.city}, ` : ""}{v.state} {v.zip}.
         </p>
@@ -583,6 +594,9 @@ export default function Customers() {
     try {
       created = await base44.entities.Customer.create({
         ...form,
+        // Keep the legacy one-line `address` in sync with structured billing
+        // (QB BillAddr + customer-list display read it).
+        address: billingOneLine(form.bill_to_address) || form.address || "",
         shop_owner: shopScope(user),
         orders: 0,
       });
@@ -622,6 +636,8 @@ export default function Customers() {
       // sends a write attempt and risks moving a customer to another shop
       // if the policy ever loosens. Send only the editable surface.
       const { id, created_date, updated_date, shop_owner, ...patch } = editing;
+      // Keep legacy one-line `address` in sync with structured billing.
+      patch.address = billingOneLine(editing.bill_to_address) || editing.address || "";
       const updated = await base44.entities.Customer.update(editing.id, patch);
       setCustomers((prev) => prev.map((c) => (c.id === editing.id ? updated : c)));
       setEditing(updated);
@@ -773,7 +789,6 @@ export default function Customers() {
               { key: "company", label: "Company / Org", placeholder: "Company name" },
               { key: "email", label: "Email", placeholder: "jane@example.com", type: "email" },
               { key: "phone", label: "Phone", placeholder: "(775) 555-0000", type: "tel" },
-              { key: "address", label: "Address", placeholder: "123 Main St" },
               { key: "notes", label: "Notes", placeholder: "Terms, preferences…" },
               { key: "tax_id", label: "Tax ID", placeholder: "12-3456789" },
             ].map((f) => (
@@ -792,10 +807,19 @@ export default function Customers() {
             ))}
           </div>
 
-          <ShipToAddressFields
+          <AddressFields
+            label="Billing Address"
+            value={form.bill_to_address}
+            onChange={(next) => setForm({ ...form, bill_to_address: next })}
+          />
+
+          <AddressFields
+            label="Shipping Address"
+            sublabel="used to calculate sales tax"
+            taxHint
             value={form.ship_to_address}
             onChange={(next) => setForm({ ...form, ship_to_address: next })}
-            legacyAddress={form.address}
+            onSameAsBilling={() => setForm({ ...form, ship_to_address: normalizeShipTo(form.bill_to_address) })}
           />
 
           <div className="flex items-center gap-2">
@@ -983,7 +1007,12 @@ export default function Customers() {
 
                   <button
                     onClick={() => {
-                      setEditing({ ...c });
+                      // Seed structured Billing from the legacy free-text `address`
+                      // for customers created before billing went structured, so
+                      // their existing address shows in the new fields.
+                      const seededBilling = c.bill_to_address
+                        || (c.address ? (parseUsAddress(c.address) || normalizeShipTo({ street: c.address })) : null);
+                      setEditing({ ...c, bill_to_address: seededBilling });
                       setConfirmDelete(false);
                       setArtworkNote("");
                       setArtworkColorCount("");
@@ -1034,7 +1063,6 @@ export default function Customers() {
                 { key: "company", label: "Company / Org", placeholder: "Company name" },
                 { key: "email", label: "Email", placeholder: "jane@example.com" },
                 { key: "phone", label: "Phone", placeholder: "(775) 555-0000" },
-                { key: "address", label: "Address", placeholder: "123 Main St" },
                 { key: "notes", label: "Notes", placeholder: "Terms, preferences…" },
                 { key: "tax_id", label: "Tax ID", placeholder: "12-3456789" },
               ].map((f) => (
@@ -1052,10 +1080,19 @@ export default function Customers() {
               ))}
             </div>
 
-            <ShipToAddressFields
+            <AddressFields
+              label="Billing Address"
+              value={editing.bill_to_address}
+              onChange={(next) => setEditing({ ...editing, bill_to_address: next })}
+            />
+
+            <AddressFields
+              label="Shipping Address"
+              sublabel="used to calculate sales tax"
+              taxHint
               value={editing.ship_to_address}
               onChange={(next) => setEditing({ ...editing, ship_to_address: next })}
-              legacyAddress={editing.address}
+              onSameAsBilling={() => setEditing({ ...editing, ship_to_address: normalizeShipTo(editing.bill_to_address) })}
             />
 
             <div className="flex items-center gap-2">
