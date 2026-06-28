@@ -4,11 +4,17 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { CardGridSkeleton } from "@/components/shared/Skeletons";
 import { uploadFile } from "@/lib/uploadFile";
+import { uploadCertificate, signCertificateUrl } from "@/lib/tax/certificateStorage";
 import { fmtMoney, getDisplayName } from "../components/shared/pricing";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import Icon from "../components/shared/Icon";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
+import { normalizeShipTo, isShipToComplete, isShipToEmpty, parseUsAddress } from "@/lib/tax/address";
+import {
+  EXEMPTION_TYPES, parseStateList,
+  isExemptionExpired, isExemptionExpiringSoon, exemptionStatus,
+} from "@/lib/tax/exemption";
 import { buildAdditiveMergePatch, describeMergeFor } from "@/lib/customers/mergeCustomerData";
 import { aggregateInvoiceStatsByCustomer } from "@/lib/customers/invoiceStats";
 import { findReconcileNeeded, partitionReconcilePairs, planReconcileActions } from "@/lib/customers/qbReconcileDetect";
@@ -36,7 +42,226 @@ const emptyCustomerForm = {
   tax_id: "",
   tax_exempt: false,
   default_deposit_pct: 0,
+  ship_to_address: null,
+  exemption_type: "",
+  exemption_certificate_number: "",
+  exemption_certificate_path: "",
+  exemption_expires_at: "",
+  exemption_states: null,
 };
+
+// Structured ship-to capture (Phase 1 of multi-state tax). State + ZIP are
+// what QuickBooks AST needs to source destination tax; street/city are
+// supporting. Shared by the New and Edit customer forms.
+function ShipToAddressFields({ value, onChange, legacyAddress }) {
+  const v = normalizeShipTo(value || {});
+  const set = (k, val) => onChange(normalizeShipTo({ ...v, [k]: val }));
+  const complete = isShipToComplete(v);
+  const empty = isShipToEmpty(v);
+  const canPrefill = empty && legacyAddress && parseUsAddress(legacyAddress);
+
+  const inputCls =
+    "w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300";
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          Ship-To Address{" "}
+          <span className="normal-case font-medium text-slate-400">— used to calculate sales tax</span>
+        </label>
+        {canPrefill && (
+          <button
+            type="button"
+            onClick={() => onChange(parseUsAddress(legacyAddress))}
+            className="text-[11px] font-semibold text-teal-600 hover:text-teal-700 underline"
+          >
+            Fill from address
+          </button>
+        )}
+      </div>
+
+      <input
+        type="text"
+        value={v.street}
+        onChange={(e) => set("street", e.target.value)}
+        placeholder="Street"
+        className={inputCls}
+      />
+      <div className="grid grid-cols-6 gap-2">
+        <input
+          type="text"
+          value={v.city}
+          onChange={(e) => set("city", e.target.value)}
+          placeholder="City"
+          className={`${inputCls} col-span-3`}
+        />
+        <input
+          type="text"
+          value={v.state}
+          onChange={(e) => set("state", e.target.value.toUpperCase().slice(0, 2))}
+          placeholder="ST"
+          maxLength={2}
+          className={`${inputCls} col-span-1 uppercase`}
+        />
+        <input
+          type="text"
+          value={v.zip}
+          onChange={(e) => set("zip", e.target.value)}
+          placeholder="ZIP"
+          className={`${inputCls} col-span-2`}
+        />
+      </div>
+
+      {!empty && !complete && (
+        <p className="text-[11px] text-amber-600">
+          Add the <b>state</b> and <b>ZIP</b> so QuickBooks calculates tax for the delivery
+          location. Without them it falls back to your shop's home rate.
+        </p>
+      )}
+      {complete && (
+        <p className="text-[11px] text-emerald-600">
+          ✓ Sales tax will be calculated for {v.city ? `${v.city}, ` : ""}{v.state} {v.zip}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Exemption certificate capture (Phase 2 of multi-state tax). Shown when a
+// customer is marked tax-exempt. Captures the basis (type), the certificate
+// (number + document), where it applies (states), and when it expires — the
+// record needed to defend the exemption in an audit. An expired cert is
+// surfaced loudly because qbSync then collects tax until it's renewed.
+function ExemptionFields({ value, onChange }) {
+  const v = value || {};
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState("");
+  // Local text mirror for the states input so in-progress typing isn't
+  // clobbered by the parse-to-array round-trip. Init once (component is keyed
+  // per customer at the call site, so this stays correct across edits).
+  const [statesText, setStatesText] = useState(() =>
+    Array.isArray(v.exemption_states) ? v.exemption_states.join(", ") : ""
+  );
+
+  const expired = isExemptionExpired(v);
+  const expiringSoon = !expired && isExemptionExpiringSoon(v);
+
+  const inputCls =
+    "w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300";
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadErr("");
+    setUploading(true);
+    try {
+      // Private cert bucket (not the public artwork bucket) — certs carry a tax ID.
+      const { path } = await uploadCertificate(file);
+      onChange({ exemption_certificate_path: path });
+    } catch (err) {
+      setUploadErr(err?.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      e.target.value = ""; // allow re-selecting the same file
+    }
+  }
+
+  async function viewCert() {
+    const url = await signCertificateUrl(v.exemption_certificate_path);
+    if (url) window.open(url, "_blank", "noopener");
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-3 space-y-2 bg-white/60 dark:bg-slate-900/40">
+      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+        Exemption Certificate
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={v.exemption_type || ""}
+          onChange={(e) => onChange({ exemption_type: e.target.value })}
+          className={inputCls}
+        >
+          <option value="">Type…</option>
+          {EXEMPTION_TYPES.map((t) => (
+            <option key={t.value} value={t.value}>{t.label}</option>
+          ))}
+        </select>
+        <input
+          type="text"
+          value={v.exemption_certificate_number || ""}
+          onChange={(e) => onChange({ exemption_certificate_number: e.target.value })}
+          placeholder="Certificate #"
+          className={inputCls}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-400 mb-0.5">Expires</label>
+          <input
+            type="date"
+            value={v.exemption_expires_at || ""}
+            onChange={(e) => onChange({ exemption_expires_at: e.target.value })}
+            className={inputCls}
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-400 mb-0.5">States (blank = all)</label>
+          <input
+            type="text"
+            value={statesText}
+            onChange={(e) => {
+              setStatesText(e.target.value);
+              onChange({ exemption_states: parseStateList(e.target.value) });
+            }}
+            placeholder="CA, NV"
+            className={`${inputCls} uppercase`}
+          />
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 text-xs">
+        {v.exemption_certificate_path ? (
+          <>
+            <span className="text-emerald-600 font-semibold">✓ Certificate attached</span>
+            <button type="button" onClick={viewCert} className="text-teal-600 hover:text-teal-700 underline">View</button>
+            <button
+              type="button"
+              onClick={() => onChange({ exemption_certificate_path: "" })}
+              className="text-slate-400 hover:text-rose-600"
+            >
+              Remove
+            </button>
+          </>
+        ) : (
+          <label className="text-teal-600 hover:text-teal-700 underline cursor-pointer">
+            {uploading ? "Uploading…" : "Attach certificate (PDF/image)"}
+            <input
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg"
+              className="hidden"
+              onChange={handleFile}
+              disabled={uploading}
+            />
+          </label>
+        )}
+      </div>
+
+      {uploadErr && <p className="text-[11px] text-rose-600">{uploadErr}</p>}
+      {expired && (
+        <p className="text-[11px] text-rose-600 font-semibold">
+          ⚠ Certificate expired — sales tax will be collected until it's renewed.
+        </p>
+      )}
+      {expiringSoon && (
+        <p className="text-[11px] text-amber-600">Certificate expires soon — renew it to keep the exemption.</p>
+      )}
+    </div>
+  );
+}
 
 function getClientArtworkKey(customerId) {
   return `client:${customerId}`;
@@ -567,18 +792,43 @@ export default function Customers() {
             ))}
           </div>
 
+          <ShipToAddressFields
+            value={form.ship_to_address}
+            onChange={(next) => setForm({ ...form, ship_to_address: next })}
+            legacyAddress={form.address}
+          />
+
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="tax_exempt_new"
               checked={form.tax_exempt}
-              onChange={(e) => setForm({ ...form, tax_exempt: e.target.checked })}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setForm({
+                  ...form,
+                  tax_exempt: checked,
+                  // Unchecking clears the cert so a stale certificate can't linger.
+                  ...(checked ? {} : {
+                    exemption_type: "", exemption_certificate_number: "",
+                    exemption_certificate_path: "", exemption_expires_at: "", exemption_states: null,
+                  }),
+                });
+              }}
               className="w-4 h-4 accent-teal-600"
             />
             <label htmlFor="tax_exempt_new" className="text-sm font-semibold text-slate-600">
               Tax Exempt
             </label>
           </div>
+
+          {form.tax_exempt && (
+            <ExemptionFields
+              key="exempt-new"
+              value={form}
+              onChange={(patch) => setForm({ ...form, ...patch })}
+            />
+          )}
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-600 uppercase tracking-widest">Default Payment Terms</label>
@@ -712,11 +962,24 @@ export default function Customers() {
                     <div className="text-xs text-slate-500">collected</div>
                   </div>
 
-                  {c.tax_exempt && (
-                    <span className="text-xs font-semibold text-teal-600 bg-teal-50 border border-teal-100 px-2 py-0.5 rounded-full">
-                      Tax Exempt
-                    </span>
-                  )}
+                  {c.tax_exempt && (() => {
+                    const status = exemptionStatus(c);
+                    const style = status === "expired"
+                      ? "text-rose-600 bg-rose-50 border-rose-100"
+                      : status === "expiring"
+                        ? "text-amber-600 bg-amber-50 border-amber-100"
+                        : "text-teal-600 bg-teal-50 border-teal-100";
+                    const label = status === "expired"
+                      ? "Exempt — cert expired"
+                      : status === "expiring"
+                        ? "Exempt — cert expiring"
+                        : "Tax Exempt";
+                    return (
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${style}`}>
+                        {label}
+                      </span>
+                    );
+                  })()}
 
                   <button
                     onClick={() => {
@@ -789,18 +1052,42 @@ export default function Customers() {
               ))}
             </div>
 
+            <ShipToAddressFields
+              value={editing.ship_to_address}
+              onChange={(next) => setEditing({ ...editing, ship_to_address: next })}
+              legacyAddress={editing.address}
+            />
+
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
                 id="tax_exempt_edit"
                 checked={!!editing.tax_exempt}
-                onChange={(e) => setEditing({ ...editing, tax_exempt: e.target.checked })}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setEditing({
+                    ...editing,
+                    tax_exempt: checked,
+                    ...(checked ? {} : {
+                      exemption_type: "", exemption_certificate_number: "",
+                      exemption_certificate_path: "", exemption_expires_at: "", exemption_states: null,
+                    }),
+                  });
+                }}
                 className="w-4 h-4 accent-teal-600"
               />
               <label htmlFor="tax_exempt_edit" className="text-sm font-semibold text-slate-600">
                 Tax Exempt
               </label>
             </div>
+
+            {editing.tax_exempt && (
+              <ExemptionFields
+                key={`exempt-${editing.id || "new"}`}
+                value={editing}
+                onChange={(patch) => setEditing({ ...editing, ...patch })}
+              />
+            )}
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-600 uppercase tracking-widest">Default Payment Terms</label>

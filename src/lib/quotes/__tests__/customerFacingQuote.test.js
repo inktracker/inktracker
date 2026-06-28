@@ -1,5 +1,38 @@
 import { describe, it, expect } from "vitest";
-import { toCustomerFacingQuote, isBrokerQuote, customerFacingShopName } from "../customerFacingQuote";
+import { toCustomerFacingQuote, isBrokerQuote, customerFacingShopName, customerFacingTotals } from "../customerFacingQuote";
+
+describe("customerFacingTotals — broker wholesale must never reach the end client", () => {
+  const fb = { fallbackTax: 12, fallbackTotal: 162 };
+
+  it("non-broker with a QB invoice → QB numbers are authoritative", () => {
+    expect(customerFacingTotals({ qb_total: 200, qb_tax_amount: 15 }, { qbStale: false, ...fb }))
+      .toEqual({ tax: 15, total: 200, isQbAuthoritative: true });
+  });
+
+  it("non-broker but qb is STALE → fall back to saved totals", () => {
+    expect(customerFacingTotals({ qb_total: 200, qb_tax_amount: 15 }, { qbStale: true, ...fb }))
+      .toEqual({ tax: 12, total: 162, isQbAuthoritative: false });
+  });
+
+  it("non-broker with no QB invoice → fall back", () => {
+    expect(customerFacingTotals({}, fb)).toEqual({ tax: 12, total: 162, isQbAuthoritative: false });
+  });
+
+  it("BROKER quote with a QB invoice → NEVER uses qb_total (the leak fix)", () => {
+    // qb_total here is the shop→broker wholesale ($646); the end client must
+    // see the client total ($753 = fallbackTotal), never $646.
+    expect(customerFacingTotals(
+      { broker_id: "bo@x.com", qb_total: 646, qb_tax_amount: 50 },
+      { qbStale: false, fallbackTax: 62, fallbackTotal: 753 },
+    )).toEqual({ tax: 62, total: 753, isQbAuthoritative: false });
+  });
+
+  it("broker detection via broker_email also suppresses qb_total", () => {
+    expect(customerFacingTotals(
+      { broker_email: "bo@x.com", qb_total: 646 }, { fallbackTotal: 753 },
+    ).isQbAuthoritative).toBe(false);
+  });
+});
 
 describe("isBrokerQuote", () => {
   it("true when broker_id is set", () => {

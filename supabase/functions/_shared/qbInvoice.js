@@ -260,8 +260,165 @@ export function buildQBCustomerBody(customer, displayName) {
   if (isLikelyEmail(customer?.email)) body.PrimaryEmailAddr = { Address: customer.email.trim() };
   if (customer?.phone)   body.PrimaryPhone     = { FreeFormNumber: customer.phone };
   if (customer?.address) body.BillAddr         = { Line1: customer.address };
+  // Structured ship-to drives destination sales tax. Set it on the QB customer
+  // record so QB defaults it onto invoices too (the per-invoice ShipAddr is the
+  // authority, but a clean customer record keeps QB and InkTracker aligned).
+  const shipAddr = buildQbShipAddr(customer?.ship_to_address, customer?.address);
+  if (shipAddr) body.ShipAddr = shipAddr;
   if (customer?.tax_id)  body.ResaleNum        = customer.tax_id;
   return body;
+}
+
+/**
+ * Build a QuickBooks address object from a structured ship-to.
+ *
+ * QB Automated Sales Tax sources the tax jurisdiction from PostalCode +
+ * CountrySubDivisionCode (state). A Line1-only address gives AST nothing to
+ * source from, so it falls back to the company's home address — taxing every
+ * invoice at the shop's local rate regardless of destination.
+ *
+ * Returns a STRUCTURED address (Line1/City/CountrySubDivisionCode/PostalCode/
+ * Country) when the ship-to has at least state + zip (the AST minimum); else
+ * falls back to { Line1: fallbackText } (legacy free-text — NOT AST-sourceable,
+ * which the Phase-0 tax hold will catch); else null.
+ *
+ * Pure — no I/O. `shipTo` shape: { street, city, state, zip, country }.
+ */
+export function buildQbShipAddr(shipTo, fallbackText) {
+  const s = shipTo && typeof shipTo === "object" ? shipTo : null;
+  const street  = String(s?.street ?? "").trim();
+  const city    = String(s?.city ?? "").trim();
+  const state   = String(s?.state ?? "").trim().toUpperCase();
+  const zip     = String(s?.zip ?? "").trim();
+  const country = String(s?.country ?? "").trim().toUpperCase() || "US";
+
+  if (state && zip) {
+    const addr = { PostalCode: zip, CountrySubDivisionCode: state, Country: country };
+    if (street) addr.Line1 = street;
+    if (city)   addr.City  = city;
+    return addr;
+  }
+
+  const fb = String(fallbackText ?? street ?? "").trim();
+  return fb ? { Line1: fb } : null;
+}
+
+/**
+ * True when a ship-to has enough structure (state + zip) for AST to source a
+ * destination jurisdiction. When false, QB falls back to the shop's home rate
+ * and the resulting tax mismatch is caught by the Phase-0 hold.
+ */
+export function isAstSourceableShipTo(shipTo) {
+  const s = shipTo && typeof shipTo === "object" ? shipTo : null;
+  const state = String(s?.state ?? "").trim();
+  const zip   = String(s?.zip ?? "").trim();
+  return Boolean(state && zip);
+}
+
+/**
+ * Whether a customer's tax exemption is ACTIVE for a given sale.
+ *
+ * Audit-safe: a `tax_exempt` flag alone isn't enough. An EXPIRED certificate
+ * means tax must be collected, and a certificate scoped to specific states
+ * doesn't exempt a sale shipping elsewhere. Returns false (→ collect tax)
+ * whenever the exemption can't be substantiated for THIS sale.
+ *
+ * Pure — no I/O.
+ *
+ * @param {object} customer   may carry tax_exempt, exemption_expires_at
+ *                            (YYYY-MM-DD), exemption_states (array of 2-letter).
+ * @param {object} [opts]
+ * @param {string} [opts.asOf]             ISO date (YYYY-MM-DD) to evaluate against.
+ * @param {string} [opts.destinationState] ship-to state (2-letter) for scoped certs.
+ */
+export function isExemptionActive(customer, opts = {}) {
+  if (!customer?.tax_exempt) return false;
+
+  // Expiry: the certificate is valid THROUGH exemption_expires_at; inactive
+  // strictly after it. Unknown asOf → don't expire (can't evaluate).
+  const asOf = String(opts.asOf ?? "").slice(0, 10);
+  const exp  = String(customer?.exemption_expires_at ?? "").slice(0, 10);
+  if (exp && asOf && asOf > exp) return false;
+
+  // Per-state scope: a cert listing states exempts only sales into those states.
+  const states = Array.isArray(customer?.exemption_states)
+    ? customer.exemption_states.map((s) => String(s).trim().toUpperCase()).filter(Boolean)
+    : [];
+  if (states.length) {
+    const dest = String(opts.destinationState ?? "").trim().toUpperCase();
+    // Known destination → must be covered. Unknown destination → honor the
+    // exemption (the Phase-0 tax hold catches any resulting mismatch).
+    if (dest) return states.includes(dest);
+  }
+  return true;
+}
+
+/**
+ * Build the immutable tax-audit record (Phase 3) for one QB invoice. Captures
+ * the tax AS CHARGED — taxable base, per-jurisdiction lines, ship-to state,
+ * and exemption basis — from QuickBooks' authoritative TxnTaxDetail. Pure; the
+ * caller persists it (upsert on shop_owner + qb_invoice_id).
+ *
+ * @param {object} qbInvoice  the QB Invoice (with TotalAmt + TxnTaxDetail).
+ * @param {object} ctx        { shopOwner, quoteId, qbInvoiceId, customer, isTaxExempt, txnDate }.
+ */
+export function buildTaxRecordFromQbInvoice(qbInvoice, ctx = {}) {
+  const total    = Number(qbInvoice?.TotalAmt ?? 0);
+  const taxTotal = Number(qbInvoice?.TxnTaxDetail?.TotalTax ?? 0);
+  const subtotal = Number((total - taxTotal).toFixed(2));
+
+  const rawLines = Array.isArray(qbInvoice?.TxnTaxDetail?.TaxLine)
+    ? qbInvoice.TxnTaxDetail.TaxLine
+    : [];
+  const tax_lines = rawLines
+    .filter((l) => l && l.TaxLineDetail)
+    .map((l) => ({
+      rate_percent: Number(l.TaxLineDetail.TaxPercent ?? 0),
+      amount:       Number(l.Amount ?? 0),
+      taxable:      Number(l.TaxLineDetail.NetAmountTaxable ?? 0),
+    }));
+
+  // Taxable base: AST tax lines (state + county + city) each report the SAME
+  // net taxable for a combined rate, so take the max (not the sum) to avoid
+  // double-counting. Fall back to the subtotal when taxed but no line detail.
+  const taxableFromLines = tax_lines.reduce((m, l) => Math.max(m, l.taxable), 0);
+  const taxable_amount = taxTotal > 0
+    ? Number((taxableFromLines > 0 ? taxableFromLines : subtotal).toFixed(2))
+    : 0;
+  const effective_rate = taxable_amount > 0
+    ? Number(((taxTotal / taxable_amount) * 100).toFixed(4))
+    : 0;
+
+  // Ship-to: prefer the InkTracker customer's structured ship-to; fall back to
+  // the QB invoice's own ShipAddr (lets the backfill capture a state for
+  // invoices created with a structured address even when the customer record
+  // lacks one).
+  const ship = ctx.customer?.ship_to_address || {};
+  const qbShip = qbInvoice?.ShipAddr || {};
+  const shipState = (String(ship.state ?? "").trim().toUpperCase()
+    || String(qbShip.CountrySubDivisionCode ?? "").trim().toUpperCase()) || null;
+  const shipZip = (String(ship.zip ?? "").trim()
+    || String(qbShip.PostalCode ?? "").trim()) || null;
+  return {
+    shop_owner:    ctx.shopOwner ?? null,
+    qb_invoice_id: ctx.qbInvoiceId != null ? String(ctx.qbInvoiceId) : null,
+    quote_id:      ctx.quoteId ?? null,
+    customer_id:   ctx.customer?.id != null ? String(ctx.customer.id) : null,
+    customer_name: ctx.customer?.company || ctx.customer?.name || null,
+    txn_date:      String(qbInvoice?.TxnDate || ctx.txnDate || "").slice(0, 10) || null,
+    authority:     "quickbooks_ast",
+    subtotal,
+    tax_total:     taxTotal,
+    total,
+    taxable_amount,
+    effective_rate,
+    ship_to_state: shipState,
+    ship_to_zip:   shipZip,
+    exempt:        !!ctx.isTaxExempt,
+    exemption_type:               ctx.customer?.exemption_type || null,
+    exemption_certificate_number: ctx.customer?.exemption_certificate_number || null,
+    tax_lines,
+  };
 }
 
 // ── Single-quote SQL escaping for QB QBO query strings ─────────────────────

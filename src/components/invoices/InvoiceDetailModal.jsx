@@ -140,6 +140,11 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           qb_customer_id: customer?.qb_customer_id || "",
           tax_exempt: customer?.tax_exempt || false,
           tax_id: customer?.tax_id || "",
+          ship_to_address: customer?.ship_to_address || null,
+          exemption_expires_at: customer?.exemption_expires_at || null,
+          exemption_states: customer?.exemption_states || null,
+          exemption_type: customer?.exemption_type || null,
+          exemption_certificate_number: customer?.exemption_certificate_number || null,
         },
       });
       if (invErr) {
@@ -160,7 +165,20 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         throw new Error(invErr.message || "Failed to create");
       }
       if (data?.error) throw new Error(data.error);
-      setQbStatus({ type: "success", text: `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}` });
+      if (data?.taxBlocked) {
+        // QB computed a different sales tax than the invoice — on hold, no
+        // payment link minted. Don't present this as a clean success.
+        const d = data.taxBlockDetail || {};
+        setQbStatus({
+          type: "error",
+          text:
+            `Invoice created in QuickBooks but ON HOLD — QuickBooks calculated a different sales tax ` +
+            `(billed $${Number(d.quotedTax || 0).toFixed(2)}, QB computed $${Number(d.qbTax || 0).toFixed(2)}). ` +
+            `No payment link was minted. Fix the customer's QB tax setup or this invoice's tax rate, then Refresh. See docs/qb-tax-sync.md.`,
+        });
+      } else {
+        setQbStatus({ type: "success", text: `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}` });
+      }
     } catch (err) {
       setQbStatus({ type: "error", text: err.message });
     } finally {

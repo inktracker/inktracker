@@ -4,6 +4,10 @@ import {
   nextAvailableDocNumber,
   buildQBDisplayName,
   buildQBCustomerBody,
+  buildQbShipAddr,
+  isAstSourceableShipTo,
+  isExemptionActive,
+  buildTaxRecordFromQbInvoice,
   escapeQbStringLiteral,
   buildInvoiceLinesFromPayload,
   extractPaymentLink,
@@ -308,7 +312,26 @@ describe("buildQBCustomerBody", () => {
       PrimaryEmailAddr: { Address: "john@acme.com" },
       PrimaryPhone: { FreeFormNumber: "555-0100" },
       BillAddr: { Line1: "1 Main St" },
+      // No structured ship_to → ShipAddr falls back to the legacy address line.
+      ShipAddr: { Line1: "1 Main St" },
       ResaleNum: "TX-12345",
+    });
+  });
+
+  it("emits a STRUCTURED ShipAddr when the customer has a state+zip ship-to", () => {
+    const body = buildQBCustomerBody({
+      name: "John",
+      address: "1 Main St",
+      ship_to_address: { street: "500 Market St", city: "Austin", state: "tx", zip: "78701" },
+    }, "John");
+    // BillAddr stays the legacy line; ShipAddr is the AST-sourceable destination.
+    expect(body.BillAddr).toEqual({ Line1: "1 Main St" });
+    expect(body.ShipAddr).toEqual({
+      Line1: "500 Market St",
+      City: "Austin",
+      CountrySubDivisionCode: "TX",
+      PostalCode: "78701",
+      Country: "US",
     });
   });
 
@@ -978,5 +1001,181 @@ describe("buildInvoiceLinesFromPayload — per-line tax + fees", () => {
     // output carries them for qbSync to read — assert they exist here so the
     // contract with qbSync is pinned.
     expect(lines[0]).toHaveProperty("_taxable", true);
+  });
+});
+
+// ── buildQbShipAddr / isAstSourceableShipTo ─────────────────────────────────
+describe("buildQbShipAddr", () => {
+  it("builds a structured AST-sourceable address from state+zip", () => {
+    expect(buildQbShipAddr({ street: "1 A St", city: "Reno", state: "NV", zip: "89501" }, "ignored")).toEqual({
+      Line1: "1 A St", City: "Reno", CountrySubDivisionCode: "NV", PostalCode: "89501", Country: "US",
+    });
+  });
+
+  it("uppercases state, defaults country to US, omits empty street/city", () => {
+    expect(buildQbShipAddr({ state: "tx", zip: "78701" })).toEqual({
+      CountrySubDivisionCode: "TX", PostalCode: "78701", Country: "US",
+    });
+  });
+
+  it("honors a provided country", () => {
+    expect(buildQbShipAddr({ state: "ON", zip: "M5V", country: "CA" }).Country).toBe("CA");
+  });
+
+  it("falls back to Line1 from fallbackText when state/zip are incomplete", () => {
+    expect(buildQbShipAddr({ street: "1 A St", city: "Reno" }, "1 A St, Reno NV")).toEqual({ Line1: "1 A St, Reno NV" });
+    expect(buildQbShipAddr(null, "100 Liberty St")).toEqual({ Line1: "100 Liberty St" });
+  });
+
+  it("returns null when there is nothing usable", () => {
+    expect(buildQbShipAddr(null, "")).toBeNull();
+    expect(buildQbShipAddr({}, "")).toBeNull();
+    expect(buildQbShipAddr(undefined, undefined)).toBeNull();
+  });
+
+  it("zip alone (no state) is NOT sourceable — falls back to fallback line", () => {
+    expect(buildQbShipAddr({ zip: "89501" }, "fallback")).toEqual({ Line1: "fallback" });
+  });
+});
+
+describe("isAstSourceableShipTo", () => {
+  it("true only with both state and zip", () => {
+    expect(isAstSourceableShipTo({ state: "NV", zip: "89501" })).toBe(true);
+    expect(isAstSourceableShipTo({ state: "NV" })).toBe(false);
+    expect(isAstSourceableShipTo({ zip: "89501" })).toBe(false);
+    expect(isAstSourceableShipTo(null)).toBe(false);
+    expect(isAstSourceableShipTo({})).toBe(false);
+  });
+});
+
+// ── isExemptionActive ───────────────────────────────────────────────────────
+describe("isExemptionActive", () => {
+  const asOf = "2026-06-27";
+
+  it("false when not tax_exempt", () => {
+    expect(isExemptionActive({ tax_exempt: false }, { asOf })).toBe(false);
+    expect(isExemptionActive({}, { asOf })).toBe(false);
+    expect(isExemptionActive(null, { asOf })).toBe(false);
+  });
+
+  it("true for a blanket exemption with no expiry", () => {
+    expect(isExemptionActive({ tax_exempt: true }, { asOf })).toBe(true);
+  });
+
+  it("honors expiry: valid through the date, inactive strictly after", () => {
+    expect(isExemptionActive({ tax_exempt: true, exemption_expires_at: "2026-06-27" }, { asOf })).toBe(true);  // today = expiry
+    expect(isExemptionActive({ tax_exempt: true, exemption_expires_at: "2026-06-28" }, { asOf })).toBe(true);  // future
+    expect(isExemptionActive({ tax_exempt: true, exemption_expires_at: "2026-06-26" }, { asOf })).toBe(false); // past
+  });
+
+  it("does not expire when asOf is unknown", () => {
+    expect(isExemptionActive({ tax_exempt: true, exemption_expires_at: "2020-01-01" }, {})).toBe(true);
+  });
+
+  it("scoped cert: exempt only for covered destination states", () => {
+    const c = { tax_exempt: true, exemption_states: ["CA", "nv"] };
+    expect(isExemptionActive(c, { asOf, destinationState: "NV" })).toBe(true);
+    expect(isExemptionActive(c, { asOf, destinationState: "tx" })).toBe(false);
+  });
+
+  it("scoped cert with unknown destination falls back to exempt", () => {
+    expect(isExemptionActive({ tax_exempt: true, exemption_states: ["CA"] }, { asOf })).toBe(true);
+  });
+
+  it("expired beats scope (expiry checked first)", () => {
+    const c = { tax_exempt: true, exemption_states: ["NV"], exemption_expires_at: "2020-01-01" };
+    expect(isExemptionActive(c, { asOf, destinationState: "NV" })).toBe(false);
+  });
+});
+
+// ── buildTaxRecordFromQbInvoice ─────────────────────────────────────────────
+describe("buildTaxRecordFromQbInvoice", () => {
+  const qbInvoice = {
+    TxnDate: "2026-06-20",
+    TotalAmt: 124.69,
+    TxnTaxDetail: {
+      TotalTax: 9.69,
+      TaxLine: [
+        { Amount: 5.0, DetailType: "TaxLineDetail", TaxLineDetail: { TaxPercent: 4.6, NetAmountTaxable: 115.0 } },
+        { Amount: 4.69, DetailType: "TaxLineDetail", TaxLineDetail: { TaxPercent: 4.078, NetAmountTaxable: 115.0 } },
+      ],
+    },
+  };
+  const ctx = {
+    shopOwner: "shop@example.com",
+    quoteId: "Q-2026-9",
+    qbInvoiceId: "3712",
+    isTaxExempt: false,
+    customer: { id: 42, company: "Acme", ship_to_address: { state: "nv", zip: "89501" } },
+  };
+
+  it("captures totals, taxable base (max of lines, not sum), and effective rate", () => {
+    const rec = buildTaxRecordFromQbInvoice(qbInvoice, ctx);
+    expect(rec.total).toBe(124.69);
+    expect(rec.tax_total).toBe(9.69);
+    expect(rec.subtotal).toBe(115.0);
+    expect(rec.taxable_amount).toBe(115.0);            // max(115,115) — not 230
+    expect(rec.effective_rate).toBeCloseTo(8.4261, 3); // 9.69/115*100
+    expect(rec.tax_lines).toHaveLength(2);
+    expect(rec.tax_lines[0]).toEqual({ rate_percent: 4.6, amount: 5.0, taxable: 115.0 });
+  });
+
+  it("carries context: shop, ids, ship-to state (uppercased), exemption flag", () => {
+    const rec = buildTaxRecordFromQbInvoice(qbInvoice, ctx);
+    expect(rec.shop_owner).toBe("shop@example.com");
+    expect(rec.qb_invoice_id).toBe("3712");
+    expect(rec.quote_id).toBe("Q-2026-9");
+    expect(rec.customer_id).toBe("42");
+    expect(rec.customer_name).toBe("Acme");
+    expect(rec.txn_date).toBe("2026-06-20");
+    expect(rec.ship_to_state).toBe("NV");
+    expect(rec.ship_to_zip).toBe("89501");
+    expect(rec.exempt).toBe(false);
+    expect(rec.authority).toBe("quickbooks_ast");
+  });
+
+  it("handles a no-tax invoice (exempt) — zero taxable, empty lines", () => {
+    const rec = buildTaxRecordFromQbInvoice(
+      { TxnDate: "2026-06-20", TotalAmt: 100, TxnTaxDetail: { TotalTax: 0 } },
+      { ...ctx, isTaxExempt: true },
+    );
+    expect(rec.tax_total).toBe(0);
+    expect(rec.taxable_amount).toBe(0);
+    expect(rec.effective_rate).toBe(0);
+    expect(rec.tax_lines).toEqual([]);
+    expect(rec.exempt).toBe(true);
+  });
+
+  it("falls back to subtotal as taxable when taxed but no line detail", () => {
+    const rec = buildTaxRecordFromQbInvoice(
+      { TxnDate: "2026-06-20", TotalAmt: 108.5, TxnTaxDetail: { TotalTax: 8.5 } },
+      ctx,
+    );
+    expect(rec.taxable_amount).toBe(100.0);
+  });
+});
+
+describe("buildTaxRecordFromQbInvoice — ShipAddr fallback (backfill)", () => {
+  it("uses the QB invoice ShipAddr state/zip when the customer lacks a ship-to", () => {
+    const rec = buildTaxRecordFromQbInvoice(
+      {
+        TxnDate: "2026-05-01",
+        TotalAmt: 108.27,
+        TxnTaxDetail: { TotalTax: 8.27 },
+        ShipAddr: { CountrySubDivisionCode: "ca", PostalCode: "94016" },
+      },
+      { shopOwner: "s@x.com", qbInvoiceId: "9", customer: { id: 1, name: "X" } },
+    );
+    expect(rec.ship_to_state).toBe("CA");
+    expect(rec.ship_to_zip).toBe("94016");
+  });
+
+  it("prefers the customer ship-to over the QB ShipAddr when both exist", () => {
+    const rec = buildTaxRecordFromQbInvoice(
+      { TotalAmt: 100, TxnTaxDetail: { TotalTax: 0 }, ShipAddr: { CountrySubDivisionCode: "CA", PostalCode: "94016" } },
+      { shopOwner: "s@x.com", qbInvoiceId: "9", customer: { id: 1, ship_to_address: { state: "NV", zip: "89501" } } },
+    );
+    expect(rec.ship_to_state).toBe("NV");
+    expect(rec.ship_to_zip).toBe("89501");
   });
 });

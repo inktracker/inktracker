@@ -3,6 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { StatCardsSkeleton, ChartCardSkeleton } from "@/components/shared/Skeletons";
 import { fmtMoney, getOrderUnits } from "../components/shared/pricing";
 import { getDateRangeValues } from "@/lib/dateRangeUtils";
+import SalesTaxReport from "../components/reports/SalesTaxReport";
 import { computeOutstanding } from "@/lib/reports/invoiceStats";
 import { QB_REPORTS, qbReportUrl } from "@/lib/reports/qbReportLink";
 import { ShoppingBag, DollarSign, Receipt, Layers, Activity, FileText, ExternalLink, RefreshCw, Package } from "lucide-react";
@@ -367,6 +368,8 @@ export default function Performance() {
           </div>
         </div>
       )}
+
+      <SalesTaxReport from={from} to={to} />
     </div>
   );
 }
