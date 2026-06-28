@@ -1047,7 +1047,12 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // faithful but the total diverges beyond a cent purely via tax. Today
   // this never fires (the shop's flat rate equals QB's AST rate); it is
   // the tripwire for the day they diverge. See docs/qb-tax-sync.md.
-  const taxBlocked = reconciliation.taxMismatch === true;
+  //
+  // acceptQbTax: the shop reviewed the hold and chose "use QuickBooks' tax"
+  // (one-click on the held send). We then ADOPT QB's authoritative tax onto
+  // the quote (below), mint the link, and proceed — no hold.
+  const acceptQbTax = params?.acceptQbTax === true;
+  const taxBlocked = reconciliation.taxMismatch === true && !acceptQbTax;
 
   if (reconciliation.severity !== RECONCILE_SEVERITY.OK) {
     console.error(
@@ -1195,6 +1200,17 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // versioned revision (e.g. Q-2026-115-r2).
   const qbDocNumber = String(qbInvoiceFinal?.DocNumber || baseDocNumber);
 
+  // When the shop accepted QB's tax (one-click on the held send), adopt QB's
+  // authoritative numbers onto the quote/invoice so the email, PDF, payment
+  // page, and any future reconcile all match what QB charges — no re-hold.
+  const adoptQbTaxFields = acceptQbTax
+    ? {
+        tax:      qbTaxAmount,
+        total:    qbTotal,
+        tax_rate: qbSubtotal > 0 ? Number(((qbTaxAmount / qbSubtotal) * 100).toFixed(4)) : 0,
+      }
+    : {};
+
   // 5. Save QB invoice ID + DocNumber + payment link + final QB-computed
   // totals back to the source record. Both ids matter — the internal id
   // for API calls, the DocNumber for the operator-facing UI.
@@ -1208,6 +1224,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_subtotal:     qbSubtotal,
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
+      ...adoptQbTaxFields,
       // Don't advance a held invoice to "Sent" — it hasn't been sent.
       status:          (!taxBlocked && quote.status === "Draft") ? "Sent" : quote.status,
     }).eq("id", quote.id);
@@ -1223,6 +1240,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_subtotal:     qbSubtotal,
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
+      ...adoptQbTaxFields,
     }).eq("id", quote.id);
   }
 
@@ -1235,7 +1253,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // Skip when QB's tax doesn't match what the quote billed (taxMismatch): that
   // invoice is being held for reconciliation (Phase 0) and hasn't been sent, so
   // recording its tax as charged would put a phantom liability in the filing
-  // report until the shop fixes it. The clean re-sync writes the record.
+  // report until the shop fixes it. The clean re-sync — OR an explicit
+  // acceptQbTax (the shop adopted QB's tax) — writes the record.
   try {
     const taxRecord = buildTaxRecordFromQbInvoice(qbInvoiceFinal, {
       shopOwner:   quote.shop_owner,
@@ -1244,7 +1263,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       customer,
       isTaxExempt,
     });
-    if (taxRecord.shop_owner && taxRecord.qb_invoice_id && reconciliation.taxMismatch !== true) {
+    if (taxRecord.shop_owner && taxRecord.qb_invoice_id && (reconciliation.taxMismatch !== true || acceptQbTax)) {
       const taxAdmin = createClient(
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
