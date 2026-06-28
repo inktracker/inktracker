@@ -6,8 +6,18 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const APP_URL = Deno.env.get("APP_URL") || Deno.env.get("VITE_APP_URL") || "https://www.inktracker.app";
 const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/gmailOAuthCallback`;
 
+// KILL SWITCH (audit PRIV-02): the Gmail→Gemini email scanner is disabled
+// (see emailScanner/index.ts). Refuse new Gmail connections too, so no fresh
+// inbox-read tokens are minted. Flip to true to re-enable alongside emailScanner.
+const GMAIL_CONNECT_ENABLED = false;
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
+
+  if (!GMAIL_CONNECT_ENABLED) {
+    return Response.redirect(`${APP_URL}/Account?gmail_error=disabled`);
+  }
+
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   const error = url.searchParams.get("error");
