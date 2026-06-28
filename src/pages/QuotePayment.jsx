@@ -21,7 +21,7 @@ import {
   sortSizeEntries,
 } from "../components/shared/pricing";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
-import { toCustomerFacingQuote, customerFacingShopName } from "@/lib/quotes/customerFacingQuote";
+import { toCustomerFacingQuote, customerFacingShopName, customerFacingTotals, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
@@ -267,7 +267,11 @@ export default function QuotePayment() {
   // and waits for a correct link than underpays.
   const qbStaleFlag = isQbStale(quote);
   const qbCheckoutTarget = resolveCheckoutTarget(quote);
-  const qbAvailable = qbCheckoutTarget.provider === "qb" && Boolean(qbCheckoutTarget.url) && !qbStaleFlag;
+  // Broker quotes: the QB invoice/link is the shop→broker WHOLESALE charge,
+  // not the broker's end-client price. Never route the end client to it —
+  // fall back to approve-only so the broker collects from their client
+  // out-of-band. (Display totals are likewise gated via customerFacingTotals.)
+  const qbAvailable = qbCheckoutTarget.provider === "qb" && Boolean(qbCheckoutTarget.url) && !qbStaleFlag && !isBrokerQuote(quote);
   const canCollectPayment = qbAvailable;
 
   async function handleApprove() {
@@ -736,11 +740,18 @@ export default function QuotePayment() {
               // Stale QB total (quote edited after invoice created) → fall back
               // to the quote's real saved total so the customer sees the right
               // amount; payment is also gated off above until regenerated.
-              const hasQb = quote.qb_total != null && !qbStaleFlag;
+              // Broker quotes never use the shop-side qb_total (wholesale) —
+              // customerFacingTotals returns the client totals for them.
+              const cft = customerFacingTotals(quote, {
+                qbStale: qbStaleFlag,
+                fallbackTax: totals.tax,
+                fallbackTotal: totals.total,
+              });
+              const hasQb = cft.isQbAuthoritative;
               const taxLabel = hasQb ? "Tax" : `Est. Tax (${displayQuote.tax_rate}%)`;
               const totalLabel = hasQb ? "Total Due" : "Est. Total";
-              const taxValue = hasQb ? Number(quote.qb_tax_amount || 0) : totals.tax;
-              const totalValue = hasQb ? Number(quote.qb_total || 0) : totals.total;
+              const taxValue = hasQb ? cft.tax : totals.tax;
+              const totalValue = hasQb ? cft.total : totals.total;
               return (
                 <>
                   {(hasQb ? taxValue > 0 : (parseFloat(displayQuote.tax_rate) || 0) > 0) && (
@@ -836,7 +847,11 @@ export default function QuotePayment() {
               </p>
             </>
           ) : (() => {
-            const effectiveTotal = quote?.qb_total != null ? Number(quote.qb_total) : totals.total;
+            // Broker quotes charge the client total, never the shop-side qb_total.
+            const effectiveTotal = customerFacingTotals(quote, {
+              qbStale: qbStaleFlag,
+              fallbackTotal: totals.total,
+            }).total;
             const depositPct = customer?.default_deposit_pct != null
               ? Number(customer.default_deposit_pct) || 0
               : parseFloat(quote?.deposit_pct) || 0;
