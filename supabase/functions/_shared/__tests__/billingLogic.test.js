@@ -9,6 +9,7 @@ import {
   reconcileFieldsFromSubscriptions,
   ACCESS_GRANTING_SUB_STATUSES,
   trialPeriodDaysForCheckout,
+  subscriptionBlocksWrites,
   buildSubscriptionMetadata,
   deriveStripeAccountStatus,
   shouldCreateStripeCustomer,
@@ -492,5 +493,36 @@ describe("reconcileFieldsFromSubscriptions", () => {
     expect(ACCESS_GRANTING_SUB_STATUSES).toContain("active");
     expect(ACCESS_GRANTING_SUB_STATUSES).toContain("trialing");
     expect(ACCESS_GRANTING_SUB_STATUSES).not.toContain("canceled");
+  });
+});
+
+// ── subscriptionBlocksWrites (BILL-02 RLS write gate contract) ───────────
+describe("subscriptionBlocksWrites", () => {
+  const NOW = new Date("2026-05-14T00:00:00Z").getTime();
+  const daysFromNow = (n) => new Date(NOW + n * 86400000).toISOString();
+
+  it("BLOCKS clearly-lapsed subscriptions", () => {
+    expect(subscriptionBlocksWrites({ tier: "expired" }, NOW)).toBe(true);
+    expect(subscriptionBlocksWrites({ tier: "incomplete" }, NOW)).toBe(true);
+    expect(subscriptionBlocksWrites({ status: "canceled" }, NOW)).toBe(true);
+    expect(subscriptionBlocksWrites({ tier: "trial", trialEndsAt: daysFromNow(-1) }, NOW)).toBe(true);
+  });
+
+  it("ALLOWS active / trialing / past_due / in-window trial", () => {
+    expect(subscriptionBlocksWrites({ tier: "shop", status: "active" }, NOW)).toBe(false);
+    expect(subscriptionBlocksWrites({ tier: "shop", status: "trialing" }, NOW)).toBe(false);
+    expect(subscriptionBlocksWrites({ tier: "shop", status: "past_due" }, NOW)).toBe(false);
+    expect(subscriptionBlocksWrites({ tier: "trial", trialEndsAt: daysFromNow(5) }, NOW)).toBe(false);
+  });
+
+  it("fail-safe ALLOWS on unknown / empty (never lock out on missing data)", () => {
+    expect(subscriptionBlocksWrites({}, NOW)).toBe(false);
+    expect(subscriptionBlocksWrites({ tier: null, status: null }, NOW)).toBe(false);
+    expect(subscriptionBlocksWrites({ tier: "trial", trialEndsAt: null }, NOW)).toBe(false);
+  });
+
+  it("accepts snake_case profile shape too", () => {
+    expect(subscriptionBlocksWrites({ subscription_tier: "expired" }, NOW)).toBe(true);
+    expect(subscriptionBlocksWrites({ subscription_status: "canceled" }, NOW)).toBe(true);
   });
 });
