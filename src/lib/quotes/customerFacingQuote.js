@@ -55,6 +55,38 @@ export function customerFacingShopName({ quote, shopName = "", fallback = "Shop"
   return shopName || fallback;
 }
 
+// Customer-facing tax/total for the /QuotePayment page.
+//
+// For a NON-broker quote with a QB invoice, QuickBooks' recorded numbers are
+// authoritative — they're what the customer actually pays — so show/charge
+// those (`qb_total`/`qb_tax_amount`), unless the quote was edited after the
+// invoice was created (qbStale), in which case fall back to the saved totals.
+//
+// For a BROKER quote the shop's `qb_total` is the broker's WHOLESALE price
+// (shop→broker), NOT the price the broker quoted their end client. It must
+// NEVER be shown to or charged to the end client (the 2026-05-26 leak class).
+// Broker quotes always use the client-facing fallback totals, and callers must
+// also suppress the shop's QB payment link for them (see QuotePayment).
+//
+// `fallbackTax`/`fallbackTotal` are the already-client-swapped saved totals
+// (from toCustomerFacingQuote). Returns { tax, total, isQbAuthoritative }.
+export function customerFacingTotals(quote, { qbStale = false, fallbackTax = 0, fallbackTotal = 0 } = {}) {
+  const qbAuthoritative =
+    !isBrokerQuote(quote) && quote?.qb_total != null && !qbStale;
+  if (qbAuthoritative) {
+    return {
+      tax: Number(quote.qb_tax_amount || 0),
+      total: Number(quote.qb_total || 0),
+      isQbAuthoritative: true,
+    };
+  }
+  return {
+    tax: Number(fallbackTax || 0),
+    total: Number(fallbackTotal || 0),
+    isQbAuthoritative: false,
+  };
+}
+
 export function toCustomerFacingQuote(quote) {
   if (!quote || !isBrokerQuote(quote)) return quote;
 
