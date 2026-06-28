@@ -1195,6 +1195,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // audit trail. Upsert on (shop_owner, qb_invoice_id) so a resync refreshes
   // the one authoritative row. Best-effort — must never fail the invoice.
   // See docs/qb-multistate-tax-scope.md §10.
+  //
+  // Skip when QB's tax doesn't match what the quote billed (taxMismatch): that
+  // invoice is being held for reconciliation (Phase 0) and hasn't been sent, so
+  // recording its tax as charged would put a phantom liability in the filing
+  // report until the shop fixes it. The clean re-sync writes the record.
   try {
     const taxRecord = buildTaxRecordFromQbInvoice(qbInvoiceFinal, {
       shopOwner:   quote.shop_owner,
@@ -1203,7 +1208,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       customer,
       isTaxExempt,
     });
-    if (taxRecord.shop_owner && taxRecord.qb_invoice_id) {
+    if (taxRecord.shop_owner && taxRecord.qb_invoice_id && reconciliation.taxMismatch !== true) {
       const taxAdmin = createClient(
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,

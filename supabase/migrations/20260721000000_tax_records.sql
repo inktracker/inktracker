@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS public.tax_records (
   quote_id                      TEXT,
   customer_id                   TEXT,
   customer_name                 TEXT,
-  txn_date                      DATE        NOT NULL,
+  txn_date                      DATE,        -- QB invoices always carry one; nullable so a rare missing date never drops an audit row
+
   authority                     TEXT        NOT NULL DEFAULT 'quickbooks_ast',
   subtotal                      NUMERIC     NOT NULL DEFAULT 0,
   tax_total                     NUMERIC     NOT NULL DEFAULT 0,
@@ -50,8 +51,19 @@ CREATE INDEX IF NOT EXISTS tax_records_shop_state_idx
 -- never forge or alter what was charged.
 ALTER TABLE public.tax_records ENABLE ROW LEVEL SECURITY;
 
+-- Owner sees their own rows; managers/brokers see rows for any shop listed in
+-- their profile's assigned_shops (same clause every shop-scoped table carries,
+-- so the Performance report isn't empty for non-owner team members).
 DROP POLICY IF EXISTS tax_records_select_own ON public.tax_records;
 CREATE POLICY tax_records_select_own ON public.tax_records
   FOR SELECT
   TO authenticated
-  USING (shop_owner = (auth.jwt() ->> 'email'));
+  USING (
+    shop_owner = (auth.jwt() ->> 'email')
+    OR EXISTS (
+      SELECT 1
+      FROM public.profiles
+      WHERE profiles.email = (auth.jwt() ->> 'email')
+        AND profiles.assigned_shops @> to_jsonb(tax_records.shop_owner)
+    )
+  );

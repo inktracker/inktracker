@@ -801,7 +801,18 @@ export default function Customers() {
               type="checkbox"
               id="tax_exempt_new"
               checked={form.tax_exempt}
-              onChange={(e) => setForm({ ...form, tax_exempt: e.target.checked })}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setForm({
+                  ...form,
+                  tax_exempt: checked,
+                  // Unchecking clears the cert so a stale certificate can't linger.
+                  ...(checked ? {} : {
+                    exemption_type: "", exemption_certificate_number: "",
+                    exemption_certificate_path: "", exemption_expires_at: "", exemption_states: null,
+                  }),
+                });
+              }}
               className="w-4 h-4 accent-teal-600"
             />
             <label htmlFor="tax_exempt_new" className="text-sm font-semibold text-slate-600">
@@ -1050,7 +1061,17 @@ export default function Customers() {
                 type="checkbox"
                 id="tax_exempt_edit"
                 checked={!!editing.tax_exempt}
-                onChange={(e) => setEditing({ ...editing, tax_exempt: e.target.checked })}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setEditing({
+                    ...editing,
+                    tax_exempt: checked,
+                    ...(checked ? {} : {
+                      exemption_type: "", exemption_certificate_number: "",
+                      exemption_certificate_path: "", exemption_expires_at: "", exemption_states: null,
+                    }),
+                  });
+                }}
                 className="w-4 h-4 accent-teal-600"
               />
               <label htmlFor="tax_exempt_edit" className="text-sm font-semibold text-slate-600">

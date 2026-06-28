@@ -19,8 +19,8 @@ EXISTS` — they never drop or alter existing data).
 
 ## Order is the whole game
 
-`qbSync` writes to the new columns/table. **Deploy `qbSync` before the
-migrations and those writes fail** (missing column/table). So:
+`qbSync` writes to the new columns/table. **If you deploy `qbSync` before the
+migrations, those writes fail** (missing column/table). So:
 **migrations → qbSync → frontend.**
 
 ---

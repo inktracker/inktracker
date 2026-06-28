@@ -149,6 +149,8 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
             ship_to_address: customer?.ship_to_address || null,
             exemption_expires_at: customer?.exemption_expires_at || null,
             exemption_states: customer?.exemption_states || null,
+            exemption_type: customer?.exemption_type || null,
+            exemption_certificate_number: customer?.exemption_certificate_number || null,
           },
         },
       });
