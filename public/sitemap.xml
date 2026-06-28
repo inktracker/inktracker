@@ -38,30 +38,5 @@
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
-  <url>
-    <loc>https://inktracker.app/compare/inktracker-vs-printavo</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://inktracker.app/compare/inktracker-vs-yoprint</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://inktracker.app/compare/inktracker-vs-inksoft</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://inktracker.app/compare/inktracker-vs-deconetwork</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://inktracker.app/compare/printavo-alternatives</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
   <!-- compare-pages:end -->
 </urlset>
