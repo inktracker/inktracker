@@ -520,7 +520,11 @@ export default function QuoteEditorModal({
       if (data?.error) throw new Error(data.error);
       const rate = Number(data.effectiveRate || 0);
       setQ((prev) => ({ ...prev, tax_rate: rate }));
-      setCalcTax({ loading: false, error: "", result: { tax: Number(data.tax || 0), rate } });
+      setCalcTax({
+        loading: false,
+        error: "",
+        result: { tax: Number(data.tax || 0), rate, exempt: !!data.exempt, state: ship.state },
+      });
     } catch (e) {
       setCalcTax({ loading: false, error: e.message || "Tax calculation failed.", result: null });
     }
@@ -1209,6 +1213,15 @@ export default function QuoteEditorModal({
                   {calcTax.result && (
                     <p className="text-[11px] text-emerald-600 text-right">
                       ✓ QuickBooks tax: {fmtMoney(calcTax.result.tax)} ({calcTax.result.rate}%) — filled above.
+                    </p>
+                  )}
+                  {/* Explain a $0 result so it doesn't read as a glitch. Factual,
+                      not tax advice. Only the no-nexus case (taxed, not exempt). */}
+                  {calcTax.result && calcTax.result.tax === 0 && !calcTax.result.exempt && (
+                    <p className="text-[11px] text-slate-500 leading-snug bg-slate-100 dark:bg-slate-800 rounded-lg px-2 py-1.5">
+                      $0 — you're not registered to collect sales tax in {calcTax.result.state || "this state"} (no nexus),
+                      so QuickBooks charges none. The buyer is responsible for any use tax owed in their own jurisdiction.
+                      To collect here, add the state in QuickBooks → Taxes.
                     </p>
                   )}
                   {calcTax.error && (

@@ -1211,6 +1211,12 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       }
     : {};
 
+  // Clobber-guard: only write qb_payment_link when we actually minted one.
+  // A re-sync whose link mint transiently fails (or a held invoice that skips
+  // minting) returns paymentLink=null — writing that would WIPE a previously
+  // good link and break "Approve & Pay". Omit the field to keep the existing link.
+  const linkField = paymentLink ? { qb_payment_link: paymentLink } : {};
+
   // 5. Save QB invoice ID + DocNumber + payment link + final QB-computed
   // totals back to the source record. Both ids matter — the internal id
   // for API calls, the DocNumber for the operator-facing UI.
@@ -1219,7 +1225,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     await supabase.from("quotes").update({
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
-      qb_payment_link: paymentLink,
+      ...linkField,
       qb_synced_at:    new Date().toISOString(),
       qb_subtotal:     qbSubtotal,
       qb_tax_amount:   qbTaxAmount,
@@ -1236,7 +1242,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     await supabase.from("invoices").update({
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
-      qb_payment_link: paymentLink,
+      ...linkField,
       qb_subtotal:     qbSubtotal,
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
