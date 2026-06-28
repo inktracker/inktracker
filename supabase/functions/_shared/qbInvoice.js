@@ -389,7 +389,16 @@ export function buildTaxRecordFromQbInvoice(qbInvoice, ctx = {}) {
     ? Number(((taxTotal / taxable_amount) * 100).toFixed(4))
     : 0;
 
+  // Ship-to: prefer the InkTracker customer's structured ship-to; fall back to
+  // the QB invoice's own ShipAddr (lets the backfill capture a state for
+  // invoices created with a structured address even when the customer record
+  // lacks one).
   const ship = ctx.customer?.ship_to_address || {};
+  const qbShip = qbInvoice?.ShipAddr || {};
+  const shipState = (String(ship.state ?? "").trim().toUpperCase()
+    || String(qbShip.CountrySubDivisionCode ?? "").trim().toUpperCase()) || null;
+  const shipZip = (String(ship.zip ?? "").trim()
+    || String(qbShip.PostalCode ?? "").trim()) || null;
   return {
     shop_owner:    ctx.shopOwner ?? null,
     qb_invoice_id: ctx.qbInvoiceId != null ? String(ctx.qbInvoiceId) : null,
@@ -403,8 +412,8 @@ export function buildTaxRecordFromQbInvoice(qbInvoice, ctx = {}) {
     total,
     taxable_amount,
     effective_rate,
-    ship_to_state: String(ship.state ?? "").trim().toUpperCase() || null,
-    ship_to_zip:   String(ship.zip ?? "").trim() || null,
+    ship_to_state: shipState,
+    ship_to_zip:   shipZip,
     exempt:        !!ctx.isTaxExempt,
     exemption_type:               ctx.customer?.exemption_type || null,
     exemption_certificate_number: ctx.customer?.exemption_certificate_number || null,

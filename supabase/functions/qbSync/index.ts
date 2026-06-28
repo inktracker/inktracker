@@ -1398,10 +1398,12 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
 
   if (all.length === 0) return { imported: 0, skipped: 0, updated: 0, total: 0, truncatedAtCap };
 
-  // Build customer lookup: qb_customer_id → InkTracker customer
+  // Build customer lookup: qb_customer_id → InkTracker customer. Pull the tax
+  // fields too so the tax-record backfill below can attribute ship-to state +
+  // exemption from the current customer record.
   const { data: customers } = await supabase
     .from("customers")
-    .select("id, qb_customer_id, name")
+    .select("id, qb_customer_id, name, company, ship_to_address, tax_exempt, exemption_type, exemption_certificate_number")
     .eq("shop_owner", shopOwner);
   const custByQbId = new Map<string, any>();
   for (const c of customers ?? []) {
@@ -1429,6 +1431,15 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   let imported = 0;
   let skipped = 0;
   let updated = 0;
+  let taxRecords = 0;
+
+  // Service-role client for the tax-audit-record backfill (tax_records is
+  // service-role-write-only). Built once; the per-invoice upsert below
+  // populates history so the by-state report covers existing invoices.
+  const taxAdmin = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
 
   for (const qbInv of all) {
     const docNumber = qbInv.DocNumber || `QB-${qbInv.Id}`;
@@ -1520,9 +1531,30 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       if (error) { console.error("[pullInvoices] insert failed:", error.message, docNumber); skipped++; }
       else { imported++; }
     }
+
+    // Tax-audit-record backfill (best-effort). Upsert one record per QB
+    // invoice from its authoritative TxnTaxDetail so the by-state report
+    // covers history. Ship-to + exemption come from the matched customer
+    // (falls back to the QB invoice's ShipAddr). Never fail the pull on this.
+    try {
+      const taxRecord = buildTaxRecordFromQbInvoice(qbInv, {
+        shopOwner,
+        quoteId: docNumber,
+        qbInvoiceId: qbInv.Id,
+        customer: custMatch || undefined,
+        isTaxExempt: !!custMatch?.tax_exempt,
+      });
+      const { error: trErr } = await taxAdmin
+        .from("tax_records")
+        .upsert(taxRecord, { onConflict: "shop_owner,qb_invoice_id" });
+      if (trErr) console.error("[pullInvoices] tax-record upsert error:", trErr.message, docNumber);
+      else taxRecords++;
+    } catch (err) {
+      console.error("[pullInvoices] tax-record build failed:", (err as Error)?.message, docNumber);
+    }
   }
 
-  return { imported, skipped, updated, total: all.length, truncatedAtCap };
+  return { imported, skipped, updated, taxRecords, total: all.length, truncatedAtCap };
 }
 
 // ── Action: getCustomerStats (live from QB) ────────────────────────────────

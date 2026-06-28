@@ -1154,3 +1154,28 @@ describe("buildTaxRecordFromQbInvoice", () => {
     expect(rec.taxable_amount).toBe(100.0);
   });
 });
+
+describe("buildTaxRecordFromQbInvoice — ShipAddr fallback (backfill)", () => {
+  it("uses the QB invoice ShipAddr state/zip when the customer lacks a ship-to", () => {
+    const rec = buildTaxRecordFromQbInvoice(
+      {
+        TxnDate: "2026-05-01",
+        TotalAmt: 108.27,
+        TxnTaxDetail: { TotalTax: 8.27 },
+        ShipAddr: { CountrySubDivisionCode: "ca", PostalCode: "94016" },
+      },
+      { shopOwner: "s@x.com", qbInvoiceId: "9", customer: { id: 1, name: "X" } },
+    );
+    expect(rec.ship_to_state).toBe("CA");
+    expect(rec.ship_to_zip).toBe("94016");
+  });
+
+  it("prefers the customer ship-to over the QB ShipAddr when both exist", () => {
+    const rec = buildTaxRecordFromQbInvoice(
+      { TotalAmt: 100, TxnTaxDetail: { TotalTax: 0 }, ShipAddr: { CountrySubDivisionCode: "CA", PostalCode: "94016" } },
+      { shopOwner: "s@x.com", qbInvoiceId: "9", customer: { id: 1, ship_to_address: { state: "NV", zip: "89501" } } },
+    );
+    expect(rec.ship_to_state).toBe("NV");
+    expect(rec.ship_to_zip).toBe("89501");
+  });
+});
