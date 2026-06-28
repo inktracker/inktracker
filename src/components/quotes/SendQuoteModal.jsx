@@ -51,10 +51,14 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // Broker-side totals — used for the post-send patch which writes back
   // to the row (must stay broker-side or we'd corrupt the saved record).
   const totals = getQuoteTotalsForSend(quote);
-  // When the shop accepts QB's tax on a held send, we adopt QB's authoritative
-  // tax/total here so the email body, {{total}}, the displayed summary, and the
-  // send all reflect what QB charges — not the stale flat-rate estimate.
-  const [qbAdopted, setQbAdopted] = useState(null); // { tax, total } | null
+  // When the shop accepts QB's tax on a held send, the edge adopts QB's
+  // authoritative tax/total/rate onto the quote row; we re-fetch it and use
+  // that fresh copy (`q`) for EVERYTHING customer-facing below — totals, the
+  // email body/{{total}}, and the PDF — so the quote the customer receives
+  // matches what QB charges and the /QuotePayment page. Falls back to the
+  // prop on a normal (non-adopted) send.
+  const [adoptedQuote, setAdoptedQuote] = useState(null);
+  const q = adoptedQuote || quote;
   // Tax-hold detail (set when QB computed a different tax) → drives the
   // "Use QuickBooks' tax" affordance instead of a dead-end error.
   const [taxHold, setTaxHold] = useState(null); // { quotedTax, qbTax, qbTotal } | null
@@ -62,10 +66,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // Client-side totals — what the customer sees in the email body,
   // {{total}} interpolation, and on the /QuotePayment page. Equal to
   // `totals` for non-broker quotes; reads client_* fields for broker.
-  const baseCustomerTotals = getCustomerFacingTotals(quote);
-  const customerTotals = qbAdopted
-    ? { ...baseCustomerTotals, tax: qbAdopted.tax, total: qbAdopted.total }
-    : baseCustomerTotals;
+  const customerTotals = getCustomerFacingTotals(q);
 
   // ── Customer-facing brand name ───────────────────────────────────────
   // For broker quotes the END CLIENT must see the BROKER as the merchant
@@ -340,9 +341,13 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         autoSendAfter = false;
         setTaxHold(null);
         setQbError("");
-        if (data.qbTotal != null) {
-          setQbAdopted({ tax: Number(data.qbTaxAmount || 0), total: Number(data.qbTotal || 0) });
-        }
+        // Re-fetch the quote so totals, the email body, and the PDF all use
+        // QB's adopted tax/total/rate (the edge just wrote them to the row) —
+        // otherwise the emailed PDF would still show the stale flat rate.
+        try {
+          const fresh = await base44.entities.Quote.get(quote.id);
+          if (fresh) setAdoptedQuote(fresh);
+        } catch { /* non-fatal — payment page still reads qb_total from the row */ }
         setQbNotice(
           `Now using QuickBooks' tax — total is ${fmtMoney(Number(data.qbTotal || 0))}. Review below, then Send.`,
         );
@@ -530,7 +535,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // the explicit "Create QB Invoice" button — handleCreateQbInvoice
       // above. handleSend just emails; the qb_payment_link is already on
       // the quote row by this point.
-      const quoteForPdf = { ...quote, public_token: publicToken };
+      const quoteForPdf = { ...q, public_token: publicToken };
 
       // Generate PDF attachment — use the shared client-mode generator so it
       // matches the layout used everywhere else in the app.
@@ -568,7 +573,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         // standard total otherwise). The saved row's `total` field is
         // unchanged — only the value passed to the email function is
         // overridden here.
-        quote: { ...quote, total: customerTotals.total },
+        quote: { ...q, total: customerTotals.total },
         recipients: recipientEmails,
         taggedSubject,
         body,
