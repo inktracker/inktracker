@@ -15,6 +15,14 @@
   ],
   "rewrites": [
     {
+      "source": "/compare",
+      "destination": "/compare/index.html"
+    },
+    {
+      "source": "/compare/:slug",
+      "destination": "/compare/:slug.html"
+    },
+    {
       "source": "/((?!.*\\..*).*)",
       "destination": "/index.html"
     }
