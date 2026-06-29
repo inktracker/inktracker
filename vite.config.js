@@ -41,10 +41,12 @@ export default defineConfig({
     "import.meta.env.VITE_SENTRY_RELEASE": JSON.stringify(RELEASE),
   },
   build: {
-    // Source maps are required for the plugin to upload anything. With
-    // filesToDeleteAfterUpload above, they don't end up in the public
-    // bundle — only Sentry sees them.
-    sourcemap: true,
+    // Only emit source maps when we have the Sentry token to upload + delete
+    // them (filesToDeleteAfterUpload above). Without the token the plugin is
+    // disabled and would NOT strip the .map files, so emitting them would ship
+    // readable source to the public bundle (DEP-04). Gate emission on the token
+    // so a no-token build (local, or CI missing the secret) ships no maps.
+    sourcemap: process.env.SENTRY_AUTH_TOKEN ? true : false,
     rollupOptions: {
       output: {
         // Split the stable, already-eager vendor libs into their own chunks so
