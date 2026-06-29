@@ -55,7 +55,6 @@ Dashboard, Quotes, Production, Orders, Customers, Inventory, Invoices, Expenses,
 | `acLookupStyle` / `acSearchCatalog` / `acGetInventory` / `acGetPriceList` | AS Colour API |
 | `adminAction` | User management (invite, delete, list) |
 | `createQuoteFromPayload` | Create quote from wizard submission |
-| `shopifySync` / `shopifyOAuthCallback` | Shopify inventory integration |
 | `_shared/ascolour.ts` | Shared AS Colour auth helpers |
 
 All edge functions have `verify_jwt = false` in `supabase/config.toml` (auth handled internally).
