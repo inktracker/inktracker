@@ -89,7 +89,7 @@ export default function QuoteRequest() {
           // "Screen Print" even when the shop has embroidery enabled.
           if (s.pricing_config) {
             const { loadShopPricingConfig } = await import("@/components/shared/pricing");
-            loadShopPricingConfig(s.pricing_config);
+            loadShopPricingConfig(s.pricing_config, s.owner_email);
           }
         }
       } catch {} finally {

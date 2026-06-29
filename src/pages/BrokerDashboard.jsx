@@ -745,7 +745,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
         // Mirror of the QuoteRequest.jsx hydration step for the public
         // wizard; same module, different surface.
         if (shopRecord?.pricing_config) {
-          loadShopPricingConfig(shopRecord.pricing_config);
+          loadShopPricingConfig(shopRecord.pricing_config, shopRecord.owner_email);
         }
 
         const myQuotes = (allQuotes || []).filter((q) => {

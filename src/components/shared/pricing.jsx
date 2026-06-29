@@ -162,12 +162,39 @@ export const BROKER_MARKUP_SHARE = 0.5;
 // Per-shop pricing config — set via loadShopPricingConfig() on app startup.
 // When null, all functions use the hardcoded defaults above.
 let _pc = null;
+// CACHE-01: which shop _pc was loaded for. Lets us detect cross-shop "bleed" —
+// a quote for shop A priced while the module holds shop B's config (happens on
+// multi-shop surfaces like the broker dashboard). Stage 1 is detection-only
+// (telemetry, no math change); a later stage threads config to prevent it.
+let _pcOwner = null;
 
-export function loadShopPricingConfig(config) {
+export function loadShopPricingConfig(config, owner = null) {
   _pc = config && Object.keys(config).length > 0 ? config : null;
+  _pcOwner = owner ?? null;
 }
 
 export function getShopPricingConfig() { return _pc; }
+export function getShopPricingConfigOwner() { return _pcOwner; }
+
+// Telemetry-only bleed detector (CACHE-01, Stage 1). Conservative to avoid
+// false positives: both owners must be present and real (broker: pseudo-owners
+// and blank/new quotes are skipped), and we warn once per (loaded→quoted) pair.
+const _bleedSeen = new Set();
+export function detectPricingConfigBleed(quoteShopOwner) {
+  const loaded = _pcOwner;
+  const quoted = quoteShopOwner;
+  if (!loaded || !quoted) return false;
+  if (String(loaded).startsWith("broker:") || String(quoted).startsWith("broker:")) return false;
+  if (loaded === quoted) return false;
+  const pair = `${loaded}=>${quoted}`;
+  if (!_bleedSeen.has(pair)) {
+    _bleedSeen.add(pair);
+    // console.error is picked up by Sentry's console integration, surfacing
+    // the real prod blast radius before we do the riskier config-threading.
+    try { console.error(`[pricing] CACHE-01 config bleed: pricing a quote for "${quoted}" while config is loaded for "${loaded}"`); } catch { /* ignore */ }
+  }
+  return true;
+}
 
 // Default turnaround windows in BUSINESS days. The shop can override
 // either of these in Account → Pricing alongside the Rush Fee %, so
@@ -963,6 +990,10 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
   // analytics rollups where a missing row shouldn't crash. Test IT5
   // pins this contract.
   q = q || {};
+  // CACHE-01 (telemetry only): flag if this quote's shop differs from the shop
+  // whose config is currently loaded — i.e. we're about to price with the wrong
+  // config. No behavior change; just surfaces real bleed.
+  detectPricingConfigBleed(q.shop_owner);
   const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
   let subtotal = 0;   // sum of baseSubtotals (before rush)
   let rushTotal = 0;   // sum of rushFees
