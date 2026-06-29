@@ -1,5 +1,6 @@
-import { supabase } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import { validateUploadCandidate } from "@/lib/uploadValidation";
+import { shopScope } from "@/lib/shopScope";
 
 // Tax-exemption certificates contain a tax ID, so unlike artwork they go in a
 // PRIVATE bucket (public=false) — no public URL exists; access is signed-URL
@@ -14,9 +15,15 @@ const SIGNED_TTL = 60 * 60; // 1 hour — plenty for a viewing session
  */
 export async function uploadCertificate(file) {
   const ext = validateUploadCandidate(file);
-  // UUID filename: unguessable, and the bucket grants no list, so a path can't
-  // be enumerated or guessed.
-  const path = `${crypto.randomUUID()}.${ext}`;
+  // Tenant-scoped path: "<shop_owner>/<uuid>.<ext>". The first segment is the
+  // shop owner's email (shopScope resolves it for owners AND team members), and
+  // the bucket RLS (SEC-01, migration 20260728) requires that segment to be a
+  // shop the caller belongs to — so one shop can't read another's certs even
+  // with the path. UUID filename stays unguessable on top of that.
+  const me = await base44.auth.me();
+  const owner = shopScope(me);
+  if (!owner) throw new Error("You must be signed in to upload a certificate.");
+  const path = `${owner}/${crypto.randomUUID()}.${ext}`;
   const { error } = await supabase.storage
     .from(CERT_BUCKET)
     .upload(path, file, { upsert: false, cacheControl: "3600" });
