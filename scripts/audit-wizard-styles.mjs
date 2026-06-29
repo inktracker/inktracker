@@ -11,9 +11,10 @@
 //   (c) periodically as part of ops hygiene
 //
 // Usage:
-//   SUPABASE_URL=https://qtrypzzcjebvfcihiynt.supabase.co \
-//   SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key> \
-//   node scripts/audit-wizard-styles.mjs
+//   ./scripts/with-secrets.sh node scripts/audit-wizard-styles.mjs
+//   # or as part of the deploy gate: ./scripts/with-secrets.sh npm run deploy
+//   (the service-role key is pulled from the macOS Keychain — see
+//    scripts/with-secrets.sh for the one-time setup.)
 //
 // Exits 0 if everything looks good, 1 if any shop has stale data.
 // Suitable for cron / CI gates if you ever want to enforce.

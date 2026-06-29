@@ -8,10 +8,8 @@
 // customization (display name override, category, markup, enabled flag). Only
 // styles failing isStyleEnriched() are refetched; everything else is untouched.
 //
-// Usage:
-//   SUPABASE_URL=https://<ref>.supabase.co \
-//   SUPABASE_SERVICE_ROLE_KEY=<service-role> \
-//   node scripts/resync-shop-wizard.mjs <owner_email>
+// Usage (service-role key + URL come from the macOS Keychain via the wrapper):
+//   ./scripts/with-secrets.sh node scripts/resync-shop-wizard.mjs <owner_email>
 //
 // Pair with: node scripts/audit-wizard-styles.mjs  (verify clean after).
 

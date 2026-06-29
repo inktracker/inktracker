@@ -4,9 +4,8 @@
 // and refuses to write if a requested style isn't found (so a typo can't
 // silently no-op or remove the wrong thing).
 //
-// Usage:
-//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
-//   node scripts/remove-wizard-styles.mjs <owner_email> <styleNumber...>
+// Usage (service-role key + URL come from the macOS Keychain via the wrapper):
+//   ./scripts/with-secrets.sh node scripts/remove-wizard-styles.mjs <owner_email> <styleNumber...>
 
 import { createClient } from "@supabase/supabase-js";
 
