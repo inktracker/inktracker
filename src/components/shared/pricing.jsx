@@ -1013,12 +1013,24 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   };
 }
 
-export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
+export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, pc = undefined) {
   // Defensive null/undefined: callers like effectiveQuoteTotals pre-
   // wrap with `q || {}`, but the bare function is also called from
   // analytics rollups where a missing row shouldn't crash. Test IT5
   // pins this contract.
   q = q || {};
+  // CACHE-01 Phase 2b: when an explicit pricing config is passed (a multi-shop
+  // surface pricing a quote for a shop other than the session's), compute under
+  // it via the borrow/restore primitive so the session global is never mutated
+  // and the result reflects the QUOTE's owner, not whatever happens to be
+  // loaded. Default (pc === undefined) reads the loaded global — single-shop
+  // behavior is byte-identical. Recurse with pc omitted so the body below runs
+  // against the now-borrowed global.
+  if (pc !== undefined) {
+    return withShopPricingConfig(pc, q.shop_owner ?? null, () =>
+      calcQuoteTotalsWithLinking(q, markup),
+    );
+  }
   // CACHE-01 (telemetry only): flag if this quote's shop differs from the shop
   // whose config is currently loaded — i.e. we're about to price with the wrong
   // config. No behavior change; just surfaces real bleed.
@@ -1080,8 +1092,8 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
   };
 }
 
-export function calcQuoteTotals(q, markup = STANDARD_MARKUP) {
-  return calcQuoteTotalsWithLinking(q, markup);
+export function calcQuoteTotals(q, markup = STANDARD_MARKUP, pc = undefined) {
+  return calcQuoteTotalsWithLinking(q, markup, pc);
 }
 
 // Product categories that drive both the line-item category picker and the

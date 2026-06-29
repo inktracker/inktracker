@@ -27,7 +27,7 @@
 // causing buildOrderFromQuote to diverge silently from it. Now
 // shared so the contract is enforced everywhere.
 
-import { calcQuoteTotals, calcSetupFees, getShopPricingConfig } from "../../components/shared/pricing";
+import { calcQuoteTotals, calcSetupFees, getShopPricingConfig, withShopPricingConfig } from "../../components/shared/pricing";
 import { sumAdditionalCharges } from "../pricing/additionalCharges";
 import { roundedQuoteTotals } from "../pricing/quoteRounding";
 
@@ -64,7 +64,20 @@ export function savedAfterDiscount(quote) {
  *             afterDisc: number, source: 'saved' | 'live' }}
  *   source — observable so callers (and tests) can see which path won
  */
-export function effectiveQuoteTotals(quote, markup = undefined) {
+export function effectiveQuoteTotals(quote, markup = undefined, pc = undefined) {
+  // CACHE-01 Phase 2b: when a multi-shop surface passes an explicit pricing
+  // config, run the WHOLE resolution under it (borrow/restore). This covers
+  // both the live calcQuoteTotals call AND the getShopPricingConfig() setup-fee
+  // read in the live branch below, so the quote is priced for ITS owner without
+  // mutating the session global. Default (pc === undefined) keeps reading the
+  // loaded global — byte-identical to before. Saved quotes ignore config
+  // entirely (they read snapshot fields), so the borrow is a harmless no-op
+  // there. Recurse with pc omitted so the body runs against the borrowed global.
+  if (pc !== undefined) {
+    return withShopPricingConfig(pc, quote?.shop_owner ?? null, () =>
+      effectiveQuoteTotals(quote, markup),
+    );
+  }
   const live = calcQuoteTotals(quote || {}, markup);
 
   if (quote && Number.isFinite(quote.total) && quote.total > 0) {

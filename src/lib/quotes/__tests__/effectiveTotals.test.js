@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { effectiveQuoteTotals } from "../effectiveTotals.js";
-import { loadShopPricingConfig, BROKER_MARKUP } from "../../../components/shared/pricing.jsx";
+import { loadShopPricingConfig, BROKER_MARKUP, getShopPricingConfig, getShopPricingConfigOwner } from "../../../components/shared/pricing.jsx";
 
 beforeEach(() => {
   loadShopPricingConfig(null);
@@ -255,5 +255,52 @@ describe("effectiveQuoteTotals — PRICE-01: live (pre-save) total includes setu
     const t = effectiveQuoteTotals(quote);
     expect(t.source).toBe("live");
     expect(t.setup_total ?? 0).toBe(0);
+  });
+});
+
+describe("effectiveQuoteTotals — Phase 2b config threading (CACHE-01)", () => {
+  // Two configs that price the same garment differently: cost 4.62 falls in the
+  // first (above:0) markup tier, so the markup value alone moves the total.
+  const cfgA = { garmentMarkup: [{ above: 0, markup: 1.5 }] };
+  const cfgB = { garmentMarkup: [{ above: 0, markup: 2.0 }] };
+  const draft = () => {
+    const q = makeQuote();
+    delete q.subtotal; delete q.tax; delete q.total; // force the live path
+    return q;
+  };
+
+  it("2B1 — an explicit pc prices the quote, NOT the loaded global", () => {
+    loadShopPricingConfig(cfgB, "shopB@x.co");
+    const underB = effectiveQuoteTotals(draft()).total;
+
+    loadShopPricingConfig(cfgA, "shopA@x.co");
+    const underA = effectiveQuoteTotals(draft()).total;
+    expect(underA).not.toBe(underB); // configs genuinely differ
+
+    // Global holds cfgA; passing cfgB explicitly must yield cfgB's number.
+    const threaded = effectiveQuoteTotals(draft(), undefined, cfgB).total;
+    expect(threaded).toBe(underB);
+  });
+
+  it("2B2 — restores the session global + owner after threading (no bleed left behind)", () => {
+    loadShopPricingConfig(cfgA, "shopA@x.co");
+    effectiveQuoteTotals(draft(), undefined, cfgB);
+    expect(getShopPricingConfig()).toBe(cfgA);
+    expect(getShopPricingConfigOwner()).toBe("shopA@x.co");
+  });
+
+  it("2B3 — default (pc omitted) is identical to reading the global", () => {
+    loadShopPricingConfig(cfgA, "shopA@x.co");
+    const viaGlobal = effectiveQuoteTotals(draft()).total;
+    const viaUndef = effectiveQuoteTotals(draft(), undefined, undefined).total;
+    expect(viaUndef).toBe(viaGlobal);
+  });
+
+  it("2B4 — a SAVED quote ignores pc (reads its snapshot) — borrow is a no-op", () => {
+    loadShopPricingConfig(cfgA, "shopA@x.co");
+    const saved = makeQuote({ subtotal: 923, tax: 76, total: 999 });
+    const t = effectiveQuoteTotals(saved, undefined, cfgB);
+    expect(t.total).toBe(999);
+    expect(t.source).toBe("saved");
   });
 });
