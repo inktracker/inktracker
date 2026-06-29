@@ -43,6 +43,24 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
+    // RL-01: rate-limit this anonymous, credential-bearing endpoint by client
+    // IP — a server-derived key, never a client-supplied one (RL-02 lesson).
+    // Each call fans out up to 5 upstream AS Colour requests on GLOBAL creds,
+    // so an unbounded caller is a scraping / cost-amplification vector. 60/hr
+    // per IP is generous for real wizard browsing (results are cached client-
+    // side) while capping a scraper at ~300 upstream fetches/hr.
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+    const rlAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: underLimit } = await rlAdmin.rpc("check_request_rate", {
+      p_key: `ac_catalog:${ip}`, p_limit_per_hr: 60,
+    });
+    if (underLimit === false) {
+      return Response.json(
+        { error: "Too many catalog requests — please slow down and try again shortly." },
+        { status: 429, headers: CORS },
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const { query = "", category = "", limit = 48, page = 1, accessToken } = body;
 
