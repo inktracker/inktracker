@@ -1,0 +1,52 @@
+name: Storage backup
+
+# Off-platform backup of Supabase Storage (audit OPS-02). Supabase's daily
+# backup covers Postgres only — NOT Storage — so artwork + tax-exemption certs
+# would be unrecoverable after a DB restore. This downloads both buckets nightly
+# and keeps them as a GitHub artifact (independent of the Supabase project).
+#
+# SETUP (one-time repo secrets):
+#   gh secret set SUPABASE_URL                 # https://<ref>.supabase.co
+#   gh secret set SUPABASE_SERVICE_ROLE_KEY    # service_role key
+#
+# NOTE: artifact retention is capped (30d here) and large buckets count toward
+# storage limits — this is a recovery point, not a substitute for the
+# Supabase-side backups. Restore steps: docs/disaster-recovery.md.
+
+on:
+  schedule:
+    - cron: "30 4 * * *" # 04:30 UTC daily (before the 05:00 reconcile)
+  workflow_dispatch: {}
+
+concurrency:
+  group: storage-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: Install supabase-js
+        run: npm ci --omit=dev || npm install @supabase/supabase-js@2
+      - name: Export storage buckets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY repo secrets not set."
+            exit 1
+          fi
+          node scripts/backup-storage.mjs
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: storage-backup-${{ github.run_id }}
+          path: storage-backup/
+          retention-days: 30
+          if-no-files-found: warn

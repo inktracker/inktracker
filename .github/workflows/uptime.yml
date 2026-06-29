@@ -1,0 +1,46 @@
+name: Uptime monitor
+
+# Automated outage detection (audit OPS-04). Hits the production frontend and
+# the /api/health endpoint on a schedule; a non-200 fails the job, which makes
+# GitHub email the repo admins (and shows a red ❌). Runs on GitHub's infra, so
+# it's independent of Vercel/Supabase being up — a real external synthetic check.
+#
+# Hourly to stay within the private-repo Actions free minutes. For finer-grained
+# coverage (1–5 min) point a free UptimeRobot/healthchecks monitor at
+# https://www.inktracker.app/api/health too — see docs/disaster-recovery.md.
+
+on:
+  schedule:
+    - cron: "17 * * * *" # hourly, off-the-hour to avoid scheduler congestion
+  workflow_dispatch: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe production
+        run: |
+          set -u
+          fail=0
+          check() {
+            local name="$1" url="$2" want="${3:-200}"
+            code=$(curl -sS -o /tmp/body -w "%{http_code}" --max-time 20 "$url" || echo 000)
+            if [ "$code" != "$want" ]; then
+              echo "::error::$name DOWN — $url returned $code (expected $want)"
+              fail=1
+            else
+              echo "✓ $name OK ($code) — $url"
+            fi
+          }
+          check "frontend"    "https://www.inktracker.app/"            200
+          check "health-api"  "https://www.inktracker.app/api/health"  200
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Uptime probe failed — production may be down."
+            exit 1
+          fi
+          echo "All probes healthy."
