@@ -10,6 +10,8 @@ import {
   calcSetupFees,
   getShopPricingConfig,
   loadShopPricingConfig,
+  getPricingConfigSnapshot,
+  restorePricingConfigSnapshot,
   getQty,
   fmtMoney,
   tod,
@@ -241,6 +243,12 @@ export default function QuoteEditorModal({
   const totalWithSetup = _rt.total;
 
   useEffect(() => {
+    // Capture the session's pricing config BEFORE the editor borrows one, and
+    // restore it when the editor closes — a clean borrow boundary so an open
+    // editor can't leave a config loaded for the rest of the session (CACHE-01
+    // Stage 2a). Today the editor loads its own session shop, so this is a
+    // no-op in practice; it future-proofs the boundary for cross-shop edits.
+    const sessionPcSnapshot = getPricingConfigSnapshot();
     async function loadUser() {
       try {
         const currentUser = await base44.auth.me();
@@ -261,7 +269,12 @@ export default function QuoteEditorModal({
           // for brokers, hard refreshes, or any path that skipped AuthContext.
           // A shop that enabled embroidery would otherwise see it vanish from the
           // dropdown on edit. Mirrors QuoteRequest.jsx's anon-wizard hydration.
-          if (cfg) loadShopPricingConfig(cfg);
+          // Pass the owner so _pcOwner stays set — loading config without it
+          // blanked the owner and silently disabled the CACHE-01 bleed detector
+          // for the rest of the session. shopScope() resolves the session shop
+          // (team members → owner's tenant), so this re-asserts THIS session's
+          // shop, never a foreign one.
+          if (cfg) loadShopPricingConfig(cfg, shopScope(currentUser));
           if (cfg && (cfg.extras || cfg.embroidery?.extras || cfg.custom_techniques)) {
             setAddonsByScope(buildAddonsByScope(cfg, DEFAULT_LABELS));
           } else if (shops?.[0]?.addons?.length) {
@@ -283,6 +296,7 @@ export default function QuoteEditorModal({
     }
 
     loadUser();
+    return () => restorePricingConfigSnapshot(sessionPcSnapshot);
   }, []);
 
   useEffect(() => {

@@ -176,6 +176,35 @@ export function loadShopPricingConfig(config, owner = null) {
 export function getShopPricingConfig() { return _pc; }
 export function getShopPricingConfigOwner() { return _pcOwner; }
 
+// CACHE-01 Stage 2a — snapshot / restore the module pricing-config globals.
+// A surface that temporarily borrows another shop's config (an editor modal, a
+// multi-shop render) can capture the session state, borrow, then put it back —
+// instead of leaving a foreign config loaded, which is the "stale global" bleed
+// mode. Snapshots carry the already-normalized _pc, so restore assigns directly.
+export function getPricingConfigSnapshot() {
+  return { config: _pc, owner: _pcOwner };
+}
+export function restorePricingConfigSnapshot(snap) {
+  _pc = snap?.config ?? null;
+  _pcOwner = snap?.owner ?? null;
+}
+
+// Run `fn` with `config`/`owner` temporarily loaded, then restore the prior
+// snapshot — even if `fn` throws. Returns fn's result. This is the synchronous
+// borrow/restore primitive Phase 2b will thread through the live calc so a
+// multi-shop surface can price a quote under its OWNER's config without
+// mutating the session global. Synchronous by design: do not pass an async fn
+// (the restore would run before its awaited work).
+export function withShopPricingConfig(config, owner, fn) {
+  const snap = getPricingConfigSnapshot();
+  try {
+    loadShopPricingConfig(config, owner);
+    return fn();
+  } finally {
+    restorePricingConfigSnapshot(snap);
+  }
+}
+
 // Telemetry-only bleed detector (CACHE-01, Stage 1). Conservative to avoid
 // false positives: both owners must be present and real (broker: pseudo-owners
 // and blank/new quotes are skipped), and we warn once per (loaded→quoted) pair.

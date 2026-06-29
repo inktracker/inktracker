@@ -21,6 +21,9 @@ import {
   getShopPricingConfig,
   getShopPricingConfigOwner,
   detectPricingConfigBleed,
+  getPricingConfigSnapshot,
+  restorePricingConfigSnapshot,
+  withShopPricingConfig,
   getEnabledTechniques,
   STANDARD_MARKUP,
   FIRST_PRINT,
@@ -341,6 +344,33 @@ describe("Shop pricing config — load/get cycle", () => {
     const cfg = { maxColors: 12, firstPrint: { 1: { 25: 10.0 } } };
     loadShopPricingConfig(cfg);
     expect(getShopPricingConfig()).toBe(cfg);
+  });
+
+  // CACHE-01 Stage 2a — snapshot / restore / borrow primitives.
+  it("PC4 — snapshot + restore round-trips config AND owner", () => {
+    loadShopPricingConfig({ maxColors: 8 }, "shopA@x.co");
+    const snap = getPricingConfigSnapshot();
+    loadShopPricingConfig({ maxColors: 3 }, "shopB@x.co"); // borrow a different shop
+    expect(getShopPricingConfigOwner()).toBe("shopB@x.co");
+    restorePricingConfigSnapshot(snap);
+    expect(getShopPricingConfig().maxColors).toBe(8);
+    expect(getShopPricingConfigOwner()).toBe("shopA@x.co");
+  });
+
+  it("PC5 — withShopPricingConfig borrows then restores, even when fn throws", () => {
+    loadShopPricingConfig({ maxColors: 8 }, "shopA@x.co");
+    const seen = withShopPricingConfig({ maxColors: 3 }, "shopB@x.co", () => getShopPricingConfigOwner());
+    expect(seen).toBe("shopB@x.co");                 // fn saw the borrowed owner
+    expect(getShopPricingConfigOwner()).toBe("shopA@x.co"); // restored after
+    expect(() => withShopPricingConfig({ maxColors: 3 }, "shopB@x.co", () => { throw new Error("boom"); })).toThrow("boom");
+    expect(getShopPricingConfigOwner()).toBe("shopA@x.co"); // restored despite throw
+  });
+
+  it("PC6 — restorePricingConfigSnapshot(undefined) clears to null safely", () => {
+    loadShopPricingConfig({ maxColors: 8 }, "shopA@x.co");
+    restorePricingConfigSnapshot(undefined);
+    expect(getShopPricingConfig()).toBe(null);
+    expect(getShopPricingConfigOwner()).toBe(null);
   });
 });
 
