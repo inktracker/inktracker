@@ -6,6 +6,9 @@ import { loadShopProductionTasks } from "@/lib/productionTasks";
 import { resolveTeamSubscription } from "@/lib/billing";
 import { userStateChanged } from "@/lib/auth/userStateChanged";
 import { clearMetricsCache } from "@/lib/qbMetricsCache";
+import { queryClientInstance } from "@/lib/query-client";
+import { setCacheShop } from "@/lib/queries/cachedEntity";
+import { shopScope } from "@/lib/shopScope";
 
 // Sentry is loaded lazily (kept off the critical path). Fire-and-forget so
 // importing @sentry never blocks auth — these run post-boot on login/logout.
@@ -147,6 +150,10 @@ export const AuthProvider = ({ children }) => {
     // Clear cached shop financials so they don't sit in localStorage for the
     // next person on a shared back-office machine.
     clearMetricsCache();
+    // Drop the react-query cache + tenant scope so the next account in this
+    // browser can't read the previous shop's cached rows (CACHE-03).
+    setCacheShop(null);
+    try { queryClientInstance.clear(); } catch { /* non-fatal */ }
     setAuthError({ type: "auth_required", message: "Authentication required" });
     lazySentry("clearSentryUser");
   }, []);
@@ -168,6 +175,8 @@ export const AuthProvider = ({ children }) => {
         setUser((prev) => (userStateChanged(prev, fullUser) ? fullUser : prev));
         setIsAuthenticated(true);
         setAuthError(null);
+        // Scope cached reads to this tenant (CACHE-03).
+        setCacheShop(shopScope(fullUser));
         // Tag future Sentry events with this user's opaque ID + their
         // shop_name (used as Sentry "username" + a filterable tag).
         // Triage shows "Biota Mfg" directly instead of needing a

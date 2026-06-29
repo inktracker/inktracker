@@ -37,10 +37,20 @@ function stable(value) {
   return value;
 }
 
+// Active tenant for cache scoping (CACHE-03). Set by AuthContext on login and
+// cleared on logout. Keys include it so two shops in the same browser session
+// (e.g. a broker switching accounts) can never read each other's cached rows —
+// defense-in-depth on top of RLS + clear-on-signout.
+let _activeShop = "_";
+export function setCacheShop(shop) {
+  _activeShop = shop || "_";
+}
+
 // Cache key for a read. Segment 1 is the resolved TABLE name so it matches the
-// ["entity", <table>] prefix that mutations invalidate.
+// ["entity", <table>] prefix that mutations invalidate; the active shop is a
+// later segment so prefix-invalidation still works across shops.
 export function entityKey(entity, params) {
-  return ["entity", resolveTable(entity), JSON.stringify(stable(params ?? {}))];
+  return ["entity", resolveTable(entity), _activeShop, JSON.stringify(stable(params ?? {}))];
 }
 
 /** Cached equivalent of base44.entities[entity].filter(filters, sort, limit, columns). */
