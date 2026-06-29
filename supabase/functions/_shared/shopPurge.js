@@ -27,6 +27,15 @@ export const SHOP_PURGE_TABLES = Object.freeze([
   { table: "inventory_items",  column: "shop_owner" },
   { table: "shop_performance", column: "shop_owner" },
   { table: "tax_categories",   column: "shop_owner" },
+  // Broker-side rows ABOUT this shop. Each is keyed by the shop owner's email
+  // (shop_owner column — see 20260501_rls_lockdown policies), so deleting the
+  // shop must take its broker rows too, or broker-held PII (performance, docs,
+  // files, notifications) is orphaned forever — the exact GDPR/CCPA gap
+  // PRIV-01 closes (NEW-04). broker_id-keyed rows for OTHER shops are untouched.
+  { table: "broker_notifications", column: "shop_owner" },
+  { table: "broker_performance",   column: "shop_owner" },
+  { table: "broker_documents",     column: "shop_owner" },
+  { table: "broker_files",         column: "shop_owner" },
   { table: "orders",           column: "shop_owner" },
   { table: "quotes",           column: "shop_owner" },
   { table: "customers",        column: "shop_owner" },
@@ -46,6 +55,11 @@ export const ARTWORK_SOURCE_TABLES = Object.freeze([
   { table: "orders",   column: "shop_owner" },
   { table: "messages", column: "shop_owner" },
   { table: "expenses", column: "shop_owner" },
+  // Broker doc/file tables can hold /artwork/ references for this shop too
+  // (NEW-04). extractArtworkPaths only matches the /artwork/ form, so listing
+  // them is safe even for rows that point at a different bucket.
+  { table: "broker_documents", column: "shop_owner" },
+  { table: "broker_files",     column: "shop_owner" },
 ]);
 
 // Pull artwork-bucket object paths out of a set of rows. Conservative: only
