@@ -15,7 +15,7 @@ vi.mock("@/api/supabaseClient", () => ({
   },
 }));
 
-import { cachedFilter, cachedList, entityKey, invalidateEntity } from "@/lib/queries/cachedEntity";
+import { cachedFilter, cachedList, entityKey, invalidateEntity, setCacheShop } from "@/lib/queries/cachedEntity";
 import { queryClientInstance } from "@/lib/query-client";
 
 beforeEach(() => {
@@ -37,6 +37,17 @@ describe("entityKey", () => {
 
   it("distinguishes different params", () => {
     expect(entityKey("Order", { a: 1 })).not.toEqual(entityKey("Order", { a: 2 }));
+  });
+
+  it("scopes keys by active shop (CACHE-03) while keeping the invalidation prefix", () => {
+    setCacheShop("shopA@x.co");
+    const a = entityKey("Order", { a: 1 });
+    setCacheShop("shopB@y.co");
+    const b = entityKey("Order", { a: 1 });
+    expect(a).not.toEqual(b);                 // different shops → different cache entries
+    expect(a.slice(0, 2)).toEqual(["entity", "orders"]); // prefix still matches mutation invalidation
+    expect(b.slice(0, 2)).toEqual(["entity", "orders"]);
+    setCacheShop(null); // reset for other tests
   });
 });
 
