@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { checkAdminTargetAccess } from "../_shared/adminTargetAccess.js";
+import { checkAdminTargetAccess, isAssignableRole } from "../_shared/adminTargetAccess.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -149,6 +149,14 @@ serve(async (req) => {
     if (action === "setRole") {
       if (!role) {
         return new Response(JSON.stringify({ error: "role required" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // SEC-06: reject 'admin' (platform-staff role) and any non-assignable
+      // role so a shop owner can't mint an admin / escalate via this endpoint.
+      if (!isAssignableRole(role)) {
+        return new Response(JSON.stringify({ error: "Invalid role. Allowed: shop, manager, employee, broker, user." }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

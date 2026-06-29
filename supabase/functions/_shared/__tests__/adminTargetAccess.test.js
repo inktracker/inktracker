@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { checkAdminTargetAccess } from "../adminTargetAccess.js";
+import { checkAdminTargetAccess, isAssignableRole } from "../adminTargetAccess.js";
 
 // The bug class this helper guards against:
 // Before extraction, adminAction's setRole + deleteUser had inline checks
@@ -95,5 +95,20 @@ describe("checkAdminTargetAccess", () => {
     it("returns not_found on no args at all", () => {
       expect(checkAdminTargetAccess()).toEqual({ ok: false, reason: "not_found" });
     });
+  });
+});
+
+describe("isAssignableRole (SEC-06 — no minting admins via setRole)", () => {
+  it("allows the tenant-scoped roles the AdminPanel uses", () => {
+    for (const r of ["shop", "manager", "employee", "broker", "user"]) {
+      expect(isAssignableRole(r)).toBe(true);
+    }
+  });
+  it("rejects 'admin' and anything not on the allowlist", () => {
+    expect(isAssignableRole("admin")).toBe(false);
+    expect(isAssignableRole("superuser")).toBe(false);
+    expect(isAssignableRole("")).toBe(false);
+    expect(isAssignableRole(null)).toBe(false);
+    expect(isAssignableRole(undefined)).toBe(false);
   });
 });
