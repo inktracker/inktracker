@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 

@@ -21,7 +21,7 @@ import {
   credsFromProfile,
   getAcBearerToken,
 } from "../_shared/ascolour.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadShopProfileForUser } from "../_shared/profileSecrets.ts";
 
 Deno.serve(async (req) => {

@@ -2,7 +2,7 @@
 // QB redirects here after user authorizes: ?code=...&state=...&realmId=...
 // Exchanges the code for tokens and stores them in the user's profile.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { buildOAuthTokenFields, refreshExpiryFromTokens } from "../_shared/connectionLogic.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
 

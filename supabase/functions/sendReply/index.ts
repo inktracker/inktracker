@@ -10,7 +10,7 @@
 // Authenticated request — RLS on messages table is enforced separately when
 // the frontend logs the row.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import { renderEmailLayout, EMAIL_INK } from "../_shared/emailLayout.ts";
 

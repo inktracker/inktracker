@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { checkAdminTargetAccess, isAssignableRole } from "../_shared/adminTargetAccess.js";
 import { authorizeShopPurge, SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, ARTWORK_SOURCE_TABLES, extractArtworkPaths } from "../_shared/shopPurge.js";
-import Stripe from "npm:stripe@14";
+import Stripe from "npm:stripe@14.25.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

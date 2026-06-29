@@ -6,7 +6,7 @@
 // have an authenticated session via supabase.functions.invoke(), so the
 // auth gate doesn't break legitimate use.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
 const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;

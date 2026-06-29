@@ -1,7 +1,7 @@
 // QuickBooks sync — handles all QB API operations from the InkTracker frontend.
 // Actions: checkConnection | createInvoice | syncExpense | getCustomers
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { mintPaymentLink } from "../_shared/qbPaymentLink.js";

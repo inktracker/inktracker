@@ -16,7 +16,7 @@
 // or unconfigured secret; fails OPEN only if Google's siteverify endpoint is
 // unreachable, so a Google outage can't take the funnel down.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

@@ -23,7 +23,7 @@
 // Subscription gate is intentionally NOT enforced — disconnecting
 // integrations should always work even on expired trials.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { updateProfileSecrets, loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 
 const SUPABASE_URL         = Deno.env.get("SUPABASE_URL")!;

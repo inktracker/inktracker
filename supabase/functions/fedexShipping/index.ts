@@ -1,5 +1,5 @@
 // FedEx Shipping — getRates, createShipment, trackShipment, validateAddress
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import {
   CORS, FEDEX_BASE, FEDEX_ACCOUNT_NUMBER, SHIPPER_ADDRESS, SHIPPER_CONTACT,
