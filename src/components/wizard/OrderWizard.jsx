@@ -1052,8 +1052,22 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <span className="text-xs text-[var(--brand)] font-semibold">Edit</span>
                     {garments.length > 1 && (
-                      <span onClick={(e) => { e.stopPropagation(); removeGarment(idx); }}
-                        className="text-xs text-red-400 hover:text-red-600">Remove</span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Remove garment"
+                        onClick={(e) => { e.stopPropagation(); removeGarment(idx); }}
+                        onKeyDown={(e) => {
+                          // Keyboard parity with the click handler (FE-03). This
+                          // sits inside the card <button>, so swallow the event
+                          // to keep Enter/Space from also toggling the card.
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            removeGarment(idx);
+                          }
+                        }}
+                        className="text-xs text-red-400 hover:text-red-600 cursor-pointer">Remove</span>
                     )}
                   </div>
                 </button>
