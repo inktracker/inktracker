@@ -4,6 +4,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { escapeHtml, sanitizeEmailBody } from "../_shared/emailSanitize.js";
 import {
   renderEmailLayout,
   renderEmailButton,
@@ -217,25 +218,17 @@ Deno.serve(async (req) => {
     const total = Number(quoteTotal || 0).toFixed(2);
 
     // Anything that flows from user-controlled fields (customer name from
-    // the public wizard, broker-set display name + email) needs HTML-
-    // escaping before it lands in the email body — otherwise a `<script>`
-    // or `<img onerror=…>` in any of those fields renders in the
-    // recipient's inbox. Same pattern sendReply + qbErrorDigest use.
-    const escapeHtml = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (ch) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    }[ch] || ch));
-
+    // the public wizard, broker-set display name + email, the custom body)
+    // needs HTML-escaping before it lands in the email body — otherwise a
+    // `<script>` or `<img onerror=…>` renders in the recipient's inbox. Shared,
+    // unit-tested escaper (escapes quotes too — INT-04).
     const firstName = escapeHtml((customerName || "").split(" ")[0] || "there");
     const safeBrokerName  = escapeHtml(brokerName);
     const safeBrokerEmail = escapeHtml(brokerEmail);
 
-    // If a custom body was provided, use it. Otherwise build a clean default.
-    const customBody = body ? body
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>") : "";
+    // Custom body: fully escape (incl. quotes), then newlines → <br>. Was
+    // escaping only &<> (INT-04) — fine in element content, latent elsewhere.
+    const customBody = sanitizeEmailBody(body);
 
     // Inline art proof(s). Strictly allowlisted: https + our public storage
     // path only, so a crafted payload can't smuggle a tracking pixel or a
