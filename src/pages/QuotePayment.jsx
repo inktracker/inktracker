@@ -848,10 +848,12 @@ export default function QuotePayment() {
             </>
           ) : (() => {
             // Broker quotes charge the client total, never the shop-side qb_total.
-            const effectiveTotal = customerFacingTotals(quote, {
+            // Coerce to a finite number — a missing/NaN total would render
+            // "$NaN" on the pay CTA (FE-10).
+            const effectiveTotal = Number(customerFacingTotals(quote, {
               qbStale: qbStaleFlag,
               fallbackTotal: totals.total,
-            }).total;
+            }).total) || 0;
             const depositPct = customer?.default_deposit_pct != null
               ? Number(customer.default_deposit_pct) || 0
               : parseFloat(quote?.deposit_pct) || 0;
@@ -893,25 +895,33 @@ export default function QuotePayment() {
                   By submitting payment, you approve the items, sizes, and decoration details on this quote and authorize production to begin.
                 </p>
 
-                <button
-                  onClick={handleCheckout}
-                  disabled={checkoutLoading || approveLoading}
-                  className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
-                >
-                  {checkoutLoading || approveLoading ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      {approveLoading ? "Approving…" : "Processing…"}
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard className="w-5 h-5" />
-                      {buttonLabel}
-                    </>
-                  )}
-                </button>
+                {/* Hide the pay CTA when there's no positive total — avoids a
+                    "$0.00"/"$NaN" pay button if totals didn't resolve (FE-10). */}
+                {effectiveTotal > 0 ? (
+                  <button
+                    onClick={handleCheckout}
+                    disabled={checkoutLoading || approveLoading}
+                    className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white font-bold py-4 rounded-xl transition flex items-center justify-center gap-2 text-base"
+                  >
+                    {checkoutLoading || approveLoading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        {approveLoading ? "Approving…" : "Processing…"}
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="w-5 h-5" />
+                        {buttonLabel}
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <div className="w-full bg-slate-50 border border-slate-200 rounded-xl py-4 text-center text-sm text-slate-600">
+                    This quote's total isn't available right now — please contact the shop.
+                  </div>
+                )}
 
-                {subLabel && (
+                {effectiveTotal > 0 && subLabel && (
                   <div className="mt-2 text-center text-xs text-slate-500">{subLabel}</div>
                 )}
 
