@@ -93,7 +93,7 @@ async function fetchUserWithProfile() {
       .select("pricing_config, timezone, production_tasks")
       .eq("owner_email", shopOwner)
       .maybeSingle();
-    loadShopPricingConfig(shop?.pricing_config || null);
+    loadShopPricingConfig(shop?.pricing_config || null, shopOwner);
     loadShopTimezone(shop?.timezone || null);
     loadShopProductionTasks(shop?.production_tasks || null);
   } catch {

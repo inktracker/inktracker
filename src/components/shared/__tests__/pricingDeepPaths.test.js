@@ -19,6 +19,8 @@ import {
   findLinkedPrints,
   loadShopPricingConfig,
   getShopPricingConfig,
+  getShopPricingConfigOwner,
+  detectPricingConfigBleed,
   getEnabledTechniques,
   STANDARD_MARKUP,
   FIRST_PRINT,
@@ -314,6 +316,25 @@ describe("Shop pricing config — load/get cycle", () => {
   it("PC2 — loadShopPricingConfig({}) treated as null (empty config)", () => {
     loadShopPricingConfig({});
     expect(getShopPricingConfig()).toBe(null);
+  });
+
+  it("PC-bleed — tracks the config owner and detects cross-shop bleed (CACHE-01)", () => {
+    loadShopPricingConfig({ maxColors: 8 }, "shopA@biota.co");
+    expect(getShopPricingConfigOwner()).toBe("shopA@biota.co");
+    // pricing a quote for a DIFFERENT shop than the loaded config → bleed
+    expect(detectPricingConfigBleed("shopB@other.co")).toBe(true);
+    // same shop → fine
+    expect(detectPricingConfigBleed("shopA@biota.co")).toBe(false);
+  });
+
+  it("PC-bleed — conservative: no flag when owner unknown or a broker pseudo-owner", () => {
+    loadShopPricingConfig({ maxColors: 8 }, null);
+    expect(detectPricingConfigBleed("shopC@x.co")).toBe(false);     // no loaded owner
+    loadShopPricingConfig({ maxColors: 8 }, "broker:me@x.co");
+    expect(detectPricingConfigBleed("shopD@x.co")).toBe(false);     // broker pseudo-owner loaded
+    loadShopPricingConfig({ maxColors: 8 }, "shopE@x.co");
+    expect(detectPricingConfigBleed("broker:me@x.co")).toBe(false); // broker pseudo-owner quote
+    expect(detectPricingConfigBleed(null)).toBe(false);             // blank/new quote
   });
 
   it("PC3 — non-empty config is stored and retrievable", () => {
