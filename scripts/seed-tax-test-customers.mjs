@@ -6,11 +6,10 @@
 // Run AFTER the tax stack is deployed (the migrations add the columns this
 // writes). All customers are prefixed "ZZ Tax Test —" so cleanup is trivial.
 //
-// Usage:
-//   SUPABASE_URL=https://<ref>.supabase.co \
-//   SUPABASE_SERVICE_ROLE_KEY=<service-role key> \
+// Usage (service-role key + URL come from the macOS Keychain via the wrapper;
+// SHOP_OWNER is passed inline):
 //   SHOP_OWNER=joe@biotamfg.co \
-//   node scripts/seed-tax-test-customers.mjs
+//   ./scripts/with-secrets.sh node scripts/seed-tax-test-customers.mjs
 //
 // Optional (defaults shown) — set states to match YOUR QuickBooks nexus:
 //   HOME_STATE=NV HOME_CITY=Reno      HOME_ZIP=89501      (a state you collect in)
@@ -19,7 +18,7 @@
 //   TEST_EMAIL=<where QB sends test invoices>   (defaults to SHOP_OWNER)
 //
 // Cleanup (removes the ZZ Tax Test customers):
-//   ... SHOP_OWNER=... node scripts/seed-tax-test-customers.mjs --cleanup
+//   SHOP_OWNER=... ./scripts/with-secrets.sh node scripts/seed-tax-test-customers.mjs --cleanup
 
 const URL = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;

@@ -8,9 +8,8 @@
 // `category`, `categoryLabel`, `decorationCount`, etc.) — only the
 // supplier-sourced fields are overwritten.
 //
-// Usage:
-//   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
-//     node scripts/resync-wizard-styles.mjs [--shop owner@email] [--dry]
+// Usage (service-role key + URL come from the macOS Keychain via the wrapper):
+//   ./scripts/with-secrets.sh node scripts/resync-wizard-styles.mjs [--shop owner@email] [--dry]
 //
 // Exits 0 on success, 1 if any row couldn't be enriched (e.g. supplier
 // has no record for that style).

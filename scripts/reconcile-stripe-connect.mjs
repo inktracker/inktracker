@@ -14,12 +14,13 @@
  *   SUPABASE_URL                     — https://<project-ref>.supabase.co
  *   SUPABASE_SERVICE_ROLE_KEY        — service_role key (bypasses RLS)
  *
- * Usage:
+ * Usage (with-secrets.sh supplies SUPABASE_SERVICE_ROLE_KEY + URL from the
+ * macOS Keychain; STRIPE_SECRET_KEY is still passed inline):
  *   # Dry run — prints what WOULD change, makes no writes (default):
- *   node scripts/reconcile-stripe-connect.mjs
+ *   STRIPE_SECRET_KEY=sk_live_... ./scripts/with-secrets.sh node scripts/reconcile-stripe-connect.mjs
  *
  *   # Apply — actually updates shops.stripe_account_status:
- *   node scripts/reconcile-stripe-connect.mjs --apply
+ *   STRIPE_SECRET_KEY=sk_live_... ./scripts/with-secrets.sh node scripts/reconcile-stripe-connect.mjs --apply
  *
  * Status mapping mirrors supabase/functions/stripeWebhook/index.ts:
  *   charges_enabled               → "active"

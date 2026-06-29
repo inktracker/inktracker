@@ -2,10 +2,11 @@
 // One-off diff between two quotes. Reads via Supabase service role so it
 // bypasses RLS. Run from the inktracker repo root:
 //
-//   SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOi... node scripts/diff-quotes.mjs Q-2026-EQGT Q-2026-3T0I
+//   ./scripts/with-secrets.sh node scripts/diff-quotes.mjs Q-2026-EQGT Q-2026-3T0I
 //
-// Get the service role key from Supabase dashboard → Settings → API → "service_role".
-// (Treat it like a password — never commit it.)
+// with-secrets.sh pulls SUPABASE_SERVICE_ROLE_KEY from the macOS Keychain
+// (one-time setup in scripts/with-secrets.sh) so the key never sits in a
+// plaintext .env. Treat it like a password — never commit it.
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -14,8 +15,8 @@ const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!URL || !KEY) {
   console.error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env var.");
-  console.error("Set them inline:");
-  console.error("  SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... node scripts/diff-quotes.mjs <quote_id_a> <quote_id_b>");
+  console.error("Run it through the Keychain wrapper:");
+  console.error("  ./scripts/with-secrets.sh node scripts/diff-quotes.mjs <quote_id_a> <quote_id_b>");
   process.exit(1);
 }
 
