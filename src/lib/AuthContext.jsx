@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from "react";
+import React, { createContext, useState, useContext, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/api/supabaseClient";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import { loadShopTimezone } from "@/lib/shopTimezone";
@@ -264,7 +264,11 @@ export const AuthProvider = ({ children }) => {
     return () => subscription.unsubscribe();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const logout = async (shouldRedirect = true) => {
+  // useCallback so the provider value (memoized below) stays referentially
+  // stable — only state changes should re-render consumers, not every render
+  // recreating these handlers (FE-02). Deps are empty: the body only touches
+  // stable setters + module-level imports.
+  const logout = useCallback(async (shouldRedirect = true) => {
     setUser(null);
     setIsAuthenticated(false);
     setNeedsMfaChallenge(false);
@@ -273,25 +277,41 @@ export const AuthProvider = ({ children }) => {
     setAuthError({ type: "auth_required", message: "Authentication required" });
     await supabase.auth.signOut();
     if (shouldRedirect) window.location.href = "/";
-  };
+  }, []);
 
   // In Supabase mode, login is handled by the LoginModal in App.jsx — no redirect needed
-  const navigateToLogin = () => {};
+  const navigateToLogin = useCallback(() => {}, []);
+
+  // Memoize so the context value's identity only changes when the auth state
+  // it carries changes — not on every AuthProvider render. The handlers are all
+  // useCallback-stable, so the deps are effectively the state values (FE-02).
+  const contextValue = useMemo(
+    () => ({
+      user,
+      isAuthenticated,
+      isLoadingAuth,
+      authError,
+      logout,
+      navigateToLogin,
+      checkAppState,
+      needsMfaChallenge,
+      markMfaChallengePassed,
+    }),
+    [
+      user,
+      isAuthenticated,
+      isLoadingAuth,
+      authError,
+      logout,
+      navigateToLogin,
+      checkAppState,
+      needsMfaChallenge,
+      markMfaChallengePassed,
+    ]
+  );
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated,
-        isLoadingAuth,
-        authError,
-        logout,
-        navigateToLogin,
-        checkAppState,
-        needsMfaChallenge,
-        markMfaChallengePassed,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );
