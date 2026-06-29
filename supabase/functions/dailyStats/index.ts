@@ -38,10 +38,6 @@ function isoDaysAgo(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
-function sum(rows: any[], col: string): number {
-  return rows.reduce((s, r) => s + Number(r?.[col] ?? 0), 0);
-}
-
 // Constant-time string compare for the shared-secret bearer token. Standard
 // practice for any verifier check where length-prefix short-circuit could
 // leak timing info — even though the entropy of BRIEFING_TOKEN makes
@@ -72,29 +68,13 @@ Deno.serve(async (req) => {
   const since7d  = isoDaysAgo(7);
 
   try {
-    // ── Quotes sent (any status — counts as "quoted out the door") ──
-    const [q24, q7] = await Promise.all([
-      supabase.from("quotes").select("total").gte("created_at", since24h),
-      supabase.from("quotes").select("total").gte("created_at", since7d),
-    ]);
-    if (q24.error) throw q24.error;
-    if (q7.error)  throw q7.error;
-
-    // ── Invoices created (revenue billed) ──
-    const [i24, i7] = await Promise.all([
-      supabase.from("invoices").select("total").gte("created_at", since24h),
-      supabase.from("invoices").select("total").gte("created_at", since7d),
-    ]);
-    if (i24.error) throw i24.error;
-    if (i7.error)  throw i7.error;
-
-    // ── Payments received (paid > 0, paid_date in window) ──
-    const [p24, p7] = await Promise.all([
-      supabase.from("invoices").select("paid").gt("paid", 0).gte("paid_date", since24h),
-      supabase.from("invoices").select("paid").gt("paid", 0).gte("paid_date", since7d),
-    ]);
-    if (p24.error) throw p24.error;
-    if (p7.error)  throw p7.error;
+    // ── Revenue aggregates (count + sum), computed in SQL (SCALE-03) ──
+    // Was: SELECT every quotes.total / invoices.total / invoices.paid row
+    // platform-wide then sum in JS — unbounded memory. Now one RPC does the
+    // count()/sum() in Postgres against the created_at/shop indexes.
+    const rev = await supabase.rpc("daily_briefing_revenue");
+    if (rev.error) throw rev.error;
+    const R = (rev.data ?? {}) as Record<string, number>;
 
     // ── New shops (profiles with shop/admin role) ──
     const [s24, s7] = await Promise.all([
@@ -137,16 +117,16 @@ Deno.serve(async (req) => {
     return json({
       revenue: {
         quotes_sent: {
-          last_24h: { count: q24.data!.length, total: sum(q24.data!, "total") },
-          last_7d:  { count: q7.data!.length,  total: sum(q7.data!,  "total") },
+          last_24h: { count: R.quotes_24h_count ?? 0, total: R.quotes_24h_total ?? 0 },
+          last_7d:  { count: R.quotes_7d_count ?? 0,  total: R.quotes_7d_total ?? 0 },
         },
         invoiced: {
-          last_24h: { count: i24.data!.length, total: sum(i24.data!, "total") },
-          last_7d:  { count: i7.data!.length,  total: sum(i7.data!,  "total") },
+          last_24h: { count: R.invoices_24h_count ?? 0, total: R.invoices_24h_total ?? 0 },
+          last_7d:  { count: R.invoices_7d_count ?? 0,  total: R.invoices_7d_total ?? 0 },
         },
         payments: {
-          last_24h: { count: p24.data!.length, total: sum(p24.data!, "paid") },
-          last_7d:  { count: p7.data!.length,  total: sum(p7.data!,  "paid") },
+          last_24h: { count: R.payments_24h_count ?? 0, total: R.payments_24h_total ?? 0 },
+          last_7d:  { count: R.payments_7d_count ?? 0,  total: R.payments_7d_total ?? 0 },
         },
       },
       shops: {
