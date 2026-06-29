@@ -88,12 +88,14 @@ export default function MfaGate({ userId, userEmail, onPass }) {
   }
 
   async function applyFailure(reason) {
+    void reason;
     const next = failedAttempts + 1;
     setFailedAttempts(next);
     setCode("");
-    try {
-      await logMfaEvent("signin_code_failed", { metadata: { attempt: next, reason } });
-    } catch { /* best-effort */ }
+    // Note: the verify RPC already records 'signin_code_failed' server-side
+    // (and counts it toward the SEC-02 lockout), so we deliberately do NOT
+    // log it again here — double-logging would trip the server lockout at
+    // half the intended threshold.
     if (next >= MAX_ATTEMPTS) {
       const lockUntil = Date.now() + LOCKOUT_MS;
       setLockedUntil(lockUntil);
@@ -126,6 +128,15 @@ export default function MfaGate({ userId, userEmail, onPass }) {
         if (v.error === "expired") {
           setError("That code expired. Click Resend to get a new one.");
           setCode("");
+        } else if (v.error === "locked_out") {
+          // Server enforced the SEC-02 brute-force lockout — mirror it in the
+          // UI and sign out, same as the client-side cap path.
+          const lockUntil = Date.now() + LOCKOUT_MS;
+          setLockedUntil(lockUntil);
+          try { localStorage.setItem(LOCKOUT_STORAGE_KEY, String(lockUntil)); } catch { /* ignore */ }
+          setCode("");
+          try { await supabase.auth.signOut(); } catch { /* ignore */ }
+          setError(`Too many failed attempts. Wait ${Math.ceil(LOCKOUT_MS / 60000)} minutes before trying again. You've been signed out.`);
         } else {
           await applyFailure(v.error);
         }

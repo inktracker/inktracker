@@ -200,8 +200,8 @@ describe("verifyMfaSignInCode", () => {
     expect(result).toEqual({ ok: true });
   });
 
-  it("surfaces 'expired' and 'invalid' as the failure error", async () => {
-    for (const status of ["expired", "invalid"]) {
+  it("surfaces 'expired', 'invalid', and 'locked_out' as the failure error", async () => {
+    for (const status of ["expired", "invalid", "locked_out"]) {
       rpcMock.mockResolvedValueOnce({ data: { status }, error: null });
       const r = await verifyMfaSignInCode("999999");
       expect(r).toEqual({ ok: false, error: status });
