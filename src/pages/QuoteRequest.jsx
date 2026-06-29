@@ -92,7 +92,12 @@ export default function QuoteRequest() {
             loadShopPricingConfig(s.pricing_config, s.owner_email);
           }
         }
-      } catch {} finally {
+      } catch (e) {
+        // Don't swallow silently (FE-08): a failed config load drops the wizard
+        // to platform defaults with no signal. Surface it to console/Sentry so
+        // the degraded state is diagnosable instead of invisible.
+        console.error("[QuoteRequest] shop load failed:", e);
+      } finally {
         setShopLoading(false);
       }
     }

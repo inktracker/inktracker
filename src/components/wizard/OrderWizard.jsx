@@ -1220,15 +1220,15 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
               {/* Style # search — now lives below the entire accordion as
                   the "can't find it here?" escape hatch. */}
               <div>
-                <label className="block text-xs text-slate-500 mb-1">Or search by style #</label>
+                <label htmlFor="wiz-style-search" className="block text-xs text-slate-500 mb-1">Or search by style #</label>
                 <form onSubmit={handleSSLookup} className="flex gap-1.5">
-                  <input value={ssLookupInput} onChange={(e) => setSsLookupInput(e.target.value)} placeholder="e.g. 5001"
+                  <input id="wiz-style-search" value={ssLookupInput} onChange={(e) => setSsLookupInput(e.target.value)} placeholder="e.g. 5001"
                     className="flex-1 text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" disabled={ssLookupLoading} />
                     <button type="submit" disabled={ssLookupLoading||!ssLookupInput.trim()}
                       className="text-sm font-semibold text-[var(--brand)] border border-[var(--brand-tint)] px-3 py-2 rounded-xl hover:bg-[var(--brand-tint)] disabled:opacity-50">
                       {ssLookupLoading ? "…" : "Go"}</button>
                   </form>
-                {ssLookupError && <div className="text-xs text-red-500 mt-1">{ssLookupError}</div>}
+                {ssLookupError && <div role="alert" className="text-xs text-red-500 mt-1">{ssLookupError}</div>}
               </div>
               {/* Legacy below-the-categories block kept guarded as a
                   no-op render — falls through to false now that styles
@@ -1338,7 +1338,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                   })()}
                 </div>
               ) : !enrichingStyle ? (
-                <input value={color} onChange={e=>setColor(e.target.value)} placeholder="e.g. Black, Navy, Heather Grey"
+                <input value={color} aria-label="Garment color" onChange={e=>setColor(e.target.value)} placeholder="e.g. Black, Navy, Heather Grey"
                   className="w-full text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" />
               ) : null}
             </div>
@@ -1381,7 +1381,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                       const stock = inv[sz] ?? inv[sz.replace("XL","X")] ?? null;
                       return (<div key={sz} className="text-center">
                         <div className={`text-xs font-bold mb-1 ${BIG_SIZES.includes(sz)?"text-amber-600":"text-slate-500"}`}>{sz}</div>
-                        <input type="number" min="0" value={sizes[sz]||""} onChange={e=>setSizes(prev=>({...prev,[sz]:Math.max(0,Math.min(100000,parseInt(e.target.value,10)||0))}))}
+                        <input type="number" min="0" aria-label={`Quantity for size ${sz}`} value={sizes[sz]||""} onChange={e=>setSizes(prev=>({...prev,[sz]:Math.max(0,Math.min(100000,parseInt(e.target.value,10)||0))}))}
                           placeholder="0" className={`w-full text-center text-sm border rounded-xl py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] dark:text-slate-200 ${BIG_SIZES.includes(sz)?"border-amber-200 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700":"border-slate-200 dark:border-slate-600 dark:bg-slate-800"}`} />
                         {hasInv && <div className={`text-[10px] mt-1 ${stock!=null&&stock>0?(stock<50?"text-amber-500":"text-emerald-500"):"text-red-400"}`}>
                           {stock!=null?(stock>0?`${stock} avail`:"out"):"—"}</div>}
@@ -1540,8 +1540,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                 {key:"phone",label:"Phone",placeholder:"(775) 555-0000",type:"tel"},
               ].map(f=>(
                 <div key={f.key}>
-                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{f.label}</label>
-                  <input type={f.type} value={contact[f.key]} onChange={e=>setContact(c=>({...c,[f.key]:e.target.value}))}
+                  <label htmlFor={`wiz-${f.key}`} className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">{f.label}</label>
+                  <input id={`wiz-${f.key}`} type={f.type} value={contact[f.key]} onChange={e=>setContact(c=>({...c,[f.key]:e.target.value}))}
                     placeholder={f.placeholder}
                     className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" />
                 </div>
@@ -1549,13 +1549,13 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">In-Hands Date</label>
-                <input type="date" value={contact.dueDate} onChange={e=>setContact(c=>({...c,dueDate:e.target.value}))}
+                <label htmlFor="wiz-dueDate" className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">In-Hands Date</label>
+                <input id="wiz-dueDate" type="date" value={contact.dueDate} onChange={e=>setContact(c=>({...c,dueDate:e.target.value}))}
                   className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Art / Special Notes</label>
-                <textarea rows={3} value={contact.notes} onChange={e=>setContact(c=>({...c,notes:e.target.value}))}
+                <label htmlFor="wiz-notes" className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Art / Special Notes</label>
+                <textarea id="wiz-notes" rows={3} value={contact.notes} onChange={e=>setContact(c=>({...c,notes:e.target.value}))}
                   placeholder="File format, special instructions, ink color refs…"
                   className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] resize-none" />
               </div>
@@ -1567,8 +1567,8 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
             </label>
             {contact.taxExempt && (
               <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Resale / Tax Exempt Certificate #</label>
-                <input type="text" value={contact.taxId} onChange={e => setContact(c => ({ ...c, taxId: e.target.value }))}
+                <label htmlFor="wiz-taxId" className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Resale / Tax Exempt Certificate #</label>
+                <input id="wiz-taxId" type="text" value={contact.taxId} onChange={e => setContact(c => ({ ...c, taxId: e.target.value }))}
                   placeholder="e.g. NV-12345678"
                   className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" />
               </div>
@@ -1699,7 +1699,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
               </div>
               <div className="p-5">
                 {submitError && (
-                  <div className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
+                  <div role="alert" className="mb-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
                     {submitError}
                   </div>
                 )}
