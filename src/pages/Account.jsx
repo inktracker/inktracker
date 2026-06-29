@@ -257,6 +257,14 @@ export default function Account() {
   }, [location.search]);
 
   async function handleSave() {
+    // Tax rate: don't silently coerce invalid/out-of-range input to 0% (FE-05).
+    // Empty is allowed (= 0%, tax-exempt shop); a typed value must be 0–100.
+    const trRaw = String(taxRate).trim();
+    const trNum = parseFloat(trRaw);
+    if (trRaw !== "" && (!Number.isFinite(trNum) || trNum < 0 || trNum > 100)) {
+      notify.error("Tax rate must be a number between 0 and 100.");
+      return;
+    }
     setSaving(true);
     try {
       // Compose full_name from first + last so the 30+ legacy display
@@ -278,7 +286,7 @@ export default function Account() {
         state: stateVal.trim().toUpperCase(),
         zip: zip.trim(),
         website: website.trim() || null,
-        default_tax_rate: parseFloat(taxRate) || 0,
+        default_tax_rate: trRaw === "" ? 0 : Math.max(0, Math.min(100, trNum)),
       });
 
       // Timezone lives on the shops table (so it applies to every user in

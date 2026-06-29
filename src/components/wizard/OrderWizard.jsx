@@ -1367,7 +1367,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                       const stock = inv[sz] ?? inv[sz.replace("XL","X")] ?? null;
                       return (<div key={sz} className="text-center">
                         <div className={`text-xs font-bold mb-1 ${BIG_SIZES.includes(sz)?"text-amber-600":"text-slate-500"}`}>{sz}</div>
-                        <input type="number" min="0" value={sizes[sz]||""} onChange={e=>setSizes(prev=>({...prev,[sz]:parseInt(e.target.value)||0}))}
+                        <input type="number" min="0" value={sizes[sz]||""} onChange={e=>setSizes(prev=>({...prev,[sz]:Math.max(0,Math.min(100000,parseInt(e.target.value,10)||0))}))}
                           placeholder="0" className={`w-full text-center text-sm border rounded-xl py-2.5 focus:outline-none focus:ring-2 focus:ring-[var(--brand)] dark:text-slate-200 ${BIG_SIZES.includes(sz)?"border-amber-200 bg-amber-50 dark:bg-amber-900/30 dark:border-amber-700":"border-slate-200 dark:border-slate-600 dark:bg-slate-800"}`} />
                         {hasInv && <div className={`text-[10px] mt-1 ${stock!=null&&stock>0?(stock<50?"text-amber-500":"text-emerald-500"):"text-red-400"}`}>
                           {stock!=null?(stock>0?`${stock} avail`:"out"):"—"}</div>}
