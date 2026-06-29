@@ -801,7 +801,7 @@ export default function QuotePayment() {
           )}
 
           {approveError && (
-            <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
+            <div role="alert" className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <span className="text-sm text-red-700">{approveError}</span>
             </div>
@@ -826,7 +826,7 @@ export default function QuotePayment() {
                the shop handles payment out-of-band. */
             <>
               {approveError && (
-                <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
+                <div role="alert" className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                   <span className="text-sm text-red-700">{approveError}</span>
                 </div>
@@ -885,7 +885,7 @@ export default function QuotePayment() {
                 )}
 
                 {checkoutError && (
-                  <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
+                  <div role="alert" className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
                     <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                     <span className="text-sm text-red-700">{checkoutError}</span>
                   </div>

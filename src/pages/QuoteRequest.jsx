@@ -26,6 +26,9 @@ export default function QuoteRequest() {
   // That's the "split-second wrong color" flash. Brief spinner during
   // load is better than that flicker.
   const [shopLoading, setShopLoading] = useState(true);
+  // True when the shop's config didn't load — the wizard still works on platform
+  // defaults, but we tell the visitor so a wrong-looking price isn't silent (FE-08).
+  const [shopLoadFailed, setShopLoadFailed] = useState(false);
 
   // reCAPTCHA v3 — the wizard is the highest-volume anonymous write surface, so
   // its submission is gated server-side (wizardSubmit edge function). We obtain
@@ -76,6 +79,9 @@ export default function QuoteRequest() {
         );
         if (cfgErr) console.error("[QuoteRequest] shop config error:", cfgErr);
         const s = cfg?.shop || null;
+        // No config resolved → wizard falls back to platform defaults. Flag it
+        // so the visitor sees a notice rather than a silently-wrong price (FE-08).
+        if (!s) setShopLoadFailed(true);
         if (s) {
           setShop(s);
           if (s.wizard_styles?.length) setWizardStyles(s.wizard_styles);
@@ -97,6 +103,7 @@ export default function QuoteRequest() {
         // to platform defaults with no signal. Surface it to console/Sentry so
         // the degraded state is diagnosable instead of invisible.
         console.error("[QuoteRequest] shop load failed:", e);
+        setShopLoadFailed(true);
       } finally {
         setShopLoading(false);
       }
@@ -162,6 +169,12 @@ export default function QuoteRequest() {
           </div>
         ) : (
           <>
+            {shopLoadFailed && (
+              <div role="alert" className="mb-6 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+                We couldn't load this shop's latest pricing, so the estimate below may be approximate.
+                You can still submit your request — the shop will confirm the final quote.
+              </div>
+            )}
             <OrderWizard
               onSubmit={handleSubmit}
               styles={wizardStyles}
