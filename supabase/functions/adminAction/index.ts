@@ -1,7 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkAdminTargetAccess, isAssignableRole } from "../_shared/adminTargetAccess.js";
-import { authorizeShopPurge, SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS } from "../_shared/shopPurge.js";
+import { authorizeShopPurge, SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, ARTWORK_SOURCE_TABLES, extractArtworkPaths } from "../_shared/shopPurge.js";
+import Stripe from "npm:stripe@14";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -525,11 +526,31 @@ serve(async (req) => {
       const { count: profileCount } = await adminClient.from("profiles").select("id", { count: "exact", head: true })
         .or(`shop_owner.eq.${target},email.eq.${target}`);
 
+      // Collect this shop's artwork-bucket paths from its rows (the artwork
+      // bucket is flat/unscoped, so the only safe way to find a shop's artwork
+      // is via the shop's own rows — never another tenant's).
+      const collectArtwork = async (): Promise<Set<string>> => {
+        const set = new Set<string>();
+        for (const { table, column } of ARTWORK_SOURCE_TABLES) {
+          const { data: rows } = await adminClient.from(table).select("*").eq(column, target);
+          for (const p of extractArtworkPaths(rows || [])) set.add(p);
+        }
+        return set;
+      };
+
       if (apply !== true) {
-        return json({ dryRun: true, shopOwner: target, wouldDelete: counts, profiles: profileCount ?? 0, buckets: SHOP_PURGE_BUCKETS });
+        const artworkPreview = await collectArtwork();
+        return json({
+          dryRun: true, shopOwner: target, wouldDelete: counts,
+          profiles: profileCount ?? 0,
+          buckets: [...SHOP_PURGE_BUCKETS, "artwork"],
+          artworkObjects: artworkPreview.size,
+        });
       }
 
-      // ── APPLY: delete tenant rows, storage, profiles, auth user ──────────
+      // ── APPLY: delete rows, storage, Stripe customer, profiles, auth user ──
+      const artworkPaths = await collectArtwork(); // BEFORE deleting the rows
+
       const deleted: Record<string, number | string> = {};
       for (const { table, column } of SHOP_PURGE_TABLES) {
         const { error } = await adminClient.from(table).delete().eq(column, target);
@@ -537,6 +558,7 @@ serve(async (req) => {
       }
 
       const bucketsCleared: Record<string, number | string> = {};
+      // Prefixed buckets (tax-certificates): remove by the "<shop>/" prefix.
       for (const bucket of SHOP_PURGE_BUCKETS) {
         try {
           const { data: objs } = await adminClient.storage.from(bucket).list(target, { limit: 1000 });
@@ -550,8 +572,19 @@ serve(async (req) => {
           bucketsCleared[bucket] = `ERR ${(e as Error).message}`;
         }
       }
+      // Artwork (flat bucket): remove only the objects this shop's rows referenced.
+      if (artworkPaths.size > 0) {
+        try {
+          const { data: removed, error } = await adminClient.storage.from("artwork").remove([...artworkPaths]);
+          bucketsCleared["artwork"] = error ? `ERR ${error.message}` : (removed?.length ?? artworkPaths.size);
+        } catch (e) {
+          bucketsCleared["artwork"] = `ERR ${(e as Error).message}`;
+        }
+      } else {
+        bucketsCleared["artwork"] = 0;
+      }
 
-      // Owner profile (for auth-user deletion + Stripe id capture).
+      // Owner profile (for auth-user deletion + Stripe customer).
       const { data: ownerProfile } = await adminClient.from("profiles")
         .select("id, auth_id").eq("email", target).maybeSingle();
       let stripeCustomerId: string | null = null;
@@ -560,10 +593,22 @@ serve(async (req) => {
           .select("stripe_customer_id").eq("profile_id", ownerProfile.id).maybeSingle();
         stripeCustomerId = secrets?.stripe_customer_id ?? null;
       }
+      // Delete the Stripe customer (cancels subscriptions + removes their PII
+      // from Stripe). Best-effort — never block the data purge on Stripe.
+      let stripeDeleted = false;
+      const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+      if (stripeCustomerId && stripeKey) {
+        try {
+          const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
+          await stripe.customers.del(stripeCustomerId);
+          stripeDeleted = true;
+        } catch (e) {
+          console.error("[purgeShopData] stripe customer delete failed:", (e as Error).message);
+        }
+      }
 
       // Team-member profiles (shop_owner = target), then the owner's own profile
-      // + auth user. Stripe customer deletion is intentionally left as an
-      // out-of-band step — the id is recorded in the audit log below.
+      // + auth user.
       await adminClient.from("profiles").delete().eq("shop_owner", target);
       if (ownerProfile?.auth_id) {
         try { await adminClient.auth.admin.deleteUser(ownerProfile.auth_id); } catch { /* may already be gone */ }
@@ -584,7 +629,8 @@ serve(async (req) => {
         shopOwner: target,
         purged: deleted,
         buckets: bucketsCleared,
-        stripeCustomerToDelete: stripeCustomerId,
+        stripeCustomerId,
+        stripeDeleted,
       });
     }
 

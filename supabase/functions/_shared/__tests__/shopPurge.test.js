@@ -1,5 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, authorizeShopPurge } from "../shopPurge.js";
+import { SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS, authorizeShopPurge, extractArtworkPaths, ARTWORK_SOURCE_TABLES } from "../shopPurge.js";
+
+describe("extractArtworkPaths", () => {
+  it("pulls bucket paths from public + signed URLs in row JSON, deduped", () => {
+    const rows = [
+      { selected_artwork: ["https://x.supabase.co/storage/v1/object/public/artwork/1776-abc.png"] },
+      { attachment_url: "https://x.supabase.co/storage/v1/object/sign/artwork/1776-abc.png?token=zz" },
+      { line_items: [{ mockup: "https://x/storage/v1/object/public/artwork/sub/dir/file2.jpg" }] },
+    ];
+    const paths = extractArtworkPaths(rows);
+    expect(paths).toContain("1776-abc.png");
+    expect(paths).toContain("sub/dir/file2.jpg");
+    expect(paths.filter((p) => p === "1776-abc.png").length).toBe(1); // deduped across rows
+  });
+  it("ignores non-artwork strings and bad input", () => {
+    expect(extractArtworkPaths([{ note: "see /tax-certificates/abc.pdf and /artworkish/no.png" }])).toEqual([]);
+    expect(extractArtworkPaths(null)).toEqual([]);
+    expect(extractArtworkPaths([null, 5, "x"])).toEqual([]);
+  });
+  it("ARTWORK_SOURCE_TABLES are shop_owner-keyed", () => {
+    expect(ARTWORK_SOURCE_TABLES.every((t) => t.column === "shop_owner")).toBe(true);
+  });
+});
 
 describe("SHOP_PURGE_TABLES", () => {
   it("covers the known tenant tables and is frozen", () => {

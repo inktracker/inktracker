@@ -38,6 +38,38 @@ export const SHOP_PURGE_TABLES = Object.freeze([
 // paths aren't shop-scoped yet, so deleting by prefix isn't safe here).
 export const SHOP_PURGE_BUCKETS = Object.freeze(["tax-certificates"]);
 
+// Tables whose rows reference artwork-bucket objects (used to find a shop's
+// artwork for purge — the bucket is flat/unscoped so we can only resolve a
+// shop's artwork from its own rows, never another shop's).
+export const ARTWORK_SOURCE_TABLES = Object.freeze([
+  { table: "quotes",   column: "shop_owner" },
+  { table: "orders",   column: "shop_owner" },
+  { table: "messages", column: "shop_owner" },
+  { table: "expenses", column: "shop_owner" },
+]);
+
+// Pull artwork-bucket object paths out of a set of rows. Conservative: only
+// matches the explicit `/artwork/<path>` form (public or signed URLs, or stored
+// references), so we never delete an object a string merely resembles. Returns
+// a deduped array of bucket-relative paths (URL-decoded, query stripped).
+export function extractArtworkPaths(rows) {
+  const found = new Set();
+  const re = /\/artwork\/([A-Za-z0-9._\-/]+)/g;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    let blob;
+    try { blob = JSON.stringify(row); } catch { continue; }
+    if (!blob) continue;
+    let m;
+    while ((m = re.exec(blob)) !== null) {
+      let p = m[1];
+      try { p = decodeURIComponent(p); } catch { /* keep raw */ }
+      p = p.split("?")[0].replace(/\/+$/, "");
+      if (p) found.add(p);
+    }
+  }
+  return [...found];
+}
+
 /**
  * May `caller` purge the shop owned by `targetEmail`?
  *   - platform admin: yes (any shop)
