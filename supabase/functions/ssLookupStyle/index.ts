@@ -254,6 +254,20 @@ Deno.serve(async (req) => {
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
         { auth: { persistSession: false, autoRefreshToken: false } },
       );
+      // RL-02: the per-shop limiter below keys on the CLIENT-SUPPLIED shopOwner,
+      // which an attacker can rotate to mint a fresh bucket each call. Add a
+      // server-derived per-IP cap so rotation can't evade it. 100/hr is generous
+      // for a real wizard session (a handful of style lookups per quote).
+      const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+      const { data: ipUnder } = await rateAdmin.rpc("check_request_rate", {
+        p_key: `ss_lookup:${ip}`, p_limit_per_hr: 100,
+      });
+      if (ipUnder === false) {
+        return Response.json(
+          { error: "Too many requests — please try again shortly." },
+          { status: 429, headers: CORS },
+        );
+      }
       const { data: allowed, error: rateErr } = await rateAdmin.rpc(
         "check_supplier_lookup_rate",
         { p_shop_owner: shopOwner },
