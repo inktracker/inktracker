@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkAdminTargetAccess, isAssignableRole } from "../_shared/adminTargetAccess.js";
+import { authorizeShopPurge, SHOP_PURGE_TABLES, SHOP_PURGE_BUCKETS } from "../_shared/shopPurge.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,7 +47,7 @@ serve(async (req) => {
     // Use service-role client to look up profile — avoids any RLS restrictions
     const { data: callerProfile } = await adminClient
       .from("profiles")
-      .select("role, email, shop_name")
+      .select("role, email, shop_name, shop_owner")
       .eq("auth_id", user.id)
       .maybeSingle();
 
@@ -487,6 +488,103 @@ serve(async (req) => {
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── purgeShopData (PRIV-01) ──────────────────────────────────────────
+    // Full erasure of a shop's data footprint for account deletion (GDPR/CCPA).
+    // DRY-RUN by default — returns the row counts that WOULD be deleted; pass
+    // apply:true to actually delete. Authorized to a platform admin or the shop
+    // owner purging THEIR OWN shop, and gated on a typed `confirm` === shop
+    // owner email. Every applied purge writes an immutable data_purge_log row.
+    if (action === "purgeShopData") {
+      const json = (b: unknown, status = 200) =>
+        new Response(JSON.stringify(b), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      const { shopOwner, confirm, apply } = body;
+      const callerRole = callerProfile?.role;
+      const callerShop = callerProfile?.shop_owner || callerProfile?.email; // shopScope equivalent
+      const authz = authorizeShopPurge({ callerRole, callerShop, targetEmail: shopOwner, confirm });
+      if (!authz.ok) {
+        const status = authz.reason === "forbidden" ? 403 : 400;
+        const messages: Record<string, string> = {
+          no_target: "shopOwner is required.",
+          confirm_mismatch: "Confirmation does not match the shop owner email.",
+          forbidden: "You can only purge your own shop.",
+        };
+        return json({ error: messages[authz.reason] ?? "Purge refused." }, status);
+      }
+      const target = String(shopOwner).trim();
+
+      // Count what would be deleted (dry-run output + pre-apply verification).
+      const counts: Record<string, number | string> = {};
+      for (const { table, column } of SHOP_PURGE_TABLES) {
+        const { count, error } = await adminClient.from(table).select(column, { count: "exact", head: true }).eq(column, target);
+        counts[table] = error ? `ERR ${error.message}` : (count ?? 0);
+      }
+      const { count: profileCount } = await adminClient.from("profiles").select("id", { count: "exact", head: true })
+        .or(`shop_owner.eq.${target},email.eq.${target}`);
+
+      if (apply !== true) {
+        return json({ dryRun: true, shopOwner: target, wouldDelete: counts, profiles: profileCount ?? 0, buckets: SHOP_PURGE_BUCKETS });
+      }
+
+      // ── APPLY: delete tenant rows, storage, profiles, auth user ──────────
+      const deleted: Record<string, number | string> = {};
+      for (const { table, column } of SHOP_PURGE_TABLES) {
+        const { error } = await adminClient.from(table).delete().eq(column, target);
+        deleted[table] = error ? `ERR ${error.message}` : (counts[table] ?? 0);
+      }
+
+      const bucketsCleared: Record<string, number | string> = {};
+      for (const bucket of SHOP_PURGE_BUCKETS) {
+        try {
+          const { data: objs } = await adminClient.storage.from(bucket).list(target, { limit: 1000 });
+          if (objs && objs.length) {
+            await adminClient.storage.from(bucket).remove(objs.map((o: { name: string }) => `${target}/${o.name}`));
+            bucketsCleared[bucket] = objs.length;
+          } else {
+            bucketsCleared[bucket] = 0;
+          }
+        } catch (e) {
+          bucketsCleared[bucket] = `ERR ${(e as Error).message}`;
+        }
+      }
+
+      // Owner profile (for auth-user deletion + Stripe id capture).
+      const { data: ownerProfile } = await adminClient.from("profiles")
+        .select("id, auth_id").eq("email", target).maybeSingle();
+      let stripeCustomerId: string | null = null;
+      if (ownerProfile?.id) {
+        const { data: secrets } = await adminClient.from("profile_secrets")
+          .select("stripe_customer_id").eq("profile_id", ownerProfile.id).maybeSingle();
+        stripeCustomerId = secrets?.stripe_customer_id ?? null;
+      }
+
+      // Team-member profiles (shop_owner = target), then the owner's own profile
+      // + auth user. Stripe customer deletion is intentionally left as an
+      // out-of-band step — the id is recorded in the audit log below.
+      await adminClient.from("profiles").delete().eq("shop_owner", target);
+      if (ownerProfile?.auth_id) {
+        try { await adminClient.auth.admin.deleteUser(ownerProfile.auth_id); } catch { /* may already be gone */ }
+      }
+      await adminClient.from("profiles").delete().eq("email", target);
+
+      await adminClient.from("data_purge_log").insert({
+        shop_owner: target,
+        performed_by: callerProfile?.email || user.email,
+        performed_by_role: callerRole,
+        counts: deleted,
+        buckets_cleared: bucketsCleared,
+        stripe_customer_id: stripeCustomerId,
+      });
+
+      return json({
+        success: true,
+        shopOwner: target,
+        purged: deleted,
+        buckets: bucketsCleared,
+        stripeCustomerToDelete: stripeCustomerId,
       });
     }
 
