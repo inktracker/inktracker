@@ -39,6 +39,18 @@ describe("SHOP_PURGE_TABLES", () => {
     const names = SHOP_PURGE_TABLES.map((t) => t.table);
     expect(new Set(names).size).toBe(names.length);
   });
+  it("purges broker-side PII tables keyed by shop_owner (NEW-04 — orphaned otherwise)", () => {
+    const names = SHOP_PURGE_TABLES.map((t) => t.table);
+    for (const t of ["broker_notifications", "broker_performance", "broker_documents", "broker_files"]) {
+      expect(names).toContain(t);
+      expect(SHOP_PURGE_TABLES.find((x) => x.table === t).column).toBe("shop_owner");
+    }
+  });
+  it("scans broker doc/file tables for artwork too (NEW-04)", () => {
+    const names = ARTWORK_SOURCE_TABLES.map((t) => t.table);
+    expect(names).toContain("broker_documents");
+    expect(names).toContain("broker_files");
+  });
   it("clears the private tax-certificate bucket", () => {
     expect(SHOP_PURGE_BUCKETS).toContain("tax-certificates");
   });
