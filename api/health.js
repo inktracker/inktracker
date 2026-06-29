@@ -28,9 +28,11 @@ export default async function handler(req, res) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
-    const r = await fetch(`${url}/rest/v1/`, {
-      method: "HEAD",
-      headers: { apikey: anon, Authorization: `Bearer ${anon}` },
+    // GoTrue's liveness endpoint — public-with-apikey, returns 200 when the
+    // Supabase platform is up. (The PostgREST root requires a session and 401s.)
+    const r = await fetch(`${url}/auth/v1/health`, {
+      method: "GET",
+      headers: { apikey: anon },
       signal: controller.signal,
     });
     clearTimeout(timeout);
