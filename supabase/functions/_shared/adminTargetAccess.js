@@ -41,3 +41,14 @@ export function checkAdminTargetAccess({ targetProfile, adminEmail } = {}) {
   }
   return { ok: false, reason: "cross_shop" };
 }
+
+// Roles that setRole is allowed to assign (audit SEC-06). 'admin' is the
+// platform-staff role that bypasses subscription gates and tenant scoping —
+// it must NEVER be mintable through the app (a shop owner could otherwise
+// promote an in-shop user to admin). Provision real admins out-of-band (SQL).
+// Everything else assignable here is tenant-scoped.
+export const ASSIGNABLE_ROLES = Object.freeze(["shop", "manager", "employee", "broker", "user"]);
+
+export function isAssignableRole(role) {
+  return ASSIGNABLE_ROLES.includes(role);
+}
