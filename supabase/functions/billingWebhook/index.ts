@@ -1,5 +1,5 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
-import Stripe from "npm:stripe@14";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import Stripe from "npm:stripe@14.25.0";
 import { claimWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
 import { sendApprovalNotification } from "../_shared/approvalNotificationEmail.js";
 import { buildTrialWillEndEmail } from "../_shared/trialWillEndEmail.js";

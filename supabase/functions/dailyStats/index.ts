@@ -21,7 +21,7 @@
 //     generated_at: <iso>,
 //   }
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { CORS } from "../_shared/cors.ts";
 
 const SUPABASE_URL              = Deno.env.get("SUPABASE_URL")!;

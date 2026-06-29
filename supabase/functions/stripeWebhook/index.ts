@@ -8,8 +8,8 @@
 //      URL: https://<your-project-ref>.supabase.co/functions/v1/stripeWebhook
 //      Events: checkout.session.completed, checkout.session.expired
 
-import { createClient } from "npm:@supabase/supabase-js@2";
-import Stripe from "npm:stripe@14";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import Stripe from "npm:stripe@14.25.0";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { claimWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
 import { insertShopNotification } from "../_shared/notifications.js";

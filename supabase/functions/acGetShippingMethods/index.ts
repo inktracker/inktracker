@@ -16,7 +16,7 @@ import {
   credsFromProfile,
   type AcCreds,
 } from "../_shared/ascolour.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadShopProfileForUser } from "../_shared/profileSecrets.ts";
 
 async function resolveCreds(accessToken?: string): Promise<AcCreds | null> {

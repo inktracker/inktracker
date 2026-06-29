@@ -3,7 +3,7 @@
 //       https://api.ssactivewear.com/V2/Styles.aspx
 // Auth: HTTP Basic, username = account number, password = API key
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 import { buildSupplierCacheKey, readSupplierCache, writeSupplierCache } from "../_shared/supplierCache.ts";
 

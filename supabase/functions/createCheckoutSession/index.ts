@@ -1,8 +1,8 @@
 // Handles quote loading, approval, Stripe checkout session creation, and shop owner notifications.
 // Public — no JWT required (customer-facing quote payment page).
 
-import { createClient } from "npm:@supabase/supabase-js@2";
-import Stripe from "npm:stripe@14";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import Stripe from "npm:stripe@14.25.0";
 import {
   chooseQuoteApprovalRecipient,
   chooseArtworkApprovalRecipient,

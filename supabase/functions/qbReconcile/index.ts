@@ -27,7 +27,7 @@
 // Deploy: npx supabase functions deploy qbReconcile --no-verify-jwt
 // (CRON_SECRET is the actual auth, not the Supabase JWT.)
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import {
   loadProfileWithSecrets,
   updateProfileSecrets,

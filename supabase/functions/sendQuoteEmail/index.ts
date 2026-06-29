@@ -2,7 +2,7 @@
 // Sends FROM quotes@inktracker.app (verified domain) with Reply-To set to the
 // shop owner or broker's actual email so replies go directly to them.
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import { escapeHtml, sanitizeEmailBody } from "../_shared/emailSanitize.js";
 import {
