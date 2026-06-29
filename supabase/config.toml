@@ -70,12 +70,6 @@ verify_jwt = false
 [functions.fedexShipping]
 verify_jwt = false
 
-[functions.hello-world]
-enabled = true
-verify_jwt = true
-import_map = "./functions/hello-world/deno.json"
-entrypoint = "./functions/hello-world/index.ts"
-
 [functions.dailyStats]
 verify_jwt = false
 
@@ -92,9 +86,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.onboardingAssistant]
-verify_jwt = false
-
-[functions.sendMfaRecoveryEmail]
 verify_jwt = false
 
 [functions.sendMfaSignInCode]
