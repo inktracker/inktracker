@@ -16,10 +16,12 @@
 -- thread, then delete the orphans, then enforce NOT NULL.
 
 -- quotes ← customer's shop
+-- NB: quotes.customer_id is TEXT, customers.id is UUID (the DB-03 mismatch),
+-- so compare on the UUID's text form.
 UPDATE public.quotes q
    SET shop_owner = c.shop_owner
   FROM public.customers c
- WHERE q.shop_owner IS NULL AND q.customer_id = c.id AND c.shop_owner IS NOT NULL;
+ WHERE q.shop_owner IS NULL AND q.customer_id = c.id::text AND c.shop_owner IS NOT NULL;
 
 -- messages ← linked quote/order (thread_id = "quote:<quote_id>" / "order:<order_id>")
 UPDATE public.messages m
