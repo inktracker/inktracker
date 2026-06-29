@@ -492,6 +492,26 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, quoteId, token, ...rest } = body;
 
+    // RL-04: rate-limit the customer-facing read + session actions by client IP
+    // (server-derived — never a client-supplied key). These take a quoteId/
+    // orderId + token from an emailed link; an IP cap is defense-in-depth
+    // against token brute-force / record enumeration and Stripe-session spam.
+    // The mutation/notify actions (approveQuote, approveArtwork) already have
+    // their own per-record backstops, so they're not gated here.
+    const RL_LIMITS: Record<string, number> = { getQuote: 120, getOrder: 120, createSession: 30 };
+    if (RL_LIMITS[action]) {
+      const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+      const { data: underLimit } = await serviceClient().rpc("check_request_rate", {
+        p_key: `ccs:${action}:${ip}`, p_limit_per_hr: RL_LIMITS[action],
+      });
+      if (underLimit === false) {
+        return Response.json(
+          { error: "Too many requests — please slow down and try again shortly." },
+          { status: 429, headers: CORS },
+        );
+      }
+    }
+
     let result: any;
 
     switch (action) {
