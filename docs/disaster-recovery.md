@@ -1,15 +1,22 @@
 # InkTracker — Disaster Recovery Runbook
 
 What to do when data is lost or corrupted. Backups are only as good as a
-tested restore — this is that procedure. Last reviewed 2026-06-14.
+tested restore — this is that procedure. Last reviewed 2026-06-28.
 
 ## What we have today (Free tier)
 
 - **Daily physical backups** of the Postgres database, managed by
   Supabase (WAL-G enabled). Verified via the Management API:
   `pitr_enabled: false`, `walg_enabled: true`, region `us-west-2`.
-- **Recovery point (RPO):** up to ~24 hours. A restore rolls back to the
-  most recent daily backup — anything done since that backup is lost.
+- **Nightly Storage backup** of the `artwork` + `tax-certificates` buckets to a
+  GitHub artifact (`.github/workflows/storage-backup.yml`) — Supabase's daily
+  backup does NOT cover Storage. See "Storage backups" below.
+- **Recovery point (RPO):** up to ~24 hours (DB daily backup; Storage nightly).
+  A restore rolls back to the most recent backup — anything since is lost.
+- **Recovery time (RTO) target: ~4 hours** — from declaring an incident to a
+  verified-restored app: DB restore (Supabase, ~30–60 min) + Storage re-upload
+  from the artifact + redeploy frontend/functions + the post-restore
+  verification below. Target until the restore drill is run (see OPS-03 drill).
 - **No point-in-time recovery yet** — see "When to enable PITR" below.
 
 ## Detection layers (so you find out FAST)
@@ -21,7 +28,49 @@ These run before you'd ever need a restore:
   9 months.
 - **Nightly QB reconciliation** — catches missed payment webhooks + drift.
 - **QB error digest** — alerts on a spike of QuickBooks errors.
-- **Sentry** — runtime error capture.
+- **Uptime monitor** (OPS-04) — `.github/workflows/uptime.yml` hits the prod
+  frontend + `/api/health` hourly; a non-200 fails the job → GitHub emails
+  admins. Runs on GitHub's infra so it still fires when Vercel/Supabase are
+  down. For 1–5 min granularity, also point a free UptimeRobot/healthchecks
+  monitor at `https://www.inktracker.app/api/health`.
+- **Reconcile dead-man's-switch** (OPS-05) — the reconcile cron pings
+  healthchecks.io on success; the monitor pages if no ping arrives in ~26h, so
+  a silently-stopped cron is caught (set `HEALTHCHECK_RECONCILE_URL`).
+- **Sentry** — runtime error capture (frontend; edge instrumentation is a
+  follow-up — needs an edge SENTRY_DSN).
+
+## Storage backups (OPS-02)
+
+Supabase's daily backup is **Postgres only** — Storage is not included, so a
+clean DB restore would still leave every artwork/cert reference dangling and
+lose tax-compliance documents.
+
+- **Backup:** `.github/workflows/storage-backup.yml` runs `scripts/backup-storage.mjs`
+  nightly (04:30 UTC), downloading every object in `artwork` + `tax-certificates`
+  into a GitHub artifact (`storage-backup-<run_id>`, 30-day retention). Needs
+  repo secrets `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`.
+- **Restore:** download the most recent `storage-backup` artifact from the
+  Actions run, then re-upload per bucket preserving paths, e.g.
+  `supabase storage cp --recursive ./artwork "ss:///artwork"` (or the dashboard
+  / a small upload script using the service role). Paths must match exactly —
+  `tax-certificates` objects live under `<shop_owner>/<uuid>` (SEC-01).
+- **Caveat:** the artifact is a recovery point, not a high-durability store
+  (capped retention/size). It complements, not replaces, enabling Supabase
+  PITR + a proper offsite once paying.
+
+## Restore drill (OPS-03 — run once, then annually)
+
+The procedure below is written but UNTESTED until this drill is done. Run it
+into a throwaway Supabase project to validate the chain and confirm the ~4h RTO:
+
+1. Create a scratch Supabase project; apply `supabase/migrations/` to it.
+2. Restore the latest DB backup (or load a dump) into it.
+3. Download the latest `storage-backup` artifact and re-upload both buckets.
+4. Set the function secrets the app needs (QB, Stripe, Resend, suppliers).
+5. Point a preview frontend at the scratch project; sign in.
+6. Verify: `SELECT * FROM data_integrity_violations();` is all-zero, a shop's
+   quotes/orders render, a cert's signed URL opens, and QuickBooks resolves.
+7. Record the wall-clock time as the measured RTO; update the target above.
 
 ## Restore procedure (daily backup)
 

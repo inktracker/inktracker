@@ -13,6 +13,15 @@ name: QB nightly reconcile
 # the Supabase `CRON_SECRET` function secret:
 #   gh secret set CRON_SECRET        # paste the value
 # Test immediately via the "Run workflow" button (workflow_dispatch).
+#
+# DEAD-MAN'S-SWITCH (audit OPS-05): a failed run shows a red ❌ + emails admins,
+# but nothing fires if the cron silently STOPS running (disabled, scheduler
+# outage) — that recreated the original 9-month blindspot. Fix: on success we
+# ping an external monitor; configure a free healthchecks.io check (period
+# 1 day, grace 2h) and add its ping URL as a repo secret so it pages if no ping
+# arrives in ~26h:
+#   gh secret set HEALTHCHECK_RECONCILE_URL   # https://hc-ping.com/<uuid>
+# (Optional — the heartbeat step no-ops if the secret is unset.)
 
 on:
   schedule:
@@ -47,4 +56,15 @@ jobs:
           if [ "$code" != "200" ]; then
             echo "::error::qbReconcile returned $code (401 = CRON_SECRET mismatch with Supabase)."
             exit 1
+          fi
+      - name: Heartbeat (dead-man's-switch)
+        # Only reached on a SUCCESSFUL reconcile (prior step exits 1 on failure).
+        # Pings the external monitor so it pages if the cron ever stops pinging.
+        env:
+          HEALTHCHECK_RECONCILE_URL: ${{ secrets.HEALTHCHECK_RECONCILE_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_RECONCILE_URL" ]; then
+            curl -fsS -m 10 --retry 3 "$HEALTHCHECK_RECONCILE_URL" >/dev/null && echo "heartbeat sent"
+          else
+            echo "HEALTHCHECK_RECONCILE_URL not set — skipping heartbeat (see workflow header to enable the dead-man's-switch)."
           fi
