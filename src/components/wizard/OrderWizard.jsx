@@ -713,10 +713,15 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
       console.warn("[colorAnalyzer] failed:", err);
     }
 
-    // File upload — store the URL
+    // File upload — store the URL. Also keep a LOCAL blob url for the in-wizard
+    // preview (eyedropper): the wizard is anonymous and pre-quote, so it can't
+    // build a proxy link, and once the artwork bucket is private (M-1) the
+    // stored public url won't render. The blob is of the file the customer just
+    // picked — no storage round-trip needed.
     try {
+      const previewUrl = URL.createObjectURL(file);
       const { file_url } = await uploadFile(file);
-      setArtFiles(prev => ({ ...prev, [idx]: { name: file.name, url: file_url } }));
+      setArtFiles(prev => ({ ...prev, [idx]: { name: file.name, url: file_url, previewUrl } }));
     } catch (err) {
       // Notify so the customer knows the artwork didn't attach — otherwise
       // they see the filename + color analysis and assume the upload worked.
@@ -1458,7 +1463,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
                           <span className="text-emerald-600 font-semibold truncate flex-1">✓ {artFiles[idx].name}</span>
                           <button onClick={()=>{setArtFiles(prev=>{const n={...prev};delete n[idx];return n;}); setColorResults(prev=>{const n={...prev};delete n[idx];return n;});}} className="text-slate-500 hover:text-red-500 text-xs">Remove</button>
                         </div>
-                        <ColorAnalysisResult result={colorResults[idx]} imageUrl={artFiles[idx]?.url}
+                        <ColorAnalysisResult result={colorResults[idx]} imageUrl={artFiles[idx]?.previewUrl || artFiles[idx]?.url}
                           onApplyCount={(count, pantones) => updateImprint(idx, { colors: Math.min(8, Math.max(1, count)), ...(pantones ? { pantones } : {}) })} />
                       </div>
                     ) : (
