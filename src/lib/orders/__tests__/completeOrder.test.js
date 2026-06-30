@@ -180,6 +180,36 @@ describe("buildOrderCompletionPlan — invoiceCreate shape", () => {
     expect(plan.invoiceCreate.due).toBe("2026-06-11");
   });
 
+  it("projects ALL QB-relevant pricing fields onto the invoice (no silent QB drops)", () => {
+    // The invoice is what buildQBInvoicePayload reads, so every field it needs
+    // must be carried — else the QB invoice diverges from the order.
+    const order = {
+      ...baseOrder,
+      setup_total: 45,
+      additional_charges: [{ label: "Shipping", amount: 85, taxable: true }],
+      discount_type: "flat",
+      deposit_pct: 50,
+      deposit_paid: true,
+    };
+    const plan = buildOrderCompletionPlan(order, { today: TODAY, shopOwner: SHOP });
+    expect(plan.invoiceCreate).toMatchObject({
+      setup_total: 45,
+      additional_charges: order.additional_charges,
+      discount_type: "flat",
+      deposit_pct: 50,
+      deposit_paid: true,
+    });
+  });
+
+  it("defaults the projected fields safely when the order lacks them", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, { today: TODAY, shopOwner: SHOP });
+    expect(plan.invoiceCreate.setup_total).toBe(0);
+    expect(plan.invoiceCreate.additional_charges).toBeNull();
+    expect(plan.invoiceCreate.discount_type).toBe("percent");
+    expect(plan.invoiceCreate.deposit_pct).toBe(0);
+    expect(plan.invoiceCreate.deposit_paid).toBe(false);
+  });
+
   it("uses the override invoiceId when supplied (for deterministic tests)", () => {
     const plan = buildOrderCompletionPlan(baseOrder, {
       today: TODAY,

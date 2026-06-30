@@ -133,6 +133,16 @@ export function buildOrderCompletionPlan(
     // "Setup & Screen Fees" line (buildQBInvoicePayload reads setup_total).
     // Without it the QB invoice under-bills by the setup amount (NEW-09).
     setup_total: order.setup_total || 0,
+    // Carry the rest of the pricing fields the QB invoice builder reads, so an
+    // order-derived QB invoice matches the order exactly (parity with the
+    // quote→QB path). Missing these silently diverged QB from InkTracker:
+    //   - additional_charges: one-off fees emitted as QB lines (was dropped → under-bill)
+    //   - discount_type: flat vs percent (was absent → a flat discount read as %)
+    //   - deposit_pct/deposit_paid: credits a paid deposit (was absent → over-charge)
+    additional_charges: order.additional_charges ?? null,
+    discount_type: order.discount_type || "percent",
+    deposit_pct: order.deposit_pct ?? 0,
+    deposit_paid: !!order.deposit_paid,
     paid: false,
     status: "Sent",
     line_items: order.line_items || [],
