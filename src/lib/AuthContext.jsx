@@ -114,7 +114,7 @@ async function fetchUserWithProfile() {
     try {
       const { data } = await supabase
         .from("profiles")
-        .select("subscription_tier, subscription_status, trial_ends_at")
+        .select("subscription_tier, subscription_status, trial_ends_at, past_due_since")
         .eq("email", shopOwner)
         .maybeSingle();
       ownerSub = data || null;

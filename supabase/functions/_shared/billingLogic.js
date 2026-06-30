@@ -170,7 +170,27 @@ export function subscriptionBlocksWrites(gov = {}, now = Date.now()) {
     const endsAt = new Date(trial).getTime();
     if (Number.isFinite(endsAt) && endsAt < now) return true;
   }
-  return false; // active / trialing / past_due / trial-in-window / unknown → allow
+  // BILL-03: a past_due subscription keeps full access for a grace window, then
+  // collapses to read-only (writes blocked). Within grace / unknown start → allow.
+  if (pastDueGraceElapsed(gov, now)) return true;
+  return false; // active / trialing / past_due-in-grace / trial-in-window / unknown → allow
+}
+
+// BILL-03: how long a past_due subscription keeps full (read-write) access
+// before collapsing to read-only. MUST stay in lockstep with the SQL function
+// public.has_active_subscription() and the frontend mirror in src/lib/billing.js.
+export const PAST_DUE_GRACE_DAYS = 7;
+
+// True once a past_due subscription has exhausted its grace window — writes are
+// then blocked (read-only). Within grace, or when we don't know when it lapsed
+// (no past_due_since stamped), returns false (still read-write).
+export function pastDueGraceElapsed(gov = {}, now = Date.now()) {
+  const status = gov?.status ?? gov?.subscription_status ?? null;
+  if (status !== "past_due") return false;
+  const since = gov?.pastDueSince ?? gov?.past_due_since ?? null;
+  if (!since) return false;
+  const t = new Date(since).getTime();
+  return Number.isFinite(t) && t < now - PAST_DUE_GRACE_DAYS * 86400000;
 }
 
 // Subscription metadata we attach to every Stripe checkout. Stripe

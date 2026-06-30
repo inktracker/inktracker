@@ -4,6 +4,8 @@
 // Returns null if the subscription is active, or a Response to return
 // immediately if expired/canceled.
 
+import { pastDueGraceElapsed } from "./billingLogic.js";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -68,8 +70,15 @@ export function requireActiveSubscription(profile: Profile | null): Response | n
     return null;
   }
 
-  // Past due — allow with warning (Stripe retries payment)
+  // Past due — allow during the grace window (Stripe retries payment), then
+  // block writes once grace is exhausted (BILL-03: read-only after 7 days).
   if (status === "past_due") {
+    if (pastDueGraceElapsed(profile)) {
+      return new Response(
+        JSON.stringify({ error: "Your subscription payment is past due. Update your card to keep making changes — your account is read-only until it's resolved." }),
+        { status: 403, headers: { ...CORS, "Content-Type": "application/json" } },
+      );
+    }
     return null;
   }
 
