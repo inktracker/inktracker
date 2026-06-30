@@ -60,9 +60,9 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
   useEffect(() => {
     const shop = shopName || "Your Shop";
     if (isPaid) {
-      setSubject(`Receipt for Invoice ${invoice.invoice_id} from ${shop}`);
+      setSubject(`Your order is ready — ${shop}`);
       setBody(
-        `Hi ${invoice.customer_name || "there"},\n\nThank you — your invoice has been paid in full. A copy is attached for your records.\n\nInvoice: ${invoice.invoice_id}\nTotal: ${fmtMoney(invoice.total)} (Paid)\n\nWe appreciate your business!\n${shop}`
+        `Hi ${invoice.customer_name || "there"},\n\nGreat news — your order is ready! Your invoice has been paid in full; a copy is attached for your records.\n\nInvoice: ${invoice.invoice_id}\nTotal: ${fmtMoney(invoice.total)} (Paid)\n\nThank you for your business!\n${shop}`
       );
       return;
     }

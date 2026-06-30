@@ -431,14 +431,18 @@ async function mintInvoicePaymentLink(
   invoiceId: string,
   billEmail: string | null,
   initialInvoice: any,
+  skipSend = false,
 ): Promise<{ link: string | null; finalInvoice: any; reason: string | null }> {
   // Thin wrapper over the pure, unit-tested orchestrator in
   // ../_shared/qbPaymentLink.js: try include=invoiceLink (no email) first, fall
   // back to /send (emails) only if it yields no link. Keeps the duplicate QB
-  // email off by default while never breaking payment.
+  // email off by default while never breaking payment. When skipSend is set
+  // (invoice/order flow), the /send fallback is suppressed entirely — QB never
+  // emails the customer.
   const result = await mintPaymentLink({
     initialInvoice,
     billEmail,
+    skipSend,
     extractLink: sharedExtractPaymentLink,
     fetchLink: async () => {
       const r = await qbFetchInvoiceWithLink(token, realmId, invoiceId);
@@ -697,6 +701,9 @@ const extractPaymentLink = (invoiceData: any, _realmId?: string) => sharedExtrac
 
 async function handleCreateInvoice(token: string, realmId: string, params: any, supabase: any) {
   const { quote, customer, invoicePayload } = params;
+  // When true, suppress QBO's /send fallback so creating the invoice never
+  // emails the customer (invoice/order flow — the shop sends via InkTracker).
+  const noEmail = !!params?.noEmail;
 
   if (!invoicePayload?.lines?.length) {
     throw new Error("Missing invoicePayload — frontend must compute quote totals");
@@ -1138,7 +1145,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       `(drift $${reconciliation.taxDrift.toFixed(2)}) — payment link NOT minted; customer send blocked.`,
     );
   } else {
-    const linkResult = await mintInvoicePaymentLink(token, realmId, qbInvoiceId, billEmail, initialInvoice);
+    const linkResult = await mintInvoicePaymentLink(token, realmId, qbInvoiceId, billEmail, initialInvoice, noEmail);
     paymentLink = linkResult.link;
     linkFailureReason = linkResult.reason;
   }
