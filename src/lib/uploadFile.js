@@ -56,7 +56,7 @@ export async function uploadFile(file) {
 // validation as uploadFile (extension/size + scriptable-SVG rejection) so this
 // path is no less safe than the artwork one. `ownerId` namespaces the key and
 // is sanitized — never trust it raw in a storage path.
-const LOGO_BUCKET = "public";
+const LOGO_BUCKET = "logos";
 export async function uploadLogo(file, ownerId = "") {
   const ext = validateUploadCandidate(file);
   await rejectDangerousSvg(file, ext);

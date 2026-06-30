@@ -60,10 +60,10 @@ async function main() {
     try {
       const { data: blob, error: dlErr } = await admin.storage.from("artwork").download(srcPath);
       if (dlErr || !blob) throw new Error(`download failed: ${dlErr?.message || "no data"}`);
-      const { error: upErr } = await admin.storage.from("public")
+      const { error: upErr } = await admin.storage.from("logos")
         .upload(destPath, blob, { upsert: false, cacheControl: "31536000", contentType: blob.type || undefined });
       if (upErr) throw new Error(`upload failed: ${upErr.message}`);
-      const { data: pub } = admin.storage.from("public").getPublicUrl(destPath);
+      const { data: pub } = admin.storage.from("logos").getPublicUrl(destPath);
       const { error: updErr } = await admin.from("profiles").update({ logo_url: pub.publicUrl }).eq("id", p.id);
       if (updErr) throw new Error(`profile update failed: ${updErr.message}`);
       console.log(`  ✓ migrated: ${label}`);
