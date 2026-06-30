@@ -40,12 +40,15 @@ export async function uploadFile(file) {
 
   if (error) throw error;
 
-  // We return BOTH the bucket-relative path and the legacy public URL.
-  //   - `path` is the new canonical reference; callers that store it can
-  //     ask for a fresh signed URL on demand via `signArtworkUrl(path)`.
-  //   - `file_url` is the public URL the bucket currently serves. Kept
-  //     for backward compatibility with the dozens of consumers that
-  //     read `file_url` directly off the upload result.
+  // `path` is the canonical reference — new callers should store it and call
+  // signArtworkUrl(path) (the artwork bucket is now PRIVATE; M-1).
+  //
+  // `file_url` is a legacy public-FORM URL. The bucket no longer serves it
+  // (private), but it's retained because every reader resolves the bucket path
+  // back out of it (resolveArtworkPath) and the artworkProof proxy authorizes
+  // the path from this `/artwork/<path>` form — so it still works as a path-
+  // carrier for the dozens of consumers that read `file_url` off the result.
+  // It is NOT a live URL; never render it directly without signing.
   const file_url = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}`;
   return { path, file_url };
 }
