@@ -10,6 +10,7 @@
 // Returns: { quoteId, id } on success; { error } on failure.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { captureError } from "../_shared/observability.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -244,6 +245,7 @@ Deno.serve(async (req) => {
       customerMatched: !!customerId,
     });
   } catch (err) {
+    await captureError(err, { fn: "createQuoteFromPayload" });
     console.error("createQuoteFromPayload error:", err);
     return json({ error: (err as Error).message }, 500);
   }

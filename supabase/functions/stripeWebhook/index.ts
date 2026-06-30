@@ -9,6 +9,7 @@
 //      Events: checkout.session.completed, checkout.session.expired
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { captureError } from "../_shared/observability.ts";
 import Stripe from "npm:stripe@14.25.0";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { claimWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
@@ -446,6 +447,7 @@ Deno.serve(async (req) => {
 
     return Response.json({ received: true }, { headers: CORS });
   } catch (err) {
+    await captureError(err, { fn: "stripeWebhook" });
     console.error("[stripeWebhook] Error processing event:", err);
     return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
   }

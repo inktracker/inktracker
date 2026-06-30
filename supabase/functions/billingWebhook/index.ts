@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { captureError } from "../_shared/observability.ts";
 import Stripe from "npm:stripe@14.25.0";
 import { claimWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
 import { sendApprovalNotification } from "../_shared/approvalNotificationEmail.js";
@@ -258,6 +259,7 @@ Deno.serve(async (req) => {
       headers: { ...CORS, "Content-Type": "application/json" },
     });
   } catch (err) {
+    await captureError(err, { fn: "billingWebhook" });
     console.error("billingWebhook error:", err);
     const message = err instanceof Error ? err.message : String(err);
     return new Response(JSON.stringify({ error: message }), {

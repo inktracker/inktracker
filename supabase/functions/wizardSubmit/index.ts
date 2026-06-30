@@ -17,6 +17,7 @@
 // unreachable, so a Google outage can't take the funnel down.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { captureError } from "../_shared/observability.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -79,6 +80,7 @@ Deno.serve(async (req) => {
 
     return json({ id: data });
   } catch (err) {
+    await captureError(err, { fn: "wizardSubmit" });
     console.error("[wizardSubmit] error:", err);
     return json({ error: String((err as Error)?.message ?? err) }, 500);
   }

@@ -53,8 +53,14 @@ Deno.serve(async (req) => {
     // ── Idempotency claim (INT-01) ──────────────────────────────────
     // Guard against placing the same real-money order twice. Key is a stable
     // per-submit UUID from the client; shop_owner is derived server-side.
+    // REQUIRED: a missing key means we can't dedup, so we refuse the order
+    // outright rather than risk a duplicate supplier purchase (reject BEFORE
+    // any supplier POST).
     const shopOwner = (profile?.email || user.email || "") as string;
-    const idemKey = typeof idempotencyKey === "string" ? idempotencyKey : "";
+    const idemKey = typeof idempotencyKey === "string" ? idempotencyKey.trim() : "";
+    if (!idemKey) {
+      return Response.json({ error: "idempotencyKey is required." }, { status: 400, headers: CORS });
+    }
     if (idemKey && shopOwner) {
       let claim;
       try {

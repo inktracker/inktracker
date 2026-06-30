@@ -33,6 +33,19 @@ jobs:
       - name: Check edge function syntax
         run: npm run check:functions
 
+      # Reproducible edge deploys (supply chain): fail CI if any edge-function
+      # dependency drifts from the committed lockfile. `--frozen` errors instead
+      # of updating the lock, so a new/changed transitive dep can't ship
+      # unpinned. npm: specifiers are already exact-pinned in source; this locks
+      # the rest (deno.land/std, etc.).
+      - name: Set up Deno
+        uses: denoland/setup-deno@909cc5acb0fdd60627fb858598759246509fa755 # v2
+        with:
+          deno-version: v2.x
+
+      - name: Verify edge deps are locked (frozen)
+        run: npm run check:functions:lock
+
       # Production build — catches things vitest can't, like orphan
       # imports from pages that aren't unit-tested. Vercel runs the
       # same command at deploy time, so a green check here matches

@@ -119,7 +119,12 @@ Deno.serve(async (req) => {
     // network-timeout retry, two tabs). Key = the purchase_orders UUID;
     // shop_owner is derived server-side, never trusted from the client.
     const shopOwner = profile?.email || user.email || "";
-    const idempotencyKey = typeof body?.idempotencyKey === "string" ? body.idempotencyKey : "";
+    // REQUIRED: without a key we can't dedup, so refuse the order rather than
+    // risk a duplicate real-money supplier purchase (reject BEFORE any POST).
+    const idempotencyKey = typeof body?.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
+    if (!idempotencyKey) {
+      return Response.json({ error: "idempotencyKey is required." }, { status: 400, headers: CORS });
+    }
     if (idempotencyKey && shopOwner) {
       let claim;
       try {

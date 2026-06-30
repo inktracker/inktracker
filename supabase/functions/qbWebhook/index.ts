@@ -8,6 +8,7 @@
 // Deploy: npx supabase functions deploy qbWebhook --no-verify-jwt
 
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import { captureError } from "../_shared/observability.ts";
 import { claimWebhookEventDetailed, CLAIM_OUTCOMES, extractQbEventId } from "../_shared/webhookIdempotency.js";
 import { logEvent } from "../_shared/qbAudit.js";
 import { verifyQbSignature } from "../_shared/qbWebhookSignature.js";
@@ -390,6 +391,7 @@ Deno.serve(async (req) => {
     // QB expects a 200 response to confirm receipt
     return new Response("ok", { status: 200, headers: CORS });
   } catch (err) {
+    await captureError(err, { fn: "qbWebhook" });
     console.error("[qbWebhook] Error:", err);
     // Still return 200 so QB doesn't keep retrying on parse errors
     return new Response("ok", { status: 200, headers: CORS });
