@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { uploadFile } from "@/lib/uploadFile";
+import { uploadFile, openSignedArtwork } from "@/lib/uploadFile";
 import { filterAndSortClients } from "@/lib/broker/clientFilter";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import {
@@ -545,6 +545,7 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                       <div className="flex items-center gap-2 shrink-0">
                         <a
                           href={art.url}
+                          onClick={(e) => { e.preventDefault(); openSignedArtwork(art.path || art.url); }}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-1.5 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-lg transition"
