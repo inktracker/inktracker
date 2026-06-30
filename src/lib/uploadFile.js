@@ -50,6 +50,26 @@ export async function uploadFile(file) {
   return { path, file_url };
 }
 
+// Shop / broker LOGOS are public branding (not customer artwork), and they're
+// embedded in emails where they can't be signed — so they live in the public
+// `public` bucket, NOT the artwork bucket (which is going private — M-1). Same
+// validation as uploadFile (extension/size + scriptable-SVG rejection) so this
+// path is no less safe than the artwork one. `ownerId` namespaces the key and
+// is sanitized — never trust it raw in a storage path.
+const LOGO_BUCKET = "public";
+export async function uploadLogo(file, ownerId = "") {
+  const ext = validateUploadCandidate(file);
+  await rejectDangerousSvg(file, ext);
+  const safeId = String(ownerId || "logo").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || "logo";
+  const path = `logos/${safeId}_${Date.now()}.${ext}`;
+  const { error } = await supabase.storage
+    .from(LOGO_BUCKET)
+    .upload(path, file, { upsert: false, cacheControl: "31536000" });
+  if (error) throw error;
+  const { data } = supabase.storage.from(LOGO_BUCKET).getPublicUrl(path);
+  return { path, file_url: data.publicUrl };
+}
+
 // Convert a storage path OR a legacy public/signed URL into a freshly
 // signed URL. Older artwork records only have the public URL; this
 // helper parses the path out of those URLs so we can sign uniformly.

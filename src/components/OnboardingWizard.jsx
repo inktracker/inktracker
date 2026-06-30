@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { uploadFile } from "@/lib/uploadFile";
+import { uploadLogo } from "@/lib/uploadFile";
 import { seedDemoData } from "@/lib/demoSeed";
 import {
   buildOnboardingProfile,
@@ -83,22 +83,14 @@ export default function OnboardingWizard({ user, onComplete }) {
     if (!file) return;
     setUploading(true);
     try {
-      // Sanitize the extension — file.name is user-controlled; don't let it
-      // inject characters into the storage key.
-      const ext = (file.name.split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "png";
-      const path = `logos/${user.id}_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("public")
-        .upload(path, file, { upsert: true });
-      if (upErr) throw upErr;
-      const { data } = supabase.storage.from("public").getPublicUrl(path);
-      setLogoUrl(data.publicUrl);
+      // M-1: logos go to the public bucket via the shared, VALIDATED helper
+      // (extension/size + scriptable-SVG rejection) — the previous inline upload
+      // here skipped that validation. No artwork-bucket fallback: logos must not
+      // land in the bucket that's going private.
+      const { file_url } = await uploadLogo(file, user?.id);
+      if (file_url) setLogoUrl(file_url);
     } catch {
-      // fallback using shared upload helper
-      try {
-        const { file_url } = await uploadFile(file);
-        if (file_url) setLogoUrl(file_url);
-      } catch {}
+      // upload failed — keep the existing logo; the user can retry.
     } finally {
       setUploading(false);
       e.target.value = "";
