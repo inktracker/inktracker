@@ -1116,7 +1116,9 @@ export default function QuoteDetailModal({
                         </div>
                         {!hasQb && !stale && (
                           <div className="text-[11px] text-slate-500 -mt-1">
-                            Final tax calculated based on ship-to address at checkout.
+                            {/* TAX-02: non-QB quotes use the shop's flat rate; there's no
+                                ship-to recalculation at checkout, so don't claim one. */}
+                            Estimated using the shop&rsquo;s sales-tax rate.
                           </div>
                         )}
                         {stale && (
