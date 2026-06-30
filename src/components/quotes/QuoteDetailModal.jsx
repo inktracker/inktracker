@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { openSignedArtwork } from "@/lib/uploadFile";
 import {
   calcQuoteTotals,
   calcLinkedLinePrice,
@@ -1018,6 +1019,7 @@ export default function QuoteDetailModal({
                                               {art.url ? (
                                                 <a
                                                   href={art.url}
+                                                  onClick={(e) => { e.preventDefault(); openSignedArtwork(art.path || art.url); }}
                                                   target="_blank"
                                                   rel="noopener noreferrer"
                                                   className="shrink-0 text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"

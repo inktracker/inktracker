@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { base44 } from "@/api/supabaseClient";
-import { uploadFile } from "@/lib/uploadFile";
+import { uploadFile, openSignedArtwork } from "@/lib/uploadFile";
 import { Send, MessageSquare, Paperclip, X, FileText, Download } from "lucide-react";
 import { notify } from "@/lib/notify";
 
@@ -182,6 +182,7 @@ export default function BrokerMessaging({ currentUser, otherEmail, otherName, th
                 {m.attachment_url && (
                   <a
                     href={m.attachment_url}
+                    onClick={(e) => { e.preventDefault(); openSignedArtwork(m.attachment_url); }}
                     target="_blank"
                     rel="noopener noreferrer"
                     download={m.attachment_name || true}

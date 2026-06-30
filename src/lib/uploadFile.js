@@ -70,3 +70,13 @@ export async function signArtworkUrl(pathOrUrl, expiresInSec = DEFAULT_SIGNED_TT
   }
 }
 
+// Open an artwork file in a new tab via a freshly-signed URL (M-1: authenticated
+// "open artwork" / download links, so they keep working once the bucket is
+// private). Falls back to the passed url if signing fails (works while the
+// bucket is still public).
+export async function openSignedArtwork(pathOrUrl) {
+  if (!pathOrUrl) return;
+  const signed = await signArtworkUrl(pathOrUrl);
+  window.open(signed || pathOrUrl, "_blank", "noopener,noreferrer");
+}
+
