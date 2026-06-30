@@ -1,3 +1,5 @@
+import { sanitizeSupplierPrice } from "./supplierPrice.ts";
+
 // Shared AS Colour API helpers.
 // Docs reference: AS Colour NZ — API Overview (api@ascolour.com)
 // Base URL: https://api.ascolour.co.nz/v1
@@ -192,7 +194,7 @@ export function normalizeVariant(v: any) {
     colour: v.colour ?? v.colourName ?? v.colorName ?? v.color ?? "",
     size: v.sizeCode ?? v.size ?? v.sizeName ?? "",
     barcode: v.GTIN12 ?? v.barcode ?? v.gtin ?? "",
-    price: Number(v.price ?? v.unitPrice ?? 0),
+    price: sanitizeSupplierPrice(v.price ?? v.unitPrice),
     imageUrl: v.imageUrl ?? "",
     discontinued: v.discontinued ?? false,
   };
