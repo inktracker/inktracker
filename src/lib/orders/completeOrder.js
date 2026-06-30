@@ -129,6 +129,10 @@ export function buildOrderCompletionPlan(
     subtotal: order.subtotal || 0,
     tax: order.tax || 0,
     total: order.total || 0,
+    // Carry setup/screen fees so a QB invoice created from this row emits the
+    // "Setup & Screen Fees" line (buildQBInvoicePayload reads setup_total).
+    // Without it the QB invoice under-bills by the setup amount (NEW-09).
+    setup_total: order.setup_total || 0,
     paid: false,
     status: "Sent",
     line_items: order.line_items || [],

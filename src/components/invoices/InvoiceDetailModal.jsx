@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload, getDisplayName } from "../shared/pricing";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
@@ -25,6 +25,10 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   const [showSendModal, setShowSendModal] = useState(false);
   const [qbCreating, setQbCreating] = useState(false);
   const [qbStatus, setQbStatus] = useState(null);
+  // Idempotency key for the QB create (NEW-10). Held in a ref so re-fires of
+  // the same attempt reuse it (collapsing duplicate QB writes), while a later
+  // intentional retry — after the modal re-renders fresh — gets a new key.
+  const qbAttemptKeyRef = useRef(null);
   // Tri-state: null = haven't checked yet, true = order exists,
   // false = orphan (order_id set on the invoice but no matching order
   // row — e.g. order was deleted, or invoice came from a different
@@ -118,12 +122,16 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         };
       }
 
+      const idempotencyKey = qbAttemptKeyRef.current || crypto.randomUUID();
+      qbAttemptKeyRef.current = idempotencyKey;
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
         action: "createInvoice",
         accessToken: session.access_token,
         // Don't let QuickBooks email the customer — the shop sends via the
         // Send button. Suppresses qbSync's /send fallback.
         noEmail: true,
+        // Collapse concurrent/double submits onto one QB write (NEW-10).
+        idempotencyKey,
         quote: quoteShape,
         invoicePayload,
         customer: {

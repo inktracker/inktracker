@@ -81,6 +81,14 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     date: q.date,
     order_date: orderDate,
     due_date: q.due_date || null,
+    // Carry the setup/screen-fee total forward. The order's `total` already
+    // includes it (effectiveQuoteTotals folds setup in), but downstream
+    // buildQBInvoicePayload emits the "Setup & Screen Fees" QB line from THIS
+    // field — drop it and the QuickBooks invoice silently under-bills by the
+    // setup amount ($20–$200+). Prefer the quote's saved value (the saved-
+    // totals contract); fall back to the live-computed setup when the quote
+    // was converted pre-save (t.setup_total only populated on the live branch).
+    setup_total: Number(q.setup_total) || Number(t.setup_total) || 0,
     status: "Art Approval",
     line_items: q.line_items,
     notes: q.notes,

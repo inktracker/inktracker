@@ -75,6 +75,11 @@ export async function createInvoiceInQB({ base44, invoice, customer, session }) 
       // itself via the Send flow (Resend). qbSync mints the pay link via
       // ?include=invoiceLink and suppresses the /send fallback.
       noEmail: true,
+      // Idempotency (NEW-10): stable per invoice so two concurrent submits
+      // (double-click / two tabs) collapse onto ONE QB write instead of
+      // creating duplicate QB invoices. A later manual retry goes through
+      // InvoiceDetailModal with a fresh per-attempt key.
+      idempotencyKey: `createInvoice:${invoice.id || invoice.invoice_id}`,
       quote: quoteShape,
       invoicePayload,
       customer: {
