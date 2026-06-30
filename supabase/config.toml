@@ -4,6 +4,9 @@ verify_jwt = false
 [functions.createCheckoutSession]
 verify_jwt = false
 
+[functions.artworkProof]
+verify_jwt = false
+
 [functions.verifyRecaptcha]
 verify_jwt = false
 

@@ -1,3 +1,4 @@
+import { resolveArtworkPath } from "@/lib/artworkPath";
 import { customerFacingShopName } from "./customerFacingQuote";
 
 // Pure orchestration logic for the Send Quote flow.
@@ -170,15 +171,27 @@ export function nextStatusOnSend(currentStatus) {
  * @param {object} quote
  * @returns {Array<{url:string,name:string}>}
  */
+// M-1: artwork is moving to a private bucket, so the emailed proof <img> can no
+// longer point at a public storage URL. Instead point each one at the
+// token-gated artworkProof proxy, which 302-redirects to a fresh signed URL on
+// every open — the inline image keeps working forever without exposing a public
+// or guessable URL. Needs the quote's id + public_token; without them (e.g. a
+// quote that never minted a token) we emit nothing rather than a broken/leaky
+// link.
 export function extractProofImageUrls(quote) {
   const art = Array.isArray(quote?.selected_artwork) ? quote.selected_artwork : [];
+  const id = quote?.id || quote?.quote_id || "";
+  const token = (quote?.public_token ?? "").toString().trim();
+  const base = (import.meta?.env?.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  if (!id || !token || !base) return [];
   const out = [];
   for (const a of art) {
-    const url = a?.url || a?.file_url;
-    if (!url || typeof url !== "string") continue;
-    if (!/^https:\/\//i.test(url)) continue; // only https, no data:/javascript:
-    const clean = url.split("?")[0].toLowerCase();
+    const path = resolveArtworkPath(a?.path || a?.url || a?.file_url);
+    if (!path) continue;
+    const clean = path.split("?")[0].toLowerCase();
     if (!/\.(png|jpe?g|gif|webp)$/.test(clean)) continue; // images only
+    const url = `${base}/functions/v1/artworkProof?type=quote&id=${encodeURIComponent(id)}` +
+      `&token=${encodeURIComponent(token)}&path=${encodeURIComponent(path)}`;
     out.push({ url, name: a?.name || "Art proof" });
     if (out.length >= 6) break;
   }

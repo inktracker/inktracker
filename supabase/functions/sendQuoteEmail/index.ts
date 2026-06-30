@@ -238,7 +238,10 @@ Deno.serve(async (req) => {
       .filter((p: any) =>
         p && typeof p.url === "string" &&
         /^https:\/\//i.test(p.url) &&
-        p.url.includes("/storage/v1/object/public/"))
+        // M-1: proof images are now token-gated artworkProof proxy links; keep
+        // the legacy public-storage form too for in-flight / older sends.
+        (p.url.includes("/functions/v1/artworkProof") ||
+         p.url.includes("/storage/v1/object/public/")))
       .slice(0, 6);
     const proofHtml = safeProofImages.length
       ? `<div style="margin:4px 0 24px;">

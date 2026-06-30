@@ -573,7 +573,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         // standard total otherwise). The saved row's `total` field is
         // unchanged — only the value passed to the email function is
         // overridden here.
-        quote: { ...q, total: customerTotals.total },
+        // public_token + id let extractProofImageUrls build token-gated
+        // artworkProof proxy links for the emailed proof images (M-1).
+        quote: { ...q, total: customerTotals.total, public_token: publicToken },
         recipients: recipientEmails,
         taggedSubject,
         body,
