@@ -6,6 +6,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
 import { buildSupplierCacheKey, readSupplierCache, writeSupplierCache } from "../_shared/supplierCache.ts";
+import { sanitizeSupplierPrice, MAX_SANE_CASE_PRICE } from "../_shared/supplierPrice.ts";
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
 const GLOBAL_SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
@@ -146,8 +147,8 @@ function groupRowsByBrand(rows: any[]): any[] {
           colorName,
           colorCode: row.colorCode ?? "",
           sku: String(row.sku ?? "").replace(/-[^-]+$/, ""),
-          piecePrice: Number(row.piecePrice ?? row.piece_price ?? 0),
-          casePrice:  Number(row.casePrice  ?? row.case_price  ?? 0),
+          piecePrice: sanitizeSupplierPrice(row.piecePrice ?? row.piece_price),
+          casePrice:  sanitizeSupplierPrice(row.casePrice  ?? row.case_price, MAX_SANE_CASE_PRICE),
           imageUrl: frontRaw ? (frontRaw.startsWith("http") ? frontRaw : `https://www.ssactivewear.com/${frontRaw}`) : "",
           backImageUrl: backRaw ? (backRaw.startsWith("http") ? backRaw : `https://www.ssactivewear.com/${backRaw}`) : "",
           sizeQuantities: {},
@@ -158,7 +159,7 @@ function groupRowsByBrand(rows: any[]): any[] {
       const sizeName = row.sizeName ?? row.size ?? "";
       if (sizeName) {
         colorMap[colorName].sizeQuantities[sizeName] = Number(row.qty ?? 0);
-        const rowPrice = Number(row.piecePrice ?? row.piece_price ?? 0);
+        const rowPrice = sanitizeSupplierPrice(row.piecePrice ?? row.piece_price);
         if (rowPrice > 0) colorMap[colorName].sizePrices[sizeName] = rowPrice;
       }
     }

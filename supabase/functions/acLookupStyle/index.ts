@@ -19,6 +19,7 @@ import {
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets, loadShopProfileForUser } from "../_shared/profileSecrets.ts";
 import { buildSupplierCacheKey, readSupplierCache, writeSupplierCache } from "../_shared/supplierCache.ts";
+import { sanitizeSupplierPrice } from "../_shared/supplierPrice.ts";
 
 // Returns the AcCreds bundle to use for this request.
 //
@@ -274,7 +275,14 @@ Deno.serve(async (req) => {
           );
           const priceItems = Array.isArray(priceRes.data?.data) ? priceRes.data.data : [];
           for (const p of priceItems) {
-            if (p.sku && p.price != null) skuPriceMap[p.sku] = Number(p.price);
+            // INT-03: sanitize at ingestion — a bad pricelist value (negative,
+            // non-numeric, absurd) would otherwise flow straight into the colour
+            // priceMap below and a saved garment cost. 0 means "no usable price"
+            // and is skipped by the `!v.price` guard when building priceMap.
+            if (p.sku) {
+              const clean = sanitizeSupplierPrice(p.price);
+              if (clean > 0) skuPriceMap[p.sku] = clean;
+            }
           }
           logs.push({ call: `prices:p${pg}`, count: priceItems.length });
           if (priceItems.length < 250) break;
