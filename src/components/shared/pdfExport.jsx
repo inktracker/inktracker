@@ -15,6 +15,7 @@ import {
 } from './pricing';
 import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
+import { signArtworkUrl } from '../../lib/uploadFile';
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -34,6 +35,7 @@ function normalizeArtworkList(record) {
     .map(a => ({
       name: a.name || a.artwork_name || 'Artwork',
       url:  a.url  || a.file_url     || a.artwork_url || '',
+      path: a.path || '',
     }))
     .filter(a => a.url);
 }
@@ -62,7 +64,9 @@ async function finalizePdf(doc, record, output, filename) {
       const merged = await PDFDocument.load(bytes);
       for (const att of pdfAttachments) {
         try {
-          const resp = await fetch(att.url);
+          // M-1: sign for the private artwork bucket; fall back to the raw url
+          // while the bucket is still public.
+          const resp = await fetch((await signArtworkUrl(att.path || att.url)) || att.url);
           if (!resp.ok) continue;
           const ab = await resp.arrayBuffer();
           const src = await PDFDocument.load(ab);
@@ -113,6 +117,9 @@ async function appendArtworkPages(doc, record) {
   for (const art of items) {
     const isRaster = /\.(png|jpe?g|webp)(\?|$)/i.test(art.url);
     if (!isRaster) continue;
+    // M-1: sign for the private artwork bucket; fall back to the raw url while
+    // the bucket is still public.
+    const src = (await signArtworkUrl(art.path || art.url)) || art.url;
     let img;
     try {
       img = await new Promise((resolve, reject) => {
@@ -126,7 +133,7 @@ async function appendArtworkPages(doc, record) {
           resolve({ dataUrl: c.toDataURL('image/png'), w: i.width, h: i.height });
         };
         i.onerror = reject;
-        i.src = art.url;
+        i.src = src;
       });
     } catch {
       continue;
