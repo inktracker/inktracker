@@ -145,6 +145,20 @@ describe("buildOrderFromQuote — order defaults", () => {
     expect(order.total).toBeGreaterThan(0);
   });
 
+  it("stamps order_date from the passed shop-tz `today` (the conversion date)", () => {
+    const order = buildOrderFromQuote(baseQuote(), {
+      userEmail: "shop@x.com",
+      now: NOW,
+      today: "2026-05-12",
+    });
+    expect(order.order_date).toBe("2026-05-12");
+  });
+
+  it("falls back to deriving order_date from `now` when no `today` is passed", () => {
+    const order = buildOrderFromQuote(baseQuote(), { userEmail: "shop@x.com", now: NOW });
+    expect(order.order_date).toBe("2026-05-12"); // NOW is 2026-05-12T12:00Z
+  });
+
   it("survives a null quote (no crash, sane shape)", () => {
     const order = buildOrderFromQuote(null, { userEmail: "shop@x.com", now: NOW });
     expect(order.status).toBe("Art Approval");

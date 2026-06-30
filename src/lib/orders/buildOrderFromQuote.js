@@ -43,8 +43,14 @@ export function generateOrderId(now = Date.now()) {
  * @param {number} [opts.now]      injected clock for deterministic order_id
  * @returns {object} payload ready for Order.create()
  */
-export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now() } = {}) {
+export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), today } = {}) {
   const q = quote || {};
+  // The order's own creation date (= the date the quote was approved/converted).
+  // Stored as a shop-tz `date` string so order forms can show it without the
+  // UTC-vs-shop-tz drift a raw created_at timestamp would have. Callers pass
+  // `today = todayInShopTz()`; fall back to deriving it from `now` for tests
+  // and any caller that doesn't.
+  const orderDate = today || new Date(now).toISOString().split("T")[0];
   const brokerOrder = isBrokerQuote(q);
   const brokerDisplayName = q.broker_name || q.broker_company || q.broker_id || q.customer_name;
   const brokerClientName = q.customer_name || "";
@@ -73,6 +79,7 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now() } 
     broker_client_name: brokerOrder ? brokerClientName : "",
     job_title: q.job_title || "",
     date: q.date,
+    order_date: orderDate,
     due_date: q.due_date || null,
     status: "Art Approval",
     line_items: q.line_items,

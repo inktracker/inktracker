@@ -372,7 +372,9 @@ export default function Production() {
     if (billingGate("complete orders")) return;
     const updated = await runOrderCompletion({ order, userEmail: user.email, base44 });
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
-    setViewing(null);
+    // Keep the modal open on the just-completed order so its action bar can
+    // reveal Create Invoice → Send. Only updates if this order is being viewed.
+    setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
   }
 
   async function handleDelete(id) {
