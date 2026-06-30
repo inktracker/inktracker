@@ -89,6 +89,14 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     // totals contract); fall back to the live-computed setup when the quote
     // was converted pre-save (t.setup_total only populated on the live branch).
     setup_total: Number(q.setup_total) || Number(t.setup_total) || 0,
+    // Carry one-off fees + the deposit percentage forward for the same reason
+    // as setup_total: the order total already includes the fees, and the QB
+    // invoice builder emits a line per additional charge and credits the
+    // deposit. Drop these and the QuickBooks invoice diverges from the order
+    // (under-bills the fees / over-charges by not crediting the deposit).
+    // deposit_paid is already carried below.
+    additional_charges: q.additional_charges ?? null,
+    deposit_pct: q.deposit_pct ?? null,
     status: "Art Approval",
     line_items: q.line_items,
     notes: q.notes,

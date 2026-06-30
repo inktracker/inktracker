@@ -169,6 +169,17 @@ describe("buildOrderFromQuote — order defaults", () => {
     expect(order.setup_total).toBe(0);
   });
 
+  it("carries additional_charges + deposit_pct so the QB invoice doesn't drop fees / mis-credit deposits", () => {
+    const charges = [{ label: "Shipping", amount: 85, taxable: true }];
+    const order = buildOrderFromQuote(
+      baseQuote({ additional_charges: charges, deposit_pct: 50, deposit_paid: true }),
+      { userEmail: "shop@x.com", now: NOW },
+    );
+    expect(order.additional_charges).toEqual(charges);
+    expect(order.deposit_pct).toBe(50);
+    expect(order.deposit_paid).toBe(true);
+  });
+
   it("survives a null quote (no crash, sane shape)", () => {
     const order = buildOrderFromQuote(null, { userEmail: "shop@x.com", now: NOW });
     expect(order.status).toBe("Art Approval");
