@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   parseRecipients,
   decidePublicToken,
@@ -10,40 +10,54 @@ import {
 } from "../sendOrchestration.js";
 
 describe("extractProofImageUrls", () => {
-  const base = "https://x.supabase.co/storage/v1/object/public/artwork";
+  // M-1: proof images are now token-gated artworkProof proxy links built from
+  // the quote's id + public_token + VITE_SUPABASE_URL.
+  const SUPA = "https://x.supabase.co";
+  const base = `${SUPA}/storage/v1/object/public/artwork`;
+  const Q = { id: "qid-1", public_token: "tok-1" };
+  const proxy = (path) =>
+    `${SUPA}/functions/v1/artworkProof?type=quote&id=${encodeURIComponent(Q.id)}` +
+    `&token=${encodeURIComponent(Q.public_token)}&path=${encodeURIComponent(path)}`;
+  beforeEach(() => vi.stubEnv("VITE_SUPABASE_URL", SUPA));
+  afterEach(() => vi.unstubAllEnvs());
+
   it("returns [] when no artwork", () => {
-    expect(extractProofImageUrls({})).toEqual([]);
-    expect(extractProofImageUrls({ selected_artwork: null })).toEqual([]);
+    expect(extractProofImageUrls({ ...Q })).toEqual([]);
+    expect(extractProofImageUrls({ ...Q, selected_artwork: null })).toEqual([]);
   });
-  it("keeps image urls, drops PDFs and non-https", () => {
+  it("returns [] when the quote has no public_token (don't emit a broken/leaky link)", () => {
+    expect(extractProofImageUrls({ id: "x", selected_artwork: [{ url: `${base}/a.png` }] })).toEqual([]);
+  });
+  it("builds token-gated proxy links for images, drops PDFs and non-artwork urls", () => {
     const out = extractProofImageUrls({
+      ...Q,
       selected_artwork: [
         { url: `${base}/a.png`, name: "Front" },
         { url: `${base}/b.pdf`, name: "Spec" },        // pdf dropped
         { file_url: `${base}/c.jpg` },                  // file_url fallback
-        { url: "http://insecure/d.png" },               // non-https dropped
+        { url: "http://insecure/d.png" },               // not an artwork url → dropped
         { url: "javascript:alert(1)" },                 // dropped
       ],
     });
     expect(out).toEqual([
-      { url: `${base}/a.png`, name: "Front" },
-      { url: `${base}/c.jpg`, name: "Art proof" },
+      { url: proxy("a.png"), name: "Front" },
+      { url: proxy("c.jpg"), name: "Art proof" },
     ]);
   });
   it("caps at 6", () => {
     const many = Array.from({ length: 9 }, (_, i) => ({ url: `${base}/${i}.png` }));
-    expect(extractProofImageUrls({ selected_artwork: many })).toHaveLength(6);
+    expect(extractProofImageUrls({ ...Q, selected_artwork: many })).toHaveLength(6);
   });
-  it("buildSendQuoteEmailRequest includes proofImages", () => {
+  it("buildSendQuoteEmailRequest includes proof proxy links", () => {
     const req = buildSendQuoteEmailRequest({
-      quote: { quote_id: "Q1", selected_artwork: [{ url: `${base}/a.png`, name: "Front" }] },
+      quote: { ...Q, quote_id: "Q1", selected_artwork: [{ url: `${base}/a.png`, name: "Front" }] },
       recipients: ["c@x.test"],
       taggedSubject: "s",
       body: "b",
       paymentLink: "https://pay",
       shopName: "Shop",
     });
-    expect(req.proofImages).toEqual([{ url: `${base}/a.png`, name: "Front" }]);
+    expect(req.proofImages).toEqual([{ url: proxy("a.png"), name: "Front" }]);
   });
 });
 
@@ -474,24 +488,32 @@ describe("buildPostSendQuotePatch (P1–P7)", () => {
 });
 
 describe("extractProofImageUrls — edge cases", () => {
-  const base = "https://x.supabase.co/storage/v1/object/public/artwork";
+  const SUPA = "https://x.supabase.co";
+  const base = `${SUPA}/storage/v1/object/public/artwork`;
+  const Q = { id: "qid-1", public_token: "tok-1" };
+  const proxy = (path) =>
+    `${SUPA}/functions/v1/artworkProof?type=quote&id=${encodeURIComponent(Q.id)}` +
+    `&token=${encodeURIComponent(Q.public_token)}&path=${encodeURIComponent(path)}`;
+  beforeEach(() => vi.stubEnv("VITE_SUPABASE_URL", SUPA));
+  afterEach(() => vi.unstubAllEnvs());
+
   it("accepts uppercase extensions and ignores query strings", () => {
-    const out = extractProofImageUrls({ selected_artwork: [
+    const out = extractProofImageUrls({ ...Q, selected_artwork: [
       { url: `${base}/A.PNG` },
       { url: `${base}/b.JPG?token=abc&v=2` },
     ] });
-    expect(out.map((p) => p.url)).toEqual([`${base}/A.PNG`, `${base}/b.JPG?token=abc&v=2`]);
+    expect(out.map((p) => p.url)).toEqual([proxy("A.PNG"), proxy("b.JPG")]);
   });
   it("excludes SVG and other non-raster types", () => {
-    expect(extractProofImageUrls({ selected_artwork: [{ url: `${base}/logo.svg` }] })).toEqual([]);
-    expect(extractProofImageUrls({ selected_artwork: [{ url: `${base}/doc.pdf` }] })).toEqual([]);
+    expect(extractProofImageUrls({ ...Q, selected_artwork: [{ url: `${base}/logo.svg` }] })).toEqual([]);
+    expect(extractProofImageUrls({ ...Q, selected_artwork: [{ url: `${base}/doc.pdf` }] })).toEqual([]);
   });
   it("skips items with no usable url and non-string urls", () => {
-    const out = extractProofImageUrls({ selected_artwork: [
+    const out = extractProofImageUrls({ ...Q, selected_artwork: [
       { name: "no url" },
       { url: 12345 },
       { url: `${base}/ok.png`, name: "Front" },
     ] });
-    expect(out).toEqual([{ url: `${base}/ok.png`, name: "Front" }]);
+    expect(out).toEqual([{ url: proxy("ok.png"), name: "Front" }]);
   });
 });
