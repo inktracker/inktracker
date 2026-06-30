@@ -1,0 +1,24 @@
+-- M-1 stage 3c: flip the `artwork` bucket PRIVATE — closes the public leak.
+--
+-- Until now public=true meant /object/public/artwork/<path> served ANY object
+-- with no auth, and paths are flat (not tenant-scoped), so artwork leaked
+-- through quote rows + emailed proof links. Everything that reads artwork has
+-- been converted off raw public URLs first (stages 1-3b):
+--   - anonymous surfaces (emailed proof, QuotePayment, ArtApproval) → the
+--     token-gated artworkProof proxy (signs via service-role);
+--   - authenticated in-app surfaces → client-side signed URLs (signArtworkUrl);
+--   - the wizard's just-uploaded preview → a local blob (no storage read);
+--   - logos moved to the separate public `logos` bucket.
+--
+-- Flipping public=false makes /object/public/artwork return an error; reads now
+-- require a signed URL. The existing RLS is left intact:
+--   - anon_upload_artwork (INSERT, anon+authenticated): the public wizard still
+--     uploads artwork before the customer authenticates;
+--   - anon_read_artwork (SELECT, anon+authenticated): lets authenticated users
+--     sign client-side; the proxy signs via service-role regardless. (A future
+--     hardening can narrow anon SELECT once we confirm no anon path signs
+--     directly — the proxy already covers the anon read paths.)
+--
+-- ROLLBACK (instant, no data change): UPDATE storage.buckets SET public=true WHERE id='artwork';
+
+UPDATE storage.buckets SET public = false WHERE id = 'artwork';
