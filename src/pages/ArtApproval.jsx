@@ -4,6 +4,7 @@ import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2 } from "lucide-react";
 import { fmtDate, getOrderDisplayClient } from "../components/shared/pricing";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
+import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
 
 function getOrderArtwork(order) {
   const map = new Map();
@@ -148,7 +149,15 @@ export default function ArtApproval() {
     );
   }
 
-  const artwork = getOrderArtwork(order);
+  // M-1: render each proof through the token-gated artworkProof proxy (so the
+  // soon-private bucket stays sealed for anon viewers). `_src` is the proxy
+  // link; `_fallback` is the original url used via <img onError> while the
+  // bucket is still public, so nothing breaks during the transition.
+  const artwork = getOrderArtwork(order).map((art) => {
+    const fallback = art.url;
+    const src = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback }) || fallback;
+    return { ...art, _src: src, _fallback: fallback };
+  });
   const alreadyApproved = order?.art_approved;
 
   return (
@@ -217,12 +226,13 @@ export default function ArtApproval() {
                     art.url.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? (
                       <button
                         type="button"
-                        onClick={() => setPreview(art)}
+                        onClick={() => setPreview({ ...art, url: art._src, file_url: art._src, path: null })}
                         className="group relative block w-full bg-slate-50"
                         title="Click to enlarge"
                       >
                         <img
-                          src={art.url}
+                          src={art._src}
+                          onError={(e) => { if (art._fallback && e.currentTarget.src !== art._fallback) e.currentTarget.src = art._fallback; }}
                           alt={art.name}
                           className="w-full max-h-96 object-contain"
                         />
@@ -233,12 +243,12 @@ export default function ArtApproval() {
                     ) : art.url.match(/\.pdf(\?|$)/i) ? (
                       <button
                         type="button"
-                        onClick={() => setPreview(art)}
+                        onClick={() => setPreview({ ...art, url: art._src, file_url: art._src, path: null })}
                         className="group relative block w-full bg-slate-100"
                         title="Click to enlarge"
                       >
                         <object
-                          data={`${art.url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
+                          data={`${art._src}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
                           type="application/pdf"
                           className="w-full h-96 pointer-events-none bg-white"
                           aria-label={art.name}
@@ -252,7 +262,7 @@ export default function ArtApproval() {
                       </button>
                     ) : (
                       <a
-                        href={art.url}
+                        href={art._src}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-3 bg-slate-50 px-5 py-5 text-teal-600 font-semibold text-sm hover:bg-teal-50 transition"
