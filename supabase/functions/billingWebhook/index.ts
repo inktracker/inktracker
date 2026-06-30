@@ -54,6 +54,25 @@ async function profileIdForCustomer(supabase: any, customerId: string): Promise<
   return data?.profile_id ?? null;
 }
 
+// BILL-03: mark a subscription past_due and START its grace clock — but only on
+// the TRANSITION into past_due. Stripe fires invoice.payment_failed on every
+// dunning retry; stamping now() each time would keep resetting the 7-day window
+// so it never elapsed. COALESCE keeps the first stamp.
+async function markPastDue(customerId: string) {
+  const supabase = adminClient();
+  const profileId = await profileIdForCustomer(supabase, customerId);
+  if (!profileId) {
+    console.error(`[billingWebhook] no profile linked to ${customerId} — cannot mark past_due`);
+    return;
+  }
+  const { data: prof } = await supabase
+    .from("profiles").select("past_due_since").eq("id", profileId).maybeSingle();
+  const updates: Record<string, any> = { subscription_status: "past_due" };
+  if (!prof?.past_due_since) updates.past_due_since = new Date().toISOString();
+  const { error } = await supabase.from("profiles").update(updates).eq("id", profileId);
+  if (error) console.error("[billingWebhook] markPastDue update failed:", error.message);
+}
+
 // Apply an update to the right tables: subscription_tier/status/trial_ends_at
 // → profiles; stripe_subscription_id/stripe_customer_id → profile_secrets.
 async function updateProfileByCustomer(customerId: string, updates: Record<string, any>) {
@@ -135,6 +154,7 @@ Deno.serve(async (req) => {
             subscription_tier: resolvedTier,
             subscription_status: sub.status === "trialing" ? "trialing" : "active",
             stripe_subscription_id: subscriptionId,
+            past_due_since: null, // fresh active/trialing sub → clear any grace clock (BILL-03)
           });
         }
         break;
@@ -146,11 +166,22 @@ Deno.serve(async (req) => {
         const priceId = sub.items.data[0]?.price?.id || "";
         const tier = PRICE_TO_TIER[priceId] || sub.metadata?.tier || "shop";
 
-        await updateProfileByCustomer(customerId, {
-          subscription_tier: tier,
-          subscription_status: sub.status,
-          stripe_subscription_id: sub.id,
-        });
+        if (sub.status === "past_due") {
+          // Stamp the grace clock (COALESCE — see markPastDue) and keep tier/sub id.
+          await updateProfileByCustomer(customerId, {
+            subscription_tier: tier,
+            stripe_subscription_id: sub.id,
+          });
+          await markPastDue(customerId);
+        } else {
+          await updateProfileByCustomer(customerId, {
+            subscription_tier: tier,
+            subscription_status: sub.status,
+            stripe_subscription_id: sub.id,
+            // Recovered to active/trialing → clear the grace clock (BILL-03).
+            ...(sub.status === "active" || sub.status === "trialing" ? { past_due_since: null } : {}),
+          });
+        }
         break;
       }
 
@@ -169,9 +200,9 @@ Deno.serve(async (req) => {
         const invoice = event.data.object as Stripe.Invoice;
         const customerId = invoice.customer as string;
 
-        await updateProfileByCustomer(customerId, {
-          subscription_status: "past_due",
-        });
+        // Stamp past_due + start the grace clock (BILL-03). markPastDue COALESCEs
+        // so repeated dunning failures don't reset the 7-day window.
+        await markPastDue(customerId);
         break;
       }
 

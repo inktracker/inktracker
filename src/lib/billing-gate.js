@@ -24,7 +24,7 @@ export function useBillingGate(userOverride) {
   const { user: ctxUser } = useAuth();
   const user = userOverride ?? ctxUser;
   const tier = getEffectiveTier(user);
-  const readOnly = isReadOnly(tier, user?.subscription_status);
+  const readOnly = isReadOnly(tier, user?.subscription_status, user?.past_due_since);
 
   /**
    * Returns true if the caller should ABORT the mutation. Shows an

@@ -10,6 +10,8 @@ import {
   ACCESS_GRANTING_SUB_STATUSES,
   trialPeriodDaysForCheckout,
   subscriptionBlocksWrites,
+  pastDueGraceElapsed,
+  PAST_DUE_GRACE_DAYS,
   buildSubscriptionMetadata,
   deriveStripeAccountStatus,
   shouldCreateStripeCustomer,
@@ -524,5 +526,27 @@ describe("subscriptionBlocksWrites", () => {
   it("accepts snake_case profile shape too", () => {
     expect(subscriptionBlocksWrites({ subscription_tier: "expired" }, NOW)).toBe(true);
     expect(subscriptionBlocksWrites({ subscription_status: "canceled" }, NOW)).toBe(true);
+  });
+
+  // BILL-03: past_due grace window.
+  it("ALLOWS past_due within the 7-day grace, BLOCKS after", () => {
+    expect(PAST_DUE_GRACE_DAYS).toBe(7);
+    // No stamp yet → still read-write (fail-safe, grace hasn't been measured).
+    expect(subscriptionBlocksWrites({ status: "past_due" }, NOW)).toBe(false);
+    // 3 days in → within grace → allow.
+    expect(subscriptionBlocksWrites({ status: "past_due", pastDueSince: daysFromNow(-3) }, NOW)).toBe(false);
+    // Exactly at the edge (7 days) → still allow (strictly older than 7 blocks).
+    expect(subscriptionBlocksWrites({ status: "past_due", pastDueSince: daysFromNow(-7) }, NOW)).toBe(false);
+    // 8 days in → grace exhausted → block writes (read-only).
+    expect(subscriptionBlocksWrites({ status: "past_due", pastDueSince: daysFromNow(-8) }, NOW)).toBe(true);
+    // snake_case shape too.
+    expect(subscriptionBlocksWrites({ subscription_status: "past_due", past_due_since: daysFromNow(-10) }, NOW)).toBe(true);
+  });
+
+  it("pastDueGraceElapsed only fires for past_due past the window", () => {
+    expect(pastDueGraceElapsed({ status: "active", pastDueSince: daysFromNow(-30) }, NOW)).toBe(false);
+    expect(pastDueGraceElapsed({ status: "past_due" }, NOW)).toBe(false);              // no stamp
+    expect(pastDueGraceElapsed({ status: "past_due", pastDueSince: daysFromNow(-2) }, NOW)).toBe(false);
+    expect(pastDueGraceElapsed({ status: "past_due", pastDueSince: daysFromNow(-9) }, NOW)).toBe(true);
   });
 });

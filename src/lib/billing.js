@@ -108,6 +108,7 @@ export function resolveTeamSubscription(profile, ownerSub) {
     subscription_tier:   ownerSub.subscription_tier,
     subscription_status: ownerSub.subscription_status,
     trial_ends_at:       ownerSub.trial_ends_at,
+    past_due_since:      ownerSub.past_due_since, // inherit the owner's grace clock (BILL-03)
   };
 }
 
@@ -125,9 +126,21 @@ export function getTierColor(tier) {
   return colors[tier] || "bg-slate-100 text-slate-600";
 }
 
-export function isReadOnly(tier, status) {
-  if (status === "canceled" || status === "past_due") return true;
+// BILL-03: days a past_due subscription keeps full access before going
+// read-only. Mirror of _shared/billingLogic.js PAST_DUE_GRACE_DAYS and the SQL
+// has_active_subscription() grace window — keep all three in lockstep.
+export const PAST_DUE_GRACE_DAYS = 7;
+
+export function isReadOnly(tier, status, pastDueSince, now = Date.now()) {
+  if (status === "canceled") return true;
   if (tier === "expired") return true;
+  // past_due is read-only only AFTER the grace window; within grace (or with no
+  // stamped start) the shop keeps full read-write access (BILL-03).
+  if (status === "past_due") {
+    if (!pastDueSince) return false;
+    const t = new Date(pastDueSince).getTime();
+    return Number.isFinite(t) && t < now - PAST_DUE_GRACE_DAYS * 86400000;
+  }
   return false;
 }
 

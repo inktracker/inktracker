@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getEffectiveTier, canAccess, resolveTeamSubscription } from "../billing";
+import { getEffectiveTier, canAccess, resolveTeamSubscription, isReadOnly, PAST_DUE_GRACE_DAYS } from "../billing";
 
 // Fixed reference time so trial-expiry tests are deterministic.
 const NOW = new Date("2026-05-12T07:00:00.000Z");
@@ -198,5 +198,28 @@ describe("getEffectiveTier — incomplete (BILL-01: card required at signup)", (
   });
   it("still lets an admin bypass an incomplete tier", () => {
     expect(getEffectiveTier({ role: "admin", subscription_tier: "incomplete" })).toBe("shop");
+  });
+});
+
+describe("isReadOnly — past_due 7-day grace (BILL-03)", () => {
+  const NOW = new Date("2026-05-14T00:00:00Z").getTime();
+  const daysAgo = (n) => new Date(NOW - n * 86400000).toISOString();
+
+  it("canceled / expired are read-only immediately", () => {
+    expect(isReadOnly("shop", "canceled", null, NOW)).toBe(true);
+    expect(isReadOnly("expired", "active", null, NOW)).toBe(true);
+  });
+
+  it("past_due keeps full access within the grace window, read-only after", () => {
+    expect(PAST_DUE_GRACE_DAYS).toBe(7);
+    expect(isReadOnly("shop", "past_due", null, NOW)).toBe(false);            // no stamp → not yet
+    expect(isReadOnly("shop", "past_due", daysAgo(3), NOW)).toBe(false);      // within grace
+    expect(isReadOnly("shop", "past_due", daysAgo(7), NOW)).toBe(false);      // at the edge
+    expect(isReadOnly("shop", "past_due", daysAgo(8), NOW)).toBe(true);       // grace exhausted
+  });
+
+  it("active / trialing are never read-only", () => {
+    expect(isReadOnly("shop", "active", null, NOW)).toBe(false);
+    expect(isReadOnly("trial", "trialing", null, NOW)).toBe(false);
   });
 });
