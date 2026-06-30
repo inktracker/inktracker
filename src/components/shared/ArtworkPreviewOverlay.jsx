@@ -16,7 +16,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import { ArrowLeft, Download, Loader2 } from "lucide-react";
+import { ArrowLeft, Download, Loader2, FileText } from "lucide-react";
 import { signArtworkUrl } from "@/lib/uploadFile";
 import { useModalA11y } from "@/lib/useModalA11y";
 
@@ -33,6 +33,19 @@ export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back"
   const [url, setUrl] = useState(null);
   const panelRef = useRef(null);
   const { onKeyDown } = useModalA11y(panelRef, { onClose });
+
+  // Mobile browsers (iOS Safari, Android Chrome) don't inline-render PDFs in
+  // <object>/<iframe> — they paint a blank box AND the embed captures taps over
+  // the header. On narrow screens, show a tap-to-open CTA instead of the embed.
+  const [isNarrow, setIsNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return undefined;
+    const mq = window.matchMedia("(max-width: 640px)");
+    const update = () => setIsNarrow(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
   useEffect(() => {
     let cancelled = false;
     setUrl(null);
@@ -107,14 +120,30 @@ export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back"
           <Loader2 className="w-8 h-8 text-slate-500 animate-spin" />
         ) : isImage ? (
           <img src={url} alt={name} className="max-w-full max-h-full object-contain" />
+        ) : isPdf && isNarrow ? (
+          // Mobile: inline PDF embeds render blank and steal taps. Show a
+          // tap-to-open CTA that opens the proof in the device's native viewer.
+          <div className="flex flex-col items-center gap-4 text-center px-6">
+            <FileText className="w-14 h-14 text-slate-400" />
+            <div className="text-sm text-slate-600 max-w-xs">
+              PDF previews aren&rsquo;t supported in-app on phones. Tap below to open
+              the proof in your device&rsquo;s viewer.
+            </div>
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ touchAction: "manipulation" }}
+              className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-bold px-6 py-3 rounded-xl"
+            >
+              <Download className="w-5 h-5" /> Open proof PDF
+            </a>
+          </div>
         ) : isPdf ? (
-          // The PDF embed is locked to US-Letter aspect (8.5 × 11) so
-          // mobile browsers — which otherwise stretch the rendered
-          // page to whatever box they're given — never distort the
-          // proof. The aspect-ratio container picks the largest size
-          // that fits both dimensions of the available space; the
-          // <object>/<iframe> fills that box exactly, matching the
-          // page proportions so nothing scales unevenly.
+          // Desktop: the PDF embed is locked to US-Letter aspect (8.5 × 11) so
+          // the rendered page never distorts. The aspect-ratio container picks
+          // the largest size that fits both dimensions; the <object>/<iframe>
+          // fills that box exactly.
           <div
             className="bg-white shadow-sm"
             style={{
