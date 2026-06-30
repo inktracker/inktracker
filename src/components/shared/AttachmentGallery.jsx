@@ -15,9 +15,10 @@
 //   uploading — bool; disables the Add tile + shows a spinner
 //   uploadError — string; shown under the grid
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Paperclip, FileText, ImageIcon, Plus, X, Loader2 } from "lucide-react";
 import { collectAttachments } from "@/lib/artwork/collectAttachments";
+import { signArtworkUrl } from "@/lib/uploadFile";
 import ArtworkPreviewOverlay from "./ArtworkPreviewOverlay";
 
 function fileExt(name = "", url = "") {
@@ -44,6 +45,24 @@ export default function AttachmentGallery({
   const fileRef = useRef(null);
   const items = collectAttachments(record);
   const canUpload = typeof onUpload === "function";
+
+  // M-1: this is an authenticated (shop-side) surface, so sign each thumbnail
+  // for the soon-private bucket. Falls back to the original public url if
+  // signing returns null — so nothing breaks while the bucket is still public.
+  const [signed, setSigned] = useState({});
+  const sigKey = items.map((a) => a.id || a.path || a.url).join("|");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        items.map(async (a) => [a.id, await signArtworkUrl(a.path || a.url)]),
+      );
+      if (!cancelled) setSigned(Object.fromEntries(entries.filter(([, u]) => u)));
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sigKey]);
+  const srcFor = (a) => signed[a.id] || a.url;
 
   // Nothing to show AND no way to add → render nothing.
   if (items.length === 0 && !canUpload) return null;
@@ -87,7 +106,7 @@ export default function AttachmentGallery({
               <button type="button" onClick={() => setPreview(art)} className="block w-full text-left">
                 <div className="relative aspect-[4/3] bg-slate-50 dark:bg-slate-800 flex items-center justify-center overflow-hidden">
                   {img && (art.url || art.path) ? (
-                    <img src={art.url} alt={art.name} loading="lazy" className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform" />
+                    <img src={srcFor(art)} onError={(e) => { if (art.url && e.currentTarget.src !== art.url) e.currentTarget.src = art.url; }} alt={art.name} loading="lazy" className="w-full h-full object-contain group-hover:scale-[1.02] transition-transform" />
                   ) : pdf && (art.url || art.path) ? (
                     // First-page PDF preview. pointer-events-none so the
                     // click falls through to the button (opens the full
@@ -95,7 +114,7 @@ export default function AttachmentGallery({
                     // to the icon visually if the browser can't render it.
                     <>
                       <object
-                        data={`${art.url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
+                        data={`${srcFor(art)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
                         type="application/pdf"
                         className="w-full h-full pointer-events-none"
                         aria-label={art.name}
