@@ -1124,7 +1124,13 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output, custome
     headerPrimary,
     headerSecondary,
     `Status: ${order.status}`,
-    order.due_date ? `In-hands: ${fmtDate(order.due_date)}` : null,
+    // Show the order date (when the quote was approved/converted) alongside the
+    // in-hands date. Falls back to the original quote date for legacy orders
+    // that predate the order_date column.
+    [
+      (order.order_date || order.date) ? `Ordered: ${fmtDate(order.order_date || order.date)}` : null,
+      order.due_date ? `In-hands: ${fmtDate(order.due_date)}` : null,
+    ].filter(Boolean).join('   ·   ') || null,
     shopName,
     logoUrl,
     headerEmail,

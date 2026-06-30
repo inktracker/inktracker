@@ -53,13 +53,24 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
     return () => { active = false; };
   }, [invoice?.id]);
 
+  // Already-paid invoices send as a RECEIPT: the PDF is attached, but there's
+  // no "Pay Invoice" link to mint or include (the customer has nothing to pay).
+  const isPaid = !!invoice?.paid;
+
   useEffect(() => {
     const shop = shopName || "Your Shop";
+    if (isPaid) {
+      setSubject(`Receipt for Invoice ${invoice.invoice_id} from ${shop}`);
+      setBody(
+        `Hi ${invoice.customer_name || "there"},\n\nThank you — your invoice has been paid in full. A copy is attached for your records.\n\nInvoice: ${invoice.invoice_id}\nTotal: ${fmtMoney(invoice.total)} (Paid)\n\nWe appreciate your business!\n${shop}`
+      );
+      return;
+    }
     setSubject(`Invoice ${invoice.invoice_id} from ${shop}`);
     setBody(
       `Hi ${invoice.customer_name || "there"},\n\nYour invoice is ready.\n\nInvoice: ${invoice.invoice_id}\nTotal: ${fmtMoney(invoice.total)}\n${invoice.due ? `Due: ${invoice.due}` : ""}\n\nPlease let us know if you have any questions.\n\nThank you for your business!\n${shop}`
     );
-  }, [shopName, invoice.invoice_id, invoice.customer_name, invoice.total, invoice.due]);
+  }, [shopName, invoice.invoice_id, invoice.customer_name, invoice.total, invoice.due, isPaid]);
 
   const recipientEmails = emailsInput.split(",").map((e) => e.trim()).filter((e) => e.length > 0);
 
@@ -180,8 +191,9 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       // Resolves the common case where the customer record has an
       // invalid email (caught by isValidEmail) but the operator typed
       // a real one into the To field.
-      let effectiveLink = usablePaymentLink;
-      if (!effectiveLink && invoice.qb_invoice_id) {
+      // Paid invoices are receipts — never mint or attach a pay link.
+      let effectiveLink = isPaid ? null : usablePaymentLink;
+      if (!isPaid && !effectiveLink && invoice.qb_invoice_id) {
         const minted = await tryMintMissingLink(recipientEmails[0]);
         // Tax hold: QuickBooks calculated a different sales tax than this
         // invoice. Do NOT send — the customer would be charged a tax we
@@ -336,7 +348,15 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                   (qbSendState). Branches on qb_invoice_id so the user never sees
                   conflicting "QB invoice missing" messaging after a successful
                   Create in QB. */}
-              {qbState.status === "ready" && (
+              {isPaid && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+                  <span className="text-xs text-emerald-700 leading-relaxed">
+                    This invoice is paid — it&rsquo;ll be sent as a receipt with the PDF attached, no payment link.
+                  </span>
+                </div>
+              )}
+              {!isPaid && qbState.status === "ready" && (
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                   <span className="text-xs text-emerald-700 leading-relaxed">
@@ -350,7 +370,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                   can still send the invoice — the email just won't carry
                   a QB Pay button. Adding your own payment instructions in
                   the message body above is the alternative. */}
-              {qbState.status === "needs_create" && (
+              {!isPaid && qbState.status === "needs_create" && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                   <div className="text-xs text-amber-800 leading-relaxed">
@@ -360,7 +380,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
                 </div>
               )}
 
-              {qbState.status === "send_failed" && (
+              {!isPaid && qbState.status === "send_failed" && (
                 <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
                   <div className="text-xs text-red-700 leading-relaxed">
