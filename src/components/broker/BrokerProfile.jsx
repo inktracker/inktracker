@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { User, Save, CheckCircle2, AlertCircle, Link2, Unlink, Upload, X } from "lucide-react";
-import { uploadFile } from "@/lib/uploadFile";
+import { uploadLogo } from "@/lib/uploadFile";
 import { notify } from "@/lib/notify";
 import { qbOAuthErrorMessage } from "@/lib/qb/oauthErrorMessage";
 import BrokerCredentials from "./BrokerCredentials";
@@ -71,7 +71,8 @@ export default function BrokerProfile({ user, onUpdate }) {
     if (!file) return;
     setUploadingLogo(true);
     try {
-      const { file_url } = await uploadFile(file);
+      // M-1: logos go to the public bucket, not the (soon-private) artwork one.
+      const { file_url } = await uploadLogo(file, user?.id);
       setLogoUrl(file_url);
       await base44.auth.updateMe({ logo_url: file_url });
       const updated = await base44.auth.me();

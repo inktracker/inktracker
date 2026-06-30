@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { FormSkeleton, InlineLinesSkeleton } from "@/components/shared/Skeletons";
-import { uploadFile } from "@/lib/uploadFile";
+import { uploadLogo } from "@/lib/uploadFile";
 import { clampRushTierMaxDays, defaultNewRushTierMaxDays } from "@/lib/pricing/rushTierClamp";
 import { DEFAULT_BRAND, BRAND_PRESETS, normalizeBrandColor } from "@/lib/branding";
 import { User, LogOut, Upload, X, Package, Link2, CheckCircle2, AlertCircle, Mail, RefreshCw, DownloadCloud, ChevronDown, Wand2, CreditCard, Loader2, CheckSquare, Shield } from "lucide-react";
@@ -334,7 +334,8 @@ export default function Account() {
 
     setUploading(true);
     try {
-      const { file_url } = await uploadFile(file);
+      // M-1: logos go to the public bucket, not the (soon-private) artwork one.
+      const { file_url } = await uploadLogo(file, user?.id);
 
       setLogoUrl(file_url);
 
