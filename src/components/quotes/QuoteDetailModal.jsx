@@ -449,8 +449,10 @@ export default function QuoteDetailModal({
         const path = `quote_${quote.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
         const { error: upErr } = await supabase.storage.from("artwork").upload(path, file, { upsert: false });
         if (upErr) throw upErr;
+        // url is the public-FORM path-carrier (artwork bucket is private — M-1);
+        // store `path` as the canonical reference so readers sign from it directly.
         const { data: { publicUrl } } = supabase.storage.from("artwork").getPublicUrl(path);
-        newArtwork.push({ id: path, name: file.name, url: publicUrl, note: "", source: "upload" });
+        newArtwork.push({ id: path, name: file.name, path, url: publicUrl, note: "", source: "upload" });
       }
       await base44.entities.Quote.update(quote.id, { selected_artwork: newArtwork });
       setLocalArtwork(newArtwork);
