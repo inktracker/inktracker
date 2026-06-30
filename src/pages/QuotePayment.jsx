@@ -21,6 +21,7 @@ import {
   sortSizeEntries,
 } from "../components/shared/pricing";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
+import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
 import { toCustomerFacingQuote, customerFacingShopName, customerFacingTotals, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
@@ -500,7 +501,17 @@ export default function QuotePayment() {
             bucket is public, so public URLs render; the overlay's signed-URL
             sign falls back to the public URL for anon viewers. */}
         {(() => {
-          const proofs = (displayQuote.selected_artwork || []).filter((a) => a && (a.url || a.file_url));
+          const proofs = (displayQuote.selected_artwork || [])
+            .filter((a) => a && (a.url || a.file_url))
+            .map((a) => {
+              const fallback = a.url || a.file_url;
+              // M-1: render via the token-gated proxy so the (soon-private)
+              // bucket stays sealed. Falls back to the existing url if we can't
+              // build a proxy link, and via <img onError> while the bucket is
+              // still public — so nothing breaks during the transition.
+              const src = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback }) || fallback;
+              return { ...a, _src: src, _fallback: fallback };
+            });
           if (proofs.length === 0) return null;
           const isPdf = (a) => /\.pdf(\?|$)/i.test(a.url || a.file_url || a.name || "");
           return (
@@ -513,20 +524,21 @@ export default function QuotePayment() {
                   <button
                     key={a.id || a.url || i}
                     type="button"
-                    onClick={() => setPreviewArt(a)}
+                    onClick={() => setPreviewArt({ ...a, url: a._src, file_url: a._src, path: null })}
                     className="group relative aspect-square rounded-xl border border-slate-200 bg-slate-50 overflow-hidden hover:border-teal-400 hover:shadow-md transition"
                     title={`${a.name || "Artwork"} — click to enlarge`}
                   >
                     {isPdf(a) ? (
                       <object
-                        data={`${a.url || a.file_url}#toolbar=0&navpanes=0&view=FitH`}
+                        data={`${a._src}#toolbar=0&navpanes=0&view=FitH`}
                         type="application/pdf"
                         className="w-full h-full pointer-events-none"
                         aria-label={a.name || "PDF proof"}
                       />
                     ) : (
                       <img
-                        src={a.url || a.file_url}
+                        src={a._src}
+                        onError={(e) => { if (a._fallback && e.currentTarget.src !== a._fallback) e.currentTarget.src = a._fallback; }}
                         alt={a.name || "Art proof"}
                         className="w-full h-full object-contain"
                       />
