@@ -159,6 +159,16 @@ describe("buildOrderFromQuote — order defaults", () => {
     expect(order.order_date).toBe("2026-05-12"); // NOW is 2026-05-12T12:00Z
   });
 
+  it("carries setup_total forward so the QB invoice doesn't drop the setup fee (NEW-09)", () => {
+    const order = buildOrderFromQuote(baseQuote({ setup_total: 45 }), { userEmail: "shop@x.com", now: NOW });
+    expect(order.setup_total).toBe(45);
+  });
+
+  it("setup_total defaults to 0 (not undefined) when the quote has none", () => {
+    const order = buildOrderFromQuote(baseQuote({ setup_total: undefined }), { userEmail: "shop@x.com", now: NOW });
+    expect(order.setup_total).toBe(0);
+  });
+
   it("survives a null quote (no crash, sane shape)", () => {
     const order = buildOrderFromQuote(null, { userEmail: "shop@x.com", now: NOW });
     expect(order.status).toBe("Art Approval");
