@@ -37,18 +37,15 @@
 // `onClose`. Pass `dismissOnBackdropClick={false}` to opt out (e.g.
 // editor modals that hold unsaved form state).
 
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { createPortal } from "react-dom";
+import { useModalA11y } from "@/lib/useModalA11y";
 
 const LAYOUT_CLASSES = {
   centered:    "items-center  justify-center",
   "slide-right": "items-stretch justify-end",
   "slide-left":  "items-stretch justify-start",
 };
-
-// Elements that can receive focus, for the Tab focus-trap.
-const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export default function ModalBackdrop({
   onClose,
@@ -67,55 +64,16 @@ export default function ModalBackdrop({
 
   // FE-01: hand-rolled modals lacked focus management + Escape + dialog
   // semantics. Centralizing it here fixes every ModalBackdrop consumer at once.
-  // Move focus into the modal on open (keyboard + screen-reader users start
-  // inside it), and restore it to the previously-focused element on close.
-  useEffect(() => {
-    const previouslyFocused = document.activeElement;
-    const panel = panelRef.current;
-    const focusables = panel ? panel.querySelectorAll(FOCUSABLE_SELECTOR) : [];
-    if (focusables.length) focusables[0].focus();
-    else if (panel) panel.focus();
-    return () => {
-      if (previouslyFocused && typeof previouslyFocused.focus === "function") {
-        previouslyFocused.focus();
-      }
-    };
-  }, []);
+  // Escape mirrors backdrop-dismiss intent — editor modals that opt out of
+  // backdrop dismissal (to protect unsaved edits) keep Escape from discarding
+  // their state too.
+  const { onKeyDown } = useModalA11y(panelRef, {
+    onClose,
+    canDismiss: dismissOnBackdropClick,
+  });
 
   function handleBackdropClick() {
     if (dismissOnBackdropClick && onClose) onClose();
-  }
-
-  function handleKeyDown(e) {
-    if (e.key === "Escape") {
-      // Escape mirrors backdrop-dismiss intent: editor modals that opt out of
-      // backdrop dismissal (to protect unsaved edits) keep Escape from
-      // discarding their state too.
-      if (dismissOnBackdropClick && onClose) {
-        e.stopPropagation();
-        onClose();
-      }
-      return;
-    }
-    if (e.key !== "Tab") return;
-    // Focus trap — keep Tab / Shift+Tab cycling within the panel.
-    const panel = panelRef.current;
-    if (!panel) return;
-    const focusables = panel.querySelectorAll(FOCUSABLE_SELECTOR);
-    if (!focusables.length) {
-      e.preventDefault();
-      return;
-    }
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || !panel.contains(active))) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
   }
 
   // Slide-outs take a full-height bg-white panel; the inner wrapper
@@ -131,7 +89,7 @@ export default function ModalBackdrop({
       className={`fixed ${bg} backdrop-blur-sm flex ${layoutClass} ${isSlide ? "" : "p-4 overflow-y-auto"} ${z} ${className}`}
       style={{ top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
       onClick={handleBackdropClick}
-      onKeyDown={handleKeyDown}
+      onKeyDown={onKeyDown}
     >
       <div
         ref={panelRef}

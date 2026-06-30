@@ -14,10 +14,11 @@
 //              to "Back" — callers like OrderDetailModal pass
 //              "Back to order".
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, Download, Loader2 } from "lucide-react";
 import { signArtworkUrl } from "@/lib/uploadFile";
+import { useModalA11y } from "@/lib/useModalA11y";
 
 export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back" }) {
   const fallbackUrl = art?.url || art?.file_url || "";
@@ -30,6 +31,8 @@ export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back"
   // flicker. Now we hold a loading state until the URL is settled and
   // mount the embed exactly once.
   const [url, setUrl] = useState(null);
+  const panelRef = useRef(null);
+  const { onKeyDown } = useModalA11y(panelRef, { onClose });
   useEffect(() => {
     let cancelled = false;
     setUrl(null);
@@ -60,7 +63,13 @@ export default function ArtworkPreviewOverlay({ art, onClose, backLabel = "Back"
   // creates a new containing block that confines `fixed inset-0`).
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] bg-slate-900 flex flex-col"
+      ref={panelRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Artwork preview"
+      tabIndex={-1}
+      onKeyDown={onKeyDown}
+      className="fixed inset-0 z-[80] bg-slate-900 flex flex-col focus:outline-none"
       style={{ top: 0, left: 0, right: 0, bottom: 0 }}
     >
       {/* z-10 + relative pins the header above the embed's stacking

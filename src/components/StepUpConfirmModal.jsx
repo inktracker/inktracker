@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ShieldCheck, X, AlertTriangle } from "lucide-react";
+import { useModalA11y } from "@/lib/useModalA11y";
 import {
   isMfaEmailEnabled,
   requestMfaSignInCode,
@@ -91,14 +92,17 @@ export default function StepUpConfirmModal({
     return () => clearTimeout(t);
   }, [retryAfter]);
 
+  const panelRef = useRef(null);
+  const { onKeyDown } = useModalA11y(panelRef, { onClose: onCancel, active: open });
+
   if (!open) return null;
 
   // While we're checking whether MFA is on we want a brief loading
   // shell. Most users will see this for under a second.
   if (phase === "checking" || phase === "sending") {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+      <div onKeyDown={onKeyDown} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div ref={panelRef} role="dialog" aria-modal="true" aria-label="Security check" tabIndex={-1} className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 focus:outline-none">
           <p className="text-sm text-slate-600">Checking security…</p>
         </div>
       </div>
@@ -167,8 +171,8 @@ export default function StepUpConfirmModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div onKeyDown={onKeyDown} className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div ref={panelRef} role="dialog" aria-modal="true" aria-label={actionLabel || "Security confirmation"} tabIndex={-1} className="bg-white rounded-2xl shadow-2xl w-full max-w-md focus:outline-none">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-teal-600" />
