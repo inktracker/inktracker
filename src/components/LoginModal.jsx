@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
+import { useModalA11y } from "@/lib/useModalA11y";
 
 // MFA is enforced by <MfaGate> in AuthenticatedApp, not here. This
 // modal's only job is to establish a Supabase session — the gate kicks
@@ -88,6 +89,9 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
       clearTimeout(timeout);
     };
   }, [pendingConfirmEmail, password, onClose]);
+
+  const panelRef = useRef(null);
+  const { onKeyDown } = useModalA11y(panelRef, { onClose, active: isOpen });
 
   if (!isOpen) return null;
 
@@ -238,8 +242,15 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto">
+    <div onKeyDown={onKeyDown} className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={mode === "signup" ? "Create account" : "Sign in"}
+        tabIndex={-1}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto focus:outline-none"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <h2 className="text-lg font-bold text-slate-900">
