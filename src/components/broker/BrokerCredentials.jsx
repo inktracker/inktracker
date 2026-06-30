@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/api/supabaseClient";
-import { uploadFile } from "@/lib/uploadFile";
+import { uploadFile, openSignedArtwork } from "@/lib/uploadFile";
 import { Upload, FileText, CheckCircle2, AlertCircle, XCircle, FileWarning } from "lucide-react";
 
 const DEFAULT_CREDENTIALS = [
@@ -139,6 +139,7 @@ export default function BrokerCredentials({ user, onUpdate }) {
                     {c.file_name && (
                       <a
                         href={c.file}
+                        onClick={(e) => { e.preventDefault(); openSignedArtwork(c.file); }}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-teal-600 underline"
