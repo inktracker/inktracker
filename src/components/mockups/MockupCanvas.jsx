@@ -12,11 +12,21 @@ const PRINT_AREAS = {
 
 export { PRINT_AREAS };
 
+// crossOrigin is only needed (and only valid) for CROSS-ORIGIN http(s) images —
+// it lets the canvas export stay taint-free. For same-origin blob:/data: URLs
+// (custom-garment uploads, locally-read artwork) setting it can make the image
+// fail to LOAD in some browsers (onerror), which silently produced a blank proof
+// / mobile mockup even though the on-screen <img> rendered fine. Only flag
+// http(s) sources.
+function setCorsForRemote(img, src) {
+  if (/^https?:/i.test(String(src || ""))) img.crossOrigin = "anonymous";
+}
+
 // Convert image to single ink color with hard threshold (no shades)
 function makeOneColor(imgSrc, hexColor, threshold = 128) {
   return new Promise((resolve) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    setCorsForRemote(img, imgSrc);
     img.onload = () => {
       const c = document.createElement("canvas");
       c.width = img.width; c.height = img.height;
@@ -51,7 +61,7 @@ function makeOneColor(imgSrc, hexColor, threshold = 128) {
 function floodFillRemove(imgSrc, clickX, clickY, tolerance) {
   return new Promise((resolve) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    setCorsForRemote(img, imgSrc);
     img.onload = () => {
       const c = document.createElement("canvas");
       c.width = img.width; c.height = img.height;
@@ -162,7 +172,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
   useEffect(() => {
     if (!artworkUrlProp) { setProcessedArtwork(null); return; }
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    setCorsForRemote(img, artworkUrlProp);
     img.onload = () => {
       setArtworkSize({ width: img.width, height: img.height });
       const aspect = img.width / img.height;
@@ -211,7 +221,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
         const ctx = canvas.getContext("2d");
         if (!garmentImageUrl) { resolve(null); return; }
         const gImg = new Image();
-        gImg.crossOrigin = "anonymous";
+        setCorsForRemote(gImg, garmentImageUrl);
         gImg.onload = () => {
           // Maintain aspect ratio — center the garment in the square
           const aspect = gImg.width / gImg.height;
@@ -227,7 +237,7 @@ const MockupCanvas = forwardRef(function MockupCanvas({
           ctx.drawImage(gImg, dx, dy, dw, dh);
           if (artworkUrl) {
             const aImg = new Image();
-            aImg.crossOrigin = "anonymous";
+            setCorsForRemote(aImg, artworkUrl);
             aImg.onload = () => {
               const ax = artworkPos.x * size, ay = artworkPos.y * size;
               const aw = artworkPos.w * size, ah = artworkPos.h * size;
