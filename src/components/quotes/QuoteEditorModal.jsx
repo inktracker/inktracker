@@ -1334,7 +1334,12 @@ export default function QuoteEditorModal({
                 const updateCharge = (idx, patch) =>
                   setQ({ ...q, additional_charges: charges.map((c, i) => (i === idx ? { ...c, ...patch } : c)) });
                 const addCharge = () =>
-                  setQ({ ...q, additional_charges: [...charges, { id: `ac-${Date.now()}`, label: "", amount: "", taxable: false }] });
+                  // TAX-04: default a new charge to TAXABLE. Shipping/handling/rush
+                  // fees are taxable in most US states, and over-collecting (then
+                  // remitting) is the shop-safe error vs. silently under-collecting.
+                  // The per-charge toggle below lets the shop mark genuine
+                  // exceptions non-taxable. Default only; existing charges unchanged.
+                  setQ({ ...q, additional_charges: [...charges, { id: `ac-${Date.now()}`, label: "", amount: "", taxable: true }] });
                 const removeCharge = (idx) =>
                   setQ({ ...q, additional_charges: charges.filter((_, i) => i !== idx) });
                 return (
