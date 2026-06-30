@@ -766,7 +766,11 @@ export default function QuotePayment() {
                   </div>
                   {!hasQb && (
                     <div className="text-[11px] text-slate-500 text-right -mt-1">
-                      Final tax calculated based on ship-to address at checkout.
+                      {/* TAX-02: this branch only renders for non-QB quotes, whose
+                          tax is the shop's flat rate — there is no ship-to-based
+                          recalculation at checkout (Stripe charges the saved total
+                          as-is), so don't claim one. */}
+                      Estimated using the shop&rsquo;s sales-tax rate.
                     </div>
                   )}
                 </>
