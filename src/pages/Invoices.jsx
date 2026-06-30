@@ -38,6 +38,10 @@ export default function Invoices() {
   const [dateTo, setDateTo] = useState("");
   const [advFilters, setAdvFilters] = useState(initialCustomer ? { customer: initialCustomer } : {});
   const [qbOutstanding, setQbOutstanding] = useState(null);
+  // SCALE-05: the QB pull caps at 10k rows. Surface it here too (the Account
+  // migrate flow already does) so a large shop's silent truncation isn't only
+  // visible in server logs.
+  const [qbTruncated, setQbTruncated] = useState(false);
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
 
@@ -62,10 +66,11 @@ export default function Invoices() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.access_token) {
           // Sync invoices from QB (updates existing, creates new — no duplicates)
-          await base44.functions.invoke("qbSync", {
+          const { data: pullRes } = await base44.functions.invoke("qbSync", {
             action: "pullInvoices",
             accessToken: session.access_token,
           });
+          if (pullRes?.truncatedAtCap) setQbTruncated(true);
           // Reload with fresh data + recompute outstanding from local rows.
           const freshInv = await base44.entities.Invoice.filter({ shop_owner: shopScope(currentUser) }, "-date", 1000);
           setInvoices(freshInv);
@@ -237,6 +242,12 @@ export default function Invoices() {
       <div className="flex justify-between items-center">
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">Invoices</h2>
       </div>
+      {qbTruncated && (
+        <div role="status" className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          QuickBooks returned more than 10,000 invoices — only the most recent were synced. Older
+          invoices may be missing here. Contact support if you need the full history imported.
+        </div>
+      )}
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <div className="bg-red-50 border border-red-100 rounded-xl p-2.5 sm:p-4">
           <div className="text-[10px] font-bold text-red-400 uppercase tracking-widest mb-1">Outstanding</div>
