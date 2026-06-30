@@ -51,6 +51,26 @@ describe("mintPaymentLink", () => {
     expect(deps.sendInvoice).toHaveBeenCalledWith("cust@example.com");
   });
 
+  it("with skipSend, NEVER calls /send even when the no-email path yields nothing", async () => {
+    // Invoice/order flow: the shop sends via InkTracker, so a QB email is
+    // unwanted. We accept no link rather than emailing.
+    const deps = base({
+      skipSend: true,
+      fetchLink: vi.fn(async () => null),          // include never returns a link
+      sendInvoice: vi.fn(async () => ({ link: "L3" })),
+    });
+    const out = await mintPaymentLink(deps);
+    expect(out).toMatchObject({ link: null, reason: "no_link_no_email", emailed: false });
+    expect(deps.sendInvoice).not.toHaveBeenCalled();
+  });
+
+  it("skipSend still returns a link when include=invoiceLink provides one (no email)", async () => {
+    const deps = base({ skipSend: true, fetchLink: vi.fn(async () => ({ link: "L1" })) });
+    const out = await mintPaymentLink(deps);
+    expect(out).toMatchObject({ link: "L1", emailed: false });
+    expect(deps.sendInvoice).not.toHaveBeenCalled();
+  });
+
   it("does NOT email (or even attempt /send) when there's no billEmail", async () => {
     const deps = base({ billEmail: "", fetchLink: vi.fn(async () => null) });
     const out = await mintPaymentLink(deps);

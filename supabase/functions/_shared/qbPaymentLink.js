@@ -31,6 +31,13 @@ export async function mintPaymentLink({
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   noEmailWaits = [0, 1500],
   sendRefetchWait = 3000,
+  // When true, NEVER fall back to QBO's /send (which emails the customer a
+  // copy of the invoice). Used by the invoice/order flow, where the shop
+  // sends the email itself via InkTracker/Resend and an unexpected QB email
+  // is unwanted. Trade-off: if include=invoiceLink doesn't yield a link
+  // (e.g. QB Payments not yet provisioned), we return no link rather than
+  // emailing — the operator can send the PDF or retry.
+  skipSend = false,
 }) {
   let invoice = initialInvoice;
 
@@ -49,7 +56,11 @@ export async function mintPaymentLink({
     }
   }
 
-  // 3. Fallback: /send (emails). Needs a billEmail.
+  // 3. Fallback: /send (emails). Skipped entirely when skipSend is set — the
+  // caller would rather have no link than send a QB email.
+  if (skipSend) {
+    return { link: null, finalInvoice: invoice, reason: "no_link_no_email", emailed: false };
+  }
   if (!billEmail) {
     return { link: null, finalInvoice: invoice, reason: "no_bill_email", emailed: false };
   }

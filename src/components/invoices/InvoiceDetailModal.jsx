@@ -63,17 +63,10 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       });
       return;
     }
-    // QBO's POST /invoice/{id}/send is the only API that mints a
-    // customer-facing payment link — and it also emails the customer
-    // a copy of the invoice from QuickBooks' own mail servers. There
-    // is no "create without notifying" option. Confirm so operators
-    // don't accidentally fire off an invoice from a quiet footer button.
-    const recipientEmail = customer?.email || invoice.customer_email;
-    const proceed = window.confirm(
-      `Heads up: QuickBooks will email ${recipientEmail || "the customer"} a copy of this invoice with a pay-now link the moment you click OK.\n\n` +
-      `This happens on QuickBooks' side — InkTracker can't suppress it. Continue?`
-    );
-    if (!proceed) return;
+    // Creating the QB invoice no longer emails the customer: qbSync mints the
+    // pay link via ?include=invoiceLink and we pass noEmail so the /send
+    // fallback (the only path that emails) is suppressed. The customer is
+    // emailed only when the shop explicitly clicks Send. So no confirm here.
     setQbCreating(true);
     setQbStatus(null);
     try {
@@ -128,6 +121,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       const { data, error: invErr } = await base44.functions.invoke("qbSync", {
         action: "createInvoice",
         accessToken: session.access_token,
+        // Don't let QuickBooks email the customer — the shop sends via the
+        // Send button. Suppresses qbSync's /send fallback.
+        noEmail: true,
         quote: quoteShape,
         invoicePayload,
         customer: {
@@ -261,8 +257,11 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - discVal / 100);
   const totals = invoice ? { sub, afterDisc, tax: invoice.tax, total: invoice.total } : null;
 
+  // z-[120] sits above the OrderDetailModal (z-[60]) so "Preview Invoice"
+  // opened from a completed order layers on top, not behind it. Still below
+  // SendInvoiceModal (z-[200]), which this modal can open.
   return (
-    <ModalBackdrop onClose={onClose} z="z-50">
+    <ModalBackdrop onClose={onClose} z="z-[120]">
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
 
         {/* Header */}

@@ -71,6 +71,10 @@ export async function createInvoiceInQB({ base44, invoice, customer, session }) 
     const { data, error } = await base44.functions.invoke("qbSync", {
       action: "createInvoice",
       accessToken: session.access_token,
+      // Never let QuickBooks email the customer — the shop sends the invoice
+      // itself via the Send flow (Resend). qbSync mints the pay link via
+      // ?include=invoiceLink and suppresses the /send fallback.
+      noEmail: true,
       quote: quoteShape,
       invoicePayload,
       customer: {
