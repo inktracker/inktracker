@@ -1,15 +1,10 @@
-import { Fragment, useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import ArtworkPreviewOverlay from "../shared/ArtworkPreviewOverlay";
 import SendInvoiceModal from "../invoices/SendInvoiceModal";
-import { createInvoiceInQB } from "@/lib/invoices/createInvoiceInQB";
 import { createPortal } from "react-dom";
-import { Link } from "react-router-dom";
-import { createPageUrl } from "@/utils";
 import { base44, supabase } from "@/api/supabaseClient";
-import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
-import { orderThreadId, quoteThreadId } from "@/lib/messageThreads";
 import { buildShortfallReorderPayloads, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { notify } from "@/lib/notify";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
@@ -21,25 +16,11 @@ import {
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
 import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normalizePresses";
-import { MessageSquare, Paperclip} from "lucide-react";
+import { Paperclip } from "lucide-react";
 import {
-  calcLinkedLinePrice,
-  buildLinkedQtyMap,
-  getLineExtras,
-  fmtDate,
-  fmtMoney,
-  getQty,
-  getShortfallQty,
-  getCompletedQty,
-  SIZES,
   getDisplayName,
-  BROKER_MARKUP,
   O_STATUSES,
-  sortSizeEntries,
 } from "../shared/pricing";
-import Badge from "../shared/Badge";
-import { exportOrderToPDF } from "../shared/pdfExport";
-import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck, ExternalLink, Loader2, ChevronDown } from "lucide-react";
 // Per-stage checklist tasks now live in src/lib/productionTasks.js so
 // each shop can customize them via Account → Production Tasks. The
 // helper falls back to the shipped defaults when a stage isn't
@@ -47,81 +28,17 @@ import { Link2, Download, Eye, Trash2, ShoppingCart, CheckCircle2, Hammer, Truck
 // Order Goods only fire when those canonical names are in the list.
 import { getStageTasks } from "@/lib/productionTasks";
 import { todayInShopTz } from "@/lib/shopTimezone";
-
-// STATUS_ORDER previously had its own (different — missing "Order
-// Goods") list; replaced with the canonical O_STATUSES so the
-// "next status" arrow walks the same pipeline as everything else.
-function getNextStatus(currentStatus) {
-  const idx = O_STATUSES.indexOf(currentStatus);
-  return idx >= 0 && idx < O_STATUSES.length - 1 ? O_STATUSES[idx + 1] : null;
-}
-
-function getPreviousStatus(currentStatus) {
-  const idx = O_STATUSES.indexOf(currentStatus);
-  return idx > 0 ? O_STATUSES[idx - 1] : null;
-}
-
-function getImprintArtwork(imp) {
-  if (!imp) return null;
-  if (!imp.artwork_id && !imp.artwork_name && !imp.artwork_url) return null;
-
-  return {
-    id: imp.artwork_id || imp.artwork_url || imp.artwork_name || "",
-    name: imp.artwork_name || "Attached Artwork",
-    url: imp.artwork_url || "",
-    note: imp.artwork_note || "",
-    colors: imp.artwork_colors || "",
-  };
-}
-
-function getOrderArtwork(order) {
-  const map = new Map();
-
-  (order?.selected_artwork || []).forEach((art) => {
-    const key = art.id || art.url || art.name;
-    if (!key || map.has(key)) return;
-
-    map.set(key, {
-      id: art.id || key,
-      name: art.name || "Connected Artwork",
-      url: art.url || art.file_url || "",
-      note: art.note || "",
-      colors: art.colors || art.artwork_colors || "",
-      source: art.source || "Connected to quote",
-      placements: [],
-    });
-  });
-
-  (order?.line_items || []).forEach((li) => {
-    (li.imprints || []).forEach((imp) => {
-      const art = getImprintArtwork(imp);
-      if (!art) return;
-
-      const key = art.id || art.url || art.name;
-      const existing = map.get(key);
-      const placement = [imp.location, imp.title].filter(Boolean).join(" · ");
-
-      if (existing) {
-        if (placement && !existing.placements.includes(placement)) {
-          existing.placements.push(placement);
-        }
-        if (!existing.colors && art.colors) existing.colors = art.colors;
-        if (!existing.note && art.note) existing.note = art.note;
-        if (!existing.url && art.url) existing.url = art.url;
-        existing.source = "Linked to production imprints";
-        return;
-      }
-
-      map.set(key, {
-        ...art,
-        source: "Linked to production imprints",
-        placements: placement ? [placement] : [],
-      });
-    });
-  });
-
-  return Array.from(map.values());
-}
+import OrderDetailHeader from "./orderDetail/OrderDetailHeader";
+import OrderLineItems from "./orderDetail/OrderLineItems";
+import FloorModePanel from "./orderDetail/FloorModePanel";
+import OrderShippingSection from "./orderDetail/OrderShippingSection";
+import OrderJobCostSection from "./orderDetail/OrderJobCostSection";
+import OrderInvoiceActions from "./orderDetail/OrderInvoiceActions";
+import OrderUtilityActions from "./orderDetail/OrderUtilityActions";
+import OrderMessagesSection from "./orderDetail/OrderMessagesSection";
+import { useOrderShipping } from "./orderDetail/useOrderShipping";
+import { useOrderInvoice } from "./orderDetail/useOrderInvoice";
+import { getNextStatus, getPreviousStatus, getOrderArtwork } from "./orderDetail/orderDetailHelpers";
 
 export default function OrderDetailModal({
   order,
@@ -215,18 +132,17 @@ export default function OrderDetailModal({
   // Floor Mode renders the OLD stage's checklist forever because
   // useState only reads the prop on mount.
   useEffect(() => { setLiveOrder(order); }, [order]);
-  // Existing invoice for this order/quote, if any. Drives whether the
-  // action bar shows "Create Invoice" vs "Preview Invoice" + the
-  // optional "View in QB" link. Fetched once on mount.
-  const [relatedInvoice, setRelatedInvoice] = useState(null);
-  // Send-invoice flow (opened from the Completed action bar). `sendCustomer`
-  // is fetched lazily when the operator clicks Send. `creatingInvoice` covers
-  // the whole Create Invoice → push-to-QB sequence; `qbPushNote` surfaces a
-  // best-effort QB outcome (e.g. tax hold) without blocking.
-  const [sendingInvoice, setSendingInvoice] = useState(false);
-  const [sendCustomer, setSendCustomer] = useState(null);
-  const [creatingInvoice, setCreatingInvoice] = useState(false);
-  const [qbPushNote, setQbPushNote] = useState("");
+  // Related invoice + Create/Send flow — extracted into a hook.
+  const {
+    relatedInvoice,
+    sendingInvoice, setSendingInvoice,
+    sendCustomer,
+    creatingInvoice,
+    qbPushNote,
+    lookupRelatedInvoice,
+    handleCreateInvoice,
+    handleOpenSend,
+  } = useOrderInvoice({ order, customer, onComplete, callAction });
   // Shop-configured press list (Account → Production Setup) + this
   // shop's employees, used to populate the two Assigned dropdowns
   // below the cost fields. Empty arrays just mean the dropdown shows
@@ -235,36 +151,33 @@ export default function OrderDetailModal({
   const [presses, setPresses] = useState([]);
   const [employees, setEmployees] = useState([]);
 
-  // Shipping
-  const [showShipping, setShowShipping] = useState(false);
-  const [shipStreet, setShipStreet] = useState(order.shipping_address_street || "");
-  const [shipCity, setShipCity] = useState(order.shipping_address_city || "");
-  const [shipState, setShipState] = useState(order.shipping_address_state || "");
-  const [shipZip, setShipZip] = useState(order.shipping_address_zip || "");
-  const [shipCountry, setShipCountry] = useState(order.shipping_address_country || "US");
-  const [shipWeight, setShipWeight] = useState(order.shipping_weight || "");
-  const [shipLength, setShipLength] = useState(order.shipping_length || "");
-  const [shipWidth, setShipWidth] = useState(order.shipping_width || "");
-  const [shipHeight, setShipHeight] = useState(order.shipping_height || "");
-  const [shipService, setShipService] = useState(order.shipping_service_type || "");
-  const [shipRates, setShipRates] = useState([]);
-  const [loadingRates, setLoadingRates] = useState(false);
-  const [creatingLabel, setCreatingLabel] = useState(false);
-  const [shipTracking, setShipTracking] = useState(order.tracking_number || "");
-  const [shipLabelUrl, setShipLabelUrl] = useState(order.shipping_label_url || "");
-  const [shipStatus, setShipStatus] = useState(order.shipping_status || "");
-  // Read-only sync for the shipping result trio. These get written by
-  // the in-modal "Create Label" / "Track Shipment" actions but can also
-  // arrive externally (FedEx webhook, label created from another tab).
-  // The shipping FORM inputs above (address, weight, dims) deliberately
-  // DON'T sync — they're user-editable and would clobber in-progress
-  // edits if the order prop refreshed mid-typing.
-  useEffect(() => { setShipTracking(order.tracking_number || ""); }, [order.tracking_number]);
-  useEffect(() => { setShipLabelUrl(order.shipping_label_url || ""); }, [order.shipping_label_url]);
-  useEffect(() => { setShipStatus(order.shipping_status || ""); }, [order.shipping_status]);
-  const [savingShipping, setSavingShipping] = useState(false);
-  const [shippingSaved, setShippingSaved] = useState(false);
-  const [shipError, setShipError] = useState("");
+  // Shipping — FedEx state + handlers extracted into a hook.
+  const {
+    showShipping, setShowShipping,
+    shipStreet, setShipStreet,
+    shipCity, setShipCity,
+    shipState, setShipState,
+    shipZip, setShipZip,
+    shipCountry, setShipCountry,
+    shipWeight, setShipWeight,
+    shipLength, setShipLength,
+    shipWidth, setShipWidth,
+    shipHeight, setShipHeight,
+    shipService, setShipService,
+    shipRates,
+    loadingRates,
+    creatingLabel,
+    shipTracking,
+    shipLabelUrl,
+    shipStatus,
+    savingShipping,
+    shippingSaved,
+    shipError,
+    handleGetRates,
+    handleCreateLabel,
+    handleSaveShipping,
+    handleTrackShipment,
+  } = useOrderShipping(order);
 
   // Stage-complete check + auto-advance. Mirrors ShopFloor.jsx so the
   // two surfaces behave the same way: when every task in the current
@@ -467,93 +380,6 @@ export default function OrderDetailModal({
     }
   }
 
-  const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
-
-  async function callFedEx(action, params) {
-    setShipError("");
-    const { data: { session } } = await supabase.auth.getSession();
-    const { data, error: invErr } = await base44.functions.invoke("fedexShipping", {
-      action,
-      accessToken: session?.access_token,
-      ...params,
-    });
-    if (invErr) {
-      setShipError(invErr.message || "FedEx request failed");
-      return { error: invErr.message };
-    }
-    if (data?.error) setShipError(data.error);
-    return data;
-  }
-
-  async function handleGetRates() {
-    setLoadingRates(true);
-    setShipRates([]);
-    const data = await callFedEx("getRates", {
-      shipTo: { street: shipStreet, city: shipCity, state: shipState, zip: shipZip, country: shipCountry },
-      weight: shipWeight, length: shipLength, width: shipWidth, height: shipHeight,
-    });
-    if (data.rates) setShipRates(data.rates);
-    setLoadingRates(false);
-  }
-
-  async function handleCreateLabel() {
-    if (!shipService) { setShipError("Select a shipping service first"); return; }
-    setCreatingLabel(true);
-    const data = await callFedEx("createShipment", {
-      shipTo: {
-        street: shipStreet, city: shipCity, state: shipState, zip: shipZip, country: shipCountry,
-        name: order.customer_name, company: "",
-      },
-      weight: shipWeight, length: shipLength, width: shipWidth, height: shipHeight,
-      serviceType: shipService,
-      orderId: order.id,
-      customerName: order.customer_name,
-    });
-    if (data.trackingNumber) {
-      setShipTracking(data.trackingNumber);
-      setShipLabelUrl(data.labelUrl || "");
-      setShipStatus("Label Created");
-      // Also open the label for immediate printing
-      if (data.encodedLabel) {
-        const w = window.open("", "_blank");
-        if (w) {
-          w.document.write(`<iframe src="${data.encodedLabel}" style="width:100%;height:100%;border:none"></iframe>`);
-        }
-      }
-    }
-    setCreatingLabel(false);
-  }
-
-  async function handleSaveShipping() {
-    setSavingShipping(true);
-    try {
-      await base44.entities.Order.update(order.id, {
-        shipping_address_street: shipStreet,
-        shipping_address_city: shipCity,
-        shipping_address_state: shipState,
-        shipping_address_zip: shipZip,
-        shipping_address_country: shipCountry,
-        shipping_weight: parseFloat(shipWeight) || null,
-        shipping_length: parseFloat(shipLength) || null,
-        shipping_width: parseFloat(shipWidth) || null,
-        shipping_height: parseFloat(shipHeight) || null,
-        shipping_service_type: shipService,
-      });
-      setShippingSaved(true);
-      setTimeout(() => setShippingSaved(false), 2000);
-    } catch (err) {
-      notify.error("Couldn't save shipping", err);
-    } finally {
-      setSavingShipping(false);
-    }
-  }
-
-  async function handleTrackShipment() {
-    if (!shipTracking) return;
-    const data = await callFedEx("trackShipment", { trackingNumber: shipTracking });
-    if (data.status) setShipStatus(data.status);
-  }
-
   async function handleArtworkUpload(e) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -571,14 +397,12 @@ export default function OrderDetailModal({
           .upload(path, file, { upsert: false });
         if (upErr) throw upErr;
 
-        // url is the public-FORM path-carrier (artwork bucket is private — M-1);
-        // store `path` as the canonical reference so readers sign from it directly.
-        const { data } = supabase.storage.from("artwork").getPublicUrl(path);
+        // The artwork bucket is private (M-1) — a getPublicUrl() here would 400.
+        // `path` is the canonical reference; readers sign a URL from it directly.
         newArtwork.push({
           id: path,
           name: file.name,
           path,
-          url: data.publicUrl,
           note: "",
           colors: "",
           source: "Uploaded to order",
@@ -677,143 +501,6 @@ export default function OrderDetailModal({
       .catch(() => {});
   }, []);
 
-  // Look up any existing invoice for this order (or its source
-  // quote) so the action bar can show "Preview Invoice" instead of
-  // "Create Invoice" when an invoice already exists. Two match
-  // paths:
-  //   1. order_id match — invoice was created via this order's
-  //      handleComplete on a prior visit
-  //   2. invoice_id = order.quote_id — invoice was created via
-  //      SendQuoteModal pushing the quote to QB (then synced back
-  //      via handlePullInvoices, which uses the QB DocNumber —
-  //      typically the quote_id — as the invoice_id)
-  // Resolve the invoice tied to this order (two match paths above) and return
-  // it. Used by the mount effect AND by handleCreateInvoice, which needs the
-  // freshly-created row to drive the QB push + Send button. Returns null when
-  // none exists; sets relatedInvoice state as a side effect.
-  async function lookupRelatedInvoice() {
-    if (!order?.shop_owner) { setRelatedInvoice(null); return null; }
-    try {
-      const byOrderId = await base44.entities.Invoice.filter({
-        shop_owner: order.shop_owner,
-        order_id: order.order_id,
-      });
-      if (byOrderId.length > 0) { setRelatedInvoice(byOrderId[0]); return byOrderId[0]; }
-      if (order.quote_id) {
-        const byQuoteId = await base44.entities.Invoice.filter({
-          shop_owner: order.shop_owner,
-          invoice_id: order.quote_id,
-        });
-        if (byQuoteId.length > 0) { setRelatedInvoice(byQuoteId[0]); return byQuoteId[0]; }
-      }
-      setRelatedInvoice(null);
-      return null;
-    } catch (err) {
-      console.error("[OrderDetailModal] related-invoice lookup failed:", err);
-      setRelatedInvoice(null);
-      return null;
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const inv = await lookupRelatedInvoice();
-      // If the effect was torn down mid-flight, undo the state write so we
-      // don't render a stale invoice for a different order.
-      if (cancelled && inv) setRelatedInvoice(null);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?.id, order?.order_id, order?.quote_id, order?.shop_owner]);
-
-  // Look up the customer record for an invoice (needed for the QB push +
-  // Send email). Best-effort — returns null if it can't be resolved.
-  async function fetchInvoiceCustomer(inv) {
-    const cid = inv?.customer_id || order?.customer_id;
-    // The `customer` prop is the order's customer (keyed by order.customer_id),
-    // already carrying email/company/qb_customer_id — prefer it over a lookup.
-    if (customer && (customer.id === cid || customer.email)) return customer;
-    try {
-      if (cid) {
-        const rows = await base44.entities.Customer.filter({ shop_owner: order.shop_owner, id: cid });
-        if (rows?.length) return rows[0];
-      }
-      const email = inv?.customer_email || order?.customer_email;
-      if (email) {
-        const byEmail = await base44.entities.Customer.filter({ shop_owner: order.shop_owner, email });
-        if (byEmail?.length) return byEmail[0];
-      }
-    } catch (err) {
-      console.warn("[OrderDetailModal] customer lookup failed:", err?.message);
-    }
-    // Minimal shape so SendInvoiceModal still prefills the To field.
-    return { id: cid || "", name: inv?.customer_name || order?.customer_name || "", email: inv?.customer_email || order?.customer_email || "" };
-  }
-
-  // "Create Invoice" on a Completed order with no invoice yet:
-  //   1. run the parent's completion (creates the InkTracker invoice row),
-  //   2. resolve that fresh invoice,
-  //   3. if QuickBooks is connected, push it to QB silently (no customer
-  //      email — qbSync mints the pay link via ?include=invoiceLink),
-  //   4. leave the modal open so the revealed "Send" button can email it.
-  // The QB step is best-effort: a failure (or no QB connection) still leaves
-  // a valid InkTracker invoice the shop can send or push manually later.
-  async function handleCreateInvoice() {
-    if (!onComplete) return;
-    setCreatingInvoice(true);
-    setQbPushNote("");
-    try {
-      await callAction(onComplete, order);
-      const inv = await lookupRelatedInvoice();
-      if (!inv) return;
-      if (inv.qb_invoice_id) return; // already in QB (e.g. linked from a sent quote)
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) return;
-
-      // Only attempt the push when QB is actually connected — otherwise the
-      // edge function errors and we'd surface noise for shops that don't use QB.
-      let connected = false;
-      try {
-        const { data, error } = await base44.functions.invoke("qbSync", {
-          action: "checkConnection",
-          accessToken: session.access_token,
-        });
-        connected = !error && !!data?.connected;
-      } catch { /* treat as not connected */ }
-      if (!connected) return;
-
-      const cust = await fetchInvoiceCustomer(inv);
-      const result = await createInvoiceInQB({ base44, invoice: inv, customer: cust, session });
-      if (result?.taxBlocked) {
-        const d = result.taxBlockDetail || {};
-        setQbPushNote(
-          `Invoice created. QuickBooks put it on hold — it calculated a different sales tax ` +
-          `(billed $${Number(d.quotedTax || 0).toFixed(2)}, QB computed $${Number(d.qbTax || 0).toFixed(2)}). ` +
-          `No pay link yet; fix the tax in QB then use Send. See docs/qb-tax-sync.md.`
-        );
-      } else if (!result?.ok) {
-        setQbPushNote(`Invoice created in InkTracker, but the QuickBooks push didn't complete: ${result?.error || "unknown error"}. You can retry from the invoice's "Create in QB".`);
-      }
-      // Refresh so the action bar picks up qb_invoice_id / qb_payment_link.
-      await lookupRelatedInvoice();
-    } catch (err) {
-      notify.error("Couldn't create the invoice", err);
-    } finally {
-      setCreatingInvoice(false);
-    }
-  }
-
-  // Open the Send Invoice modal — fetch the customer first so the recipient
-  // and any QB pay link are prefilled.
-  async function handleOpenSend() {
-    if (!relatedInvoice) return;
-    const cust = await fetchInvoiceCustomer(relatedInvoice);
-    setSendCustomer(cust);
-    setSendingInvoice(true);
-  }
-
   // Load the shop's configured press list + this shop's employees so
   // the two Assigned dropdowns have real options. Best-effort — empty
   // arrays just collapse the dropdowns to "no options" + fall back to
@@ -897,102 +584,15 @@ export default function OrderDetailModal({
         className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-4xl my-4"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-start px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700">
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">
-              {order.order_id} {order.quote_id && `· ${order.quote_id}`}
-            </div>
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 truncate">
-              {displayClient}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 mt-0.5">
-              {displayJobTitle && (
-                <div className="text-sm text-slate-500">Job: {displayJobTitle}</div>
-              )}
-              {(order.order_date || order.date) && (
-                <div className="text-sm text-slate-500">Ordered: {fmtDate(order.order_date || order.date)}</div>
-              )}
-              {order.due_date && (
-                <div className="text-sm text-slate-500">Due: {fmtDate(order.due_date)}</div>
-              )}
-              {artworkFiles.length > 0 && (
-                <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-full">
-                  {artworkFiles.length} artwork file{artworkFiles.length === 1 ? "" : "s"}
-                </span>
-              )}
-              {normalizeAssignedPress(order.assigned_press) && (
-                <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2.5 py-1 rounded-full">
-                  {normalizeAssignedPress(order.assigned_press)}
-                </span>
-              )}
-              {order.assigned_operator && (
-                <span className="text-[11px] font-semibold text-cyan-700 bg-cyan-50 border border-cyan-100 px-2.5 py-1 rounded-full">
-                  {order.assigned_operator}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <Badge s={order.status} />
-            {order.paid ? (
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-                Paid
-              </span>
-            ) : (
-              <span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">
-                Unpaid
-              </span>
-            )}
-            <button
-              onClick={onClose}
-              className="text-slate-500 hover:text-slate-600 text-lg leading-none"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-
-        {/* Production Progress Pipeline.
-            Chips distributed evenly across the row — connectors use
-            flex-1 to absorb extra width. Per-step notes popover was
-            removed on 2026-05-12 (Joe's polish pass). stepNotes state
-            still persists via handleSaveJobCost so the order's
-            step_notes column isn't broken — just no inline editor
-            here. */}
-        <div className="px-3 sm:px-6 py-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 overflow-x-auto">
-          <div className="flex items-center w-full min-w-max sm:min-w-0">
-            {O_STATUSES.map((s, i) => {
-              const currentIdx = O_STATUSES.indexOf(order.status);
-              const done = i < currentIdx;
-              const active = i === currentIdx;
-              const isLast = i === O_STATUSES.length - 1;
-              return (
-                <Fragment key={s}>
-                  <button
-                    onClick={() => {
-                      if (i === currentIdx) return;
-                      if (onAdvance && i === currentIdx + 1) onAdvance(order.id);
-                      else if (onRevert && i === currentIdx - 1) onRevert(order.id);
-                    }}
-                    disabled={Math.abs(i - currentIdx) > 1}
-                    className={`flex items-center gap-1 sm:gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold transition whitespace-nowrap ${
-                      active ? "bg-teal-600 text-white shadow-sm" :
-                      done ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer" :
-                      i === currentIdx + 1 ? "bg-white dark:bg-slate-900 text-slate-500 border border-slate-200 dark:border-slate-700 hover:border-teal-300 hover:text-teal-600 cursor-pointer" :
-                      "bg-white dark:bg-slate-900 text-slate-300 border border-slate-100 dark:border-slate-700"
-                    }`}
-                  >
-                    {done && <span>✓</span>}
-                    {s}
-                  </button>
-                  {!isLast && (
-                    <div className={`flex-1 h-0.5 mx-1 sm:mx-2 ${done ? "bg-emerald-300" : "bg-slate-200"}`} />
-                  )}
-                </Fragment>
-              );
-            })}
-          </div>
-        </div>
+        <OrderDetailHeader
+          order={order}
+          displayClient={displayClient}
+          displayJobTitle={displayJobTitle}
+          artworkFiles={artworkFiles}
+          onClose={onClose}
+          onAdvance={onAdvance}
+          onRevert={onRevert}
+        />
 
         <div className="p-4 sm:p-6 space-y-5">
           <div className="bg-teal-50 border border-teal-100 rounded-2xl p-4">
@@ -1019,835 +619,90 @@ export default function OrderDetailModal({
 
           {(liveOrder.line_items || []).length > 0 ? (
             <>
-              {(liveOrder.line_items || []).map((li) => {
-                const qty = getQty(li);
-                const shortfallQty = getShortfallQty(li);
-                const completedQty = getCompletedQty(li);
-                const markup = isBrokerOrder ? BROKER_MARKUP : undefined;
-                const linkedQtyMap = buildLinkedQtyMap(liveOrder.line_items || []);
-                // Use saved pricing from "calculate once"; fall back to live calc for legacy
-                const hasSaved = Number.isFinite(li._ppp) && li._ppp > 0 && Number.isFinite(li._lineTotal);
-                const clientPppOverride = Number(li?.clientPpp);
-                const useClientPpp = !hasSaved && markup === undefined && Number.isFinite(clientPppOverride) && clientPppOverride > 0 && qty > 0;
-                const r = hasSaved
-                  ? { lineTotal: li._lineTotal, ppp: li._ppp, regularPpp: li._ppp, oversizePpp: li._ppp }
-                  : useClientPpp
-                    ? { lineTotal: clientPppOverride * qty, ppp: clientPppOverride, regularPpp: clientPppOverride, oversizePpp: clientPppOverride, overridden: true }
-                    : calcLinkedLinePrice(li, order.rush_rate, getLineExtras(li, order), markup, linkedQtyMap);
-                const activeSizes = SIZES.filter(
-                  (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
-                );
-                return (
-                  <div key={li.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                    <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                      <div>
-                        <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">
-                          {li.style || "Garment"}
-                        </span>
-                        {li.garmentColor && (
-                          <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>
-                        )}
-                        <span className="ml-2 text-xs text-slate-500">
-                          Wholesale: {fmtMoney(li.garmentCost)}
-                        </span>
-                      </div>
-                      {r && (
-                        <span className="font-bold text-slate-700 text-sm">
-                          {fmtMoney(r.lineTotal)}
-                        </span>
-                      )}
-                    </div>
+              <OrderLineItems
+                order={order}
+                liveOrder={liveOrder}
+                isBrokerOrder={isBrokerOrder}
+                totals={totals}
+                isFlat={isFlat}
+                discVal={discVal}
+                lineDiscountFactor={lineDiscountFactor}
+                setPreviewArt={setPreviewArt}
+                handleReorderShortfall={handleReorderShortfall}
+                reorderCreating={reorderCreating}
+              />
 
-                    {activeSizes.length > 0 && (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
-                              <td className="px-4 py-2 text-xs text-slate-500 font-semibold">
-                                Size
-                              </td>
-                              {activeSizes.map((sz) => (
-                                <td
-                                  key={sz}
-                                  className="px-3 py-2 text-center text-xs font-semibold text-slate-600"
-                                >
-                                  {sz}
-                                </td>
-                              ))}
-                              <td className="px-4 py-2 text-center text-xs font-semibold text-slate-600">
-                                Total
-                              </td>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr>
-                              <td className="px-4 py-2 text-xs text-slate-500">Qty</td>
-                              {activeSizes.map((sz) => (
-                                <td
-                                  key={sz}
-                                  className="px-3 py-2 text-center font-semibold text-slate-800 dark:text-slate-200"
-                                >
-                                  {(li.sizes || {})[sz] || 0}
-                                </td>
-                              ))}
-                              <td className="px-4 py-2 text-center font-bold text-slate-800 dark:text-slate-200">
-                                {qty}
-                              </td>
-                            </tr>
-                            {r && (
-                              <tr>
-                                <td className="px-4 py-2 text-xs text-slate-500">Price/ea</td>
-                                {activeSizes.map((sz) => (
-                                  <td
-                                    key={sz}
-                                    className="px-3 py-2 text-center text-xs text-slate-500"
-                                  >
-                                    {fmtMoney(r.ppp)}
-                                  </td>
-                                ))}
-                                <td className="px-4 py-2 text-center text-xs font-bold text-slate-700">
-                                  {fmtMoney(r.lineTotal)}
-                                </td>
-                              </tr>
-                            )}
-                            {/* Shortfall entry moved to Floor Mode (Printing
-                                step) — misprints are logged by the shop floor
-                                worker, not by whoever opens the order detail.
-                                The read-only "Completed" total row below still
-                                renders here when shortfall > 0 so the pricing
-                                table reflects the adjusted net qty. */}
-                            {shortfallQty > 0 && (
-                              <tr className="bg-emerald-50/40 border-t border-emerald-100">
-                                <td className="px-4 py-2 text-xs text-emerald-700 font-semibold">
-                                  Completed
-                                </td>
-                                {activeSizes.map((sz) => {
-                                  const sizeQty = (li.sizes || {})[sz] || 0;
-                                  const sizeShort = (li._shortfall || {})[sz] || 0;
-                                  return (
-                                    <td key={sz} className="px-3 py-2 text-center text-xs font-semibold text-emerald-800">
-                                      {Math.max(0, sizeQty - sizeShort)}
-                                    </td>
-                                  );
-                                })}
-                                <td className="px-4 py-2 text-center text-xs font-bold text-emerald-800">
-                                  {completedQty} of {qty}
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+              <FloorModePanel
+                liveOrder={liveOrder}
+                floorCollapsed={floorCollapsed}
+                setFloorCollapsed={setFloorCollapsed}
+                floorToggleTask={floorToggleTask}
+                floorTogglePrint={floorTogglePrint}
+                floorToggleGoods={floorToggleGoods}
+                bulkOrderGoodsStep={bulkOrderGoodsStep}
+                saveShortfall={saveShortfall}
+              />
 
-                    <div className="border-t border-slate-200 dark:border-slate-700 p-4 space-y-3">
-                      {(li.imprints || []).map((imp) => {
-                        const art = getImprintArtwork(imp);
+              <OrderShippingSection
+                showShipping={showShipping}
+                setShowShipping={setShowShipping}
+                shipError={shipError}
+                shipTracking={shipTracking}
+                shipStatus={shipStatus}
+                shipLabelUrl={shipLabelUrl}
+                shipStreet={shipStreet}
+                setShipStreet={setShipStreet}
+                shipCity={shipCity}
+                setShipCity={setShipCity}
+                shipState={shipState}
+                setShipState={setShipState}
+                shipZip={shipZip}
+                setShipZip={setShipZip}
+                shipCountry={shipCountry}
+                setShipCountry={setShipCountry}
+                shipWeight={shipWeight}
+                setShipWeight={setShipWeight}
+                shipLength={shipLength}
+                setShipLength={setShipLength}
+                shipWidth={shipWidth}
+                setShipWidth={setShipWidth}
+                shipHeight={shipHeight}
+                setShipHeight={setShipHeight}
+                shipService={shipService}
+                setShipService={setShipService}
+                shipRates={shipRates}
+                loadingRates={loadingRates}
+                creatingLabel={creatingLabel}
+                savingShipping={savingShipping}
+                shippingSaved={shippingSaved}
+                handleGetRates={handleGetRates}
+                handleSaveShipping={handleSaveShipping}
+                handleCreateLabel={handleCreateLabel}
+                handleTrackShipment={handleTrackShipment}
+              />
 
-                        return (
-                          <div key={imp.id} className="space-y-2.5">
-                            {imp.title && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{imp.title}</div>}
-                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
-                              <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
-                              <span className="text-slate-500">
-                                {imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}
-                              </span>
-                              {imp.pantones && (
-                                <span className="text-teal-600 font-medium">{imp.pantones}</span>
-                              )}
-                              {imp.details && (
-                                <span className="text-slate-500 italic">{imp.details}</span>
-                              )}
-                            </div>
-                            {(imp.width || imp.height) && (
-                              <div className="flex gap-2 text-xs text-slate-500">
-                                {imp.width && <span>Width: {imp.width}</span>}
-                                {imp.height && <span>Height: {imp.height}</span>}
-                              </div>
-                            )}
-
-                            {art && (
-                              <div className="bg-teal-50 border border-teal-100 rounded-xl px-4 py-3">
-                                <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400 mb-2">
-                                  Attached Artwork
-                                </div>
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="min-w-0">
-                                    <div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
-                                      {art.name}
-                                    </div>
-                                    {art.note && (
-                                      <div className="text-xs text-slate-500 truncate mt-0.5">
-                                        {art.note}
-                                      </div>
-                                    )}
-                                    {art.colors && (
-                                      <div className="text-xs text-teal-600 font-semibold mt-1">
-                                        Artwork colors: {art.colors}
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {art.url ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => setPreviewArt(art)}
-                                      className="shrink-0 text-xs font-semibold text-teal-600 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition"
-                                    >
-                                      Open
-                                    </button>
-                                  ) : null}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-
-                      {r && (
-                        <div className="bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 space-y-1">
-                          <div className="flex justify-between text-xs text-slate-600">
-                            <span>Line Subtotal</span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">
-                              {fmtMoney(r.lineTotal)}
-                            </span>
-                          </div>
-                          {parseFloat(order.discount) > 0 && (() => {
-                            const lineSub = r.lineTotal;
-                            const lineAfterDisc = lineSub * lineDiscountFactor;
-                            return (
-                              <div className="flex justify-between text-xs text-emerald-600">
-                                <span>After Discount</span>
-                                <span className="font-semibold">
-                                  {fmtMoney(lineAfterDisc)}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                          <div className="flex justify-between text-xs text-slate-600 border-t border-teal-200 pt-1">
-                            <span>Final Cost (incl. tax)</span>
-                            <span className="font-bold text-teal-700">
-                              {fmtMoney(
-                                r.lineTotal * lineDiscountFactor *
-                                  (1 + parseFloat(order.tax_rate) / 100)
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
-              {totals && (
-                <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
-                  <div className="flex justify-between text-sm text-slate-500">
-                    <span>Subtotal</span>
-                    <span>{fmtMoney(totals.sub)}</span>
-                  </div>
-                  {parseFloat(order.discount) > 0 && (
-                    <div className="flex justify-between text-sm text-emerald-600">
-                      <span>Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${order.discount}%)`}</span>
-                      <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm text-slate-500">
-                    <span>Tax ({order.tax_rate}%)</span>
-                    <span>{fmtMoney(totals.tax)}</span>
-                  </div>
-                  <div className="flex justify-between font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 pt-2">
-                    <span>Total</span>
-                    <span className="text-xl">{fmtMoney(totals.total)}</span>
-                  </div>
-                </div>
-              )}
-
-              {order.notes && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
-                  <span className="font-semibold">Notes: </span>
-                  {order.notes}
-                </div>
-              )}
-
-              {/* Reorder Shortfall — appears only when any line item
-                  has _shortfall > 0. One click creates a draft PO
-                  with the missing pieces; shop reviews + sends from
-                  Purchase Orders. See lib/orders/shortfallReorder.js. */}
-              {(() => {
-                const totalShort = totalOrderShortfall(liveOrder);
-                if (totalShort === 0) return null;
-                return (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm text-amber-800">
-                      <div className="font-semibold">
-                        Shortfall: {totalShort} piece{totalShort === 1 ? "" : "s"}
-                      </div>
-                      <div className="text-xs text-amber-700 mt-0.5">
-                        Reorder to make the customer whole — creates a draft PO with these sizes.
-                      </div>
-                    </div>
-                    <button
-                      onClick={handleReorderShortfall}
-                      disabled={reorderCreating}
-                      className="inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl transition disabled:opacity-60"
-                    >
-                      <ShoppingCart className="w-4 h-4" />
-                      {reorderCreating ? "Creating…" : `Reorder Shortfall (${totalShort} pcs)`}
-                    </button>
-                  </div>
-                );
-              })()}
-
-              {/* Floor Mode Panel — stage-aware per-size tracking.
-                  Order Goods: ordered/received cycle (goods_progress).
-                  Printing:    per-imprint print tracking (print_progress).
-                  Other stages: read-only quantity (no leaked dots).
-                  The indigo bar IS the collapsible header (clickable);
-                  panel body only renders when expanded. Per-order
-                  localStorage remembers the user's preference. */}
-              {(() => {
-                const step = liveOrder.status || "Pre-Press";
-                const tasks = getStageTasks(step);
-                const checklist = liveOrder.checklist || {};
-                const stepChecks = checklist[step] || {};
-                const printProgress = checklist.print_progress || {};
-                const goodsProgress = checklist.goods_progress || {};
-
-                const { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived } = countGoodsProgress(liveOrder);
-
-                return (
-                  <div className="border-2 border-teal-400 rounded-xl overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setFloorCollapsed(c => !c)}
-                      aria-expanded={!floorCollapsed}
-                      className="w-full px-4 py-3 bg-teal-600 text-white flex items-center justify-between hover:bg-teal-700 transition text-left"
-                    >
-                      <div className="flex items-center gap-2">
-                        <Hammer className="w-4 h-4" />
-                        <span className="text-sm font-bold">Floor Mode — {step}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {step === "Order Goods" && goodsTotal > 0 && (
-                          <span className="text-xs font-semibold text-teal-100">
-                            <span className="text-white">{goodsReceived}</span> received
-                            {goodsOrdered > 0 && <> · <span className="text-white">{goodsOrdered}</span> ordered</>}
-                            {" · "}{goodsTotal} total
-                          </span>
-                        )}
-                        <ChevronDown
-                          className={`w-4 h-4 text-teal-100 transition-transform duration-200 ${floorCollapsed ? "-rotate-90" : "rotate-0"}`}
-                          aria-hidden="true"
-                        />
-                      </div>
-                    </button>
-                    {!floorCollapsed && (
-                    <div className="p-4 space-y-4">
-                      {/* Checklist — Order Goods has two auto-derived
-                          tasks (Place blank order / Receive goods) so
-                          operators don't double-confirm what the
-                          per-size buttons already capture. */}
-                      {tasks.length > 0 && (() => {
-                        const counts = { total: goodsTotal, ordered: goodsOrdered, received: goodsReceived, marked: goodsOrdered + goodsReceived };
-                        const autoDone = (task) => autoCheckOrderGoodsTask(step, task, counts);
-                        const isDone = (task) => {
-                          const a = autoDone(task);
-                          return a === null ? !!stepChecks[task] : a;
-                        };
-                        const doneCount = tasks.filter(isDone).length;
-                        return (
-                          <div>
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Checklist</span>
-                              <span className="text-xs font-bold text-teal-600">{doneCount}/{tasks.length}</span>
-                            </div>
-                            <div className="space-y-1">
-                              {tasks.map(task => {
-                                const auto = autoDone(task);
-                                const done = isDone(task);
-                                // Auto-derived tasks (Place blank order / Receive
-                                // goods) get a bulk-action click handler — sets
-                                // every size to the corresponding status. Lets
-                                // shops whose blanks don't come through the AS
-                                // Colour PO integration check these off without
-                                // tapping each size individually.
-                                const bulkTarget =
-                                  task === "Place blank order" ? "ordered" :
-                                  task === "Receive goods"     ? "received" :
-                                  null;
-                                const handleClick = bulkTarget
-                                  ? () => bulkOrderGoodsStep(bulkTarget)
-                                  : () => floorToggleTask(task);
-                                return (
-                                  <button key={task}
-                                    onClick={handleClick}
-                                    title={bulkTarget
-                                      ? `Marks every size as ${bulkTarget}. Or tap individual sizes below for partial.`
-                                      : undefined}
-                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
-                                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
-                                      {done && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
-                                    </div>
-                                    <span className={`text-sm ${done ? "text-emerald-700 line-through" : "text-slate-700"}`}>{task}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Per-line-item per-size tracking */}
-                      {(liveOrder.line_items || []).map((li, liIdx) => {
-                        const imprints = (li.imprints || []).filter(imp => (imp.colors || 0) > 0);
-                        // For non-Printing stages we still show the line item
-                        // (so Order Goods sees the garment list); only Printing
-                        // requires imprints to render.
-                        if (step === "Printing" && imprints.length === 0) return null;
-                        return (
-                          <div key={liIdx}>
-                            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
-                              {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
-                            </div>
-                            {/* What's being printed on THIS garment — one row per
-                                imprint so the operator sees the design, where it
-                                goes, its ink colors, and size. Answers "which
-                                design goes on which shirt" for multi-design jobs. */}
-                            {imprints.length > 0 && (
-                              <div className="mb-2 space-y-1">
-                                {imprints.map((imp, ii) => {
-                                  const dim = imp.width && imp.height
-                                    ? `${imp.width}" × ${imp.height}"`
-                                    : imp.width ? `${imp.width}" wide`
-                                    : imp.height ? `${imp.height}" tall` : "";
-                                  const nColors = Number(imp.colors) || 0;
-                                  return (
-                                    <div key={ii} className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5">
-                                      {imp.title && <span className="font-bold text-slate-800">{imp.title}</span>}
-                                      <span className="font-semibold text-teal-700">{imp.location || "Print"}</span>
-                                      <span className="text-slate-300">·</span>
-                                      <span>{nColors} color{nColors === 1 ? "" : "s"}</span>
-                                      {imp.technique && (<><span className="text-slate-300">·</span><span>{imp.technique}</span></>)}
-                                      {imp.pantones && (<><span className="text-slate-300">·</span><span className="text-slate-500">{imp.pantones}</span></>)}
-                                      {dim && (<><span className="text-slate-300">·</span><span className="text-slate-500">{dim}</span></>)}
-                                      {imp.details && (<><span className="text-slate-300">·</span><span className="text-slate-500 italic">{imp.details}</span></>)}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            <div className="flex flex-wrap gap-2">
-                              {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
-                                // ── Order Goods: blank → ordered → received → blank ──
-                                // All three states are tap-able now (cycle), so
-                                // an accidental tap is always recoverable.
-                                if (step === "Order Goods") {
-                                  const status = goodsProgress[`${liIdx}-${size}`]?.status;
-                                  const label =
-                                    status === "received" ? "Received"
-                                    : status === "ordered" ? "Ordered"
-                                    : null;
-                                  const tooltip =
-                                    status === "received" ? "Tap to clear back to blank"
-                                    : status === "ordered" ? "Tap to mark received"
-                                    : "Tap to mark ordered";
-                                  return (
-                                    <button key={size}
-                                      onClick={() => floorToggleGoods(liIdx, size)}
-                                      title={tooltip}
-                                      className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition flex flex-col items-center min-w-[64px] ${
-                                        status === "received"
-                                          ? "bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-50"
-                                          : status === "ordered"
-                                            ? "bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100"
-                                            : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
-                                      }`}>
-                                      <span>{size}: {count}</span>
-                                      {label && (
-                                        <span className={`text-[10px] font-semibold uppercase tracking-wide mt-0.5 ${
-                                          status === "received" ? "text-emerald-600" : "text-amber-600"
-                                        }`}>
-                                          {label}
-                                        </span>
-                                      )}
-                                    </button>
-                                  );
-                                }
-
-                                // ── Printing: per-imprint progress ──
-                                if (step === "Printing") {
-                                  const donePrints = imprints.filter((_, ii) => !!printProgress[`${liIdx}-${size}-${ii}`]).length;
-                                  const allDone = imprints.length > 0 && donePrints === imprints.length;
-                                  const partial = donePrints > 0 && !allDone;
-                                  return (
-                                    <div key={size} className="flex flex-col items-center">
-                                      <button onClick={() => {
-                                        if (allDone) {
-                                          imprints.forEach((_, ii) => floorTogglePrint(liIdx, size, ii));
-                                        } else {
-                                          const next = imprints.findIndex((_, ii) => !printProgress[`${liIdx}-${size}-${ii}`]);
-                                          if (next !== -1) floorTogglePrint(liIdx, size, next);
-                                        }
-                                      }}
-                                        className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-slate-200 text-slate-700 hover:border-teal-300"}`}>
-                                        {size}: {count}{allDone && " ✓"}
-                                      </button>
-                                      {imprints.length > 1 && (
-                                        <div className="flex gap-0.5 mt-1">
-                                          {imprints.map((imp, ii) => (
-                                            <button key={ii} onClick={() => floorTogglePrint(liIdx, size, ii)}
-                                              title={imp.location}
-                                              className={`w-2.5 h-2.5 rounded-full transition ${printProgress[`${liIdx}-${size}-${ii}`] ? "bg-emerald-400" : "bg-slate-300 hover:bg-slate-400"}`} />
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                }
-
-                                // ── Other stages: read-only quantity ──
-                                return (
-                                  <span key={size}
-                                    className="text-sm rounded-xl px-3 py-2 font-bold border-2 bg-white border-slate-200 text-slate-700">
-                                    {size}: {count}
-                                  </span>
-                                );
-                              })}
-                            </div>
-
-                            {/* Misprints (shortfall) entry — only relevant
-                                during Printing, only fires for sizes that
-                                have a positive qty. Capped at the original
-                                qty per size so an operator can't log more
-                                misprints than were printed. Stored on the
-                                line item under _shortfall so the pricing
-                                table's "Completed" line picks it up. */}
-                            {step === "Printing" && (
-                              <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
-                                <span className="text-[10px] font-semibold uppercase tracking-widest text-amber-700 mr-1">Misprints</span>
-                                {sortSizeEntries(Object.entries(li.sizes || {}))
-                                  .filter(([, v]) => parseInt(v) > 0)
-                                  .map(([size]) => (
-                                    <label key={size} className="inline-flex items-center gap-1.5">
-                                      <span className="text-xs text-slate-500 font-semibold">{size}</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max={(li.sizes || {})[size] || 0}
-                                        defaultValue={(li._shortfall || {})[size] || 0}
-                                        onBlur={(e) => {
-                                          const v = e.target.value;
-                                          const cur = (li._shortfall || {})[size] || 0;
-                                          if (String(cur) !== String(v)) {
-                                            saveShortfall(li.id, size, v);
-                                          }
-                                        }}
-                                        className="w-12 text-center text-xs font-semibold text-amber-800 bg-white border border-amber-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                                        title={`Misprints for ${size}`}
-                                      />
-                                    </label>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Shipping */}
-              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                <button onClick={() => setShowShipping(!showShipping)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition text-left">
-                  <div className="flex items-center gap-2">
-                    <Truck className="w-4 h-4 text-slate-500" />
-                    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Shipping</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {shipTracking && (
-                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full text-blue-700 bg-blue-50">{shipTracking}</span>
-                    )}
-                    <span className="text-xs text-slate-500">{showShipping ? "▲" : "▼"}</span>
-                  </div>
-                </button>
-                {showShipping && (
-                  <div className="p-4 space-y-4">
-                    {shipError && (
-                      <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{shipError}</div>
-                    )}
-
-                    {/* Already shipped — show tracking info */}
-                    {shipTracking ? (
-                      <div className="space-y-3">
-                        <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
-                          <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-bold text-slate-800">Shipment Created</div>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              Tracking: <span className="font-mono font-semibold text-slate-700">{shipTracking}</span>
-                            </div>
-                            {shipStatus && <div className="text-xs text-slate-500 mt-0.5">Status: {shipStatus}</div>}
-                          </div>
-                          <div className="flex gap-2 shrink-0">
-                            <a
-                              href={`https://www.fedex.com/fedextrack/?trknbr=${shipTracking}`}
-                              target="_blank" rel="noopener noreferrer"
-                              className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1"
-                            >
-                              Track <ExternalLink className="w-3 h-3" />
-                            </a>
-                            {shipLabelUrl && (
-                              <a href={shipLabelUrl} target="_blank" rel="noopener noreferrer"
-                                className="text-xs font-semibold text-teal-600 hover:text-teal-700 flex items-center gap-1">
-                                Label <Download className="w-3 h-3" />
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                        <button onClick={handleTrackShipment}
-                          className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition">
-                          Refresh tracking status
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        {/* Ship-to Address */}
-                        <div>
-                          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Ship To</div>
-                          <div className="space-y-2">
-                            <input type="text" placeholder="Street address" value={shipStreet} onChange={e => setShipStreet(e.target.value)}
-                              className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                              <input type="text" placeholder="City" value={shipCity} onChange={e => setShipCity(e.target.value)}
-                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
-                              <input type="text" placeholder="State" value={shipState} onChange={e => setShipState(e.target.value)} maxLength={2}
-                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 uppercase" />
-                              <input type="text" placeholder="ZIP" value={shipZip} onChange={e => setShipZip(e.target.value)}
-                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
-                              <select value={shipCountry} onChange={e => setShipCountry(e.target.value)}
-                                className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300">
-                                <option value="US">US</option>
-                                <option value="CA">CA</option>
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Package Dimensions */}
-                        <div>
-                          <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Package</div>
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                            <div>
-                              <label className="text-[10px] text-slate-500">Weight (lbs)</label>
-                              <input type="number" min="0" step="0.1" value={shipWeight} onChange={e => setShipWeight(e.target.value)}
-                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-slate-500">Length (in)</label>
-                              <input type="number" min="0" step="1" value={shipLength} onChange={e => setShipLength(e.target.value)}
-                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-slate-500">Width (in)</label>
-                              <input type="number" min="0" step="1" value={shipWidth} onChange={e => setShipWidth(e.target.value)}
-                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
-                            </div>
-                            <div>
-                              <label className="text-[10px] text-slate-500">Height (in)</label>
-                              <input type="number" min="0" step="1" value={shipHeight} onChange={e => setShipHeight(e.target.value)}
-                                className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Get Rates */}
-                        <div className="flex items-center gap-3">
-                          <button onClick={handleGetRates} disabled={loadingRates || !shipStreet || !shipCity || !shipState || !shipZip || !shipWeight}
-                            className="text-xs font-bold text-white bg-slate-700 hover:bg-slate-800 px-4 py-2 rounded-lg transition disabled:opacity-40">
-                            {loadingRates ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Getting rates...</span> : "Get Rates"}
-                          </button>
-                          <button onClick={handleSaveShipping} disabled={savingShipping}
-                            className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition">
-                            {savingShipping ? "Saving..." : shippingSaved ? "Saved" : "Save address"}
-                          </button>
-                        </div>
-
-                        {/* Rate Results */}
-                        {shipRates.length > 0 && (
-                          <div>
-                            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-2">Select Service</div>
-                            <div className="space-y-1.5">
-                              {shipRates.map(r => (
-                                <button key={r.serviceType} onClick={() => setShipService(r.serviceType)}
-                                  className={`w-full text-left flex items-center justify-between px-3 py-2.5 rounded-lg border transition text-sm ${
-                                    shipService === r.serviceType
-                                      ? "border-teal-400 bg-teal-50 text-teal-700"
-                                      : "border-slate-200 hover:border-slate-300 text-slate-700"
-                                  }`}>
-                                  <div>
-                                    <span className="font-semibold">{r.serviceName}</span>
-                                    {r.transitDays && <span className="text-xs text-slate-500 ml-2">{r.transitDays}</span>}
-                                  </div>
-                                  <span className="font-bold">${(Number(r.totalCharge) || 0).toFixed(2)}</span>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Create Label */}
-                        {shipService && (
-                          <button onClick={handleCreateLabel} disabled={creatingLabel}
-                            className="text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 px-5 py-2.5 rounded-xl transition disabled:opacity-50 w-full sm:w-auto">
-                            {creatingLabel
-                              ? <span className="flex items-center justify-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Creating label...</span>
-                              : "Create Shipping Label"}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Job Costing & Production Assignment */}
-              <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-                <button onClick={() => setShowJobCost(!showJobCost)}
-                  className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition text-left">
-                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Job Costing & Production</div>
-                  <div className="flex items-center gap-3">
-                    {(parseFloat(actualCost) > 0 || order.actual_cost > 0) && (
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                        (order.total || 0) - (parseFloat(actualCost) || order.actual_cost || 0) > 0
-                          ? "text-emerald-700 bg-emerald-50" : "text-red-600 bg-red-50"
-                      }`}>
-                        {fmtMoney((order.total || 0) - (parseFloat(actualCost) || order.actual_cost || 0))} margin
-                      </span>
-                    )}
-                    <span className="text-xs text-slate-500">{showJobCost ? "▲" : "▼"}</span>
-                  </div>
-                </button>
-                {showJobCost && (
-                  <div className="p-4 space-y-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      <div>
-                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Estimated Hours</label>
-                        <input type="number" min="0" step="0.25" value={estimatedHours} onChange={e => setEstimatedHours(e.target.value)}
-                          placeholder="planning"
-                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Actual Hours</label>
-                        <input type="number" min="0" step="0.25" value={laborHours} onChange={e => setLaborHours(e.target.value)}
-                          placeholder="after run"
-                          className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Material Cost</label>
-                        <div className="relative mt-0.5">
-                          <span className="absolute left-2 top-1.5 text-slate-500 text-sm">$</span>
-                          <input type="number" min="0" step="0.01" value={actualCost} onChange={e => setActualCost(e.target.value)}
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
-                        </div>
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Labor Cost</label>
-                        <div className="relative mt-0.5">
-                          <span className="absolute left-2 top-1.5 text-slate-500 text-sm">$</span>
-                          <input type="number" min="0" step="0.01" value={laborCost} onChange={e => setLaborCost(e.target.value)}
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg pl-5 pr-2 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300" />
-                        </div>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Assigned Press</label>
-                        {presses.length > 0 ? (
-                          <select
-                            value={assignedPress}
-                            onChange={e => setAssignedPress(e.target.value)}
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5"
-                          >
-                            <option value="">— Unassigned —</option>
-                            {presses.map(p => (
-                              <option key={p.name} value={p.name}>
-                                {p.name}{p.colors ? ` — ${p.colors}c` : ""}
-                              </option>
-                            ))}
-                            {/* Preserve a saved legacy/free-text value
-                                that's not in the shop's current list so
-                                we don't silently drop it. */}
-                            {assignedPress && !presses.some(p => p.name === assignedPress) && (
-                              <option value={assignedPress}>{assignedPress} (custom)</option>
-                            )}
-                          </select>
-                        ) : (
-                          <input type="text" value={assignedPress} onChange={e => setAssignedPress(e.target.value)}
-                            placeholder="Add presses in Account → Production Setup"
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
-                        )}
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase">Assigned Operator</label>
-                        {employees.length > 0 ? (
-                          <select
-                            value={assignedOperator}
-                            onChange={e => setAssignedOperator(e.target.value)}
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5"
-                          >
-                            <option value="">— Unassigned —</option>
-                            {employees.map(u => {
-                              const label = u.full_name || u.email;
-                              return <option key={u.id} value={label}>{label}</option>;
-                            })}
-                            {/* Preserve a saved legacy/free-text value
-                                that doesn't match any current employee. */}
-                            {assignedOperator &&
-                             !employees.some(u => (u.full_name || u.email) === assignedOperator) && (
-                              <option value={assignedOperator}>{assignedOperator} (custom)</option>
-                            )}
-                          </select>
-                        ) : (
-                          <input type="text" value={assignedOperator} onChange={e => setAssignedOperator(e.target.value)}
-                            placeholder="Invite employees from Account → Admin Panel"
-                            className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-teal-300 mt-0.5" />
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Job P&L summary */}
-                    {(parseFloat(actualCost) > 0 || parseFloat(laborCost) > 0) && (() => {
-                      const totalCost = (parseFloat(actualCost) || 0) + (parseFloat(laborCost) || 0);
-                      const revenue = order.total || 0;
-                      const margin = revenue - totalCost;
-                      const marginPct = revenue > 0 ? ((margin / revenue) * 100).toFixed(1) : 0;
-                      return (
-                        <div className="bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-1.5">
-                          <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Job P&L</div>
-                          <div className="flex justify-between text-sm"><span className="text-slate-500">Revenue</span><span className="font-semibold text-slate-800 dark:text-slate-200">{fmtMoney(revenue)}</span></div>
-                          <div className="flex justify-between text-sm"><span className="text-slate-500">Material Cost</span><span className="font-semibold text-slate-800 dark:text-slate-200">−{fmtMoney(parseFloat(actualCost) || 0)}</span></div>
-                          <div className="flex justify-between text-sm"><span className="text-slate-500">Labor Cost</span><span className="font-semibold text-slate-800 dark:text-slate-200">−{fmtMoney(parseFloat(laborCost) || 0)}</span></div>
-                          <div className={`flex justify-between text-sm font-bold border-t border-slate-200 dark:border-slate-600 pt-1.5 ${margin >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                            <span>Profit ({marginPct}%)</span><span>{fmtMoney(margin)}</span>
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    <div className="flex items-center gap-2">
-                      <button onClick={handleSaveJobCost} disabled={savingCost}
-                        className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
-                        {savingCost ? "Saving…" : "Save"}
-                      </button>
-                      {costSaved && <span className="text-xs text-emerald-600 font-semibold">Saved</span>}
-                    </div>
-                  </div>
-                )}
-              </div>
+              <OrderJobCostSection
+                order={order}
+                showJobCost={showJobCost}
+                setShowJobCost={setShowJobCost}
+                estimatedHours={estimatedHours}
+                setEstimatedHours={setEstimatedHours}
+                laborHours={laborHours}
+                setLaborHours={setLaborHours}
+                actualCost={actualCost}
+                setActualCost={setActualCost}
+                laborCost={laborCost}
+                setLaborCost={setLaborCost}
+                assignedPress={assignedPress}
+                setAssignedPress={setAssignedPress}
+                assignedOperator={assignedOperator}
+                setAssignedOperator={setAssignedOperator}
+                presses={presses}
+                employees={employees}
+                handleSaveJobCost={handleSaveJobCost}
+                savingCost={savingCost}
+                costSaved={costSaved}
+              />
             </>
           ) : (
             <div className="text-center py-8 text-slate-300 text-sm">
@@ -1856,194 +711,43 @@ export default function OrderDetailModal({
           )}
         </div>
 
-        {/* Messages — order thread (with reply box) + read-only view of
-            originating quote thread. Collapsible; shares one localStorage
-            key with the other detail modals so the user's preference
-            applies everywhere. */}
-        <CollapsibleSection
-          title="Messages"
-          icon={<MessageSquare className="w-4 h-4 text-slate-500" />}
-          storageKey="messages-window-collapsed"
-          className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700"
-        >
-          <MessagesTab
-            threadId={orderThreadId(order)}
-            currentUserEmail={order.shop_owner}
-            replyContext={{
-              customerEmail: order.customer_email || "",
-              shopName,
-              refId: order.order_id,
-              defaultSubject: `Order ${order.order_id}`,
-            }}
-          />
-          {order.quote_id && (
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <div className="text-xs font-semibold text-slate-500 mb-2">
-                From originating quote {order.quote_id}
-              </div>
-              <MessagesTab
-                threadId={quoteThreadId(order.quote_id)}
-                currentUserEmail={order.shop_owner}
-              />
-            </div>
-          )}
-        </CollapsibleSection>
+        <OrderMessagesSection order={order} shopName={shopName} />
 
         <div className="px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl space-y-2">
-          {/* Row 1: workflow actions (status flow + payment) */}
-          <div className="flex flex-wrap items-center gap-2">
-            {onRevert && prevStatus && (
-              <button
-                onClick={() => callAction(onRevert, order.id)}
-                disabled={saving}
-                className="px-3 py-2 text-sm font-semibold text-slate-500 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition disabled:opacity-50"
-              >
-                ← {prevStatus}
-              </button>
-            )}
-            {onAdvance && nextStatus && (
-              <button
-                onClick={advanceWithGoodsGuard}
-                disabled={saving}
-                className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
-              >
-                {saving ? "Saving…" : `${order.status} Complete →`}
-              </button>
-            )}
-            {/* Invoice action — three states:
-                  1. Order Completed + invoice exists → "Preview Invoice" (opens InvoiceDetailModal via parent)
-                  2. Order Completed + no invoice    → "Create Invoice" (calls onComplete)
-                  3. Order Completed + invoice has qb_invoice_id → also show "View in QB" link
-                The "Create" path was previously labeled "Convert to Invoice" and
-                ran on every click — Joe found that this duplicated invoices when
-                a quote had already been invoiced via the Send-Quote-via-QB flow.
-                The dedup guard is enforced at three layers now:
-                  - This UI gate (no Create button when invoice exists)
-                  - handleComplete's pre-fetch + buildOrderCompletionPlan
-                  - DB unique index on (shop_owner, order_id) in
-                    20260519_invoices_no_duplicates.sql */}
-            {order.status === "Completed" && relatedInvoice && (
-              <>
-                {onShowInvoice && (
-                  <button
-                    onClick={() => onShowInvoice(relatedInvoice)}
-                    className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition"
-                  >
-                    Preview Invoice
-                  </button>
-                )}
-                {/* Send the invoice to the customer (Resend email + QB pay
-                    link when one exists). Reuses the standard Send flow; for
-                    already-paid invoices it sends the PDF as a receipt. */}
-                <button
-                  onClick={handleOpenSend}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition"
-                >
-                  <MessageSquare className="w-4 h-4" /> Send
-                </button>
-                {relatedInvoice.qb_invoice_id && (
-                  <a
-                    href={`https://qbo.intuit.com/app/invoice?txnId=${encodeURIComponent(relatedInvoice.qb_invoice_id)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 text-sm font-semibold text-[#2CA01C] border border-[#2CA01C] rounded-xl hover:bg-[#2CA01C]/5 transition"
-                  >
-                    View in QB
-                  </a>
-                )}
-              </>
-            )}
-            {order.status === "Completed" && !relatedInvoice && onComplete && (
-              <button
-                onClick={handleCreateInvoice}
-                disabled={saving || creatingInvoice}
-                className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50"
-              >
-                {creatingInvoice ? "Creating…" : "Create Invoice"}
-              </button>
-            )}
-            {onTogglePaid && (
-              <button
-                onClick={() => callAction(onTogglePaid, order)}
-                disabled={saving}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 ${
-                  order.paid
-                    ? "text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
-                    : "text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
-                }`}
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                {order.paid ? "Unmark Paid" : "Mark Paid"}
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="ml-auto px-4 py-2 text-sm font-semibold text-slate-500 rounded-xl hover:bg-slate-100 transition"
-            >
-              Close
-            </button>
-          </div>
+          <OrderInvoiceActions
+            order={order}
+            saving={saving}
+            onRevert={onRevert}
+            onAdvance={onAdvance}
+            onShowInvoice={onShowInvoice}
+            onComplete={onComplete}
+            onTogglePaid={onTogglePaid}
+            onClose={onClose}
+            prevStatus={prevStatus}
+            nextStatus={nextStatus}
+            relatedInvoice={relatedInvoice}
+            creatingInvoice={creatingInvoice}
+            qbPushNote={qbPushNote}
+            callAction={callAction}
+            advanceWithGoodsGuard={advanceWithGoodsGuard}
+            handleCreateInvoice={handleCreateInvoice}
+            handleOpenSend={handleOpenSend}
+          />
 
-          {/* Best-effort QB push outcome (tax hold / push failure). The invoice
-              still exists; the operator can Send or fix QB and retry. */}
-          {qbPushNote && (
-            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              {qbPushNote}
-            </div>
-          )}
-
-          {/* Row 2: utility actions (share, download, vendor order, delete) */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => copyLink("art")}
-              title="Share art approval link"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
-            >
-              <Link2 className="w-3.5 h-3.5" />
-              {copied === "art" ? "Copied!" : "Art Approval Link"}
-            </button>
-            <button
-              onClick={() => copyLink("status")}
-              title="Share status link"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
-            >
-              <Link2 className="w-3.5 h-3.5" />
-              {copied === "status" ? "Copied!" : "Status Link"}
-            </button>
-            {/* Preview opens the PDF in a new tab; the browser's
-                native viewer has its own Download button, so we don't
-                render a separate "Download PDF" pill here (matches
-                Quote + Invoice modals). */}
-            <button
-              onClick={async () => {
-                const url = await exportOrderToPDF(order, shopName, logoUrl, "blob", customer?.company);
-                if (url) window.open(url, "_blank");
-              }}
-              title="Preview PDF"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-100 transition"
-            >
-              <Eye className="w-3.5 h-3.5" /> Preview
-            </button>
-            {/* The Create PO button only makes sense while the order is
-                actively at the Order Goods stage — once blanks are in,
-                placing a new PO from the same order is noise. Limits
-                the footer to actions that are relevant to the current
-                stage. */}
-            {onOrderFromAC && liveOrder.status === "Order Goods" && (
-              <ACOrderButton order={order} sourcePO={sourcePO} onOrderFromAC={onOrderFromAC} disabled={saving} />
-            )}
-            {onDelete && (
-              <button
-                onClick={() => callAction(onDelete, order.id)}
-                disabled={saving}
-                title="Delete order"
-                className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                {saving ? "Deleting…" : "Delete"}
-              </button>
-            )}
-          </div>
+          <OrderUtilityActions
+            order={order}
+            liveOrder={liveOrder}
+            customer={customer}
+            shopName={shopName}
+            logoUrl={logoUrl}
+            copied={copied}
+            copyLink={copyLink}
+            onOrderFromAC={onOrderFromAC}
+            sourcePO={sourcePO}
+            saving={saving}
+            onDelete={onDelete}
+            callAction={callAction}
+          />
         </div>
       </div>
 
@@ -2065,47 +769,5 @@ export default function OrderDetailModal({
       )}
     </div>,
     document.body,
-  );
-}
-
-// Tri-state button beside Delete in the order header.
-//   no source PO       → "Order from AS Colour" (opens ACOrderModal)
-//   draft source PO    → "View Pending PO" (links to /PurchaseOrders)
-//   submitted PO       → "✓ Ordered" (links to /PurchaseOrders, read-only feel)
-//
-// The signal-it-was-ordered behaviour is what differentiates this from
-// the old SS button which always invited a re-order.
-function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled }) {
-  if (sourcePO?.status === "submitted") {
-    return (
-      <Link
-        to={createPageUrl("PurchaseOrders")}
-        title={`Already ordered from AS Colour${sourcePO.supplier_order_id ? ` · ${sourcePO.supplier_order_id}` : ""}`}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 border border-emerald-200 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition"
-      >
-        <CheckCircle2 className="w-3.5 h-3.5" /> Ordered
-      </Link>
-    );
-  }
-  if (sourcePO?.status === "draft") {
-    return (
-      <Link
-        to={createPageUrl("PurchaseOrders")}
-        title="A draft PO exists for this order — open Purchase Orders to review and submit"
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-700 border border-amber-200 bg-amber-50 rounded-lg hover:bg-amber-100 transition"
-      >
-        <Truck className="w-3.5 h-3.5" /> View Pending PO
-      </Link>
-    );
-  }
-  return (
-    <button
-      onClick={() => onOrderFromAC(order)}
-      disabled={disabled}
-      title="Create a draft AS Colour PO from this order's line items"
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-600 border border-teal-200 rounded-lg hover:bg-teal-50 transition disabled:opacity-50"
-    >
-      <Truck className="w-3.5 h-3.5" /> Create PO
-    </button>
   );
 }

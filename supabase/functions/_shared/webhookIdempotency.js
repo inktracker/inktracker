@@ -1,12 +1,21 @@
 // Webhook idempotency guard. Imported by stripeWebhook, qbWebhook,
 // billingWebhook so all three share one tested implementation.
 //
-// Contract:
-//   - claimWebhookEvent(supabase, source, eventId) tries to INSERT
-//     into processed_webhook_events. Returns true if this is the
-//     first time we've seen the event, false if it's a duplicate
-//     (Stripe retry, etc).
-//   - Caller MUST check the return value and short-circuit on false.
+// TWO-PHASE contract (reserve → do work → commit / release):
+//   - claimWebhookEvent(supabase, source, eventId) RESERVES the event by
+//     INSERTing into processed_webhook_events. Returns true if this is the
+//     first delivery (caller should process), false if it's a duplicate
+//     (Stripe retry, concurrent delivery, etc). Caller MUST short-circuit
+//     on false.
+//   - A successful handler leaves the row in place — that IS the commit.
+//   - If the side effect FAILS after a successful claim, the caller MUST
+//     call releaseWebhookEvent() to delete the reservation, THEN return a
+//     non-2xx so the provider redelivers. Without the release, the claim
+//     is a premature commit: Stripe's at-least-once retry would see
+//     "already processed", short-circuit, and the effect (quote-paid, QB
+//     mirror, subscription unlock, emails) would be permanently dropped —
+//     the "claim-then-crash" gap. The reservation is only a commit once
+//     the work has actually succeeded.
 //
 // Why an INSERT-with-conflict-detection instead of SELECT-then-INSERT:
 //   - SELECT-then-INSERT has a TOCTOU race. Two webhook handlers
@@ -17,6 +26,12 @@
 //   - INSERT...ON CONFLICT DO NOTHING is atomic. Postgres serializes.
 //     If the conflict fires, the side effects don't run. Safe under
 //     concurrent retry.
+//
+// Residual window: a HARD kill (OOM / wall-clock timeout) between claim
+// and release runs no catch, so that one event can still be dropped until
+// a later redelivery. Closing that fully needs a lease/expiry column
+// (reserved_at + completed_at) so a stale reservation can be reclaimed —
+// tracked as a follow-up (additive migration).
 //
 // The PURE helpers below extract event IDs from each provider's
 // payload shape. Wrapped this way because the DB call is the only
@@ -157,4 +172,38 @@ export async function claimWebhookEvent(supabase, source, eventId, payload = nul
   if (detailed.status === CLAIM_OUTCOMES.FIRST) return true;
   if (detailed.status === CLAIM_OUTCOMES.NO_EVENT_ID) return true;
   return false;
+}
+
+/**
+ * Two-phase claim, phase 2 (RELEASE). Deletes the reservation row so a
+ * provider redelivery of the SAME event re-runs the side effect.
+ *
+ * Call this ONLY when the side effect failed after a successful claim —
+ * the claim was a reservation, not a commit. A handler that succeeds must
+ * NOT release (the row is the commit / the dedup guard for future retries).
+ *
+ * Best-effort and never throws: if the release itself fails, the worst
+ * case degrades to today's behavior (the event stays claimed / dropped),
+ * so a release failure must not mask the original error the caller is
+ * about to surface. No-op on a falsy eventId (nothing was ever claimed).
+ *
+ * @param {object} supabase — service-role client
+ * @param {string} source   — 'stripe' / 'qb' / 'billing'
+ * @param {string} eventId  — the same id passed to claimWebhookEvent
+ * @returns {Promise<void>}
+ */
+export async function releaseWebhookEvent(supabase, source, eventId) {
+  if (!eventId) return;
+  try {
+    const { error } = await supabase
+      .from("processed_webhook_events")
+      .delete()
+      .eq("source", source)
+      .eq("event_id", eventId);
+    if (error) {
+      console.error(`[webhookIdempotency] ${source}/${eventId} release failed:`, error.message);
+    }
+  } catch (err) {
+    console.error(`[webhookIdempotency] ${source}/${eventId} release threw:`, err?.message || err);
+  }
 }

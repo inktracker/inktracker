@@ -449,9 +449,9 @@ export function getOrderUnits(order) {
   return (order.line_items || []).reduce((sum, li) => sum + getQty(li), 0);
 }
 
-export function getAdminMarkup(garmentCost) {
+export function getAdminMarkup(garmentCost, configOverride) {
   const cost = parseFloat(garmentCost) || 0;
-  const tiers = _pc?.garmentMarkup;
+  const tiers = (configOverride ?? _pc)?.garmentMarkup;
   if (tiers && Array.isArray(tiers)) {
     // Config tiers: [{ above: 25, markup: 1.15 }, ...] sorted desc by "above"
     const sorted = [...tiers].sort((a, b) => b.above - a.above);
@@ -467,11 +467,11 @@ export function getAdminMarkup(garmentCost) {
   return 1.4;
 }
 
-export function getBrokerMarkupShare() {
-  return _pc?.brokerMarkupShare ?? BROKER_MARKUP_SHARE;
+export function getBrokerMarkupShare(configOverride) {
+  return (configOverride ?? _pc)?.brokerMarkupShare ?? BROKER_MARKUP_SHARE;
 }
 
-export function getBrokerMarkup(garmentCost, share) {
+export function getBrokerMarkup(garmentCost, share, configOverride) {
   // `share` is the broker's % DISCOUNT off the shop's standard markup.
   // The broker pays (1 - share) of the standard markup spread above
   // raw cost:
@@ -481,13 +481,15 @@ export function getBrokerMarkup(garmentCost, share) {
   // Pre-2026-06-03 the formula used `share` directly, which inverted
   // the UX — higher input gave smaller broker discount. See the
   // BROKER_MARKUP_SHARE constant header for the bug story.
-  const s = share ?? getBrokerMarkupShare();
-  const adminMarkup = getAdminMarkup(garmentCost);
+  const s = share ?? getBrokerMarkupShare(configOverride);
+  const adminMarkup = getAdminMarkup(garmentCost, configOverride);
   return 1 + ((adminMarkup - 1) * (1 - s));
 }
 
-export function getMarkup(garmentCost, isBroker = false) {
-  return isBroker ? getBrokerMarkup(garmentCost) : getAdminMarkup(garmentCost);
+export function getMarkup(garmentCost, isBroker = false, configOverride) {
+  return isBroker
+    ? getBrokerMarkup(garmentCost, undefined, configOverride)
+    : getAdminMarkup(garmentCost, configOverride);
 }
 
 export function fmtDate(d) {
@@ -614,8 +616,8 @@ const DEFAULT_EMB_PRICING = {
 const DEFAULT_EMB_STITCH_TIERS = ["Under 5K", "5K-10K", "10K-15K", "15K+"];
 const DEFAULT_EMB_QTY_TIERS = [12, 24, 48, 72, 144];
 
-function getEmbroideryPPP(stitchIdx, qty) {
-  const emb = _pc?.embroidery;
+function getEmbroideryPPP(stitchIdx, qty, configOverride) {
+  const emb = (configOverride ?? _pc)?.embroidery;
   const pricing = emb?.pricing || DEFAULT_EMB_PRICING;
   const stitchTiers = emb?.stitchTiers || DEFAULT_EMB_STITCH_TIERS;
   const qtyTiers = emb?.qtyTiers || DEFAULT_EMB_QTY_TIERS;
@@ -773,7 +775,13 @@ export function calcSetupFees({ lineItems, override, isReorder, skippedFeeIds, c
   return { enabled: true, screens, items: active, total: Math.round(total * 100) / 100 };
 }
 
-export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, sizePricesOverride) {
+export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, sizePricesOverride, configOverride) {
+  // configOverride threads the shop's pricing_config explicitly through the
+  // whole line-price math so a multi-shop surface can price under the quote's
+  // OWNER config regardless of what's loaded in the module global — CACHE-01
+  // bleed becomes structurally impossible on this path. Defaults to `_pc` for
+  // every existing caller, so behavior is identical when nothing is threaded.
+  const pc = configOverride ?? _pc;
   const qty = getQty(li);
   if (!qty || qty < 1 || !li.imprints || li.imprints.length === 0) return null;
 
@@ -786,7 +794,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   // puts the smallest-color imprint first; "most" matches industry
   // convention where the heaviest imprint carries the setup. Per-shop
   // toggle in Account → Pricing.
-  const ordering = _pc?.firstPrintOrdering || "fewest";
+  const ordering = pc?.firstPrintOrdering || "fewest";
   const sorted = ordering === "most"
     ? [...active].sort((a, b) => b.colors - a.colors)
     : [...active].sort((a, b) => a.colors - b.colors);
@@ -794,11 +802,11 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
 
   let printCost = 0;
   let firstPPP = 0;
-  let displayTier = getTier(qty);
+  let displayTier = getTier(qty, pc?.tiers);
 
-  const fp = _pc?.firstPrint || FIRST_PRINT;
-  const ap = _pc?.addlPrint || ADDL_PRINT;
-  const maxColors = _pc?.maxColors || 8;
+  const fp = pc?.firstPrint || FIRST_PRINT;
+  const ap = pc?.addlPrint || ADDL_PRINT;
+  const maxColors = pc?.maxColors || 8;
 
   // Per-imprint technique pricing: each imprint uses its OWN technique's
   // rate table. Group-local "first" counter so a mix of embroidery +
@@ -825,10 +833,10 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     // configured on Account → Pricing. Falls back to screen print's
     // tables for unknown techniques so newly-added techs without a
     // custom rate sheet still price something.
-    const techCfg = isEmb ? null : getTechniqueRates(tech, _pc);
+    const techCfg = isEmb ? null : getTechniqueRates(tech, pc);
     const techFp        = techCfg ? techCfg.firstPrint : fp;
     const techAp        = techCfg ? techCfg.addlPrint  : ap;
-    const techTiers     = techCfg ? techCfg.tiers      : (_pc?.tiers || [25, 50, 100, 200]);
+    const techTiers     = techCfg ? techCfg.tiers      : (pc?.tiers || [25, 50, 100, 200]);
     const techMaxColors = techCfg ? techCfg.maxColors  : maxColors;
 
     const colors = Math.min(techMaxColors, Math.max(1, imp.colors || 1));
@@ -837,9 +845,9 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     let tier, rate;
     if (isEmb) {
       const stitchIdx = Math.max(0, colors - 1);
-      rate = getEmbroideryPPP(stitchIdx, tierQty);
+      rate = getEmbroideryPPP(stitchIdx, tierQty, pc);
       if (!isFirstInGroup) rate *= 0.7;
-      const embTiers = _pc?.embroidery?.qtyTiers || [12, 24, 48, 72, 144];
+      const embTiers = pc?.embroidery?.qtyTiers || [12, 24, 48, 72, 144];
       const stiers = [...embTiers].sort((a, b) => b - a);
       tier = stiers[stiers.length - 1];
       for (const t of stiers) { if (tierQty >= t) { tier = t; break; } }
@@ -894,7 +902,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   // the DTF tab show up when the line has a DTF imprint, without
   // polluting screen-print-only lines with DTF-specific fees.
   const customExtras = {};
-  const customTechs = _pc?.custom_techniques || {};
+  const customTechs = pc?.custom_techniques || {};
   for (const imp of sorted) {
     const tech = imp.technique || "Screen Print";
     if (tech === "Screen Print" || tech === "Embroidery") continue;
@@ -904,8 +912,8 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     }
   }
   const er = {
-    ...(hasScreenPrint ? (_pc?.extras || EXTRA_RATES) : {}),
-    ...(hasEmbroidery ? (_pc?.embroidery?.extras || {}) : {}),
+    ...(hasScreenPrint ? (pc?.extras || EXTRA_RATES) : {}),
+    ...(hasEmbroidery ? (pc?.embroidery?.extras || {}) : {}),
     ...customExtras,
   };
 
@@ -914,7 +922,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   const sizePrices = sizePricesOverride || li.sizePrices || {};
   const hasSizePrices = Object.keys(sizePrices).length > 0;
   const flatCost = parseFloat(li.garmentCost) || 0;
-  const flatMarkup = getMarkup(flatCost, isBroker);
+  const flatMarkup = getMarkup(flatCost, isBroker, pc);
 
   // Per-piece decoration cost — printCost is the total imprint cost
   // (first + additional locations × qty). Percent-mode extras apply
@@ -959,7 +967,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     const wholesaleCost = hasSizePrices && sizePrices[sz] > 0
       ? sizePrices[sz]
       : flatCost;
-    const sizeMarkup = getMarkup(wholesaleCost, isBroker);
+    const sizeMarkup = getMarkup(wholesaleCost, isBroker, pc);
     const garmentPpp = Math.round(wholesaleCost * sizeMarkup * 100) / 100;
     const totalPpp = Math.round((printExtraPpp + garmentPpp) * 100) / 100;
     sizeBreakdown[sz] = { qty: n, garmentPpp, totalPpp };
@@ -1013,16 +1021,16 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   };
 }
 
-export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
+export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, configOverride) {
   // Defensive null/undefined: callers like effectiveQuoteTotals pre-
   // wrap with `q || {}`, but the bare function is also called from
   // analytics rollups where a missing row shouldn't crash. Test IT5
   // pins this contract.
   q = q || {};
-  // CACHE-01 (telemetry only): flag if this quote's shop differs from the shop
-  // whose config is currently loaded — i.e. we're about to price with the wrong
-  // config. No behavior change; just surfaces real bleed.
-  detectPricingConfigBleed(q.shop_owner);
+  // CACHE-01: when the caller threads the quote-owner's config explicitly there
+  // is no global to bleed from — pricing is config-explicit end to end. Only run
+  // the telemetry detector on the legacy global path (no override supplied).
+  if (!configOverride) detectPricingConfigBleed(q.shop_owner);
   const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
   let subtotal = 0;   // sum of baseSubtotals (before rush)
   let rushTotal = 0;   // sum of rushFees
@@ -1036,7 +1044,7 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
       subtotal += override * qty;
       return;
     }
-    const r = calcLinkedLinePrice(li, q.rush_rate, _getLineExtras(li, q), markup, linkedQtyMap);
+    const r = calcLinkedLinePrice(li, q.rush_rate, _getLineExtras(li, q), markup, linkedQtyMap, undefined, configOverride);
     if (r) {
       // Use ppp × qty so totals match the displayed average per-piece price
       subtotal += r.ppp * r.qty;
@@ -1080,8 +1088,8 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP) {
   };
 }
 
-export function calcQuoteTotals(q, markup = STANDARD_MARKUP) {
-  return calcQuoteTotalsWithLinking(q, markup);
+export function calcQuoteTotals(q, markup = STANDARD_MARKUP, configOverride) {
+  return calcQuoteTotalsWithLinking(q, markup, configOverride);
 }
 
 // Product categories that drive both the line-item category picker and the
@@ -1190,14 +1198,16 @@ export function resolveLineCategory(li) {
   return mapTechniqueToCategory(primaryTechniqueForLine(li));
 }
 
-export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
+export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP, configOverride) {
   const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
   const lines = [];
 
   const isBroker = markup !== STANDARD_MARKUP;
   // Opt-in per-technique revenue: split each garment line into a garment line
   // + a decoration line (by technique). Off → identical single-line behavior.
-  const splitEnabled = !!getShopPricingConfig()?.qb_split_lines;
+  // configOverride keeps the QB payload config-explicit (CACHE-01) — defaults
+  // to the module global for every existing caller.
+  const splitEnabled = !!(configOverride ?? getShopPricingConfig())?.qb_split_lines;
 
   (quote.line_items || []).forEach((li) => {
     const qty = getQty(li);
@@ -1235,7 +1245,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
       }
       let gCost = 0, printCost = 0, extraCost = 0;
       try {
-        const br = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap);
+        const br = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap, undefined, configOverride);
         if (br) { gCost = br.gCost || 0; printCost = br.printCost || 0; extraCost = br.extraCost || 0; }
       } catch { /* fall back to all-garment */ }
       const { garment, decoration } = allocateGarmentDecoration(amt, gCost, printCost, extraCost);
@@ -1292,7 +1302,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
       if (hasOverride) {
         lineTotalForQb = override * qty;
       } else {
-        const r = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap);
+        const r = calcLinkedLinePrice(li, quote.rush_rate, _getLineExtras(li, quote), markup, linkedQtyMap, undefined, configOverride);
         if (!r) return;
         lineTotalForQb = r.lineTotal;
       }
@@ -1333,7 +1343,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
 
   // Use saved totals when available (calculate-once), fall back to live calc
   const hasSavedTotal = Number.isFinite(quote.total) && quote.total > 0;
-  const totals = hasSavedTotal ? null : calcQuoteTotalsWithLinking(quote, markup);
+  const totals = hasSavedTotal ? null : calcQuoteTotalsWithLinking(quote, markup, configOverride);
   const depositPct = parseFloat(quote.deposit_pct) || 0;
   const totalForDeposit = hasSavedTotal ? quote.total : (totals.afterDisc + totals.tax);
   const depositAmount = quote.deposit_paid && depositPct > 0
@@ -1345,7 +1355,7 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP) {
 
   // Apply the shop's QB item-name mapping (if any) to every line. No-op when
   // the shop hasn't configured one — so this is fully non-breaking.
-  const qbItemMap = getShopPricingConfig()?.qb_item_map || null;
+  const qbItemMap = (configOverride ?? getShopPricingConfig())?.qb_item_map || null;
   if (qbItemMap) {
     for (const l of lines) l.itemName = mapQbItemName(l.itemName, qbItemMap);
   }

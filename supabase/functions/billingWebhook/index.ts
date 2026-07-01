@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { captureError } from "../_shared/observability.ts";
 import Stripe from "npm:stripe@14.25.0";
-import { claimWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
+import { claimWebhookEvent, releaseWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
 import { sendApprovalNotification } from "../_shared/approvalNotificationEmail.js";
 import { buildTrialWillEndEmail } from "../_shared/trialWillEndEmail.js";
 import { partitionSecretUpdates } from "../_shared/connectionLogic.js";
@@ -102,6 +102,9 @@ async function updateProfileByCustomer(customerId: string, updates: Record<strin
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
+  // Hoisted so the outer catch can RELEASE the two-phase claim (see below).
+  let dedupId: string | null = null;
+
   try {
     const body = await req.text();
     const sig = req.headers.get("stripe-signature");
@@ -131,7 +134,7 @@ Deno.serve(async (req) => {
     // a dedup gate, a retry of customer.subscription.created could
     // fire the trial-activation side effects twice. Tests CW1–CW6
     // in _shared/__tests__/webhookIdempotency.test.js.
-    const dedupId = extractBillingEventId(event);
+    dedupId = extractBillingEventId(event);
     const isFirstDelivery = await claimWebhookEvent(adminClient(), "billing", dedupId as string, event);
     if (!isFirstDelivery) {
       console.log(`[billingWebhook] Duplicate event ${dedupId} — skipping`);
@@ -259,6 +262,12 @@ Deno.serve(async (req) => {
       headers: { ...CORS, "Content-Type": "application/json" },
     });
   } catch (err) {
+    // Two-phase claim: the claim was a RESERVATION. A side effect threw, so
+    // release it before returning non-2xx — otherwise Stripe's retry would
+    // find the event "already processed" and the subscription unlock / grace
+    // clock / dunning effect would be permanently dropped. Releasing lets the
+    // retry re-run the handler.
+    await releaseWebhookEvent(adminClient(), "billing", dedupId as string);
     await captureError(err, { fn: "billingWebhook" });
     console.error("billingWebhook error:", err);
     const message = err instanceof Error ? err.message : String(err);
