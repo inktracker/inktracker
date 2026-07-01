@@ -401,24 +401,31 @@ BEGIN
     'shops','messages','broker_documents','broker_files'
   ]) LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
-    -- Allow all operations for authenticated users (tighten later)
+    -- Allow all operations for authenticated users (tighten later).
+    -- Postgres has NO "CREATE POLICY IF NOT EXISTS" — drop-then-create for
+    -- idempotency instead (the old syntax was a hard parse error).
+    EXECUTE format('DROP POLICY IF EXISTS "auth_all_%s" ON %I', tbl, tbl);
     EXECUTE format('
-      CREATE POLICY IF NOT EXISTS "auth_all_%s" ON %I
+      CREATE POLICY "auth_all_%s" ON %I
         FOR ALL TO authenticated USING (TRUE) WITH CHECK (TRUE)
     ', tbl, tbl);
     -- Allow public (anon) read+insert for quote/order submission pages
   END LOOP;
 END $$;
 
--- Public quote submission (QuoteRequest page — unauthenticated)
-CREATE POLICY IF NOT EXISTS "anon_insert_quotes" ON quotes
+-- Public quote submission (QuoteRequest page — unauthenticated).
+-- Postgres has no CREATE POLICY IF NOT EXISTS → drop-then-create.
+DROP POLICY IF EXISTS "anon_insert_quotes" ON quotes;
+CREATE POLICY "anon_insert_quotes" ON quotes
   FOR INSERT TO anon WITH CHECK (TRUE);
 
-CREATE POLICY IF NOT EXISTS "anon_select_quotes" ON quotes
+DROP POLICY IF EXISTS "anon_select_quotes" ON quotes;
+CREATE POLICY "anon_select_quotes" ON quotes
   FOR SELECT TO anon USING (TRUE);
 
 -- Public order submission
-CREATE POLICY IF NOT EXISTS "anon_insert_orders" ON orders
+DROP POLICY IF EXISTS "anon_insert_orders" ON orders;
+CREATE POLICY "anon_insert_orders" ON orders
   FOR INSERT TO anon WITH CHECK (TRUE);
 
 -- ──────────────────────────────────────────────────────────
