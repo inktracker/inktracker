@@ -251,10 +251,10 @@ export default function Mockups() {
   // Per-view print spec (size + colors), keyed by view id. Front/Back seed
   // the common 13×19 default; added views start blank. 16 color slots — the
   // visible count is driven by maxColors.
-  const blankSpec = () => ({ w: "", h: "", colors: Array(16).fill("") });
+  const blankSpec = () => ({ w: "", h: "", details: "", colors: Array(16).fill("") });
   const [viewSpecs, setViewSpecs] = useState({
-    Front: { w: "13", h: "19", colors: Array(16).fill("") },
-    Back: { w: "13", h: "19", colors: Array(16).fill("") },
+    Front: { w: "13", h: "19", details: "", colors: Array(16).fill("") },
+    Back: { w: "13", h: "19", details: "", colors: Array(16).fill("") },
   });
   const specFor = (v) => viewSpecs[v] || blankSpec();
   function updateSpec(v, patch) {
@@ -566,7 +566,12 @@ export default function Mockups() {
       const colorRows = maxColors;
       const sizeRowH = 16;
       const colorRowH = 12;
-      const cardH = 12 + sizeRowH + colorRows * colorRowH;
+      // Add a per-print Details row (placement notes like 2" from collar) only
+      // when at least one print has details — keeps every card the same height
+      // so the 2-col grid stays aligned. Rendered ABOVE the colors.
+      const anyDetails = proofViewIds.some((v) => (specFor(v).details || "").trim());
+      const detailsRowH = 22;
+      const cardH = 12 + sizeRowH + (anyDetails ? detailsRowH : 0) + colorRows * colorRowH;
 
       // Page-break guard so added views don't silently clip off the page.
       const estSpecH = Math.ceil(proofViewIds.length / specCols) * (cardH + 10);
@@ -596,6 +601,19 @@ export default function Mockups() {
         doc.setFont(undefined, "normal");
         doc.text(`${spec.w || "—"}" × ${spec.h || "—"}"`, sx + 40, cy + 11);
         cy += sizeRowH;
+        // details (placement notes) — only when any print has them, so cards align
+        if (anyDetails) {
+          doc.rect(sx, cy, specCardW, detailsRowH);
+          doc.setFont(undefined, "bold");
+          doc.text("Details:", sx + 4, cy + 9);
+          doc.setFont(undefined, "normal");
+          const dtxt = (spec.details || "").trim();
+          if (dtxt) {
+            const dlines = doc.splitTextToSize(dtxt, specCardW - 48).slice(0, 2);
+            doc.text(dlines, sx + 44, cy + 9);
+          }
+          cy += detailsRowH;
+        }
         // colors
         for (let ci = 0; ci < colorRows; ci++) {
           doc.rect(sx, cy, specCardW, colorRowH);
@@ -966,6 +984,17 @@ export default function Mockups() {
                 <input value={specFor(view).h} onChange={e => updateSpec(view, { h: e.target.value })}
                   placeholder="H" className="flex-1 text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300" />
               </div>
+            </div>
+
+            {/* Placement / print details for the active view — free text like
+                "2\" down from collar". Per-view, so each print carries its own. */}
+            <div className="border-t border-slate-100 pt-3">
+              <label className="text-[10px] text-slate-500 block mb-1">
+                {decorationFor(view)} Details — {viewLabel(view)}
+              </label>
+              <textarea value={specFor(view).details} onChange={e => updateSpec(view, { details: e.target.value })}
+                rows={2} placeholder={`e.g. 2" down from collar, centered`}
+                className="w-full text-xs border border-slate-200 rounded px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-teal-300" />
             </div>
 
             {/* Colors for the active view */}
