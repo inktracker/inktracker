@@ -1410,6 +1410,33 @@ export default function OrderDetailModal({
                             <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
                               {li.brand ? `${li.brand} ` : ""}{li.style || "Item"}{li.garmentColor ? ` — ${li.garmentColor}` : ""}
                             </div>
+                            {/* What's being printed on THIS garment — one row per
+                                imprint so the operator sees the design, where it
+                                goes, its ink colors, and size. Answers "which
+                                design goes on which shirt" for multi-design jobs. */}
+                            {imprints.length > 0 && (
+                              <div className="mb-2 space-y-1">
+                                {imprints.map((imp, ii) => {
+                                  const dim = imp.width && imp.height
+                                    ? `${imp.width}" × ${imp.height}"`
+                                    : imp.width ? `${imp.width}" wide`
+                                    : imp.height ? `${imp.height}" tall` : "";
+                                  const nColors = Number(imp.colors) || 0;
+                                  return (
+                                    <div key={ii} className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5">
+                                      {imp.title && <span className="font-bold text-slate-800">{imp.title}</span>}
+                                      <span className="font-semibold text-teal-700">{imp.location || "Print"}</span>
+                                      <span className="text-slate-300">·</span>
+                                      <span>{nColors} color{nColors === 1 ? "" : "s"}</span>
+                                      {imp.technique && (<><span className="text-slate-300">·</span><span>{imp.technique}</span></>)}
+                                      {imp.pantones && (<><span className="text-slate-300">·</span><span className="text-slate-500">{imp.pantones}</span></>)}
+                                      {dim && (<><span className="text-slate-300">·</span><span className="text-slate-500">{dim}</span></>)}
+                                      {imp.details && (<><span className="text-slate-300">·</span><span className="text-slate-500 italic">{imp.details}</span></>)}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                             <div className="flex flex-wrap gap-2">
                               {sortSizeEntries(Object.entries(li.sizes || {})).filter(([, v]) => parseInt(v) > 0).map(([size, count]) => {
                                 // ── Order Goods: blank → ordered → received → blank ──
