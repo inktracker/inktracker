@@ -13,6 +13,8 @@ import { captureError } from "../_shared/observability.ts";
 import { resolvePaidQuoteUpdate, isPaymentAccountAuthorized } from "../_shared/stripePaymentEffect.js";
 import Stripe from "npm:stripe@14.25.0";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
+import { decideTokenRefresh, buildRefreshedTokenFields } from "../_shared/connectionLogic.js";
 import { claimWebhookEvent, releaseWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
 import { insertShopNotification } from "../_shared/notifications.js";
 import {
@@ -80,20 +82,18 @@ async function getShopQbTokens(supabase: any, shopOwnerEmail: string) {
   const profile = await loadProfileWithSecrets(supabase, { email: shopOwnerEmail });
   if (!profile?.qb_access_token || !profile?.qb_realm_id) return null;
 
-  const expiresAt = profile.qb_token_expires_at ? new Date(profile.qb_token_expires_at).getTime() : 0;
-  const needsRefresh = Date.now() > expiresAt - 5 * 60 * 1000;
-  if (!needsRefresh) {
-    return { accessToken: profile.qb_access_token, realmId: profile.qb_realm_id };
-  }
-
-  const fresh = await refreshQbToken(profile.qb_refresh_token as string);
-  await updateProfileSecrets(supabase, profile.id, {
-    qb_access_token:     fresh.access_token,
-    qb_refresh_token:    fresh.refresh_token ?? profile.qb_refresh_token,
-    qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
+  // Refresh (when near expiry) under the SHARED DB lease lock. A webhook and a
+  // concurrent qbSync/qbReconcile refresh must not both POST the rotating
+  // refresh token to Intuit — one rotation gets clobbered → invalid_grant → the
+  // shop's QB "randomly disconnects". Same serialized path the other functions
+  // use; unit-tested in _shared/qbTokenLock + connectionLogic.
+  return await refreshQbTokenSerialized(supabase, profile, {
+    decideRefresh: decideTokenRefresh,
+    refreshFn: refreshQbToken,
+    buildFields: buildRefreshedTokenFields,
+    persist: (id: string, fields: any) => updateProfileSecrets(supabase, id, fields),
+    reload: (id: string) => loadProfileWithSecrets(supabase, { id }),
   });
-
-  return { accessToken: fresh.access_token, realmId: profile.qb_realm_id };
 }
 
 async function recordQbPayment(
