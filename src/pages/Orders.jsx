@@ -13,7 +13,7 @@ import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
-import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
+import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
 
@@ -208,8 +208,15 @@ export default function Orders() {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm("Delete this order?")) return;
     const order = orders.find((o) => o.id === id);
+    // Honest confirm copy: an order made from a quote isn't lost — the quote is
+    // restored (to the broker for broker jobs, else to your Quotes list).
+    const msg = !order?.quote_id
+      ? "Delete this order?"
+      : (order?.broker_id || order?.broker_email)
+        ? "Delete this order?\n\nIts quote goes back to the broker, so nothing is lost."
+        : "Delete this order?\n\nIts originating quote returns to your Quotes list, so nothing is lost.";
+    if (!window.confirm(msg)) return;
     await base44.entities.Order.delete(id);
     setOrders((prev) => prev.filter((o) => o.id !== id));
     setViewing(null);
@@ -225,10 +232,9 @@ export default function Orders() {
       }
     }
 
-    // If this was a broker order, roll the source quote back so the
-    // broker isn't staring at a "Converted to Order" status with no
-    // underlying order, and ping their ShopActionFeed.
-    handleBrokerOrderDeletion(order);
+    // Restore the originating quote: regular orders return to Quotes as
+    // "Approved"; broker orders go back to the broker (+ ShopActionFeed ping).
+    revertQuoteOnOrderDelete(order);
   }
 
   async function handleTogglePaid(order) {

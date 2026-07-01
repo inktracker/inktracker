@@ -22,7 +22,7 @@ import { ChevronLeft, ChevronRight, CalendarDays, List, LayoutGrid } from "lucid
 import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
-import { handleBrokerOrderDeletion } from "@/lib/orders/handleBrokerOrderDeletion";
+import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
 import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink";
 import { resolveJobLabel } from "@/lib/calendar/resolveJobLabel";
 import { shopScope } from "@/lib/shopScope";
@@ -378,15 +378,22 @@ export default function Production() {
   }
 
   async function handleDelete(id) {
-    if (!window.confirm("Delete this order?")) return;
     const order = orders.find((o) => o.id === id);
+    // Honest confirm copy: an order made from a quote isn't lost — the quote is
+    // restored (to the broker for broker jobs, else to your Quotes list).
+    const msg = !order?.quote_id
+      ? "Delete this order?"
+      : (order?.broker_id || order?.broker_email)
+        ? "Delete this order?\n\nIts quote goes back to the broker, so nothing is lost."
+        : "Delete this order?\n\nIts originating quote returns to your Quotes list, so nothing is lost.";
+    if (!window.confirm(msg)) return;
     await base44.entities.Order.delete(id);
     setOrders((prev) => prev.filter((o) => o.id !== id));
     setViewing(null);
 
-    // If the deleted order originated from a broker quote, roll the quote
-    // back to "Client Approved" and notify the broker via ShopActionFeed.
-    handleBrokerOrderDeletion(order);
+    // Restore the originating quote: regular orders return to Quotes as
+    // "Approved"; broker orders go back to the broker (+ ShopActionFeed ping).
+    revertQuoteOnOrderDelete(order);
   }
 
   async function handleTogglePaid(order) {
