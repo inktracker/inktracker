@@ -10,6 +10,16 @@ jobs:
   tests:
     name: tests
     runs-on: ubuntu-latest
+    # Dummy (non-secret) Supabase env so the client constructs at import.
+    # src/api/supabaseClient.js calls createClient(URL, KEY) at module load and
+    # throws "supabaseUrl is required" when unset — any test transitively
+    # importing it (e.g. via lib/messageThreads) would fail in CI, which has no
+    # .env.local. These are placeholders: tests mock every real call, and prod
+    # still gets its real values from Vercel (so a real deploy that forgets them
+    # still fails loudly — we're not weakening that).
+    env:
+      VITE_SUPABASE_URL: http://localhost:54321
+      VITE_SUPABASE_ANON_KEY: test-anon-key
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
