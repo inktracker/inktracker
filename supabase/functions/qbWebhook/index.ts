@@ -8,6 +8,8 @@
 // Deploy: npx supabase functions deploy qbWebhook --no-verify-jwt
 
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
+import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
+import { decideTokenRefresh, buildRefreshedTokenFields } from "../_shared/connectionLogic.js";
 import { captureError } from "../_shared/observability.ts";
 import { claimWebhookEventDetailed, CLAIM_OUTCOMES, extractQbEventId } from "../_shared/webhookIdempotency.js";
 import { logEvent } from "../_shared/qbAudit.js";
@@ -81,10 +83,7 @@ const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")     ?? "";
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET") ?? "";
 const QB_TOKEN_URL     = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
 
-async function getAccessToken(supabase: any, profile: any): Promise<string> {
-  const expiresAt = new Date(profile.qb_token_expires_at).getTime();
-  if (Date.now() < expiresAt - 5 * 60 * 1000) return profile.qb_access_token;
-
+async function refreshQbAccessToken(refreshTok: string) {
   const res = await fetch(QB_TOKEN_URL, {
     method: "POST",
     headers: {
@@ -92,21 +91,28 @@ async function getAccessToken(supabase: any, profile: any): Promise<string> {
       "Content-Type": "application/x-www-form-urlencoded",
       Accept: "application/json",
     },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: profile.qb_refresh_token }),
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshTok }),
   });
   if (!res.ok) {
     console.error(`[qbWebhook] Token refresh failed: ${res.status}`);
     throw new Error("QuickBooks connection expired. Please reconnect in Account settings.");
   }
-  const fresh = await res.json();
+  return res.json();
+}
 
-  await updateProfileSecrets(supabase, profile.id, {
-    qb_access_token:     fresh.access_token,
-    qb_refresh_token:    fresh.refresh_token ?? profile.qb_refresh_token,
-    qb_token_expires_at: new Date(Date.now() + fresh.expires_in * 1000).toISOString(),
+async function getAccessToken(supabase: any, profile: any): Promise<string> {
+  // Refresh (when near expiry) under the SHARED DB lease lock so a webhook and a
+  // concurrent qbSync/qbReconcile refresh don't both POST the rotating refresh
+  // token and clobber it (the "QB randomly disconnected" bug). Same serialized
+  // path the other QB functions use.
+  const { accessToken } = await refreshQbTokenSerialized(supabase, profile, {
+    decideRefresh: decideTokenRefresh,
+    refreshFn: refreshQbAccessToken,
+    buildFields: buildRefreshedTokenFields,
+    persist: (id: string, fields: any) => updateProfileSecrets(supabase, id, fields),
+    reload: (id: string) => loadProfileWithSecrets(supabase, { id }),
   });
-
-  return fresh.access_token;
+  return accessToken;
 }
 
 // ── Core: find quote by QB invoice ID and mark paid ──────────────────────────
