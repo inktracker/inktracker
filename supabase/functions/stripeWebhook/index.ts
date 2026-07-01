@@ -10,6 +10,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { captureError } from "../_shared/observability.ts";
+import { resolvePaidQuoteUpdate, isPaymentAccountAuthorized } from "../_shared/stripePaymentEffect.js";
 import Stripe from "npm:stripe@14.25.0";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { claimWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
@@ -320,7 +321,7 @@ Deno.serve(async (req) => {
           .select("stripe_account_id")
           .eq("owner_email", quote.shop_owner)
           .maybeSingle();
-        if (!shopRow?.stripe_account_id || shopRow.stripe_account_id !== stripeAccountId) {
+        if (!isPaymentAccountAuthorized({ sessionAccount: stripeAccountId, shopAccount: shopRow?.stripe_account_id })) {
           console.error(
             `[stripeWebhook] REJECTED: session for quote ${quote.quote_id} came from account ${stripeAccountId} but the quote's shop ${quote.shop_owner} owns ${shopRow?.stripe_account_id ?? "<none>"}`,
           );
@@ -328,21 +329,18 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Update quote status (authoritative server-side confirmation)
-      // Don't overwrite if already converted to an order
-      if (quote.status === "Converted to Order" || quote.converted_order_id) {
-        console.log(`[stripeWebhook] Quote ${quote.quote_id} already converted to order — skipping status update`);
-        await supabase
-          .from("quotes")
-          .update({ deposit_paid: true })
-          .eq("id", quoteId);
-      } else {
-        const newStatus = isDeposit ? "Approved" : "Approved and Paid";
-        await supabase
-          .from("quotes")
-          .update({ status: newStatus, deposit_paid: true })
-          .eq("id", quoteId);
+      // Update quote status (authoritative server-side confirmation). The
+      // decision — and the "don't rewind a converted order" guard — is the pure,
+      // unit-tested resolvePaidQuoteUpdate.
+      const quoteUpdate = resolvePaidQuoteUpdate({
+        status: quote.status,
+        converted_order_id: quote.converted_order_id,
+        isDeposit,
+      });
+      if (!quoteUpdate.status) {
+        console.log(`[stripeWebhook] Quote ${quote.quote_id} already converted to order — stamping deposit_paid only`);
       }
+      await supabase.from("quotes").update(quoteUpdate).eq("id", quoteId);
 
       // Look up shop name for customer email
       const { data: shops } = await supabase
