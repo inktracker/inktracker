@@ -490,6 +490,19 @@ export function isQbInvoicePaid(invoice) {
   return total > 0 && balance === 0;
 }
 
+// True when the QB invoice already has ANY payment applied (balance below its
+// total) — includes a deposit-only partial payment, which isQbInvoicePaid
+// (balance===0) misses. Used to make the deposit-recording idempotent: on a
+// re-sync, if the invoice already carries a payment, we must NOT post the
+// deposit a second time (NEW-12 — a $500 deposit posting twice would zero out
+// a balance the customer still owes).
+export function qbInvoiceHasPayment(invoice) {
+  if (!invoice) return false;
+  const total = Number(invoice.TotalAmt ?? 0);
+  const balance = Number(invoice.Balance ?? 0);
+  return total > 0 && balance < total;
+}
+
 // ── UPDATE-failure shape ────────────────────────────────────────────
 //
 // Why this exists: until 2026-05-30, handleCreateInvoice silently
