@@ -140,7 +140,7 @@ export default function Inventory() {
     }
   }
 
-  const hasShopify = items.some(i => i.category === "Shopify" || i._shopifyLive);
+  const hasShopify = items.some(i => i.category === "Shopify");
   const cats = ["All", ...categories, ...(hasShopify && !categories.includes("Shopify") ? ["Shopify"] : [])];
 
   const filtered = useMemo(() => {
@@ -380,7 +380,6 @@ export default function Inventory() {
                   <div className="font-semibold text-slate-800">{group.baseName}</div>
                   <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
                     <span>{firstItem.category}</span>
-                    {firstItem._shopifyLive && <span className="text-emerald-500 font-semibold">Live</span>}
                     {hasVariants && <span>{group.items.length} variant{group.items.length !== 1 ? "s" : ""}</span>}
                     {!hasVariants && <span className="font-mono">{firstItem.sku}</span>}
                   </div>
@@ -471,7 +470,7 @@ export default function Inventory() {
           onAddToCart={addToSsCart}
           onSave={async (updates) => {
             for (const { id, ...fields } of updates) {
-              const { variantName, _shopifyLive, ...payload } = fields;
+              const { variantName, ...payload } = fields;
               const updated = await base44.entities.InventoryItem.update(id, payload);
               setItems(prev => prev.map(i => i.id === id ? updated : i));
             }

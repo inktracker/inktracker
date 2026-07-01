@@ -24,6 +24,11 @@ export default defineConfig({
       // npm run e2e command and the @playwright/test runner. Vitest
       // would try to import them as unit tests otherwise.
       "e2e/**",
+      // knowledge/.claude/worktrees/ holds a gitignored Claude Code
+      // worktree — a full stale copy of src including tests. Without this
+      // exclude vitest globs those 53 duplicate specs and double-runs the
+      // suite against outdated code (1,223 phantom cases). Test only src/.
+      "knowledge/**",
     ],
   },
 });

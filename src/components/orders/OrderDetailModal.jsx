@@ -571,14 +571,12 @@ export default function OrderDetailModal({
           .upload(path, file, { upsert: false });
         if (upErr) throw upErr;
 
-        // url is the public-FORM path-carrier (artwork bucket is private — M-1);
-        // store `path` as the canonical reference so readers sign from it directly.
-        const { data } = supabase.storage.from("artwork").getPublicUrl(path);
+        // The artwork bucket is private (M-1) — a getPublicUrl() here would 400.
+        // `path` is the canonical reference; readers sign a URL from it directly.
         newArtwork.push({
           id: path,
           name: file.name,
           path,
-          url: data.publicUrl,
           note: "",
           colors: "",
           source: "Uploaded to order",
