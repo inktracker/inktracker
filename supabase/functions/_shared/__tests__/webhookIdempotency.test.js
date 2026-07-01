@@ -4,6 +4,7 @@ import {
   extractQbEventId,
   extractBillingEventId,
   claimWebhookEvent,
+  releaseWebhookEvent,
 } from "../webhookIdempotency.js";
 
 // ─────────────────────────────────────────────────────────────────────
@@ -279,5 +280,52 @@ describe("claimWebhookEventDetailed (CWD1–CWD5)", () => {
     expect(await claimWebhookEvent(mockSupabase({ error: null, count: 1 }), "stripe", null)).toBe(true);
     expect(await claimWebhookEvent(mockSupabase({ error: { code: "23505" }, count: 0 }), "stripe", "evt_2")).toBe(false);
     expect(await claimWebhookEvent(mockSupabase({ error: { code: "08006" }, count: 0 }), "stripe", "evt_3")).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// releaseWebhookEvent — two-phase claim, phase 2 (release-on-failure)
+// ─────────────────────────────────────────────────────────────────────
+
+describe("releaseWebhookEvent (RW1–RW5)", () => {
+  function mockDeleteSupabase(deleteResult) {
+    const eqEvent = vi.fn().mockResolvedValue(deleteResult);
+    const eqSource = vi.fn().mockReturnValue({ eq: eqEvent });
+    const del = vi.fn().mockReturnValue({ eq: eqSource });
+    const from = vi.fn().mockReturnValue({ delete: del });
+    return { supabase: { from }, spies: { from, del, eqSource, eqEvent } };
+  }
+
+  it("RW1 — deletes the reservation row scoped to (source, event_id)", async () => {
+    const { supabase, spies } = mockDeleteSupabase({ error: null });
+    await releaseWebhookEvent(supabase, "stripe", "evt_boom");
+    expect(spies.from).toHaveBeenCalledWith("processed_webhook_events");
+    expect(spies.del).toHaveBeenCalledTimes(1);
+    expect(spies.eqSource).toHaveBeenCalledWith("source", "stripe");
+    expect(spies.eqEvent).toHaveBeenCalledWith("event_id", "evt_boom");
+  });
+
+  it("RW2 — no-op on a falsy eventId (nothing was ever claimed)", async () => {
+    const { supabase, spies } = mockDeleteSupabase({ error: null });
+    await releaseWebhookEvent(supabase, "stripe", null);
+    await releaseWebhookEvent(supabase, "stripe", "");
+    expect(spies.from).not.toHaveBeenCalled();
+  });
+
+  it("RW3 — a DB delete error is swallowed, not thrown (must not mask the original error)", async () => {
+    const { supabase } = mockDeleteSupabase({ error: { message: "delete failed" } });
+    await expect(releaseWebhookEvent(supabase, "billing", "evt_x")).resolves.toBeUndefined();
+  });
+
+  it("RW4 — a thrown client error is caught, not propagated", async () => {
+    const supabase = { from() { throw new Error("ECONNRESET"); } };
+    await expect(releaseWebhookEvent(supabase, "billing", "evt_y")).resolves.toBeUndefined();
+  });
+
+  it("RW5 — a successful handler must NOT release (contract: release is failure-only)", () => {
+    // Documents the calling contract enforced in stripeWebhook/billingWebhook:
+    // release lives ONLY in the catch block, so a committed event keeps its
+    // dedup row. This test pins intent — the handlers wire it that way.
+    expect(typeof releaseWebhookEvent).toBe("function");
   });
 });

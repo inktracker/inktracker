@@ -13,7 +13,7 @@ import { captureError } from "../_shared/observability.ts";
 import { resolvePaidQuoteUpdate, isPaymentAccountAuthorized } from "../_shared/stripePaymentEffect.js";
 import Stripe from "npm:stripe@14.25.0";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
-import { claimWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
+import { claimWebhookEvent, releaseWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
 import { insertShopNotification } from "../_shared/notifications.js";
 import {
   renderEmailLayout,
@@ -445,6 +445,12 @@ Deno.serve(async (req) => {
 
     return Response.json({ received: true }, { headers: CORS });
   } catch (err) {
+    // Two-phase claim: the claim above was a RESERVATION, not a commit. The
+    // side effect threw, so release it — otherwise the 500 below triggers
+    // Stripe's retry, which would find the event "already processed" and drop
+    // the payment/QB-mirror/email effects for good. Releasing lets the retry
+    // re-run the handler from the top.
+    await releaseWebhookEvent(supabase, "stripe", dedupId as string);
     await captureError(err, { fn: "stripeWebhook" });
     console.error("[stripeWebhook] Error processing event:", err);
     return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
