@@ -2,6 +2,7 @@
 // Actions: checkConnection | createInvoice | syncExpense | getCustomers
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { captureError } from "../_shared/observability.ts";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { mintPaymentLink } from "../_shared/qbPaymentLink.js";
@@ -2602,6 +2603,7 @@ Deno.serve(async (req) => {
 
     return Response.json({ success: true, ...result }, { headers: CORS });
   } catch (err) {
+    await captureError(err, { fn: "qbSync" });
     // QbRateLimitError survives all retries → tell the frontend it's a
     // throttle, not a hard failure. 200 + structured body so the JS
     // client's FunctionsHttpError doesn't swallow the retry-after value.

@@ -2,6 +2,7 @@
 // Public — no JWT required (customer-facing quote payment page).
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { captureError } from "../_shared/observability.ts";
 import Stripe from "npm:stripe@14.25.0";
 import {
   chooseQuoteApprovalRecipient,
@@ -538,6 +539,7 @@ Deno.serve(async (req) => {
 
     return Response.json(result, { headers: CORS });
   } catch (err) {
+    await captureError(err, { fn: "createCheckoutSession" });
     console.error("[createCheckoutSession] error:", err);
     return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
   }

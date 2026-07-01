@@ -7,9 +7,18 @@ name: e2e
 # per-PR fast path.
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
-#   VITE_SUPABASE_URL          — the project URL
+#   VITE_SUPABASE_URL          — the project URL (use a THROWAWAY/staging project)
+#   VITE_SUPABASE_ANON_KEY     — that project's anon key; the new isolation /
+#                                subscription specs sign in as a real client to
+#                                assert RLS + storage policies actually deny
 #   SUPABASE_SERVICE_ROLE_KEY  — used by e2e/_helpers to create/delete
 #                                test fixtures (never reaches the browser)
+#
+# To make this a REQUIRED per-PR gate (the regression net's purpose), the human:
+#   1. points the secrets above at a THROWAWAY test project (NOT prod — the
+#      specs create/delete users/shops and run the purge),
+#   2. adds `pull_request:` + `push: branches: [main]` to the `on:` block below,
+#   3. enables branch protection requiring this check (Settings → Branches).
 
 on:
   workflow_dispatch:
@@ -31,4 +40,5 @@ jobs:
         run: npm run e2e
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

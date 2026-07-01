@@ -28,6 +28,7 @@
 // (CRON_SECRET is the actual auth, not the Supabase JWT.)
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { captureError } from "../_shared/observability.ts";
 import {
   loadProfileWithSecrets,
   updateProfileSecrets,
@@ -780,6 +781,7 @@ Deno.serve(async (req) => {
       webhook_health: webhookHealth,
     });
   } catch (err) {
+    await captureError(err, { fn: "qbReconcile" });
     console.error("[qbReconcile] fatal:", err);
     return Response.json(
       { error: (err as Error)?.message || "reconcile failed" },
