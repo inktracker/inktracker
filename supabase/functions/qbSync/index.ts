@@ -24,6 +24,7 @@ import {
   buildQbSendInvoiceUrl,
   stripDocNumberRevision,
   isQbInvoicePaid,
+  qbInvoiceHasPayment,
   buildUpdateFailureResponse,
   resolveInvoiceCustomerFields,
   pickIncomeAccountId,
@@ -803,6 +804,12 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   let created: any;
   let qbInvoiceId: string = quote.qb_invoice_id || "";
   let qbInvoiceFinal: any;
+  // NEW-12 idempotency: true when we're resyncing an invoice that ALREADY has a
+  // payment applied in QB (e.g. the deposit posted on a prior sync). Gates the
+  // deposit-recording step below so a re-send / re-"Create in QB" can't post the
+  // deposit twice. Stays false on a first-time create (no existing invoice), so
+  // a genuine deposit is still recorded exactly once.
+  let existingInvoiceHadPayment = false;
 
   // If the quote already has a QB invoice ID, UPDATE the existing invoice
   // instead of creating a duplicate. This is the "resync" path.
@@ -819,6 +826,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     } catch (e) {
       console.error(`[createInvoice] Could not fetch existing QB invoice ${qbInvoiceId}:`, (e as Error)?.message);
     }
+
+    // Record whether a payment is already applied BEFORE we mutate the invoice,
+    // so the deposit step below doesn't double-post on a re-sync (NEW-12).
+    existingInvoiceHadPayment = qbInvoiceHasPayment(existingInv);
 
     if (existingInv && isQbInvoicePaid(existingInv)) {
       // Paid-state guard. The previous behavior here was to attempt an
@@ -1162,9 +1173,13 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   let depositRecordFailed = false;
   const depositAmount = Number(invoicePayload?.depositAmount) || 0;
   // Skip while tax-held: a held invoice isn't going out, and recording the
-  // deposit now would double it when the fixed invoice is re-synced (the
-  // resync path records the deposit again). It records on the clean re-sync.
-  if (quote.deposit_paid && depositAmount > 0 && !taxBlocked) {
+  // deposit now would double it when the fixed invoice is re-synced.
+  // Skip when the existing QB invoice ALREADY carries a payment
+  // (existingInvoiceHadPayment) — the deposit was recorded on a prior sync, and
+  // posting it again would over-apply and zero out a balance still owed
+  // (NEW-12). A first-time create has no existing payment, so the deposit is
+  // still recorded exactly once.
+  if (quote.deposit_paid && depositAmount > 0 && !taxBlocked && !existingInvoiceHadPayment) {
     try {
       await qbCreate(token, realmId, "payment", {
         CustomerRef: { value: qbCustomerId },

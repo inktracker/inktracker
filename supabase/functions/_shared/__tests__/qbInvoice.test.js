@@ -18,6 +18,7 @@ import {
   stripDocNumberRevision,
   isRevisionDocNumber,
   isQbInvoicePaid,
+  qbInvoiceHasPayment,
   buildUpdateFailureResponse,
   pickIncomeAccountId,
   dominantItemIncomeAccount,
@@ -27,6 +28,26 @@ import {
   normalizeItemName,
   clampPaymentAmount,
 } from "../qbInvoice";
+
+describe("qbInvoiceHasPayment (NEW-12 deposit double-post guard)", () => {
+  it("false when no payment applied (balance === total)", () => {
+    expect(qbInvoiceHasPayment({ TotalAmt: 1000, Balance: 1000 })).toBe(false);
+  });
+  it("true for a deposit-only partial payment (0 < balance < total) — the case isQbInvoicePaid MISSES", () => {
+    // $500 deposit on a $1000 invoice → balance 500. This is exactly the
+    // re-sync scenario that used to double-post the deposit.
+    expect(qbInvoiceHasPayment({ TotalAmt: 1000, Balance: 500 })).toBe(true);
+    expect(isQbInvoicePaid({ TotalAmt: 1000, Balance: 500 })).toBe(false);
+  });
+  it("true for a fully paid invoice (balance 0)", () => {
+    expect(qbInvoiceHasPayment({ TotalAmt: 1000, Balance: 0 })).toBe(true);
+  });
+  it("false for a missing/zero-total invoice (first-time create → deposit still records)", () => {
+    expect(qbInvoiceHasPayment(null)).toBe(false);
+    expect(qbInvoiceHasPayment(undefined)).toBe(false);
+    expect(qbInvoiceHasPayment({ TotalAmt: 0, Balance: 0 })).toBe(false);
+  });
+});
 
 describe("normalizeForMatch", () => {
   it("lowercases, collapses whitespace, and strips punctuation", () => {
