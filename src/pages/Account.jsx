@@ -507,6 +507,32 @@ export default function Account() {
   }
 
   async function handleMigrateInvoices() {
+    // Enforce customers-before-invoices. Invoices link to a customer by
+    // qb_customer_id, so pulling them before any customers are imported
+    // leaves them unlinked — the exact gap a shop hit running the invoice
+    // sync alone. Fast-path: a successful customer sync THIS session means
+    // we're clearly in order. Otherwise check for any already-imported QB
+    // customer; if there are none, steer them to sync customers first
+    // (a plain confirm, not a banner).
+    const syncedCustomersThisSession = !!(qbMigrateResult && !qbMigrateResult.error);
+    if (!syncedCustomersThisSession) {
+      let hasQbCustomers = true; // fail-open: a check error must not block the sync
+      try {
+        const { count } = await supabase
+          .from("customers")
+          .select("id", { count: "exact", head: true })
+          .not("qb_customer_id", "is", null);
+        hasQbCustomers = (count ?? 0) > 0;
+      } catch (err) {
+        console.warn("QB customer presence check failed — proceeding:", err);
+      }
+      if (!hasQbCustomers) {
+        const proceed = window.confirm(
+          "Sync your QuickBooks customers first so these invoices link to the right customer.\n\nSync invoices anyway?"
+        );
+        if (!proceed) return;
+      }
+    }
     setQbMigratingInv(true);
     setQbMigrateInvResult(null);
     try {

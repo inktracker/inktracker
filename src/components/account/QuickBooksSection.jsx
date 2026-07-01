@@ -200,7 +200,7 @@ export default function QuickBooksSection({
               ) : (
                 <>
                   <DownloadCloud className="w-4 h-4" />
-                  Sync Customers from QuickBooks
+                  1. Sync Customers from QuickBooks
                 </>
               )}
             </button>
@@ -236,7 +236,7 @@ export default function QuickBooksSection({
               ) : (
                 <>
                   <DownloadCloud className="w-4 h-4" />
-                  Sync Invoices from QuickBooks
+                  2. Sync Invoices from QuickBooks
                 </>
               )}
             </button>
