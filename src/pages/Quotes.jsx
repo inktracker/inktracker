@@ -22,6 +22,7 @@ import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { validateQuoteForSave } from "../lib/quotes/validation";
 import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
+import { isConvertedToOrder } from "../lib/quotes/approvalState";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
 import { useBillingGate } from "../lib/billing-gate";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
@@ -96,10 +97,11 @@ export default function Quotes() {
           cachedList("User"),
         ]);
 
-        // Exclude quotes already converted to orders — those live under Orders now.
-        const q = allQuotes.filter((quote) =>
-          quote.status !== "Converted to Order"
-        );
+        // Exclude quotes already converted to orders — those live under Orders
+        // now. Checks converted_order_id as well as status: a status-only
+        // filter let desynced rows (converted_order_id set, status regressed
+        // by the approve-replay bug) reappear here as unconvertible zombies.
+        const q = allQuotes.filter((quote) => !isConvertedToOrder(quote));
         setQuotes(q);
         // If the Dashboard linked us here with ?id=, auto-open that quote
         if (searchId) {
@@ -356,7 +358,10 @@ export default function Quotes() {
     setDuplicating(true);
     try {
       const newId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
-      const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, ...rest } = q;
+      // converted_order_id / converted_at must not survive duplication —
+      // a Draft born with them can never be converted (handleConvert's
+      // already-converted guard keys on converted_order_id).
+      const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, converted_order_id, converted_at, ...rest } = q;
       // Shop-tz, not UTC. toISOString() returns tomorrow's date after
       // ~5pm Pacific — the duplicated quote then sorted into tomorrow's
       // calendar slot.

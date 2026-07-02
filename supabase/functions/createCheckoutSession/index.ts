@@ -13,6 +13,7 @@ import {
 } from "../_shared/approvalNotificationEmail.js";
 import { toCustomerFacingQuote } from "../_shared/customerFacingQuote.js";
 import { insertShopNotification } from "../_shared/notifications.js";
+import { resolveApproveQuoteUpdate, APPROVE_GUARD_OR } from "../_shared/approveQuoteEffect.js";
 
 // The quote/customer rows returned to the UNauthenticated payment page must
 // not leak broker wholesale pricing or shop-internal customer PII. We:
@@ -154,42 +155,56 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // first select was just for the token verification.
   const { data: pre } = await supabase
     .from("quotes")
-    .select("broker_id, broker_email, status, client_status")
+    .select("broker_id, broker_email, status, client_status, converted_order_id")
     .eq("id", quoteId)
     .single();
 
-  // Only the FIRST approve transition should send an email. Re-clicking the
-  // emailed link (or a script looping the action) must NOT re-fire notifications
-  // — otherwise it's an email-bomb vector from the verified domain.
-  const alreadyApproved = pre?.status === "Approved" || pre?.status === "Client Approved" || pre?.client_status === "Approved";
+  // One-way, idempotent transition. resolveApproveQuoteUpdate returns
+  // update=null when the quote is already at/past approval ("Approved",
+  // "Client Approved", or the sacred "Converted to Order" / "Approved and
+  // Paid" / "Paid") — replaying the emailed link must neither rewrite a
+  // later lifecycle state (it used to yank converted quotes back to
+  // "Approved") nor re-fire notifications (email-bomb vector from the
+  // verified domain).
+  //
+  // Broker quotes route to "Client Approved", not "Approved": the clicker
+  // is the broker's END CLIENT, and the broker still has to "Submit to
+  // Shop" (mirrors BrokerDashboard.handleMarkClientApproved exactly).
+  const { update: approvePatch, isBroker: isBrokerQuote } =
+    resolveApproveQuoteUpdate(pre ?? {}, { nowISO: new Date().toISOString() });
 
-  // Broker quotes follow client-first workflow: the customer clicking
-  // Approve is the broker's END CLIENT, NOT the shop. Setting status
-  // to "Approved" here would skip the broker's "Submit to Shop" step
-  // entirely and the broker portal would render the quote as
-  // "Shop Approved" (per BrokerDashboard.jsx — Approved + Shop Approved
-  // are treated the same). Mirror the broker portal's
-  // handleMarkClientApproved so the state is exactly what the broker
-  // would set if they marked it manually: status "Client Approved",
-  // client_status "Approved", client_approved_at = now. The broker
-  // still has to hit Submit to Shop to move it into the shop's queue.
-  const isBrokerQuote = Boolean(pre?.broker_id || pre?.broker_email);
-  const updatePayload: any = isBrokerQuote
-    ? {
-        status: "Client Approved",
-        client_status: "Approved",
-        client_approved_at: new Date().toISOString(),
-      }
-    : { status: "Approved" };
+  let quote: any = null;
+  // True only when THIS request performed the approve transition — the sole
+  // condition under which notifications fire.
+  let transitioned = false;
 
-  const { data: quote, error } = await supabase
-    .from("quotes")
-    .update(updatePayload)
-    .eq("id", quoteId)
-    .select("*")
-    .single();
+  if (approvePatch) {
+    // APPROVE_GUARD_OR makes the write itself refuse rows that reached a
+    // locked status after our pre-read — without it, a conversion landing
+    // in that window would still get clobbered.
+    const { data: updatedRows, error } = await supabase
+      .from("quotes")
+      .update(approvePatch)
+      .eq("id", quoteId)
+      .or(APPROVE_GUARD_OR)
+      .select("*");
+    if (error) return { error: "Failed to approve quote." };
+    quote = updatedRows?.[0] ?? null;
+    transitioned = Boolean(quote);
+  }
 
-  if (error || !quote) return { error: "Failed to approve quote." };
+  if (!quote) {
+    // Already approved/converted/paid (or we lost the guard race) —
+    // idempotent success: return the current state, write nothing.
+    const { data: current } = await supabase
+      .from("quotes")
+      .select("*")
+      .eq("id", quoteId)
+      .single();
+    quote = current;
+  }
+
+  if (!quote) return { error: "Failed to approve quote." };
 
   // Public-safe allowlist — this object is returned to the unauthenticated
   // quote-payment page. Adding new sensitive columns to the shops table
@@ -223,8 +238,9 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // chooseQuoteApprovalRecipient encodes that decision and is
   // unit-tested separately.
   try {
-    if (alreadyApproved) {
-      // Re-approval (link re-clicked / replayed) — already notified; skip.
+    if (!transitioned) {
+      // No transition happened (replayed link / already past approval) —
+      // already notified on the first approval; skip.
     } else {
     // In-app bell notification for the shop owner — DIRECT shop quotes only.
     // Broker quotes go to "Client Approved" and route to the broker's own feed
@@ -264,7 +280,7 @@ async function handleApproveQuote(quoteId: string, token?: string) {
       reply_to: email?.reply_to,
     });
     } // end rate-limit gate
-    } // end !alreadyApproved gate
+    } // end transitioned gate
   } catch (notifyErr) {
     console.error("[approveQuote] notification build/send failed:", notifyErr);
   }
@@ -322,27 +338,57 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
   if (!existing?.public_token || !token || !safeEquals(token, existing.public_token)) {
     return { error: "Order not found." };
   }
-  // Only the first approval transition notifies — replays must not re-email.
+  // Only the first approval transition writes + notifies. A replayed link
+  // must not restamp art_approved_at / art_approved_by — that erases the
+  // record of who actually approved and when (same replay-clobber class as
+  // approveQuote above).
   const alreadyApproved = existing.art_approved === true;
 
-  const { data: order, error } = await supabase
-    .from("orders")
-    .update({
-      art_approved: true,
-      art_approved_at: new Date().toISOString(),
-      art_approved_by: approvedBy || "Customer",
-    })
-    .eq("id", orderId)
-    .select("*")
-    .single();
+  let order: any = null;
+  // True only when THIS request flipped art_approved — the sole condition
+  // under which the notification fires (race losers must not re-email).
+  let transitioned = false;
+  if (alreadyApproved) {
+    const { data: current } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("id", orderId)
+      .single();
+    order = current;
+  } else {
+    // Guarded write: only transitions rows still unapproved, so two
+    // near-simultaneous clicks can't both stamp (the loser falls through
+    // to the re-read below).
+    const { data: updatedRows, error } = await supabase
+      .from("orders")
+      .update({
+        art_approved: true,
+        art_approved_at: new Date().toISOString(),
+        art_approved_by: approvedBy || "Customer",
+      })
+      .eq("id", orderId)
+      .not("art_approved", "is", true)
+      .select("*");
+    if (error) return { error: "Failed to approve artwork." };
+    order = updatedRows?.[0] ?? null;
+    transitioned = Boolean(order);
+    if (!order) {
+      const { data: current } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("id", orderId)
+        .single();
+      order = current;
+    }
+  }
 
-  if (error || !order) return { error: "Failed to approve artwork." };
+  if (!order) return { error: "Failed to approve artwork." };
 
   // Best-effort notification. Mirrors the quote-approval pattern;
   // see the comment on handleApproveQuote for rationale.
   try {
-    if (alreadyApproved) {
-      // already notified on first approval — skip
+    if (!transitioned) {
+      // already notified on the first approval (replay or race loser) — skip
     } else {
     const { data: underLimit } = await supabase.rpc("check_request_rate", {
       p_key: `approve_artwork:${orderId}`, p_limit_per_hr: 5,
@@ -372,7 +418,7 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
       reply_to: email?.reply_to,
     });
     } // end rate-limit gate
-    } // end !alreadyApproved gate
+    } // end transitioned gate
   } catch (notifyErr) {
     console.error("[approveArtwork] notification build/send failed:", notifyErr);
   }

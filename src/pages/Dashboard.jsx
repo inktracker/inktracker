@@ -12,6 +12,7 @@ import { bucketQuotes } from "@/lib/broker/quoteStatus";
 import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, BarChart2, Package, DollarSign, FileText, Bell, RefreshCw } from "lucide-react";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
 import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink";
+import { isConvertedToOrder } from "@/lib/quotes/approvalState";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
 import GettingStartedChecklist from "../components/GettingStartedChecklist";
@@ -558,8 +559,9 @@ export default function Dashboard() {
   // been converted to orders aren't "active quotes" anymore, they live
   // under Orders. Counting them on the dashboard made the chip claim
   // e.g. "4 Quotes" then take you to an empty list. Both surfaces now
-  // exclude "Converted to Order".
-  const activeQuotes = quotes.filter((q) => q.status !== "Converted to Order");
+  // exclude "Converted to Order" (and converted_order_id, in case the
+  // status desynced — see lib/quotes/approvalState.js).
+  const activeQuotes = quotes.filter((q) => !isConvertedToOrder(q));
   const totalQuotesCount = activeQuotes.length;
   const totalQuotesValue = sumTotals(activeQuotes);
 
