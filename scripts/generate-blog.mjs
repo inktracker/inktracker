@@ -64,6 +64,8 @@ ul.body-list li{margin:.55em 0}
 .callout{border-left:3px solid var(--forest);background:#f6faf7;border-radius:0 10px 10px 0;padding:14px 18px;margin:1.5em 0}
 .callout h4{margin:0 0 4px;font-size:1rem}
 .callout p{margin:0;color:#333}
+.faq dt{font-weight:700;margin-top:1em}
+.faq dd{margin:.2em 0 0;color:#333}
 .blog-cta{background:var(--ink);color:#fff;border-radius:14px;padding:30px 26px;margin:2.6em 0;text-align:center}
 .blog-cta h3{font-family:"Anton",sans-serif;color:#fff;text-transform:uppercase;font-size:1.6rem;margin:0 0 .45em}
 .blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
@@ -287,9 +289,27 @@ function renderBlock(b) {
 function renderPost(post) {
   const canonical = `${SITE.baseUrl}/blog/${post.slug}`;
   const bodyHtml = post.body.map(renderBlock).join("\n");
+  // Optional FAQ: the visible <dl> and the FAQPage JSON-LD must carry the same
+  // text — Google ignores schema-only FAQs. Same markup/pattern as /compare.
+  const faqHtml = post.faqs
+    ? `<h2>Common questions</h2>\n<dl class="faq">\n${post.faqs
+        .map((f) => `<dt>${esc(f.q)}</dt><dd>${esc(f.a)}</dd>`)
+        .join("\n")}\n</dl>`
+    : "";
+  const faqLd = post.faqs
+    ? {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        mainEntity: post.faqs.map((f) => ({
+          "@type": "Question",
+          name: f.q,
+          acceptedAnswer: { "@type": "Answer", text: f.a },
+        })),
+      }
+    : null;
   const article = {
     "@context": "https://schema.org",
-    "@type": "Article",
+    "@type": "BlogPosting",
     headline: post.title,
     description: post.description,
     image: post.ogImage || SITE.logo,
@@ -336,7 +356,7 @@ function renderPost(post) {
   ${FONTS}
   <style>${CSS}</style>
   ${ldJson(article)}
-  ${ldJson(breadcrumb)}
+  ${ldJson(breadcrumb)}${faqLd ? `\n  ${ldJson(faqLd)}` : ""}
 </head>
 <body>
 ${siteHeader}
@@ -346,7 +366,7 @@ ${siteHeader}
   <h1>${esc(post.title)}</h1>
   <p class="post-meta">By ${esc(post.author)}, ${esc(post.authorRole)} · ${esc(fmtDate(post.date))} · ${esc(String(post.readMin))} min read</p>
   <article class="post-body">
-${bodyHtml}
+${bodyHtml}${faqHtml ? `\n${faqHtml}` : ""}
   </article>
   ${post.cta ? ctaBlock(post) : ""}
 </main>
