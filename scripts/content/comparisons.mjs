@@ -24,7 +24,7 @@ export const SITE = Object.freeze({
   logo: "https://inktracker.app/icon-512.png",
   price: "$99/mo",
   priceYear: "$999/yr",
-  trial: "14-day free trial — no credit card",
+  trial: "14-day free trial",
   reviewed: "June 2026",
 });
 

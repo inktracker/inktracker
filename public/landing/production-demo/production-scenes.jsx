@@ -1140,7 +1140,7 @@ function ScenePLockup() {
         whiteSpace: 'nowrap',
       }}>
         <span style={{ width: 7, height: 7, borderRadius: 0, background: '#22C55E' }} />
-        14-day free trial · No credit card required
+        14-day free trial
       </div>
 
       {/* Logo + wordmark */}
