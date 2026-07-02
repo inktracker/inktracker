@@ -322,11 +322,14 @@ export const POSTS = Object.freeze([
   // Target keyword: "dtf vs screen printing" (SEO plan priority #1). Written
   // for shop OWNERS deciding per job — NOT the buyer-facing version (that
   // angle is reserved for Biota Mfg per the plan's cannibalization note).
+  // VOICE CONSTRAINT: Joe runs screens only — no DTF equipment at Biota. The
+  // post's stance is "a screen printer giving you the honest math, including
+  // when the answer isn't my shop." Never claim first-person DTF experience.
   {
     slug: "dtf-vs-screen-printing",
-    title: "DTF vs. screen printing: how I decide which one runs",
+    title: "DTF vs. screen printing, from a shop that only runs screens",
     description:
-      "Both live in my shop and both make money — on different jobs. The real cost math on setup vs. per-piece, where the break-even actually lands, and the pricing trap that eats your margin on transfers.",
+      "I'm a screen printer — there's no DTF printer in my shop. But the question lands weekly, and the math is objective: setup cost vs. per-piece cost. Where the break-even lands, where each process wins, and why I still haven't bought the machine.",
     category: "Production",
     author: "Joe",
     authorRole: "Founder, InkTracker",
@@ -334,45 +337,45 @@ export const POSTS = Object.freeze([
     readMin: 7,
     ogImage: SITE.logo,
     cta: true,
-    ctaHeading: "Quote both processes without two systems.",
+    ctaHeading: "Quote it right, whichever process runs.",
     ctaBody:
-      "InkTracker prices screen print and DTF jobs side by side — setup fees, per-piece costs, and your markup in one quote. We run it in our own shop every day.",
+      "InkTracker holds your setup fees, garment markup, and per-piece pricing and stacks them on every quote — screen print, embroidery, or DTF. We run it in our own shop every day.",
     body: [
-      { type: "p", html: "Somebody asks me \"DTF or screen printing?\" about once a week, and they always want a winner. There isn't one. Both live in my shop, both make money, and they make it on completely different jobs. What you actually need is the math that tells you which one runs today." },
+      { type: "p", html: "Let me be straight before the first number: I'm a screen printer. There is no DTF printer in my shop, and this isn't a secret review from someone running both. But \"DTF or screen printing?\" lands in my inbox about once a week, usually from someone starting out — and the honest answer doesn't need me to own the machine, because the economics are objective. Sometimes that answer is \"not my process.\" You should hear it anyway." },
       { type: "p", html: "Quick level-set if DTF is new to you: it's direct-to-film. Full-color art gets printed on a film sheet, dusted with adhesive powder, and heat-pressed onto the garment. No screens, no emulsion, no reclaim tank. That \"no screens\" part is the whole story — everything else follows from it." },
 
       { type: "h2", text: "It's setup cost vs. per-piece cost. That's the entire decision." },
       { type: "p", html: "Screen printing is expensive to start and cheap to run. Every color is a screen — coat it, burn it, tape it, register it, reclaim it later. I charge $25 a screen in setup because that's real labor. But once the press is dialed, each print costs pennies in ink. The setup spreads thinner with every shirt in the run." },
-      { type: "p", html: "DTF is the mirror image: free to start, flat cost forever. No setup at all — but every single shirt carries the transfer cost plus press time, and shirt number 300 costs exactly what shirt number one did. It never gets cheaper." },
-      { type: "p", html: "Put numbers on it. Twelve shirts, two-color front. Screens are $50 of setup — that's $4.17 a shirt before ink touches anything. The same art as a DTF transfer runs me about $2.50 pressed. DTF wins and it isn't close. Now make it 100 shirts: setup is 50 cents each and shrinking, ink is pennies — call it under a dollar a print. The transfer is still $2.50. Every. Single. Shirt. Screens win and it isn't close either." },
-      { type: "callout", title: "My break-even lands around two dozen", html: "For a one- or two-color design, the lines cross somewhere between 20 and 30 pieces in my shop. More colors push the crossover higher — every color adds a screen, and DTF doesn't care if the art has four colors or forty. A six-color job might not beat DTF until 60+ pieces. Run your own setup fee and transfer cost through the math; your number will be near mine, not on it." },
+      { type: "p", html: "DTF is the mirror image: nothing to start, flat cost forever. No setup at all — but every single shirt carries the transfer cost plus press time, and shirt number 300 costs exactly what shirt number one did. It never gets cheaper." },
+      { type: "p", html: "Put numbers on it. Twelve shirts, two-color front. My screens are $50 of setup — that's $4.17 a shirt before ink touches anything. The gang-sheet vendors will sell that same art as a transfer for a couple-fifty a print, give or take. DTF wins and it isn't close. Now make it 100 shirts: setup is 50 cents each and shrinking, ink is pennies. The transfer is still a couple-fifty. Every. Single. Shirt. Screens win and it isn't close either." },
+      { type: "callout", title: "The crossover lands around two dozen", html: "For a one- or two-color design, run $25-a-screen setup against vendor transfer pricing and the lines cross somewhere around 20 to 30 pieces. More colors push the crossover higher — every color adds a screen, and DTF doesn't care if the art has four colors or forty. A six-color job might not beat film until 60+ pieces. Run your own setup fee and a real vendor quote through the math; your number will be near this one, not on it." },
 
-      { type: "h2", text: "Where DTF earns its spot" },
+      { type: "h2", text: "Where DTF wins — yes, a screen printer is telling you this" },
       { type: "ul", items: [
-        "<b>Short runs and one-offs.</b> Twelve hats for a bachelor party, a sample for a client meeting, a reprint for the one hoodie that got a hole. No screens means no minimum that makes sense.",
-        "<b>Full-color and photo art.</b> That sunset photo with forty colors is one transfer. As screens it's a sim-process separation and a day of registration — beautiful, and priced like it.",
-        "<b>Mixed garments in one order.</b> Tees, hoodies, tote bags, a nylon jacket — same transfer presses onto all of it. On press that's re-registration every time the substrate changes.",
-        "<b>Names and numbers.</b> Personalization on the back of a screened team order. Print the fronts on press, press the names from film. Best of both on one invoice.",
+        "<b>Short runs and one-offs.</b> Twelve hats for a bachelor party, one sample for a client meeting, a reprint for the single hoodie that got a hole. Burning screens for that job is how a shop loses money politely.",
+        "<b>Full-color and photo art.</b> A sunset photo with forty colors is one transfer. On press it's a sim-process separation and a day of registration — gorgeous when it's worth it, priced like it always.",
+        "<b>Mixed garments in one order.</b> Tees, hoodies, totes, a nylon jacket — the same transfer presses onto all of it. On press, every substrate change is another setup.",
+        "<b>Names and numbers.</b> Shops that run both will print 200 team fronts on press and heat-press the personalization from film. Nobody burns a screen per name.",
       ] },
 
       { type: "h2", text: "Where screens keep the crown" },
       { type: "ul", items: [
-        "<b>Volume.</b> Past the crossover the gap widens on every shirt. At 500 pieces the difference between pennies of ink and $2.50 of film is your entire profit on the job.",
-        "<b>The hand.</b> Ink pushed into fabric feels like the shirt. A transfer sits on top of it. DTF has gotten a lot better, but on a big solid print you can still tell with your eyes closed — and so can customers who wear the shirt fifty times.",
+        "<b>Volume.</b> Past the crossover the gap widens on every shirt. At 500 pieces the difference between pennies of ink and a couple-fifty of film is your entire profit on the job.",
+        "<b>The hand.</b> Ink pushed into fabric feels like the shirt. A transfer sits on top of it. DTF has gotten a lot better, but on a big solid print you can still tell with your eyes closed — and so can a customer who wears the shirt fifty times.",
         "<b>Simple spot-color work.</b> A one-color logo on 200 shirts is the job screen printing was born for. Nothing touches it on cost or speed.",
-        "<b>Reorders.</b> The art's proven, the seps exist, re-setup is cheap. That repeat customer's quarterly 300-piece run gets more profitable every time it comes back.",
+        "<b>Reorders.</b> The art's proven, the seps exist, re-setup is cheap. A repeat customer's quarterly 300-piece run gets more profitable every time it comes back.",
       ] },
 
-      { type: "h2", text: "The pricing trap: \"no setup\" doesn't mean cheap" },
-      { type: "p", html: "This is the mistake I see new shops make with DTF, and I made a version of it myself. The transfer has no setup fee, so they quote it like it's free money — cost of the film times two, done. Then they press 40 shirts at 45 seconds each and wonder where the afternoon went." },
-      { type: "p", html: "Press time is production time. Your overhead doesn't care whether the shirt went through a dryer or a heat press — every print that leaves my shop carries its share of rent, power, and payroll <a href=\"/blog/build-a-screen-printing-price-chart\">same as the chart math</a>. Price DTF off transfer cost plus press labor plus that overhead share, at the same margin you protect on press. If DTF is the right process for the job, it deserves a real price, not a discount for being convenient." },
+      { type: "h2", text: "If you do run DTF: \"no setup\" doesn't mean cheap" },
+      { type: "p", html: "The trap I see when new shops add transfers: no setup fee, so they quote it like free money — film cost times two, done. Then they press 40 shirts, most of a minute each, and wonder where the afternoon went." },
+      { type: "p", html: "Press time is production time. Overhead doesn't care whether the shirt went through a dryer or a heat press — every print that leaves a shop carries its share of rent, power, and payroll, <a href=\"/blog/build-a-screen-printing-price-chart\">same as the chart math</a>. Price transfers off film cost plus press labor plus that overhead share, at the same margin you'd protect on press. If DTF is the right process for the job, it deserves a real price, not a discount for being convenient." },
 
-      { type: "h2", text: "Do you even need the printer?" },
-      { type: "p", html: "Honest take: probably not on day one. A DTF printer is a second business living inside your first one — white ink that wants to clog, humidity control, daily maintenance whether you sold film that day or not. The gang-sheet vendors will print your art on a 22×60 sheet for twenty-something dollars and ship it in two days. Ten, twelve front prints per sheet, no machine, no maintenance, sell DTF tomorrow." },
-      { type: "p", html: "The printer starts making sense when transfers become a steady chunk of your volume and the vendor bill plus the two-day wait costs more than the machine and the babysitting would. That's a spreadsheet decision, not a trade-show impulse. Run your monthly transfer spend against the machine's real cost — ink, film, powder, maintenance hours — before the sales rep runs it for you." },
+      { type: "h2", text: "Why I still haven't bought the machine" },
+      { type: "p", html: "Every trade show, somebody tries to sell me one. Here's the math that keeps my wallet closed: a DTF printer is a second business living inside your first one. White ink that wants to clog, humidity control, daily maintenance whether you sold film that day or not. Meanwhile the gang-sheet vendors will print anyone's art on a 22×60 sheet for twenty-something dollars and ship it in two days — ten or twelve front prints a sheet, no machine, no babysitting." },
+      { type: "p", html: "So the short-run work I'm wrong for doesn't need me to own a printer to get served — and if I ever add DTF, it starts with vendor sheets and a heat press, not a machine. The printer makes sense when transfer volume is steady enough that the vendor bill plus the two-day wait costs more than the machine and its upkeep. That's a spreadsheet decision. Run your monthly transfer spend against the machine's real cost — ink, film, powder, maintenance hours — before the sales rep runs it for you." },
 
-      { type: "h2", text: "The rule I actually use" },
-      { type: "p", html: "Small, colorful, mixed, or personalized: film. Big, simple, repeating: screens. When a job sits in the middle, I run the setup-versus-per-piece math above and let the number pick. The shops that lose money on this aren't choosing the wrong process — they're refusing to have both answers available and forcing every job through the one they own." },
+      { type: "h2", text: "The honest rule" },
+      { type: "p", html: "Small, colorful, mixed, or personalized: film is probably your answer, and a screen printer who tells you otherwise is quoting his equipment, not your job. Big, simple, repeating: bring it to a press, because nothing beats it and the reorders only get better. When a job sits in the middle, run the setup-versus-per-piece math above and let the number pick. That's how I'd want to be told, so that's how I'm telling you." },
     ],
     related: [
       { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a screen printing job" },
@@ -389,11 +392,11 @@ export const POSTS = Object.freeze([
       },
       {
         q: "Can I mix DTF and screen printing in one order?",
-        a: "Yes, and it's one of the most profitable moves a shop can make. Screen print the 200 identical fronts on press, then heat-press DTF names and numbers on the backs. The volume work gets volume pricing and the personalization gets done without burning a screen per name.",
+        a: "Shops that run both do it all the time, and it's a profitable combination: screen print the 200 identical fronts on press, then heat-press DTF names and numbers on the backs. The volume work gets volume pricing and the personalization gets done without burning a screen per name.",
       },
       {
-        q: "Should my shop buy a DTF printer or order gang sheets?",
-        a: "Start with gang sheets from a transfer vendor — around twenty-something dollars for a 22×60 sheet holding ten or more front prints, shipped in days, zero maintenance. Buy the printer only when your monthly transfer spend and turnaround needs clearly outrun the vendor's bill plus the machine's real ongoing cost in ink, film, powder, and daily upkeep.",
+        q: "Should a shop buy a DTF printer or order gang sheets?",
+        a: "Start with gang sheets from a transfer vendor — around twenty-something dollars for a 22×60 sheet holding ten or more front prints, shipped in days, zero maintenance. The printer only makes sense when monthly transfer volume and turnaround needs clearly outrun the vendor's bill plus the machine's real ongoing cost in ink, film, powder, and daily upkeep.",
       },
     ],
   },
