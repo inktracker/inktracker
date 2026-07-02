@@ -20,6 +20,10 @@ export { SITE };
 
 // End-of-post CTA + related links are appended by the renderer (cta:true),
 // so posts don't repeat that markup.
+//
+// Optional `faqs: [{ q, a }]` renders a visible "Common questions" <dl> at the
+// end of the post AND emits matching FAQPage JSON-LD (both or neither — Google
+// requires the FAQ text to be visible on the page).
 
 export const POSTS = Object.freeze([
   // ── Post 1 — Pricing a screen printing job ───────────────────────────────
@@ -73,6 +77,20 @@ export const POSTS = Object.freeze([
       { href: "/blog/build-a-screen-printing-price-chart", text: "Build a price chart that covers your overhead" },
       { href: "/compare", text: "The honest software buyer's guide" },
     ],
+    faqs: [
+      {
+        q: "What's the difference between margin and markup?",
+        a: "Markup is what you add on top of cost; margin is what you keep out of the final price. Mark a $6 cost up 50% and you get $9, but that $3 is only 33% of the sale — not 50%. If you want to keep half, divide cost by 0.5, not multiply by 1.5. People lose real money confusing the two.",
+      },
+      {
+        q: "Do I really need a setup fee if my prints already cover overhead?",
+        a: "Yes. Burning, taping, registering, and reclaiming a screen costs the same whether you print 25 shirts or 250. On big runs it's pennies a shirt; on a 12-piece job it's the whole difference between profit and working for free. Charge per screen, and drop to a lower re-setup rate on reorders where the screens already exist.",
+      },
+      {
+        q: "How much should I mark up the blank garment?",
+        a: "Keep garment markup on its own ladder, separate from the print price, and slide it down as blanks get pricier. 40% on a $4 tee is fine; 40% on a $30 hoodie makes you the most expensive shop in town, so a hoodie might get 15%. Keeping it separate is what lets you swap a tee for a hoodie without rebuilding the quote.",
+      },
+    ],
   },
 
   // ── Post 2 — Building a price chart ───────────────────────────────────────
@@ -121,6 +139,20 @@ export const POSTS = Object.freeze([
       { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a single screen printing job" },
       { href: "/compare", text: "The honest software buyer's guide" },
     ],
+    faqs: [
+      {
+        q: "What should the cheapest price on my chart be?",
+        a: "One color, smallest run. That square is your cost per print divided by (1 minus your target margin). Spend $14k a month, push 4,000 shirts, and each print costs about $3.50 — at a 45% margin that base is $6.36. Every other cell on the chart grows from that number.",
+      },
+      {
+        q: "How do I set the price breaks without typing in every cell?",
+        a: "Two rules fill the whole chart. Bigger runs cost less per shirt because setup is fixed, so knock roughly 10% off at each size break, a little less each time. More colors cost more but not double — the first color carries the setup, so each color after adds a shrinking slice. Set the two percentages and the chart moves as one when you change your base.",
+      },
+      {
+        q: "How often should I rebuild my price chart?",
+        a: "You don't rebuild it — you change the base. Because the chart is built off one cost-per-print number and a couple of percentages, bumping prices 5% next year is a one-number edit, not a spreadsheet retype. Revisit the base whenever your overhead or volume shifts enough to move that cost-per-print figure.",
+      },
+    ],
   },
 
   // ── Post 3 — Pricing embroidery ───────────────────────────────────────────
@@ -164,6 +196,16 @@ export const POSTS = Object.freeze([
       { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a screen printing job" },
       { href: "/blog/build-a-screen-printing-price-chart", text: "Build a price chart that covers overhead" },
     ],
+    faqs: [
+      {
+        q: "What sets the price on an embroidery job?",
+        a: "Stitch count. It's the embroidery equivalent of color count on a screen print — the one input that drives the number. Get the design digitized (or at least estimated) so you know the stitch count before you quote. Quote without it and you're guessing at the thing that sets the price.",
+      },
+      {
+        q: "Should I charge for digitizing?",
+        a: "Yes, once per design. Digitizing a new logo runs around $50 of one-time work; charge it on the first order and reuse the file forever after. Don't bury it in the per-piece price — it's a one-time line, not a running cost.",
+      },
+    ],
   },
 
   // ── Post 4 — Sales tax (stub draft, sourced from docs/tax-help-content.md) ─
@@ -191,6 +233,16 @@ export const POSTS = Object.freeze([
     related: [
       { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a screen printing job" },
       { href: "/compare", text: "The honest software buyer's guide" },
+    ],
+    faqs: [
+      {
+        q: "Do I charge sales tax on a print order?",
+        a: "Usually yes on retail sales to the end customer, but it depends on your state and the customer. Resale (a customer reselling the shirts) is typically exempt with a valid resale certificate. Rates, nexus, and what's taxable vary by state — this is the mechanics, not tax advice; confirm your specifics with your accountant or state Department of Revenue.",
+      },
+      {
+        q: "Is the tax calculated on the garment, the printing, or both?",
+        a: "In most states the taxable amount is the full sale — garment plus decoration — because you're selling a finished product, not a service on the customer's own goods. Customer-supplied garments can change that. Again, state-specific; check your Department of Revenue.",
+      },
     ],
   },
 ]);

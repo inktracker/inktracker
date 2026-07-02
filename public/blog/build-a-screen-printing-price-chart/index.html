@@ -60,6 +60,8 @@ ul.body-list li{margin:.55em 0}
 .callout{border-left:3px solid var(--forest);background:#f6faf7;border-radius:0 10px 10px 0;padding:14px 18px;margin:1.5em 0}
 .callout h4{margin:0 0 4px;font-size:1rem}
 .callout p{margin:0;color:#333}
+.faq dt{font-weight:700;margin-top:1em}
+.faq dd{margin:.2em 0 0;color:#333}
 .blog-cta{background:var(--ink);color:#fff;border-radius:14px;padding:30px 26px;margin:2.6em 0;text-align:center}
 .blog-cta h3{font-family:"Anton",sans-serif;color:#fff;text-transform:uppercase;font-size:1.6rem;margin:0 0 .45em}
 .blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
@@ -93,26 +95,38 @@ ul.body-list li{margin:.55em 0}
   <script type="application/ld+json">
 {
   "@context": "https://schema.org",
-  "@type": "Article",
+  "@type": "BlogPosting",
+  "@id": "https://inktracker.app/blog/build-a-screen-printing-price-chart#post",
   "headline": "How I build a screen printing price chart",
   "description": "Your print prices worked out ahead of time — every color count, every quantity — built on what your shop actually costs to run. Cost per print, real margin, two percentages to fill the grid, and the fees that decide small runs.",
   "image": "https://inktracker.app/icon-512.png",
+  "url": "https://inktracker.app/blog/build-a-screen-printing-price-chart",
+  "inLanguage": "en-US",
+  "isPartOf": {
+    "@type": "Blog",
+    "@id": "https://inktracker.app/blog#blog"
+  },
   "datePublished": "2026-07-01",
   "dateModified": "2026-07-02",
   "author": {
     "@type": "Person",
     "name": "Joe",
-    "jobTitle": "Founder, InkTracker"
+    "jobTitle": "Founder, InkTracker",
+    "url": "https://inktracker.app"
   },
   "publisher": {
     "@type": "Organization",
     "name": "InkTracker",
+    "url": "https://inktracker.app",
     "logo": {
       "@type": "ImageObject",
       "url": "https://inktracker.app/icon-512.png"
     }
   },
-  "mainEntityOfPage": "https://inktracker.app/blog/build-a-screen-printing-price-chart"
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://inktracker.app/blog/build-a-screen-printing-price-chart"
+  }
 }
 </script>
   <script type="application/ld+json">
@@ -137,6 +151,38 @@ ul.body-list li{margin:.55em 0}
       "position": 3,
       "name": "How I build a screen printing price chart",
       "item": "https://inktracker.app/blog/build-a-screen-printing-price-chart"
+    }
+  ]
+}
+</script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What should the cheapest price on my chart be?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "One color, smallest run. That square is your cost per print divided by (1 minus your target margin). Spend $14k a month, push 4,000 shirts, and each print costs about $3.50 — at a 45% margin that base is $6.36. Every other cell on the chart grows from that number."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How do I set the price breaks without typing in every cell?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Two rules fill the whole chart. Bigger runs cost less per shirt because setup is fixed, so knock roughly 10% off at each size break, a little less each time. More colors cost more but not double — the first color carries the setup, so each color after adds a shrinking slice. Set the two percentages and the chart moves as one when you change your base."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How often should I rebuild my price chart?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "You don't rebuild it — you change the base. Because the chart is built off one cost-per-print number and a couple of percentages, bumping prices 5% next year is a one-number edit, not a spreadsheet retype. Revisit the base whenever your overhead or volume shifts enough to move that cost-per-print figure."
+      }
     }
   ]
 }
@@ -194,6 +240,12 @@ ul.body-list li{margin:.55em 0}
 <p>Stack it up and a real quote is: print + garment×markup + screens + extras + rush. Say 100 shirts, two-color front, $4 tee — print's about $5.77 a shirt, garment's $5.60, two screens is fifty bucks (fifty cents a shirt). Roughly $11.87 each, call it $1,187, before rush. Leave the screens off and you just ran a hundred shirts for fifty dollars under cost. Nobody does that on purpose. Lots of new printers do it by accident.</p>
 <h2>Build it once</h2>
 <p>Set it up one time — a base you can defend, a couple of percentages to shape the rest, garment and fees kept separate — and stop guessing at the counter. That's the whole system.</p>
+<h2>Common questions</h2>
+<dl class="faq">
+<dt>What should the cheapest price on my chart be?</dt><dd>One color, smallest run. That square is your cost per print divided by (1 minus your target margin). Spend $14k a month, push 4,000 shirts, and each print costs about $3.50 — at a 45% margin that base is $6.36. Every other cell on the chart grows from that number.</dd>
+<dt>How do I set the price breaks without typing in every cell?</dt><dd>Two rules fill the whole chart. Bigger runs cost less per shirt because setup is fixed, so knock roughly 10% off at each size break, a little less each time. More colors cost more but not double — the first color carries the setup, so each color after adds a shrinking slice. Set the two percentages and the chart moves as one when you change your base.</dd>
+<dt>How often should I rebuild my price chart?</dt><dd>You don't rebuild it — you change the base. Because the chart is built off one cost-per-print number and a couple of percentages, bumping prices 5% next year is a one-number edit, not a spreadsheet retype. Revisit the base whenever your overhead or volume shifts enough to move that cost-per-print figure.</dd>
+</dl>
   </article>
   <div class="blog-cta">
     <h3>Build it once, stop guessing at the counter.</h3>
