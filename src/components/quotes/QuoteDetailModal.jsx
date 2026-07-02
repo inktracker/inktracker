@@ -26,6 +26,7 @@ import ModalBackdrop from "../shared/ModalBackdrop";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { quoteThreadId } from "@/lib/messageThreads";
+import { isConvertedToOrder } from "@/lib/quotes/approvalState";
 import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare, UserCheck, UserX, Paperclip } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -1273,7 +1274,10 @@ export default function QuoteDetailModal({
               </>
             )}
 
-            {(quote.status === "Approved" || quote.status === "Approved and Paid" || quote.status === "Client Approved") && (
+            {/* isConvertedToOrder guard: a desynced row (converted_order_id
+                set, status regressed) must not offer a Convert button that
+                dead-ends in the "already converted" toast. */}
+            {(quote.status === "Approved" || quote.status === "Approved and Paid" || quote.status === "Client Approved") && !isConvertedToOrder(quote) && (
               <button
                 onClick={() => callAction(onConvert, quote)}
                 disabled={saving}
