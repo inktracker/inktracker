@@ -6,6 +6,7 @@ import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJo
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
 import { addDaysISO, relativeDueLabel, getOrderActionHint, selectOverdueOrders } from "@/lib/calendar/agendaHints";
+import { buildPointEvents } from "@/lib/calendar/pointEvents";
 import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 import {
   dayIndex as schedulerDayIndex,
@@ -206,63 +207,10 @@ export default function Production() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const pointEvents = useMemo(() => {
-    const map = {};
-    orders.forEach((o) => {
-      const stepDates = o.step_dates || {};
-      O_STATUSES.forEach((step) => {
-        const val = stepDates[step];
-        if (!val) return;
-        
-        if (step === "Printing" && typeof val === "object" && val.start && val.end) {
-          // Printing as date range: add point events for start and end dates
-          [val.start, val.end].forEach((date) => {
-            if (!map[date]) map[date] = [];
-            map[date].push({ order: o, step, isDue: false });
-          });
-        } else if (typeof val === "string") {
-          // Single date for any step
-          if (!map[val]) map[val] = [];
-          map[val].push({ order: o, step, isDue: false });
-        }
-      });
-      if (o.date) {
-        if (!map[o.date]) map[o.date] = [];
-        map[o.date].push({ order: o, step: "Order Goods", isDue: false });
-      }
-      // Completed orders get a green chip on completed_date so the
-      // calendar serves as a historical "what shipped when" record even
-      // when an order had no scheduled steps.
-      if (o.status === "Completed" && o.completed_date) {
-        if (!map[o.completed_date]) map[o.completed_date] = [];
-        map[o.completed_date].push({ order: o, step: "Completed", isDue: false });
-      }
-      // Completed orders don't get a red "Due" chip — the job is done.
-      if (o.due_date && o.status !== "Completed") {
-        if (!map[o.due_date]) map[o.due_date] = [];
-        map[o.due_date].push({ order: o, step: "Due", isDue: true });
-      }
-
-    });
-
-    // Quote lifecycle chips — pushed directly from quote rows, not joined
-    // via order. A quote that's been sent but not converted still shows up.
-    // Date strings normalized to YYYY-MM-DD (client_approved_at is full ISO).
-    quotes.forEach((q) => {
-      if (q.sent_date) {
-        const d = String(q.sent_date).slice(0, 10);
-        if (!map[d]) map[d] = [];
-        map[d].push({ kind: "quote", quote: q, step: "Quote Sent", isDue: false });
-      }
-      if (q.client_approved_at) {
-        const d = String(q.client_approved_at).slice(0, 10);
-        if (!map[d]) map[d] = [];
-        map[d].push({ kind: "quote", quote: q, step: "Quote Approved", isDue: false });
-      }
-    });
-
-    return map;
-  }, [orders, quotes]);
+  // Extracted to lib/calendar/pointEvents.js (unit-tested there). Key rule:
+  // a Completed order renders ONE "Completed" chip, sourced from
+  // completed_date — step_dates["Completed"] used to add a second one.
+  const pointEvents = useMemo(() => buildPointEvents(orders, quotes), [orders, quotes]);
 
   const allActiveOrders = useMemo(() => {
     const active = orders.filter((o) => o.status !== "Completed");
@@ -320,7 +268,16 @@ export default function Production() {
     if (!order) return;
     const stepDates = { ...(order.step_dates || {}), [step]: newDate || undefined };
     if (!newDate) delete stepDates[step];
-    const updated = await base44.entities.Order.update(orderId, { step_dates: stepDates });
+    const payload = { step_dates: stepDates };
+    // On a Completed order, the calendar's "Completed" chip is sourced from
+    // completed_date (buildPointEvents), not step_dates — so moving that chip
+    // must move completed_date too or the drag silently does nothing and the
+    // Dashboard/revenue windows keep the old date. Never CLEAR completed_date
+    // here: status stays "Completed" and stats require the stamp.
+    if (step === "Completed" && order.status === "Completed" && newDate) {
+      payload.completed_date = newDate;
+    }
+    const updated = await base44.entities.Order.update(orderId, payload);
     setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
   }
 
