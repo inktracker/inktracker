@@ -311,6 +311,14 @@ function renderPost(post) {
         })),
       }
     : null;
+  // wordCount for the BlogPosting schema: visible body text only (tags and
+  // entities stripped), matching what a reader actually sees on the page.
+  const bodyText = post.body
+    .flatMap((b) => [b.html, b.text, b.title, ...(b.items || [])])
+    .filter(Boolean)
+    .join(" ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&[a-z#0-9]+;/gi, " ");
   const article = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -321,6 +329,9 @@ function renderPost(post) {
     url: canonical,
     inLanguage: "en-US",
     isPartOf: { "@type": "Blog", "@id": `${SITE.baseUrl}/blog#blog` },
+    articleSection: post.category,
+    wordCount: bodyText.split(/\s+/).filter(Boolean).length,
+    timeRequired: `PT${post.readMin}M`,
     datePublished: isoDate(post.date),
     dateModified: isoDate(post.updated || post.date),
     author: { "@type": "Person", name: post.author, jobTitle: post.authorRole, url: SITE.baseUrl },
