@@ -130,7 +130,7 @@ function ctaBlock(post) {
   return `<div class="blog-cta">
     <h3>${esc(heading)}</h3>
     <p>${esc(body)}</p>
-    <a class="cta" href="${SIGNUP_URL}">Start your 14-day free trial — no card</a>
+    <a class="cta" href="${SIGNUP_URL}">Start your 14-day free trial</a>
     <div class="related">Related: <a href="/compare">the honest software buyer's guide</a> · <a href="/for-printers">InkTracker for printers</a></div>
   </div>`;
 }
@@ -484,7 +484,7 @@ const DISCLAIMER_NEWSLETTER = `<!-- newsletter capture: phase 2 -->`;
 function renderForPrinters() {
   const canonical = `${SITE.baseUrl}/for-printers`;
   const title = "That quote was made in InkTracker — print shop software";
-  const desc = "The shop that sent you that quote runs quoting, production, and invoicing in one place — software built by a printer, for printers. Start a 14-day free trial, no card.";
+  const desc = "The shop that sent you that quote runs quoting, production, and invoicing in one place — software built by a printer, for printers. Start a 14-day free trial.";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -517,7 +517,7 @@ ${siteHeader}
   <div class="blog-cta">
     <h3>See why they switched.</h3>
     <p>Made by a working print shop. We use it every day.</p>
-    <a class="cta" href="${SITE.baseUrl}/?ref=quote">Start your 14-day free trial — no card</a>
+    <a class="cta" href="${SITE.baseUrl}/?ref=quote">Start your 14-day free trial</a>
     <div class="related">Or read <a href="${SITE.baseUrl}/compare">the honest software buyer's guide</a>.</div>
   </div>
 </main>
