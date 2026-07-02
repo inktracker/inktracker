@@ -463,7 +463,7 @@ function PublicLandingPage() {
               <a
                 href="/blog"
                 className={`hidden sm:inline-block ${navLink}`}
-                style={{ color: INK }}
+                style={{ color: INK, fontFamily: H_FONT }}
               >
                 Learn
               </a>
@@ -500,7 +500,7 @@ function PublicLandingPage() {
                   </button>
                 ))}
                 {/* Real route (static page) — plain <a>, not an anchor jump. */}
-                <a href="/blog" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE }}>
+                <a href="/blog" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE, fontFamily: H_FONT }}>
                   Learn
                 </a>
                 <button onClick={() => { setMobileMenuOpen(false); openLogin(); }} className={`text-left py-4 sm:hidden ${navLink}`} style={{ color: INK }}>

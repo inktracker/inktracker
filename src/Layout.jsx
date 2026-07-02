@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
-import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight } from "lucide-react";
+import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight, BookOpen } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
 import OnboardingAssistant from "./components/onboarding/OnboardingAssistant";
@@ -27,6 +27,7 @@ const ICON_MAP = {
   Embed: Code2,
   Mockups: Palette,
   Account: Settings,
+  Resources: BookOpen,
   AdminPanel: ShieldCheck,
 };
 
@@ -47,6 +48,8 @@ const NAV = [
   { label: "Mockups", page: "Mockups", feature: "mockups" },
   { label: "Wizard", page: "Wizard", feature: "wizard" },
   { label: "Account", page: "Account" },
+  // Opens the public blog/resources in a new tab (static page, outside the SPA).
+  { label: "Resources", page: "Resources", href: "/blog", external: true },
 ];
 
 // Pages that should auto-expand a parent group when active.
@@ -100,6 +103,26 @@ export default function Layout({ children, currentPageName }) {
   // closes the slide-out menu on click. `child` styles a sub-item:
   // smaller icon, indented, no chevron of its own.
   function renderNavItem(n, { mobile = false, child = false } = {}) {
+    // External items ("Resources" → the blog) open a static/marketing page in a
+    // new tab. Real <a> (not react-router Link, which would client-route into
+    // the SPA catch-all), and never subscription/permission gated — public
+    // content, every role. Shown on both desktop + mobile nav.
+    if (n.external) {
+      const ExtIcon = ICON_MAP[n.page];
+      return (
+        <a
+          key={n.page}
+          href={n.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={mobile ? () => setMobileMenuOpen(false) : undefined}
+          className="flex items-center gap-3 px-3 pr-3 py-2.5 rounded-xl text-[11px] font-bold uppercase tracking-[0.16em] transition text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200"
+        >
+          {ExtIcon && <ExtIcon className="w-5 h-5 text-slate-500" />}
+          <span className="flex-1">{n.label}</span>
+        </a>
+      );
+    }
     // Per-manager section permissions (owner-controlled). Hides nav
     // items a manager isn't allowed to see; no-op for every other role.
     if (!managerCanAccess(user, n.page)) return null;
