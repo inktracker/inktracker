@@ -115,6 +115,10 @@ const ldJson = (obj) => `<script type="application/ld+json">\n${JSON.stringify(o
 const fmtDate = (iso) =>
   new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
 
+// Posts store plain YYYY-MM-DD; schema.org datetimes need a timezone or the
+// Rich Results Test flags them. Stamp a fixed morning-Pacific publish time.
+const isoDate = (d) => `${d}T08:00:00-07:00`;
+
 // ── Standard end-of-post CTA (§5) ────────────────────────────────────────────
 const SIGNUP_URL = `${SITE.baseUrl}/?ref=blog&utm_source=blog&utm_medium=content`;
 // §5 standard CTA — fixed related links to /compare and /for-printers. Cross-post
@@ -317,8 +321,8 @@ function renderPost(post) {
     url: canonical,
     inLanguage: "en-US",
     isPartOf: { "@type": "Blog", "@id": `${SITE.baseUrl}/blog#blog` },
-    datePublished: post.date,
-    dateModified: post.updated || post.date,
+    datePublished: isoDate(post.date),
+    dateModified: isoDate(post.updated || post.date),
     author: { "@type": "Person", name: post.author, jobTitle: post.authorRole, url: SITE.baseUrl },
     publisher: {
       "@type": "Organization",
@@ -351,8 +355,8 @@ function renderPost(post) {
   <meta property="og:description" content="${esc(post.description)}" />
   <meta property="og:url" content="${esc(canonical)}" />
   <meta property="og:image" content="${esc(post.ogImage || SITE.logo)}" />
-  <meta property="article:published_time" content="${esc(post.date)}" />
-  <meta property="article:modified_time" content="${esc(post.updated || post.date)}" />
+  <meta property="article:published_time" content="${esc(isoDate(post.date))}" />
+  <meta property="article:modified_time" content="${esc(isoDate(post.updated || post.date))}" />
   <meta property="article:author" content="${esc(post.author)}" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(post.title)}" />
@@ -419,8 +423,8 @@ function renderIndex(posts) {
       "@id": `${SITE.baseUrl}/blog/${p.slug}#post`,
       headline: p.title,
       url: `${SITE.baseUrl}/blog/${p.slug}`,
-      datePublished: p.date,
-      dateModified: p.updated || p.date,
+      datePublished: isoDate(p.date),
+      dateModified: isoDate(p.updated || p.date),
       author: { "@type": "Person", name: p.author, url: SITE.baseUrl },
     })),
   };
