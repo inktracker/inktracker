@@ -324,3 +324,53 @@ describe("isStyleEnriched — predicate", () => {
     expect(isStyleEnriched({})).toBe(false);
   });
 });
+
+describe("pickAndNormalize — supplierHint pinning", () => {
+  // The same brand+style on two suppliers — the core SanMar-overlap case.
+  const SS_GILDAN = { ...SM_MATCH_PC61, id: "ss-g5000", brandName: "Gildan", styleNumber: "5000", colors: [{ colorName: "White", imageUrl: "https://ss.example/g5000.jpg", piecePrice: 2.42 }] };
+  const SM_GILDAN = { ...SM_MATCH_PC61, id: "sm-g5000", brandName: "Gildan", styleNumber: "5000", colors: [{ colorName: "White", imageUrl: "https://sm.example/g5000.jpg", piecePrice: 2.38 }] };
+
+  it("supplierHint 'sm' keeps a SanMar style on SanMar even though S&S matches the brand", () => {
+    // Without the pin, brandHint "Gildan" resolves S&S-first and a re-sync
+    // silently flips the style (and its garment cost) to S&S.
+    const result = pickAndNormalize(
+      { matches: [SS_GILDAN] },
+      null,
+      { matches: [SM_GILDAN] },
+      { brandHint: "Gildan", supplierHint: "sm" }
+    );
+    expect(result.enrichedFrom).toBe("sm");
+    expect(result.priceMap.White).toEqual({ piecePrice: 2.38 });
+  });
+
+  it("supplierHint 'ss' pins to S&S", () => {
+    const result = pickAndNormalize(
+      { matches: [SS_GILDAN] },
+      null,
+      { matches: [SM_GILDAN] },
+      { brandHint: "Gildan", supplierHint: "ss" }
+    );
+    expect(result.enrichedFrom).toBe("ss");
+    expect(result.priceMap.White).toEqual({ piecePrice: 2.42 });
+  });
+
+  it("is strict: pinned supplier with no match returns null (no cross-supplier substitution)", () => {
+    const result = pickAndNormalize(
+      { matches: [SS_GILDAN] },
+      null,
+      { matches: [] },
+      { brandHint: "Gildan", supplierHint: "sm" }
+    );
+    expect(result).toBeNull();
+  });
+
+  it("no supplierHint preserves the legacy preference order (ss wins)", () => {
+    const result = pickAndNormalize(
+      { matches: [SS_GILDAN] },
+      null,
+      { matches: [SM_GILDAN] },
+      { brandHint: "Gildan" }
+    );
+    expect(result.enrichedFrom).toBe("ss");
+  });
+});

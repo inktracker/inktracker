@@ -339,8 +339,12 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     const canonicalStyle = getCanonicalStyleNumber(typed, match);
     const brand = cleanText(match.brandName) || "Unknown Brand";
     const description = getBestDescription(match) || "Untitled";
-    // Key includes brand to prevent deduplication when different brands have same style
-    const key = `${canonicalStyle}|${brand}|${description}`;
+    const supplier = cleanText(match._supplier) || "";
+    // Key includes brand to prevent deduplication when different brands have
+    // same style, AND the source supplier: Gildan 5000 exists on both S&S
+    // and SanMar with near-identical listings, and each supplier has its own
+    // pricing — collapsing them would silently take the supplier choice away.
+    const key = `${canonicalStyle}|${brand}|${description}|${supplier}`;
 
     if (seen.has(key)) return;
     seen.add(key);
@@ -355,10 +359,14 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     // clicked. Result: dropdown visually showed AS Colour but the
     // applied data was always Augusta.
     unique.push({
-      id: `${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
+      // Supplier in the id for the same reason it's in the dedup key — two
+      // suppliers' rows for the same brand+style must stay selectable
+      // independently (the 2026-06-08 style-5071 bug class).
+      id: `${supplier.toLowerCase() || "x"}::${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,
+      _supplier: supplier,
       styleCategory: match.styleCategory || "",
       colors: match.colors || [],
       inventoryMap: match.inventoryMap || {},
@@ -370,6 +378,20 @@ export function buildBrandOptions(matches, typedStyleNumber) {
       label: `${brand} — ${canonicalStyle} — ${description}`,
     });
   });
+
+  // When the same brand+style came back from more than one supplier, the
+  // labels are indistinguishable — append the supplier so the dropdown is
+  // an explicit supplier choice ("Gildan — 5000 — Heavy Cotton Tee (SanMar)").
+  const brandStyleCounts = new Map();
+  for (const o of unique) {
+    const k = `${o.brandName}|${o.styleNumber}`;
+    brandStyleCounts.set(k, (brandStyleCounts.get(k) || 0) + 1);
+  }
+  for (const o of unique) {
+    if (o._supplier && brandStyleCounts.get(`${o.brandName}|${o.styleNumber}`) > 1) {
+      o.label = `${o.label} (${o._supplier})`;
+    }
+  }
 
   return unique;
 }
@@ -792,13 +814,18 @@ export default function LineItemEditor({
       currentInventory[k] = v;
     }
   }
+  const brandStyleMatchesLi = (option) =>
+    cleanText(option.brandName).toLowerCase() === cleanText(li.brand).toLowerCase() &&
+    cleanText(option.styleNumber).toUpperCase() ===
+      cleanText(li.supplierStyleNumber || li.resolvedStyleNumber || li.styleNumber).toUpperCase();
+  // Same brand+style can exist as one option per supplier — prefer the one
+  // matching the line item's saved supplier so reopening a SanMar line
+  // doesn't silently pre-select the S&S twin (and its different pricing).
   const selectedBrandOption =
     brandOptions.find(
-      (option) =>
-        cleanText(option.brandName).toLowerCase() === cleanText(li.brand).toLowerCase() &&
-        cleanText(option.styleNumber).toUpperCase() ===
-          cleanText(li.supplierStyleNumber || li.resolvedStyleNumber || li.styleNumber).toUpperCase()
-    ) || brandOptions[0];
+      (option) => brandStyleMatchesLi(option) &&
+        (!li.supplier || !option._supplier || option._supplier === li.supplier)
+    ) || brandOptions.find(brandStyleMatchesLi) || brandOptions[0];
 
   function updateImprint(idx, patch) {
     const imprints = (li.imprints || []).map((im, i) =>

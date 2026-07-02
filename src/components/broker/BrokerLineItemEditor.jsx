@@ -25,19 +25,29 @@ async function lookupStyle(styleNumber) {
   const code = String(styleNumber || "").trim().toUpperCase();
   if (!code) return { matches: [] };
 
-  const [ssRes, acRes] = await Promise.allSettled([
+  const [ssRes, acRes, smRes] = await Promise.allSettled([
     supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: code } }),
     supabase.functions.invoke("acLookupStyle", { body: { styleCode: code } }),
+    supabase.functions.invoke("smLookupStyle", { body: { styleNumber: code } }),
   ]);
 
-  const grab = (r) => {
+  // Tag each match with the supplier whose lookup returned it — brand names
+  // can't identify the supplier (Gildan/Bella live on both S&S and SanMar).
+  const grab = (r, supplierName) => {
     if (r.status !== "fulfilled") return [];
     const data = r.value?.data;
     if (!data || data.error) return [];
-    return data.matches || data.results || data.items || data.products || [];
+    const arr = data.matches || data.results || data.items || data.products || [];
+    return arr.map((m) => ({ ...m, _supplier: supplierName }));
   };
 
-  return { matches: [...grab(ssRes), ...grab(acRes)] };
+  return {
+    matches: [
+      ...grab(ssRes, "S&S Activewear"),
+      ...grab(acRes, "AS Colour"),
+      ...grab(smRes, "SanMar"),
+    ],
+  };
 }
 
 function cleanText(value) {
@@ -278,7 +288,11 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     const canonicalStyle = getCanonicalStyleNumber(typed, match);
     const brand = cleanText(match.brandName) || "Unknown Brand";
     const description = getBestDescription(match) || "Untitled";
-    const key = `${canonicalStyle}|${brand}|${description}`;
+    const supplier = cleanText(match._supplier) || "";
+    // Supplier is part of the key: the same brand+style exists on both S&S
+    // and SanMar with per-supplier pricing — collapsing them would take the
+    // supplier choice away.
+    const key = `${canonicalStyle}|${brand}|${description}|${supplier}`;
 
     if (seen.has(key)) return;
     seen.add(key);
@@ -290,10 +304,11 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     // up with the same <option value> and the find-by-id resolution
     // always returns the first one in array order.
     unique.push({
-      id: `${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
+      id: `${supplier.toLowerCase() || "x"}::${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,
+      _supplier: supplier,
       styleCategory: match.styleCategory || "",
       colors: match.colors || [],
       inventoryMap: match.inventoryMap || {},
@@ -305,6 +320,19 @@ export function buildBrandOptions(matches, typedStyleNumber) {
       label: `${brand} — ${canonicalStyle} — ${description}`,
     });
   });
+
+  // Disambiguate labels when the same brand+style came back from more than
+  // one supplier — the dropdown pick IS the supplier choice.
+  const brandStyleCounts = new Map();
+  for (const o of unique) {
+    const k = `${o.brandName}|${o.styleNumber}`;
+    brandStyleCounts.set(k, (brandStyleCounts.get(k) || 0) + 1);
+  }
+  for (const o of unique) {
+    if (o._supplier && brandStyleCounts.get(`${o.brandName}|${o.styleNumber}`) > 1) {
+      o.label = `${o.label} (${o._supplier})`;
+    }
+  }
 
   return unique;
 }
@@ -332,9 +360,10 @@ function applySelectedMatch(li, selectedMatch) {
 
   const selectedPrice = (selectedMatch.priceMap && selectedMatch.priceMap[firstColor]) || {};
   const supplierFromMatch =
-    cleanText(selectedMatch.raw?.brandName).toLowerCase() === "as colour"
+    selectedMatch._supplier ||
+    (cleanText(selectedMatch.raw?.brandName).toLowerCase() === "as colour"
       ? "AS Colour"
-      : "S&S Activewear";
+      : "S&S Activewear");
 
   return {
     ...li,

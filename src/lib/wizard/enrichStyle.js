@@ -105,11 +105,24 @@ export function normalizeSupplierMatch(match, { brandHint, source, styleNumber }
  * @param {object?} opts
  * @param {string?} opts.brandHint
  * @param {string?} opts.styleNumber
+ * @param {string?} opts.supplierHint  "ss" | "ac" | "sm" — pins the pick to
+ *   that supplier's response, strictly (no cross-supplier fallback). Brand
+ *   hints alone can't disambiguate: the same brand+style often exists on
+ *   BOTH S&S and SanMar (Gildan 5000, Bella 3001, Comfort Colors 1717...),
+ *   and without the pin a re-sync would silently flip a SanMar style to
+ *   S&S pricing. Callers pass the row's saved `enrichedFrom` (or the
+ *   search result's source) here.
  */
-export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber } = {}) {
-  const ssMatches = (ssData && Array.isArray(ssData.matches)) ? ssData.matches : [];
-  const acMatches = (acData && Array.isArray(acData.matches)) ? acData.matches : [];
-  const smMatches = (smData && Array.isArray(smData.matches)) ? smData.matches : [];
+export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber, supplierHint } = {}) {
+  let ssMatches = (ssData && Array.isArray(ssData.matches)) ? ssData.matches : [];
+  let acMatches = (acData && Array.isArray(acData.matches)) ? acData.matches : [];
+  let smMatches = (smData && Array.isArray(smData.matches)) ? smData.matches : [];
+
+  // Supplier pin: empty the other pools so every rule below (brand hints,
+  // first-match fallback) can only ever pick from the pinned supplier.
+  if (supplierHint === "ss") { acMatches = []; smMatches = []; }
+  else if (supplierHint === "ac") { ssMatches = []; smMatches = []; }
+  else if (supplierHint === "sm") { ssMatches = []; acMatches = []; }
   const brandLower = (brandHint || "").toLowerCase().trim();
   const isAsColourHint = /as ?colour/.test(brandLower);
 
@@ -165,7 +178,7 @@ export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumbe
  * Supabase is injected so this function is independently testable —
  * pass a stub `{ functions: { invoke: jest.fn() } }`.
  */
-export async function fetchEnrichedStyle(styleNumber, brandHint, supabase) {
+export async function fetchEnrichedStyle(styleNumber, brandHint, supabase, supplierHint) {
   if (!styleNumber || typeof styleNumber !== "string") return null;
   const styleNum = styleNumber.trim().toUpperCase();
   if (!styleNum) return null;
@@ -186,7 +199,7 @@ export async function fetchEnrichedStyle(styleNumber, brandHint, supabase) {
     const ssData = ssRes.status === "fulfilled" ? ssRes.value?.data : null;
     const acData = acRes.status === "fulfilled" ? acRes.value?.data : null;
     const smData = smRes.status === "fulfilled" ? smRes.value?.data : null;
-    return pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber: styleNum });
+    return pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber: styleNum, supplierHint });
   } catch (err) {
     // Surface what actually failed instead of pretending success.
     // Callers still treat null as "couldn't enrich" but at least the
