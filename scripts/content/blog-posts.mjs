@@ -78,37 +78,44 @@ export const POSTS = Object.freeze([
   // ── Post 2 — Building a price chart ───────────────────────────────────────
   {
     slug: "build-a-screen-printing-price-chart",
-    title: "Build a screen printing price chart that already covers your overhead",
+    title: "How I build a screen printing price chart",
     description:
-      "A price chart is your price-per-print answered ahead of time for every color-count and quantity. Most shops build it from print cost alone and forget the rent. Here's how to bake overhead and real margin into the whole grid.",
+      "Your print prices worked out ahead of time — every color count, every quantity — built on what your shop actually costs to run. Cost per print, real margin, two percentages to fill the grid, and the fees that decide small runs.",
     category: "Pricing",
     author: "Joe",
     authorRole: "Founder, InkTracker",
     date: "2026-07-01",
-    updated: "2026-07-01",
-    readMin: 6,
+    updated: "2026-07-02",
+    readMin: 8,
     ogImage: SITE.logo,
     cta: true,
+    ctaHeading: "Build it once, stop guessing at the counter.",
+    ctaBody:
+      "InkTracker holds your print chart, garment markup, and fees and stacks them on every quote — we run it in our own shop every day.",
     body: [
-      { type: "p", html: "A price chart is just your price-per-print, answered ahead of time. Instead of doing the math fresh on every quote, you build a grid once — colors down one side, quantities across the top — and every cell holds the per-print price for that combination. Then quoting is lookup, not arithmetic." },
-      { type: "p", html: "The problem is how most charts get built: straight from print cost. You figure out what it costs to push ink onto a shirt, add a markup, and fill in the grid. It looks complete. But it's missing the biggest bill you pay every month — the one that shows up whether or not the press runs. Your rent doesn't care how many shirts you printed. Neither does your power bill, your insurance, your software, your loan payment, or the paycheck you're supposed to take home." },
+      { type: "p", html: "When I started out I priced jobs off a competitor's website and a gut feeling. Some made money, plenty didn't, and I couldn't tell which was which until the numbers came in at the end of the month." },
+      { type: "p", html: "A price chart is how you stop guessing. It's your print prices worked out ahead of time — every color count, every quantity — so you quote off a number you trust instead of one you pulled out of the air. Most charts float on nothing, though. This one's built on what your shop actually costs to run." },
 
-      { type: "h2", text: "Spread your overhead across every print" },
-      { type: "p", html: "Overhead is every cost that isn't the blank or the ink: rent, utilities, insurance, software subscriptions, equipment loans, and — this is the one shops forget — <b>your own pay</b>. If you don't build your wage into the chart, every job silently underpays you and the shop looks more profitable than it is." },
-      { type: "p", html: "The move is simple: add up your monthly overhead, divide by how many prints you do in a month, and you get an <b>overhead-per-print</b> number. That's the slice of the rent each print has to carry. Add it to your direct print cost <i>before</i> you apply margin, and suddenly every cell in the grid is pulling its weight on the fixed bills." },
-      { type: "callout", title: "The overhead math, in one line", html: "Monthly overhead ÷ prints per month = overhead added to every print. If you spend $6,000 a month to keep the doors open and you do 3,000 prints, every print carries $2.00 of overhead before ink even enters the picture." },
-
-      { type: "p", html: "The grid below is built exactly this way. Set your monthly overhead, your prints per month, your base print cost, and your margin — and it fills in a full colors × quantity chart with overhead already spread across every cell. It's the same shape as the pricing chart InkTracker manages for you, so what you build here is what you'd set once in the app." },
+      { type: "h2", text: "Start with what a print actually costs you" },
+      { type: "p", html: "Not the ink. Everything. Rent, power, the light bill, a tube of emulsion, and your own paycheck. Two numbers get you there and you already know both — what your shop costs to run in a month, and how many shirts you print in that month. Divide one by the other. Spend $14k a month, push 4,000 shirts, and every print costs you about $3.50 before you've made a dime." },
+      { type: "p", html: "Then decide what you want to keep. Want 45%? Your base isn't cost times something — it's cost divided by 0.55. That $3.50 turns into $6.36. Write it down. That's the cheapest square on your whole chart: one color, smallest run. Everything else grows from it." },
       { type: "calculator", kind: "chart" },
 
-      { type: "h2", text: "Margin isn't markup (and the difference is real money)" },
-      { type: "p", html: "This is the mistake that costs shops the most, because it hides inside a number that <i>sounds</i> right. \"I mark everything up 50%\" feels like a 50% margin. It isn't." },
-      { type: "p", html: "Markup is added to your cost. Margin is a slice of your price. If a print costs you $6 and you mark it up 50%, you charge $9 — but your profit is $3 out of a $9 price, which is only a <b>33% margin</b>. You thought you were keeping half; you're keeping a third. Every cell in a chart built on markup is quietly thinner than you believe." },
-      { type: "p", html: "Price by margin instead, and each cell is <code>price = cost ÷ (1 − margin)</code>. Want a true 50% margin on that $6 cost? <code>6 ÷ (1 − 0.50) = $12</code>, not $9. The formula guarantees the profit you actually decided to keep, on every square of the grid, instead of leaving it to a markup number that rounds down your paycheck. The note under the calculator shows the markup-equivalent of whatever margin you pick, so you can see the gap for yourself." },
+      { type: "h2", text: "Let percentages do the boring part" },
+      { type: "p", html: "You don't type in 32 prices. You set two rules and the chart fills itself. Bigger runs cost less per shirt, because setup is the same whether you print 25 or 250 — so knock a chunk off at each size break, around 10% for the first jump and a little less each time after. More colors cost more, but not double. The first color's the expensive one; it carries the setup. Every color after is just another screen and another pass, so each one adds a slice — call it 10% — and that slice shrinks as the count climbs." },
+      { type: "p", html: "Build it this way and the chart moves as one. Want to bump prices 5% next year? Change your base. Beats retyping a spreadsheet." },
 
-      { type: "h2", text: "Set it once" },
-      { type: "p", html: "The payoff of a chart is that you stop making pricing decisions per quote. You make them once — carefully, with overhead and real margin baked in — and then every quote just reads the right cell." },
-      { type: "p", html: "That grid you just built is your pricing chart. In InkTracker, it's not a spreadsheet you keep in a drawer; it's the live pricing config. You set your color counts, your quantity breaks, your overhead assumptions, and your margin one time, and every quote the shop sends pulls its numbers straight from that chart — including the small-run setup math from <a href=\"/blog/how-to-price-a-screen-printing-job\">the pricing basics post</a>. Change your overhead when your rent goes up, and every future quote updates itself. That's the difference between a chart that sits still and one that actually runs your shop." },
+      { type: "h2", text: "Margin isn't markup (this one cost me)" },
+      { type: "p", html: "Mark a $6 cost up 50% and you get $9. Feels like half of it's profit. It isn't — $3 out of $9 is 33%. If you actually want to keep half, you divide by 0.5 and charge $12. I priced a whole season on \"cost times 1.5\" thinking I was at 50 points. I was at 33. Don't be me." },
+
+      { type: "h2", text: "The chart is half the shirt. Here's the rest." },
+      { type: "p", html: "<b>Garment.</b> You don't sell blanks at cost, but the markup slides down as they get pricier. Forty percent on a $4 tee is easy. Forty percent on a $30 hoodie makes you the priciest shop in town — so a hoodie gets maybe 15%. Keep it on its own ladder, away from the print chart. That's what lets you swap a tee for a hoodie without rebuilding anything." },
+      { type: "p", html: "<b>Screens.</b> Every color's a screen, and a screen is time — burn it, tape it, register it, reclaim it later. Charge a setup fee per screen. Three-color front, three screens. Reorder the same art and the screens already exist, so drop to a small re-setup rate. On 200 shirts it's pennies each. On a 12-piece job it's the whole difference between a profit and a thank-you card." },
+      { type: "p", html: "<b>Extras and rush.</b> A PMS match, a heavy discharge print, tags in the neck — all cost more, all get a line, some once and some per shirt. And if somebody needs 100 shirts in three days while everyone else waits, that's a rush percentage on the order." },
+      { type: "p", html: "Stack it up and a real quote is: print + garment×markup + screens + extras + rush. Say 100 shirts, two-color front, $4 tee — print's about $5.77 a shirt, garment's $5.60, two screens is fifty bucks (fifty cents a shirt). Roughly $11.87 each, call it $1,187, before rush. Leave the screens off and you just ran a hundred shirts for fifty dollars under cost. Nobody does that on purpose. Lots of new printers do it by accident." },
+
+      { type: "h2", text: "Build it once" },
+      { type: "p", html: "Set it up one time — a base you can defend, a couple of percentages to shape the rest, garment and fees kept separate — and stop guessing at the counter. That's the whole system." },
     ],
     related: [
       { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a single screen printing job" },
