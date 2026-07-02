@@ -25,7 +25,6 @@ import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
 import { toCustomerFacingQuote, customerFacingShopName, customerFacingTotals, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
-import { quoteAlreadyApproved, quoteAlreadyPaid } from "@/lib/quotes/approvalState";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 
@@ -241,13 +240,15 @@ export default function QuotePayment() {
     load();
   }, [quoteDbId]);
 
-  const alreadyPaid = quoteAlreadyPaid(quote);
+  const alreadyPaid =
+    quote?.status === "Approved and Paid" ||
+    quote?.status === "Paid" ||
+    (quote?.status === "Approved" && quote?.deposit_paid);
 
-  // Includes "Converted to Order" / "Client Approved" / converted_order_id —
-  // a stale emailed link re-opened after conversion must render as already
-  // approved, never offer a live Approve action (the server would refuse the
-  // write anyway; see _shared/approveQuoteEffect.js).
-  const alreadyApproved = quoteAlreadyApproved(quote);
+  const alreadyApproved =
+    quote?.status === "Approved" ||
+    quote?.status === "Approved and Paid" ||
+    quote?.status === "Paid";
 
   const isExpired = (() => {
     if (!quote?.expires_date) return false;
@@ -328,9 +329,12 @@ export default function QuotePayment() {
       }
     }
 
-    // Same predicate as the render gate — converted / client-approved quotes
-    // must not auto-fire another approveQuote before checkout.
-    if (!quoteAlreadyApproved(quote)) {
+    const isAlreadyApproved =
+      quote?.status === "Approved" ||
+      quote?.status === "Approved and Paid" ||
+      quote?.status === "Paid";
+
+    if (!isAlreadyApproved) {
       const approved = await handleApprove();
       if (!approved) return;
     }
@@ -836,23 +840,6 @@ export default function QuotePayment() {
             /* Shop has neither QB nor an active Stripe Connect account.
                Show Approve-only — the customer signals consent here and
                the shop handles payment out-of-band. */
-            alreadyApproved ? (
-              /* Already approved (or converted to an order) — a re-opened
-                 email link shows the settled state, not a live button.
-                 approveSuccess already renders its own banner above, so
-                 skip this one right after a fresh click. */
-              !approveSuccess && (
-                <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-5 py-4 text-center">
-                  <div className="font-bold text-base mb-1 flex items-center justify-center gap-2">
-                    <CheckCircle2 className="w-5 h-5" />
-                    Quote approved
-                  </div>
-                  <div className="text-sm text-emerald-700">
-                    {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment.
-                  </div>
-                </div>
-              )
-            ) : (
             <>
               {approveError && (
                 <div role="alert" className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
@@ -875,7 +862,6 @@ export default function QuotePayment() {
                 {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment after you approve.
               </p>
             </>
-            )
           ) : (() => {
             // Broker quotes charge the client total, never the shop-side qb_total.
             // Coerce to a finite number — a missing/NaN total would render

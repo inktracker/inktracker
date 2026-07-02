@@ -22,7 +22,6 @@ import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { validateQuoteForSave } from "../lib/quotes/validation";
 import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
-import { isConvertedToOrder } from "../lib/quotes/approvalState";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
 import { useBillingGate } from "../lib/billing-gate";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
@@ -97,11 +96,10 @@ export default function Quotes() {
           cachedList("User"),
         ]);
 
-        // Exclude quotes already converted to orders — those live under Orders
-        // now. Checks converted_order_id as well as status: a status-only
-        // filter let desynced rows (converted_order_id set, status regressed
-        // by the approve-replay bug) reappear here as unconvertible zombies.
-        const q = allQuotes.filter((quote) => !isConvertedToOrder(quote));
+        // Exclude quotes already converted to orders — those live under Orders now.
+        const q = allQuotes.filter((quote) =>
+          quote.status !== "Converted to Order"
+        );
         setQuotes(q);
         // If the Dashboard linked us here with ?id=, auto-open that quote
         if (searchId) {
