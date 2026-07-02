@@ -329,7 +329,7 @@ export const POSTS = Object.freeze([
     slug: "dtf-vs-screen-printing",
     title: "DTF vs. screen printing, from a shop that only runs screens",
     description:
-      "I'm a screen printer — there's no DTF printer in my shop. But the question lands weekly, and the math is objective: setup cost vs. per-piece cost. Where the break-even lands, where each process wins, and why I still haven't bought the machine.",
+      "I'm a screen printer — there's no DTF printer in my shop. But the question lands weekly, and the math is objective: setup cost vs. per-piece cost. Where the break-even lands, where each process wins, and why I still haven't bought the equipment.",
     category: "Production",
     author: "Joe",
     authorRole: "Founder, InkTracker",
@@ -341,7 +341,7 @@ export const POSTS = Object.freeze([
     ctaBody:
       "InkTracker holds your setup fees, garment markup, and per-piece pricing and stacks them on every quote — screen print, embroidery, or DTF. We run it in our own shop every day.",
     body: [
-      { type: "p", html: "Let me be straight before the first number: I'm a screen printer. There is no DTF printer in my shop, and this isn't a secret review from someone running both. But \"DTF or screen printing?\" lands in my inbox about once a week, usually from someone starting out — and the honest answer doesn't need me to own the machine, because the economics are objective. Sometimes that answer is \"not my process.\" You should hear it anyway." },
+      { type: "p", html: "Let me be straight before the first number: I'm a screen printer. There is no DTF printer in my shop, and this isn't a secret review from someone running both. But \"DTF or screen printing?\" lands in my inbox about once a week, usually from someone starting out — and the honest answer doesn't need me to own the equipment, because the economics are objective. Sometimes that answer is \"not my process.\" You should hear it anyway." },
       { type: "p", html: "Quick level-set if DTF is new to you: it's direct-to-film. Full-color art gets printed on a film sheet, dusted with adhesive powder, and heat-pressed onto the garment. No screens, no emulsion, no reclaim tank. That \"no screens\" part is the whole story — everything else follows from it." },
 
       { type: "h2", text: "It's setup cost vs. per-piece cost. That's the entire decision." },
@@ -370,9 +370,9 @@ export const POSTS = Object.freeze([
       { type: "p", html: "The trap I see when new shops add transfers: no setup fee, so they quote it like free money — film cost times two, done. Then they press 40 shirts, most of a minute each, and wonder where the afternoon went." },
       { type: "p", html: "Press time is production time. Overhead doesn't care whether the shirt went through a dryer or a heat press — every print that leaves a shop carries its share of rent, power, and payroll, <a href=\"/blog/build-a-screen-printing-price-chart\">same as the chart math</a>. Price transfers off film cost plus press labor plus that overhead share, at the same margin you'd protect on press. If DTF is the right process for the job, it deserves a real price, not a discount for being convenient." },
 
-      { type: "h2", text: "Why I still haven't bought the machine" },
-      { type: "p", html: "Every trade show, somebody tries to sell me one. Here's the math that keeps my wallet closed: a DTF printer is a second business living inside your first one. White ink that wants to clog, humidity control, daily maintenance whether you sold film that day or not. Meanwhile the gang-sheet vendors will print anyone's art on a 22×60 sheet for twenty-something dollars and ship it in two days — ten or twelve front prints a sheet, no machine, no babysitting." },
-      { type: "p", html: "So the short-run work I'm wrong for doesn't need me to own a printer to get served — and if I ever add DTF, it starts with vendor sheets and a heat press, not a machine. The printer makes sense when transfer volume is steady enough that the vendor bill plus the two-day wait costs more than the machine and its upkeep. That's a spreadsheet decision. Run your monthly transfer spend against the machine's real cost — ink, film, powder, maintenance hours — before the sales rep runs it for you." },
+      { type: "h2", text: "Why I still haven't bought the equipment" },
+      { type: "p", html: "Every trade show, somebody tries to sell me one. Here's the math that keeps my wallet closed: a DTF printer is a second business living inside your first one. White ink that wants to clog, humidity control, daily maintenance whether you sold film that day or not. Meanwhile the gang-sheet vendors will print anyone's art on a 22×60 sheet for twenty-something dollars and ship it in two days — ten or twelve front prints a sheet, no equipment, no babysitting." },
+      { type: "p", html: "So the short-run work I'm wrong for doesn't need me to own a printer to get served — and if I ever add DTF, it starts with vendor sheets and a heat press, not the equipment. The printer makes sense when transfer volume is steady enough that the vendor bill plus the two-day wait costs more than the equipment and its upkeep. That's a spreadsheet decision. Run your monthly transfer spend against the equipment's real cost — ink, film, powder, maintenance hours — before the sales rep runs it for you." },
 
       { type: "h2", text: "The honest rule" },
       { type: "p", html: "Small, colorful, mixed, or personalized: film is probably your answer, and a screen printer who tells you otherwise is quoting his equipment, not your job. Big, simple, repeating: bring it to a press, because nothing beats it and the reorders only get better. When a job sits in the middle, run the setup-versus-per-piece math above and let the number pick. That's how I'd want to be told, so that's how I'm telling you." },
@@ -396,7 +396,7 @@ export const POSTS = Object.freeze([
       },
       {
         q: "Should a shop buy a DTF printer or order gang sheets?",
-        a: "Start with gang sheets from a transfer vendor — around twenty-something dollars for a 22×60 sheet holding ten or more front prints, shipped in days, zero maintenance. The printer only makes sense when monthly transfer volume and turnaround needs clearly outrun the vendor's bill plus the machine's real ongoing cost in ink, film, powder, and daily upkeep.",
+        a: "Start with gang sheets from a transfer vendor — around twenty-something dollars for a 22×60 sheet holding ten or more front prints, shipped in days, zero maintenance. The printer only makes sense when monthly transfer volume and turnaround needs clearly outrun the vendor's bill plus the equipment's real ongoing cost in ink, film, powder, and daily upkeep.",
       },
     ],
   },
