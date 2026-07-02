@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DTF vs. screen printing: how I decide which one runs — InkTracker</title>
+  <meta name="description" content="Both live in my shop and both make money — on different jobs. The real cost math on setup vs. per-piece, where the break-even actually lands, and the pricing trap that eats your margin on transfers." />
+  <link rel="canonical" href="https://inktracker.app/blog/dtf-vs-screen-printing" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="DTF vs. screen printing: how I decide which one runs" />
+  <meta property="og:description" content="Both live in my shop and both make money — on different jobs. The real cost math on setup vs. per-piece, where the break-even actually lands, and the pricing trap that eats your margin on transfers." />
+  <meta property="og:url" content="https://inktracker.app/blog/dtf-vs-screen-printing" />
+  <meta property="og:image" content="https://inktracker.app/icon-512.png" />
+  <meta property="article:published_time" content="2026-07-02T08:00:00-07:00" />
+  <meta property="article:modified_time" content="2026-07-02T08:00:00-07:00" />
+  <meta property="article:author" content="Joe" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="DTF vs. screen printing: how I decide which one runs" />
+  <meta name="twitter:description" content="Both live in my shop and both make money — on different jobs. The real cost math on setup vs. per-piece, where the break-even actually lands, and the pricing trap that eats your margin on transfers." />
+  <meta name="twitter:image" content="https://inktracker.app/icon-512.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" />
+  <style>:root{--ink:#0e0e0e;--muted:#6b6b6b;--hair:#e5e5e5;--forest:#2c5840;--forest-dark:#1a3a28}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);background:#fff;font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--forest)}
+.wrap{max-width:820px;margin:0 auto;padding:0 20px}
+header.site{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:2px solid var(--ink)}
+header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px}
+.brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand span{color:var(--forest)}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px;font-size:15px}
+.cta:hover{background:var(--forest-dark)}
+nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
+nav.crumbs a{color:var(--muted)}
+h1{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.01em;line-height:1.02;font-size:clamp(2.2rem,6vw,3.6rem);margin:.4em 0 .2em}
+h2{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.02em;font-size:clamp(1.4rem,3.5vw,2rem);margin:1.8em 0 .5em}
+h3{font-size:1.05rem;margin:0 0 .25em}
+.lede{font-size:1.12rem;color:#262626}
+.reviewed{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:6px}
+footer.site{border-top:2px solid var(--ink);margin-top:2em;padding:24px 0;font-size:13px;color:var(--muted)}
+footer.site a{color:var(--muted);margin-right:16px}
+.disclaimer{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);margin-top:3em;padding:18px 0}
+/* blog */
+.cat-tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--forest);border-radius:8px;padding:4px 10px}
+.post-meta{font-size:13px;color:var(--muted);margin-top:10px}
+.post-list{list-style:none;padding:0;margin:1.6em 0;display:grid;gap:16px}
+.post-list li{border:1px solid var(--hair);border-radius:12px;padding:20px 22px;transition:border-color .15s}
+.post-list li:hover{border-color:var(--forest)}
+.post-list h2{font-size:1.35rem;margin:.5em 0 .3em}
+.post-list h2 a{color:var(--ink);text-decoration:none}
+.post-list h2 a:hover{color:var(--forest)}
+.post-list p{margin:.3em 0;color:#333}
+.post-body p{margin:1.05em 0}
+.post-body code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:.92em}
+ul.body-list{margin:1em 0;padding-left:1.25em}
+ul.body-list li{margin:.55em 0}
+.callout{border-left:3px solid var(--forest);background:#f6faf7;border-radius:0 10px 10px 0;padding:14px 18px;margin:1.5em 0}
+.callout h4{margin:0 0 4px;font-size:1rem}
+.callout p{margin:0;color:#333}
+.faq dt{font-weight:700;margin-top:1em}
+.faq dd{margin:.2em 0 0;color:#333}
+.blog-cta{background:var(--ink);color:#fff;border-radius:14px;padding:30px 26px;margin:2.6em 0;text-align:center}
+.blog-cta h3{font-family:"Anton",sans-serif;color:#fff;text-transform:uppercase;font-size:1.6rem;margin:0 0 .45em}
+.blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
+.blog-cta .related{margin-top:1.1em;font-size:13px;color:#bdbdbd}
+.blog-cta .related a{color:#eaeaea}
+/* calculator */
+.calc{border:1px solid var(--hair);border-radius:14px;padding:20px;margin:1.6em 0;background:#fafafa}
+.calc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.calc-row:last-of-type{border-bottom:0}
+.calc-label{flex:1 1 210px;min-width:190px}
+.calc-label b{display:block;font-size:14px}
+.calc-label span{font-size:12px;color:var(--muted)}
+.calc-slider{flex:2 1 170px;accent-color:var(--forest);height:22px}
+.calc-val{min-width:64px;text-align:right;font-weight:700;color:var(--forest);font-variant-numeric:tabular-nums}
+.calc-out{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 6px}
+.calc-stat{border:1px solid var(--hair);border-radius:10px;padding:12px;text-align:center;background:#fff}
+.calc-stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.calc-stat .v{font-family:"Anton",sans-serif;font-size:1.55rem;color:var(--forest)}
+.calc-note{font-size:13px;color:#444;margin-top:8px;line-height:1.55}
+.calc-digit{font-size:13px;color:var(--forest);font-weight:600;margin-top:8px}
+.calc-table{width:100%;border-collapse:collapse;margin:14px 0 4px;font-variant-numeric:tabular-nums;font-size:14px}
+.calc-table th{background:var(--forest);color:#fff;padding:8px 10px;text-align:right;font-weight:700}
+.calc-table th:first-child{text-align:left}
+.calc-table td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--hair)}
+.calc-table td.rl{text-align:left;font-weight:700}
+.calc-table tbody tr:nth-child(even){background:#f6faf7}
+.proof{list-style:none;padding:0;margin:1.4em 0;display:grid;gap:12px}
+.proof li{padding:14px 18px 14px 42px;position:relative;border:1px solid var(--hair);border-radius:10px}
+.proof li:before{content:"\2713";position:absolute;left:16px;top:14px;color:var(--forest);font-weight:800}
+@media(min-width:640px){}</style>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "@id": "https://inktracker.app/blog/dtf-vs-screen-printing#post",
+  "headline": "DTF vs. screen printing: how I decide which one runs",
+  "description": "Both live in my shop and both make money — on different jobs. The real cost math on setup vs. per-piece, where the break-even actually lands, and the pricing trap that eats your margin on transfers.",
+  "image": "https://inktracker.app/icon-512.png",
+  "url": "https://inktracker.app/blog/dtf-vs-screen-printing",
+  "inLanguage": "en-US",
+  "isPartOf": {
+    "@type": "Blog",
+    "@id": "https://inktracker.app/blog#blog"
+  },
+  "articleSection": "Production",
+  "wordCount": 971,
+  "timeRequired": "PT7M",
+  "datePublished": "2026-07-02T08:00:00-07:00",
+  "dateModified": "2026-07-02T08:00:00-07:00",
+  "author": {
+    "@type": "Person",
+    "name": "Joe",
+    "jobTitle": "Founder, InkTracker",
+    "url": "https://inktracker.app"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "InkTracker",
+    "url": "https://inktracker.app",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://inktracker.app/icon-512.png"
+    }
+  },
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": "https://inktracker.app/blog/dtf-vs-screen-printing"
+  }
+}
+</script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "InkTracker",
+      "item": "https://inktracker.app/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Blog",
+      "item": "https://inktracker.app/blog"
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "name": "DTF vs. screen printing: how I decide which one runs",
+      "item": "https://inktracker.app/blog/dtf-vs-screen-printing"
+    }
+  ]
+}
+</script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Is DTF cheaper than screen printing?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Under roughly two dozen pieces, usually yes — DTF has no setup cost, so short runs win. Past that, screen printing gets cheaper with every shirt because setup spreads across the run while a transfer costs the same on shirt one and shirt three hundred. More colors push the crossover higher, since every screen adds setup that DTF doesn't have."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does DTF last as long as screen printing?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Good DTF pressed correctly survives fifty-plus washes and modern film is far better than the transfers of a few years ago. But ink pushed into the fabric still outlives and outfeels a layer sitting on top of it, especially on large solid prints. For merch someone will wear weekly for years, screens still win; for event and short-life pieces the difference rarely matters."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I mix DTF and screen printing in one order?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, and it's one of the most profitable moves a shop can make. Screen print the 200 identical fronts on press, then heat-press DTF names and numbers on the backs. The volume work gets volume pricing and the personalization gets done without burning a screen per name."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Should my shop buy a DTF printer or order gang sheets?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Start with gang sheets from a transfer vendor — around twenty-something dollars for a 22×60 sheet holding ten or more front prints, shipped in days, zero maintenance. Buy the printer only when your monthly transfer spend and turnaround needs clearly outrun the vendor's bill plus the machine's real ongoing cost in ink, film, powder, and daily upkeep."
+      }
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="https://inktracker.app/">Ink<span>Tracker</span></a>
+  <a class="cta" href="https://inktracker.app/#pricing">Start free trial</a>
+</div></header>
+<main class="wrap">
+  <nav class="crumbs"><a href="https://inktracker.app/">Home</a> › <a href="https://inktracker.app/blog">Blog</a> › Production</nav>
+  <span class="cat-tag">Production</span>
+  <h1>DTF vs. screen printing: how I decide which one runs</h1>
+  <p class="post-meta">By Joe, Founder, InkTracker · July 2, 2026 · 7 min read</p>
+  <article class="post-body">
+<p>Somebody asks me "DTF or screen printing?" about once a week, and they always want a winner. There isn't one. Both live in my shop, both make money, and they make it on completely different jobs. What you actually need is the math that tells you which one runs today.</p>
+<p>Quick level-set if DTF is new to you: it's direct-to-film. Full-color art gets printed on a film sheet, dusted with adhesive powder, and heat-pressed onto the garment. No screens, no emulsion, no reclaim tank. That "no screens" part is the whole story — everything else follows from it.</p>
+<h2>It's setup cost vs. per-piece cost. That's the entire decision.</h2>
+<p>Screen printing is expensive to start and cheap to run. Every color is a screen — coat it, burn it, tape it, register it, reclaim it later. I charge $25 a screen in setup because that's real labor. But once the press is dialed, each print costs pennies in ink. The setup spreads thinner with every shirt in the run.</p>
+<p>DTF is the mirror image: free to start, flat cost forever. No setup at all — but every single shirt carries the transfer cost plus press time, and shirt number 300 costs exactly what shirt number one did. It never gets cheaper.</p>
+<p>Put numbers on it. Twelve shirts, two-color front. Screens are $50 of setup — that's $4.17 a shirt before ink touches anything. The same art as a DTF transfer runs me about $2.50 pressed. DTF wins and it isn't close. Now make it 100 shirts: setup is 50 cents each and shrinking, ink is pennies — call it under a dollar a print. The transfer is still $2.50. Every. Single. Shirt. Screens win and it isn't close either.</p>
+<div class="callout"><h4>My break-even lands around two dozen</h4><p>For a one- or two-color design, the lines cross somewhere between 20 and 30 pieces in my shop. More colors push the crossover higher — every color adds a screen, and DTF doesn't care if the art has four colors or forty. A six-color job might not beat DTF until 60+ pieces. Run your own setup fee and transfer cost through the math; your number will be near mine, not on it.</p></div>
+<h2>Where DTF earns its spot</h2>
+<ul class="body-list"><li><b>Short runs and one-offs.</b> Twelve hats for a bachelor party, a sample for a client meeting, a reprint for the one hoodie that got a hole. No screens means no minimum that makes sense.</li><li><b>Full-color and photo art.</b> That sunset photo with forty colors is one transfer. As screens it's a sim-process separation and a day of registration — beautiful, and priced like it.</li><li><b>Mixed garments in one order.</b> Tees, hoodies, tote bags, a nylon jacket — same transfer presses onto all of it. On press that's re-registration every time the substrate changes.</li><li><b>Names and numbers.</b> Personalization on the back of a screened team order. Print the fronts on press, press the names from film. Best of both on one invoice.</li></ul>
+<h2>Where screens keep the crown</h2>
+<ul class="body-list"><li><b>Volume.</b> Past the crossover the gap widens on every shirt. At 500 pieces the difference between pennies of ink and $2.50 of film is your entire profit on the job.</li><li><b>The hand.</b> Ink pushed into fabric feels like the shirt. A transfer sits on top of it. DTF has gotten a lot better, but on a big solid print you can still tell with your eyes closed — and so can customers who wear the shirt fifty times.</li><li><b>Simple spot-color work.</b> A one-color logo on 200 shirts is the job screen printing was born for. Nothing touches it on cost or speed.</li><li><b>Reorders.</b> The art's proven, the seps exist, re-setup is cheap. That repeat customer's quarterly 300-piece run gets more profitable every time it comes back.</li></ul>
+<h2>The pricing trap: &quot;no setup&quot; doesn't mean cheap</h2>
+<p>This is the mistake I see new shops make with DTF, and I made a version of it myself. The transfer has no setup fee, so they quote it like it's free money — cost of the film times two, done. Then they press 40 shirts at 45 seconds each and wonder where the afternoon went.</p>
+<p>Press time is production time. Your overhead doesn't care whether the shirt went through a dryer or a heat press — every print that leaves my shop carries its share of rent, power, and payroll <a href="/blog/build-a-screen-printing-price-chart">same as the chart math</a>. Price DTF off transfer cost plus press labor plus that overhead share, at the same margin you protect on press. If DTF is the right process for the job, it deserves a real price, not a discount for being convenient.</p>
+<h2>Do you even need the printer?</h2>
+<p>Honest take: probably not on day one. A DTF printer is a second business living inside your first one — white ink that wants to clog, humidity control, daily maintenance whether you sold film that day or not. The gang-sheet vendors will print your art on a 22×60 sheet for twenty-something dollars and ship it in two days. Ten, twelve front prints per sheet, no machine, no maintenance, sell DTF tomorrow.</p>
+<p>The printer starts making sense when transfers become a steady chunk of your volume and the vendor bill plus the two-day wait costs more than the machine and the babysitting would. That's a spreadsheet decision, not a trade-show impulse. Run your monthly transfer spend against the machine's real cost — ink, film, powder, maintenance hours — before the sales rep runs it for you.</p>
+<h2>The rule I actually use</h2>
+<p>Small, colorful, mixed, or personalized: film. Big, simple, repeating: screens. When a job sits in the middle, I run the setup-versus-per-piece math above and let the number pick. The shops that lose money on this aren't choosing the wrong process — they're refusing to have both answers available and forcing every job through the one they own.</p>
+<h2>Common questions</h2>
+<dl class="faq">
+<dt>Is DTF cheaper than screen printing?</dt><dd>Under roughly two dozen pieces, usually yes — DTF has no setup cost, so short runs win. Past that, screen printing gets cheaper with every shirt because setup spreads across the run while a transfer costs the same on shirt one and shirt three hundred. More colors push the crossover higher, since every screen adds setup that DTF doesn't have.</dd>
+<dt>Does DTF last as long as screen printing?</dt><dd>Good DTF pressed correctly survives fifty-plus washes and modern film is far better than the transfers of a few years ago. But ink pushed into the fabric still outlives and outfeels a layer sitting on top of it, especially on large solid prints. For merch someone will wear weekly for years, screens still win; for event and short-life pieces the difference rarely matters.</dd>
+<dt>Can I mix DTF and screen printing in one order?</dt><dd>Yes, and it's one of the most profitable moves a shop can make. Screen print the 200 identical fronts on press, then heat-press DTF names and numbers on the backs. The volume work gets volume pricing and the personalization gets done without burning a screen per name.</dd>
+<dt>Should my shop buy a DTF printer or order gang sheets?</dt><dd>Start with gang sheets from a transfer vendor — around twenty-something dollars for a 22×60 sheet holding ten or more front prints, shipped in days, zero maintenance. Buy the printer only when your monthly transfer spend and turnaround needs clearly outrun the vendor's bill plus the machine's real ongoing cost in ink, film, powder, and daily upkeep.</dd>
+</dl>
+  </article>
+  <div class="blog-cta">
+    <h3>Quote both processes without two systems.</h3>
+    <p>InkTracker prices screen print and DTF jobs side by side — setup fees, per-piece costs, and your markup in one quote. We run it in our own shop every day.</p>
+    <a class="cta" href="https://inktracker.app/?ref=blog&utm_source=blog&utm_medium=content">Start your 14-day free trial — no card</a>
+    <div class="related">Related: <a href="/compare">the honest software buyer's guide</a> · <a href="/for-printers">InkTracker for printers</a></div>
+  </div>
+</main>
+<footer class="site"><div class="wrap">
+  <a href="https://inktracker.app/">InkTracker home</a><a href="https://inktracker.app/blog">Blog</a><a href="https://inktracker.app/compare">Software guide</a><a href="https://inktracker.app/support">Support</a>
+</div></footer>
+</body>
+</html>
