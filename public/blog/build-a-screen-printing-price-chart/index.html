@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Build a screen printing price chart that already covers your overhead — InkTracker</title>
+  <meta name="description" content="A price chart is your price-per-print answered ahead of time for every color-count and quantity. Most shops build it from print cost alone and forget the rent. Here's how to bake overhead and real margin into the whole grid." />
+  <link rel="canonical" href="https://inktracker.app/blog/build-a-screen-printing-price-chart" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="article" />
+  <meta property="og:title" content="Build a screen printing price chart that already covers your overhead" />
+  <meta property="og:description" content="A price chart is your price-per-print answered ahead of time for every color-count and quantity. Most shops build it from print cost alone and forget the rent. Here's how to bake overhead and real margin into the whole grid." />
+  <meta property="og:url" content="https://inktracker.app/blog/build-a-screen-printing-price-chart" />
+  <meta property="og:image" content="https://inktracker.app/icon-512.png" />
+  <meta property="article:published_time" content="2026-07-01" />
+  <meta property="article:modified_time" content="2026-07-01" />
+  <meta property="article:author" content="Joe" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Build a screen printing price chart that already covers your overhead" />
+  <meta name="twitter:description" content="A price chart is your price-per-print answered ahead of time for every color-count and quantity. Most shops build it from print cost alone and forget the rent. Here's how to bake overhead and real margin into the whole grid." />
+  <meta name="twitter:image" content="https://inktracker.app/icon-512.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" />
+  <style>:root{--ink:#0e0e0e;--muted:#6b6b6b;--hair:#e5e5e5;--forest:#2c5840;--forest-dark:#1a3a28}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);background:#fff;font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--forest)}
+.wrap{max-width:820px;margin:0 auto;padding:0 20px}
+header.site{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:2px solid var(--ink)}
+header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px}
+.brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand span{color:var(--forest)}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px;font-size:15px}
+.cta:hover{background:var(--forest-dark)}
+nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
+nav.crumbs a{color:var(--muted)}
+h1{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.01em;line-height:1.02;font-size:clamp(2.2rem,6vw,3.6rem);margin:.4em 0 .2em}
+h2{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.02em;font-size:clamp(1.4rem,3.5vw,2rem);margin:1.8em 0 .5em}
+h3{font-size:1.05rem;margin:0 0 .25em}
+.lede{font-size:1.12rem;color:#262626}
+.reviewed{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-top:6px}
+footer.site{border-top:2px solid var(--ink);margin-top:2em;padding:24px 0;font-size:13px;color:var(--muted)}
+footer.site a{color:var(--muted);margin-right:16px}
+.disclaimer{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);margin-top:3em;padding:18px 0}
+/* blog */
+.cat-tag{display:inline-block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--forest);background:#f0f5f1;border:1px solid #d6e4da;border-radius:999px;padding:3px 10px}
+.post-meta{font-size:13px;color:var(--muted);margin-top:10px}
+.post-list{list-style:none;padding:0;margin:1.6em 0;display:grid;gap:16px}
+.post-list li{border:1px solid var(--hair);border-radius:12px;padding:20px 22px;transition:border-color .15s}
+.post-list li:hover{border-color:var(--forest)}
+.post-list h2{font-size:1.35rem;margin:.5em 0 .3em}
+.post-list h2 a{color:var(--ink);text-decoration:none}
+.post-list h2 a:hover{color:var(--forest)}
+.post-list p{margin:.3em 0;color:#333}
+.post-body p{margin:1.05em 0}
+.post-body code{background:#f2f2f2;padding:1px 5px;border-radius:4px;font-size:.92em}
+ul.body-list{margin:1em 0;padding-left:1.25em}
+ul.body-list li{margin:.55em 0}
+.callout{border-left:3px solid var(--forest);background:#f6faf7;border-radius:0 10px 10px 0;padding:14px 18px;margin:1.5em 0}
+.callout h4{margin:0 0 4px;font-size:1rem}
+.callout p{margin:0;color:#333}
+.blog-cta{background:var(--ink);color:#fff;border-radius:14px;padding:30px 26px;margin:2.6em 0;text-align:center}
+.blog-cta h3{font-family:"Anton",sans-serif;color:#fff;text-transform:uppercase;font-size:1.6rem;margin:0 0 .45em}
+.blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
+.blog-cta .related{margin-top:1.1em;font-size:13px;color:#bdbdbd}
+.blog-cta .related a{color:#eaeaea}
+/* calculator */
+.calc{border:1px solid var(--hair);border-radius:14px;padding:20px;margin:1.6em 0;background:#fafafa}
+.calc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.calc-row:last-of-type{border-bottom:0}
+.calc-label{flex:1 1 210px;min-width:190px}
+.calc-label b{display:block;font-size:14px}
+.calc-label span{font-size:12px;color:var(--muted)}
+.calc-slider{flex:2 1 170px;accent-color:var(--forest);height:22px}
+.calc-val{min-width:64px;text-align:right;font-weight:700;color:var(--forest);font-variant-numeric:tabular-nums}
+.calc-out{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 6px}
+.calc-stat{border:1px solid var(--hair);border-radius:10px;padding:12px;text-align:center;background:#fff}
+.calc-stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.calc-stat .v{font-family:"Anton",sans-serif;font-size:1.55rem;color:var(--forest)}
+.calc-note{font-size:13px;color:#444;margin-top:8px;line-height:1.55}
+.calc-digit{font-size:13px;color:var(--forest);font-weight:600;margin-top:8px}
+.calc-table{width:100%;border-collapse:collapse;margin:14px 0 4px;font-variant-numeric:tabular-nums;font-size:14px}
+.calc-table th{background:var(--forest);color:#fff;padding:8px 10px;text-align:right;font-weight:700}
+.calc-table th:first-child{text-align:left}
+.calc-table td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--hair)}
+.calc-table td.rl{text-align:left;font-weight:700}
+.calc-table tbody tr:nth-child(even){background:#f6faf7}
+.proof{list-style:none;padding:0;margin:1.4em 0;display:grid;gap:12px}
+.proof li{padding:14px 18px 14px 42px;position:relative;border:1px solid var(--hair);border-radius:10px}
+.proof li:before{content:"\2713";position:absolute;left:16px;top:14px;color:var(--forest);font-weight:800}
+@media(min-width:640px){}</style>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Article",
+  "headline": "Build a screen printing price chart that already covers your overhead",
+  "description": "A price chart is your price-per-print answered ahead of time for every color-count and quantity. Most shops build it from print cost alone and forget the rent. Here's how to bake overhead and real margin into the whole grid.",
+  "image": "https://inktracker.app/icon-512.png",
+  "datePublished": "2026-07-01",
+  "dateModified": "2026-07-01",
+  "author": {
+    "@type": "Person",
+    "name": "Joe",
+    "jobTitle": "Founder, InkTracker"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "InkTracker",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://inktracker.app/icon-512.png"
+    }
+  },
+  "mainEntityOfPage": "https://inktracker.app/blog/build-a-screen-printing-price-chart"
+}
+</script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "InkTracker",
+      "item": "https://inktracker.app/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Blog",
+      "item": "https://inktracker.app/blog"
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "name": "Build a screen printing price chart that already covers your overhead",
+      "item": "https://inktracker.app/blog/build-a-screen-printing-price-chart"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="https://inktracker.app/">Ink<span>Tracker</span></a>
+  <a class="cta" href="https://inktracker.app/#pricing">Start free trial</a>
+</div></header>
+<main class="wrap">
+  <nav class="crumbs"><a href="https://inktracker.app/">Home</a> › <a href="https://inktracker.app/blog">Blog</a> › Pricing</nav>
+  <span class="cat-tag">Pricing</span>
+  <h1>Build a screen printing price chart that already covers your overhead</h1>
+  <p class="post-meta">By Joe, Founder, InkTracker · July 1, 2026 · 6 min read</p>
+  <article class="post-body">
+<p>A price chart is just your price-per-print, answered ahead of time. Instead of doing the math fresh on every quote, you build a grid once — colors down one side, quantities across the top — and every cell holds the per-print price for that combination. Then quoting is lookup, not arithmetic.</p>
+<p>The problem is how most charts get built: straight from print cost. You figure out what it costs to push ink onto a shirt, add a markup, and fill in the grid. It looks complete. But it's missing the biggest bill you pay every month — the one that shows up whether or not the press runs. Your rent doesn't care how many shirts you printed. Neither does your power bill, your insurance, your software, your loan payment, or the paycheck you're supposed to take home.</p>
+<h2>Spread your overhead across every print</h2>
+<p>Overhead is every cost that isn't the blank or the ink: rent, utilities, insurance, software subscriptions, equipment loans, and — this is the one shops forget — <b>your own pay</b>. If you don't build your wage into the chart, every job silently underpays you and the shop looks more profitable than it is.</p>
+<p>The move is simple: add up your monthly overhead, divide by how many prints you do in a month, and you get an <b>overhead-per-print</b> number. That's the slice of the rent each print has to carry. Add it to your direct print cost <i>before</i> you apply margin, and suddenly every cell in the grid is pulling its weight on the fixed bills.</p>
+<div class="callout"><h4>The overhead math, in one line</h4><p>Monthly overhead ÷ prints per month = overhead added to every print. If you spend $6,000 a month to keep the doors open and you do 3,000 prints, every print carries $2.00 of overhead before ink even enters the picture.</p></div>
+<p>The grid below is built exactly this way. Set your monthly overhead, your prints per month, your base print cost, and your margin — and it fills in a full colors × quantity chart with overhead already spread across every cell. It's the same shape as the pricing chart InkTracker manages for you, so what you build here is what you'd set once in the app.</p>
+<div class="calc" id="calc-chart"><div class="calc-row">
+    <div class="calc-label"><b>Monthly overhead</b><span>rent, power, insurance, software, your pay</span></div>
+    <input type="range" class="calc-slider" data-in="overhead" min="1500" max="16000" step="250" value="6000" />
+    <output class="calc-val" data-val="overhead">–</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Prints per month</b><span>how many prints you run</span></div>
+    <input type="range" class="calc-slider" data-in="prints" min="800" max="12000" step="100" value="3000" />
+    <output class="calc-val" data-val="prints">–</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>1-color print cost</b><span>ink + labor for one color</span></div>
+    <input type="range" class="calc-slider" data-in="one" min="1" max="5" step="0.05" value="2" />
+    <output class="calc-val" data-val="one">–</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Cost per extra color</b><span>each additional color adds this</span></div>
+    <input type="range" class="calc-slider" data-in="extra" min="0.15" max="1" step="0.05" value="0.45" />
+    <output class="calc-val" data-val="extra">–</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Target margin</b><span>the profit slice you keep</span></div>
+    <input type="range" class="calc-slider" data-in="margin" min="15" max="60" step="1" value="45" />
+    <output class="calc-val" data-val="margin">–</output>
+  </div><table class="calc-table"><thead><tr><th>Colors \ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead><tbody data-grid></tbody></table><p class="calc-note" data-note>–</p></div><script>(function(){var root=document.getElementById("calc-chart");if(!root)return;var COLORS=[1,2,3,4,5,6,7,8],TIERS=[25,50,100,200],QF={25:1.0,50:0.90,100:0.83,200:0.78};function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}function ct(n){return Math.round(n).toLocaleString("en-US");}var S={overhead:6000,prints:3000,one:2,extra:0.45,margin:45};function build(){var oph=S.overhead/S.prints;var mf=S.margin/100;var rows="";for(var c=0;c<COLORS.length;c++){var col=COLORS[c];rows+="<tr><td class=\"rl\">"+col+(col===1?" color":" colors")+"</td>";for(var t=0;t<TIERS.length;t++){var q=TIERS[t];var direct=(S.one+(col-1)*S.extra)*QF[q];var cost=oph+direct;var price=cost/(1-mf);rows+="<td>"+m2(price)+"</td>";}rows+="</tr>";}root.querySelector("[data-grid]").innerHTML=rows;var meq=Math.round(mf/(1-mf)*100);root.querySelector("[data-note]").textContent="Overhead adds "+m2(oph)+" to every print ("+m0(S.overhead)+" \u00f7 "+ct(S.prints)+" prints). Each cell = cost \u00f7 "+(1-mf).toFixed(2)+". Your "+S.margin+"% margin is a "+meq+"% markup \u2014 not the same thing.";}function wire(k,t){var sl=root.querySelector("[data-in=\""+k+"\"]");var ov=root.querySelector("[data-val=\""+k+"\"]");function u(){S[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(S[k]):t==="m2"?m2(S[k]):t==="ct"?ct(S[k]):t==="pct"?(Math.round(S[k])+"%"):S[k];build();}sl.addEventListener("input",u);u();}wire("overhead","m0");wire("prints","ct");wire("one","m2");wire("extra","m2");wire("margin","pct");})();</script>
+<h2>Margin isn't markup (and the difference is real money)</h2>
+<p>This is the mistake that costs shops the most, because it hides inside a number that <i>sounds</i> right. "I mark everything up 50%" feels like a 50% margin. It isn't.</p>
+<p>Markup is added to your cost. Margin is a slice of your price. If a print costs you $6 and you mark it up 50%, you charge $9 — but your profit is $3 out of a $9 price, which is only a <b>33% margin</b>. You thought you were keeping half; you're keeping a third. Every cell in a chart built on markup is quietly thinner than you believe.</p>
+<p>Price by margin instead, and each cell is <code>price = cost ÷ (1 − margin)</code>. Want a true 50% margin on that $6 cost? <code>6 ÷ (1 − 0.50) = $12</code>, not $9. The formula guarantees the profit you actually decided to keep, on every square of the grid, instead of leaving it to a markup number that rounds down your paycheck. The note under the calculator shows the markup-equivalent of whatever margin you pick, so you can see the gap for yourself.</p>
+<h2>Set it once</h2>
+<p>The payoff of a chart is that you stop making pricing decisions per quote. You make them once — carefully, with overhead and real margin baked in — and then every quote just reads the right cell.</p>
+<p>That grid you just built is your pricing chart. In InkTracker, it's not a spreadsheet you keep in a drawer; it's the live pricing config. You set your color counts, your quantity breaks, your overhead assumptions, and your margin one time, and every quote the shop sends pulls its numbers straight from that chart — including the small-run setup math from <a href="/blog/how-to-price-a-screen-printing-job">the pricing basics post</a>. Change your overhead when your rent goes up, and every future quote updates itself. That's the difference between a chart that sits still and one that actually runs your shop.</p>
+  </article>
+  <div class="blog-cta">
+    <h3>Stop pricing in a spreadsheet.</h3>
+    <p>InkTracker runs this math on every quote automatically — blanks, colors, quantity breaks, and setup — so every job is priced right before it hits the press.</p>
+    <a class="cta" href="https://inktracker.app/?ref=blog&utm_source=blog&utm_medium=content">Start your 14-day free trial — no card</a>
+    <div class="related">Related: <a href="/compare">the honest software buyer's guide</a> · <a href="/for-printers">InkTracker for printers</a></div>
+  </div>
+</main>
+<footer class="site"><div class="wrap">
+  <a href="https://inktracker.app/">InkTracker home</a><a href="https://inktracker.app/blog">Blog</a><a href="https://inktracker.app/compare">Software guide</a><a href="https://inktracker.app/support">Support</a>
+</div></footer>
+</body>
+</html>
