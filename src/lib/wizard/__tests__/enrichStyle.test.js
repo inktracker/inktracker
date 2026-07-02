@@ -50,6 +50,24 @@ const SS_MATCH_REDKAP_5080 = {
   ],
 };
 
+// Fixture — SanMar PC61 in the matchUiShape smLookupStyle returns. Port & Co
+// is a SanMar house brand, so a brand hint for it should resolve via SanMar
+// (S&S doesn't carry it in this scenario).
+const SM_MATCH_PC61 = {
+  id: "PC61",
+  brandName: "Port & Company",
+  styleNumber: "PC61",
+  title: "Port & Company - Essential Tee. PC61",
+  description: "A year-round essential, our best-selling t-shirt.",
+  styleCategory: "T-Shirts",
+  styleImage: "https://cdnm.sanmar.example/catalog/images/PC61.jpg",
+  colors: [
+    { colorName: "White", imageUrl: "https://cdnm.sanmar.example/PC61_white.jpg", piecePrice: 2.38 },
+    { colorName: "Black", imageUrl: "https://cdnm.sanmar.example/PC61_black.jpg", piecePrice: 2.84 },
+  ],
+  sizes: ["S", "M", "L", "XL", "2XL"],
+};
+
 describe("normalizeSupplierMatch", () => {
   it("captures the cost fields the public wizard needs to include the blank in pricing math", () => {
     const result = normalizeSupplierMatch(SS_MATCH_BELLA_3001, { source: "ss" });
@@ -133,6 +151,7 @@ describe("pickAndNormalize — supplier disambiguation", () => {
     const result = pickAndNormalize(
       { matches: [SS_MATCH_REDKAP_5080] },
       { matches: [AC_MATCH_5080] },
+      null,
       { brandHint: "AS Colour" }
     );
 
@@ -147,6 +166,7 @@ describe("pickAndNormalize — supplier disambiguation", () => {
     const result = pickAndNormalize(
       { matches: [SS_MATCH_REDKAP_5080, SS_MATCH_BELLA_3001] },
       null,
+      null,
       { brandHint: "Bella+Canvas" }
     );
     expect(result.brand).toBe("Bella+Canvas");
@@ -157,19 +177,20 @@ describe("pickAndNormalize — supplier disambiguation", () => {
     const result = pickAndNormalize(
       { matches: [SS_MATCH_BELLA_3001] },
       { matches: [AC_MATCH_5080] },
+      null,
       {}
     );
     expect(result.enrichedFrom).toBe("ss"); // ss listed first
   });
 
   it("falls back to AS Colour when S&S has no matches", () => {
-    const result = pickAndNormalize(null, { matches: [AC_MATCH_5080] }, {});
+    const result = pickAndNormalize(null, { matches: [AC_MATCH_5080] }, null, {});
     expect(result.enrichedFrom).toBe("ac");
   });
 
   it("returns null when neither supplier knows the style", () => {
-    expect(pickAndNormalize(null, null, {})).toBeNull();
-    expect(pickAndNormalize({ matches: [] }, { matches: [] }, {})).toBeNull();
+    expect(pickAndNormalize(null, null, null, {})).toBeNull();
+    expect(pickAndNormalize({ matches: [] }, { matches: [] }, { matches: [] }, {})).toBeNull();
   });
 
   it("returns null when brandHint='AS Colour' and AS Colour has no match (won't substitute S&S)", () => {
@@ -183,6 +204,7 @@ describe("pickAndNormalize — supplier disambiguation", () => {
     const result = pickAndNormalize(
       { matches: [SS_MATCH_REDKAP_5080] }, // S&S has SOMETHING for this style
       { matches: [] },                     // AS Colour has nothing
+      null,
       { brandHint: "AS Colour" }
     );
     expect(result).toBeNull();
@@ -194,6 +216,7 @@ describe("pickAndNormalize — supplier disambiguation", () => {
     // rather than substituting an unrelated product.
     const result = pickAndNormalize(
       { matches: [SS_MATCH_REDKAP_5080] },
+      null,
       null,
       { brandHint: "Bella+Canvas" }
     );
@@ -207,9 +230,47 @@ describe("pickAndNormalize — supplier disambiguation", () => {
     const result = pickAndNormalize(
       { matches: [SS_MATCH_REDKAP_5080] },
       { matches: [AC_MATCH_5080] },
+      null,
       {}
     );
     expect(result.enrichedFrom).toBe("ss");
+  });
+
+  it("resolves a SanMar-carried brand hint via SanMar when S&S has no matching brand", () => {
+    // Port & Company is a SanMar house brand. A row saved with that brand
+    // must enrich from the SanMar response even when S&S returned some
+    // OTHER product for the same style number.
+    const result = pickAndNormalize(
+      { matches: [SS_MATCH_REDKAP_5080] },
+      null,
+      { matches: [SM_MATCH_PC61] },
+      { brandHint: "Port & Company" }
+    );
+    expect(result.brand).toBe("Port & Company");
+    expect(result.enrichedFrom).toBe("sm");
+    expect(result.priceMap.White).toEqual({ piecePrice: 2.38 });
+    expect(result.garmentCost).toBeGreaterThan(0);
+  });
+
+  it("prefers the S&S row when the hinted brand exists on BOTH S&S and SanMar", () => {
+    // Overlapping-catalog case: both suppliers carry the brand. Legacy
+    // preference keeps S&S first so existing shops' costs don't silently
+    // switch supplier on a re-sync.
+    const ssPortCo = { ...SM_MATCH_PC61, id: "ss-pc61", colors: [{ colorName: "White", imageUrl: "https://ss.example/pc61.jpg", piecePrice: 2.41 }] };
+    const result = pickAndNormalize(
+      { matches: [ssPortCo] },
+      null,
+      { matches: [SM_MATCH_PC61] },
+      { brandHint: "Port & Company" }
+    );
+    expect(result.enrichedFrom).toBe("ss");
+    expect(result.priceMap.White).toEqual({ piecePrice: 2.41 });
+  });
+
+  it("falls back to SanMar when neither S&S nor AS Colour has a match (no hint)", () => {
+    const result = pickAndNormalize(null, null, { matches: [SM_MATCH_PC61] }, {});
+    expect(result.enrichedFrom).toBe("sm");
+    expect(result.brand).toBe("Port & Company");
   });
 });
 

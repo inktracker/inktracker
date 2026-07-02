@@ -72,6 +72,18 @@ const probes = [
     healthy: (json) => !(json?.code === "UNAUTHORIZED_NO_AUTH_HEADER" || json?.error === "Unauthorized"),
     badShape: (json) => json?.code === "UNAUTHORIZED_NO_AUTH_HEADER" || json?.error === "Unauthorized",
   },
+  {
+    name: "smLookupStyle",
+    payload: { styleNumber: "PC61", shopOwner: SHOP_OWNER },
+    // Same gateway-level check as AC. Additionally: until SanMar
+    // onboarding completes there are no credentials anywhere, so the
+    // function legitimately answers 500 "SanMar credentials not
+    // configured" — that still proves it's deployed and reachable by
+    // the anonymous wizard, which is what this smoke test guards.
+    tolerateHttpError: (json) => /sanmar credentials not configured/i.test(json?.error || ""),
+    healthy: (json) => !(json?.code === "UNAUTHORIZED_NO_AUTH_HEADER" || json?.error === "Unauthorized"),
+    badShape: (json) => json?.code === "UNAUTHORIZED_NO_AUTH_HEADER" || json?.error === "Unauthorized",
+  },
 ];
 
 console.log(`[smoke] Probing ${probes.length} edge function(s) at ${SUPABASE_URL}…\n`);
@@ -95,7 +107,8 @@ for (const probe of probes) {
     continue;
   }
 
-  const ok = res.ok && json && probe.healthy(json) && !probe.badShape(json);
+  const httpOk = res.ok || Boolean(probe.tolerateHttpError?.(json));
+  const ok = httpOk && json && probe.healthy(json) && !probe.badShape(json);
   if (ok) {
     console.log(`  ✓ ${probe.name} — live, accepting anon+shopOwner.`);
   } else {

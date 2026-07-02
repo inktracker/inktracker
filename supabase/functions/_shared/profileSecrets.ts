@@ -35,6 +35,9 @@ export type ProfileWithSecrets = {
   ac_subscription_key?: string | null;
   ss_account_number?: string | null;
   ss_api_key?: string | null;
+  sanmar_customer_number?: string | null;
+  sanmar_username?: string | null;
+  sanmar_password?: string | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
   // Anything else returned by the profiles SELECT

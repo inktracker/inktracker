@@ -12,14 +12,20 @@ export default function SupplierKeysSection({ user }) {
   // the "Connected" badges + editing state derive from them.
   const [ssHasKey, setSsHasKey] = useState(false);
   const [acHasKey, setAcHasKey] = useState(false);
+  const [smHasKey, setSmHasKey] = useState(false);
   const [acEmailFromServer, setAcEmailFromServer] = useState("");
+  const [smUsernameFromServer, setSmUsernameFromServer] = useState("");
   const [ssAccount, setSsAccount] = useState("");
   const [ssKey, setSsKey] = useState("");
   const [acSubKey, setAcSubKey] = useState("");
   const [acEmail, setAcEmail] = useState("");
   const [acPassword, setAcPassword] = useState("");
+  const [smCustomerNumber, setSmCustomerNumber] = useState("");
+  const [smUsername, setSmUsername] = useState("");
+  const [smPassword, setSmPassword] = useState("");
   const [ssEditing, setSsEditing] = useState(true);
   const [acEditing, setAcEditing] = useState(true);
+  const [smEditing, setSmEditing] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -38,9 +44,12 @@ export default function SupplierKeysSection({ user }) {
         if (!alive || error || !data) return;
         setSsHasKey(!!data.ss);
         setAcHasKey(!!data.ac);
+        setSmHasKey(!!data.sanmar);
         setAcEmailFromServer(data.ac_email || "");
+        setSmUsernameFromServer(data.sanmar_username || "");
         setSsEditing(!data.ss);
         setAcEditing(!data.ac);
+        setSmEditing(!data.sanmar);
         if (data.ac_email) setAcEmail(data.ac_email);
       } catch {
         // Stay in "no connection" mode — the user can still re-enter creds.
@@ -100,6 +109,20 @@ export default function SupplierKeysSection({ user }) {
           supplierSecrets.ac_password = acPassword.trim();
         }
       }
+      if (smEditing) {
+        const num = smCustomerNumber.trim();
+        // SanMar customer numbers are numeric — same autofill guard as S&S.
+        if (num && !/^\d+$/.test(num)) {
+          notify.error("SanMar Customer Number must be digits only. Saved credentials were not touched.");
+          setSaving(false);
+          return;
+        }
+        if (num) supplierSecrets.sanmar_customer_number = num;
+        if (smUsername.trim()) supplierSecrets.sanmar_username = smUsername.trim();
+        if (smPassword.trim() && smPassword !== "********") {
+          supplierSecrets.sanmar_password = smPassword.trim();
+        }
+      }
 
       const profileUpdates = {};
       const thresholds = { ...initialThresholds };
@@ -131,6 +154,11 @@ export default function SupplierKeysSection({ user }) {
           setAcEditing(false);
         }
         if (supplierSecrets.ac_email) setAcEmailFromServer(supplierSecrets.ac_email);
+        if (supplierSecrets.sanmar_customer_number || supplierSecrets.sanmar_username || supplierSecrets.sanmar_password) {
+          setSmHasKey(true);
+          setSmEditing(false);
+        }
+        if (supplierSecrets.sanmar_username) setSmUsernameFromServer(supplierSecrets.sanmar_username);
       }
 
       await base44.auth.updateMe(profileUpdates);
@@ -151,6 +179,7 @@ export default function SupplierKeysSection({ user }) {
     const labels = {
       ss: "S&S Activewear",
       ac: "AS Colour",
+      sanmar: "SanMar",
     };
     if (!confirm(`Disconnect ${labels[supplier]}? Your saved API credentials will be removed. You can re-enter them later.`)) {
       return;
@@ -168,6 +197,9 @@ export default function SupplierKeysSection({ user }) {
       if (supplier === "ac") {
         setAcSubKey(""); setAcEmail(""); setAcPassword("");
         setAcHasKey(false); setAcEditing(true); setAcEmailFromServer("");
+      } else if (supplier === "sanmar") {
+        setSmCustomerNumber(""); setSmUsername(""); setSmPassword("");
+        setSmHasKey(false); setSmEditing(true); setSmUsernameFromServer("");
       } else {
         setSsAccount(""); setSsKey("");
         setSsHasKey(false); setSsEditing(true);
@@ -280,17 +312,58 @@ export default function SupplierKeysSection({ user }) {
         </div>
       </div>
 
-      {/* SanMar — not currently supported */}
-      <div className="border border-slate-200 bg-slate-50/50 rounded-xl p-4 space-y-2">
+      {/* SanMar */}
+      <div className={`border rounded-xl p-4 space-y-3 ${smHasKey && !smEditing ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200"}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-500">SanMar</span>
-            <span className="text-[10px] font-bold text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full">Not available</span>
+            <span className="text-sm font-bold text-blue-700">SanMar</span>
+            {smHasKey && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Connected</span>}
           </div>
+          {smHasKey && !smEditing && (
+            <div className="flex items-center gap-3">
+              <button onClick={() => { setSmEditing(true); setSmCustomerNumber(""); setSmUsername(""); setSmPassword(""); }}
+                className="text-xs font-semibold text-teal-600 hover:text-teal-700">Edit</button>
+              <button onClick={() => handleDisconnect("sanmar")}
+                className="text-xs font-semibold text-slate-500 hover:text-red-500">Disconnect</button>
+            </div>
+          )}
         </div>
-        <p className="text-xs text-slate-500 leading-relaxed">
-          SanMar's API requires per-shop integration approval and static-IP whitelisting that doesn't fit our current infrastructure. Add SanMar items by hand for now — we may revisit a partner-route integration in a future release.
-        </p>
+        {smEditing ? (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Customer Number</label>
+                <input type="text" value={smCustomerNumber} onChange={e => setSmCustomerNumber(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">SanMar.com Username</label>
+                <input type="text" value={smUsername} onChange={e => setSmUsername(e.target.value)} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 mb-1">SanMar.com Password</label>
+                <input type="password" value={smPassword} onChange={e => setSmPassword(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-500">
+              Your sanmar.com login works here once SanMar has enabled Web Services on your account.
+            </p>
+          </>
+        ) : smHasKey ? (
+          <div className="text-xs text-slate-500 space-y-1">
+            <div>Credentials saved. Click <span className="font-semibold">Edit</span> to replace.</div>
+            {smUsernameFromServer && <div>Username: {smUsernameFromServer}</div>}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500">No SanMar credentials configured. Enter your account details to connect.</p>
+        )}
+
+        <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-[11px] text-amber-800 leading-relaxed">
+          <strong className="block mb-1 text-amber-900">One-time SanMar setup required first</strong>
+          SanMar enables API access per account. Email <a href="mailto:sanmarintegrations@sanmar.com" className="font-mono underline">sanmarintegrations@sanmar.com</a> with
+          your customer number, e-sign their free Integration Agreement, and access is granted in 1–2 business days.
+          After that, your regular sanmar.com login above connects InkTracker to live SanMar style data and your contracted pricing.
+          Style lookups use exact style numbers (PC61, K420, DT6000). Ordering through InkTracker requires SanMar's separate PO-integration approval — coming later.
+        </div>
       </div>
 
       {/* Free-freight thresholds */}

@@ -18,23 +18,24 @@ import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 
-// Query both S&S Activewear and AS Colour in parallel and merge results.
-// AS Colour uses `styleCode`, S&S uses `styleNumber` — same wire format on the
-// way out, so the brandOptions dropdown ends up with one entry per (brand, style)
-// regardless of supplier. Either supplier failing/returning empty doesn't break
-// the lookup; we just use whatever came back.
+// Query S&S Activewear, AS Colour, and SanMar in parallel and merge results.
+// AS Colour uses `styleCode`, the others use `styleNumber` — same wire format
+// on the way out, so the brandOptions dropdown ends up with one entry per
+// (brand, style) regardless of supplier. Any supplier failing/returning empty
+// doesn't break the lookup; we just use whatever came back.
 //
 // Returns { matches, reason } where reason distinguishes:
 //   undefined          — matches were found
-//   'no_results'       — both suppliers responded, neither had matches
-//   'suppliers_unreachable' — both suppliers errored / no API creds set
+//   'no_results'       — suppliers responded, none had matches
+//   'suppliers_unreachable' — all suppliers errored / no API creds set
 async function lookupStyle(styleNumber) {
   const code = String(styleNumber || "").trim().toUpperCase();
   if (!code) return { matches: [] };
 
-  const [ssRes, acRes] = await Promise.allSettled([
+  const [ssRes, acRes, smRes] = await Promise.allSettled([
     supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: code } }),
     supabase.functions.invoke("acLookupStyle", { body: { styleCode: code } }),
+    supabase.functions.invoke("smLookupStyle", { body: { styleNumber: code } }),
   ]);
 
   const wasReached = (r) => {
@@ -46,17 +47,25 @@ async function lookupStyle(styleNumber) {
     return !data.error;
   };
 
-  const grab = (r) => {
+  // Tag each match with the supplier whose lookup returned it. Brand names
+  // can't identify the supplier (Port Authority lives on both S&S and
+  // SanMar), but the response source can.
+  const grab = (r, supplierName) => {
     if (!wasReached(r)) return [];
     const data = r.value.data;
-    return data.matches || data.results || data.items || data.products || [];
+    const arr = data.matches || data.results || data.items || data.products || [];
+    return arr.map((m) => ({ ...m, _supplier: supplierName }));
   };
 
-  const matches = [...grab(ssRes), ...grab(acRes)];
+  const matches = [
+    ...grab(ssRes, "S&S Activewear"),
+    ...grab(acRes, "AS Colour"),
+    ...grab(smRes, "SanMar"),
+  ];
 
   if (matches.length === 0) {
-    const eitherReached = wasReached(ssRes) || wasReached(acRes);
-    return { matches, reason: eitherReached ? "no_results" : "suppliers_unreachable" };
+    const anyReached = wasReached(ssRes) || wasReached(acRes) || wasReached(smRes);
+    return { matches, reason: anyReached ? "no_results" : "suppliers_unreachable" };
   }
   return { matches };
 }
@@ -521,7 +530,7 @@ function applySelectedMatch(li, selectedMatch) {
       selectedMatch.styleCategory,
       productName || selectedMatch.description
     ) || li.category || "",
-    supplier: selectedMatch.brandName === "AS Colour" ? "AS Colour" : "S&S Activewear",
+    supplier: selectedMatch._supplier || (selectedMatch.brandName === "AS Colour" ? "AS Colour" : "S&S Activewear"),
     supplierLastLookupAt: new Date().toISOString(),
     // Per-size wholesale prices from the API (e.g. { S: 4.62, M: 4.62, "2XL": 5.62 })
     sizePrices: JSON.parse(JSON.stringify((selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {})),

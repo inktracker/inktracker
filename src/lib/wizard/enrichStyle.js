@@ -30,7 +30,7 @@
  * @param {object?} opts
  * @param {string?} opts.brandHint    Caller's known brand (preserves it
  *                                    when supplier returns ambiguous data).
- * @param {string}  opts.source       "ss" | "ac" — which supplier matched.
+ * @param {string}  opts.source       "ss" | "ac" | "sm" — which supplier matched.
  * @param {string?} opts.styleNumber  Fallback style number if match lacks one.
  * @returns {object|null}
  */
@@ -91,8 +91,8 @@ export function normalizeSupplierMatch(match, { brandHint, source, styleNumber }
 }
 
 /**
- * Given parallel S&S + AS Colour responses, pick the best match using
- * the brand hint (if any) and normalize. Returns null when neither
+ * Given parallel S&S + AS Colour + SanMar responses, pick the best match
+ * using the brand hint (if any) and normalize. Returns null when no
  * supplier knows the style number.
  *
  * Centralizes the brand-disambiguation logic so collisions like
@@ -101,18 +101,25 @@ export function normalizeSupplierMatch(match, { brandHint, source, styleNumber }
  *
  * @param {object?} ssData    Resolved data from `ssLookupStyle` (or null).
  * @param {object?} acData    Resolved data from `acLookupStyle` (or null).
+ * @param {object?} smData    Resolved data from `smLookupStyle` (or null).
  * @param {object?} opts
  * @param {string?} opts.brandHint
  * @param {string?} opts.styleNumber
  */
-export function pickAndNormalize(ssData, acData, { brandHint, styleNumber } = {}) {
+export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber } = {}) {
   const ssMatches = (ssData && Array.isArray(ssData.matches)) ? ssData.matches : [];
   const acMatches = (acData && Array.isArray(acData.matches)) ? acData.matches : [];
+  const smMatches = (smData && Array.isArray(smData.matches)) ? smData.matches : [];
   const brandLower = (brandHint || "").toLowerCase().trim();
   const isAsColourHint = /as ?colour/.test(brandLower);
 
   let match = null;
   let source = null;
+
+  const findBrandMatch = (matches) => matches.find(m => {
+    const b = (m.brandName || "").toLowerCase();
+    return b && (b.includes(brandLower) || brandLower.includes(b));
+  });
 
   if (isAsColourHint) {
     // Brand hint pins us to AS Colour. If AC has no match for this
@@ -123,22 +130,26 @@ export function pickAndNormalize(ssData, acData, { brandHint, styleNumber } = {}
     // the audit gate flags it.
     if (acMatches[0]) { match = acMatches[0]; source = "ac"; }
   } else if (brandLower) {
-    // Brand hint specifies a brand carried by S&S. Same strict
-    // semantics: if no S&S row matches that brand, don't fall back
-    // to "any S&S product with that style number" — the collision
-    // risk is exactly the bug we're guarding against.
-    const brandMatch = ssMatches.find(m => {
-      const b = (m.brandName || "").toLowerCase();
-      return b && (b.includes(brandLower) || brandLower.includes(b));
-    });
-    if (brandMatch) { match = brandMatch; source = "ss"; }
+    // Brand hint specifies a brand. Same strict semantics: only a row
+    // whose brand actually matches wins — never "any product with that
+    // style number"; the collision risk is exactly the bug we're
+    // guarding against. S&S checked first (legacy preference), then
+    // SanMar — both carry overlapping brands (Port Authority, District,
+    // Sport-Tek live in both catalogs).
+    const ssBrandMatch = findBrandMatch(ssMatches);
+    if (ssBrandMatch) { match = ssBrandMatch; source = "ss"; }
+    else {
+      const smBrandMatch = findBrandMatch(smMatches);
+      if (smBrandMatch) { match = smBrandMatch; source = "sm"; }
+    }
   } else {
-    // No brand hint — first match wins. S&S preferred when both
+    // No brand hint — first match wins. S&S preferred when several
     // suppliers have a match (legacy compat; predates the wizard
-    // brand field). Used by free-form lookups where the caller has
-    // no opinion about the brand.
+    // brand field), then AS Colour, then SanMar. Used by free-form
+    // lookups where the caller has no opinion about the brand.
     if (ssMatches[0]) { match = ssMatches[0]; source = "ss"; }
     else if (acMatches[0]) { match = acMatches[0]; source = "ac"; }
+    else if (smMatches[0]) { match = smMatches[0]; source = "sm"; }
   }
 
   if (!match) return null;
@@ -167,13 +178,15 @@ export async function fetchEnrichedStyle(styleNumber, brandHint, supabase) {
     return null;
   }
   try {
-    const [ssRes, acRes] = await Promise.allSettled([
+    const [ssRes, acRes, smRes] = await Promise.allSettled([
       supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: styleNum } }),
       supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNum } }),
+      supabase.functions.invoke("smLookupStyle", { body: { styleNumber: styleNum } }),
     ]);
     const ssData = ssRes.status === "fulfilled" ? ssRes.value?.data : null;
     const acData = acRes.status === "fulfilled" ? acRes.value?.data : null;
-    return pickAndNormalize(ssData, acData, { brandHint, styleNumber: styleNum });
+    const smData = smRes.status === "fulfilled" ? smRes.value?.data : null;
+    return pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber: styleNum });
   } catch (err) {
     // Surface what actually failed instead of pretending success.
     // Callers still treat null as "couldn't enrich" but at least the

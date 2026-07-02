@@ -51,6 +51,9 @@ const UPDATABLE_KEYS = new Set([
   "ac_email",          // not actually a secret, but logically grouped with ac_* creds
   "ac_password",
   "ac_subscription_key",
+  "sanmar_customer_number",
+  "sanmar_username",
+  "sanmar_password",
 ]);
 
 Deno.serve(async (req) => {
@@ -79,8 +82,11 @@ Deno.serve(async (req) => {
         gmail: Boolean(profile.gmail_access_token),
         ss:    Boolean(profile.ss_account_number && profile.ss_api_key),
         ac:    Boolean(profile.ac_subscription_key),
+        sanmar: Boolean(profile.sanmar_customer_number && profile.sanmar_username && profile.sanmar_password),
         // ac_email isn't a secret, but the frontend wants to display it
         ac_email: profile.ac_email ?? null,
+        // Same for the SanMar username — shown as "connected as ..." in Account.
+        sanmar_username: profile.sanmar_username ?? null,
       });
     }
 
@@ -143,6 +149,8 @@ Deno.serve(async (req) => {
         clearFields = { ss_account_number: null, ss_api_key: null };
       } else if (provider === "ac") {
         clearFields = { ac_subscription_key: null, ac_email: null, ac_password: null };
+      } else if (provider === "sanmar") {
+        clearFields = { sanmar_customer_number: null, sanmar_username: null, sanmar_password: null };
       } else {
         return json({ error: `Unknown provider: ${provider}` }, 400);
       }
