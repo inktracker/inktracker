@@ -117,10 +117,13 @@ const fmtDate = (iso) =>
 const SIGNUP_URL = `${SITE.baseUrl}/?ref=blog&utm_source=blog&utm_medium=content`;
 // §5 standard CTA — fixed related links to /compare and /for-printers. Cross-post
 // links live in each post's body, not here.
-function ctaBlock() {
+function ctaBlock(post) {
+  const heading = post?.ctaHeading || "Stop pricing in a spreadsheet.";
+  const body = post?.ctaBody ||
+    "InkTracker runs this math on every quote automatically — blanks, colors, quantity breaks, and setup — so every job is priced right before it hits the press.";
   return `<div class="blog-cta">
-    <h3>Stop pricing in a spreadsheet.</h3>
-    <p>InkTracker runs this math on every quote automatically — blanks, colors, quantity breaks, and setup — so every job is priced right before it hits the press.</p>
+    <h3>${esc(heading)}</h3>
+    <p>${esc(body)}</p>
     <a class="cta" href="${SIGNUP_URL}">Start your 14-day free trial — no card</a>
     <div class="related">Related: <a href="/compare">the honest software buyer's guide</a> · <a href="/for-printers">InkTracker for printers</a></div>
   </div>`;
@@ -131,11 +134,11 @@ function ctaBlock() {
 // the inline JS only rebuilds data rows — keeps the JS free of backslash/`${}`
 // escaping inside this template literal. Each control is its own row with a
 // live value readout on the right.
-function sliderRow(key, label, hint, attrs) {
+function sliderRow(key, label, hint, attrs, initial = "–") {
   return `<div class="calc-row">
     <div class="calc-label"><b>${esc(label)}</b><span>${esc(hint)}</span></div>
     <input type="range" class="calc-slider" data-in="${key}" ${attrs} />
-    <output class="calc-val" data-val="${key}">–</output>
+    <output class="calc-val" data-val="${key}">${esc(initial)}</output>
   </div>`;
 }
 
@@ -172,33 +175,61 @@ function jobCalc() {
 }
 
 function chartCalc() {
+  // ── Static-first defaults (computed at build time so the grid + stats render
+  // without JS). base ≈ $6.36, 8-color/200 ≈ $8.15 with these defaults.
+  const D = { costs: 14000, shirts: 4000, margin: 45, vol: 10, color: 10 };
+  const m2n = (n) => "$" + (Math.round(n * 100) / 100).toFixed(2);
+  const m0n = (n) => "$" + Math.round(n).toLocaleString("en-US");
+  const ctn = (n) => Math.round(n).toLocaleString("en-US");
+  const cpp = D.costs / D.shirts;
+  const base = cpp / (1 - D.margin / 100);
+  const vd = D.vol / 100, ac = D.color / 100;
+  const tm = [1]; for (let i = 1; i < 4; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));
+  const cm = [1]; for (let c = 1; c < 8; c++) cm[c] = cm[c - 1] * (1 + ac * Math.pow(0.9, c - 1));
+  let defRows = "";
+  for (let ci = 0; ci < 8; ci++) {
+    const col = ci + 1;
+    defRows += `<tr><td class="rl">${col}${col === 1 ? " color" : " colors"}</td>`;
+    for (let qi = 0; qi < 4; qi++) defRows += `<td>${m2n(base * cm[ci] * tm[qi])}</td>`;
+    defRows += "</tr>";
+  }
+
   const controls =
-    sliderRow("overhead", "Monthly overhead", "rent, power, insurance, software, your pay", 'min="1500" max="16000" step="250" value="6000"') +
-    sliderRow("prints", "Prints per month", "how many prints you run", 'min="800" max="12000" step="100" value="3000"') +
-    sliderRow("one", "1-color print cost", "ink + labor for one color", 'min="1" max="5" step="0.05" value="2"') +
-    sliderRow("extra", "Cost per extra color", "each additional color adds this", 'min="0.15" max="1" step="0.05" value="0.45"') +
-    sliderRow("margin", "Target margin", "the profit slice you keep", 'min="15" max="60" step="1" value="45"');
-  // Static header: corner + quantity tiers [25,50,100,200] (match DEFAULT_TIERS).
+    sliderRow("costs", "Total monthly costs", "rent, power, supplies, your pay", 'min="1000" max="50000" step="500" value="14000"', m0n(D.costs)) +
+    sliderRow("shirts", "Shirts per month", "how many you print in a month", 'min="50" max="30000" step="50" value="4000"', ctn(D.shirts)) +
+    sliderRow("margin", "Target margin", "the profit slice you keep", 'min="10" max="75" step="1" value="45"', D.margin + "%") +
+    sliderRow("vol", "Volume discount", "knocked off at each size break", 'min="0" max="30" step="1" value="10"', D.vol + "%") +
+    sliderRow("color", "Added color", "each extra color adds", 'min="0" max="30" step="1" value="10"', D.color + "%");
+
+  const stats = `<div class="calc-out" style="grid-template-columns:repeat(2,1fr)">
+    <div class="calc-stat"><div class="k">Cost per print</div><div class="v" data-out="cpp">${m2n(cpp)}</div></div>
+    <div class="calc-stat"><div class="k">Base print price</div><div class="v" data-out="base">${m2n(base)}</div></div>
+  </div>`;
   const head = '<thead><tr><th>Colors \\ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead>';
-  const table = `<table class="calc-table">${head}<tbody data-grid></tbody></table>`;
+  const table = `<table class="calc-table">${head}<tbody data-grid>${defRows}</tbody></table>`;
+  const caption = `<p class="calc-note">Price per print. Garment and markup are added separately.</p>`;
+
   const script =
     '<script>(function(){var root=document.getElementById("calc-chart");if(!root)return;' +
-    'var COLORS=[1,2,3,4,5,6,7,8],TIERS=[25,50,100,200],QF={25:1.0,50:0.90,100:0.83,200:0.78};' +
     'function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}' +
     'function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}' +
     'function ct(n){return Math.round(n).toLocaleString("en-US");}' +
-    'var S={overhead:6000,prints:3000,one:2,extra:0.45,margin:45};' +
-    'function build(){var oph=S.overhead/S.prints;var mf=S.margin/100;var rows="";' +
-    'for(var c=0;c<COLORS.length;c++){var col=COLORS[c];rows+="<tr><td class=\\"rl\\">"+col+(col===1?" color":" colors")+"</td>";' +
-    'for(var t=0;t<TIERS.length;t++){var q=TIERS[t];var direct=(S.one+(col-1)*S.extra)*QF[q];var cost=oph+direct;var price=cost/(1-mf);rows+="<td>"+m2(price)+"</td>";}rows+="</tr>";}' +
+    'var S={costs:14000,shirts:4000,margin:45,vol:10,color:10};' +
+    'function model(){var cpp=S.costs/S.shirts;var base=cpp/(1-S.margin/100);var vd=S.vol/100,ac=S.color/100;' +
+    'var tm=[1];for(var i=1;i<4;i++)tm[i]=tm[i-1]*(1-vd*Math.pow(0.8,i-1));' +
+    'var cm=[1];for(var c=1;c<8;c++)cm[c]=cm[c-1]*(1+ac*Math.pow(0.9,c-1));' +
+    'return {cpp:cpp,base:base,tm:tm,cm:cm};}' +
+    'function build(){var M=model();var rows="";' +
+    'for(var ci=0;ci<8;ci++){var col=ci+1;rows+="<tr><td class=\\"rl\\">"+col+(col===1?" color":" colors")+"</td>";' +
+    'for(var qi=0;qi<4;qi++){rows+="<td>"+m2(M.base*M.cm[ci]*M.tm[qi])+"</td>";}rows+="</tr>";}' +
     'root.querySelector("[data-grid]").innerHTML=rows;' +
-    'var meq=Math.round(mf/(1-mf)*100);' +
-    'root.querySelector("[data-note]").textContent="Overhead adds "+m2(oph)+" to every print ("+m0(S.overhead)+" \\u00f7 "+ct(S.prints)+" prints). Each cell = cost \\u00f7 "+(1-mf).toFixed(2)+". Your "+S.margin+"% margin is a "+meq+"% markup \\u2014 not the same thing.";}' +
+    'root.querySelector("[data-out=\\"cpp\\"]").textContent=m2(M.cpp);' +
+    'root.querySelector("[data-out=\\"base\\"]").textContent=m2(M.base);}' +
     'function wire(k,t){var sl=root.querySelector("[data-in=\\""+k+"\\"]");var ov=root.querySelector("[data-val=\\""+k+"\\"]");' +
-    'function u(){S[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(S[k]):t==="m2"?m2(S[k]):t==="ct"?ct(S[k]):t==="pct"?(Math.round(S[k])+"%"):S[k];build();}' +
+    'function u(){S[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(S[k]):t==="ct"?ct(S[k]):t==="pct"?(Math.round(S[k])+"%"):S[k];build();}' +
     'sl.addEventListener("input",u);u();}' +
-    'wire("overhead","m0");wire("prints","ct");wire("one","m2");wire("extra","m2");wire("margin","pct");})();</script>';
-  return `<div class="calc" id="calc-chart">${controls}${table}<p class="calc-note" data-note>–</p></div>${script}`;
+    'wire("costs","m0");wire("shirts","ct");wire("margin","pct");wire("vol","pct");wire("color","pct");})();</script>';
+  return `<div class="calc" id="calc-chart">${controls}${stats}${table}${caption}</div>${script}`;
 }
 
 function embroideryCalc() {
@@ -317,7 +348,7 @@ ${siteHeader}
   <article class="post-body">
 ${bodyHtml}
   </article>
-  ${post.cta ? ctaBlock() : ""}
+  ${post.cta ? ctaBlock(post) : ""}
 </main>
 ${siteFooter}
 </body>
