@@ -48,7 +48,7 @@ footer.site{border-top:2px solid var(--ink);margin-top:2em;padding:24px 0;font-s
 footer.site a{color:var(--muted);margin-right:16px}
 .disclaimer{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);margin-top:3em;padding:18px 0}
 /* blog */
-.cat-tag{display:inline-block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--forest);background:#f0f5f1;border:1px solid #d6e4da;border-radius:999px;padding:3px 10px}
+.cat-tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--forest);border-radius:8px;padding:4px 10px}
 .post-meta{font-size:13px;color:var(--muted);margin-top:10px}
 .post-list{list-style:none;padding:0;margin:1.6em 0;display:grid;gap:16px}
 .post-list li{border:1px solid var(--hair);border-radius:12px;padding:20px 22px;transition:border-color .15s}
@@ -131,7 +131,7 @@ function ctaBlock(post) {
   return `<div class="blog-cta">
     <h3>${esc(heading)}</h3>
     <p>${esc(body)}</p>
-    <a class="cta" href="${SIGNUP_URL}">Start your 14-day free trial — no card</a>
+    <a class="cta" href="${SIGNUP_URL}">Start your 14-day free trial</a>
     <div class="related">Related: <a href="/compare">the honest software buyer's guide</a> · <a href="/for-printers">InkTracker for printers</a></div>
   </div>`;
 }
@@ -485,7 +485,7 @@ const DISCLAIMER_NEWSLETTER = `<!-- newsletter capture: phase 2 -->`;
 function renderForPrinters() {
   const canonical = `${SITE.baseUrl}/for-printers`;
   const title = "That quote was made in InkTracker — print shop software";
-  const desc = "The shop that sent you that quote runs quoting, production, and invoicing in one place — software built by a printer, for printers. Start a 14-day free trial, no card.";
+  const desc = "The shop that sent you that quote runs quoting, production, and invoicing in one place — software built by a printer, for printers. Start a 14-day free trial.";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -518,7 +518,7 @@ ${siteHeader}
   <div class="blog-cta">
     <h3>See why they switched.</h3>
     <p>Made by a working print shop. We use it every day.</p>
-    <a class="cta" href="${SITE.baseUrl}/?ref=quote">Start your 14-day free trial — no card</a>
+    <a class="cta" href="${SITE.baseUrl}/?ref=quote">Start your 14-day free trial</a>
     <div class="related">Or read <a href="${SITE.baseUrl}/compare">the honest software buyer's guide</a>.</div>
   </div>
 </main>
