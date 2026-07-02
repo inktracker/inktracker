@@ -457,6 +457,16 @@ function PublicLandingPage() {
                 at sm+) trims the button width on phones so it doesn't crash
                 into the centered wordmark. */}
             <div className="flex items-center gap-3 md:gap-4">
+              {/* Static marketing page (Vercel rewrite → /blog/index.html), so a
+                  plain <a> for a full navigation — NOT react-router <Link>,
+                  which would client-route into the SPA catch-all and 404. */}
+              <a
+                href="/blog"
+                className={`hidden sm:inline-block ${navLink}`}
+                style={{ color: INK }}
+              >
+                Learn
+              </a>
               <button
                 onClick={openLogin}
                 className={`hidden sm:inline-block ${navLink}`}
@@ -489,6 +499,10 @@ function PublicLandingPage() {
                     {label}
                   </button>
                 ))}
+                {/* Real route (static page) — plain <a>, not an anchor jump. */}
+                <a href="/blog" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE }}>
+                  Learn
+                </a>
                 <button onClick={() => { setMobileMenuOpen(false); openLogin(); }} className={`text-left py-4 sm:hidden ${navLink}`} style={{ color: INK }}>
                   Sign in
                 </button>
