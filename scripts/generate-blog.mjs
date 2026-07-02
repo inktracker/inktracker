@@ -108,6 +108,7 @@ const siteHeader = `<header class="site"><div class="wrap">
 
 const siteFooter = `<footer class="site"><div class="wrap">
   <a href="${SITE.baseUrl}/">InkTracker home</a><a href="${SITE.baseUrl}/blog">Blog</a><a href="${SITE.baseUrl}/compare">Software guide</a><a href="${SITE.baseUrl}/support">Support</a>
+  <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
 </div></footer>`;
 
 const ldJson = (obj) => `<script type="application/ld+json">\n${JSON.stringify(obj, null, 2)}\n</script>`;

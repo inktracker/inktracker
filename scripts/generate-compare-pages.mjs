@@ -76,6 +76,7 @@ const siteHeader = `<header class="site"><div class="wrap">
 
 const siteFooter = `<footer class="site"><div class="wrap">
   <a href="${SITE.baseUrl}/">InkTracker home</a><a href="${SITE.baseUrl}/#pricing">Pricing</a><a href="${SITE.baseUrl}/support">Support</a>
+  <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
 </div></footer>`;
 
 const DISCLAIMER = `<p class="disclaimer">This guide reflects publicly available information, last reviewed ${SITE.reviewed}. Product names and trademarks belong to their respective owners; details and pricing change — always confirm current specifics on each vendor's own website. InkTracker details reflect the live product.</p>`;
@@ -83,9 +84,12 @@ const DISCLAIMER = `<p class="disclaimer">This guide reflects publicly available
 const ldJson = (obj) => `<script type="application/ld+json">\n${JSON.stringify(obj, null, 2)}\n</script>`;
 
 function ctaBlock() {
+  // The Biota line is the "real shop runs on this" proof signal — soft
+  // trust, one sentence, never keyword-stuffed (SEO plan item 5).
   return `<div class="cta-block">
     <div class="price">${SITE.price}</div>
     <p>InkTracker: one plan, everything included. ${esc(SITE.trial)}.</p>
+    <p>Built and battle-tested in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
     <a class="cta" href="${SITE.baseUrl}/#pricing">Start your free trial</a>
   </div>`;
 }
