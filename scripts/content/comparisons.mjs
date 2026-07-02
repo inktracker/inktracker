@@ -12,6 +12,8 @@
 //  - Competitor blurbs are POSITIVE and fair — describe what each is good at,
 //    never a negative/"can't do" claim. Anything competitor-specific gets a
 //    human fact-check (see PR). `REVIEWED` stamps when that last happened.
+//  - The trial REQUIRES a card (since 2026-07-02) — never write "no card" /
+//    "no credit card". Enforced by scripts/__tests__/blogPosts.test.js.
 //
 // SEPARATION OF CONCERNS: this file is *content*. scripts/generate-compare-
 // pages.mjs is the *renderer*. Editing copy = edit here, re-run

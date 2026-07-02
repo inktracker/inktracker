@@ -6,6 +6,8 @@
 //   - Every InkTracker claim must be verifiable in the live product.
 //   - No negative claims about competitors. These posts teach pricing; they
 //     don't knock other tools.
+//   - The trial REQUIRES a card (since 2026-07-02) — never write "no card" /
+//     "no credit card". Enforced by scripts/__tests__/blogPosts.test.js.
 //
 // `body` is an ordered list of blocks the renderer understands:
 //   { type:'p', html }              — paragraph (html allowed; author-trusted)
