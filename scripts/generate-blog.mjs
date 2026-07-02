@@ -310,18 +310,23 @@ function renderPost(post) {
   const article = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
+    "@id": `${canonical}#post`,
     headline: post.title,
     description: post.description,
     image: post.ogImage || SITE.logo,
+    url: canonical,
+    inLanguage: "en-US",
+    isPartOf: { "@type": "Blog", "@id": `${SITE.baseUrl}/blog#blog` },
     datePublished: post.date,
     dateModified: post.updated || post.date,
-    author: { "@type": "Person", name: post.author, jobTitle: post.authorRole },
+    author: { "@type": "Person", name: post.author, jobTitle: post.authorRole, url: SITE.baseUrl },
     publisher: {
       "@type": "Organization",
       name: SITE.name,
+      url: SITE.baseUrl,
       logo: { "@type": "ImageObject", url: SITE.logo },
     },
-    mainEntityOfPage: canonical,
+    mainEntityOfPage: { "@type": "WebPage", "@id": canonical },
   };
   const breadcrumb = {
     "@context": "https://schema.org",
@@ -399,14 +404,24 @@ function renderIndex(posts) {
   const blogLd = {
     "@context": "https://schema.org",
     "@type": "Blog",
+    "@id": `${canonical}#blog`,
     name: "InkTracker Blog",
     url: canonical,
+    inLanguage: "en-US",
+    publisher: {
+      "@type": "Organization",
+      name: SITE.name,
+      url: SITE.baseUrl,
+      logo: { "@type": "ImageObject", url: SITE.logo },
+    },
     blogPost: posts.map((p) => ({
       "@type": "BlogPosting",
+      "@id": `${SITE.baseUrl}/blog/${p.slug}#post`,
       headline: p.title,
       url: `${SITE.baseUrl}/blog/${p.slug}`,
       datePublished: p.date,
-      author: { "@type": "Person", name: p.author },
+      dateModified: p.updated || p.date,
+      author: { "@type": "Person", name: p.author, url: SITE.baseUrl },
     })),
   };
   const title = "InkTracker Blog — pricing & running a print shop";
