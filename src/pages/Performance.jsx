@@ -47,6 +47,11 @@ export default function Performance() {
   const [qbRefreshing, setQbRefreshing] = useState(false);
   const [dateRange, setDateRange] = useState("thisMonth");
   const [loadError, setLoadError] = useState("");
+  // performance_stats RPC result — server-truth for the stat cards. The
+  // capped fetches below (1000 rows each) exist for the QB overlay + tax
+  // report and as the fallback when the RPC errors; computing card totals
+  // from them silently dropped a multi-year shop's oldest rows.
+  const [serverStats, setServerStats] = useState(null);
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -131,6 +136,22 @@ export default function Performance() {
     return { from: r.dateFrom || null, to: r.dateTo || null };
   }, [dateRange]);
 
+  // Server-side aggregates for the selected range. Refetches on range
+  // change; null (RPC failed) drops the cards back to the capped client
+  // math below. Also exact where the client couldn't be: the orphan
+  // cross-reference had to disable itself past the 1000-order cap.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.rpc("performance_stats", { p_from: from, p_to: to })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error("[Performance] performance_stats rpc failed:", error.message); setServerStats(null); return; }
+        setServerStats(data || null);
+      })
+      .catch((e) => { if (!cancelled) { console.error("[Performance] performance_stats rpc threw:", e); setServerStats(null); } });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
   // shop_performance is denormalized — a row is written when an order
   // completes (see buildOrderCompletionPlan.shopPerformanceCreate)
   // and is NOT cascade-deleted when the underlying order is later
@@ -164,8 +185,10 @@ export default function Performance() {
   }, [liveRecords, from, to]);
 
   // ── Stats ────────────────────────────────────────────────────────────────
-  const totalOrders = filteredRecords.length;
-  const grossSales  = filteredRecords.reduce((s, r) => s + (Number(r.total) || 0), 0);
+  // Server RPC first (aggregates over ALL history the caller can see);
+  // capped client math as fallback.
+  const totalOrders = serverStats?.period_orders_count ?? filteredRecords.length;
+  const grossSales  = serverStats?.period_gross_sales ?? filteredRecords.reduce((s, r) => s + (Number(r.total) || 0), 0);
   const aov         = totalOrders > 0 ? grossSales / totalOrders : 0;
 
   // Units sold = total garment pieces across completed orders in the
@@ -180,12 +203,13 @@ export default function Performance() {
     }
     return m;
   }, [orders]);
-  const totalUnits = useMemo(() => {
+  const clientUnits = useMemo(() => {
     return filteredRecords.reduce((sum, r) => {
       const o = ordersByOrderId.get(r.order_id);
       return sum + getOrderUnits(o);
     }, 0);
   }, [filteredRecords, ordersByOrderId]);
+  const totalUnits = serverStats?.period_units ?? clientUnits;
 
   const activeOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -193,10 +217,13 @@ export default function Performance() {
       return s && !COMPLETED_STATUSES.has(s) && !CANCELLED_STATUSES.has(s);
     });
   }, [orders]);
-  const activeCount = activeOrders.length;
-  const activeValue = activeOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const activeCount = serverStats?.active_orders_count ?? activeOrders.length;
+  const activeValue = serverStats?.active_orders_value ?? activeOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
 
-  const outstandingTotals = useMemo(() => computeOutstanding(invoices), [invoices]);
+  const clientOutstanding = useMemo(() => computeOutstanding(invoices), [invoices]);
+  const outstandingTotals = serverStats
+    ? { total: serverStats.outstanding_total, count: serverStats.outstanding_count }
+    : clientOutstanding;
 
   if (loading) {
     return (
