@@ -48,6 +48,7 @@ import {
   DRIFT_KINDS,
 } from "../_shared/qbReconcileLogic.js";
 import { buildQuotePatchFromFreshInvoice } from "../_shared/qbRefreshLogic.js";
+import { parseRetryAfterMs } from "../_shared/qbRateLimit.ts";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
 import {
   isInvoiceFullyPaid,
@@ -137,21 +138,30 @@ async function ensureFreshToken(adminClient: any, profile: any) {
   return accessToken;
 }
 
-// Minimal QB query — no retries here; one bad invoice doesn't tank
-// the cron. classifyQuoteDrift handles "not found" naturally and the
-// error is recorded per-quote.
+// Minimal QB query. 429s are retried honoring Retry-After (same
+// qbRateLimit helper qbSync uses) — without this, a rate-limited window
+// turned every remaining invoice in the run into a false "error"
+// classification and skipped its real reconciliation. Other errors still
+// throw so one bad invoice doesn't tank the cron (recorded per-quote).
 async function qbQuery(token: string, realmId: string, q: string) {
   const url = `${QB_BASE}/${realmId}/query?query=${encodeURIComponent(q)}&minorversion=65`;
-  const res = await fetch(url, {
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Accept":        "application/json",
-    },
-  });
-  if (!res.ok) {
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept":        "application/json",
+      },
+    });
+    if (res.ok) return await res.json();
+    if (res.status === 429 && attempt < MAX_ATTEMPTS - 1) {
+      const wait = parseRetryAfterMs(res.headers.get("retry-after")) ?? 1000 * 2 ** attempt;
+      await res.text().catch(() => "");
+      await new Promise((resolve) => setTimeout(resolve, wait));
+      continue;
+    }
     throw new Error(`QB query ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
-  return await res.json();
 }
 
 // ── One-shop reconciliation pass ─────────────────────────────────────
@@ -719,20 +729,37 @@ Deno.serve(async (req) => {
   console.error(`[qbReconcile] integrity: ${integrityResult.violations} violation(s), alerted=${integrityResult.alerted}`);
 
   try {
-    // Find every profile with QB connected. profile_secrets holds the
-    // tokens; profiles holds the role/shop_owner. We need both.
+    // Find every profile with QB connected, LEAST-recently-reconciled
+    // first (never-reconciled at the very front). Combined with the time
+    // budget below this makes the run self-sharding: shops the budget
+    // doesn't reach tonight keep their older stamp and lead tomorrow's
+    // run, so no shop can starve as shop count grows — the old
+    // iterate-everything loop just hit the edge wall-clock cap and
+    // silently dropped the tail.
     const { data: secretRows, error: secretErr } = await adminClient
       .from("profile_secrets")
-      .select("profile_id")
+      .select("profile_id, qb_last_reconciled_at")
       .not("qb_access_token", "is", null)
-      .not("qb_realm_id",     "is", null);
+      .not("qb_realm_id",     "is", null)
+      .order("qb_last_reconciled_at", { ascending: true, nullsFirst: true });
     if (secretErr) {
       return Response.json({ error: `profile_secrets query: ${secretErr.message}` }, { status: 500 });
     }
     const profileIds = (secretRows ?? []).map((r: any) => r.profile_id).filter(Boolean);
 
+    // Stop starting new shops once the budget is spent — safely under the
+    // edge function CPU/wall-clock cap, leaving headroom for the shop in
+    // flight to finish plus the digest/rollup writes after the loop.
+    const TIME_BUDGET_MS = Number(Deno.env.get("QB_RECONCILE_BUDGET_MS")) || 100_000;
+
     const shopResults: any[] = [];
+    let shopsSkipped = 0;
     for (const profileId of profileIds) {
+      if (Date.now() - startedAt > TIME_BUDGET_MS) {
+        shopsSkipped = profileIds.length - shopResults.length;
+        console.error(`[qbReconcile] time budget spent — deferring ${shopsSkipped} shop(s) to the next run`);
+        break;
+      }
       try {
         const profile = await loadProfileWithSecrets(adminClient, { id: profileId });
         // Owners have shop_owner=NULL (keyed by email) — accept shop_owner || email.
@@ -745,6 +772,13 @@ Deno.serve(async (req) => {
       } catch (err) {
         shopResults.push({ profileId, error: (err as Error)?.message });
       }
+      // Stamp even on error — a shop whose reconcile throws every night
+      // must not pin itself to the front of the queue and starve the rest.
+      // The per-shop error lands in shopResults/the rollup for operators.
+      await adminClient
+        .from("profile_secrets")
+        .update({ qb_last_reconciled_at: new Date().toISOString() })
+        .eq("profile_id", profileId);
     }
 
     const allClassifications = shopResults.flatMap((s: any) => s.classifications ?? []);
@@ -766,6 +800,7 @@ Deno.serve(async (req) => {
       status:       summary.errors > 0 ? "error" : "success",
       response_body: {
         shops: shopResults.length,
+        shops_skipped: shopsSkipped,
         summary,
         duration_ms: durationMs,
       },
@@ -775,6 +810,7 @@ Deno.serve(async (req) => {
     return Response.json({
       ok:       true,
       shops:    shopResults.length,
+      shops_skipped: shopsSkipped,
       summary,
       duration_ms: durationMs,
       alert:    alertResult,
