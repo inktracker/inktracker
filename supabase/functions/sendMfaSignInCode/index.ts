@@ -20,7 +20,7 @@ import { sendResendEmail } from "../_shared/resendClient.js";
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const RESEND_API_KEY    = Deno.env.get("RESEND_API_KEY");
-const SEND_FROM         = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
+const SEND_FROM         = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

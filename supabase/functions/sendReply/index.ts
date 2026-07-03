@@ -17,7 +17,7 @@ import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
+const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
