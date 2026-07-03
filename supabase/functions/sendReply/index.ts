@@ -13,6 +13,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import { renderEmailLayout, EMAIL_INK } from "../_shared/emailLayout.ts";
+import { sendResendEmail } from "../_shared/resendClient.js";
+import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
@@ -116,29 +118,36 @@ Deno.serve(async (req) => {
 
     const html = bodyToHtml(body, shopName, shopLogoUrl);
 
-    const results = await Promise.all(
-      toList.map(async (recipient: string) => {
-        const res = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: fromHeader,
-            to: [recipient],
-            subject: subject || "(no subject)",
-            html,
-            ...(safeReplyTo ? { reply_to: safeReplyTo } : {}),
-            // Bcc the shop owner so they have a copy in their inbox too.
-            ...(safeReplyTo ? { bcc: [safeReplyTo] } : {}),
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) console.error("[sendReply] Resend error:", data);
-        return { to: recipient, ok: res.ok, data };
-      })
+    // Sequential, retried sends via resendClient (was parallel bare fetches —
+    // a 429/5xx silently dropped the reply). Each attempt is logged so a
+    // "customer never saw my reply" report is answerable from data.
+    const logClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    const results: Array<{ to: string; ok: boolean; reason?: string | null }> = [];
+    for (const recipient of toList as string[]) {
+      const result = await sendResendEmail({
+        from: fromHeader,
+        to: [recipient],
+        subject: subject || "(no subject)",
+        html,
+        ...(safeReplyTo ? { reply_to: safeReplyTo } : {}),
+        // Bcc the shop owner so they have a copy in their inbox too.
+        ...(safeReplyTo ? { bcc: [safeReplyTo] } : {}),
+      }, { apiKey: RESEND_API_KEY });
+      await logNotificationAttempt(logClient, {
+        shop_owner: safeReplyTo || "unknown",
+        event_type: "reply",
+        recipient_email: recipient,
+        recipient_role: "customer",
+        subject: subject || "(no subject)",
+        status: result.ok ? "sent" : "failed",
+        failure_reason: result.ok ? null : result.reason,
+        resend_id: result.id ?? null,
+      });
+      results.push({ to: recipient, ok: result.ok, reason: result.reason });
+    }
 
     const allOk = results.every((r) => r.ok);
     return Response.json({ sent: allOk, results }, { headers: CORS });

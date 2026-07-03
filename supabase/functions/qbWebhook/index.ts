@@ -392,7 +392,18 @@ Deno.serve(async (req) => {
       return new Response("idempotency store unavailable", { status: 503, headers: CORS });
     }
 
-    await Promise.all(notifications.map((n: any) => processNotification(supabase, n)));
+    // Bounded concurrency (was an uncapped Promise.all). Each notification
+    // can trigger QB API calls + a Resend send; a large multi-entity batch
+    // fanning out simultaneously is the exact shape that trips Resend's
+    // ~2 req/s account limit and spikes concurrent QB token refreshes.
+    const NOTIFICATION_CONCURRENCY = 2;
+    for (let i = 0; i < notifications.length; i += NOTIFICATION_CONCURRENCY) {
+      await Promise.all(
+        notifications
+          .slice(i, i + NOTIFICATION_CONCURRENCY)
+          .map((n: any) => processNotification(supabase, n)),
+      );
+    }
 
     // QB expects a 200 response to confirm receipt
     return new Response("ok", { status: 200, headers: CORS });
