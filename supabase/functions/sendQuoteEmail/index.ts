@@ -178,13 +178,31 @@ Deno.serve(async (req) => {
         return Response.json({ error: "quoteId required" }, { status: 400, headers: CORS });
       }
       const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-      const { data: q } = await admin
+      let { data: q } = await admin
         .from("quotes")
         .select("shop_owner, broker_id, broker_name, broker_company, broker_email")
         .eq("quote_id", quoteId)
         .maybeSingle();
       if (!q) {
-        return Response.json({ error: "Quote not found" }, { status: 404, headers: CORS });
+        // Invoice sends reuse this function with quoteId = invoice.invoice_id.
+        // Invoices born from a quote share the quote's id and resolve above,
+        // but order-completion invoices carry generated INV-YYYY-XXXXX ids
+        // that exist only on the invoices table — without this fallback the
+        // ownership gate 404'd every one of those sends ("Quote not found").
+        // Same authorization semantics: the caller's shop must own the row.
+        const { data: inv } = await admin
+          .from("invoices")
+          .select("shop_owner")
+          .eq("invoice_id", quoteId)
+          .maybeSingle();
+        if (inv) {
+          // Invoices carry no broker identity columns; the brand resolution
+          // below treats them as direct shop documents.
+          q = { shop_owner: inv.shop_owner, broker_id: null, broker_name: null, broker_company: null, broker_email: null };
+        }
+      }
+      if (!q) {
+        return Response.json({ error: "Quote or invoice not found" }, { status: 404, headers: CORS });
       }
       const qShopOwner = String(q.shop_owner || "").toLowerCase();
       const email = caller?.email || "";
