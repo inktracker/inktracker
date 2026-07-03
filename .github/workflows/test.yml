@@ -1,10 +1,12 @@
 name: tests
 
+# push:main + pull_request covers everything once. The old push:["**"] +
+# pull_request:["**"] pair ran CI twice per push to a PR branch — every
+# failure meant two "run failed" emails.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
-    branches: ["**"]
 
 jobs:
   tests:
@@ -48,7 +50,17 @@ jobs:
       # of updating the lock, so a new/changed transitive dep can't ship
       # unpinned. npm: specifiers are already exact-pinned in source; this locks
       # the rest (deno.land/std, etc.).
+      # The Deno download flakes with "TypeError: fetch failed" on GitHub's
+      # runners (CDN hiccup) — one retry absorbs it instead of failing the run.
       - name: Set up Deno
+        id: setup-deno
+        continue-on-error: true
+        uses: denoland/setup-deno@909cc5acb0fdd60627fb858598759246509fa755 # v2
+        with:
+          deno-version: v2.x
+
+      - name: Set up Deno (retry)
+        if: steps.setup-deno.outcome == 'failure'
         uses: denoland/setup-deno@909cc5acb0fdd60627fb858598759246509fa755 # v2
         with:
           deno-version: v2.x
