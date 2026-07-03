@@ -18,10 +18,13 @@ import { sendResendEmail } from "./resendClient.js";
 // nothing user-visible). The 2026-05-31 "approval emails not
 // arriving" report.
 //
-// quotes@inktracker.app is verified end-to-end (SPF/DKIM/DMARC on
-// inktracker.app pointing at Resend). Any future sender address must
-// be added in Resend's dashboard before being used here.
-const SEND_FROM_DEFAULT = "quotes@inktracker.app";
+// The Resend-verified sending domain is info.inktracker.app — NOT the
+// root domain. This default previously pointed at quotes@inktracker.app
+// (root), and because APPROVAL_SEND_FROM was never set, every approval /
+// payment notification 403'd silently from June 1 to July 2, 2026. Any
+// future sender address must be added in Resend's dashboard before being
+// used here.
+const SEND_FROM_DEFAULT = "quotes@info.inktracker.app";
 
 // ── Recipient routing ───────────────────────────────────────────────
 //
@@ -264,7 +267,12 @@ export async function sendApprovalNotification({ to, subject, html, reply_to }, 
   // when the SLN2 test wired through to this code path.
   const runtimeEnv = env ?? (typeof Deno !== "undefined" ? Deno.env : undefined);
   const apiKey  = runtimeEnv?.get?.("RESEND_API_KEY") || "";
-  const sendFrom = runtimeEnv?.get?.("APPROVAL_SEND_FROM") || SEND_FROM_DEFAULT;
+  // Fall back to FROM_EMAIL — the secret every other sender reads — before
+  // the hardcoded default, so this path can never diverge from them again.
+  const sendFrom =
+    runtimeEnv?.get?.("APPROVAL_SEND_FROM") ||
+    runtimeEnv?.get?.("FROM_EMAIL") ||
+    SEND_FROM_DEFAULT;
 
   if (!apiKey)  return { ok: false, reason: "no_api_key" };
   if (!to)      return { ok: false, reason: "no_recipient" };

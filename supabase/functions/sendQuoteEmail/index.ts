@@ -19,7 +19,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 // Default to the verified InkTracker domain (SPF/DKIM/DMARC set up there).
 // biotamfg.co isn't an InkTracker sending domain; if FROM_EMAIL env var is
 // unset, fall back to inktracker.app so mail actually delivers.
-const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
+const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",

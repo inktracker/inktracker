@@ -85,7 +85,7 @@ const SUPABASE_KEY     = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // alert NEVER blocks reconciliation — it's monitoring, not the work.
 const OPERATOR_ALERT_EMAIL = Deno.env.get("OPERATOR_ALERT_EMAIL") ?? "";
 const RESEND_API_KEY       = Deno.env.get("RESEND_API_KEY") ?? "";
-const ALERT_FROM_EMAIL     = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
+const ALERT_FROM_EMAIL     = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 
 // Constant-time string compare. Used for the CRON_SECRET bearer
 // check below — `!==` short-circuits on the first mismatched byte
