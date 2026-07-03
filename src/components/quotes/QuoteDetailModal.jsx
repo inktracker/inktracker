@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { openSignedArtwork } from "@/lib/uploadFile";
+import { openSignedArtwork, uploadFile } from "@/lib/uploadFile";
 import {
   calcQuoteTotals,
   calcLinkedLinePrice,
@@ -446,14 +446,12 @@ export default function QuoteDetailModal({
     try {
       const newArtwork = [...localArtwork];
       for (const file of files) {
-        const ext = file.name.split(".").pop();
-        const path = `quote_${quote.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("artwork").upload(path, file, { upsert: false });
-        if (upErr) throw upErr;
-        // url is the public-FORM path-carrier (artwork bucket is private — M-1);
-        // store `path` as the canonical reference so readers sign from it directly.
-        const { data: { publicUrl } } = supabase.storage.from("artwork").getPublicUrl(path);
-        newArtwork.push({ id: path, name: file.name, path, url: publicUrl, note: "", source: "upload" });
+        // Shared helper: validates (extension/size/scriptable-SVG — this
+        // inline path skipped all of it) and writes the artwork_objects
+        // ownership row the read policy resolves through. file_url is the
+        // /artwork/ path-carrier; `path` stays the canonical reference.
+        const { path, file_url } = await uploadFile(file);
+        newArtwork.push({ id: path, name: file.name, path, url: file_url, note: "", source: "upload" });
       }
       await base44.entities.Quote.update(quote.id, { selected_artwork: newArtwork });
       setLocalArtwork(newArtwork);

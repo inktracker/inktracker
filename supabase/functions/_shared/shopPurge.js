@@ -63,23 +63,32 @@ export const ARTWORK_SOURCE_TABLES = Object.freeze([
   { table: "broker_files",     column: "shop_owner" },
 ]);
 
-// Pull artwork-bucket object paths out of a set of rows. Conservative: only
-// matches the explicit `/artwork/<path>` form (public or signed URLs, or stored
-// references), so we never delete an object a string merely resembles. Returns
-// a deduped array of bucket-relative paths (URL-decoded, query stripped).
+// Pull artwork-bucket object paths out of a set of rows. Conservative:
+// matches the explicit `/artwork/<path>` form (public or signed URLs, or
+// stored references) plus explicit `"path": "<name>"` fields — the legacy
+// order-modal uploads stored ONLY a bare path with no /artwork/ url, so the
+// /artwork/-only match orphaned those objects at purge. A string a path
+// merely resembles still never matches. Returns a deduped array of
+// bucket-relative paths (URL-decoded, query stripped).
 export function extractArtworkPaths(rows) {
   const found = new Set();
-  const re = /\/artwork\/([A-Za-z0-9._\-/]+)/g;
+  const patterns = [
+    /\/artwork\/([A-Za-z0-9._\-/]+)/g,
+    /"path"\s*:\s*"([A-Za-z0-9._\-/]+)"/g,
+  ];
   for (const row of Array.isArray(rows) ? rows : []) {
     let blob;
     try { blob = JSON.stringify(row); } catch { continue; }
     if (!blob) continue;
-    let m;
-    while ((m = re.exec(blob)) !== null) {
-      let p = m[1];
-      try { p = decodeURIComponent(p); } catch { /* keep raw */ }
-      p = p.split("?")[0].replace(/\/+$/, "");
-      if (p) found.add(p);
+    for (const re of patterns) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(blob)) !== null) {
+        let p = m[1];
+        try { p = decodeURIComponent(p); } catch { /* keep raw */ }
+        p = p.split("?")[0].replace(/\/+$/, "");
+        if (p) found.add(p);
+      }
     }
   }
   return [...found];
