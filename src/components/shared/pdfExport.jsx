@@ -1217,6 +1217,159 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output, custome
   return finalizePdf(doc, order, output, `Order-${order.order_id}.pdf`);
 }
 
+// Packing slip — itemized shipment document with NO pricing anywhere.
+// `finalQuantities` is { [lineIndex]: { [size]: number } } — the confirmed
+// ship counts from PackingSlipModal (order qty minus misprints, operator-
+// edited). Falls back to the line's ordered sizes when a line/size is
+// absent so the export also works standalone.
+export async function exportPackingSlipToPDF(order, shopName, logoUrl, output, customerCompany, finalQuantities) {
+  const jsPDF = await loadJsPDF();
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const isBrokerOrder = isBrokerQuote(order);
+  const displayJobTitle = getOrderPdfJobTitle(order);
+
+  // Same audience rules as the order form header: broker orders lead with
+  // the broker's company and reference the end client; direct orders lead
+  // with the customer's company.
+  let headerPrimary;
+  let headerSecondary;
+  if (isBrokerOrder) {
+    headerPrimary = order.broker_company || order.broker_name || order.broker_email || order.broker_id || "—";
+    const clientName = order.broker_client_name || order.customer_name;
+    headerSecondary = clientName ? `Reference: ${clientName}` : "";
+  } else {
+    headerPrimary = customerCompany || getOrderPdfClientName(order);
+    headerSecondary = customerCompany && order.customer_name
+      ? order.customer_name
+      : (displayJobTitle ? `Job: ${displayJobTitle}` : "");
+  }
+
+  let yPos = await addHeader(
+    doc,
+    'PACKING SLIP',
+    `${order.order_id}${order.quote_id ? ' · ' + order.quote_id : ''}`,
+    headerPrimary,
+    headerSecondary,
+    displayJobTitle && headerSecondary !== `Job: ${displayJobTitle}` ? `Job: ${displayJobTitle}` : null,
+    [
+      `Date: ${fmtDate(order.completed_date || order.order_date || order.date || new Date())}`,
+      order.due_date ? `In-hands: ${fmtDate(order.due_date)}` : null,
+    ].filter(Boolean).join('   ·   '),
+    shopName,
+    logoUrl,
+    "",
+    ""
+  );
+
+  // Ship-to block — order-level shipping columns win; fall back to the
+  // customer record's structured ship-to, then their legacy one-line address.
+  const shipLines = [];
+  if (order.shipping_address_street) {
+    shipLines.push(order.shipping_address_street);
+    const cityLine = [order.shipping_address_city, order.shipping_address_state, order.shipping_address_zip]
+      .filter(Boolean).join(', ');
+    if (cityLine) shipLines.push(cityLine);
+    if (order.shipping_address_country) shipLines.push(order.shipping_address_country);
+  }
+  if (shipLines.length > 0) {
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(100, 100, 120);
+    doc.text('SHIP TO', margin, yPos);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(50, 50, 70);
+    doc.text(shipLines, margin, yPos + 4.5);
+    yPos += 4.5 + shipLines.length * 4 + 4;
+  }
+
+  // Column header
+  doc.setFontSize(8);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(100, 100, 120);
+  doc.text('☐', margin + 1, yPos);
+  doc.text('ITEM', margin + 8, yPos);
+  doc.text('QTY', pageWidth - margin, yPos, { align: 'right' });
+  yPos += 2;
+  doc.setDrawColor(200, 200, 215);
+  doc.setLineWidth(0.3);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 5;
+
+  let grandTotal = 0;
+  (order.line_items || []).forEach((li, idx) => {
+    const confirmed = finalQuantities?.[idx];
+    const orderedSizes = li.sizes || {};
+    // Union of ordered sizes + any size the operator added in the modal.
+    const sizeKeys = [...new Set([...Object.keys(orderedSizes), ...Object.keys(confirmed || {})])];
+    const rows = sizeKeys
+      .map((s) => ({ size: s, qty: confirmed ? (parseInt(confirmed[s], 10) || 0) : (parseInt(orderedSizes[s], 10) || 0) }))
+      .filter((r) => r.qty > 0);
+    if (rows.length === 0) return;
+    const lineTotal = rows.reduce((sum, r) => sum + r.qty, 0);
+    grandTotal += lineTotal;
+
+    if (yPos > pageHeight - 30) { doc.addPage(); yPos = margin; }
+
+    // Check-off box per line for the packer.
+    doc.setDrawColor(150, 150, 170);
+    doc.setLineWidth(0.3);
+    doc.rect(margin, yPos - 3, 3.5, 3.5);
+
+    const title = [li.style, li.garmentColor || li.color].filter(Boolean).join(' — ') || 'Item';
+    const name = li.productName || li.description || li.garmentName || '';
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(30, 30, 40);
+    doc.text(title, margin + 8, yPos);
+    doc.setFontSize(10);
+    doc.text(String(lineTotal), pageWidth - margin, yPos, { align: 'right' });
+    yPos += 4.5;
+    if (name && name !== title) {
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(90, 90, 110);
+      const nameLines = doc.splitTextToSize(name, pageWidth - 2 * margin - 30);
+      doc.text(nameLines[0], margin + 8, yPos);
+      yPos += 4;
+    }
+    doc.setFontSize(8.5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(70, 70, 90);
+    doc.text(rows.map((r) => `${r.size}: ${r.qty}`).join('    '), margin + 8, yPos);
+    yPos += 6.5;
+  });
+
+  if (yPos > pageHeight - 25) { doc.addPage(); yPos = margin; }
+  doc.setDrawColor(180, 180, 200);
+  doc.setLineWidth(0.5);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 6;
+  doc.setFontSize(11);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(20, 20, 30);
+  doc.text('TOTAL UNITS', margin, yPos);
+  doc.text(String(grandTotal), pageWidth - margin, yPos, { align: 'right' });
+  yPos += 8;
+
+  if (order.notes) {
+    if (yPos > pageHeight - 30) { doc.addPage(); yPos = margin; }
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(100, 100, 120);
+    doc.text('Notes:', margin, yPos);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(70, 70, 90);
+    doc.text(doc.splitTextToSize(order.notes, pageWidth - 2 * margin), margin, yPos + 4.5);
+  }
+
+  // Empty record → finalizePdf/appendArtwork skip artwork pages; a packing
+  // slip travels in the box, not with the customer's source files.
+  return finalizePdf(doc, {}, output, `PackingSlip-${order.order_id}.pdf`);
+}
+
 // QB-style invoice layout — clean tabular DESCRIPTION/QTY/RATE/AMOUNT rows
 // instead of the colored-bar-per-size layout. Accepts an options object so
 // the caller can pass full shop profile info (address, phone, email, website).
