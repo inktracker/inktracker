@@ -59,6 +59,12 @@ jobs:
         with:
           deno-version: v2.x
 
+      # Back-to-back attempts have both failed inside the same outage window
+      # (run 28629984391) — wait out a short CDN blip before retrying.
+      - name: Wait before Deno retry
+        if: steps.setup-deno.outcome == 'failure'
+        run: sleep 30
+
       - name: Set up Deno (retry)
         if: steps.setup-deno.outcome == 'failure'
         uses: denoland/setup-deno@909cc5acb0fdd60627fb858598759246509fa755 # v2
