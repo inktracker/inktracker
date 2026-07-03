@@ -480,4 +480,71 @@ export const POSTS = Object.freeze([
       },
     ],
   },
+
+  // ── Post 8 — Print shop workflow ─────────────────────────────────────────
+  // SEO plan priority #3 (quote → production → invoice, tied to the product)
+  // + keyword-bank "print shop workflow" (20/mo, 0 difficulty). The walked
+  // job is real but anonymized — never name customers in posts. Product
+  // claims verified: approve/pay quote link, quote→order conversion,
+  // production calendar/schedule, completion → invoice, QB payment flow.
+  {
+    slug: "print-shop-workflow",
+    title: "The print shop workflow that stops jobs from falling through the cracks",
+    description:
+      "Jobs don't die at the press — they die in the handoffs. The five handoffs every job makes from first email to money in the bank, where each one leaks, and one real job walked all the way through.",
+    category: "Production",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-07-03",
+    readMin: 6,
+    ogImage: SITE.logo,
+    cta: true,
+    ctaHeading: "One record, first email to paid.",
+    ctaBody:
+      "InkTracker carries the job through every handoff — quote, approval, production, invoice, QuickBooks — without retyping or a whiteboard. We run our own shop on it every day.",
+    body: [
+      { type: "p", html: "Nobody loses a job at the press. The press is the easy part — ink goes on the shirt, the shirt goes in the box. Jobs die in the <b>handoffs</b>: the gap between the email and the quote, the quote and the yes, the yes and the press schedule, the box and the invoice. Every one of those gaps used to be covered in my shop by a whiteboard, a spreadsheet, and me remembering things. Two of those three are bad at their jobs, and the whiteboard can't send email." },
+      { type: "p", html: "Whatever you run your shop on — software, paper, memory — the workflow is the same five handoffs. Name them and you can see exactly where yours leaks." },
+
+      { type: "h2", text: "The five handoffs" },
+      { type: "ul", items: [
+        "<b>1. Inquiry → quote.</b> Someone wants shirts; you owe them a number. Leak: the email sits for three days because quoting means opening four supplier tabs and a calculator. Speed wins jobs here — the first decent quote usually gets the order.",
+        "<b>2. Quote → approval.</b> The customer says yes. Leak: they say it on the phone, or in a text, or with a thumbs-up emoji — and three weeks later they \"never approved that.\" An approval isn't real until it's recorded, and the strongest record is the customer clicking approve on the quote itself.",
+        "<b>3. Approval → production.</b> The yes becomes a scheduled job with a due date, goods ordered, art proofed. Leak: the blanks get ordered late because approval lived in your inbox and the supplier order lived in your head. This is the handoff that turns into rush-shipping fees.",
+        "<b>4. Production → done.</b> The job moves through the steps — art approval, goods in, press, boxed. Leak: nobody can answer \"where's my order?\" without walking the floor. Every one of those calls interrupts the person answering AND the person printing.",
+        "<b>5. Done → paid.</b> The shirts ship, the invoice goes out, the money lands, the books record it. Leak: the job that shipped and never got invoiced. Every shop that bills after delivery has done this at least once; most find out months later, and some never do.",
+      ] },
+      { type: "callout", title: "Audit your own shop in five minutes", html: "For each handoff, ask one question: \"If I got sick tomorrow, would this step still happen?\" Any handoff that lives in your head or your inbox is a no. That's your leak list, ranked worst-first." },
+
+      { type: "h2", text: "One real job, walked through" },
+      { type: "p", html: "Here's a recent one from my shop — a supply company's shirt order, names left off. The email came in with art attached. The quote went out the same morning with an approve-and-pay link on it; the customer clicked approve and paid through the invoice link without either of us touching a phone. The moment payment landed, the quote became an order — same record, new stage, nothing retyped — and showed up on the production calendar with its due date." },
+      { type: "p", html: "Art proof went out from the order and came back approved — clicked, stamped with who and when, not \"yeah looks good\" on a call. Goods were ordered against the job. It ran, got marked complete, and the completion date is sitting on the calendar as history: what shipped when. The invoice was already in QuickBooks from the approval step, already paid, already matched to the right customer. Total administrative touches by a human: sending the quote, ordering the blanks, pressing print. Everything else was the job carrying itself between stages." },
+      { type: "p", html: "The point isn't that software is magic. It's that <b>the job never changed systems</b>. Every handoff above leaks exactly when the job jumps containers — inbox to whiteboard, whiteboard to spreadsheet, spreadsheet to QuickBooks — because every jump is a human retyping under distraction. Kill the jumps and the leaks go with them." },
+
+      { type: "h2", text: "If you're on a whiteboard today" },
+      { type: "p", html: "A whiteboard is honestly a fine production board — it fails as a <i>system of record</i>. If software isn't in the cards yet, patch the two worst leaks first: get approvals in writing (email reply minimum — \"reply APPROVED to this email\" costs nothing), and keep one list of every job that's shipped but not invoiced, checked weekly. Those two habits are most of the money. The rest of the workflow — quoting speed, status visibility, books that match reality — is what shop software is actually for, and it's the difference you feel at 30+ jobs a month when the whiteboard stops fitting in your head. <a href=\"/blog/screen-printing-software-honest-comparison\">Choosing that software honestly is its own post</a>." },
+    ],
+    related: [
+      { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a screen printing job" },
+      { href: "/blog/quickbooks-for-screen-printers", text: "QuickBooks for screen printers" },
+    ],
+    faqs: [
+      {
+        q: "What is a print shop workflow?",
+        a: "The path every job takes from first contact to money in the bank: inquiry → quote → approval → production → delivery → invoice → paid. Every shop has one whether it's written down or not — the difference is whether the handoffs between stages are recorded somewhere or living in someone's head.",
+      },
+      {
+        q: "Where do print shop jobs most often fall through the cracks?",
+        a: "At the handoffs, not the press. The most expensive leaks: quotes that never get followed up, verbal approvals with no record, blanks ordered late because approval lived in an inbox, and jobs that ship but never get invoiced. Each one is a handoff where the job changed containers and a human had to remember to carry it.",
+      },
+      {
+        q: "Can I run a print shop on a whiteboard and spreadsheet?",
+        a: "Plenty of shops do, and a whiteboard is a genuinely good production board. It breaks down as a system of record: it can't send a quote, record an approval, or tell you what shipped without being invoiced. The pain arrives with volume — around a few dozen jobs a month, the shop stops fitting in one person's head.",
+      },
+      {
+        q: "When should a shop get workflow software?",
+        a: "When the leaks start costing real money: a missed invoice, a rush-shipping fee because goods were ordered late, a customer dispute over what was approved. If you're patching those with discipline and it's holding, keep your money. When the same leak bites twice, the software pays for itself on the third save.",
+      },
+    ],
+  },
 ]);
