@@ -1140,7 +1140,7 @@ function PendingApprovalPage() {
           </div>
 
           <h1 className="text-3xl font-bold text-slate-900">
-            Account pending review
+            Setting up your account
           </h1>
 
           <p className="text-base text-slate-600 mt-4 leading-7">
@@ -1151,13 +1151,13 @@ function PendingApprovalPage() {
         <div className="px-8 pb-10">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-6 py-6">
             <p className="text-sm text-slate-700 leading-7">
-              We review new accounts within 1 business day. You'll automatically get access as soon as you're approved — no need to do anything else.
+              We're finishing your account setup — this usually takes a few seconds. If this page doesn't move on its own, sign out and back in.
             </p>
           </div>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-slate-500 leading-6">
-              This page checks for approval automatically every 30 seconds.
+              This page checks automatically every 30 seconds.
             </p>
             {user?.email ? (
               <p className="text-sm text-slate-500 leading-6 mt-2">
@@ -1470,15 +1470,16 @@ const AuthenticatedApp = () => {
   return (
     <>
       <AppRoutes />
-      {isExpired && (
+      {/* neverSubscribed is handled by the teal TrialStatusBanner at the top
+          of Layout — showing this red strip too gave one user two
+          contradictory banners at once. This one is only for real expiries. */}
+      {isExpired && !neverSubscribed && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-red-600 text-white px-4 py-3 flex items-center justify-center gap-4 shadow-lg">
           <span className="text-sm font-semibold">
-            {neverSubscribed
-              ? "Add a payment method to start your 14-day free trial and unlock InkTracker."
-              : "Your trial has expired. Upgrade to keep creating quotes and orders."}
+            Your trial has expired. Upgrade to keep creating quotes and orders.
           </span>
           <a href="/Account?billing=1" className="bg-white text-red-700 font-bold text-sm px-4 py-1.5 rounded-lg hover:bg-red-50 transition">
-            {neverSubscribed ? "Start free trial" : "View Plans"}
+            View Plans
           </a>
         </div>
       )}

@@ -102,7 +102,11 @@ export default function BillingSection({ user }) {
   }
 
   const tier = sub?.tier || "trial";
-  const hasPaidPlan = tier !== "trial" && tier !== "expired";
+  // Only 'shop' has a Stripe subscription behind it — 'incomplete' (no card
+  // yet) used to slip through the old !== trial/expired check and got a
+  // "Manage Billing" button that opened an empty portal.
+  const hasPaidPlan = tier === "shop";
+  const neverSubscribed = tier === "incomplete";
 
   return (
     <div className="space-y-4">
@@ -157,7 +161,11 @@ export default function BillingSection({ user }) {
             </div>
             <button onClick={() => handleCheckout(plan.billing)} disabled={!!checkoutLoading}
               className="w-full text-xs font-bold py-2.5 rounded-lg transition disabled:opacity-50 text-white bg-teal-600 hover:bg-teal-700">
-              {checkoutLoading === plan.billing ? "Loading..." : `Subscribe ${plan.name.toLowerCase()}`}
+              {checkoutLoading === plan.billing
+                ? "Loading..."
+                : neverSubscribed
+                  ? "Start 14-day free trial"
+                  : `Subscribe ${plan.name.toLowerCase()}`}
             </button>
           </div>
         ))}

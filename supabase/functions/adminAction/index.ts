@@ -337,10 +337,11 @@ serve(async (req) => {
               shop_owner: user.email,
             };
             if (assignRole === "broker" || assignRole === "manager" || assignRole === "employee") updatePayload.assigned_shops = assignedShops;
-            await adminClient
+            const { error: updateErr } = await adminClient
               .from("profiles")
               .update(updatePayload)
               .eq("id", existingByAuth.id);
+            if (updateErr) throw updateErr;
           } else {
             const insertPayload: any = {
               auth_id: invitedAuthId,
@@ -351,10 +352,25 @@ serve(async (req) => {
               shop_owner: user.email,
             };
             if (assignRole === "broker" || assignRole === "manager" || assignRole === "employee") insertPayload.assigned_shops = assignedShops;
-            await adminClient.from("profiles").insert(insertPayload);
+            const { error: insertErr } = await adminClient.from("profiles").insert(insertPayload);
+            if (insertErr) throw insertErr;
           }
         } catch (profileErr) {
-          console.error("Profile create/update failed (invite was sent):", profileErr);
+          // Do NOT return { invited: true } here. handle_new_user created this
+          // auth user as a fresh SHOP OWNER (role 'shop', tier 'incomplete');
+          // if the corrective role/shop_owner update fails, the invitee would
+          // land in the onboarding wizard as a stranded fake owner instead of
+          // joining this shop. Supabase's .update() doesn't throw — it returns
+          // { error } — which is why the old catch never even fired on a DB
+          // failure. Surface it so the admin re-sends the invite (the retry
+          // hits the existingByAuth branch and repairs the profile).
+          console.error("Invite role assignment failed:", profileErr);
+          return new Response(JSON.stringify({
+            error: "Invite email was sent, but assigning their role failed. Send the invite again to the same address to fix it.",
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
 
         return new Response(JSON.stringify({ invited: true, email: cleanEmail, role: assignRole }), {

@@ -113,7 +113,9 @@ export function resolveTeamSubscription(profile, ownerSub) {
 }
 
 export function getTierLabel(tier) {
-  const labels = { trial: "Free Trial", shop: "Shop", expired: "Expired" };
+  // 'incomplete' = card-required signup that hasn't added a payment method
+  // yet (BILL-01). It's not expired — their trial never started.
+  const labels = { trial: "Free Trial", shop: "Shop", expired: "Expired", incomplete: "No plan yet" };
   return labels[tier] || tier;
 }
 
@@ -122,6 +124,7 @@ export function getTierColor(tier) {
     trial: "bg-teal-100 text-teal-700",
     shop: "bg-green-100 text-green-700",
     expired: "bg-red-100 text-red-700",
+    incomplete: "bg-slate-100 text-slate-600",
   };
   return colors[tier] || "bg-slate-100 text-slate-600";
 }
