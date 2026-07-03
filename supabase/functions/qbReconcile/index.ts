@@ -68,6 +68,11 @@ import {
   buildQbErrorDigestHtml,
 } from "../_shared/qbErrorDigest.js";
 import {
+  summarizeNotificationFailures,
+  shouldSendEmailHealthAlert,
+  buildEmailHealthAlertText,
+} from "../_shared/emailHealthAlert.js";
+import {
   shouldSendIntegrityAlert,
   buildIntegrityAlertText,
 } from "../_shared/dataIntegrity.js";
@@ -701,6 +706,70 @@ async function alertWebhookHealth(adminClient: any, paidNotRecorded: number): Pr
   }
 }
 
+// ── Email-delivery health alert ─────────────────────────────────────
+// Reads notification_log for the last 24h and emails the OPERATOR when any
+// notification send failed. The blind spot this closes: every shop-owner
+// notification 403'd silently for a month (June 1 → July 2, 2026) because
+// nothing watched the log. OPERATOR-ONLY: the text names shops and secrets
+// to check — it must never route to a shop owner, so the recipient is
+// strictly OPERATOR_ALERT_EMAIL and the scan skips when that's unset.
+// Same shape as the scans above: 24h dedup via qb_event_log, failures
+// swallowed (monitoring, not the work).
+async function scanAndAlertEmailHealth(adminClient: any): Promise<{ failed: number; alerted: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { failed: 0, alerted: false };
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: rows, error } = await adminClient
+      .from("notification_log")
+      .select("status, failure_reason, event_type, shop_owner")
+      .gte("created_at", since)
+      .limit(500);
+    if (error) {
+      console.warn("[qbReconcile] email-health scan failed:", error.message);
+      return { failed: 0, alerted: false };
+    }
+    const summary = summarizeNotificationFailures(rows ?? []);
+    if (!shouldSendEmailHealthAlert(summary)) {
+      return { failed: 0, alerted: false };
+    }
+    // Once-per-day dedup — a broken sender nudges daily, not per run.
+    const { data: recent } = await adminClient
+      .from("qb_event_log")
+      .select("id")
+      .eq("action", "email_health_alert")
+      .gte("created_at", since)
+      .limit(1)
+      .maybeSingle();
+    if (recent) return { failed: summary.failed, alerted: false };
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: `InkTracker <${ALERT_FROM_EMAIL}>`,
+        to: [OPERATOR_ALERT_EMAIL],
+        subject: `[InkTracker] Notification emails failing — ${summary.failed} failed send(s) in 24h`,
+        text: buildEmailHealthAlertText(summary),
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[qbReconcile] email-health alert send failed: ${res.status} ${await res.text()}`);
+      return { failed: summary.failed, alerted: false };
+    }
+    await logEvent(adminClient, {
+      shop_owner:    "__system__",
+      action:        "email_health_alert",
+      direction:     "outbound",
+      status:        "success",
+      response_body: { failed: summary.failed, by_reason: summary.byReason },
+    });
+    return { failed: summary.failed, alerted: true };
+  } catch (err) {
+    console.warn("[qbReconcile] email-health scan exception:", (err as Error)?.message);
+    return { failed: 0, alerted: false };
+  }
+}
+
 // ── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -727,6 +796,8 @@ Deno.serve(async (req) => {
   const alertResult = await scanAndAlertQbErrors(adminClient);
   const integrityResult = await scanAndAlertDataIntegrity(adminClient);
   console.error(`[qbReconcile] integrity: ${integrityResult.violations} violation(s), alerted=${integrityResult.alerted}`);
+  const emailHealth = await scanAndAlertEmailHealth(adminClient);
+  console.error(`[qbReconcile] email-health: ${emailHealth.failed} failed send(s) in 24h, alerted=${emailHealth.alerted}`);
 
   try {
     // Find every profile with QB connected, LEAST-recently-reconciled
