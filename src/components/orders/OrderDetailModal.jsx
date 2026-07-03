@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import ArtworkPreviewOverlay from "../shared/ArtworkPreviewOverlay";
 import SendInvoiceModal from "../invoices/SendInvoiceModal";
+import PackingSlipModal from "./PackingSlipModal";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import CollapsibleSection from "../shared/CollapsibleSection";
@@ -150,6 +151,8 @@ export default function OrderDetailModal({
   // when there's nothing to pick from.
   const [presses, setPresses] = useState([]);
   const [employees, setEmployees] = useState([]);
+  // Packing slip confirm-quantities modal (Completed orders only).
+  const [showPackingSlip, setShowPackingSlip] = useState(false);
 
   // Shipping — FedEx state + handlers extracted into a hook.
   const {
@@ -732,6 +735,7 @@ export default function OrderDetailModal({
             advanceWithGoodsGuard={advanceWithGoodsGuard}
             handleCreateInvoice={handleCreateInvoice}
             handleOpenSend={handleOpenSend}
+            onCreateSlip={() => setShowPackingSlip(true)}
           />
 
           <OrderUtilityActions
@@ -765,6 +769,18 @@ export default function OrderDetailModal({
           customer={sendCustomer}
           onClose={() => setSendingInvoice(false)}
           onSuccess={() => { lookupRelatedInvoice(); }}
+        />
+      )}
+
+      {/* Conditional mount so quantities re-initialize from the order's
+          current sizes/_shortfall on every open (modal prop-state rule). */}
+      {showPackingSlip && (
+        <PackingSlipModal
+          order={liveOrder}
+          customer={customer}
+          shopName={shopName}
+          logoUrl={logoUrl}
+          onClose={() => setShowPackingSlip(false)}
         />
       )}
     </div>,

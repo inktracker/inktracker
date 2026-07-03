@@ -1,4 +1,4 @@
-import { MessageSquare, CheckCircle2 } from "lucide-react";
+import { MessageSquare, CheckCircle2, Package } from "lucide-react";
 
 // Row 1 of the Order Detail footer: workflow actions (status flow +
 // invoice create/preview/send + QB link + mark-paid + close) and the
@@ -23,6 +23,7 @@ export default function OrderInvoiceActions({
   advanceWithGoodsGuard,
   handleCreateInvoice,
   handleOpenSend,
+  onCreateSlip,
 }) {
   return (
     <>
@@ -96,6 +97,17 @@ export default function OrderInvoiceActions({
             className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50"
           >
             {creatingInvoice ? "Creating…" : "Create Invoice"}
+          </button>
+        )}
+        {/* Packing slip — finished orders only. Opens the confirm-quantities
+            modal (ordered minus recorded misprints, editable) before the
+            price-free PDF preview. */}
+        {order.status === "Completed" && onCreateSlip && (
+          <button
+            onClick={onCreateSlip}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-300 bg-teal-50 hover:bg-teal-100 rounded-xl transition"
+          >
+            <Package className="w-4 h-4" /> Create Slip
           </button>
         )}
         {onTogglePaid && (
