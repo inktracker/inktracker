@@ -59,3 +59,31 @@ describe("dashboard_stats RPC — status literals stay in lockstep with JS", () 
     expect(last.sql).toMatch(/revoke\s+all[^;]*dashboard_stats[^;]*from\s+public/i);
   });
 });
+
+describe("performance_stats RPC — status literals stay in lockstep with Performance.jsx", () => {
+  const last = lastFileDefining("performance_stats");
+
+  it("has an effective migration", () => {
+    expect(last, "no migration defines performance_stats").toBeTruthy();
+  });
+
+  it("mirrors COMPLETED_STATUSES and CANCELLED_STATUSES", () => {
+    // Performance.jsx line ~14: Completed/Shipped/Delivered/Picked Up and
+    // Cancelled/Canceled/Voided — note the one-L 'Canceled' variant.
+    for (const status of ["Completed", "Shipped", "Delivered", "Picked Up", "Cancelled", "Canceled", "Voided"]) {
+      expect(last.sql, `missing status '${status}'`).toContain(`'${status}'`);
+    }
+  });
+
+  it("keeps the orphan cross-reference (deleted orders must not keep counting)", () => {
+    expect(last.sql).toMatch(/exists\s*\(\s*select\s+1\s+from\s+public\.orders/i);
+  });
+
+  it("is RLS-scoped (SECURITY INVOKER) and authenticated-only", () => {
+    const body = last.sql.match(/function\s+public\.performance_stats[\s\S]*?\$\$;/i)?.[0] || "";
+    expect(body).toBeTruthy();
+    expect(body).not.toMatch(/security\s+definer/i);
+    expect(last.sql).toMatch(/grant\s+execute[^;]*performance_stats[^;]*authenticated/i);
+    expect(last.sql).toMatch(/revoke\s+all[^;]*performance_stats[^;]*from\s+public/i);
+  });
+});
