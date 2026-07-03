@@ -58,3 +58,36 @@ describe("blog — generated output in sync with content", () => {
     }
   });
 });
+
+describe("blog index — ordering and category filter", () => {
+  const index = () => read("public", "blog", "index.html");
+
+  it("lists posts newest first (same-day ties: later POSTS entry first)", () => {
+    const expected = [...POSTS]
+      .sort((a, b) => b.date.localeCompare(a.date) || POSTS.indexOf(b) - POSTS.indexOf(a))
+      .map((p) => p.slug);
+    const listed = [...index().matchAll(/<h2><a href="[^"]*\/blog\/([^"]+)">/g)].map((m) => m[1]);
+    expect(listed).toEqual(expected);
+  });
+
+  it("renders one filter chip per category plus All, and tags every card", () => {
+    const html = index();
+    const chips = [...html.matchAll(/data-filter="([^"]+)"/g)].map((m) => m[1]);
+    expect(chips[0]).toBe("*");
+    expect(new Set(chips.slice(1))).toEqual(new Set(POSTS.map((p) => p.category)));
+    for (const post of POSTS) {
+      expect(html, `card for ${post.slug} carries data-category`).toContain(
+        `<li data-category="${post.category}">`,
+      );
+    }
+  });
+
+  it("keeps every card in the static HTML (filter is client-side show/hide only)", () => {
+    const html = index();
+    for (const post of POSTS) {
+      expect(html, `${post.slug} must stay crawlable on the index`).toContain(
+        `/blog/${post.slug}`,
+      );
+    }
+  });
+});

@@ -49,6 +49,11 @@ footer.site a{color:var(--muted);margin-right:16px}
 .disclaimer{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);margin-top:3em;padding:18px 0}
 /* blog */
 .cat-tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--forest);border-radius:8px;padding:4px 10px}
+.cat-filter{display:flex;flex-wrap:wrap;gap:8px;margin:1.4em 0 0}
+.cat-filter .chip{font:inherit;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);background:#f2f2f2;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;transition:background .15s,color .15s}
+.cat-filter .chip:hover{background:#e6e6e6}
+.cat-filter .chip.is-active{background:var(--forest);color:#fff}
+.cat-filter .chip:focus-visible{outline:2px solid var(--forest);outline-offset:2px}
 .post-meta{font-size:13px;color:var(--muted);margin-top:10px}
 .post-list{list-style:none;padding:0;margin:1.6em 0;display:grid;gap:16px}
 .post-list li{border:1px solid var(--hair);border-radius:12px;padding:20px 22px;transition:border-color .15s}
@@ -401,7 +406,7 @@ function renderIndex(posts) {
   const canonical = `${SITE.baseUrl}/blog`;
   const cards = posts
     .map(
-      (p) => `<li>
+      (p) => `<li data-category="${esc(p.category)}">
       <span class="cat-tag">${esc(p.category)}</span>
       <h2><a href="${SITE.baseUrl}/blog/${p.slug}">${esc(p.title)}</a></h2>
       <p>${esc(p.description)}</p>
@@ -409,6 +414,33 @@ function renderIndex(posts) {
     </li>`,
     )
     .join("\n");
+  // Filter chips — one per category that actually has posts, in the order
+  // categories first appear (newest post first). Pure client-side show/hide:
+  // every card stays in the HTML, so crawlers and no-JS readers see all posts.
+  const categories = [...new Set(posts.map((p) => p.category))];
+  const filterChips = `<div class="cat-filter" role="group" aria-label="Filter posts by topic">
+    <button type="button" class="chip is-active" data-filter="*" aria-pressed="true">All</button>
+${categories.map((c) => `    <button type="button" class="chip" data-filter="${esc(c)}" aria-pressed="false">${esc(c)}</button>`).join("\n")}
+  </div>`;
+  const filterScript = `<script>
+(function () {
+  var chips = document.querySelectorAll(".cat-filter .chip");
+  var cards = document.querySelectorAll(".post-list li");
+  chips.forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      var want = chip.getAttribute("data-filter");
+      chips.forEach(function (c) {
+        var on = c === chip;
+        c.classList.toggle("is-active", on);
+        c.setAttribute("aria-pressed", on ? "true" : "false");
+      });
+      cards.forEach(function (card) {
+        card.hidden = want !== "*" && card.getAttribute("data-category") !== want;
+      });
+    });
+  });
+})();
+</script>`;
   const breadcrumb = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -468,12 +500,14 @@ ${siteHeader}
   <nav class="crumbs"><a href="${SITE.baseUrl}/">Home</a> › Blog</nav>
   <h1>The InkTracker Blog</h1>
   <p class="lede">How to price your work, run the money side, and get jobs out the door — written by a working print shop, not a marketing team.</p>
+  ${filterChips}
   <ul class="post-list">
 ${cards}
   </ul>
   ${DISCLAIMER_NEWSLETTER}
 </main>
 ${siteFooter}
+${filterScript}
 </body>
 </html>`;
 }
@@ -553,7 +587,12 @@ function syncSitemap(posts) {
 
 // ── write ────────────────────────────────────────────────────────────────────
 mkdirSync(join(PUBLIC, "blog"), { recursive: true });
-writeFileSync(join(PUBLIC, "blog", "index.html"), renderIndex(POSTS));
+// Index lists newest first. Same-day posts tiebreak by array position,
+// later entry first — POSTS is append-only, so appending IS publishing order.
+const POSTS_NEWEST_FIRST = [...POSTS].sort(
+  (a, b) => b.date.localeCompare(a.date) || POSTS.indexOf(b) - POSTS.indexOf(a),
+);
+writeFileSync(join(PUBLIC, "blog", "index.html"), renderIndex(POSTS_NEWEST_FIRST));
 for (const post of POSTS) {
   const dir = join(PUBLIC, "blog", post.slug);
   mkdirSync(dir, { recursive: true });
