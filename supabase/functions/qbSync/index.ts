@@ -36,6 +36,8 @@ import {
   isExemptionActive,
   buildTaxRecordFromQbInvoice,
   qbJurisdictionRate,
+  stripQbDiscountNote,
+  shouldReplaceLocalInvoiceItems,
 } from "../_shared/qbInvoice.js";
 import {
   reconcileQbInvoice,
@@ -1614,9 +1616,11 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   // QB lands on the row that holds the base DocNumber instead of
   // spawning a sibling row. Closes the "two rows for one quote" bug
   // surfaced by the Shana Krochmal invoice.
+  // line_items + order_id feed shouldReplaceLocalInvoiceItems — the pull must
+  // know whether a matched row has local itemization worth preserving.
   const { data: existingInvoices } = await supabase
     .from("invoices")
-    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name")
+    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name, order_id, line_items")
     .eq("shop_owner", shopOwner);
   const existingByDoc = new Map<string, any>();
   const existingByQbId = new Map<string, any>();
@@ -1674,12 +1678,15 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     const balance = Number(qbInv.Balance ?? 0);
     const isPaid = balance === 0 && totalAmt > 0;
 
-    // Map QB line items
+    // Map QB line items. stripQbDiscountNote removes the " (less $X
+    // discount)" label OUR push appended for QB's tax math — the local row
+    // carries discount as real fields; importing the note back duplicated it
+    // onto every line (the INV-2026-CQY1X PDF).
     const lineItems = (qbInv.Line ?? [])
       .filter((l: any) => l.DetailType === "SalesItemLineDetail")
       .map((l: any) => ({
         id: `qb-${l.Id || Math.random().toString(36).slice(2)}`,
-        style: l.Description || l.SalesItemLineDetail?.ItemRef?.name || "Item",
+        style: stripQbDiscountNote(l.Description || l.SalesItemLineDetail?.ItemRef?.name || "Item"),
         garmentCost: 0,
         sizes: {},
         imprints: [],
@@ -1720,6 +1727,22 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     };
 
     if (existingId) {
+      // Locally-born invoices (order-born, or rich local line items) keep
+      // their itemization and pricing semantics — a Sync-All used to replace
+      // them with flattened qb-N stubs and zero the discount (INV-2026-CQY1X,
+      // 2026-07-03). QB stays authoritative for money STATE (paid/status/
+      // total/tax/dates), which remains in the payload. Local `subtotal` is
+      // pre-discount by app semantics; QB's is post-discount — overwriting it
+      // while keeping discount>0 would double-discount the display.
+      if (!shouldReplaceLocalInvoiceItems(existingRow)) {
+        delete payload.line_items;
+        delete payload.discount;
+        delete payload.tax_rate;
+        delete payload.rush_rate;
+        delete payload.extras;
+        delete payload.subtotal;
+        delete payload.notes;
+      }
       const { error } = await supabase.from("invoices").update(payload).eq("id", existingId);
       if (error) { console.error("[pullInvoices] update failed:", error.message, docNumber); skipped++; }
       else { updated++; }

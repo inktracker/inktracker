@@ -1517,9 +1517,10 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   doc.setFont(undefined, 'normal');
   const items = Array.isArray(invoice.line_items) ? invoice.line_items : [];
 
-  // Rate/amount come straight from what was stamped at quote-save time.
-  // No new math here — if a line wasn't stamped, we render "—" rather than
-  // fabricate a number that won't match what the customer was quoted.
+  // Rate/amount come straight from what was stamped at quote-save time, or —
+  // for QB-imported line items — from the amount QB reported (`lineTotal`,
+  // no underscore). No new math here; if a line carries no saved amount at
+  // all, we render "—" rather than fabricate a number.
   function lineRateAmount(li) {
     const qty = getQty(li) || Number(li?.qty) || 0;
     const override = Number(li?.clientPpp);
@@ -1534,6 +1535,12 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     }
     if (Number.isFinite(li?._ppp) && qty > 0) {
       return { qty, rate: li._ppp, amount: li._ppp * qty, hasPrice: true };
+    }
+    // QB-imported shape (qbSync handlePullInvoices): { qty, lineTotal }.
+    // These rendered as "—" across the board — the INV-2026-CQY1X PDF.
+    const imported = Number(li?.lineTotal);
+    if (Number.isFinite(imported) && (li?.lineTotal ?? null) !== null) {
+      return { qty, rate: qty > 0 ? imported / qty : imported, amount: imported, hasPrice: true };
     }
     return { qty, rate: 0, amount: 0, hasPrice: false };
   }
@@ -1551,8 +1558,13 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     if (yPos > pageHeight - 60) { doc.addPage(); yPos = margin; }
     lineSubtotal += amount;
 
-    const headerLine = getItemHeaderLine(li);
-    const metaLine   = getItemMetaLine(li);
+    // Strip the " (less $X discount)" note qbSync appended for QB's tax math —
+    // rows imported before the pull path stripped it carry it in every
+    // description. The discount belongs in the totals column, not on lines.
+    // Keep in lockstep with QB_DISCOUNT_NOTE_RE in _shared/qbInvoice.js.
+    const stripDiscountNote = (s) => String(s ?? "").replace(/ \(less (?:\$[\d,.]+|[\d.]+%) discount\)/g, "");
+    const headerLine = stripDiscountNote(getItemHeaderLine(li));
+    const metaLine   = stripDiscountNote(getItemMetaLine(li));
 
     // Description: bold first line + (optional) muted second line, wrapped to col width
     const descMaxWidth = colQtyX - margin - 6;
@@ -1611,6 +1623,18 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   };
 
   totalsRow('SUBTOTAL', fmtMoney(subtotal));
+
+  // Itemized discount — same semantics as InvoiceDetailModal: `subtotal` is
+  // pre-discount; flat vs percent from discount_type (with the legacy >100
+  // heuristic). Rendered as its own totals row, never baked into line items.
+  const discVal = Number(invoice.discount) || 0;
+  if (discVal > 0) {
+    const isFlatDisc = invoice.discount_type === 'flat' || (discVal > 100 && invoice.discount_type !== 'percent');
+    const discountAmt = isFlatDisc ? discVal : subtotal * (discVal / 100);
+    const discLabel = isFlatDisc ? 'DISCOUNT' : `DISCOUNT (${discVal}%)`;
+    totalsRow(discLabel, `-${fmtMoney(discountAmt)}`, { color: [22, 101, 52] });
+  }
+
   totalsRow(`TAX (${taxRate}%)`, fmtMoney(tax));
   totalsRow('TOTAL', fmtMoney(total));
 

@@ -714,3 +714,47 @@ export function resolveInvoiceCustomerFields(custMatch, existingRow, qbCustomerN
   }
   return { customer_id: null, customer_name: qbCustomerName || "Unknown" };
 }
+
+// ── Pull-path round-trip guards ─────────────────────────────────────────────
+//
+// buildInvoiceLinesFromPayload (above) appends " (less $X discount)" to each
+// QB line so QB taxes the post-discount amount. When handlePullInvoices later
+// imports QB lines back, that note must NOT ride along — the local invoice
+// carries discount/discount_type as real fields, and the note duplicated onto
+// every line is what made INV-2026-CQY1X's PDF unreadable (2026-07-03).
+// End-anchored and matching exactly the two label formats we emit, so a
+// legitimate description that merely mentions a discount is untouched.
+// pdfExport.jsx carries a copy of this regex for already-damaged rows — keep
+// the two in lockstep.
+export const QB_DISCOUNT_NOTE_RE = / \(less (?:\$[\d,.]+|[\d.]+%) discount\)(?=$|\s*\()/;
+
+export function stripQbDiscountNote(description) {
+  let s = String(description ?? "");
+  // Multiple imprints can each carry the note after joins — strip repeatedly.
+  for (let i = 0; i < 8 && QB_DISCOUNT_NOTE_RE.test(s); i++) {
+    s = s.replace(QB_DISCOUNT_NOTE_RE, "");
+  }
+  return s;
+}
+
+/**
+ * Should the pull path REPLACE this existing local invoice's pricing fields
+ * (line_items, discount, discount_type, tax_rate, extras, subtotal) with the
+ * flattened QB shape?
+ *
+ * Only when the row has nothing local to lose: no rich line items (empty, or
+ * every item is a prior QB import — id "qb-…") AND it isn't order-born.
+ * Locally-born invoices keep their itemization (sizes, imprints, stamped
+ * per-line pricing, discount fields); QB stays authoritative for money state
+ * (paid/status/total/tax + the qb_* mirrors), which the caller still updates.
+ *
+ * This is the guard for the INV-2026-CQY1X clobbering: a Sync-All replaced an
+ * order-born invoice's rich lines with five qb-N stubs.
+ */
+export function shouldReplaceLocalInvoiceItems(existingRow) {
+  if (!existingRow) return true;                       // fresh INSERT — QB shape is all we have
+  if (existingRow.order_id) return false;              // order-born — always preserve
+  const items = Array.isArray(existingRow.line_items) ? existingRow.line_items : [];
+  if (items.length === 0) return true;                 // nothing local to lose
+  return items.every((li) => String(li?.id ?? "").startsWith("qb-"));
+}
