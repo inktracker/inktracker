@@ -40,6 +40,19 @@ export async function uploadFile(file) {
 
   if (error) throw error;
 
+  // Ownership mapping — the artwork read policy resolves tenancy through
+  // artwork_objects by equality (20260827) instead of LIKE-scanning six
+  // tables per read. A BEFORE INSERT trigger stamps uploader + shop_owner
+  // server-side from the caller's profile; we send only the name.
+  // Best-effort: on failure the transitional reference-based fallback
+  // policy still grants reads once the quote/order row is saved.
+  try {
+    const { error: mapErr } = await supabase.from("artwork_objects").insert({ name: path });
+    if (mapErr) console.warn("[uploadFile] artwork_objects mapping insert failed:", mapErr.message);
+  } catch (mapErr) {
+    console.warn("[uploadFile] artwork_objects mapping insert threw:", mapErr?.message || mapErr);
+  }
+
   // `path` is the canonical reference — new callers should store it and call
   // signArtworkUrl(path) (the artwork bucket is now PRIVATE; M-1).
   //
