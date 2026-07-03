@@ -1243,3 +1243,53 @@ describe("buildTaxRecordFromQbInvoice — ShipAddr fallback (backfill)", () => {
     expect(rec.ship_to_zip).toBe("89501");
   });
 });
+
+// ── Pull-path round-trip guards (INV-2026-CQY1X, 2026-07-03) ────────────────
+import { stripQbDiscountNote, shouldReplaceLocalInvoiceItems } from "../qbInvoice.js";
+
+describe("stripQbDiscountNote", () => {
+  it("strips the flat-discount label our push appends", () => {
+    expect(stripQbDiscountNote("Next Level 6410 Black | Freebird / Front (less $75.00 discount)"))
+      .toBe("Next Level 6410 Black | Freebird / Front");
+  });
+  it("strips the percent-discount label", () => {
+    expect(stripQbDiscountNote("Tee | Front / Screen Print (less 10% discount)"))
+      .toBe("Tee | Front / Screen Print");
+  });
+  it("strips repeated notes (multi-imprint descriptions)", () => {
+    expect(stripQbDiscountNote("A (less $5.00 discount) (less $5.00 discount)")).toBe("A");
+  });
+  it("leaves ordinary text mentioning discounts alone", () => {
+    const s = "Discount tees for the discount event";
+    expect(stripQbDiscountNote(s)).toBe(s);
+    const mid = "Bundle (less setup) | Front";
+    expect(stripQbDiscountNote(mid)).toBe(mid);
+  });
+  it("handles null/undefined", () => {
+    expect(stripQbDiscountNote(null)).toBe("");
+    expect(stripQbDiscountNote(undefined)).toBe("");
+  });
+});
+
+describe("shouldReplaceLocalInvoiceItems", () => {
+  it("fresh insert (no existing row) → replace", () => {
+    expect(shouldReplaceLocalInvoiceItems(null)).toBe(true);
+    expect(shouldReplaceLocalInvoiceItems(undefined)).toBe(true);
+  });
+  it("order-born invoice → PRESERVE, even if items look imported", () => {
+    expect(shouldReplaceLocalInvoiceItems({ order_id: "ORD-2026-CG8LS", line_items: [{ id: "qb-1" }] })).toBe(false);
+  });
+  it("rich local items (non qb- ids) → PRESERVE", () => {
+    expect(shouldReplaceLocalInvoiceItems({ order_id: null, line_items: [{ id: "li-1", _lineTotal: 100 }] })).toBe(false);
+  });
+  it("mixed ids → PRESERVE (something local exists)", () => {
+    expect(shouldReplaceLocalInvoiceItems({ line_items: [{ id: "qb-1" }, { id: "li-2" }] })).toBe(false);
+  });
+  it("all prior-import qb- items → replace (QB is their only source)", () => {
+    expect(shouldReplaceLocalInvoiceItems({ order_id: null, line_items: [{ id: "qb-1" }, { id: "qb-2" }] })).toBe(true);
+  });
+  it("empty/absent items → replace (nothing local to lose)", () => {
+    expect(shouldReplaceLocalInvoiceItems({ order_id: null, line_items: [] })).toBe(true);
+    expect(shouldReplaceLocalInvoiceItems({ order_id: null })).toBe(true);
+  });
+});
