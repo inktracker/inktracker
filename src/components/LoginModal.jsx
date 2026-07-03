@@ -273,8 +273,8 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               <div>
                 <div className="text-sm font-semibold text-teal-900">New users</div>
                 <p className="text-sm text-teal-800 leading-6 mt-1">
-                  After creating your account, access remains pending until it is approved. Use
-                  the same email address each time.
+                  Create your account and set up your shop, then add a payment method to start
+                  your 14-day free trial. Use the same email address each time.
                 </p>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getEffectiveTier, canAccess, resolveTeamSubscription, isReadOnly, PAST_DUE_GRACE_DAYS } from "../billing";
+import { getEffectiveTier, canAccess, resolveTeamSubscription, isReadOnly, PAST_DUE_GRACE_DAYS, getTierLabel, getTierColor } from "../billing";
 
 // Fixed reference time so trial-expiry tests are deterministic.
 const NOW = new Date("2026-05-12T07:00:00.000Z");
@@ -221,5 +221,22 @@ describe("isReadOnly — past_due 7-day grace (BILL-03)", () => {
   it("active / trialing are never read-only", () => {
     expect(isReadOnly("shop", "active", null, NOW)).toBe(false);
     expect(isReadOnly("trial", "trialing", null, NOW)).toBe(false);
+  });
+});
+
+describe("getTierLabel / getTierColor — 'incomplete' (card-required signup)", () => {
+  it("labels 'incomplete' as 'No plan yet', not the raw tier string", () => {
+    // BillingSection renders this as the plan badge; before the fix a
+    // card-required signup saw the literal string "incomplete".
+    expect(getTierLabel("incomplete")).toBe("No plan yet");
+  });
+
+  it("gives 'incomplete' the neutral slate color, not red", () => {
+    expect(getTierColor("incomplete")).toBe("bg-slate-100 text-slate-600");
+  });
+
+  it("still passes unknown tiers through as-is (fallback contract)", () => {
+    expect(getTierLabel("mystery")).toBe("mystery");
+    expect(getTierColor("mystery")).toBe("bg-slate-100 text-slate-600");
   });
 });

@@ -5,7 +5,8 @@ import { getEffectiveTier } from "@/lib/billing";
 // Banner that surfaces the user's billing state at the top of every
 // page so they can't be surprised by a silent trial expiry.
 //
-// Three states:
+// Four states:
+//   • incomplete      → teal "add a payment method to start your trial"
 //   • trial > 3 days  → slate info strip with day count + "View plans"
 //   • trial ≤ 3 days  → amber warning ("ends in X days — pick a plan")
 //   • expired         → red "trial ended — subscribe" CTA
@@ -33,6 +34,28 @@ export default function TrialStatusBanner({ user }) {
   if (tier === "shop") return null;
 
   const plansUrl = createPageUrl("Account") + "?billing=1";
+
+  // 'incomplete' = card-required signup with no payment method yet.
+  // getEffectiveTier collapses it to "expired", but "your trial has ended"
+  // is wrong for someone whose trial never started — give them the
+  // start-your-trial message instead of the scary red one.
+  if (user.subscription_tier === "incomplete") {
+    return (
+      <div className="bg-teal-50 border-b border-teal-200 px-4 sm:px-6 py-2.5">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+          <p className="flex-1 text-sm text-teal-900 font-semibold">
+            Add a payment method to start your 14-day free trial.
+          </p>
+          <Link
+            to={plansUrl}
+            className="shrink-0 inline-flex items-center justify-center text-xs sm:text-sm font-semibold bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-xl transition whitespace-nowrap"
+          >
+            Start free trial →
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   if (tier === "expired") {
     return (
