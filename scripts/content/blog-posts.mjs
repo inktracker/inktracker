@@ -402,4 +402,82 @@ export const POSTS = Object.freeze([
       },
     ],
   },
+
+  // ── Post 7 — QuickBooks for screen printers ──────────────────────────────
+  // Target keyword: "quickbooks for screen printers" (SEO plan keyword bank —
+  // low volume, $2.50 CPC = buyer intent, near-zero difficulty). Every
+  // product claim below is verifiable in the live QB integration: customer
+  // dedup (_shared/qbInvoice.js), QB-AST-authoritative tax display
+  // (customerFacingTotals/isQbAuthoritative), expense sync + nightly
+  // reconcile (qbSync/qbReconcile). Biota's books genuinely run through
+  // this sync — the first-person claims are real.
+  {
+    slug: "quickbooks-for-screen-printers",
+    title: "QuickBooks for screen printers: stop typing every job in twice",
+    description:
+      "Your shop software and your books disagree because you're the sync — retyping every job into QuickBooks by hand. What a real two-way connection should do, the three places shop books quietly rot, and how we run ours.",
+    category: "Money",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-07-03",
+    readMin: 6,
+    ogImage: SITE.logo,
+    cta: true,
+    ctaHeading: "Your books, without the retyping.",
+    ctaBody:
+      "InkTracker's two-way QuickBooks sync creates the invoice from the quote, matches the customer instead of duplicating them, lets QuickBooks own the tax math, and reconciles every night. We run our own shop's books on it.",
+    body: [
+      { type: "p", html: "Every print shop I know runs the same accounting system: jobs live in one place — shop software, a spreadsheet, a clipboard — and the books live in QuickBooks. And the sync between them is you, at 9pm, retyping invoices. Every job gets entered twice, which means every job is two chances to fat-finger a number, and the month-end ritual is figuring out why the shop says you billed $14,200 and QuickBooks says $13,750." },
+      { type: "p", html: "I run my shop's books through QuickBooks Online, and I built the sync I'm going to describe — so read this knowing where I stand. But the first half is true whatever software you use, and if you take nothing else from it: stop being the sync." },
+
+      { type: "h2", text: "Why QuickBooks and not a spreadsheet" },
+      { type: "p", html: "Not because it's fun. Because it's the language your accountant already speaks, and because QuickBooks Online does two jobs a spreadsheet can't. First, <b>sales tax</b>: its Automated Sales Tax looks at where the order ships and applies that jurisdiction's actual rate — which matters more every year a shop sells outside its own county (<a href=\"/blog/sales-tax-for-print-shops\">the short version of that whole mess is here</a>). Second, <b>getting paid</b>: a QuickBooks invoice can carry a real payment link, so the customer pays the invoice directly and the payment is already recorded against it. No separate payment system to reconcile later." },
+      { type: "p", html: "One practical note: everything below is about QuickBooks <b>Online</b>. Desktop is a different animal with a different (much weaker) story for connecting shop software." },
+
+      { type: "h2", text: "The three places shop books quietly rot" },
+      { type: "ul", items: [
+        "<b>Drift.</b> The quote said $601. You typed $610 into QuickBooks at 9pm. Nobody notices until the customer pays the invoice and the shop record still shows a balance — or worse, the other way around.",
+        "<b>Duplicate customers.</b> Retype \"Mystery Machine Co\" one week and \"Mystery Machine Company\" the next and QuickBooks happily makes two customers. Now their history is split, their statements are wrong, and cleaning it up is an afternoon of merging you'll never schedule.",
+        "<b>Tax by vibes.</b> Your shop software charged the customer your home flat rate. QuickBooks calculated the real destination rate. The invoice and the quote now disagree by a few dollars, and multiplied across a year that's a filing headache you handed yourself.",
+      ] },
+
+      { type: "h2", text: "What a real two-way sync should do" },
+      { type: "p", html: "This is the checklist I'd hold ANY shop software against — mine included. If a vendor demos \"QuickBooks integration,\" make them show you each of these:" },
+      { type: "ul", items: [
+        "<b>The invoice comes from the quote.</b> One click, line items and amounts carried over exactly. If you can edit the quote after the invoice exists and nothing warns you, that's drift waiting to happen.",
+        "<b>Customers get matched, not duplicated.</b> The sync should find your existing QuickBooks customer even when the name isn't a character-for-character match — matching on email and normalized name, not exact spelling.",
+        "<b>QuickBooks owns the tax math.</b> Once connected, the destination-based number from Automated Sales Tax is the truth, and the shop side should display THAT — clearly labeled — instead of its own estimate. Two systems both computing tax is how you get two answers.",
+        "<b>Payments flow back.</b> When the customer pays the QuickBooks invoice, the job should show paid in the shop — without you copying it over.",
+        "<b>Expenses too.</b> Blank orders and supplier bills are half your ledger. If only invoices sync, you're still the sync for the spending side.",
+        "<b>A safety net for missed events.</b> Webhooks fail quietly. Something should re-check QuickBooks on a schedule and catch anything that slipped — a payment recorded directly in QB, an invoice edited on the QB side — instead of trusting that every message arrived.",
+      ] },
+      { type: "callout", title: "The tell in a demo", html: "Ask the vendor: \"What happens if my customer's name is spelled slightly differently in QuickBooks?\" and \"What happens if a payment gets recorded in QuickBooks directly?\" If the answer to either is a pause, you've found where the double entry comes back." },
+
+      { type: "h2", text: "How we run it" },
+      { type: "p", html: "InkTracker does the list above because I needed it to: my shop's books run through this exact sync every day. The quote becomes the QuickBooks invoice in one click. The customer gets matched against what's already in QuickBooks — email first, then normalized name — before the sync will ever create a new one. Once QuickBooks is connected, its Automated Sales Tax number is the one the customer sees, labeled as QuickBooks' number; before that, the shop's flat rate shows as an estimate and says so. Supplier expenses sync to the spending side. And every night a reconcile job re-checks QuickBooks and cleans up anything that slipped through — then emails me if it had to." },
+      { type: "p", html: "None of that is magic. It's just the position that the books are the source of truth about money, the shop system is the source of truth about work, and a human retyping between them is the worst sync protocol ever invented." },
+    ],
+    related: [
+      { href: "/blog/sales-tax-for-print-shops", text: "Sales tax for print shops: the short version" },
+      { href: "/blog/screen-printing-software-honest-comparison", text: "How to choose screen printing software" },
+    ],
+    faqs: [
+      {
+        q: "Does QuickBooks work for screen printing shops?",
+        a: "Yes — QuickBooks Online is the most common books system in small print shops, mostly because accountants already know it. What it doesn't do alone is understand jobs: quotes, garments, press schedules. That's shop software's half. The question that matters is whether the two halves sync, or whether you're retyping between them.",
+      },
+      {
+        q: "Do I need QuickBooks Online or Desktop?",
+        a: "Online, if you want shop software connected. Modern integrations are built on QuickBooks Online's API — and features like Automated Sales Tax and invoice payment links live there. Desktop integrations exist but are a different, weaker story.",
+      },
+      {
+        q: "Will connecting shop software create duplicate customers in QuickBooks?",
+        a: "It will if the integration matches customers by exact name only — one spelling variation and you get a second customer with split history. A good sync matches on email and normalized name before it ever creates anyone new. Make this question part of any demo.",
+      },
+      {
+        q: "Should my shop software or QuickBooks calculate sales tax?",
+        a: "QuickBooks, once it's connected. Its Automated Sales Tax uses the order's ship-to address and the actual jurisdiction rate, which beats any flat shop rate the moment you sell outside your home area. The shop side should display QuickBooks' number rather than compute a competing one — two systems doing tax math is how invoices and quotes end up disagreeing.",
+      },
+    ],
+  },
 ]);
