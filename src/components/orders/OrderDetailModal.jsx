@@ -5,6 +5,7 @@ import SendInvoiceModal from "../invoices/SendInvoiceModal";
 import PackingSlipModal from "./PackingSlipModal";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { uploadFile } from "@/lib/uploadFile";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { buildShortfallReorderPayloads, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { notify } from "@/lib/notify";
@@ -393,19 +394,19 @@ export default function OrderDetailModal({
       const newArtwork = [...(order.selected_artwork || [])];
 
       for (const file of files) {
-        const ext = file.name.split(".").pop();
-        const path = `${order.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage
-          .from("artwork")
-          .upload(path, file, { upsert: false });
-        if (upErr) throw upErr;
-
-        // The artwork bucket is private (M-1) — a getPublicUrl() here would 400.
-        // `path` is the canonical reference; readers sign a URL from it directly.
+        // Shared helper, not an inline storage call: it validates the file
+        // (extension/size/scriptable-SVG — this path had NO validation), writes
+        // the artwork_objects ownership row the read policy resolves through,
+        // and returns the /artwork/ path-carrier `file_url`. The old inline
+        // upload stored a bare `${order.id}_...` path with no url — invisible
+        // to the reference-based read policy AND to the customer approval
+        // page's authorizedPaths, so every thumbnail it produced was broken.
+        const { path, file_url } = await uploadFile(file);
         newArtwork.push({
           id: path,
           name: file.name,
           path,
+          url: file_url,
           note: "",
           colors: "",
           source: "Uploaded to order",

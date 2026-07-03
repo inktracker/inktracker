@@ -43,9 +43,10 @@ function resolveArtworkPath(input: string): string | null {
   return null;
 }
 
-// Every artwork path THIS row legitimately references — both URL-embedded forms
-// and bare upload paths (<13-digit ts>-<6 char>.<ext>). Used to authorize the
-// requested path so a valid token only unlocks its own row's artwork.
+// Every artwork path THIS row legitimately references — URL-embedded forms,
+// bare uploadFile paths (<13-digit ts>-<6 char>.<ext>), and any "path" field
+// value. Used to authorize the requested path so a valid token only unlocks
+// its own row's artwork.
 function authorizedPaths(row: unknown): Set<string> {
   const out = new Set<string>();
   let blob = "";
@@ -54,6 +55,13 @@ function authorizedPaths(row: unknown): Set<string> {
     try { out.add(decodeURIComponent(m[1])); } catch { out.add(m[1]); }
   }
   for (const m of blob.matchAll(/"(\d{13}-[a-z0-9]{6}\.[A-Za-z0-9]+)"/g)) {
+    out.add(m[1]);
+  }
+  // Legacy order-modal uploads stored only { path: "<uuid>_<ts>_<rand>.ext" }
+  // with no /artwork/ url — those refs matched NEITHER pattern above, so the
+  // customer approval page 404'd every one of them. Any explicit "path" field
+  // on the row is an authorized reference.
+  for (const m of blob.matchAll(/"path"\s*:\s*"([A-Za-z0-9._\-/]+)"/g)) {
     out.add(m[1]);
   }
   return out;
