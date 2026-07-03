@@ -15,6 +15,7 @@
 // token can't confirm which inbox is on file.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { sendResendEmail } from "../_shared/resendClient.js";
 
 const SUPABASE_URL      = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -84,25 +85,19 @@ Deno.serve(async (req) => {
       </div>
     `;
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        // Sender display name — without this, Gmail/Outlook fall back
-        // to showing the local-part ("quotes") as the sender, which
-        // looks like spam for a system email about an account.
-        from: `InkTracker <${SEND_FROM}>`,
-        to: [user.email],
-        subject,
-        html,
-      }),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("[sendMfaSignInCode] Resend error:", res.status, text);
+    // Retried transport — a transient Resend 429/5xx here used to hard-block
+    // the sign-in (the user's second factor never arrived).
+    const result = await sendResendEmail({
+      // Sender display name — without this, Gmail/Outlook fall back
+      // to showing the local-part ("quotes") as the sender, which
+      // looks like spam for a system email about an account.
+      from: `InkTracker <${SEND_FROM}>`,
+      to: [user.email],
+      subject,
+      html,
+    }, { apiKey: RESEND_API_KEY });
+    if (!result.ok) {
+      console.error("[sendMfaSignInCode] Resend failed after retries:", result.reason);
       return Response.json({ status: "error" }, { status: 500, headers: CORS });
     }
 

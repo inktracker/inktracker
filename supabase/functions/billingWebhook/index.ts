@@ -2,7 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { captureError } from "../_shared/observability.ts";
 import Stripe from "npm:stripe@14.25.0";
 import { claimWebhookEvent, releaseWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
-import { sendApprovalNotification } from "../_shared/approvalNotificationEmail.js";
+import { sendAndLogApprovalNotification } from "../_shared/approvalNotificationEmail.js";
 import { buildTrialWillEndEmail } from "../_shared/trialWillEndEmail.js";
 import { partitionSecretUpdates } from "../_shared/connectionLogic.js";
 import { updateProfileSecrets } from "../_shared/profileSecrets.ts";
@@ -247,7 +247,16 @@ Deno.serve(async (req) => {
               shopName: profile.shop_name,
               trialEndsOn,
             } as any);
-            await sendApprovalNotification({ to: recipient, subject, html } as any);
+            // Logged variant — the raw send bypassed notification_log, so
+            // trial reminders were invisible to the ops audit trail.
+            await sendAndLogApprovalNotification(supabase, {
+              shop_owner: recipient,
+              event_type: "trial_reminder",
+              recipient_role: "shop_owner",
+              to: recipient,
+              subject,
+              html,
+            } as any);
           } else {
             console.warn(`[billingWebhook] trial_will_end: no profile for customer ${customerId}`);
           }

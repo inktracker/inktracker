@@ -1,3 +1,5 @@
+import { sendResendEmail } from "./resendClient.js";
+
 // Email notifications fired when a client approves something via the
 // public links (quote-approval, artwork-approval). Reaches the shop
 // owner OR the broker depending on the quote shape, so the right
@@ -268,31 +270,19 @@ export async function sendApprovalNotification({ to, subject, html, reply_to }, 
   if (!to)      return { ok: false, reason: "no_recipient" };
   if (!subject) return { ok: false, reason: "no_subject" };
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type":  "application/json",
-      },
-      body: JSON.stringify({
-        from: `InkTracker <${sendFrom}>`,
-        to: [to],
-        subject,
-        html,
-        ...(reply_to ? { reply_to } : {}),
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error("[approvalNotification] Resend error:", res.status, body);
-      return { ok: false, reason: `resend_${res.status}` };
-    }
-    return { ok: true };
-  } catch (err) {
-    console.error("[approvalNotification] threw:", err?.message || err);
-    return { ok: false, reason: "exception" };
+  // Transport (retry/backoff on 429/5xx/network) lives in resendClient —
+  // this used to be a bare fetch where any transient error lost the email.
+  const result = await sendResendEmail({
+    from: `InkTracker <${sendFrom}>`,
+    to: [to],
+    subject,
+    html,
+    ...(reply_to ? { reply_to } : {}),
+  }, { apiKey, env: runtimeEnv });
+  if (!result.ok) {
+    return { ok: false, reason: result.reason || "exception" };
   }
+  return { ok: true, id: result.id };
 }
 
 // ── notification_log writer ─────────────────────────────────────────
@@ -311,15 +301,17 @@ export async function sendApprovalNotification({ to, subject, html, reply_to }, 
 /**
  * @typedef {Object} NotificationLogContext
  * @property {string} shop_owner       Required. Tenant scope.
- * @property {'quote_approval'|'artwork_approval'|'quote_payment'} event_type
+ * @property {'quote_approval'|'artwork_approval'|'quote_payment'|'quote_send'|'reply'|'payment_confirmation'|'trial_reminder'} event_type
+ *   Mirror of the notification_log_event_type_check constraint
+ *   (20260825000000) — keep the two lists in lockstep.
  * @property {string} recipient_email
- * @property {string} [recipient_role]  Free-form log field (e.g. 'shop_owner', 'broker')
- * @property {string} [quote_id]       UUID
- * @property {string} [order_id]       UUID
- * @property {string} [subject]
+ * @property {string|null} [recipient_role]  'shop_owner' | 'broker' | 'customer'
+ * @property {string|null} [quote_id]       quotes.id UUID (NOT the human "Q-####")
+ * @property {string|null} [order_id]       UUID
+ * @property {string|null} [subject]
  * @property {'sent'|'failed'|'skipped'} status
- * @property {string} [failure_reason] Required when status='failed' or 'skipped'.
- * @property {string} [resend_id]      Resend's message id, when known.
+ * @property {string|null} [failure_reason] Required when status='failed' or 'skipped'.
+ * @property {string|null} [resend_id]      Resend's message id, when known.
  */
 
 /**
@@ -395,6 +387,9 @@ export async function sendAndLogApprovalNotification(supabase, args) {
     subject,
     status: result.ok ? "sent" : "failed",
     failure_reason: result.ok ? null : result.reason,
+    // Resend's message id — joins a log row to the Resend dashboard. The
+    // column existed since 20260618 but nothing populated it.
+    resend_id: result.id ?? null,
   });
   return result;
 }
