@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
+import { validateAcCredsSave, acConnectionWarning } from "@/lib/account/acCredsValidation";
 
 // Supplier API keys editor. Extracted verbatim from Account.jsx as a pure
 // decomposition — no behavior change. Receives the current `user`.
@@ -13,6 +14,7 @@ export default function SupplierKeysSection({ user }) {
   const [ssHasKey, setSsHasKey] = useState(false);
   const [acHasKey, setAcHasKey] = useState(false);
   const [acEmailFromServer, setAcEmailFromServer] = useState("");
+  const [acHasPassword, setAcHasPassword] = useState(false);
   const [ssAccount, setSsAccount] = useState("");
   const [ssKey, setSsKey] = useState("");
   const [acSubKey, setAcSubKey] = useState("");
@@ -39,6 +41,7 @@ export default function SupplierKeysSection({ user }) {
         setSsHasKey(!!data.ss);
         setAcHasKey(!!data.ac);
         setAcEmailFromServer(data.ac_email || "");
+        setAcHasPassword(!!data.ac_password);
         setSsEditing(!data.ss);
         setAcEditing(!data.ac);
         if (data.ac_email) setAcEmail(data.ac_email);
@@ -94,11 +97,23 @@ export default function SupplierKeysSection({ user }) {
           setSaving(false);
           return;
         }
+        const typedPassword = acPassword.trim() && acPassword !== "********" ? acPassword.trim() : "";
+        // Completeness gate: pricing needs email + password (Bearer token),
+        // and saving a key stops the platform fallback — so a partial save
+        // would silently strip prices from every AC lookup. Effective state
+        // (typed + already-stored) must be all three or nothing.
+        const validity = validateAcCredsSave(
+          { key: acSubKey.trim(), email, password: typedPassword },
+          { hasKey: acHasKey, hasEmail: !!acEmailFromServer, hasPassword: acHasPassword },
+        );
+        if (!validity.ok) {
+          notify.error(validity.error);
+          setSaving(false);
+          return;
+        }
         if (acSubKey.trim()) supplierSecrets.ac_subscription_key = acSubKey.trim();
         if (email) supplierSecrets.ac_email = email;
-        if (acPassword.trim() && acPassword !== "********") {
-          supplierSecrets.ac_password = acPassword.trim();
-        }
+        if (typedPassword) supplierSecrets.ac_password = typedPassword;
       }
 
       const profileUpdates = {};
@@ -131,6 +146,7 @@ export default function SupplierKeysSection({ user }) {
           setAcEditing(false);
         }
         if (supplierSecrets.ac_email) setAcEmailFromServer(supplierSecrets.ac_email);
+        if (supplierSecrets.ac_password) setAcHasPassword(true);
       }
 
       await base44.auth.updateMe(profileUpdates);
@@ -168,6 +184,7 @@ export default function SupplierKeysSection({ user }) {
       if (supplier === "ac") {
         setAcSubKey(""); setAcEmail(""); setAcPassword("");
         setAcHasKey(false); setAcEditing(true); setAcEmailFromServer("");
+        setAcHasPassword(false);
       } else {
         setSsAccount(""); setSsKey("");
         setSsHasKey(false); setSsEditing(true);
@@ -258,7 +275,11 @@ export default function SupplierKeysSection({ user }) {
                 <input type="password" value={acPassword} onChange={e => setAcPassword(e.target.value)} className={inputCls} />
               </div>
             </div>
-            <p className="text-[10px] text-slate-500">Contact api@ascolour.com to get your API credentials.</p>
+            <p className="text-[10px] text-slate-500">
+              Contact api@ascolour.com to get your API credentials. All three fields are required —
+              pricing runs on your account login, not just the key. After connecting, re-sync your
+              wizard styles (Account → Wizard Setup) so garment prices update.
+            </p>
           </>
         ) : acHasKey ? (
           <div className="text-xs text-slate-500 space-y-1">
@@ -268,6 +289,19 @@ export default function SupplierKeysSection({ user }) {
         ) : (
           <p className="text-xs text-slate-500">No AS Colour credentials configured. Enter your account details to connect.</p>
         )}
+
+        {(() => {
+          // Shops connected before the completeness gate existed can be in
+          // the key-only state — surface it instead of letting prices
+          // silently come back empty.
+          const warning = acConnectionWarning({ hasKey: acHasKey, hasEmail: !!acEmailFromServer, hasPassword: acHasPassword });
+          return warning ? (
+            <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-[11px] text-amber-800 leading-relaxed">
+              <strong className="block mb-1 text-amber-900">Prices can&rsquo;t load yet</strong>
+              {warning}
+            </div>
+          ) : null;
+        })()}
 
         <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 text-[11px] text-amber-800 leading-relaxed">
           <strong className="block mb-1 text-amber-900">Want to place orders too?</strong>
