@@ -5,14 +5,23 @@ tested restore — this is that procedure. Last reviewed 2026-06-28.
 
 ## What we have today (Free tier)
 
-- **Daily physical backups** of the Postgres database, managed by
-  Supabase (WAL-G enabled). Verified via the Management API:
-  `pitr_enabled: false`, `walg_enabled: true`, region `us-west-2`.
+- **CORRECTION (2026-07-03): Supabase-managed DB backups DO NOT EXIST on
+  this project.** The earlier claim here inferred them from
+  `walg_enabled: true`, but the Management API's backups endpoint returns
+  `"backups": []` — WAL-G is platform infrastructure, not a restorable
+  customer backup. Free tier includes no database backups; they start
+  with the Pro upgrade (planned at 5 paying shops).
+- **Nightly DB data export** (`.github/workflows/db-backup.yml`, 04:00 UTC)
+  — every public table as JSONL in a GitHub artifact (30-day retention).
+  Until the Pro upgrade this is the ONLY database recovery point. Schema
+  restores from `supabase/migrations/`; auth.users identities are not
+  covered (users re-verify by email after a restore). See "DB restore
+  from the JSONL export" below.
 - **Nightly Storage backup** of the `artwork` + `tax-certificates` buckets to a
-  GitHub artifact (`.github/workflows/storage-backup.yml`) — Supabase's daily
-  backup does NOT cover Storage. See "Storage backups" below.
-- **Recovery point (RPO):** up to ~24 hours (DB daily backup; Storage nightly).
-  A restore rolls back to the most recent backup — anything since is lost.
+  GitHub artifact (`.github/workflows/storage-backup.yml`) — Storage isn't
+  covered by any DB backup. See "Storage backups" below.
+- **Recovery point (RPO):** up to ~24 hours (DB export + Storage, both nightly).
+  A restore rolls back to the most recent export — anything since is lost.
 - **Recovery time (RTO) target: ~4 hours** — from declaring an incident to a
   verified-restored app: DB restore (Supabase, ~30–60 min) + Storage re-upload
   from the artifact + redeploy frontend/functions + the post-restore
@@ -85,11 +94,21 @@ into a throwaway Supabase project to validate the chain and confirm the ~4h RTO:
    runner (or dashboard SQL editor) to repair the affected rows directly.
    This is how the beloved's/Choo Choo's invoices were relinked — no full
    restore needed.
-4. **Full restore (last resort):** Supabase Dashboard → Database →
-   Backups → choose the most recent good daily backup → Restore. This
-   overwrites the current database. CONFIRM the backup predates the
-   corruption. All shops lose data created since that backup — notify
-   testers/customers.
+4. **Full restore (last resort) — DB restore from the JSONL export.**
+   There is NO dashboard restore on the free tier (backups list is empty —
+   see the correction at the top). The path is:
+   a. Download the newest good `db-backup-<run_id>` artifact from
+      GitHub → Actions → "DB backup" (confirm it PREDATES the corruption).
+   b. Recreate schema: fresh project or wiped schema, then
+      `supabase db push` replays every migration.
+   c. Re-insert data per table from the JSONL, service-role key, in
+      insert-safe order (profiles/shops first, then customers, quotes,
+      orders, invoices, the rest — no hard FKs, see DB-03). A loop of
+      `supabase-js .insert()` in 500-row chunks is fine at current scale.
+   d. auth.users is NOT in the export: users re-register / re-verify with
+      the SAME email — profiles rows rejoin them by email on first login
+      (the adminAction orphan-claim guard notes apply).
+   e. Storage: re-upload from the storage-backup artifact (below).
 5. **Post-restore verify:** run `SELECT * FROM data_integrity_violations();`
    (must be all zeros), spot-check a few shops' quotes/orders, and confirm
    the QB token table still resolves (managers/owners can reach QuickBooks).
