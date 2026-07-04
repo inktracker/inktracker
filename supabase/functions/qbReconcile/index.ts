@@ -192,7 +192,7 @@ async function reconcileShop(adminClient: any, profile: any) {
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
   const { data: candidates, error } = await adminClient
     .from("quotes")
-    .select("id, quote_id, shop_owner, qb_invoice_id, qb_total, status, converted_order_id, customer_id, customer_name, customer_email, job_title, date, due_date, line_items, notes, rush_rate, extras, discount, discount_type, tax_rate, subtotal, tax, total, broker_id, broker_email, broker_name, broker_company, selected_artwork")
+    .select("*")
     .eq("shop_owner", shopOwner)
     .not("qb_invoice_id", "is", null)
     .neq("status", "Converted to Order")
@@ -205,7 +205,10 @@ async function reconcileShop(adminClient: any, profile: any) {
   }
 
   const classifications: any[] = [];
-  for (const quote of candidates ?? []) {
+  // T5: skip soft-deleted quotes — hard-delete parity: a deleted quote's QB
+  // invoice is intentionally unmanaged (guard is a no-op until the
+  // deleted_at migration + select widening land together).
+  for (const quote of (candidates ?? []).filter((q: any) => !q.deleted_at)) {
     try {
       const result = await reconcileOneQuote(adminClient, accessToken, realmId, quote, shopOwner);
       classifications.push(result);
@@ -236,7 +239,7 @@ async function reconcileShop(adminClient: any, profile: any) {
   // need a quote-level paid filter — just feed it the converted quotes.
   const { data: cascadeCandidates, error: cascadeErr } = await adminClient
     .from("quotes")
-    .select("id, quote_id, shop_owner, qb_invoice_id, status, converted_order_id, customer_id, customer_name, customer_email, broker_id, broker_email, broker_name, broker_company, total")
+    .select("*")
     .eq("shop_owner", shopOwner)
     .not("qb_invoice_id", "is", null)
     .or("status.eq.Converted to Order,converted_order_id.not.is.null")
@@ -245,7 +248,7 @@ async function reconcileShop(adminClient: any, profile: any) {
   if (cascadeErr) {
     classifications.push({ error: `cascade candidates query: ${cascadeErr.message}` });
   } else {
-    for (const quote of cascadeCandidates ?? []) {
+    for (const quote of (cascadeCandidates ?? []).filter((q: any) => !q.deleted_at)) {
       try {
         const result = await reconcileCascadeQuote(adminClient, accessToken, realmId, quote, shopOwner);
         classifications.push(result);
@@ -770,6 +773,76 @@ async function scanAndAlertEmailHealth(adminClient: any): Promise<{ failed: numb
   }
 }
 
+// ── Backup-health alert (T3) ────────────────────────────────────────
+// The nightly backup workflows write a qb_event_log breadcrumb (action
+// 'backup_failure') when a manifest comparison trips — a previously
+// non-empty table/bucket coming back empty or drastically smaller. GitHub
+// also emails on the failed run, but that only reaches whoever watches CI;
+// this puts the same signal on the operator-alert path with the details.
+// OPERATOR-ONLY, same guards as every scan above.
+async function scanAndAlertBackupHealth(adminClient: any): Promise<{ failures: number; alerted: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { failures: 0, alerted: false };
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: rows, error } = await adminClient
+      .from("qb_event_log")
+      .select("created_at, response_body")
+      .eq("action", "backup_failure")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error || !rows?.length) return { failures: 0, alerted: false };
+
+    // Once-per-day dedup, same pattern as the sibling scans.
+    const { data: recent } = await adminClient
+      .from("qb_event_log")
+      .select("id")
+      .eq("action", "backup_failure_alert")
+      .gte("created_at", since)
+      .limit(1)
+      .maybeSingle();
+    if (recent) return { failures: rows.length, alerted: false };
+
+    const lines = rows.map((r: any) => {
+      const b = r.response_body || {};
+      return `  • [${r.created_at}] ${b.kind || "?"}: ${(b.problems || []).join("; ")}`;
+    }).join("\n");
+    const text =
+      `${rows.length} backup manifest alarm(s) in the last 24h — a nightly export ` +
+      `came back empty or drastically smaller than the previous run:\n\n${lines}\n\n` +
+      `Where to look:\n` +
+      `  • GitHub → Actions → "DB backup" / "Storage backup" — the failed run's log has the per-table detail\n` +
+      `  • Compare the two most recent manifest artifacts (db-backup-manifest / storage-backup-manifest)\n` +
+      `  • If the SOURCE data really shrank (mass delete?), that's its own incident — check with the shops\n` +
+      `  • Do NOT let the next good run overwrite your last good artifact set — download it now`;
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: `InkTracker <${ALERT_FROM_EMAIL}>`,
+        to: [OPERATOR_ALERT_EMAIL],
+        subject: `[InkTracker] Backup integrity alarm — ${rows.length} manifest failure(s) in 24h`,
+        text,
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[qbReconcile] backup-health alert send failed: ${res.status} ${await res.text()}`);
+      return { failures: rows.length, alerted: false };
+    }
+    await logEvent(adminClient, {
+      shop_owner:    "__system__",
+      action:        "backup_failure_alert",
+      direction:     "outbound",
+      status:        "success",
+      response_body: { failures: rows.length },
+    });
+    return { failures: rows.length, alerted: true };
+  } catch (err) {
+    console.warn("[qbReconcile] backup-health scan exception:", (err as Error)?.message);
+    return { failures: 0, alerted: false };
+  }
+}
+
 // ── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -798,6 +871,8 @@ Deno.serve(async (req) => {
   console.error(`[qbReconcile] integrity: ${integrityResult.violations} violation(s), alerted=${integrityResult.alerted}`);
   const emailHealth = await scanAndAlertEmailHealth(adminClient);
   console.error(`[qbReconcile] email-health: ${emailHealth.failed} failed send(s) in 24h, alerted=${emailHealth.alerted}`);
+  const backupHealth = await scanAndAlertBackupHealth(adminClient);
+  console.error(`[qbReconcile] backup-health: ${backupHealth.failures} manifest failure(s) in 24h, alerted=${backupHealth.alerted}`);
 
   try {
     // Find every profile with QB connected, LEAST-recently-reconciled

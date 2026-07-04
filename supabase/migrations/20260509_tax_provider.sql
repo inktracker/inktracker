@@ -87,4 +87,10 @@ BEGIN
     RAISE NOTICE 'tax_provider_backfill shop=% tax_mode=% reason=%',
                  r.shop_id, v_mode, v_reason;
   END LOOP;
+-- restore-drill guard (2026-07-03): this backfill reads shops.shop_owner,
+-- a pre-baseline column shape that no longer exists on fresh replays
+-- (live schema uses owner_email). No data to backfill from zero — skip.
+-- Live-DB semantics unchanged (migration already applied).
+EXCEPTION WHEN undefined_column THEN
+  RAISE NOTICE 'tax_provider_backfill skipped: pre-baseline column shape';
 END $$;

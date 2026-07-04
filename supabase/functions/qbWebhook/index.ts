@@ -123,7 +123,11 @@ async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: 
   // the shop_owner filter a webhook for Shop B's invoice 1042 could
   // match — and convert — Shop A's quote 1042. See qbWebhookLogic.js
   // for the full rationale.
-  const { data: quote, error } = await buildPaidInvoiceQuery(supabase, qbInvoiceId, shopOwner);
+  const { data: quoteRow, error } = await buildPaidInvoiceQuery(supabase, qbInvoiceId, shopOwner);
+  // T5: a soft-deleted quote's QB invoice is intentionally unmanaged —
+  // exact parity with the hard-delete world, where the row was simply gone.
+  // (Property read is undefined-safe before the deleted_at migration.)
+  const quote = quoteRow?.deleted_at ? null : quoteRow;
 
   if (error) {
     console.error(`[qbWebhook] DB error looking up invoice ${qbInvoiceId} for ${shopOwner}: ${error.message}`);

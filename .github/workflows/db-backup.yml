@@ -36,16 +36,37 @@ jobs:
           node-version: "20"
       - name: Install supabase-js
         run: npm ci --omit=dev || npm install @supabase/supabase-js@2
-      - name: Export public tables
+      - name: Fetch previous run's manifest (T3 comparison baseline)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh run list --workflow "DB backup" --status success --limit 1 --json databaseId -q '.[0].databaseId' || true)
+          if [ -n "$RUN_ID" ]; then
+            gh run download "$RUN_ID" -n db-backup-manifest -D prev-manifest \
+              && echo "previous manifest from run $RUN_ID" \
+              || echo "no previous manifest artifact — first run with manifests"
+          else
+            echo "no previous successful run — comparison will be skipped"
+          fi
+      - name: Export public tables + auth identities
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PREV_MANIFEST: prev-manifest/manifest.json
         run: |
           if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -z "$SUPABASE_URL" ]; then
             echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY repo secrets not set."
             exit 1
           fi
           node scripts/backup-database.mjs
+      - name: Mirror to offsite bucket (T2 — no-op until BACKUP_S3_* secrets exist)
+        env:
+          BACKUP_S3_ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+          BACKUP_S3_BUCKET: ${{ secrets.BACKUP_S3_BUCKET }}
+          BACKUP_S3_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          BACKUP_S3_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          BACKUP_S3_REGION: ${{ secrets.BACKUP_S3_REGION }}
+        run: node scripts/offsite-mirror.mjs db-backup db
       - name: Upload backup artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -53,3 +74,28 @@ jobs:
           path: db-backup/
           retention-days: 30
           if-no-files-found: error
+      - name: Upload manifest (small, long retention — next run's baseline)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: db-backup-manifest
+          path: db-backup/manifest.json
+          retention-days: 90
+          overwrite: true
+      - name: Dead-man's-switch heartbeat (OPS-05 pattern)
+        if: success()
+        env:
+          HEALTHCHECK_BACKUP_URL: ${{ secrets.HEALTHCHECK_BACKUP_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_BACKUP_URL" ]; then
+            curl -fsS -m 10 --retry 3 "$HEALTHCHECK_BACKUP_URL" >/dev/null && echo "heartbeat sent"
+          else
+            echo "HEALTHCHECK_BACKUP_URL not set — no dead-man's-switch. Create a healthchecks.io check (~26h grace) and 'gh secret set HEALTHCHECK_BACKUP_URL'."
+          fi
+      - name: Signal failure to the monitor
+        if: failure()
+        env:
+          HEALTHCHECK_BACKUP_URL: ${{ secrets.HEALTHCHECK_BACKUP_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_BACKUP_URL" ]; then
+            curl -fsS -m 10 --retry 3 "$HEALTHCHECK_BACKUP_URL/fail" >/dev/null || true
+          fi

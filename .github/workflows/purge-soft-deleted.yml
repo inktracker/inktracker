@@ -1,0 +1,45 @@
+name: Purge soft-deleted rows
+
+# T5: hard-purges rows soft-deleted longer than the 30-day recovery window
+# (quotes/orders/invoices/customers). Weekly, service role — the only
+# hard-delete path; clients are blocked by the restrictive RLS policies in
+# migration 20260901000000. Customers still referenced by live rows are
+# never purged (see scripts/purge-soft-deleted.mjs safety rails).
+#
+# Manual dry-run: Actions → this workflow → Run workflow (apply=false).
+
+on:
+  schedule:
+    - cron: "30 5 * * 0" # Sundays 05:30 UTC, after the nightly backups
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Actually delete (false = dry run)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: purge-soft-deleted
+  cancel-in-progress: false
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: Install supabase-js
+        run: npm ci --omit=dev || npm install @supabase/supabase-js@2
+      - name: Purge past-window soft-deleted rows
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.apply }}" = "true" ]; then
+            node scripts/purge-soft-deleted.mjs --apply
+          else
+            node scripts/purge-soft-deleted.mjs
+          fi

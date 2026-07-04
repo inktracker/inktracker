@@ -37,6 +37,11 @@ supabase.auth.onAuthStateChange(() => {
 });
 
 // ─── Entity name → Supabase table name ──────────────────────────────────────
+// Tables where entity .delete() is a SOFT delete (T5 durability safety
+// net — see the delete() method below and migration 20260901000000).
+// Exported for the soft-delete contract test.
+export const SOFT_DELETE_TABLES = new Set(["quotes", "orders", "invoices", "customers"]);
+
 const TABLE_MAP = {
   Quote: "quotes",
   Order: "orders",
@@ -82,6 +87,10 @@ function createEntityProxy(tableName) {
      */
     async list(sort, limit, columns) {
       let q = supabase.from(tableName).select(columns || "*");
+      // T5: soft-deleted rows never reach app reads. This wrapper is the
+      // single read path (cachedEntity routes through it too); RLS
+      // separately guarantees deleted rows can't be edited or hard-deleted.
+      if (SOFT_DELETE_TABLES.has(tableName)) q = q.is("deleted_at", null);
       const s = parseSort(sort);
       if (s) q = q.order(s.column, { ascending: s.ascending });
       if (limit) q = q.limit(limit);
@@ -96,6 +105,7 @@ function createEntityProxy(tableName) {
      */
     async filter(filters, sort, limit, columns) {
       let q = supabase.from(tableName).select(columns || "*");
+      if (SOFT_DELETE_TABLES.has(tableName)) q = q.is("deleted_at", null); // T5 — see list()
       if (filters) {
         for (const [key, value] of Object.entries(filters)) {
           if (value != null) q = q.eq(key, value);
@@ -111,11 +121,9 @@ function createEntityProxy(tableName) {
 
     /** Fetch a single row by id */
     async get(id) {
-      const { data, error } = await supabase
-        .from(tableName)
-        .select("*")
-        .eq("id", id)
-        .single();
+      let q = supabase.from(tableName).select("*").eq("id", id);
+      if (SOFT_DELETE_TABLES.has(tableName)) q = q.is("deleted_at", null); // T5 — see list()
+      const { data, error } = await q.single();
       if (error) throw error;
       return data;
     },
@@ -145,8 +153,25 @@ function createEntityProxy(tableName) {
       return data;
     },
 
-    /** Delete a row by id */
+    /** Delete a row by id.
+     *
+     * T5 safety net: on the four highest-value tables this is a SOFT delete
+     * (sets deleted_at). Restrictive RLS policies added in migration
+     * 20260901000000 hide soft-deleted rows from every client read and
+     * refuse client hard-DELETE outright — so this is the only delete shape
+     * that can succeed from the app. Rows stay recoverable (service role)
+     * until the scheduled purge (30 days). All other tables hard-delete as
+     * before. */
     async delete(id) {
+      if (SOFT_DELETE_TABLES.has(tableName)) {
+        const { error } = await supabase
+          .from(tableName)
+          .update({ deleted_at: new Date().toISOString() })
+          .eq("id", id);
+        if (error) throw error;
+        invalidateTable(tableName);
+        return;
+      }
       const { error } = await supabase.from(tableName).delete().eq("id", id);
       if (error) throw error;
       invalidateTable(tableName);

@@ -59,6 +59,11 @@ GRANT  ALL ON profile_secrets TO service_role;
 
 -- Backfill from existing profiles columns. Idempotent — re-running is a no-op
 -- because of ON CONFLICT.
+-- restore-drill guard (2026-07-03): on a fresh-from-baseline replay the
+-- source columns no longer exist on profiles (dropped by a later migration)
+-- and there is no data to backfill — swallow undefined_column so the chain
+-- replays cleanly. Semantics on the live DB are unchanged (already applied).
+DO $$ BEGIN
 INSERT INTO profile_secrets (
   profile_id,
   qb_access_token, qb_refresh_token, qb_token_expires_at, qb_realm_id, qb_oauth_state,
@@ -78,3 +83,4 @@ SELECT
   stripe_customer_id, stripe_subscription_id
 FROM profiles
 ON CONFLICT (profile_id) DO NOTHING;
+EXCEPTION WHEN undefined_column THEN NULL; END $$;

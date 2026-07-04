@@ -109,6 +109,11 @@ async function handleGetQuote(quoteId: string, token?: string) {
     return { error: "Quote not found." };
   }
 
+  // T5: soft-deleted quotes are recycle-bin content — the emailed link goes
+  // dead exactly as it did when deletes were hard. (Property read is
+  // undefined-safe before the deleted_at migration lands.)
+  if (quote.deleted_at) return { error: "Quote not found." };
+
   // Public-safe allowlist — this object is returned to the unauthenticated
   // quote-payment page. Adding new sensitive columns to the shops table
   // won't leak unless they're added here intentionally.
@@ -155,9 +160,12 @@ async function handleApproveQuote(quoteId: string, token?: string) {
   // first select was just for the token verification.
   const { data: pre } = await supabase
     .from("quotes")
-    .select("broker_id, broker_email, status, client_status, converted_order_id")
+    .select("*")
     .eq("id", quoteId)
     .single();
+
+  // T5: a soft-deleted quote can't be approved through a stale link.
+  if (pre?.deleted_at) return { error: "Quote not found." };
 
   // One-way, idempotent transition. resolveApproveQuoteUpdate returns
   // update=null when the quote is already at/past approval ("Approved",
@@ -313,6 +321,9 @@ async function handleGetOrder(orderId: string, token?: string) {
     return { error: "Order not found." };
   }
 
+  // T5: soft-deleted orders' customer links go dead, hard-delete parity.
+  if (order.deleted_at) return { error: "Order not found." };
+
   const { data: shops } = await supabase
     .from("shops")
     .select("shop_name")
@@ -331,13 +342,15 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
   // Token gate before write.
   const { data: existing } = await supabase
     .from("orders")
-    .select("public_token, art_approved")
+    .select("*")
     .eq("id", orderId)
     .single();
 
   if (!existing?.public_token || !token || !safeEquals(token, existing.public_token)) {
     return { error: "Order not found." };
   }
+  // T5: no artwork approval against soft-deleted orders.
+  if (existing.deleted_at) return { error: "Order not found." };
   // Only the first approval transition writes + notifies. A replayed link
   // must not restamp art_approved_at / art_approved_by — that erases the
   // record of who actually approved and when (same replay-clobber class as
@@ -438,12 +451,14 @@ async function handleCreateSession(params: any) {
   // create Stripe checkout sessions for any quote ID.
   const { data: existing } = await supabase
     .from("quotes")
-    .select("public_token, shop_owner, quote_id, total, client_total, deposit_pct, customer_id")
+    .select("*")
     .eq("id", params.quoteId)
     .single();
   if (!existing?.public_token || !params.token || !safeEquals(params.token, existing.public_token)) {
     return { error: "Quote not found." };
   }
+  // T5: no checkout sessions against soft-deleted quotes.
+  if (existing.deleted_at) return { error: "Quote not found." };
 
   // Look up the shop's Stripe Connect account. Direct Charges model — the
   // shop is merchant of record, their name on the customer's CC statement,
