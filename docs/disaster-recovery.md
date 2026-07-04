@@ -137,9 +137,23 @@ edge-function wiring:
       insert-safe order (profiles/shops first, then customers, quotes,
       orders, invoices, the rest — no hard FKs, see DB-03). A loop of
       `supabase-js .insert()` in 500-row chunks is fine at current scale.
-   d. auth.users is NOT in the export: users re-register / re-verify with
-      the SAME email — profiles rows rejoin them by email on first login
-      (the adminAction orphan-claim guard notes apply).
+   d. auth identities ARE in the export as `auth_users.jsonl` (T4,
+      2026-07-03): id, email, timestamps, app/user metadata, identity
+      providers — no password hashes or secrets. Re-link procedure:
+        • Restoring into a scratch/drill Postgres: `restore-database.mjs`
+          inserts them into auth.users directly (id preserved, so
+          profiles.auth_id FKs resolve).
+        • Restoring into a REAL Supabase project: the auth schema can't be
+          written over PostgREST. For each row in auth_users.jsonl call the
+          Admin API `auth.admin.createUser({ id, email, email_confirm:
+          true, app_metadata, user_metadata })` with the service role —
+          preserving the original `id` is what keeps profiles.auth_id
+          valid. Password-based users then use "Forgot password" to set a
+          new one (hashes are deliberately not backed up); OAuth users
+          just sign in again.
+        • If ids were NOT preserved (worst case), users re-register with
+          the SAME email and profiles rejoin by email on first login
+          (adminAction orphan-claim guard notes apply).
    e. Storage: re-upload from the storage-backup artifact (below).
 5. **Post-restore verify:** run `SELECT * FROM data_integrity_violations();`
    (must be all zeros), spot-check a few shops' quotes/orders, and confirm

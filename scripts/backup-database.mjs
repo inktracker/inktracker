@@ -70,6 +70,47 @@ async function dumpTable(table) {
   return rows;
 }
 
+// ── auth identities (T4) ────────────────────────────────────────────
+// The auth schema is unreachable over PostgREST, but the GoTrue Admin API
+// (service role) lists users. Export the RECOVERABLE identity fields —
+// id, email, timestamps, app/user metadata, and identity providers — into
+// auth_users.jsonl. Deliberately NOT exported: password hashes, tokens,
+// TOTP secrets (the Admin API doesn't return them, and a backup that
+// widens the attack surface is worse than one that doesn't). After a
+// restore, users on email/password re-verify; the re-link procedure is in
+// docs/disaster-recovery.md.
+async function dumpAuthUsers() {
+  const path = `${OUT}/auth_users.jsonl`;
+  await writeFile(path, "");
+  let page = 1;
+  let rows = 0;
+  for (;;) {
+    const { data, error } = await sb.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error(`auth.admin.listUsers p${page}: ${error.message}`);
+    const users = data?.users ?? [];
+    if (!users.length) break;
+    const slim = users.map((u) => ({
+      id: u.id,
+      email: u.email,
+      email_confirmed_at: u.email_confirmed_at ?? null,
+      created_at: u.created_at,
+      last_sign_in_at: u.last_sign_in_at ?? null,
+      app_metadata: u.app_metadata ?? {},
+      user_metadata: u.user_metadata ?? {},
+      identities: (u.identities ?? []).map((i) => ({
+        provider: i.provider,
+        identity_id: i.identity_id ?? i.id,
+        created_at: i.created_at,
+      })),
+    }));
+    await appendFile(path, slim.map((r) => JSON.stringify(r)).join("\n") + "\n");
+    rows += users.length;
+    if (users.length < 200) break;
+    page++;
+  }
+  return rows;
+}
+
 await mkdir(OUT, { recursive: true });
 
 const tables = await listTables();
@@ -89,6 +130,17 @@ for (const table of tables) {
     failed++;
     console.error(`[db-backup] ${table} FAILED: ${e.message}`);
   }
+}
+
+// auth identities ride in the same backup set (T4) — a restore without
+// them strands every profiles.auth_id reference.
+try {
+  const authRows = await dumpAuthUsers();
+  grandTotal += authRows;
+  console.log(`[db-backup] auth_users: ${authRows} identities`);
+} catch (e) {
+  failed++;
+  console.error(`[db-backup] auth_users FAILED: ${e.message}`);
 }
 
 console.log(`[db-backup] ${tables.length - failed}/${tables.length} tables, ${grandTotal} rows total`);
