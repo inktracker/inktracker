@@ -48,24 +48,75 @@ async function listAll(bucket, prefix = "") {
 }
 
 let grandTotal = 0;
+// T3: a skipped bucket or failed download must FAIL the job — a silently
+// partial backup is how you find out at restore time that the one file you
+// needed isn't in it.
+let hardFailures = 0;
+const bucketStats = {};
 for (const bucket of BUCKETS) {
   let paths;
   try {
     paths = await listAll(bucket);
   } catch (e) {
-    console.error(`[backup] bucket "${bucket}" skipped: ${e.message}`);
+    console.error(`[backup] bucket "${bucket}" list FAILED: ${e.message}`);
+    hardFailures++;
     continue;
   }
   let n = 0;
+  let bytes = 0;
   for (const path of paths) {
     const { data, error } = await sb.storage.from(bucket).download(path);
-    if (error) { console.error(`[backup] download failed ${bucket}/${path}: ${error.message}`); continue; }
+    if (error) {
+      console.error(`[backup] download failed ${bucket}/${path}: ${error.message}`);
+      hardFailures++;
+      continue;
+    }
+    const buf = Buffer.from(await data.arrayBuffer());
     const dest = join(OUT, bucket, path);
     await mkdir(dirname(dest), { recursive: true });
-    await writeFile(dest, Buffer.from(await data.arrayBuffer()));
+    await writeFile(dest, buf);
     n++;
+    bytes += buf.length;
   }
-  console.log(`[backup] ${bucket}: ${n} object(s)`);
+  bucketStats[bucket] = { count: n, bytes };
+  console.log(`[backup] ${bucket}: ${n} object(s), ${bytes} bytes`);
   grandTotal += n;
 }
 console.log(`[backup] done — ${grandTotal} object(s) under ./${OUT}/`);
+
+// ── Manifest + previous-run comparison (T3) ─────────────────────────
+{
+  const { buildStorageManifest, compareManifests } = await import("./lib/backupManifest.mjs");
+  const { readFile } = await import("node:fs/promises");
+  const manifest = { generated_at: new Date().toISOString(), ...buildStorageManifest(bucketStats) };
+  await mkdir(OUT, { recursive: true });
+  await writeFile(join(OUT, "manifest.json"), JSON.stringify(manifest, null, 2));
+
+  let prev = null;
+  if (process.env.PREV_MANIFEST) {
+    try { prev = JSON.parse(await readFile(process.env.PREV_MANIFEST, "utf8")); }
+    catch { console.warn(`[backup] previous manifest unreadable — compare skipped`); }
+  }
+  const cmp = compareManifests(prev, manifest);
+  if (cmp.note) console.log(`[backup] compare: ${cmp.note}`);
+  if (!cmp.ok) {
+    for (const p of cmp.problems) console.error(`[backup] MANIFEST ALARM: ${p}`);
+    // Breadcrumb for the qbReconcile operator-alert sweep (best-effort;
+    // the exit 1 is the primary signal).
+    try {
+      await sb.from("qb_event_log").insert({
+        shop_owner: "__system__",
+        action: "backup_failure",
+        direction: "outbound",
+        status: "error",
+        response_body: { kind: "storage", problems: cmp.problems },
+      });
+    } catch { /* best-effort */ }
+    process.exit(1);
+  }
+}
+
+if (hardFailures > 0) {
+  console.error(`[backup] ${hardFailures} hard failure(s) — failing the job (partial backups must not look green).`);
+  process.exit(1);
+}

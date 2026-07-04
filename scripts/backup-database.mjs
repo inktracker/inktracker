@@ -121,10 +121,12 @@ if (!tables.length) {
 
 let failed = 0;
 let grandTotal = 0;
+const tableCounts = {};
 for (const table of tables) {
   try {
     const rows = await dumpTable(table);
     grandTotal += rows;
+    tableCounts[table] = rows;
     console.log(`[db-backup] ${table}: ${rows} rows`);
   } catch (e) {
     failed++;
@@ -134,13 +136,53 @@ for (const table of tables) {
 
 // auth identities ride in the same backup set (T4) — a restore without
 // them strands every profiles.auth_id reference.
+let authRows = 0;
 try {
-  const authRows = await dumpAuthUsers();
+  authRows = await dumpAuthUsers();
   grandTotal += authRows;
   console.log(`[db-backup] auth_users: ${authRows} identities`);
 } catch (e) {
   failed++;
   console.error(`[db-backup] auth_users FAILED: ${e.message}`);
+}
+
+// ── Manifest + previous-run comparison (T3) ─────────────────────────
+// A backup that runs green but exports a hollowed-out dataset is the
+// classic silent killer. Write per-table counts; if the workflow provided
+// the previous run's manifest (PREV_MANIFEST env), fail LOUDLY when a
+// previously non-empty table comes back empty or drastically smaller.
+{
+  const { buildDbManifest, compareManifests } = await import("./lib/backupManifest.mjs");
+  const { readFile } = await import("node:fs/promises");
+  const manifest = { generated_at: new Date().toISOString(), ...buildDbManifest(tableCounts, authRows) };
+  await writeFile(`${OUT}/manifest.json`, JSON.stringify(manifest, null, 2));
+  console.log(`[db-backup] manifest: ${Object.keys(tableCounts).length} tables, ${manifest.total_rows} rows, ${authRows} identities`);
+
+  let prev = null;
+  if (process.env.PREV_MANIFEST) {
+    try {
+      prev = JSON.parse(await readFile(process.env.PREV_MANIFEST, "utf8"));
+    } catch {
+      console.warn(`[db-backup] previous manifest unreadable at ${process.env.PREV_MANIFEST} — comparing skipped`);
+    }
+  }
+  const cmp = compareManifests(prev, manifest);
+  if (cmp.note) console.log(`[db-backup] compare: ${cmp.note}`);
+  if (!cmp.ok) {
+    for (const p of cmp.problems) console.error(`[db-backup] MANIFEST ALARM: ${p}`);
+    // Leave a breadcrumb the qbReconcile operator-alert sweep emails about
+    // (best-effort — the exit 1 below is the primary signal either way).
+    try {
+      await sb.from("qb_event_log").insert({
+        shop_owner: "__system__",
+        action: "backup_failure",
+        direction: "outbound",
+        status: "error",
+        response_body: { kind: "db", problems: cmp.problems },
+      });
+    } catch { /* alerting is best-effort; the job failure is the signal */ }
+    process.exit(1);
+  }
 }
 
 console.log(`[db-backup] ${tables.length - failed}/${tables.length} tables, ${grandTotal} rows total`);
