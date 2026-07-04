@@ -67,6 +67,32 @@ lose tax-compliance documents.
   (capped retention/size). It complements, not replaces, enabling Supabase
   PITR + a proper offsite once paying.
 
+## Soft-delete safety net (T5)
+
+With no PITR, an accidental delete used to be unrecoverable between nightly
+exports. On the four highest-value tables — **quotes, orders, invoices,
+customers** — app deletes are now SOFT (`deleted_at` timestamp, migration
+`20260901000000`):
+
+- **Recover a deleted row** (service role — clients can't):
+  `UPDATE <table> SET deleted_at = NULL WHERE id = '<id>';`
+  via the Management API SQL runner or a with-secrets script. That's the
+  whole restore — the row was never gone.
+- **Window: 30 days.** `.github/workflows/purge-soft-deleted.yml` (Sundays)
+  hard-purges older soft-deleted rows via `scripts/purge-soft-deleted.mjs`
+  (dry-run by default when run manually). Customers still referenced by
+  live rows are never purged.
+- **Guarantees** (drill-verified weekly by `verify-soft-delete.mjs`):
+  clients cannot edit, un-delete, or hard-delete a soft-deleted row
+  (restrictive RLS — tenancy policies untouched); every app read filters
+  `deleted_at IS NULL` (entity-wrapper choke point); Completed orders
+  refuse soft-delete like they refuse hard delete; the integrity oracle
+  counts live rows only.
+- **Deploy order for the T5 change set: migration FIRST**, then edge
+  functions, then frontend. The frontend/edge code is written to be
+  undefined-safe pre-migration on reads, but the wrapper's read filter and
+  soft-delete write 42703 against a database without the column.
+
 ## Offsite mirror (T2 — inert until the bucket exists)
 
 GitHub artifacts are capped, expire in 30 days, and sit in the same blast

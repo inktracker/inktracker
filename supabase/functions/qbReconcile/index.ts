@@ -192,7 +192,7 @@ async function reconcileShop(adminClient: any, profile: any) {
   const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
   const { data: candidates, error } = await adminClient
     .from("quotes")
-    .select("id, quote_id, shop_owner, qb_invoice_id, qb_total, status, converted_order_id, customer_id, customer_name, customer_email, job_title, date, due_date, line_items, notes, rush_rate, extras, discount, discount_type, tax_rate, subtotal, tax, total, broker_id, broker_email, broker_name, broker_company, selected_artwork")
+    .select("*")
     .eq("shop_owner", shopOwner)
     .not("qb_invoice_id", "is", null)
     .neq("status", "Converted to Order")
@@ -205,7 +205,10 @@ async function reconcileShop(adminClient: any, profile: any) {
   }
 
   const classifications: any[] = [];
-  for (const quote of candidates ?? []) {
+  // T5: skip soft-deleted quotes — hard-delete parity: a deleted quote's QB
+  // invoice is intentionally unmanaged (guard is a no-op until the
+  // deleted_at migration + select widening land together).
+  for (const quote of (candidates ?? []).filter((q: any) => !q.deleted_at)) {
     try {
       const result = await reconcileOneQuote(adminClient, accessToken, realmId, quote, shopOwner);
       classifications.push(result);
@@ -236,7 +239,7 @@ async function reconcileShop(adminClient: any, profile: any) {
   // need a quote-level paid filter — just feed it the converted quotes.
   const { data: cascadeCandidates, error: cascadeErr } = await adminClient
     .from("quotes")
-    .select("id, quote_id, shop_owner, qb_invoice_id, status, converted_order_id, customer_id, customer_name, customer_email, broker_id, broker_email, broker_name, broker_company, total")
+    .select("*")
     .eq("shop_owner", shopOwner)
     .not("qb_invoice_id", "is", null)
     .or("status.eq.Converted to Order,converted_order_id.not.is.null")
@@ -245,7 +248,7 @@ async function reconcileShop(adminClient: any, profile: any) {
   if (cascadeErr) {
     classifications.push({ error: `cascade candidates query: ${cascadeErr.message}` });
   } else {
-    for (const quote of cascadeCandidates ?? []) {
+    for (const quote of (cascadeCandidates ?? []).filter((q: any) => !q.deleted_at)) {
       try {
         const result = await reconcileCascadeQuote(adminClient, accessToken, realmId, quote, shopOwner);
         classifications.push(result);

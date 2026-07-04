@@ -104,10 +104,11 @@ Deno.serve(async (req) => {
       const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
       const { data: quote } = await admin
         .from("quotes")
-        .select("id, shop_owner, customer_email, sent_to")
+        .select("*")
         .eq("quote_id", quoteId)
         .maybeSingle();
-      if (!quote) {
+      // T5: soft-deleted quotes can't send email (hard-delete parity).
+      if (!quote || quote.deleted_at) {
         return Response.json({ error: "Quote not found" }, { status: 404, headers: CORS });
       }
       quoteDbId = quote.id ?? null;

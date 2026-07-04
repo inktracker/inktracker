@@ -157,3 +157,46 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 REVOKE EXECUTE ON FUNCTION public.get_quote_by_token(text) FROM anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.get_order_by_token(text) FROM anon, authenticated;
 REVOKE EXECUTE ON FUNCTION public.rls_auto_enable() FROM anon, authenticated;
+
+-- ── RLS enablement (drill-caught gap #3) ─────────────────────────────
+-- NO migration ever ran ENABLE ROW LEVEL SECURITY — production got it via
+-- the dashboard (and the rls_auto_enable event trigger for new tables).
+-- Without these, a rebuilt-from-source schema comes up with tenant
+-- isolation OFF on every table. Captured from the live dump; idempotent.
+ALTER TABLE "public"."anon_email_rate" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."artwork_objects" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."assistant_usage" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."broker_documents" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."broker_files" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."broker_notifications" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."broker_performance" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."commissions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."customers" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."data_purge_log" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."expenses" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."inventory_items" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."invoices" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."messages" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."mfa_audit_log" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."mfa_signin_codes" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."mfa_trusted_devices" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."notification_log" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."notifications" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."orders" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."payees" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."payment_accounts" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."processed_webhook_events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."profile_secrets" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."purchase_orders" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."qb_event_log" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."qb_idempotency" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."quotes" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."request_rate" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."shop_performance" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."shops" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."supplier_lookup_rate" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."supplier_order_idempotency" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."supplier_style_cache" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."tax_categories" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "public"."tax_records" ENABLE ROW LEVEL SECURITY;

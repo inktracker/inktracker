@@ -66,8 +66,10 @@ jobs:
           START=$(date +%s)
           node scripts/restore-database.mjs scripts/restore-drill/fixture
           echo "RESTORE_SECONDS=$(( $(date +%s) - START ))" >> "$GITHUB_ENV"
-      - name: "Drill 3/3 — assert tables, row counts, and integrity oracle"
+      - name: "Drill 3/4 — assert tables, row counts, and integrity oracle"
         run: node scripts/restore-drill/verify-restore.mjs
+      - name: "Drill 4/4 — soft-delete RLS contract (T5) against the replayed policies"
+        run: node scripts/restore-drill/verify-soft-delete.mjs
       - name: Report measured RTO signal
         run: |
           echo "### Restore drill ✅" >> "$GITHUB_STEP_SUMMARY"
