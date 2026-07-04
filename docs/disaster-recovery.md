@@ -67,6 +67,31 @@ lose tax-compliance documents.
   (capped retention/size). It complements, not replaces, enabling Supabase
   PITR + a proper offsite once paying.
 
+## Offsite mirror (T2 — inert until the bucket exists)
+
+GitHub artifacts are capped, expire in 30 days, and sit in the same blast
+radius as the repo — one compromised GitHub account loses code AND backups.
+Both nightly workflows therefore run `scripts/offsite-mirror.mjs`, which
+uploads the full export to an S3-compatible bucket under a date-stamped,
+never-overwritten prefix and verifies every object with a HEAD request.
+Until the `BACKUP_S3_*` secrets exist it no-ops with a loud warning; once
+they exist, an upload failure FAILS the backup job (a silent offsite
+failure is worse than none).
+
+**Bucket requirements (Joe, one-time):**
+- Provider: Cloudflare R2, Backblaze B2, or AWS S3 — anything S3-compatible.
+- **In a SEPARATE account** from the Supabase project and ideally from the
+  GitHub org — the whole point is surviving a compromise of the primary
+  accounts. Separate email, separate password manager entry, MFA on.
+- **Object versioning ON** and a **retention / object-lock (compliance
+  mode) policy** of ≥30 days, so ransomware or a fat-fingered
+  delete-everything cannot erase history even WITH the credentials.
+- Credentials: a write-only (PutObject/HeadObject) key if the provider
+  supports it — the nightly job never needs to read or delete.
+- Then: `gh secret set BACKUP_S3_ENDPOINT / BACKUP_S3_BUCKET /
+  BACKUP_S3_ACCESS_KEY_ID / BACKUP_S3_SECRET_ACCESS_KEY / BACKUP_S3_REGION`
+  and the next nightly run starts mirroring automatically.
+
 ## Restore drill (OPS-03 — AUTOMATED, weekly)
 
 **As of 2026-07-03 the core recovery chain is drilled automatically.**
