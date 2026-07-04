@@ -67,19 +67,51 @@ lose tax-compliance documents.
   (capped retention/size). It complements, not replaces, enabling Supabase
   PITR + a proper offsite once paying.
 
-## Restore drill (OPS-03 — run once, then annually)
+## Restore drill (OPS-03 — AUTOMATED, weekly)
 
-The procedure below is written but UNTESTED until this drill is done. Run it
-into a throwaway Supabase project to validate the chain and confirm the ~4h RTO:
+**As of 2026-07-03 the core recovery chain is drilled automatically.**
+`.github/workflows/restore-drill.yml` runs every Monday and on any PR that
+touches `supabase/migrations/**` or the backup/restore scripts. It:
+
+1. Replays the **entire** migration chain (baseline → every file) onto an
+   empty Postgres 16 service container — proving the schema rebuilds from
+   source. `20260430000000_baseline_schema.sql` is the generated origin
+   (the pre-migration tables never had a migration until now);
+   `20260831000000_out_of_band_capture.sql` holds the dashboard-created
+   functions/policies/indexes that were never committed. Both are
+   idempotent no-ops against the live DB.
+2. Restores the committed fixture export through
+   `scripts/restore-database.mjs` — **the same script a real restore uses**
+   (direct-Postgres mode in the drill; PostgREST mode against a real
+   project), including re-establishing `auth.users` identities from
+   `auth_users.jsonl`.
+3. Asserts: every baseline table exists, every fixture table matches its
+   row counts (hard floors defend against fixture truncation), and
+   `data_integrity_violations()` is all-zero — the same oracle the nightly
+   prod cron runs.
+
+A broken migration, an un-loadable export, or an integrity violation fails
+the workflow loudly. Measured RTO signal (2026-07-03): the DB portion —
+full schema replay + fixture restore + verification — completes in
+**~2 seconds of database work (1–2 min CI wall clock with runner setup)**.
+The ~4h full-incident RTO target above is therefore dominated by the human
+steps (scratch project provisioning, Storage re-upload, secrets, redeploy),
+not the DB restore.
+
+The ANNUAL full-stack drill (scratch Supabase project + Storage re-upload +
+preview frontend + QB resolution) is still worth one run before onboarding
+past 10 shops — the automated drill covers the DB chain, not Storage or
+edge-function wiring:
 
 1. Create a scratch Supabase project; apply `supabase/migrations/` to it.
-2. Restore the latest DB backup (or load a dump) into it.
+2. Restore the latest DB backup via `node scripts/restore-database.mjs
+   <backup-dir>` with the scratch project's URL + service key.
 3. Download the latest `storage-backup` artifact and re-upload both buckets.
 4. Set the function secrets the app needs (QB, Stripe, Resend, suppliers).
 5. Point a preview frontend at the scratch project; sign in.
 6. Verify: `SELECT * FROM data_integrity_violations();` is all-zero, a shop's
    quotes/orders render, a cert's signed URL opens, and QuickBooks resolves.
-7. Record the wall-clock time as the measured RTO; update the target above.
+7. Record the wall-clock time as the measured full-incident RTO.
 
 ## Restore procedure (daily backup)
 
