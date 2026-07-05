@@ -16,7 +16,7 @@ import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SITE } from "./content/comparisons.mjs";
-import { esc, sliderRow, chartModel, chartCell, CALC_CSS, QTY_TIERS } from "./content/calc.mjs";
+import { esc, sliderRow, chartModel, chartCell, CALC_CSS, QTY_TIERS, stitchModel, stitchCell, STITCH_QTY_TIERS, STITCH_TIERS } from "./content/calc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, "..", "public");
@@ -122,7 +122,16 @@ const TOOLS = Object.freeze([
     metaTitle: "Free Screen Printing Price Calculator — Chart + Full Job Price",
     metaDesc: "Free screen printing price calculator: build a per-print chart from your monthly overhead, then add garment markup, setup fees, and extra print locations to price a whole job. Built by a working print shop.",
   },
-  // Future: embroidery pricing calculator, setup-fee calculator, etc.
+  {
+    slug: "embroidery-pricing-calculator",
+    tag: "Pricing",
+    title: "Embroidery Pricing Calculator",
+    hubDesc: "Build a per-piece embroidery price chart from your machine's real capacity — heads, speed, run hours — then stack garment, digitizing, and 3D stitches for the full job price. Free, no signup.",
+    render: renderEmbroidery,
+    metaTitle: "Free Embroidery Pricing Calculator — Stitch Chart + Full Job Price",
+    metaDesc: "Free embroidery pricing calculator: build a per-piece price chart from your machine's stitch capacity (heads × speed × hours), then add garment markup, digitizing, and 3D/puff to price a whole embroidery job. Built by a working shop.",
+  },
+  // Future: setup-fee calculator, job margin calculator, etc.
 ]);
 
 // ── The calculator tool (Part A chart + Part B full-price breakdown) ─────────
@@ -347,6 +356,237 @@ function fullPrice(B, M) {
     markup: markup, garmentTotal: garmentTotal,
     screens: screens, setup: setup,
     total: total, perShirt: total / B.qty,
+  };
+}
+
+// ── The embroidery calculator (Part A stitch chart + Part B full price) ──────
+function renderEmbroidery(tool) {
+  const canonical = `${SITE.baseUrl}/tools/${tool.slug}`;
+
+  // Static-first defaults tuned to realistic shop numbers (a 6-head running
+  // ~110 productive stitch-hours/month prices a 7.5k left-chest around $5–6).
+  const A = { costs: 14000, heads: 6, spm: 750, hours: 110, margin: 45, vol: 10 };
+  const B = { stitches: 7500, qty: 24, garment: 6, puff: false, digitizing: true };
+  const M = stitchModel(A);
+
+  // Part A — chart controls + stat cards + clickable grid.
+  const aControls =
+    sliderRow("costs", "Total monthly costs", "rent, thread, backing, your pay", 'min="1000" max="50000" step="500" value="14000"', m0(A.costs)) +
+    sliderRow("heads", "Machine heads", "pieces sewn at once (they run in parallel)", 'min="1" max="20" step="1" value="6"', String(A.heads)) +
+    sliderRow("spm", "Stitch speed (spm)", "stitches per minute your machine runs", 'min="400" max="1000" step="10" value="750"', ct(A.spm)) +
+    sliderRow("hours", "Productive run hours / month", "actual stitching time, not shop hours", 'min="20" max="600" step="5" value="110"', ct(A.hours)) +
+    sliderRow("margin", "Target margin", "the profit slice you keep", 'min="10" max="100" step="1" value="45"', A.margin + "%") +
+    sliderRow("vol", "Volume discount", "knocked off at each size break", 'min="0" max="30" step="1" value="10"', A.vol + "%");
+  const aStats = `<div class="calc-out" style="grid-template-columns:repeat(2,1fr)">
+    <div class="calc-stat"><div class="k">Cost / 1,000 stitches</div><div class="v" data-out="cpk">${m2(M.costPerK)}</div></div>
+    <div class="calc-stat"><div class="k">Priced / 1,000 stitches</div><div class="v" data-out="bpk">${m2(M.basePerK)}</div></div>
+  </div>`;
+  const selTi = embTierIdx(B.qty);
+  let rows = "";
+  for (let si = 0; si < STITCH_TIERS.length; si++) {
+    const band = STITCH_TIERS[si];
+    rows += `<tr><td class="rl">${band.label}</td>`;
+    for (let qi = 0; qi < STITCH_QTY_TIERS.length; qi++) {
+      const sel = si === stitchBandIdx(B.stitches) && qi === selTi ? " sel" : "";
+      rows += `<td class="${sel.trim()}" data-si="${si}" data-ti="${qi}">${m2(stitchCell(M, band.k, qi))}</td>`;
+    }
+    rows += "</tr>";
+  }
+  const aHead = '<thead><tr><th>Stitches \\ Qty</th><th>12</th><th>24</th><th>48</th><th>72</th><th>144</th></tr></thead>';
+  const aTable = `<table class="calc-table">${aHead}<tbody data-grid>${rows}</tbody></table>`;
+  const aCaption = `<p class="calc-note">Per piece, run price — before digitizing and garment. Click a cell to price that combination below.</p>`;
+  const partA = `<div class="calc" id="calc-chart">${aControls}${aStats}${aTable}${aCaption}</div>`;
+
+  // Part B — controls + stacked breakdown (static default).
+  const bd0 = embFullPrice(B, M);
+  const bControls = `<div class="calc" id="calc-full">
+    ${sliderRow("stitches", "Stitch count", "stitches in the design (a left chest ≈ 7,000)", 'min="1000" max="20000" step="500" value="7500"', ct(B.stitches))}
+    ${sliderRow("qty", "Quantity", "pieces in the run", 'min="6" max="500" step="1" value="24"', ct(B.qty))}
+    ${sliderRow("garment", "Garment (blank) cost", "what you pay per piece", 'min="0" max="40" step="0.5" value="6"', m2(B.garment))}
+    <div class="toggle"><input type="checkbox" data-in="puff" /><span>3D / puff embroidery <span style="color:var(--muted)">(specialty stitch, +$2.00 / piece)</span></span></div>
+    <div class="toggle"><input type="checkbox" data-in="digitizing" checked /><span>Digitizing fee ($50, one-time per design)</span></div>
+  </div>`;
+  const partB = `${bControls}
+  <div class="bd" id="breakdown">
+    <div class="bd-row"><div class="lbl"><b>Embroidery — run</b><span data-note="run">${ct(B.stitches)} stitches · ${m2(bd0.perPiece)}/piece × ${ct(B.qty)} (priced at the ${bd0.tier} tier)</span></div><div class="amt" data-amt="run">${m2(bd0.runTotal)}</div></div>
+    <div class="bd-row" data-row="puff"${B.puff ? "" : " hidden"}><div class="lbl"><b>3D / puff embroidery</b><span data-note="puff">$2.00/piece × ${ct(B.qty)}</span></div><div class="amt" data-amt="puff">${m2(bd0.puffTotal)}</div></div>
+    <div class="bd-row"><div class="lbl"><b>Garment</b><span data-note="garment">${m2(B.garment)} × ${bd0.markup.toFixed(2)} markup × ${ct(B.qty)}</span></div><div class="amt" data-amt="garment">${m2(bd0.garmentTotal)}</div></div>
+    <div class="bd-row" data-row="digitizing"${B.digitizing ? "" : " hidden"}><div class="lbl"><b>Digitizing</b><span data-note="digitizing">$50 one-time per design</span></div><div class="amt" data-amt="digitizing">${m2(bd0.digitizing)}</div></div>
+    <div class="bd-row total"><div class="lbl"><b>Order total</b></div><div class="amt" data-amt="total">${m2(bd0.total)}</div></div>
+    <div class="bd-row pershirt"><div class="lbl">Per piece</div><div class="amt" data-amt="pershirt">${m2(bd0.perAll)}</div></div>
+  </div>`;
+
+  // Client script: inject the SHARED stitch math + this page's embFullPrice()
+  // verbatim so browser numbers equal the static render.
+  const qtyTiersJs = JSON.stringify(STITCH_QTY_TIERS);
+  const bandsJs = JSON.stringify(STITCH_TIERS);
+  const script = `<script>(function(){
+var root=document.getElementById("calc-chart"),full=document.getElementById("calc-full"),bd=document.getElementById("breakdown");
+if(!root||!full||!bd)return;
+var BANDS=${bandsJs},TQ=${qtyTiersJs};
+${stitchModel.toString()}
+${stitchCell.toString()}
+${embTierIdx.toString()}
+${stitchBandIdx.toString()}
+${embFullPrice.toString()}
+function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}
+function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}
+function ct(n){return Math.round(n).toLocaleString("en-US");}
+var A={costs:14000,heads:6,spm:750,hours:110,margin:45,vol:10};
+var B={stitches:7500,qty:24,garment:6,puff:false,digitizing:true};
+function buildChart(){var M=stitchModel(A);var st=embTierIdx(B.qty);var bi=stitchBandIdx(B.stitches);var rows="";
+for(var si=0;si<BANDS.length;si++){rows+="<tr><td class=\\"rl\\">"+BANDS[si].label+"</td>";
+for(var qi=0;qi<TQ.length;qi++){var sel=(si===bi&&qi===st)?" sel":"";rows+="<td class=\\""+sel.replace(/^ /,"")+"\\" data-si=\\""+si+"\\" data-ti=\\""+qi+"\\">"+m2(stitchCell(M,BANDS[si].k,qi))+"</td>";}
+rows+="</tr>";}
+root.querySelector("[data-grid]").innerHTML=rows;
+root.querySelector('[data-out="cpk"]').textContent=m2(M.costPerK);
+root.querySelector('[data-out="bpk"]').textContent=m2(M.basePerK);
+root.querySelectorAll("td[data-si]").forEach(function(td){td.addEventListener("click",function(){
+B.stitches=BANDS[parseInt(td.getAttribute("data-si"),10)].k*1000;
+B.qty=TQ[parseInt(td.getAttribute("data-ti"),10)];
+var ss=full.querySelector('[data-in="stitches"]');ss.value=B.stitches;full.querySelector('[data-val="stitches"]').textContent=ct(B.stitches);
+var qs=full.querySelector('[data-in="qty"]');qs.value=B.qty;full.querySelector('[data-val="qty"]').textContent=ct(B.qty);
+buildBreakdown();});});}
+function buildBreakdown(){var M=stitchModel(A);var r=embFullPrice(B,M);
+bd.querySelector('[data-amt="run"]').textContent=m2(r.runTotal);
+bd.querySelector('[data-note="run"]').textContent=ct(B.stitches)+" stitches · "+m2(r.perPiece)+"/piece × "+ct(B.qty)+" (priced at the "+r.tier+" tier)";
+bd.querySelector('[data-row="puff"]').hidden=!B.puff;
+bd.querySelector('[data-amt="puff"]').textContent=m2(r.puffTotal);
+bd.querySelector('[data-amt="garment"]').textContent=m2(r.garmentTotal);
+bd.querySelector('[data-note="garment"]').textContent=m2(B.garment)+" × "+r.markup.toFixed(2)+" markup × "+ct(B.qty);
+bd.querySelector('[data-row="digitizing"]').hidden=!B.digitizing;
+bd.querySelector('[data-amt="digitizing"]').textContent=m2(r.digitizing);
+bd.querySelector('[data-amt="total"]').textContent=m2(r.total);
+bd.querySelector('[data-amt="pershirt"]').textContent=m2(r.perAll);
+buildChart();}
+function wireA(k,t){var sl=root.querySelector('[data-in="'+k+'"]');var ov=root.querySelector('[data-val="'+k+'"]');
+function u(){A[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(A[k]):t==="ct"?ct(A[k]):t==="pct"?(Math.round(A[k])+"%"):A[k];buildBreakdown();}
+sl.addEventListener("input",u);u();}
+wireA("costs","m0");wireA("heads","");wireA("spm","ct");wireA("hours","ct");wireA("margin","pct");wireA("vol","pct");
+var ss=full.querySelector('[data-in="stitches"]'),sv=full.querySelector('[data-val="stitches"]');
+ss.addEventListener("input",function(){B.stitches=parseInt(ss.value,10);sv.textContent=ct(B.stitches);buildBreakdown();});
+var qs=full.querySelector('[data-in="qty"]'),qv=full.querySelector('[data-val="qty"]');
+qs.addEventListener("input",function(){B.qty=parseInt(qs.value,10);qv.textContent=ct(B.qty);buildBreakdown();});
+var gs=full.querySelector('[data-in="garment"]'),gv=full.querySelector('[data-val="garment"]');
+gs.addEventListener("input",function(){B.garment=parseFloat(gs.value);gv.textContent=m2(B.garment);buildBreakdown();});
+full.querySelector('[data-in="puff"]').addEventListener("change",function(e){B.puff=e.target.checked;buildBreakdown();});
+full.querySelector('[data-in="digitizing"]').addEventListener("change",function(e){B.digitizing=e.target.checked;buildBreakdown();});
+buildBreakdown();
+})();</script>`;
+
+  const webApp = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: "Embroidery Pricing Calculator",
+    url: canonical,
+    description: tool.metaDesc,
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Web",
+    inLanguage: "en-US",
+    isPartOf: { "@type": "WebSite", name: SITE.name, url: SITE.baseUrl },
+    offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+    publisher: { "@type": "Organization", name: SITE.name, url: SITE.baseUrl, logo: { "@type": "ImageObject", url: SITE.logo } },
+  };
+  const breadcrumb = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "InkTracker", item: `${SITE.baseUrl}/` },
+      { "@type": "ListItem", position: 2, name: "Free Tools", item: `${SITE.baseUrl}/tools` },
+      { "@type": "ListItem", position: 3, name: tool.title, item: canonical },
+    ],
+  };
+
+  const body = `${siteHeader}
+<main class="wrap">
+  <nav class="crumbs"><a href="${SITE.baseUrl}/">Home</a> › <a href="${SITE.baseUrl}/tools">Free Tools</a> › Embroidery Pricing Calculator</nav>
+  <h1>Free Embroidery Pricing Calculator</h1>
+  <p class="lede">Embroidery is priced by the stitch. Build a per-piece price chart from what your machine actually costs to run — then add garment, digitizing, and 3D to price the whole job. No signup.</p>
+
+  <h2>1. Build your stitch chart</h2>
+  <p>Your capacity is <b>heads × speed × the hours the machine actually runs</b> — heads matter most, because they sew in parallel (a 6-head shop puts out six pieces in the time a single-head does one). Divide your monthly costs by the stitches you sew and you get your <b>cost per 1,000 stitches</b>. Your price is that cost divided by <code>(1 − your margin)</code> — margin isn't markup, so keeping 45% means dividing by 0.55. Bigger runs cost less per piece; the chart prices each stitch band across your quantity breaks.</p>
+  ${partA}
+
+  <h2>2. The full price</h2>
+  <p>The chart is the stitching. Three things stack on top: <b>garment markup</b>, a one-time <b>digitizing fee</b>, and specialty stitches like <b>3D / puff</b>. Click a chart cell above to load it here, or set the job yourself.</p>
+  ${partB}
+  <p class="calc-note">Digitizing is one-time per design — you pay it on the first run, not on reorders, which is why re-running a logo is so much cheaper per piece. Garment markup slides down as blanks get pricier (40% on a cheap tee, ~15% on a $30 jacket). The stitching and garment scale with quantity; digitizing doesn't.</p>
+
+  <div class="soft-cta">
+    <h3>Stop rebuilding this by hand</h3>
+    <p>This is the free version of the embroidery pricing built into InkTracker — it holds your stitch-count tiers, digitizing fee, and specialty add-ons and stacks them on every quote automatically. Start a 14-day free trial.</p>
+    <a class="cta" href="${TRIAL_CALC}">Start your free trial</a>
+  </div>
+
+  <p>Want the full method in a printer's own words? Read <a href="${SITE.baseUrl}/blog/how-to-price-embroidery">how to price embroidery</a>. Also print screens? Try the <a href="${SITE.baseUrl}/tools/screen-printing-price-calculator">screen printing price calculator</a>. More free tools on the <a href="${SITE.baseUrl}/tools">tools hub</a>, and see <a href="${SITE.baseUrl}/for-printers">what InkTracker does for print &amp; embroidery shops</a>.</p>
+</main>
+${siteFooter}
+${script}`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${esc(tool.metaTitle)}</title>
+  <meta name="description" content="${esc(tool.metaDesc)}" />
+  <link rel="canonical" href="${esc(canonical)}" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${esc(tool.metaTitle)}" />
+  <meta property="og:description" content="${esc(tool.metaDesc)}" />
+  <meta property="og:url" content="${esc(canonical)}" />
+  <meta property="og:image" content="${SITE.logo}" />
+  <meta name="twitter:card" content="summary" />
+  ${FONTS}
+  <style>${CSS}</style>
+  ${ldJson(webApp)}
+  ${ldJson(breadcrumb)}
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
+// Pure: highest embroidery quantity-tier index whose breakpoint ≤ qty. ES5-safe.
+function embTierIdx(qty) {
+  var t = [12, 24, 48, 72, 144];
+  var idx = 0;
+  for (var i = 0; i < 5; i++) { if (qty >= t[i]) idx = i; }
+  return idx;
+}
+
+// Pure: which stitch band (row) a raw stitch count falls in (0–3). ES5-safe —
+// used only to highlight the matching chart cell for the current Part B design.
+function stitchBandIdx(stitches) {
+  if (stitches < 5000) return 0;
+  if (stitches < 10000) return 1;
+  if (stitches < 15000) return 2;
+  return 3;
+}
+
+// Pure full-job embroidery price. B = { stitches, qty, garment, puff, digitizing },
+// M = stitchModel(). ES5-safe. Digitizing is one-time (embroidery's setup analog);
+// puff is a flat per-piece specialty add; garment markup uses the sliding brackets.
+function embFullPrice(B, M) {
+  var ti = embTierIdx(B.qty);
+  var perPiece = M.basePerK * (B.stitches / 1000) * M.tm[ti];
+  var puffAdd = B.puff ? 2.0 : 0;
+  var g = B.garment;
+  var markup = g > 25 ? 1.15 : g > 15 ? 1.22 : g > 8 ? 1.30 : 1.40;
+  var runTotal = perPiece * B.qty;
+  var puffTotal = puffAdd * B.qty;
+  var garmentTotal = g * markup * B.qty;
+  var digitizing = B.digitizing ? 50 : 0;
+  var total = runTotal + puffTotal + garmentTotal + digitizing;
+  return {
+    ti: ti, tier: [12, 24, 48, 72, 144][ti],
+    perPiece: perPiece, runTotal: runTotal,
+    puffAdd: puffAdd, puffTotal: puffTotal,
+    markup: markup, garmentTotal: garmentTotal,
+    digitizing: digitizing,
+    total: total, perAll: total / B.qty,
   };
 }
 
