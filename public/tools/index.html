@@ -73,7 +73,10 @@ footer.site a{color:var(--muted);margin-right:16px}
 .calc-table tbody tr:nth-child(even){background:#f6faf7}
 /* calculator page extras */
 .calc-table td[data-ci]{cursor:pointer}
-.calc-table td.sel{background:var(--forest)!important;color:#fff;font-weight:700}
+/* Selection changes ONLY color/background — never font-weight — so the
+   selected cell's number doesn't get wider and reflow the column (the
+   "numbers shift when you click through the grid" bug). */
+.calc-table td.sel{background:var(--forest)!important;color:#fff}
 .stepper{display:inline-flex;align-items:center;border:1px solid var(--hair);border-radius:8px;overflow:hidden;background:#fff}
 .stepper button{width:30px;height:32px;border:0;background:#f1f1f1;font-weight:700;cursor:pointer;color:#333}
 .stepper button:hover{background:#e6e6e6}

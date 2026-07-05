@@ -73,7 +73,10 @@ footer.site a{color:var(--muted);margin-right:16px}
 .calc-table tbody tr:nth-child(even){background:#f6faf7}
 /* calculator page extras */
 .calc-table td[data-ci]{cursor:pointer}
-.calc-table td.sel{background:var(--forest)!important;color:#fff;font-weight:700}
+/* Selection changes ONLY color/background — never font-weight — so the
+   selected cell's number doesn't get wider and reflow the column (the
+   "numbers shift when you click through the grid" bug). */
+.calc-table td.sel{background:var(--forest)!important;color:#fff}
 .stepper{display:inline-flex;align-items:center;border:1px solid var(--hair);border-radius:8px;overflow:hidden;background:#fff}
 .stepper button{width:30px;height:32px;border:0;background:#f1f1f1;font-weight:700;cursor:pointer;color:#333}
 .stepper button:hover{background:#e6e6e6}
@@ -175,7 +178,7 @@ footer.site a{color:var(--muted);margin-right:16px}
     <output class="calc-val" data-val="shirts">4,000</output>
   </div><div class="calc-row">
     <div class="calc-label"><b>Target margin</b><span>the profit slice you keep</span></div>
-    <input type="range" class="calc-slider" data-in="margin" min="10" max="75" step="1" value="45" />
+    <input type="range" class="calc-slider" data-in="margin" min="10" max="100" step="1" value="45" />
     <output class="calc-val" data-val="margin">45%</output>
   </div><div class="calc-row">
     <div class="calc-label"><b>Volume discount</b><span>knocked off at each size break</span></div>
@@ -237,7 +240,13 @@ var root=document.getElementById("calc-chart"),full=document.getElementById("cal
 if(!root||!full||!bd)return;
 function chartModel(S) {
   var cpp = S.costs / S.shirts;
-  var base = cpp / (1 - S.margin / 100);
+  // Margin → base = cost ÷ (1 − margin). A true 100% margin divides by zero
+  // (price is infinite when cost is 0% of it), so floor the divisor at 0.01
+  // to return a large FINITE number instead of Infinity/NaN as margin nears
+  // 100%. Never fires below ~99%, so lower margins are unaffected.
+  var denom = 1 - S.margin / 100;
+  if (denom < 0.01) denom = 0.01;
+  var base = cpp / denom;
   var vd = S.vol / 100, ac = S.color / 100;
   var tm = [1];
   for (var i = 1; i < 4; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));

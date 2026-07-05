@@ -70,7 +70,10 @@ footer.site a{color:var(--muted);margin-right:16px}
 ${CALC_CSS}
 /* calculator page extras */
 .calc-table td[data-ci]{cursor:pointer}
-.calc-table td.sel{background:var(--forest)!important;color:#fff;font-weight:700}
+/* Selection changes ONLY color/background — never font-weight — so the
+   selected cell's number doesn't get wider and reflow the column (the
+   "numbers shift when you click through the grid" bug). */
+.calc-table td.sel{background:var(--forest)!important;color:#fff}
 .stepper{display:inline-flex;align-items:center;border:1px solid var(--hair);border-radius:8px;overflow:hidden;background:#fff}
 .stepper button{width:30px;height:32px;border:0;background:#f1f1f1;font-weight:700;cursor:pointer;color:#333}
 .stepper button:hover{background:#e6e6e6}
@@ -134,7 +137,7 @@ function renderCalculator(tool) {
   const aControls =
     sliderRow("costs", "Total monthly costs", "rent, power, supplies, your pay", 'min="1000" max="50000" step="500" value="14000"', m0(A.costs)) +
     sliderRow("shirts", "Prints per month", "how many you print in a month", 'min="50" max="30000" step="50" value="4000"', ct(A.shirts)) +
-    sliderRow("margin", "Target margin", "the profit slice you keep", 'min="10" max="75" step="1" value="45"', A.margin + "%") +
+    sliderRow("margin", "Target margin", "the profit slice you keep", 'min="10" max="100" step="1" value="45"', A.margin + "%") +
     sliderRow("vol", "Volume discount", "knocked off at each size break", 'min="0" max="30" step="1" value="10"', A.vol + "%") +
     sliderRow("color", "Added color", "each extra color adds", 'min="0" max="30" step="1" value="10"', A.color + "%");
   const aStats = `<div class="calc-out" style="grid-template-columns:repeat(2,1fr)">

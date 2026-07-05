@@ -78,6 +78,20 @@ describe("calculator page (/tools/screen-printing-price-calculator)", () => {
     expect(CALC).toContain(`data-amt="pershirt">${money(total / 72)}`);
   });
 
+  it("target margin slider goes to 100%, and the model floors the divisor (no Infinity)", () => {
+    expect(CALC).toMatch(/data-in="margin"[^>]*max="100"/);
+    const M = chartModel({ costs: 14000, shirts: 4000, margin: 100, vol: 0, color: 0 });
+    expect(Number.isFinite(M.base)).toBe(true);
+    expect(M.base).toBeCloseTo(350, 2); // 3.5 / 0.01 floor
+  });
+
+  it("selected cell changes color only — not font-weight (no column reflow / number shift)", () => {
+    // the .sel rule must not set font-weight (that widened the cell and shifted the row)
+    expect(CALC).toMatch(/\.calc-table td\.sel\{[^}]*\}/);
+    const selRule = CALC.match(/\.calc-table td\.sel\{([^}]*)\}/)[1];
+    expect(selRule).not.toContain("font-weight");
+  });
+
   it("has the five Part A sliders and Part B controls", () => {
     for (const k of ["costs", "shirts", "margin", "vol", "color"]) {
       expect(CALC).toContain(`data-in="${k}"`);

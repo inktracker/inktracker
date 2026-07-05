@@ -237,7 +237,13 @@ ul.body-list li{margin:.55em 0}
     <div class="calc-stat"><div class="k">Base print price</div><div class="v" data-out="base">$6.36</div></div>
   </div><table class="calc-table"><thead><tr><th>Colors \ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead><tbody data-grid><tr><td class="rl">1 color</td><td>$6.36</td><td>$5.73</td><td>$5.27</td><td>$4.93</td></tr><tr><td class="rl">2 colors</td><td>$7.00</td><td>$6.30</td><td>$5.80</td><td>$5.43</td></tr><tr><td class="rl">3 colors</td><td>$7.63</td><td>$6.87</td><td>$6.32</td><td>$5.91</td></tr><tr><td class="rl">4 colors</td><td>$8.25</td><td>$7.42</td><td>$6.83</td><td>$6.39</td></tr><tr><td class="rl">5 colors</td><td>$8.85</td><td>$7.96</td><td>$7.33</td><td>$6.86</td></tr><tr><td class="rl">6 colors</td><td>$9.43</td><td>$8.49</td><td>$7.81</td><td>$7.31</td></tr><tr><td class="rl">7 colors</td><td>$9.99</td><td>$8.99</td><td>$8.27</td><td>$7.74</td></tr><tr><td class="rl">8 colors</td><td>$10.52</td><td>$9.47</td><td>$8.71</td><td>$8.15</td></tr></tbody></table><p class="calc-note">Price per print. Garment and markup are added separately.</p></div><script>(function(){var root=document.getElementById("calc-chart");if(!root)return;function chartModel(S) {
   var cpp = S.costs / S.shirts;
-  var base = cpp / (1 - S.margin / 100);
+  // Margin → base = cost ÷ (1 − margin). A true 100% margin divides by zero
+  // (price is infinite when cost is 0% of it), so floor the divisor at 0.01
+  // to return a large FINITE number instead of Infinity/NaN as margin nears
+  // 100%. Never fires below ~99%, so lower margins are unaffected.
+  var denom = 1 - S.margin / 100;
+  if (denom < 0.01) denom = 0.01;
+  var base = cpp / denom;
   var vd = S.vol / 100, ac = S.color / 100;
   var tm = [1];
   for (var i = 1; i < 4; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));

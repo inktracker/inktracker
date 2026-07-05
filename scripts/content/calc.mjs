@@ -29,7 +29,13 @@ export const QTY_TIERS = [25, 50, 100, 200];
 //   cm[] = color multipliers (each added color adds a shrinking slice)
 export function chartModel(S) {
   var cpp = S.costs / S.shirts;
-  var base = cpp / (1 - S.margin / 100);
+  // Margin → base = cost ÷ (1 − margin). A true 100% margin divides by zero
+  // (price is infinite when cost is 0% of it), so floor the divisor at 0.01
+  // to return a large FINITE number instead of Infinity/NaN as margin nears
+  // 100%. Never fires below ~99%, so lower margins are unaffected.
+  var denom = 1 - S.margin / 100;
+  if (denom < 0.01) denom = 0.01;
+  var base = cpp / denom;
   var vd = S.vol / 100, ac = S.color / 100;
   var tm = [1];
   for (var i = 1; i < 4; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));
