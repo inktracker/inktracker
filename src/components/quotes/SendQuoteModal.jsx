@@ -209,17 +209,16 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // payment provider and clicks the explicit "Create QB Invoice" button.
   // Send remains disabled until this succeeds.
   async function handleCreateQbInvoice({ acceptQbTax = false } = {}) {
-    // Last-mile confirm. The inline banner above the button warns about
-    // this too, but the operator can still click-through if they're
-    // scanning fast. QBO's POST /invoice/{id}/send (the only API that
-    // mints a payment link) ALSO emails the customer from QuickBooks'
-    // mail servers — there's no opt-out. Re-tries (status === "send_failed")
-    // skip the confirm because the customer already got the first email.
+    // Last-mile confirm — this button both creates the QB invoice AND sends
+    // the customer the quote email, so it's a real outbound-email gate.
+    // NOTE: QuickBooks does NOT email a separate copy (noEmail:true suppresses
+    // the /send fallback); the customer gets ONE InkTracker email with the
+    // PDF, Approve button, and pay-now link. Re-tries (status ===
+    // "send_failed") skip the confirm — the invoice already exists.
     if (qbState.status === "needs_create") {
-      const recipientEmail = quote?.customer_email;
+      const recipientEmail = recipientEmails[0] || quote?.customer_email;
       const proceed = window.confirm(
-        `Heads up: QuickBooks will email ${recipientEmail || "the customer"} a copy of this invoice with a pay-now link the moment you click OK.\n\n` +
-        `This will also send the InkTracker quote email (PDF + approve button) right after, so the customer gets both. Continue?`
+        `This creates the QuickBooks invoice and emails ${recipientEmail || "the customer"} your quote — one message with the PDF, Approve button, and pay-now link. QuickBooks won't send a separate email. Continue?`
       );
       if (!proceed) return;
     }
@@ -297,6 +296,12 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         invoicePayload,
         idempotencyKey,
         acceptQbTax,
+        // Mint the pay-now link WITHOUT QuickBooks emailing its own copy —
+        // the /send fallback is suppressed (skipSend). InkTracker sends the
+        // single customer email (Resend) with the PDF, Approve button, and
+        // the pay link embedded. Same email-free contract as the order→
+        // invoice path (createInvoiceInQB / InvoiceDetailModal).
+        noEmail: true,
       });
       if (invErr) {
         // supabase-js wraps any non-2xx in a FunctionsHttpError whose
@@ -793,7 +798,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                     <span className="text-xs text-emerald-700 leading-relaxed">
-                      QB invoice {qbDocNumber || `#${qbInvoiceId}`} ready. QuickBooks has emailed the customer with the pay-now link.
+                      QB invoice {qbDocNumber || `#${qbInvoiceId}`} ready — its pay-now link is included in the quote email InkTracker sends. QuickBooks doesn't send a separate email.
                     </span>
                   </div>
                 )}
@@ -846,7 +851,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                       {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
                       {creatingQbInvoice ? "Creating QB invoice…" : "Create QB Invoice & Send Quote"}
                     </button>
-                    <p className="text-xs text-slate-500">QuickBooks emails the invoice + pay-now link, then InkTracker sends the branded quote email with PDF breakdown and Approve button. Skip this step to send a plain quote (no pay-now link).</p>
+                    <p className="text-xs text-slate-500">Creates the invoice in QuickBooks to get a pay-now link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. QuickBooks doesn't email a separate copy. Skip this step to send a plain quote (no pay-now link).</p>
                     {qbError && (
                       <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
                         {qbError}
