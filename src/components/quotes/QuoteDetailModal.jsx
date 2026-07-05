@@ -508,19 +508,11 @@ export default function QuoteDetailModal({
   }
 
   async function handleQBSync() {
-    // First-time invoice creation triggers QBO's POST /invoice/{id}/send,
-    // which emails the customer a copy + payment link from QuickBooks'
-    // own mail servers. Re-sync (when qb_invoice_id already exists) is
-    // an UPDATE — no new send. So gate the confirm on the create case
-    // only; re-syncs run silently.
-    if (!qbInvoiceId) {
-      const recipientEmail = customer?.email || quote.customer_email;
-      const proceed = window.confirm(
-        `Heads up: QuickBooks will email ${recipientEmail || "the customer"} a copy of this invoice with a pay-now link the moment you click OK.\n\n` +
-        `This happens on QuickBooks' side — InkTracker can't suppress it. Continue?`
-      );
-      if (!proceed) return;
-    }
+    // Sync-only: creates the invoice in QuickBooks and mints the pay-now
+    // link (used by the Send flow) WITHOUT QuickBooks emailing the customer
+    // — noEmail:true below suppresses the /send fallback. No confirm needed:
+    // this doesn't notify the customer, it just prepares the QB invoice.
+    // The shop emails the customer deliberately via Send Quote.
     setQbSyncing(true);
     setQbError(null);
     try {
@@ -552,6 +544,7 @@ export default function QuoteDetailModal({
       const { raw: data } = await provider.pushInvoice(quote, {
         customer: customerPayload,
         invoicePayload,
+        noEmail: true, // sync-only — QB must not email; Send delivers it
       });
 
       // UPDATE-on-existing-invoice failed in QB. Edge function refused

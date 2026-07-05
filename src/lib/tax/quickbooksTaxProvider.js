@@ -134,7 +134,7 @@ export function createQuickBooksTaxProvider({
       return { ...EMPTY_CALC };
     },
 
-    async pushInvoice(quote, { customer = {}, invoicePayload } = {}) {
+    async pushInvoice(quote, { customer = {}, invoicePayload, noEmail = false } = {}) {
       const qboInvoice = buildQBOInvoiceJSON(quote, { customer });
       const body = {
         action: "createInvoice",
@@ -148,6 +148,11 @@ export function createQuickBooksTaxProvider({
         //    so once the edge fn opts in, AST runs against the correct shape.
         invoicePayload,
         qboInvoice,
+        // When set, suppresses QuickBooks' own /send email (skipSend) — the
+        // pay link is still minted via include=invoiceLink. Callers that only
+        // want to SYNC (not notify the customer) pass this so QB never
+        // surprise-emails; the InkTracker Send flow delivers the email.
+        noEmail,
       };
 
       const res = await httpClient(qbSyncUrl, {
