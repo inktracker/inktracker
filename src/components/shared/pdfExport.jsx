@@ -12,9 +12,10 @@ import {
   BROKER_MARKUP,
   STANDARD_MARKUP,
   getLineExtras,
+  getShopPricingConfig,
 } from './pricing';
 import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
-import { imprintColorLabel } from '../../lib/quotes/imprintColorLabel';
+import { imprintColorLabel, imprintCountText } from '../../lib/quotes/imprintLabels';
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
 
@@ -637,7 +638,9 @@ function renderLineItems(
         const impTitle = imp.title ? ` (${imp.title})` : '';
 
         doc.text(
-          ` — ${imp.colors} color(s) · ${imp.technique}${dims}${impTitle}`,
+          // Embroidery: imp.colors is a stitch-tier index, so render the tier
+          // ("5K-10K stitches"), not "N color(s)". Customer-facing PDF.
+          ` — ${imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · ${imp.technique}${dims}${impTitle}`,
           margin + 3 + doc.getTextWidth(locText) + 1,
           yPos
         );

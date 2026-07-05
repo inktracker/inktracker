@@ -3,6 +3,7 @@ import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2 } from "lucide-react";
 import { fmtDate, getOrderDisplayClient } from "../components/shared/pricing";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
 
@@ -298,9 +299,9 @@ export default function ArtApproval() {
                                 <MapPin className="w-3.5 h-3.5 shrink-0" />
                                 {imp.title ? `${imp.title} — ${imp.location || ""}` : imp.location || "Location"}
                               </span>
-                              {imp.colors > 0 && (
+                              {imprintCountText(imp) && (
                                 <span className="text-xs text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-full">
-                                  {imp.colors} color{imp.colors !== 1 ? "s" : ""}
+                                  {imprintCountText(imp)}
                                 </span>
                               )}
                               {imp.technique && (

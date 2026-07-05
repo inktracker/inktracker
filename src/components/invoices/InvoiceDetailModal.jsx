@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload, getDisplayName } from "../shared/pricing";
+import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload, getDisplayName, getShopPricingConfig } from "../shared/pricing";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
@@ -398,7 +399,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                         {imp.title && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{imp.title}</div>}
                         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
                           <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
-                          <span className="text-slate-500">{imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}</span>
+                          <span className="text-slate-500">{imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · {imp.technique}</span>
                           {imp.pantones && <span className="text-teal-600 font-medium">{imp.pantones}</span>}
                           {imp.details && <span className="text-slate-500 italic">{imp.details}</span>}
                         </div>
