@@ -899,11 +899,11 @@ export default function QuoteDetailModal({
                   return (
                     <div
                       key={li.id}
-                      className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden"
+                      className="border border-slate-200 dark:border-slate-700 border-l-4 border-l-teal-600 rounded-xl overflow-hidden shadow-sm"
                     >
-                      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                          <div className="text-base font-bold text-slate-900 dark:text-slate-100">
                             {getGarmentHeader(li)}
                           </div>
                           {getGarmentMeta(li) && (
