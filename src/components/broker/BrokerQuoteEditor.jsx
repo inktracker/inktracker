@@ -60,6 +60,7 @@ function blankQuote() {
     },
     line_items: [newLineItem()],
     discount: 0,
+    discount_description: "",
     tax_rate: 0,
     // Broker-set tax rate for the end client. Shop-to-broker is always
     // 0% (B2B); broker-to-client is whatever the broker enters here.
@@ -689,6 +690,17 @@ export default function BrokerQuoteEditor({
                   <span className="text-slate-500 text-xs">%</span>
                 </div>
               </div>
+
+              {parseFloat(q.discount) > 0 && (
+                <input
+                  type="text"
+                  value={q.discount_description || ""}
+                  onChange={(e) => setQ({ ...q, discount_description: e.target.value })}
+                  placeholder="Discount reason (optional) — e.g. loyal customer, bulk"
+                  maxLength={120}
+                  className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+              )}
 
               {parseFloat(q.discount) > 0 && (
                 <>
