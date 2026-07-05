@@ -12,6 +12,7 @@ import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { SITE, POSTS } from "./content/blog-posts.mjs";
+import { sliderRow, chartModel, chartCell, CALC_CSS } from "./content/calc.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -76,27 +77,8 @@ ul.body-list li{margin:.55em 0}
 .blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
 .blog-cta .related{margin-top:1.1em;font-size:13px;color:#bdbdbd}
 .blog-cta .related a{color:#eaeaea}
-/* calculator */
-.calc{border:1px solid var(--hair);border-radius:14px;padding:20px;margin:1.6em 0;background:#fafafa}
-.calc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
-.calc-row:last-of-type{border-bottom:0}
-.calc-label{flex:1 1 210px;min-width:190px}
-.calc-label b{display:block;font-size:14px}
-.calc-label span{font-size:12px;color:var(--muted)}
-.calc-slider{flex:2 1 170px;accent-color:var(--forest);height:22px}
-.calc-val{min-width:64px;text-align:right;font-weight:700;color:var(--forest);font-variant-numeric:tabular-nums}
-.calc-out{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 6px}
-.calc-stat{border:1px solid var(--hair);border-radius:10px;padding:12px;text-align:center;background:#fff}
-.calc-stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.calc-stat .v{font-family:"Anton",sans-serif;font-size:1.55rem;color:var(--forest)}
-.calc-note{font-size:13px;color:#444;margin-top:8px;line-height:1.55}
-.calc-digit{font-size:13px;color:var(--forest);font-weight:600;margin-top:8px}
-.calc-table{width:100%;border-collapse:collapse;margin:14px 0 4px;font-variant-numeric:tabular-nums;font-size:14px}
-.calc-table th{background:var(--forest);color:#fff;padding:8px 10px;text-align:right;font-weight:700}
-.calc-table th:first-child{text-align:left}
-.calc-table td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--hair)}
-.calc-table td.rl{text-align:left;font-weight:700}
-.calc-table tbody tr:nth-child(even){background:#f6faf7}
+/* calculator — shared block imported from content/calc.mjs (CALC_CSS) */
+${CALC_CSS}
 .proof{list-style:none;padding:0;margin:1.4em 0;display:grid;gap:12px}
 .proof li{padding:14px 18px 14px 42px;position:relative;border:1px solid var(--hair);border-radius:10px}
 .proof li:before{content:"\\2713";position:absolute;left:16px;top:14px;color:var(--forest);font-weight:800}
@@ -112,7 +94,7 @@ const siteHeader = `<header class="site"><div class="wrap">
 </div></header>`;
 
 const siteFooter = `<footer class="site"><div class="wrap">
-  <a href="${SITE.baseUrl}/">InkTracker home</a><a href="${SITE.baseUrl}/blog">Blog</a><a href="${SITE.baseUrl}/compare">Software guide</a><a href="${SITE.baseUrl}/support">Support</a>
+  <a href="${SITE.baseUrl}/">InkTracker home</a><a href="${SITE.baseUrl}/tools">Free Tools</a><a href="${SITE.baseUrl}/blog">Blog</a><a href="${SITE.baseUrl}/compare">Software guide</a><a href="${SITE.baseUrl}/support">Support</a>
   <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
 </div></footer>`;
 
@@ -146,14 +128,6 @@ function ctaBlock(post) {
 // the inline JS only rebuilds data rows — keeps the JS free of backslash/`${}`
 // escaping inside this template literal. Each control is its own row with a
 // live value readout on the right.
-function sliderRow(key, label, hint, attrs, initial = "–") {
-  return `<div class="calc-row">
-    <div class="calc-label"><b>${esc(label)}</b><span>${esc(hint)}</span></div>
-    <input type="range" class="calc-slider" data-in="${key}" ${attrs} />
-    <output class="calc-val" data-val="${key}">${esc(initial)}</output>
-  </div>`;
-}
-
 function jobCalc() {
   const controls =
     sliderRow("blank", "Blank cost", "what you pay per shirt", 'min="1.5" max="12" step="0.25" value="4"') +
@@ -187,22 +161,18 @@ function jobCalc() {
 }
 
 function chartCalc() {
-  // ── Static-first defaults (computed at build time so the grid + stats render
-  // without JS). base ≈ $6.36, 8-color/200 ≈ $8.15 with these defaults.
+  // ── Static-first defaults (computed at build time via the SHARED model so
+  // the grid + stats render without JS). base ≈ $6.36 with these defaults.
   const D = { costs: 14000, shirts: 4000, margin: 45, vol: 10, color: 10 };
   const m2n = (n) => "$" + (Math.round(n * 100) / 100).toFixed(2);
   const m0n = (n) => "$" + Math.round(n).toLocaleString("en-US");
   const ctn = (n) => Math.round(n).toLocaleString("en-US");
-  const cpp = D.costs / D.shirts;
-  const base = cpp / (1 - D.margin / 100);
-  const vd = D.vol / 100, ac = D.color / 100;
-  const tm = [1]; for (let i = 1; i < 4; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));
-  const cm = [1]; for (let c = 1; c < 8; c++) cm[c] = cm[c - 1] * (1 + ac * Math.pow(0.9, c - 1));
+  const M = chartModel(D);
   let defRows = "";
   for (let ci = 0; ci < 8; ci++) {
     const col = ci + 1;
     defRows += `<tr><td class="rl">${col}${col === 1 ? " color" : " colors"}</td>`;
-    for (let qi = 0; qi < 4; qi++) defRows += `<td>${m2n(base * cm[ci] * tm[qi])}</td>`;
+    for (let qi = 0; qi < 4; qi++) defRows += `<td>${m2n(chartCell(M, ci, qi))}</td>`;
     defRows += "</tr>";
   }
 
@@ -214,26 +184,26 @@ function chartCalc() {
     sliderRow("color", "Added color", "each extra color adds", 'min="0" max="30" step="1" value="10"', D.color + "%");
 
   const stats = `<div class="calc-out" style="grid-template-columns:repeat(2,1fr)">
-    <div class="calc-stat"><div class="k">Cost per print</div><div class="v" data-out="cpp">${m2n(cpp)}</div></div>
-    <div class="calc-stat"><div class="k">Base print price</div><div class="v" data-out="base">${m2n(base)}</div></div>
+    <div class="calc-stat"><div class="k">Cost per print</div><div class="v" data-out="cpp">${m2n(M.cpp)}</div></div>
+    <div class="calc-stat"><div class="k">Base print price</div><div class="v" data-out="base">${m2n(M.base)}</div></div>
   </div>`;
   const head = '<thead><tr><th>Colors \\ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead>';
   const table = `<table class="calc-table">${head}<tbody data-grid>${defRows}</tbody></table>`;
   const caption = `<p class="calc-note">Price per print. Garment and markup are added separately.</p>`;
 
+  // Client script injects the SHARED model verbatim (chartModel/chartCell via
+  // .toString()) so the browser math is byte-identical to the static render
+  // and to the /tools calculator — one source, no drift.
   const script =
     '<script>(function(){var root=document.getElementById("calc-chart");if(!root)return;' +
+    chartModel.toString() + chartCell.toString() +
     'function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}' +
     'function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}' +
     'function ct(n){return Math.round(n).toLocaleString("en-US");}' +
     'var S={costs:14000,shirts:4000,margin:45,vol:10,color:10};' +
-    'function model(){var cpp=S.costs/S.shirts;var base=cpp/(1-S.margin/100);var vd=S.vol/100,ac=S.color/100;' +
-    'var tm=[1];for(var i=1;i<4;i++)tm[i]=tm[i-1]*(1-vd*Math.pow(0.8,i-1));' +
-    'var cm=[1];for(var c=1;c<8;c++)cm[c]=cm[c-1]*(1+ac*Math.pow(0.9,c-1));' +
-    'return {cpp:cpp,base:base,tm:tm,cm:cm};}' +
-    'function build(){var M=model();var rows="";' +
+    'function build(){var M=chartModel(S);var rows="";' +
     'for(var ci=0;ci<8;ci++){var col=ci+1;rows+="<tr><td class=\\"rl\\">"+col+(col===1?" color":" colors")+"</td>";' +
-    'for(var qi=0;qi<4;qi++){rows+="<td>"+m2(M.base*M.cm[ci]*M.tm[qi])+"</td>";}rows+="</tr>";}' +
+    'for(var qi=0;qi<4;qi++){rows+="<td>"+m2(chartCell(M,ci,qi))+"</td>";}rows+="</tr>";}' +
     'root.querySelector("[data-grid]").innerHTML=rows;' +
     'root.querySelector("[data-out=\\"cpp\\"]").textContent=m2(M.cpp);' +
     'root.querySelector("[data-out=\\"base\\"]").textContent=m2(M.base);}' +

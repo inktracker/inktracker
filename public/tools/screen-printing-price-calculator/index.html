@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Free Screen Printing Price Calculator — Chart + Full Job Price</title>
+  <meta name="description" content="Free screen printing price calculator: build a per-print chart from your monthly overhead, then add garment markup, setup fees, and extra print locations to price a whole job. Built by a working print shop." />
+  <link rel="canonical" href="https://inktracker.app/tools/screen-printing-price-calculator" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Free Screen Printing Price Calculator — Chart + Full Job Price" />
+  <meta property="og:description" content="Free screen printing price calculator: build a per-print chart from your monthly overhead, then add garment markup, setup fees, and extra print locations to price a whole job. Built by a working print shop." />
+  <meta property="og:url" content="https://inktracker.app/tools/screen-printing-price-calculator" />
+  <meta property="og:image" content="https://inktracker.app/icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" />
+  <style>:root{--ink:#0e0e0e;--muted:#6b6b6b;--hair:#e5e5e5;--forest:#2c5840;--forest-dark:#1a3a28}
+*{box-sizing:border-box}
+body{margin:0;color:var(--ink);background:#fff;font-family:"Inter",-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased}
+a{color:var(--forest)}
+.wrap{max-width:820px;margin:0 auto;padding:0 20px}
+header.site{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:2px solid var(--ink)}
+header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px}
+.brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.brand span{color:var(--forest)}
+.nav{display:flex;align-items:center;gap:18px}
+.nav a{font-size:13px;font-weight:600;color:var(--ink);text-decoration:none}
+.nav a:hover{color:var(--forest)}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px;font-size:15px}
+.cta:hover{background:var(--forest-dark)}
+nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
+nav.crumbs a{color:var(--muted)}
+h1{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.01em;line-height:1.02;font-size:clamp(2.2rem,6vw,3.4rem);margin:.4em 0 .2em}
+h2{font-family:"Anton","Oswald","Arial Narrow",sans-serif;text-transform:uppercase;letter-spacing:.02em;font-size:clamp(1.3rem,3.2vw,1.8rem);margin:1.6em 0 .5em}
+.lede{font-size:1.12rem;color:#262626}
+p{margin:1em 0}
+footer.site{border-top:2px solid var(--ink);margin-top:3em;padding:24px 0;font-size:13px;color:var(--muted)}
+footer.site a{color:var(--muted);margin-right:16px}
+/* tool card grid */
+.tool-grid{list-style:none;padding:0;margin:1.8em 0;display:grid;gap:16px}
+@media(min-width:640px){.tool-grid{grid-template-columns:1fr 1fr}}
+.tool-grid li{border:1px solid var(--hair);border-radius:12px;padding:22px;transition:border-color .15s}
+.tool-grid li:hover{border-color:var(--forest)}
+.tool-grid h3{margin:0 0 .3em;font-size:1.15rem}
+.tool-grid h3 a{color:var(--ink);text-decoration:none}
+.tool-grid h3 a:hover{color:var(--forest)}
+.tool-grid p{margin:.2em 0;color:#333;font-size:.95rem}
+.tool-tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#fff;background:var(--forest);border-radius:6px;padding:3px 8px;margin-bottom:10px}
+.soft-cta{background:var(--ink);color:#fff;border-radius:14px;padding:28px 26px;margin:2.6em 0;text-align:center}
+.soft-cta h3{font-family:"Anton",sans-serif;color:#fff;text-transform:uppercase;font-size:1.5rem;margin:0 0 .45em}
+.soft-cta p{color:#d8d8d8;margin:0 auto 1.2em;max-width:580px}
+.calc{border:1px solid var(--hair);border-radius:14px;padding:20px;margin:1.6em 0;background:#fafafa}
+.calc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
+.calc-row:last-of-type{border-bottom:0}
+.calc-label{flex:1 1 210px;min-width:190px}
+.calc-label b{display:block;font-size:14px}
+.calc-label span{font-size:12px;color:var(--muted)}
+.calc-slider{flex:2 1 170px;accent-color:var(--forest);height:22px}
+.calc-val{min-width:64px;text-align:right;font-weight:700;color:var(--forest);font-variant-numeric:tabular-nums}
+.calc-out{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 6px}
+.calc-stat{border:1px solid var(--hair);border-radius:10px;padding:12px;text-align:center;background:#fff}
+.calc-stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.calc-stat .v{font-family:"Anton",sans-serif;font-size:1.55rem;color:var(--forest)}
+.calc-note{font-size:13px;color:#444;margin-top:8px;line-height:1.55}
+.calc-digit{font-size:13px;color:var(--forest);font-weight:600;margin-top:8px}
+.calc-table{width:100%;border-collapse:collapse;margin:14px 0 4px;font-variant-numeric:tabular-nums;font-size:14px}
+.calc-table th{background:var(--forest);color:#fff;padding:8px 10px;text-align:right;font-weight:700}
+.calc-table th:first-child{text-align:left}
+.calc-table td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--hair)}
+.calc-table td.rl{text-align:left;font-weight:700}
+.calc-table tbody tr:nth-child(even){background:#f6faf7}
+/* calculator page extras */
+.calc-table td[data-ci]{cursor:pointer}
+.calc-table td.sel{background:var(--forest)!important;color:#fff;font-weight:700}
+.stepper{display:inline-flex;align-items:center;border:1px solid var(--hair);border-radius:8px;overflow:hidden;background:#fff}
+.stepper button{width:30px;height:32px;border:0;background:#f1f1f1;font-weight:700;cursor:pointer;color:#333}
+.stepper button:hover{background:#e6e6e6}
+.stepper .n{min-width:34px;text-align:center;font-weight:700}
+.toggle{display:flex;align-items:center;gap:10px;padding:8px 0}
+.toggle input{width:18px;height:18px;accent-color:var(--forest)}
+.toggle span{font-size:14px}
+.bd{border:1px solid var(--hair);border-radius:14px;overflow:hidden;margin:14px 0}
+.bd-row{display:flex;justify-content:space-between;gap:12px;padding:11px 16px;border-bottom:1px solid var(--hair);font-size:14px}
+.bd-row:last-child{border-bottom:0}
+.bd-row .lbl b{display:block}
+.bd-row .lbl span{font-size:12px;color:var(--muted)}
+.bd-row .amt{font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.bd-row.total{background:#f6faf7;font-size:16px}
+.bd-row.total .amt{color:var(--forest);font-size:18px}
+.bd-row.pershirt{background:#fafafa;color:var(--muted)}
+.bd-row[hidden]{display:none}</style>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Screen Printing Price Calculator",
+  "url": "https://inktracker.app/tools/screen-printing-price-calculator",
+  "description": "Free screen printing price calculator: build a per-print chart from your monthly overhead, then add garment markup, setup fees, and extra print locations to price a whole job. Built by a working print shop.",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web",
+  "inLanguage": "en-US",
+  "isPartOf": {
+    "@type": "WebSite",
+    "name": "InkTracker",
+    "url": "https://inktracker.app"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "InkTracker",
+    "url": "https://inktracker.app",
+    "logo": {
+      "@type": "ImageObject",
+      "url": "https://inktracker.app/icon-512.png"
+    }
+  }
+}
+</script>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "InkTracker",
+      "item": "https://inktracker.app/"
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "name": "Free Tools",
+      "item": "https://inktracker.app/tools"
+    },
+    {
+      "@type": "ListItem",
+      "position": 3,
+      "name": "Screen Printing Price Calculator",
+      "item": "https://inktracker.app/tools/screen-printing-price-calculator"
+    }
+  ]
+}
+</script>
+</head>
+<body>
+<header class="site"><div class="wrap">
+  <a class="brand" href="https://inktracker.app/">Ink<span>Tracker</span></a>
+  <nav class="nav">
+    <a href="https://inktracker.app/tools">Free Tools</a>
+    <a href="https://inktracker.app/blog">Blog</a>
+    <a class="cta" href="https://inktracker.app/#pricing">Start trial</a>
+  </nav>
+</div></header>
+<main class="wrap">
+  <nav class="crumbs"><a href="https://inktracker.app/">Home</a> › <a href="https://inktracker.app/tools">Free Tools</a> › Screen Printing Price Calculator</nav>
+  <h1>Free Screen Printing Price Calculator</h1>
+  <p class="lede">Build a price-per-print chart from what your shop actually costs to run — then stack garment, setup, and extra locations to price the whole job. No signup.</p>
+
+  <h2>1. Build your print chart</h2>
+  <p>Two numbers set the whole chart: what your shop costs to run in a month, and how many prints you push in that month. Divide one by the other and that's your <b>cost per print</b>. Your base price is that cost divided by <code>(1 − your margin)</code> — because margin isn't markup: keeping 45% means dividing by 0.55, not multiplying by 1.45. Bigger runs cost less per shirt (setup spreads out); each added color adds a shrinking slice.</p>
+  <div class="calc" id="calc-chart"><div class="calc-row">
+    <div class="calc-label"><b>Total monthly costs</b><span>rent, power, supplies, your pay</span></div>
+    <input type="range" class="calc-slider" data-in="costs" min="1000" max="50000" step="500" value="14000" />
+    <output class="calc-val" data-val="costs">$14,000</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Prints per month</b><span>how many you print in a month</span></div>
+    <input type="range" class="calc-slider" data-in="shirts" min="50" max="30000" step="50" value="4000" />
+    <output class="calc-val" data-val="shirts">4,000</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Target margin</b><span>the profit slice you keep</span></div>
+    <input type="range" class="calc-slider" data-in="margin" min="10" max="75" step="1" value="45" />
+    <output class="calc-val" data-val="margin">45%</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Volume discount</b><span>knocked off at each size break</span></div>
+    <input type="range" class="calc-slider" data-in="vol" min="0" max="30" step="1" value="10" />
+    <output class="calc-val" data-val="vol">10%</output>
+  </div><div class="calc-row">
+    <div class="calc-label"><b>Added color</b><span>each extra color adds</span></div>
+    <input type="range" class="calc-slider" data-in="color" min="0" max="30" step="1" value="10" />
+    <output class="calc-val" data-val="color">10%</output>
+  </div><div class="calc-out" style="grid-template-columns:repeat(2,1fr)">
+    <div class="calc-stat"><div class="k">Cost per print</div><div class="v" data-out="cpp">$3.50</div></div>
+    <div class="calc-stat"><div class="k">Base print price</div><div class="v" data-out="base">$6.36</div></div>
+  </div><table class="calc-table"><thead><tr><th>Colors \ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead><tbody data-grid><tr><td class="rl">1 color</td><td class="" data-ci="0" data-ti="0">$6.36</td><td class="" data-ci="0" data-ti="1">$5.73</td><td class="" data-ci="0" data-ti="2">$5.27</td><td class="" data-ci="0" data-ti="3">$4.93</td></tr><tr><td class="rl">2 colors</td><td class="" data-ci="1" data-ti="0">$7.00</td><td class="" data-ci="1" data-ti="1">$6.30</td><td class="" data-ci="1" data-ti="2">$5.80</td><td class="" data-ci="1" data-ti="3">$5.43</td></tr><tr><td class="rl">3 colors</td><td class="" data-ci="2" data-ti="0">$7.63</td><td class="sel" data-ci="2" data-ti="1">$6.87</td><td class="" data-ci="2" data-ti="2">$6.32</td><td class="" data-ci="2" data-ti="3">$5.91</td></tr><tr><td class="rl">4 colors</td><td class="" data-ci="3" data-ti="0">$8.25</td><td class="" data-ci="3" data-ti="1">$7.42</td><td class="" data-ci="3" data-ti="2">$6.83</td><td class="" data-ci="3" data-ti="3">$6.39</td></tr><tr><td class="rl">5 colors</td><td class="" data-ci="4" data-ti="0">$8.85</td><td class="" data-ci="4" data-ti="1">$7.96</td><td class="" data-ci="4" data-ti="2">$7.33</td><td class="" data-ci="4" data-ti="3">$6.86</td></tr><tr><td class="rl">6 colors</td><td class="" data-ci="5" data-ti="0">$9.43</td><td class="" data-ci="5" data-ti="1">$8.49</td><td class="" data-ci="5" data-ti="2">$7.81</td><td class="" data-ci="5" data-ti="3">$7.31</td></tr><tr><td class="rl">7 colors</td><td class="" data-ci="6" data-ti="0">$9.99</td><td class="" data-ci="6" data-ti="1">$8.99</td><td class="" data-ci="6" data-ti="2">$8.27</td><td class="" data-ci="6" data-ti="3">$7.74</td></tr><tr><td class="rl">8 colors</td><td class="" data-ci="7" data-ti="0">$10.52</td><td class="" data-ci="7" data-ti="1">$9.47</td><td class="" data-ci="7" data-ti="2">$8.71</td><td class="" data-ci="7" data-ti="3">$8.15</td></tr></tbody></table><p class="calc-note">Per print, before garment. Click a cell to price that combination below.</p></div>
+
+  <h2>2. The full price</h2>
+  <p>The chart is the print. Three things stack on top: <b>garment markup</b>, <b>setup fees per screen</b>, and <b>additional print locations</b>. Click a chart cell above to load it here, or set the run yourself.</p>
+  <div class="calc" id="calc-full">
+    <div class="calc-row">
+      <div class="calc-label"><b>Colors</b><span>ink colors on the front print</span></div>
+      <div class="stepper"><button type="button" data-step="-1">−</button><span class="n" data-out="colors">3</span><button type="button" data-step="1">+</button></div>
+    </div>
+    <div class="calc-row">
+    <div class="calc-label"><b>Quantity</b><span>shirts in the run</span></div>
+    <input type="range" class="calc-slider" data-in="qty" min="12" max="500" step="1" value="72" />
+    <output class="calc-val" data-val="qty">72</output>
+  </div>
+    <div class="calc-row">
+    <div class="calc-label"><b>Garment (blank) cost</b><span>what you pay per shirt</span></div>
+    <input type="range" class="calc-slider" data-in="garment" min="0" max="40" step="0.5" value="6" />
+    <output class="calc-val" data-val="garment">$6.00</output>
+  </div>
+    <div class="toggle"><input type="checkbox" data-in="twoLoc" /><span>Second print location <span style="color:var(--muted)">(additional locations share setup — priced at half)</span></span></div>
+    <div class="toggle"><input type="checkbox" data-in="setup" checked /><span>Setup fee ($25 / screen)</span></div>
+  </div>
+  <div class="bd" id="breakdown">
+    <div class="bd-row"><div class="lbl"><b>Print — front</b><span data-note="front">3 colors · $6.87/print × 72 (priced at the 50 tier)</span></div><div class="amt" data-amt="front">$494.42</div></div>
+    <div class="bd-row" data-row="second" hidden><div class="lbl"><b>Print — 2nd location</b><span data-note="second">$0.00/print × 72</span></div><div class="amt" data-amt="second">$0.00</div></div>
+    <div class="bd-row"><div class="lbl"><b>Garment</b><span data-note="garment">$6.00 × 1.40 markup × 72</span></div><div class="amt" data-amt="garment">$604.80</div></div>
+    <div class="bd-row" data-row="setup"><div class="lbl"><b>Setup &amp; screen fees</b><span data-note="setup">3 screens × $25</span></div><div class="amt" data-amt="setup">$75.00</div></div>
+    <div class="bd-row total"><div class="lbl"><b>Order total</b></div><div class="amt" data-amt="total">$1174.22</div></div>
+    <div class="bd-row pershirt"><div class="lbl">Per shirt</div><div class="amt" data-amt="pershirt">$16.31</div></div>
+  </div>
+  <p class="calc-note">Garment markup slides down as blanks get pricier (40% on a cheap tee, ~15% on a $30 hoodie) so you don't price yourself out on expensive garments. Setup is one-time per screen; the print and garment scale with quantity.</p>
+
+  <div class="soft-cta">
+    <h3>Stop rebuilding this by hand</h3>
+    <p>This is the free version of the pricing engine we built into InkTracker — it holds your chart, garment markup, and setup fees and stacks them on every quote automatically. Start a 14-day free trial.</p>
+    <a class="cta" href="https://inktracker.app/?ref=calculator">Start your free trial</a>
+  </div>
+
+  <p>Want the full method, in a printer's own words? Read <a href="https://inktracker.app/blog/build-a-screen-printing-price-chart">how I build a screen printing price chart</a> and <a href="https://inktracker.app/blog/how-to-price-a-screen-printing-job">how to price a single job</a>. More free tools on the <a href="https://inktracker.app/tools">tools hub</a>, and see <a href="https://inktracker.app/for-printers">what InkTracker does for print shops</a>.</p>
+</main>
+<footer class="site"><div class="wrap">
+  <a href="https://inktracker.app/">InkTracker home</a><a href="https://inktracker.app/tools">Free Tools</a><a href="https://inktracker.app/blog">Blog</a><a href="https://inktracker.app/compare">Software guide</a><a href="https://inktracker.app/support">Support</a>
+  <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
+</div></footer>
+<script>(function(){
+var root=document.getElementById("calc-chart"),full=document.getElementById("calc-full"),bd=document.getElementById("breakdown");
+if(!root||!full||!bd)return;
+function chartModel(S) {
+  var cpp = S.costs / S.shirts;
+  var base = cpp / (1 - S.margin / 100);
+  var vd = S.vol / 100, ac = S.color / 100;
+  var tm = [1];
+  for (var i = 1; i < 4; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));
+  var cm = [1];
+  for (var c = 1; c < 8; c++) cm[c] = cm[c - 1] * (1 + ac * Math.pow(0.9, c - 1));
+  return { cpp: cpp, base: base, tm: tm, cm: cm };
+}
+function chartCell(M, colorIdx, tierIdx) {
+  return M.base * M.cm[colorIdx] * M.tm[tierIdx];
+}
+function tierIdx(qty) {
+  var t = [25, 50, 100, 200];
+  var idx = 0;
+  for (var i = 0; i < 4; i++) { if (qty >= t[i]) idx = i; }
+  return idx;
+}
+function fullPrice(B, M) {
+  var ti = tierIdx(B.qty);
+  var frontRate = chartCell(M, B.colors - 1, ti);
+  var second = B.twoLoc ? 0.5 * frontRate : 0;
+  var g = B.garment;
+  var markup = g > 25 ? 1.15 : g > 15 ? 1.22 : g > 8 ? 1.30 : 1.40;
+  var screens = B.colors * (B.twoLoc ? 2 : 1);
+  var setup = B.setup ? screens * 25 : 0;
+  var frontTotal = frontRate * B.qty;
+  var secondTotal = second * B.qty;
+  var garmentTotal = g * markup * B.qty;
+  var total = frontTotal + secondTotal + garmentTotal + setup;
+  return {
+    ti: ti, tier: [25, 50, 100, 200][ti],
+    frontRate: frontRate, frontTotal: frontTotal,
+    second: second, secondTotal: secondTotal,
+    markup: markup, garmentTotal: garmentTotal,
+    screens: screens, setup: setup,
+    total: total, perShirt: total / B.qty,
+  };
+}
+function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}
+function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}
+function ct(n){return Math.round(n).toLocaleString("en-US");}
+var A={costs:14000,shirts:4000,margin:45,vol:10,color:10};
+var B={colors:3,qty:72,garment:6,twoLoc:false,setup:true};
+function buildChart(){var M=chartModel(A);var st=tierIdx(B.qty);var rows="";
+for(var ci=0;ci<8;ci++){var col=ci+1;rows+="<tr><td class=\"rl\">"+col+(col===1?" color":" colors")+"</td>";
+for(var qi=0;qi<4;qi++){var sel=(ci===B.colors-1&&qi===st)?" sel":"";rows+="<td class=\""+sel.replace(/^ /,"")+"\" data-ci=\""+ci+"\" data-ti=\""+qi+"\">"+m2(chartCell(M,ci,qi))+"</td>";}
+rows+="</tr>";}
+root.querySelector("[data-grid]").innerHTML=rows;
+root.querySelector('[data-out="cpp"]').textContent=m2(M.cpp);
+root.querySelector('[data-out="base"]').textContent=m2(M.base);
+root.querySelectorAll("td[data-ci]").forEach(function(td){td.addEventListener("click",function(){
+B.colors=parseInt(td.getAttribute("data-ci"),10)+1;
+var TQ=[25,50,100,200];B.qty=TQ[parseInt(td.getAttribute("data-ti"),10)];
+full.querySelector('[data-out="colors"]').textContent=B.colors;
+var qs=full.querySelector('[data-in="qty"]');qs.value=B.qty;full.querySelector('[data-val="qty"]').textContent=ct(B.qty);
+buildBreakdown();});});}
+function buildBreakdown(){var M=chartModel(A);var r=fullPrice(B,M);
+bd.querySelector('[data-amt="front"]').textContent=m2(r.frontTotal);
+bd.querySelector('[data-note="front"]').textContent=B.colors+" color"+(B.colors===1?"":"s")+" · "+m2(r.frontRate)+"/print × "+ct(B.qty)+" (priced at the "+r.tier+" tier)";
+bd.querySelector('[data-row="second"]').hidden=!B.twoLoc;
+bd.querySelector('[data-amt="second"]').textContent=m2(r.secondTotal);
+bd.querySelector('[data-note="second"]').textContent=m2(r.second)+"/print × "+ct(B.qty);
+bd.querySelector('[data-amt="garment"]').textContent=m2(r.garmentTotal);
+bd.querySelector('[data-note="garment"]').textContent=m2(B.garment)+" × "+r.markup.toFixed(2)+" markup × "+ct(B.qty);
+bd.querySelector('[data-row="setup"]').hidden=!B.setup;
+bd.querySelector('[data-amt="setup"]').textContent=m2(r.setup);
+bd.querySelector('[data-note="setup"]').textContent=r.screens+" screen"+(r.screens===1?"":"s")+" × $25";
+bd.querySelector('[data-amt="total"]').textContent=m2(r.total);
+bd.querySelector('[data-amt="pershirt"]').textContent=m2(r.perShirt);
+buildChart();}
+function wireA(k,t){var sl=root.querySelector('[data-in="'+k+'"]');var ov=root.querySelector('[data-val="'+k+'"]');
+function u(){A[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(A[k]):t==="ct"?ct(A[k]):t==="pct"?(Math.round(A[k])+"%"):A[k];buildBreakdown();}
+sl.addEventListener("input",u);u();}
+wireA("costs","m0");wireA("shirts","ct");wireA("margin","pct");wireA("vol","pct");wireA("color","pct");
+var qs=full.querySelector('[data-in="qty"]'),qv=full.querySelector('[data-val="qty"]');
+qs.addEventListener("input",function(){B.qty=parseInt(qs.value,10);qv.textContent=ct(B.qty);buildBreakdown();});
+var gs=full.querySelector('[data-in="garment"]'),gv=full.querySelector('[data-val="garment"]');
+gs.addEventListener("input",function(){B.garment=parseFloat(gs.value);gv.textContent=m2(B.garment);buildBreakdown();});
+full.querySelectorAll("[data-step]").forEach(function(btn){btn.addEventListener("click",function(){
+B.colors=Math.min(8,Math.max(1,B.colors+parseInt(btn.getAttribute("data-step"),10)));
+full.querySelector('[data-out="colors"]').textContent=B.colors;buildBreakdown();});});
+full.querySelector('[data-in="twoLoc"]').addEventListener("change",function(e){B.twoLoc=e.target.checked;buildBreakdown();});
+full.querySelector('[data-in="setup"]').addEventListener("change",function(e){B.setup=e.target.checked;buildBreakdown();});
+buildBreakdown();
+})();</script>
+</body>
+</html>

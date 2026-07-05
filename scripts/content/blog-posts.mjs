@@ -76,6 +76,7 @@ export const POSTS = Object.freeze([
       { type: "p", html: "This is exactly what InkTracker does on every quote automatically: it pulls the live blank price, applies your per-quantity print rates and per-color screen fees, spreads the setup across the run, and shows you the margin before you send it. You set your rates once; every quote after that just runs the checklist for you." },
     ],
     related: [
+      { href: "/tools/screen-printing-price-calculator", text: "Free screen printing price calculator" },
       { href: "/blog/build-a-screen-printing-price-chart", text: "Build a price chart that covers your overhead" },
       { href: "/compare", text: "The honest software buyer's guide" },
     ],
@@ -138,6 +139,7 @@ export const POSTS = Object.freeze([
       { type: "p", html: "Set it up one time — a base you can defend, a couple of percentages to shape the rest, garment and fees kept separate — and stop guessing at the counter. That's the whole system." },
     ],
     related: [
+      { href: "/tools/screen-printing-price-calculator", text: "Free screen printing price calculator" },
       { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a single screen printing job" },
       { href: "/compare", text: "The honest software buyer's guide" },
     ],

@@ -86,4 +86,16 @@
     <priority>0.6</priority>
   </url>
   <!-- blog-pages:end -->
+  <!-- tools-pages:start -->
+  <url>
+    <loc>https://inktracker.app/tools</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://inktracker.app/tools/screen-printing-price-calculator</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <!-- tools-pages:end -->
 </urlset>

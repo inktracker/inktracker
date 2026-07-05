@@ -25,6 +25,14 @@
       "destination": "/for-printers/index.html"
     },
     {
+      "source": "/tools",
+      "destination": "/tools/index.html"
+    },
+    {
+      "source": "/tools/(.*)",
+      "destination": "/tools/$1/index.html"
+    },
+    {
       "source": "/((?!.*\\..*).*)",
       "destination": "/index.html"
     }

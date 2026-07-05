@@ -19,7 +19,7 @@
     "e2e:headed": "playwright test --headed",
     "e2e:debug": "playwright test --debug",
     "audit:wizard": "node scripts/audit-wizard-styles.mjs",
-    "build:content": "node scripts/generate-compare-pages.mjs && node scripts/generate-blog.mjs && node scripts/generate-landing-static.mjs",
+    "build:content": "node scripts/generate-compare-pages.mjs && node scripts/generate-blog.mjs && node scripts/generate-tools.mjs && node scripts/generate-landing-static.mjs",
     "loadtest:smoke": "k6 run loadtest/smoke.js",
     "loadtest:frontend": "k6 run loadtest/frontend.js",
     "loadtest:wizard": "k6 run loadtest/quote-wizard.js",

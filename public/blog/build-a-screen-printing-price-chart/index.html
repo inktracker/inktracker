@@ -72,7 +72,7 @@ ul.body-list li{margin:.55em 0}
 .blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
 .blog-cta .related{margin-top:1.1em;font-size:13px;color:#bdbdbd}
 .blog-cta .related a{color:#eaeaea}
-/* calculator */
+/* calculator — shared block imported from content/calc.mjs (CALC_CSS) */
 .calc{border:1px solid var(--hair);border-radius:14px;padding:20px;margin:1.6em 0;background:#fafafa}
 .calc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
 .calc-row:last-of-type{border-bottom:0}
@@ -235,7 +235,18 @@ ul.body-list li{margin:.55em 0}
   </div><div class="calc-out" style="grid-template-columns:repeat(2,1fr)">
     <div class="calc-stat"><div class="k">Cost per print</div><div class="v" data-out="cpp">$3.50</div></div>
     <div class="calc-stat"><div class="k">Base print price</div><div class="v" data-out="base">$6.36</div></div>
-  </div><table class="calc-table"><thead><tr><th>Colors \ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead><tbody data-grid><tr><td class="rl">1 color</td><td>$6.36</td><td>$5.73</td><td>$5.27</td><td>$4.93</td></tr><tr><td class="rl">2 colors</td><td>$7.00</td><td>$6.30</td><td>$5.80</td><td>$5.43</td></tr><tr><td class="rl">3 colors</td><td>$7.63</td><td>$6.87</td><td>$6.32</td><td>$5.91</td></tr><tr><td class="rl">4 colors</td><td>$8.25</td><td>$7.42</td><td>$6.83</td><td>$6.39</td></tr><tr><td class="rl">5 colors</td><td>$8.85</td><td>$7.96</td><td>$7.33</td><td>$6.86</td></tr><tr><td class="rl">6 colors</td><td>$9.43</td><td>$8.49</td><td>$7.81</td><td>$7.31</td></tr><tr><td class="rl">7 colors</td><td>$9.99</td><td>$8.99</td><td>$8.27</td><td>$7.74</td></tr><tr><td class="rl">8 colors</td><td>$10.52</td><td>$9.47</td><td>$8.71</td><td>$8.15</td></tr></tbody></table><p class="calc-note">Price per print. Garment and markup are added separately.</p></div><script>(function(){var root=document.getElementById("calc-chart");if(!root)return;function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}function ct(n){return Math.round(n).toLocaleString("en-US");}var S={costs:14000,shirts:4000,margin:45,vol:10,color:10};function model(){var cpp=S.costs/S.shirts;var base=cpp/(1-S.margin/100);var vd=S.vol/100,ac=S.color/100;var tm=[1];for(var i=1;i<4;i++)tm[i]=tm[i-1]*(1-vd*Math.pow(0.8,i-1));var cm=[1];for(var c=1;c<8;c++)cm[c]=cm[c-1]*(1+ac*Math.pow(0.9,c-1));return {cpp:cpp,base:base,tm:tm,cm:cm};}function build(){var M=model();var rows="";for(var ci=0;ci<8;ci++){var col=ci+1;rows+="<tr><td class=\"rl\">"+col+(col===1?" color":" colors")+"</td>";for(var qi=0;qi<4;qi++){rows+="<td>"+m2(M.base*M.cm[ci]*M.tm[qi])+"</td>";}rows+="</tr>";}root.querySelector("[data-grid]").innerHTML=rows;root.querySelector("[data-out=\"cpp\"]").textContent=m2(M.cpp);root.querySelector("[data-out=\"base\"]").textContent=m2(M.base);}function wire(k,t){var sl=root.querySelector("[data-in=\""+k+"\"]");var ov=root.querySelector("[data-val=\""+k+"\"]");function u(){S[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(S[k]):t==="ct"?ct(S[k]):t==="pct"?(Math.round(S[k])+"%"):S[k];build();}sl.addEventListener("input",u);u();}wire("costs","m0");wire("shirts","ct");wire("margin","pct");wire("vol","pct");wire("color","pct");})();</script>
+  </div><table class="calc-table"><thead><tr><th>Colors \ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead><tbody data-grid><tr><td class="rl">1 color</td><td>$6.36</td><td>$5.73</td><td>$5.27</td><td>$4.93</td></tr><tr><td class="rl">2 colors</td><td>$7.00</td><td>$6.30</td><td>$5.80</td><td>$5.43</td></tr><tr><td class="rl">3 colors</td><td>$7.63</td><td>$6.87</td><td>$6.32</td><td>$5.91</td></tr><tr><td class="rl">4 colors</td><td>$8.25</td><td>$7.42</td><td>$6.83</td><td>$6.39</td></tr><tr><td class="rl">5 colors</td><td>$8.85</td><td>$7.96</td><td>$7.33</td><td>$6.86</td></tr><tr><td class="rl">6 colors</td><td>$9.43</td><td>$8.49</td><td>$7.81</td><td>$7.31</td></tr><tr><td class="rl">7 colors</td><td>$9.99</td><td>$8.99</td><td>$8.27</td><td>$7.74</td></tr><tr><td class="rl">8 colors</td><td>$10.52</td><td>$9.47</td><td>$8.71</td><td>$8.15</td></tr></tbody></table><p class="calc-note">Price per print. Garment and markup are added separately.</p></div><script>(function(){var root=document.getElementById("calc-chart");if(!root)return;function chartModel(S) {
+  var cpp = S.costs / S.shirts;
+  var base = cpp / (1 - S.margin / 100);
+  var vd = S.vol / 100, ac = S.color / 100;
+  var tm = [1];
+  for (var i = 1; i < 4; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));
+  var cm = [1];
+  for (var c = 1; c < 8; c++) cm[c] = cm[c - 1] * (1 + ac * Math.pow(0.9, c - 1));
+  return { cpp: cpp, base: base, tm: tm, cm: cm };
+}function chartCell(M, colorIdx, tierIdx) {
+  return M.base * M.cm[colorIdx] * M.tm[tierIdx];
+}function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}function ct(n){return Math.round(n).toLocaleString("en-US");}var S={costs:14000,shirts:4000,margin:45,vol:10,color:10};function build(){var M=chartModel(S);var rows="";for(var ci=0;ci<8;ci++){var col=ci+1;rows+="<tr><td class=\"rl\">"+col+(col===1?" color":" colors")+"</td>";for(var qi=0;qi<4;qi++){rows+="<td>"+m2(chartCell(M,ci,qi))+"</td>";}rows+="</tr>";}root.querySelector("[data-grid]").innerHTML=rows;root.querySelector("[data-out=\"cpp\"]").textContent=m2(M.cpp);root.querySelector("[data-out=\"base\"]").textContent=m2(M.base);}function wire(k,t){var sl=root.querySelector("[data-in=\""+k+"\"]");var ov=root.querySelector("[data-val=\""+k+"\"]");function u(){S[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(S[k]):t==="ct"?ct(S[k]):t==="pct"?(Math.round(S[k])+"%"):S[k];build();}sl.addEventListener("input",u);u();}wire("costs","m0");wire("shirts","ct");wire("margin","pct");wire("vol","pct");wire("color","pct");})();</script>
 <h2>Let percentages do the boring part</h2>
 <p>You don't type in 32 prices. You set two rules and the chart fills itself. Bigger runs cost less per shirt, because setup is the same whether you print 25 or 250 — so knock a chunk off at each size break, around 10% for the first jump and a little less each time after. More colors cost more, but not double. The first color's the expensive one; it carries the setup. Every color after is just another screen and another pass, so each one adds a slice — call it 10% — and that slice shrinks as the count climbs.</p>
 <p>Build it this way and the chart moves as one. Want to bump prices 5% next year? Change your base. Beats retyping a spreadsheet.</p>
@@ -263,7 +274,7 @@ ul.body-list li{margin:.55em 0}
   </div>
 </main>
 <footer class="site"><div class="wrap">
-  <a href="https://inktracker.app/">InkTracker home</a><a href="https://inktracker.app/blog">Blog</a><a href="https://inktracker.app/compare">Software guide</a><a href="https://inktracker.app/support">Support</a>
+  <a href="https://inktracker.app/">InkTracker home</a><a href="https://inktracker.app/tools">Free Tools</a><a href="https://inktracker.app/blog">Blog</a><a href="https://inktracker.app/compare">Software guide</a><a href="https://inktracker.app/support">Support</a>
   <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
 </div></footer>
 </body>
