@@ -78,7 +78,7 @@ ${faqs}
         </dl>
       </section>
       <nav>
-        <p>More: <a href="/blog">the InkTracker blog</a> · <a href="/compare">choosing screen printing software</a> · <a href="/support">support</a></p>
+        <p>More: <a href="/tools">free tools</a> · <a href="/blog">the InkTracker blog</a> · <a href="/compare">choosing screen printing software</a> · <a href="/support">support</a></p>
         <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
       </nav>
     </div>

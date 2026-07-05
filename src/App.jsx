@@ -424,6 +424,13 @@ function PublicLandingPage() {
                   plain <a> for a full navigation — NOT react-router <Link>,
                   which would client-route into the SPA catch-all and 404. */}
               <a
+                href="/tools"
+                className={`hidden sm:inline-block ${navLink}`}
+                style={{ color: INK, fontFamily: H_FONT }}
+              >
+                Free Tools
+              </a>
+              <a
                 href="/blog"
                 className={`hidden sm:inline-block ${navLink}`}
                 style={{ color: INK, fontFamily: H_FONT }}
@@ -462,7 +469,10 @@ function PublicLandingPage() {
                     {label}
                   </button>
                 ))}
-                {/* Real route (static page) — plain <a>, not an anchor jump. */}
+                {/* Real routes (static pages) — plain <a>, not anchor jumps. */}
+                <a href="/tools" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE, fontFamily: H_FONT }}>
+                  Free Tools
+                </a>
                 <a href="/blog" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE, fontFamily: H_FONT }}>
                   Resources
                 </a>

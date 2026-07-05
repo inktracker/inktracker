@@ -75,7 +75,7 @@ const siteHeader = `<header class="site"><div class="wrap">
 </div></header>`;
 
 const siteFooter = `<footer class="site"><div class="wrap">
-  <a href="${SITE.baseUrl}/">InkTracker home</a><a href="${SITE.baseUrl}/#pricing">Pricing</a><a href="${SITE.baseUrl}/support">Support</a>
+  <a href="${SITE.baseUrl}/">InkTracker home</a><a href="${SITE.baseUrl}/tools">Free Tools</a><a href="${SITE.baseUrl}/#pricing">Pricing</a><a href="${SITE.baseUrl}/support">Support</a>
   <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
 </div></footer>`;
 
