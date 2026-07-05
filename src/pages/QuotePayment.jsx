@@ -26,6 +26,7 @@ import { toCustomerFacingQuote, customerFacingShopName, customerFacingTotals, is
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
 import { quoteAlreadyApproved, quoteAlreadyPaid } from "@/lib/quotes/approvalState";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 
@@ -663,10 +664,12 @@ export default function QuotePayment() {
                               ? `${imp.title} · ${imp.location || "Location"}`
                               : imp.location || "Location"}
                           </span>
-                          {imp.colors > 0 && (
-                            <span>
-                              {imp.colors} color{imp.colors !== 1 ? "s" : ""}
-                            </span>
+                          {/* Embroidery imp.colors is a stitch-tier index, not a
+                              color count — render "5K-10K stitches" for embroidery,
+                              "N colors" otherwise. Customer has no shop config, so
+                              default stitch tiers are used. */}
+                          {imprintCountText(imp) && (
+                            <span>{imprintCountText(imp)}</span>
                           )}
                           {imp.technique && <span>· {imp.technique}</span>}
                           {imp.pantones && (

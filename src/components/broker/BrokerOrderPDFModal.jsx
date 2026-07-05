@@ -1,5 +1,6 @@
 import { X, Download } from "lucide-react";
-import { fmtDate, fmtMoney, getQty, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP, getOrderDisplayClient } from "../shared/pricing";
+import { fmtDate, fmtMoney, getQty, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP, getOrderDisplayClient, getShopPricingConfig } from "../shared/pricing";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
 
@@ -100,7 +101,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
                     <div key={j} className="text-xs flex flex-wrap gap-x-2 gap-y-1">
                       <span className="font-bold text-teal-700">{imp.location}</span>
                       <span className="text-slate-500">·</span>
-                      <span className="text-slate-600">{imp.colors} color{imp.colors !== 1 ? "s" : ""}</span>
+                      <span className="text-slate-600">{imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)}</span>
                       <span className="text-slate-500">·</span>
                       <span className="text-slate-600">{imp.technique}</span>
                       {imp.pantones && <><span className="text-slate-500">·</span><span className="text-teal-600 font-medium">{imp.pantones}</span></>}

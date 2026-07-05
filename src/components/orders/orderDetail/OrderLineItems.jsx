@@ -9,7 +9,9 @@ import {
   getCompletedQty,
   SIZES,
   BROKER_MARKUP,
+  getShopPricingConfig,
 } from "../../shared/pricing";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { getImprintArtwork } from "./orderDetailHelpers";
 
@@ -163,7 +165,7 @@ export default function OrderLineItems({
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
                       <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
                       <span className="text-slate-500">
-                        {imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}
+                        {imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · {imp.technique}
                       </span>
                       {imp.pantones && (
                         <span className="text-teal-600 font-medium">{imp.pantones}</span>

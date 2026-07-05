@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
-import { fmtDate, sortSizeEntries, O_STATUSES, getDisplayName } from "../components/shared/pricing";
+import { fmtDate, sortSizeEntries, O_STATUSES, getDisplayName, getShopPricingConfig } from "../components/shared/pricing";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { displayFullName } from "@/lib/displayName";
 import {
   countGoodsProgress,
@@ -851,7 +852,7 @@ export default function ShopFloor() {
                                     <span className="text-slate-800">{imp.title} </span>
                                   )}
                                   <span className="text-slate-500">
-                                    {imp.title ? "· " : ""}{imp.location} · {imp.colors}c · {imp.technique || "Screen Print"}
+                                    {imp.title ? "· " : ""}{imp.location} · {imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · {imp.technique || "Screen Print"}
                                   </span>
                                 </span>
                               ))}

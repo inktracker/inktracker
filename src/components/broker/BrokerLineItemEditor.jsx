@@ -949,36 +949,68 @@ export default function BrokerLineItemEditor({
                         />
                       </div>
 
-                      <div className="w-20">
-                        <label className="block text-xs text-slate-500 mb-0.5">Colors</label>
-                        <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
-                          <button
-                            onClick={() => updateImprint(idx, { colors: Math.max(1, imp.colors - 1) })}
-                            className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
-                          >
-                            −
-                          </button>
-                          <div className="flex-1 text-center font-bold text-slate-800 text-sm">
-                            {imp.colors}
+                      {/* Embroidery prices by stitch tier, not color count —
+                          mirror the shop-side LineItemEditor so a broker who
+                          picks Embroidery gets stitch tiers + Thread Colors,
+                          not a 1-8 color counter labeled "Ink". */}
+                      {imp.technique === "Embroidery" ? (
+                        <>
+                          <div className="w-28">
+                            <label className="block text-xs text-slate-500 mb-0.5">Stitch Count</label>
+                            <select
+                              value={imp.colors || 1}
+                              onChange={(e) => updateImprint(idx, { colors: parseInt(e.target.value) || 1 })}
+                              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
+                            >
+                              {(getShopPricingConfig()?.embroidery?.stitchTiers || ["Under 5K", "5K-10K", "10K-15K", "15K+"]).map((st, i) => (
+                                <option key={st} value={i + 1}>{st}</option>
+                              ))}
+                            </select>
                           </div>
-                          <button
-                            onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
-                            className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
+                          <div className="flex-1 min-w-28">
+                            <label className="block text-xs text-slate-500 mb-0.5">Thread Colors</label>
+                            <input
+                              value={imp.pantones || ""}
+                              onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
+                              placeholder="e.g. Navy, White, Gold"
+                              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-20">
+                            <label className="block text-xs text-slate-500 mb-0.5">Colors</label>
+                            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
+                              <button
+                                onClick={() => updateImprint(idx, { colors: Math.max(1, imp.colors - 1) })}
+                                className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
+                              >
+                                −
+                              </button>
+                              <div className="flex-1 text-center font-bold text-slate-800 text-sm">
+                                {imp.colors}
+                              </div>
+                              <button
+                                onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
+                                className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
 
-                      <div className="flex-1 min-w-28">
-                        <label className="block text-xs text-slate-500 mb-0.5">Ink Color(s)</label>
-                        <input
-                          value={imp.pantones || ""}
-                          onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
-                          placeholder="e.g. PMS 286 C, White"
-                          className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
-                        />
-                      </div>
+                          <div className="flex-1 min-w-28">
+                            <label className="block text-xs text-slate-500 mb-0.5">Ink Color(s)</label>
+                            <input
+                              value={imp.pantones || ""}
+                              onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
+                              placeholder="e.g. PMS 286 C, White"
+                              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                            />
+                          </div>
+                        </>
+                      )}
 
                       <div className="w-28">
                         <label className="block text-xs text-slate-500 mb-0.5">Technique</label>

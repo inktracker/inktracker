@@ -15,6 +15,7 @@ import {
   getTier,
   BROKER_MARKUP,
   STANDARD_MARKUP,
+  getShopPricingConfig,
 } from "../shared/pricing";
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
@@ -27,7 +28,7 @@ import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { quoteThreadId } from "@/lib/messageThreads";
 import { isConvertedToOrder } from "@/lib/quotes/approvalState";
-import { imprintColorLabel } from "@/lib/quotes/imprintColorLabel";
+import { imprintColorLabel, imprintCountText } from "@/lib/quotes/imprintLabels";
 import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare, UserCheck, UserX, Paperclip } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -972,7 +973,12 @@ export default function QuoteDetailModal({
 
                                           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
                                             {imp.method && <span>Method: {imp.method}</span>}
-                                            {imp.colors && <span>Colors: {imp.colors}</span>}
+                                            {/* Embroidery imp.colors is a stitch-tier index, not a
+                                                color count — imprintCountText renders "5K-10K stitches"
+                                                for embroidery, "N colors" otherwise. */}
+                                            {imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers) && (
+                                              <span>{imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)}</span>
+                                            )}
                                             {imp.pantones && (
                                               <span className="font-medium text-teal-600">
                                                 {imprintColorLabel(imp)}: {imp.pantones}
