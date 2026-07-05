@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import {
@@ -335,10 +335,33 @@ export default function QuoteEditorModal({
     }));
   }
 
+  // Autoscroll to a just-added / just-duplicated garment. Add appends to the
+  // bottom and Duplicate inserts below the source — both land off-screen, so
+  // people re-clicked thinking nothing happened and racked up stray garments.
+  // handlers stamp the new line's id here; the effect below scrolls to it once
+  // it's rendered, then clears the stamp. A DOM-node map keyed by line id
+  // survives reorders/removals (index would go stale).
+  const lineItemNodes = useRef(new Map());
+  const pendingScrollId = useRef(null);
+
+  useEffect(() => {
+    const id = pendingScrollId.current;
+    if (!id) return;
+    pendingScrollId.current = null;
+    const node = lineItemNodes.current.get(id);
+    if (!node) return;
+    // rAF so the scroll runs after layout of the newly-committed node.
+    requestAnimationFrame(() => {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [q.line_items]);
+
   function addLineItem() {
+    const item = newLineItem();
+    pendingScrollId.current = item.id;
     setQ((prev) => ({
       ...prev,
-      line_items: [...prev.line_items, newLineItem()],
+      line_items: [...prev.line_items, item],
     }));
   }
 
@@ -446,6 +469,7 @@ export default function QuoteEditorModal({
   function duplicateLineItem(idx) {
     const li = q.line_items[idx];
     const copy = { ...li, id: uid() };
+    pendingScrollId.current = copy.id;
     setQ((prev) => ({
       ...prev,
       line_items: [
@@ -1097,19 +1121,27 @@ export default function QuoteEditorModal({
             )}
 
             {q.line_items.map((li, idx) => (
-              <LineItemEditor
+              <div
                 key={li.id}
-                li={li}
-                rushRate={q.rush_rate}
-                extras={q.extras}
-                addonsByScope={addonsByScope}
-                allLineItems={q.line_items}
-                savedImprints={savedImprints}
-                onChange={(updated) => updateLineItem(idx, updated)}
-                onRemove={() => removeLineItem(idx)}
-                onDuplicate={() => duplicateLineItem(idx)}
-                canRemove={q.line_items.length > 1}
-              />
+                ref={(node) => {
+                  if (node) lineItemNodes.current.set(li.id, node);
+                  else lineItemNodes.current.delete(li.id);
+                }}
+                style={{ scrollMarginTop: "80px" }}
+              >
+                <LineItemEditor
+                  li={li}
+                  rushRate={q.rush_rate}
+                  extras={q.extras}
+                  addonsByScope={addonsByScope}
+                  allLineItems={q.line_items}
+                  savedImprints={savedImprints}
+                  onChange={(updated) => updateLineItem(idx, updated)}
+                  onRemove={() => removeLineItem(idx)}
+                  onDuplicate={() => duplicateLineItem(idx)}
+                  canRemove={q.line_items.length > 1}
+                />
+              </div>
             ))}
           </div>
 
