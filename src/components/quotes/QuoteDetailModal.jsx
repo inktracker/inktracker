@@ -27,6 +27,7 @@ import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { quoteThreadId } from "@/lib/messageThreads";
 import { isConvertedToOrder } from "@/lib/quotes/approvalState";
+import { imprintColorLabel } from "@/lib/quotes/imprintColorLabel";
 import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare, UserCheck, UserX, Paperclip } from "lucide-react";
 import { notify } from "@/lib/notify";
@@ -974,7 +975,7 @@ export default function QuoteDetailModal({
                                             {imp.colors && <span>Colors: {imp.colors}</span>}
                                             {imp.pantones && (
                                               <span className="font-medium text-teal-600">
-                                                Ink Colors: {imp.pantones}
+                                                {imprintColorLabel(imp)}: {imp.pantones}
                                               </span>
                                             )}
                                             {imp.details && (

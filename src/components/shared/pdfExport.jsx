@@ -14,6 +14,7 @@ import {
   getLineExtras,
 } from './pricing';
 import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
+import { imprintColorLabel } from '../../lib/quotes/imprintColorLabel';
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
 
@@ -645,7 +646,7 @@ function renderLineItems(
         if (imp.pantones) {
           doc.setFontSize(7);
           doc.setTextColor(100, 60, 160);
-          doc.text(`  Ink Colors: ${imp.pantones}`, margin + 5, yPos);
+          doc.text(`  ${imprintColorLabel(imp)}: ${imp.pantones}`, margin + 5, yPos);
           yPos += 3;
         }
 
