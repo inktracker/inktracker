@@ -7,6 +7,7 @@ import { uploadFile } from "@/lib/uploadFile";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
 import { addressOneLine } from "@/lib/tax/address";
+import { normalizeCustomerWrite } from "@/lib/customers/normalizeCustomerWrite";
 import { buildAdditiveMergePatch } from "@/lib/customers/mergeCustomerData";
 import { aggregateInvoiceStatsByCustomer } from "@/lib/customers/invoiceStats";
 import { findReconcileNeeded, partitionReconcilePairs, planReconcileActions } from "@/lib/customers/qbReconcileDetect";
@@ -366,14 +367,14 @@ export default function Customers() {
 
     let created;
     try {
-      created = await base44.entities.Customer.create({
+      created = await base44.entities.Customer.create(normalizeCustomerWrite({
         ...form,
         // Keep the legacy one-line `address` in sync with structured billing
         // (QB BillAddr + customer-list display read it).
         address: addressOneLine(form.bill_to_address) || form.address || "",
         shop_owner: shopScope(user),
         orders: 0,
-      });
+      }));
     } catch (err) {
       notify.error("Couldn't add customer", err);
       setAddingCustomer(false);
@@ -412,7 +413,9 @@ export default function Customers() {
       const { id, created_date, updated_date, shop_owner, ...patch } = editing;
       // Keep legacy one-line `address` in sync with structured billing.
       patch.address = addressOneLine(editing.bill_to_address) || editing.address || "";
-      const updated = await base44.entities.Customer.update(editing.id, patch);
+      // Toggling Tax Exempt off resets exemption_expires_at to "" — Postgres
+      // rejects "" for a date column, same failure as the add path.
+      const updated = await base44.entities.Customer.update(editing.id, normalizeCustomerWrite(patch));
       setCustomers((prev) => prev.map((c) => (c.id === editing.id ? updated : c)));
       setEditing(updated);
       setEditSaved(true);
