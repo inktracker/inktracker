@@ -741,7 +741,10 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   const isFlat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
                   return (
                     <div className="flex justify-between text-sm text-emerald-600">
-                      <span>Discount {isFlat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
+                      <span>
+                        Discount {isFlat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}
+                        {quote.discount_description ? ` — ${quote.discount_description}` : ""}
+                      </span>
                       <span>−{fmtMoney(customerTotals.sub - customerTotals.afterDisc)}</span>
                     </div>
                   );

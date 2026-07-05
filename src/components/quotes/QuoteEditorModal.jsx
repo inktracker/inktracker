@@ -80,6 +80,7 @@ function blankQuote(defaultTaxRate = 8.265) {
     line_items: [newLineItem()],
     discount: 0,
     discount_type: "percent",
+    discount_description: "",
     tax_rate: defaultTaxRate,
     deposit_pct: 0,
     deposit_paid: false,
@@ -1188,6 +1189,17 @@ export default function QuoteEditorModal({
                   </button>
                 </div>
               </div>
+
+              {parseFloat(q.discount) > 0 && (
+                <input
+                  type="text"
+                  value={q.discount_description || ""}
+                  onChange={(e) => setQ({ ...q, discount_description: e.target.value })}
+                  placeholder="Discount reason (optional) — e.g. loyal customer, bulk"
+                  maxLength={120}
+                  className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+              )}
 
               {parseFloat(q.discount) > 0 && (
                 <div className="flex justify-between text-sm text-emerald-600">

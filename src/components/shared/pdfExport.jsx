@@ -707,7 +707,7 @@ function renderLineItems(
   return { yPos, pdfLineTotals };
 }
 
-function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null, extraFeeLines = []) {
+function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null, extraFeeLines = [], discountDescription = '') {
   doc.setDrawColor(180, 180, 200);
   doc.setLineWidth(0.4);
   doc.line(margin, yPos, pageWidth - margin, yPos);
@@ -745,7 +745,8 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(16, 160, 100);
-    doc.text(isFlatDisc ? `Discount (${moneyNoWeirdMinus(discVal)}):` : `Discount (${discount}%):`, margin, yPos);
+    const discLabel = isFlatDisc ? `Discount (${moneyNoWeirdMinus(discVal)}):` : `Discount (${discount}%):`;
+    doc.text(discountDescription ? `${discLabel} ${discountDescription}` : discLabel, margin, yPos);
 
     doc.setFont(undefined, 'bold');
     doc.text(moneyNoWeirdMinus(-discountAmount), pageWidth - margin - 2, yPos, {
@@ -1061,7 +1062,8 @@ export async function exportQuoteToPDF(
         label: c.label || 'Additional fee',
         amount: c.amount,
       })),
-    ]
+    ],
+    quote.discount_description || ''
   );
 
   await appendArtworkPages(doc, quote);
@@ -1201,7 +1203,9 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output, custome
       false,
       orderDiscType,
       parseFloat(order.rush_rate) || 0,
-      orderPdfLineTotals.length > 0 ? orderPdfLineTotals.reduce((s, v) => s + v, 0) : null
+      orderPdfLineTotals.length > 0 ? orderPdfLineTotals.reduce((s, v) => s + v, 0) : null,
+      [],
+      order.discount_description || ''
     );
 
     yPos += 2;
@@ -1635,7 +1639,8 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   if (discVal > 0) {
     const isFlatDisc = invoice.discount_type === 'flat' || (discVal > 100 && invoice.discount_type !== 'percent');
     const discountAmt = isFlatDisc ? discVal : subtotal * (discVal / 100);
-    const discLabel = isFlatDisc ? 'DISCOUNT' : `DISCOUNT (${discVal}%)`;
+    const baseLabel = isFlatDisc ? 'DISCOUNT' : `DISCOUNT (${discVal}%)`;
+    const discLabel = invoice.discount_description ? `${baseLabel} — ${invoice.discount_description}` : baseLabel;
     totalsRow(discLabel, `-${fmtMoney(discountAmt)}`, { color: [22, 101, 52] });
   }
 
