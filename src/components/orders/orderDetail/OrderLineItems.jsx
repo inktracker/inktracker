@@ -51,10 +51,10 @@ export default function OrderLineItems({
           (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
         );
         return (
-          <div key={li.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-            <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+          <div key={li.id} className="border border-slate-200 dark:border-slate-700 border-l-4 border-l-teal-600 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-slate-100 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
               <div>
-                <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                <span className="font-bold text-slate-900 dark:text-slate-100 text-base">
                   {li.style || "Garment"}
                 </span>
                 {li.garmentColor && (
