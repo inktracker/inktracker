@@ -441,7 +441,10 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             <div className="flex justify-between text-sm text-slate-500"><span>Subtotal</span><span>{fmtMoney(invoice.subtotal)}</span></div>
             {invoice.discount > 0 && (
               <div className="flex justify-between text-sm text-emerald-600">
-                <span>Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${invoice.discount}%)`}</span>
+                <span>
+                  Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${invoice.discount}%)`}
+                  {invoice.discount_description ? ` — ${invoice.discount_description}` : ""}
+                </span>
                 <span>−{fmtMoney(sub - afterDisc)}</span>
               </div>
             )}

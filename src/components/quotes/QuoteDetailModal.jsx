@@ -1075,7 +1075,10 @@ export default function QuoteDetailModal({
                     const flat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
                     return (
                       <div className="flex justify-between text-sm text-emerald-600">
-                        <span>Discount {flat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
+                        <span>
+                          Discount {flat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}
+                          {quote.discount_description ? ` — ${quote.discount_description}` : ""}
+                        </span>
                         <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
                       </div>
                     );

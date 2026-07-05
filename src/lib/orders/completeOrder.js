@@ -141,6 +141,7 @@ export function buildOrderCompletionPlan(
     //   - deposit_pct/deposit_paid: credits a paid deposit (was absent → over-charge)
     additional_charges: order.additional_charges ?? null,
     discount_type: order.discount_type || "percent",
+    discount_description: order.discount_description ?? null,
     deposit_pct: order.deposit_pct ?? 0,
     deposit_paid: !!order.deposit_paid,
     paid: false,

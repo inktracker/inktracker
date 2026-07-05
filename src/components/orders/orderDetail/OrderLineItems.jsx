@@ -263,7 +263,10 @@ export default function OrderLineItems({
           </div>
           {parseFloat(order.discount) > 0 && (
             <div className="flex justify-between text-sm text-emerald-600">
-              <span>Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${order.discount}%)`}</span>
+              <span>
+                Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${order.discount}%)`}
+                {order.discount_description ? ` — ${order.discount_description}` : ""}
+              </span>
               <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
             </div>
           )}

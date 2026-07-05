@@ -104,6 +104,7 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     extras: q.extras,
     discount: q.discount,
     discount_type: q.discount_type || "percent",
+    discount_description: q.discount_description || null,
     tax_rate: brokerOrder ? 0 : q.tax_rate,
     subtotal: t.sub,
     tax: t.tax,
