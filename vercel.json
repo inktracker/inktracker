@@ -25,6 +25,10 @@
       "destination": "/for-printers/index.html"
     },
     {
+      "source": "/resources",
+      "destination": "/resources/index.html"
+    },
+    {
       "source": "/tools",
       "destination": "/tools/index.html"
     },

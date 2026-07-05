@@ -42,7 +42,7 @@ header.site .wrap{display:flex;align-items:center;justify-content:space-between;
 .brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .brand span{color:var(--forest)}
 .nav{display:flex;align-items:center;gap:18px}
-.nav a{font-size:13px;font-weight:600;color:var(--ink);text-decoration:none}
+.nav a:not(.cta){font-size:13px;font-weight:600;color:var(--ink);text-decoration:none}
 .nav a:hover{color:var(--forest)}
 .cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px;font-size:15px}
 .cta:hover{background:var(--forest-dark)}
@@ -96,11 +96,12 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" />`;
 
+// One content link ("Resources" → the hub that groups Tools + Blog) keeps
+// the header uncluttered and matches the React landing nav.
 const siteHeader = `<header class="site"><div class="wrap">
   <a class="brand" href="${SITE.baseUrl}/">Ink<span>Tracker</span></a>
   <nav class="nav">
-    <a href="${SITE.baseUrl}/tools">Free Tools</a>
-    <a href="${SITE.baseUrl}/blog">Blog</a>
+    <a href="${SITE.baseUrl}/resources">Resources</a>
     <a class="cta" href="${SITE.baseUrl}/#pricing">Start trial</a>
   </nav>
 </div></header>`;
@@ -407,10 +408,77 @@ ${siteFooter}
 </html>`;
 }
 
+// ── Resources hub (/resources) — groups the whole content cluster ────────────
+// "Resources" in the nav points here so the label matches the destination
+// (the old "Resources → blog" mislabel is gone), and Tools + Blog + the guide
+// live under one clear category.
+const RESOURCES = Object.freeze([
+  { href: `${SITE.baseUrl}/tools`, tag: "Tools", title: "Free Tools", desc: "Calculators and utilities for pricing and running a print shop — starting with the screen printing price calculator. No signup." },
+  { href: `${SITE.baseUrl}/blog`, tag: "Blog", title: "The InkTracker Blog", desc: "Plain-English guides from a working printer: pricing screen print and embroidery, sales tax, QuickBooks, DTF vs. screens, and shop workflow." },
+  { href: `${SITE.baseUrl}/compare`, tag: "Buyer's guide", title: "Choosing Screen Printing Software", desc: "A fair, no-spin look at the main shop-management tools — what each is good for, and how to pick." },
+  { href: `${SITE.baseUrl}/for-printers`, tag: "Product", title: "InkTracker for Print Shops", desc: "What InkTracker does — quoting, production, invoicing, and QuickBooks sync built for screen print and embroidery shops." },
+]);
+
+function renderResources() {
+  const canonical = `${SITE.baseUrl}/resources`;
+  const cards = RESOURCES.map((r) => `      <li>
+        <span class="tool-tag">${esc(r.tag)}</span>
+        <h3><a href="${esc(r.href)}">${esc(r.title)}</a></h3>
+        <p>${esc(r.desc)}</p>
+      </li>`).join("\n");
+  const breadcrumb = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "InkTracker", item: `${SITE.baseUrl}/` },
+      { "@type": "ListItem", position: 2, name: "Resources", item: canonical },
+    ],
+  };
+  const title = "Resources for Print Shops";
+  const desc = "Free tools, guides, and how-tos for screen printing and embroidery shops — from a working print shop. Tools, blog, and the software buyer's guide, all in one place.";
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${esc(title)}</title>
+  <meta name="description" content="${esc(desc)}" />
+  <link rel="canonical" href="${esc(canonical)}" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${esc(title)}" />
+  <meta property="og:description" content="${esc(desc)}" />
+  <meta property="og:url" content="${esc(canonical)}" />
+  <meta property="og:image" content="${SITE.logo}" />
+  <meta name="twitter:card" content="summary" />
+  ${FONTS}
+  <style>${CSS}</style>
+  ${ldJson(breadcrumb)}
+</head>
+<body>
+${siteHeader}
+<main class="wrap">
+  <nav class="crumbs"><a href="${SITE.baseUrl}/">Home</a> › Resources</nav>
+  <h1>Resources for print shops</h1>
+  <p class="lede">Free tools, guides, and how-tos — built by a printer, no email wall. Pick where you want to start.</p>
+  <ul class="tool-grid">
+${cards}
+  </ul>
+  <div class="soft-cta">
+    <h3>Run your whole shop, not just the math</h3>
+    <p>These come out of InkTracker — quoting, production, and invoicing built for screen print and embroidery shops. Start a 14-day free trial.</p>
+    <a class="cta" href="${SITE.baseUrl}/?ref=resources">Start your free trial</a>
+  </div>
+</main>
+${siteFooter}
+</body>
+</html>`;
+}
+
 // ── sitemap sync (managed block, mirrors the blog/compare pattern) ───────────
 function syncSitemap() {
   const path = join(PUBLIC, "sitemap.xml");
-  const urls = [`${SITE.baseUrl}/tools`, ...TOOLS.map((t) => `${SITE.baseUrl}/tools/${t.slug}`)];
+  const urls = [`${SITE.baseUrl}/resources`, `${SITE.baseUrl}/tools`, ...TOOLS.map((t) => `${SITE.baseUrl}/tools/${t.slug}`)];
   const entries = urls
     .map((u) => `  <url>\n    <loc>${u}</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.6</priority>\n  </url>`)
     .join("\n");
@@ -425,6 +493,8 @@ function syncSitemap() {
 }
 
 // ── write ────────────────────────────────────────────────────────────────────
+mkdirSync(join(PUBLIC, "resources"), { recursive: true });
+writeFileSync(join(PUBLIC, "resources", "index.html"), renderResources());
 mkdirSync(join(PUBLIC, "tools"), { recursive: true });
 writeFileSync(join(PUBLIC, "tools", "index.html"), renderHub());
 for (const t of TOOLS) {
@@ -434,5 +504,5 @@ for (const t of TOOLS) {
 }
 syncSitemap();
 
-console.log(`✓ Generated /tools hub + ${TOOLS.length} tool page(s) → public/tools/`);
-console.log("✓ Synced /tools into public/sitemap.xml");
+console.log(`✓ Generated /resources hub + /tools hub + ${TOOLS.length} tool page(s)`);
+console.log("✓ Synced /resources + /tools into public/sitemap.xml");

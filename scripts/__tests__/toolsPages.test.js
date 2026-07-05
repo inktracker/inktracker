@@ -124,18 +124,50 @@ describe("calculator page (/tools/screen-printing-price-calculator)", () => {
   });
 });
 
+describe("resources hub (/resources)", () => {
+  const RES = read("public", "resources", "index.html");
+  it("groups Tools + Blog (+ guide, product) as cards", () => {
+    expect(RES).toContain("<title>Resources for Print Shops</title>");
+    expect(RES).toContain(`href="${BASE}/tools"`);
+    expect(RES).toContain(`href="${BASE}/blog"`);
+    expect(RES).toContain(`href="${BASE}/compare"`);
+    expect(RES).toContain(`href="${BASE}/for-printers"`);
+  });
+  it("SEO: non-www canonical + BreadcrumbList", () => {
+    expect(RES).toContain(`<link rel="canonical" href="${BASE}/resources" />`);
+    expect(RES).toContain('"@type": "BreadcrumbList"');
+  });
+  it("the Start-trial button keeps white text (not overridden by .nav a)", () => {
+    // .nav's link-color rule must exclude .cta so the button stays white
+    const css = RES.match(/<style>([\s\S]*?)<\/style>/)[1];
+    expect(css).toContain(".nav a:not(.cta)");
+    expect(css).not.toMatch(/\.nav a\{[^}]*color/); // the bare, over-specific rule is gone
+  });
+});
+
 describe("sitemap + nav", () => {
-  it("both tools URLs are in the sitemap", () => {
+  it("tools + resources URLs are in the sitemap", () => {
     const sm = read("public", "sitemap.xml");
+    expect(sm).toContain(`<loc>${BASE}/resources</loc>`);
     expect(sm).toContain(`<loc>${BASE}/tools</loc>`);
     expect(sm).toContain(`<loc>${BASE}/tools/screen-printing-price-calculator</loc>`);
   });
-  it("a Free Tools nav entry points at /tools in the site nav", () => {
+  it("the site nav has a single Resources link → /resources (no crowding)", () => {
     const app = read("src", "App.jsx");
-    expect(app).toMatch(/href="\/tools"[\s\S]*?Free Tools/);
+    expect(app).toMatch(/href="\/resources"[\s\S]*?Resources/);
+    // the earlier separate Free-Tools nav link is gone
+    expect(app).not.toMatch(/href="\/tools"[\s\S]{0,80}Free Tools/);
   });
-  it("vercel.json rewrites /tools and /tools/*", () => {
+  it("static page headers use one Resources link (Tools/Blog grouped under it)", () => {
+    for (const f of ["tools/index.html", "blog/index.html", "compare/index.html"]) {
+      const html = read("public", ...f.split("/"));
+      const nav = html.match(/<nav class="nav">([\s\S]*?)<\/nav>/)[1];
+      expect(nav).toContain(`href="${BASE}/resources"`);
+    }
+  });
+  it("vercel.json rewrites /resources, /tools and /tools/*", () => {
     const vj = read("vercel.json");
+    expect(vj).toContain('"source": "/resources"');
     expect(vj).toContain('"source": "/tools"');
     expect(vj).toContain('"source": "/tools/(.*)"');
   });
