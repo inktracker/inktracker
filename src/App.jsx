@@ -423,15 +423,10 @@ function PublicLandingPage() {
               {/* Static marketing page (Vercel rewrite → /blog/index.html), so a
                   plain <a> for a full navigation — NOT react-router <Link>,
                   which would client-route into the SPA catch-all and 404. */}
+              {/* One "Resources" link → the /resources hub (Tools + Blog +
+                  guides). Keeps the nav uncluttered and the label honest. */}
               <a
-                href="/tools"
-                className={`hidden sm:inline-block ${navLink}`}
-                style={{ color: INK, fontFamily: H_FONT }}
-              >
-                Free Tools
-              </a>
-              <a
-                href="/blog"
+                href="/resources"
                 className={`hidden sm:inline-block ${navLink}`}
                 style={{ color: INK, fontFamily: H_FONT }}
               >
@@ -470,10 +465,7 @@ function PublicLandingPage() {
                   </button>
                 ))}
                 {/* Real routes (static pages) — plain <a>, not anchor jumps. */}
-                <a href="/tools" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE, fontFamily: H_FONT }}>
-                  Free Tools
-                </a>
-                <a href="/blog" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE, fontFamily: H_FONT }}>
+                <a href="/resources" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE, fontFamily: H_FONT }}>
                   Resources
                 </a>
                 <button onClick={() => { setMobileMenuOpen(false); openLogin(); }} className={`text-left py-4 sm:hidden ${navLink}`} style={{ color: INK }}>

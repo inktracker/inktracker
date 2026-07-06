@@ -49,6 +49,49 @@ export function chartCell(M, colorIdx, tierIdx) {
   return M.base * M.cm[colorIdx] * M.tm[tierIdx];
 }
 
+// ── Embroidery chart primitives ──────────────────────────────────────────────
+// Same overhead→chart shape as the screen-print model, but priced by the STITCH
+// (embroidery's real unit of cost) instead of the print. Also ES5-safe: runs at
+// build time AND is injected verbatim into the client via `.toString()`.
+
+// Quantity tiers embroidery prices at (columns) — InkTracker's embroidery
+// qtyTiers. Shared so Part B's quantity slider snaps to the same breaks.
+export const STITCH_QTY_TIERS = [12, 24, 48, 72, 144];
+
+// Stitch-count bands (rows). `k` = representative thousands of stitches used to
+// price that band's row (Under 5K→4k, 5K–10K→7.5k, 10K–15K→12.5k, 15K+→18k),
+// mirroring InkTracker's embroidery stitchTiers.
+export const STITCH_TIERS = [
+  { label: "Under 5K", k: 4 },
+  { label: "5K–10K", k: 7.5 },
+  { label: "10K–15K", k: 12.5 },
+  { label: "15K+", k: 18 },
+];
+
+// The embroidery chart model. S = { costs, heads, spm, hours, margin, vol }.
+//   capacity (thousands of stitches/month) = spm × 60 × hours × heads ÷ 1000
+//     — heads sew in parallel, so a 6-head shop has 6× the output of a 1-head.
+//   costPerK  = monthly costs ÷ capacity          (what 1,000 stitches cost you)
+//   basePerK  = costPerK ÷ (1 − margin)            (priced $ per 1,000 stitches)
+//   tm[]      = volume multipliers per qty tier    (bigger runs cost less)
+export function stitchModel(S) {
+  var kMonth = (S.spm * 60 * S.hours * S.heads) / 1000;
+  if (kMonth < 1) kMonth = 1;
+  var costPerK = S.costs / kMonth;
+  var denom = 1 - S.margin / 100;
+  if (denom < 0.01) denom = 0.01;
+  var basePerK = costPerK / denom;
+  var vd = S.vol / 100;
+  var tm = [1];
+  for (var i = 1; i < 5; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));
+  return { kMonth: kMonth, costPerK: costPerK, basePerK: basePerK, tm: tm };
+}
+
+// Per-piece run price for a stitch count (in thousands) at a qty-tier index (0–4).
+export function stitchCell(M, stitchesK, tierIdx) {
+  return M.basePerK * stitchesK * M.tm[tierIdx];
+}
+
 // One labelled slider row. Shared by every calculator widget.
 export function sliderRow(key, label, hint, attrs, initial = "–") {
   return `<div class="calc-row">

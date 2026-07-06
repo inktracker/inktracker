@@ -37,6 +37,9 @@ header.site .wrap{display:flex;align-items:center;justify-content:space-between;
 .brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .brand span{color:var(--forest)}
 .cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px;font-size:15px}
+.nav{display:flex;align-items:center;gap:18px}
+.nav a:not(.cta){font-size:13px;font-weight:600;color:var(--ink);text-decoration:none}
+.nav a:not(.cta):hover{color:var(--forest)}
 .cta:hover{background:var(--forest-dark)}
 nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
 nav.crumbs a{color:var(--muted)}
@@ -90,7 +93,10 @@ const FONTS = `<link rel="preconnect" href="https://fonts.googleapis.com" />
 
 const siteHeader = `<header class="site"><div class="wrap">
   <a class="brand" href="${SITE.baseUrl}/">Ink<span>Tracker</span></a>
-  <a class="cta" href="${SITE.baseUrl}/#pricing">Start free trial</a>
+  <nav class="nav">
+    <a href="${SITE.baseUrl}/resources">Resources</a>
+    <a class="cta" href="${SITE.baseUrl}/#pricing">Start free trial</a>
+  </nav>
 </div></header>`;
 
 const siteFooter = `<footer class="site"><div class="wrap">
@@ -486,10 +492,14 @@ ${filterScript}
 const DISCLAIMER_NEWSLETTER = `<!-- newsletter capture: phase 2 -->`;
 
 // ── /for-printers landing (§6) ───────────────────────────────────────────────
+// The GENERAL product page — what the site nav, breadcrumb, blog "Related"
+// links, /compare and the /tools pages all point at. Copy is context-neutral so
+// it reads right for a cold visitor. The quote-loop version (copy that assumes
+// "you just got a quote") lives separately at /made-with-inktracker.
 function renderForPrinters() {
   const canonical = `${SITE.baseUrl}/for-printers`;
-  const title = "That quote was made in InkTracker — print shop software";
-  const desc = "The shop that sent you that quote runs quoting, production, and invoicing in one place — software built by a printer, for printers. Start a 14-day free trial.";
+  const title = "InkTracker — Print Shop Software for Screen Printers & Embroiderers";
+  const desc = "Print shop software built by a working printer: quoting with live blank pricing, a shared production board, and two-way QuickBooks sync — all in one place. Start a 14-day free trial.";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -512,6 +522,56 @@ function renderForPrinters() {
 ${siteHeader}
 <main class="wrap">
   <nav class="crumbs"><a href="${SITE.baseUrl}/">Home</a> › For printers</nav>
+  <h1>Print shop software, built by a printer.</h1>
+  <p class="lede">InkTracker runs quoting, production, and invoicing in one place — for screen print and embroidery shops that are done wrangling spreadsheets and sticky notes. Built in a working shop and used on the floor every day.</p>
+  <ul class="proof">
+    <li><b>Quote in minutes, not a spreadsheet.</b> Live blank pricing, color and quantity breaks, and setup fees — priced right before it hits the press.</li>
+    <li><b>A production board your whole shop can see.</b> From art approval to shipping, everyone works off the same pipeline.</li>
+    <li><b>Invoices + QuickBooks, no double entry.</b> A two-way sync keeps invoices, payments, and customers matched.</li>
+  </ul>
+  <div class="blog-cta">
+    <h3>Run your whole shop in one place.</h3>
+    <p>Made by a working print shop. We use it every day.</p>
+    <a class="cta" href="${SITE.baseUrl}/?ref=for-printers">Start your 14-day free trial</a>
+    <div class="related">Or read <a href="${SITE.baseUrl}/compare">the honest software buyer's guide</a>.</div>
+  </div>
+</main>
+${siteFooter}
+</body>
+</html>`;
+}
+
+// ── /made-with-inktracker — the QUOTE-LOOP landing ───────────────────────────
+// The page the "This quote was made in InkTracker" link on a sent quote points
+// at (?ref=quote). Copy assumes the visitor just received a quote, so it's kept
+// OFF the general nav and noindex'd — it's a PLG conversion page, not an SEO
+// page, and its content overlaps /for-printers (which is the indexable one).
+function renderQuoteLanding() {
+  const canonical = `${SITE.baseUrl}/made-with-inktracker`;
+  const title = "That quote was made in InkTracker";
+  const desc = "The shop that sent you that quote runs quoting, production, and invoicing in one place — software built by a printer, for printers. Start a 14-day free trial.";
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${esc(title)}</title>
+  <meta name="description" content="${esc(desc)}" />
+  <meta name="robots" content="noindex, follow" />
+  <link rel="canonical" href="${esc(canonical)}" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="${esc(title)}" />
+  <meta property="og:description" content="${esc(desc)}" />
+  <meta property="og:url" content="${esc(canonical)}" />
+  <meta property="og:image" content="${SITE.logo}" />
+  <meta name="twitter:card" content="summary" />
+  ${FONTS}
+  <style>${CSS}</style>
+</head>
+<body>
+${siteHeader}
+<main class="wrap">
   <h1>That quote was made in InkTracker.</h1>
   <p class="lede">The shop that sent it runs quotes, production, and invoicing in one place — software built by a printer, for printers. If you're still living in spreadsheets and sticky notes, come see why they switched.</p>
   <ul class="proof">
@@ -523,7 +583,7 @@ ${siteHeader}
     <h3>See why they switched.</h3>
     <p>Made by a working print shop. We use it every day.</p>
     <a class="cta" href="${SITE.baseUrl}/?ref=quote">Start your 14-day free trial</a>
-    <div class="related">Or read <a href="${SITE.baseUrl}/compare">the honest software buyer's guide</a>.</div>
+    <div class="related">Or read <a href="${SITE.baseUrl}/compare">the honest software buyer's guide</a> · <a href="${SITE.baseUrl}/for-printers">what InkTracker does</a>.</div>
   </div>
 </main>
 ${siteFooter}
@@ -570,8 +630,12 @@ for (const post of POSTS) {
 }
 mkdirSync(join(PUBLIC, "for-printers"), { recursive: true });
 writeFileSync(join(PUBLIC, "for-printers", "index.html"), renderForPrinters());
+// Quote-loop landing — noindex, deliberately kept OUT of the sitemap.
+mkdirSync(join(PUBLIC, "made-with-inktracker"), { recursive: true });
+writeFileSync(join(PUBLIC, "made-with-inktracker", "index.html"), renderQuoteLanding());
 syncSitemap(POSTS);
 
 console.log(`✓ Generated blog index + ${POSTS.length} posts → public/blog/`);
 console.log("✓ Generated /for-printers landing → public/for-printers/index.html");
+console.log("✓ Generated /made-with-inktracker quote-loop landing (noindex)");
 console.log("✓ Synced /blog + /for-printers into public/sitemap.xml");
