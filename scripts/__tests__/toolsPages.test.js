@@ -145,6 +145,29 @@ describe("resources hub (/resources)", () => {
   });
 });
 
+describe("static header matches the app theme (nav + button)", () => {
+  // The live app renders nav links + the Start-trial button in Anton, uppercase,
+  // letter-spaced, with a square (non-rounded) button. Every static page must
+  // match so the header reads consistently when you cross from the SPA.
+  for (const page of ["resources", "tools", "blog", "compare", "for-printers"]) {
+    const parts = page === "resources" || page === "tools" ? [page, "index.html"] : page === "blog" || page === "compare" ? [page, "index.html"] : [page, "index.html"];
+    it(`/${page} nav links are Anton + uppercase + tracked`, () => {
+      const css = read("public", ...parts).match(/<style>([\s\S]*?)<\/style>/)[1];
+      const navRule = css.match(/\.nav a:not\(\.cta\)\{([^}]*)\}/)[1];
+      expect(navRule).toContain("Anton");
+      expect(navRule).toContain("text-transform:uppercase");
+      expect(navRule).toContain("letter-spacing:.22em");
+    });
+    it(`/${page} Start-trial button is Anton + uppercase + square`, () => {
+      const css = read("public", ...parts).match(/<style>([\s\S]*?)<\/style>/)[1];
+      const ctaRule = css.match(/\.cta\{([^}]*)\}/)[1];
+      expect(ctaRule).toContain("Anton");
+      expect(ctaRule).toContain("text-transform:uppercase");
+      expect(ctaRule).toContain("border-radius:0");
+    });
+  }
+});
+
 describe("sitemap + nav", () => {
   it("tools + resources URLs are in the sitemap", () => {
     const sm = read("public", "sitemap.xml");

@@ -42,9 +42,9 @@ header.site .wrap{display:flex;align-items:center;justify-content:space-between;
 .brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .brand span{color:var(--forest)}
 .nav{display:flex;align-items:center;gap:18px}
-.nav a:not(.cta){font-size:13px;font-weight:600;color:var(--ink);text-decoration:none}
+.nav a:not(.cta){font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .nav a:not(.cta):hover{color:var(--forest)}
-.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px;font-size:15px}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0}
 .cta:hover{background:var(--forest-dark)}
 nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
 nav.crumbs a{color:var(--muted)}
