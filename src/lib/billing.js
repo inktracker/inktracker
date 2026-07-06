@@ -98,17 +98,22 @@ export function getEffectiveTier(user, nowOverride) {
  * Pure + unit-tested. The fetch happens in AuthContext.fetchUserWithProfile.
  *
  * @param {object} profile   the signed-in user's own profile
- * @param {object|null} ownerSub  { subscription_tier, subscription_status, trial_ends_at } or null
+ * @param {object|null} ownerSub  { subscription_tier, subscription_status, trial_ends_at, past_due_since, cancel_at_period_end, subscription_ends_at } or null
  * @returns {object}         profile with effective subscription fields
  */
 export function resolveTeamSubscription(profile, ownerSub) {
   if (!profile || !ownerSub) return profile;
   return {
     ...profile,
-    subscription_tier:   ownerSub.subscription_tier,
-    subscription_status: ownerSub.subscription_status,
-    trial_ends_at:       ownerSub.trial_ends_at,
-    past_due_since:      ownerSub.past_due_since, // inherit the owner's grace clock (BILL-03)
+    subscription_tier:    ownerSub.subscription_tier,
+    subscription_status:  ownerSub.subscription_status,
+    trial_ends_at:        ownerSub.trial_ends_at,
+    past_due_since:       ownerSub.past_due_since, // inherit the owner's grace clock (BILL-03)
+    // Inherit the owner's pending-cancellation display state so team members see
+    // the same "plan ends on X" notice the owner does (display only — the access
+    // gate is unchanged; a pending cancel is still active until it isn't).
+    cancel_at_period_end: ownerSub.cancel_at_period_end,
+    subscription_ends_at: ownerSub.subscription_ends_at,
   };
 }
 
