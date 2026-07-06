@@ -12,6 +12,7 @@ import { managerCanAccess, hasOwnerAccess } from "@/lib/managerPermissions";
 import { shopScope } from "@/lib/shopScope";
 import { resolveRoleRedirect } from "@/lib/broker/roleRedirect";
 import TrialStatusBanner from "@/components/TrialStatusBanner";
+import CancellationBanner from "@/components/CancellationBanner";
 
 const ICON_MAP = {
   Dashboard: Home,
@@ -314,6 +315,9 @@ export default function Layout({ children, currentPageName }) {
             the operator can't miss it. Self-hides for paid subs and
             non-shop roles. */}
         <TrialStatusBanner user={user} />
+        {/* Pending-cancellation notice ("plan ends on X"). Self-hides unless a
+            cancel is scheduled with a future end date. Display only. */}
+        <CancellationBanner user={user} />
         {/* Mobile header */}
         <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 sticky top-0 z-30">
           <button onClick={() => setMobileMenuOpen(true)} aria-label="Open menu" className="p-1 text-slate-500 hover:text-slate-700">
