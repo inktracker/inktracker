@@ -20,6 +20,7 @@ import { BrowserRouter as Router, Route, Routes, useLocation } from "react-route
 import { managerCanAccess, firstAllowedPage } from "@/lib/managerPermissions";
 import PageNotFound from "./lib/PageNotFound";
 import CookieConsent from "@/components/CookieConsent";
+import { track, identify } from "@/lib/analytics";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
@@ -339,9 +340,21 @@ function PublicLandingPage() {
   const [previewFeature, setPreviewFeature] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  function openSignup() { setLoginMode("signup"); setShowLogin(true); }
+  // `source` labels which CTA opened signup so the funnel shows which buttons
+  // convert. Callers wired as bare `onClick={openSignup}` pass the click event
+  // instead of a string — guard so we never log an event object as the source.
+  function openSignup(source) {
+    track("signup_opened", { source: typeof source === "string" ? source : "cta" });
+    setLoginMode("signup");
+    setShowLogin(true);
+  }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
   function jumpToAnchor(hash) { setMobileMenuOpen(false); window.location.hash = hash; }
+
+  // Explicit funnel entry point. PostHog autocaptures $pageview too, but a
+  // named event keeps the landing→signup→trial funnel unambiguous regardless
+  // of how pageview capture is configured.
+  useEffect(() => { track("landing_viewed"); }, []);
 
   const INK = "#0e0e0e";
   const MUTED = "#6b6b6b";
@@ -440,7 +453,7 @@ function PublicLandingPage() {
                 Sign in
               </button>
               <button
-                onClick={openSignup}
+                onClick={() => openSignup("nav")}
                 className="hidden sm:inline-block text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 transition whitespace-nowrap"
                 style={{ background: FOREST, color: '#fff' }}
               >
@@ -472,7 +485,7 @@ function PublicLandingPage() {
                   Sign in
                 </button>
                 <button
-                  onClick={() => { setMobileMenuOpen(false); openSignup(); }}
+                  onClick={() => { setMobileMenuOpen(false); openSignup("mobile_nav"); }}
                   className="mt-2 mb-3 text-center text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 transition sm:hidden"
                   style={{ background: FOREST, color: '#fff' }}
                 >
@@ -546,7 +559,7 @@ function PublicLandingPage() {
                 software that never quite fit.
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-                <button onClick={openSignup} className={btnPrimary} style={{ background: '#fff', color: INK }}>
+                <button onClick={() => openSignup("hero")} className={btnPrimary} style={{ background: '#fff', color: INK }}>
                   Start 14-day trial
                 </button>
                 <a href="#tour" className={btnOutlineLight} style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.55)' }}>
@@ -959,7 +972,7 @@ function PublicLandingPage() {
                 ))}
               </div>
 
-              <button onClick={openSignup} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
+              <button onClick={() => openSignup("pricing")} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
                 Start free trial
               </button>
 
@@ -1002,7 +1015,7 @@ function PublicLandingPage() {
               like you mean it.
             </h2>
             <div className="mt-10">
-              <button onClick={openSignup} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
+              <button onClick={() => openSignup("footer_cta")} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
                 Start 14-day trial
               </button>
             </div>
@@ -1197,11 +1210,13 @@ function PostConfirmSpinner() {
 
       let rpcResult = null;
       let rpcError = null;
+      let authUserId = null;
       try {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) {
           rpcError = { message: "No authenticated user found" };
         } else {
+          authUserId = authUser.id;
           const out = await supabase.rpc("activate_trial", { user_auth_id: authUser.id });
           rpcResult = out.data;
           rpcError = out.error;
@@ -1213,6 +1228,12 @@ function PostConfirmSpinner() {
 
       const decision = interpretActivationResponse({ rpcResult, rpcError });
       if (decision.state === ACTIVATION_STATES.SUCCESS) {
+        // Funnel conversion. This component only mounts right after email
+        // confirmation for a fresh signup, so SUCCESS here = trial started.
+        // identify() de-anonymizes the earlier landing/signup events by the
+        // opaque auth id only (no email/name — PII policy, see analytics.js).
+        if (authUserId) identify(authUserId);
+        track("trial_activated");
         setPhase("success");
         // Refetch profile so the parent unmounts this component.
         checkAppState({ silent: false });

@@ -41,14 +41,19 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </RootErrorBoundary>
 )
 
-// Initialize Sentry AFTER first paint, on idle — keeps the sentry chunk out of
-// the initial load. Errors before this fires are still captured (the boundaries
-// lazy-init Sentry on demand). No-op without a DSN. See src/lib/sentry.js.
-const initSentryDeferred = () => import('@/lib/sentry').then((m) => m.initSentry()).catch(() => {})
+// Initialize Sentry + analytics AFTER first paint, on idle — keeps both chunks
+// out of the initial load. Errors before Sentry fires are still captured (the
+// boundaries lazy-init Sentry on demand). Both no-op without their env key;
+// analytics additionally no-ops until the visitor accepts cookies. See
+// src/lib/sentry.js and src/lib/analytics.js.
+const initDeferred = () => {
+  import('@/lib/sentry').then((m) => m.initSentry()).catch(() => {})
+  import('@/lib/analytics').then((m) => m.initAnalytics()).catch(() => {})
+}
 if (typeof window !== 'undefined') {
   if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(initSentryDeferred, { timeout: 3000 })
+    window.requestIdleCallback(initDeferred, { timeout: 3000 })
   } else {
-    window.addEventListener('load', () => setTimeout(initSentryDeferred, 1200))
+    window.addEventListener('load', () => setTimeout(initDeferred, 1200))
   }
 }
