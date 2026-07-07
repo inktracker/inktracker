@@ -55,8 +55,9 @@ export default function PricingConfigEditor({ user }) {
       // Refresh the engine's module-level _pc so the change is live
       // without a full reload. Without this, the shop owner saves a
       // toggle, hops to Quotes, and sees stale pricing math until they
-      // hard-refresh.
-      loadShopPricingConfig(config);
+      // hard-refresh. Scope to the OWNER's shop (shopScope) so a MANAGER
+      // saving the owner's config attributes it to the right shop (CACHE-01).
+      loadShopPricingConfig(config, shopScope(user));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {

@@ -18,6 +18,8 @@ import {
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import BrokerLineItemEditor from "./BrokerLineItemEditor";
+import JobFeesSection from "@/components/quotes/JobFeesSection";
+import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { Eye } from "lucide-react";
 
 const DEFAULT_EXTRAS_META = [
@@ -316,7 +318,11 @@ export default function BrokerQuoteEditor({
       const brokerRushSum = stampedItems.reduce((s, li) => s + (li._rushFee || 0), 0);
       const brokerSub = Math.round((brokerLineSub + brokerRushSum) * 100) / 100;
       const brokerAfterDisc = isFlat ? Math.max(0, brokerSub - discVal) : brokerSub * (1 - discVal / 100);
-      const brokerTotal = Math.round(brokerAfterDisc * 100) / 100;
+      // Additional fees (incl. per_job "jobfee_*" toggles) pass through at face
+      // value — flat, post-discount, no markup. Broker side is untaxed, so all
+      // charges just add on. Mirrors the shop model + the live calcQuoteTotals.
+      const addl = sumAdditionalCharges(q.additional_charges);
+      const brokerTotal = Math.round((brokerAfterDisc + addl.total) * 100) / 100;
 
       // Client-side totals (what broker charges end client). Tax-exempt
       // customers always 0% regardless of broker_tax_rate.
@@ -325,8 +331,11 @@ export default function BrokerQuoteEditor({
       const clientSub = Math.round((clientLineSub + clientRushSum) * 100) / 100;
       const clientAfterDisc = isFlat ? Math.max(0, clientSub - discVal) : clientSub * (1 - discVal / 100);
       const clientTaxRateNum = isTaxExempt ? 0 : (parseFloat(q.broker_tax_rate) || 0);
-      const clientTaxAmt = Math.round(clientAfterDisc * (clientTaxRateNum / 100) * 100) / 100;
-      const clientTotalAmt = Math.round((clientAfterDisc + clientTaxAmt) * 100) / 100;
+      // Client side: taxable charges join the taxed base; non-taxable added
+      // after tax — same contract as calcQuoteTotals / the shop quote.
+      const clientTaxBase = clientAfterDisc + addl.taxable;
+      const clientTaxAmt = Math.round(clientTaxBase * (clientTaxRateNum / 100) * 100) / 100;
+      const clientTotalAmt = Math.round((clientTaxBase + clientTaxAmt + addl.nonTaxable) * 100) / 100;
 
       await onSave({
         ...q,
@@ -334,6 +343,7 @@ export default function BrokerQuoteEditor({
         status,
         tax_rate: 0,
         tax_exempt: isTaxExempt,
+        additional_charges: normalizeAdditionalCharges(q.additional_charges),
         // Broker side — what shop reads.
         subtotal: brokerSub,
         tax: 0,
@@ -614,9 +624,17 @@ export default function BrokerQuoteEditor({
               </div>
             </div>
 
-            {/* Quote-level add-ons block removed 2026-06-04. Fees now
-                live on each line item — BrokerLineItemEditor renders
-                its own toggle group. */}
+            {/* Per-line fees (per_print/per_garment) live on each line via
+                BrokerLineItemEditor. Per_job fees are once-for-the-order and
+                toggle here — written to additional_charges (the field the shop
+                QB path + client payment page already itemize), so they carry
+                through to the client and the shop invoice. */}
+            <JobFeesSection
+              addonsByScope={addonsByScope}
+              additionalCharges={q.additional_charges}
+              subtotal={retailTotals.subtotal}
+              onChange={(next) => setQ({ ...q, additional_charges: next })}
+            />
           </div>
 
           <div className="space-y-4">
