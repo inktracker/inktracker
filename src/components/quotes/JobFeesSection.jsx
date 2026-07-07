@@ -1,16 +1,36 @@
 import { getJobAddons } from "@/lib/pricing/extrasScopes";
-import { snapshotExtraForQuote } from "@/lib/pricing/extras";
+import { computeJobFeeAmount } from "@/lib/pricing/extras";
 
-// Quote-level "Job fees" toggles — the per_job add-on category. Applied ONCE for
-// the whole order (not per line, not per piece), so they live here rather than
-// on each line. Writes a { feeKey: snapshot } map to quote.job_extras; the
-// engine (sumJobExtras) totals it into the order.
+// Quote-level "Job fees" toggles — the per_job add-on category, applied ONCE for
+// the whole order. Rather than a parallel storage, toggling a fee writes an
+// entry into the quote's additional_charges (tagged id `jobfee_<key>`), so it
+// rides the ONE additional-charges pipeline that QuickBooks, every display, the
+// PDF, the payment page, and quote→order conversion already handle. That
+// guarantees the fee shows and bills consistently everywhere.
 //
-// Self-hides when the shop has configured no per_job fees.
-export default function JobFeesSection({ addonsByScope, jobExtras, onChange }) {
+// A percent fee's dollar amount is snapshotted from the current subtotal when
+// toggled on (re-toggle to refresh) — matching how additional_charges are flat
+// stored amounts. Self-hides when the shop has configured no per_job fees.
+const jobFeeId = (key) => `jobfee_${key}`;
+
+export default function JobFeesSection({ addonsByScope, additionalCharges, subtotal = 0, onChange }) {
   const jobAddons = getJobAddons(addonsByScope);
   if (!jobAddons.length) return null;
-  const je = jobExtras || {};
+  const charges = Array.isArray(additionalCharges) ? additionalCharges : [];
+
+  const toggle = (addon) => {
+    const id = jobFeeId(addon.key);
+    const isOn = charges.some((c) => c?.id === id);
+    if (isOn) {
+      onChange(charges.filter((c) => c?.id !== id));
+      return;
+    }
+    const amount = computeJobFeeAmount(
+      { mode: addon.mode, rate: parseFloat(addon.rate) || 0 },
+      subtotal
+    );
+    onChange([...charges, { id, label: addon.label, amount, taxable: true }]);
+  };
 
   return (
     <div className="mt-4">
@@ -18,15 +38,15 @@ export default function JobFeesSection({ addonsByScope, jobExtras, onChange }) {
         Job fees (whole order)
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-        {jobAddons.map(({ key, label, rate, mode }) => {
-          const isOn = !!je[key];
+        {jobAddons.map((addon) => {
+          const { key, label, rate, mode } = addon;
+          const isOn = charges.some((c) => c?.id === jobFeeId(key));
           const isPercent = mode === "percent";
-          const snapshot = snapshotExtraForQuote({ mode, rate: parseFloat(rate) || 0, basis: "per_job" });
           return (
             <button
               key={key}
               type="button"
-              onClick={() => onChange({ ...je, [key]: isOn ? false : snapshot })}
+              onClick={() => toggle(addon)}
               className={`rounded-lg border px-2 py-1.5 text-left transition ${
                 isOn ? "border-teal-600 bg-teal-50" : "border-slate-200 hover:border-slate-300 bg-white"
               }`}

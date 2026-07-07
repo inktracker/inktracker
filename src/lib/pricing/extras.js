@@ -39,7 +39,7 @@ export function normalizeExtraBasis(basis) {
  * The category of a toggled fee. Prefers the snapshot's own basis (immutable),
  * falling back to the shop's current config, then per_garment.
  *
- * @param {*} quoteValue           what's stored on li.extras[key] / job_extras[key]
+ * @param {*} quoteValue           what's stored on li.extras[key]
  * @param {string|undefined} configBasis  extraBasis[key] from the shop config
  * @returns {"per_print"|"per_garment"|"per_job"}
  */
@@ -144,40 +144,18 @@ export function getLineExtras(li, quote) {
  * @param {{ mode, rate, basis }} entry  (the output of normalizeExtraConfigEntry)
  * @returns {number|{mode:"flat"|"percent", rate:number, basis?:string}}
  */
-/**
- * Total dollars for a quote's per_job add-ons — applied ONCE for the whole
- * quote (not per line, not per piece). Lives on quote.job_extras, a map of
- * key → snapshot, toggled in the quote editor's job-level fees section.
- *
- *   { mode:"flat",    rate:N }  → N dollars, once
- *   { mode:"percent", rate:N }  → subtotalBasis × N/100, once
- *   number (legacy)             → N dollars, once
- *   off (false/null)            → 0
- *
- * `subtotalBasis` is the line-items subtotal (before rush/discount) — the basis
- * a percent per_job fee scales against.
- *
- * @param {object|undefined} jobExtras   quote.job_extras
- * @param {number} [subtotalBasis]       line subtotal for percent fees
- * @returns {number}
- */
-export function sumJobExtras(jobExtras, subtotalBasis = 0) {
-  if (!jobExtras || typeof jobExtras !== "object") return 0;
-  let total = 0;
-  for (const on of Object.values(jobExtras)) {
-    if (!on) continue;
-    if (typeof on === "number") { total += on; continue; }
-    if (typeof on === "object") {
-      const rate = Number(on.rate) || 0;
-      if (on.mode === "percent") {
-        const b = Number(subtotalBasis);
-        total += Number.isFinite(b) && b > 0 ? (b * rate) / 100 : 0;
-      } else {
-        total += rate;
-      }
-    }
+// Per-job fees compute their once-per-order dollar amount at toggle time. flat →
+// rate; percent → subtotalBasis × rate/100. Used by JobFeesSection to write an
+// additional_charges line, so per_job rides the shared additional-charges
+// pipeline (one place — QB invoice, displays, PDF, payment all handle it).
+export function computeJobFeeAmount(entry, subtotalBasis = 0) {
+  if (!entry || typeof entry !== "object") return 0;
+  const rate = Number(entry.rate) || 0;
+  if (entry.mode === "percent") {
+    const b = Number(subtotalBasis);
+    return Number.isFinite(b) && b > 0 ? Math.round((b * rate) / 100 * 100) / 100 : 0;
   }
-  return Math.round(total * 100) / 100;
+  return Math.round(rate * 100) / 100;
 }
 
 export function snapshotExtraForQuote(entry) {

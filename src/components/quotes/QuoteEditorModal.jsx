@@ -1376,8 +1376,9 @@ export default function QuoteEditorModal({
                   shop has none. */}
               <JobFeesSection
                 addonsByScope={addonsByScope}
-                jobExtras={q.job_extras}
-                onChange={(je) => setQ({ ...q, job_extras: je })}
+                additionalCharges={q.additional_charges}
+                subtotal={totals.subtotal}
+                onChange={(next) => setQ({ ...q, additional_charges: next })}
               />
 
               {/* Additional fees — one-off named charges (shipping, rush, …)

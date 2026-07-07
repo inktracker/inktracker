@@ -13,7 +13,7 @@ import {
   getLineExtras,
   resolveExtraBasis,
   normalizeExtraBasis,
-  sumJobExtras,
+  computeJobFeeAmount,
   DEFAULT_EXTRA_BASIS,
   EXTRA_BASES,
 } from "../extras";
@@ -63,20 +63,19 @@ describe("snapshotExtraForQuote — carries the category", () => {
   });
 });
 
-describe("sumJobExtras — once-per-quote fees", () => {
-  it("sums flat per_job fees once (not per piece)", () => {
-    expect(sumJobExtras({ art: { mode: "flat", rate: 25, basis: "per_job" } }, 840)).toBe(25);
+describe("computeJobFeeAmount — the once-per-order dollar amount", () => {
+  it("flat → the rate, once", () => {
+    expect(computeJobFeeAmount({ mode: "flat", rate: 25 }, 840)).toBe(25);
   });
-  it("percent per_job scales against the line subtotal", () => {
-    expect(sumJobExtras({ handling: { mode: "percent", rate: 5, basis: "per_job" } }, 840)).toBe(42);
+  it("percent → rate% of the line subtotal", () => {
+    expect(computeJobFeeAmount({ mode: "percent", rate: 5 }, 840)).toBe(42);
   });
-  it("adds multiple fees and ignores off/empty", () => {
-    const je = { art: { mode: "flat", rate: 25, basis: "per_job" }, rush: false, legacy: 10 };
-    expect(sumJobExtras(je, 100)).toBe(35);
+  it("percent with no/zero subtotal → 0", () => {
+    expect(computeJobFeeAmount({ mode: "percent", rate: 5 }, 0)).toBe(0);
   });
-  it("returns 0 for empty / non-object", () => {
-    expect(sumJobExtras(null, 100)).toBe(0);
-    expect(sumJobExtras({}, 100)).toBe(0);
+  it("returns 0 for bad input", () => {
+    expect(computeJobFeeAmount(null, 100)).toBe(0);
+    expect(computeJobFeeAmount(undefined, 100)).toBe(0);
   });
 });
 

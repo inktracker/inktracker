@@ -35,7 +35,6 @@ import {
   resolveExtraRatePerPiece as _resolveExtraRatePerPiece,
   getLineExtras as _getLineExtras,
   resolveExtraBasis as _resolveExtraBasis,
-  sumJobExtras as _sumJobExtras,
 } from "@/lib/pricing/extras";
 import { sumAdditionalCharges as _sumAdditionalCharges, normalizeAdditionalCharges as _normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 
@@ -1098,13 +1097,11 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, configOv
   // depend on shop config and are layered + snapshotted by the editor.) When a
   // quote has no additional_charges this is a no-op: tax/total are identical to
   // the legacy afterDisc+tax result, so existing snapshots are unaffected.
-  // Per-job add-ons: configured fees toggled once for the whole quote. Applied
-  // after discount (like additional_charges) and taxable — a percent fee scales
-  // against the line subtotal.
-  const jobExtrasTotal = _sumJobExtras(q.job_extras, subtotal);
-
+  // Per-job add-ons route through additional_charges (the JobFeesSection writes
+  // a "jobfee_*" entry there), so they're summed by _sumAdditionalCharges below
+  // — one pipeline, consistent everywhere (QB invoice, displays, PDF, payment).
   const addl = _sumAdditionalCharges(q.additional_charges);
-  const taxBase = afterDisc + addl.taxable + jobExtrasTotal;
+  const taxBase = afterDisc + addl.taxable;
   const tax = taxBase * ((parseFloat(q.tax_rate) || 0) / 100);
   const total = taxBase + tax + addl.nonTaxable;
 
@@ -1114,7 +1111,6 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, configOv
     sub,
     subBeforeRush: subtotal, // deprecated alias
     afterDisc,
-    jobExtrasTotal,
     additionalTaxable: addl.taxable,
     additionalNonTaxable: addl.nonTaxable,
     additionalTotal: addl.total,

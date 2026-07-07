@@ -56,29 +56,21 @@ describe("per_print", () => {
   });
 });
 
-describe("per_job (once per quote, not per line/piece)", () => {
-  it("adds a flat fee exactly once regardless of lines/pieces", () => {
+describe("per_job (routed through additional_charges — once per order)", () => {
+  it("a flat per_job fee (a jobfee_* additional charge) is added once, taxable", () => {
     const q = {
       line_items: [line(), line({ id: "li-2", sizes: { L: "100" } })],
       rush_rate: 0, tax_rate: 0,
-      job_extras: { art: { mode: "flat", rate: 25, basis: "per_job" } },
+      additional_charges: [{ id: "jobfee_art", label: "Art fee", amount: 25, taxable: true }],
     };
     const withJob = calcQuoteTotalsWithLinking(q);
-    const withoutJob = calcQuoteTotalsWithLinking({ ...q, job_extras: {} });
-    expect(withJob.jobExtrasTotal).toBe(25);
+    const withoutJob = calcQuoteTotalsWithLinking({ ...q, additional_charges: [] });
     expect(Math.round((withJob.total - withoutJob.total) * 100) / 100).toBe(25);
+    expect(withJob.additionalTaxable).toBe(25);
   });
 
-  it("percent per_job scales against the line subtotal, once", () => {
-    const q = {
-      line_items: [line()], rush_rate: 0, tax_rate: 0,
-      job_extras: { handling: { mode: "percent", rate: 10, basis: "per_job" } },
-    };
-    const r = calcQuoteTotalsWithLinking(q);
-    expect(r.jobExtrasTotal).toBe(Math.round(r.subtotal * 10) / 100);
-  });
-
-  it("a per_job fee mistakenly on a LINE is ignored by the line calc", () => {
+  it("a per_job fee mistakenly toggled on a LINE is ignored by the line calc", () => {
+    // excludeJobAddons keeps per_job out of the line UI, but defend the engine.
     const li = line();
     const delta = base(li, { art: { mode: "flat", rate: 25, basis: "per_job" } }) - base(li, {});
     expect(delta).toBe(0);
