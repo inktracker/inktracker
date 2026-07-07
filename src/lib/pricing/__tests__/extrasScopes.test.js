@@ -60,8 +60,8 @@ describe("sliceToAddons", () => {
       extraModes: { tags: "flat", colorMatch: "percent" },
     });
     expect(out).toEqual([
-      { key: "colorMatch", label: "Color Match", rate: 10, mode: "percent" },
-      { key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat" },
+      { key: "colorMatch", label: "Color Match", rate: 10, mode: "percent", basis: "per_garment" },
+      { key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat", basis: "per_garment" },
     ]);
   });
 
@@ -128,7 +128,7 @@ describe("buildAddonsByScope", () => {
       extras: { tags: 1.5 },
       extraLabels: { tags: "Custom Tags" },
     });
-    expect(out.root).toEqual([{ key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat" }]);
+    expect(out.root).toEqual([{ key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat", basis: "per_garment" }]);
     expect(out.embroidery).toEqual([]);
     expect(out.custom).toEqual({});
   });
@@ -141,7 +141,7 @@ describe("buildAddonsByScope", () => {
         extraModes: { puff: "flat" },
       },
     });
-    expect(out.embroidery).toEqual([{ key: "puff", label: "Puff", rate: 2, mode: "flat" }]);
+    expect(out.embroidery).toEqual([{ key: "puff", label: "Puff", rate: 2, mode: "flat", basis: "per_garment" }]);
     expect(out.root).toEqual([]);
   });
 
@@ -153,7 +153,7 @@ describe("buildAddonsByScope", () => {
       },
     });
     expect(Object.keys(out.custom)).toEqual(["DTG", "DTF"]);
-    expect(out.custom.DTG).toEqual([{ key: "rush", label: "Rush Setup", rate: 1, mode: "flat" }]);
+    expect(out.custom.DTG).toEqual([{ key: "rush", label: "Rush Setup", rate: 1, mode: "flat", basis: "per_garment" }]);
     expect(out.custom.DTF[0].label).toBe("Color");
   });
 

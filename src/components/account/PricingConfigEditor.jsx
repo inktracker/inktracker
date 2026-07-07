@@ -143,6 +143,18 @@ export default function PricingConfigEditor({ user }) {
     });
   }
 
+  // Category: per_print | per_garment | per_job. Stored in a parallel map so
+  // existing fees (absent from it) default to per_garment = today's behavior.
+  function setExtraBasis(key, basis, scope) {
+    const clean = ["per_print", "per_garment", "per_job"].includes(basis) ? basis : "per_garment";
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      return setSlice(prev, scope, {
+        extraBasis: { ...(slice.extraBasis || {}), [key]: clean },
+      });
+    });
+  }
+
   function addExtra(scope) {
     const id = `custom_${Date.now()}`;
     setConfig(prev => {
@@ -151,6 +163,7 @@ export default function PricingConfigEditor({ user }) {
         extras:      { ...(slice.extras || {}),      [id]: 0 },
         extraLabels: { ...(slice.extraLabels || {}), [id]: "New Fee" },
         extraModes:  { ...(slice.extraModes || {}),  [id]: "flat" },
+        extraBasis:  { ...(slice.extraBasis || {}),  [id]: "per_garment" },
       });
     });
   }
@@ -162,10 +175,12 @@ export default function PricingConfigEditor({ user }) {
         extras:      { ...(slice.extras || {}) },
         extraLabels: { ...(slice.extraLabels || {}) },
         extraModes:  { ...(slice.extraModes || {}) },
+        extraBasis:  { ...(slice.extraBasis || {}) },
       };
       delete next.extras[key];
       delete next.extraLabels[key];
       delete next.extraModes[key];
+      delete next.extraBasis[key];
       return setSlice(prev, scope, next);
     });
   }
@@ -192,6 +207,7 @@ export default function PricingConfigEditor({ user }) {
         getSlice={getSlice}
         updateExtraLabel={updateExtraLabel}
         setExtraMode={setExtraMode}
+        setExtraBasis={setExtraBasis}
         updateExtra={updateExtra}
         removeExtra={removeExtra}
         addExtra={addExtra}

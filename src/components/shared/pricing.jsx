@@ -29,8 +29,14 @@ export {
   resolveExtraRatePerPiece,
   snapshotExtraForQuote,
   getLineExtras,
+  resolveExtraBasis,
 } from "@/lib/pricing/extras";
-import { resolveExtraRatePerPiece as _resolveExtraRatePerPiece, getLineExtras as _getLineExtras } from "@/lib/pricing/extras";
+import {
+  resolveExtraRatePerPiece as _resolveExtraRatePerPiece,
+  getLineExtras as _getLineExtras,
+  resolveExtraBasis as _resolveExtraBasis,
+  sumJobExtras as _sumJobExtras,
+} from "@/lib/pricing/extras";
 import { sumAdditionalCharges as _sumAdditionalCharges, normalizeAdditionalCharges as _normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 
 export const EXTRA_RATES = {
@@ -902,6 +908,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   // the DTF tab show up when the line has a DTF imprint, without
   // polluting screen-print-only lines with DTF-specific fees.
   const customExtras = {};
+  const customBasis = {};
   const customTechs = pc?.custom_techniques || {};
   for (const imp of sorted) {
     const tech = imp.technique || "Screen Print";
@@ -910,11 +917,23 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     if (techExtras && typeof techExtras === "object") {
       Object.assign(customExtras, techExtras);
     }
+    const techBasis = customTechs[tech]?.extraBasis;
+    if (techBasis && typeof techBasis === "object") {
+      Object.assign(customBasis, techBasis);
+    }
   }
   const er = {
     ...(hasScreenPrint ? (pc?.extras || EXTRA_RATES) : {}),
     ...(hasEmbroidery ? (pc?.embroidery?.extras || {}) : {}),
     ...customExtras,
+  };
+  // Merged category (basis) map — same scope-union as `er`, so a fee's category
+  // resolves against the right technique's config when a snapshot doesn't carry
+  // its own basis (older snapshots / true-toggles).
+  const erBasis = {
+    ...(hasScreenPrint ? (pc?.extraBasis || {}) : {}),
+    ...(hasEmbroidery ? (pc?.embroidery?.extraBasis || {}) : {}),
+    ...customBasis,
   };
 
   // Garment cost per size — use actual per-size prices from API when available,
@@ -936,15 +955,26 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   //   - { mode:"percent", rate:N } (new)           → decorationPpp × N/100
   //   - { mode:"flat",    rate:N }                 → N $/pc
   //   - true (no snapshot, look up shop rate)      → use er[k]
+  // Number of print/decoration locations on the line — the multiplier for
+  // per_print fees (e.g. underbase on front + back = ×2). Always ≥1 here.
+  const prints = printBreakdown.length;
   let extraPPP = 0;
   Object.entries(extras || {}).forEach(([k, on]) => {
     if (!on) return;
+    // per_job fees are once-per-quote — applied in calcQuoteTotalsWithLinking,
+    // never per line. Category comes from the snapshot (immutable) or config.
+    const basis = _resolveExtraBasis(on, erBasis[k]);
+    if (basis === "per_job") return;
+    let ppp;
     if (on === true) {
       // True-toggle (no snapshot) — fall back to shop's current rate.
-      extraPPP += Number(er[k] || EXTRA_RATES[k] || 0);
-      return;
+      ppp = Number(er[k] || EXTRA_RATES[k] || 0);
+    } else {
+      ppp = _resolveExtraRatePerPiece(on, decorationPpp);
     }
-    extraPPP += _resolveExtraRatePerPiece(on, decorationPpp);
+    // per_print scales by the number of locations; per_garment does not.
+    if (basis === "per_print") ppp *= prints;
+    extraPPP += ppp;
   });
   const extraCost = Math.round(extraPPP * qty * 100) / 100;
 
@@ -1068,8 +1098,13 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, configOv
   // depend on shop config and are layered + snapshotted by the editor.) When a
   // quote has no additional_charges this is a no-op: tax/total are identical to
   // the legacy afterDisc+tax result, so existing snapshots are unaffected.
+  // Per-job add-ons: configured fees toggled once for the whole quote. Applied
+  // after discount (like additional_charges) and taxable — a percent fee scales
+  // against the line subtotal.
+  const jobExtrasTotal = _sumJobExtras(q.job_extras, subtotal);
+
   const addl = _sumAdditionalCharges(q.additional_charges);
-  const taxBase = afterDisc + addl.taxable;
+  const taxBase = afterDisc + addl.taxable + jobExtrasTotal;
   const tax = taxBase * ((parseFloat(q.tax_rate) || 0) / 100);
   const total = taxBase + tax + addl.nonTaxable;
 
@@ -1079,6 +1114,7 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, configOv
     sub,
     subBeforeRush: subtotal, // deprecated alias
     afterDisc,
+    jobExtrasTotal,
     additionalTaxable: addl.taxable,
     additionalNonTaxable: addl.nonTaxable,
     additionalTotal: addl.total,

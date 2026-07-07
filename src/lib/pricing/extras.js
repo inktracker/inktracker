@@ -15,20 +15,57 @@
 //   { mode: "percent", rate: N }    → N% of the line's garment cost per piece
 //   false / null / undefined        → off
 
+// ── Add-on categories (basis) ────────────────────────────────────────
+//
+// Every fee is applied at one of three levels. The category lives in a parallel
+// pricing_config map (extraBasis) next to extras/extraModes/extraLabels, and is
+// SNAPSHOTTED onto the quote at toggle time so a saved quote is immutable even
+// if the shop later re-categorizes a fee.
+//
+//   per_garment  fee × pieces                     (the historical default)
+//   per_print    fee × print locations × pieces   (e.g. underbase, per imprint)
+//   per_job      fee once for the whole quote      (e.g. an art / setup fee)
+//
+// Absent basis → per_garment, so every existing fee + saved quote computes
+// exactly as before (no migration).
+export const EXTRA_BASES = Object.freeze(["per_print", "per_garment", "per_job"]);
+export const DEFAULT_EXTRA_BASIS = "per_garment";
+
+export function normalizeExtraBasis(basis) {
+  return EXTRA_BASES.includes(basis) ? basis : DEFAULT_EXTRA_BASIS;
+}
+
 /**
- * Normalize a shop's extras + extraModes config for a single key.
- * Always returns { mode, rate } with mode in {"flat","percent"}.
+ * The category of a toggled fee. Prefers the snapshot's own basis (immutable),
+ * falling back to the shop's current config, then per_garment.
+ *
+ * @param {*} quoteValue           what's stored on li.extras[key] / job_extras[key]
+ * @param {string|undefined} configBasis  extraBasis[key] from the shop config
+ * @returns {"per_print"|"per_garment"|"per_job"}
+ */
+export function resolveExtraBasis(quoteValue, configBasis) {
+  if (quoteValue && typeof quoteValue === "object" && quoteValue.basis) {
+    return normalizeExtraBasis(quoteValue.basis);
+  }
+  return normalizeExtraBasis(configBasis);
+}
+
+/**
+ * Normalize a shop's extras + extraModes + extraBasis config for a single key.
+ * Always returns { mode, rate, basis }.
  *
  * @param {object|undefined} extras       pricing_config.extras
  * @param {object|undefined} extraModes   pricing_config.extraModes
  * @param {string} key
- * @returns {{ mode: "flat"|"percent", rate: number }}
+ * @param {object|undefined} extraBasis   pricing_config.extraBasis
+ * @returns {{ mode: "flat"|"percent", rate: number, basis: string }}
  */
-export function normalizeExtraConfigEntry(extras, extraModes, key) {
+export function normalizeExtraConfigEntry(extras, extraModes, key, extraBasis) {
   const raw = extras?.[key];
   const rate = Number.isFinite(Number(raw)) ? Number(raw) : 0;
   const mode = extraModes?.[key] === "percent" ? "percent" : "flat";
-  return { mode, rate };
+  const basis = normalizeExtraBasis(extraBasis?.[key]);
+  return { mode, rate, basis };
 }
 
 /**
@@ -100,13 +137,57 @@ export function getLineExtras(li, quote) {
  * return the full object so the pricing engine knows how to apply
  * it against garment cost later.
  *
- * @param {{ mode, rate }} entry  (the output of normalizeExtraConfigEntry)
- * @returns {number|{mode:"percent", rate:number}}
+ * A non-default basis (per_print / per_job) forces the object form so the
+ * category travels with the quote. A per_garment FLAT fee stays a bare number —
+ * byte-identical to every existing snapshot (backward compat + immutability).
+ *
+ * @param {{ mode, rate, basis }} entry  (the output of normalizeExtraConfigEntry)
+ * @returns {number|{mode:"flat"|"percent", rate:number, basis?:string}}
  */
+/**
+ * Total dollars for a quote's per_job add-ons — applied ONCE for the whole
+ * quote (not per line, not per piece). Lives on quote.job_extras, a map of
+ * key → snapshot, toggled in the quote editor's job-level fees section.
+ *
+ *   { mode:"flat",    rate:N }  → N dollars, once
+ *   { mode:"percent", rate:N }  → subtotalBasis × N/100, once
+ *   number (legacy)             → N dollars, once
+ *   off (false/null)            → 0
+ *
+ * `subtotalBasis` is the line-items subtotal (before rush/discount) — the basis
+ * a percent per_job fee scales against.
+ *
+ * @param {object|undefined} jobExtras   quote.job_extras
+ * @param {number} [subtotalBasis]       line subtotal for percent fees
+ * @returns {number}
+ */
+export function sumJobExtras(jobExtras, subtotalBasis = 0) {
+  if (!jobExtras || typeof jobExtras !== "object") return 0;
+  let total = 0;
+  for (const on of Object.values(jobExtras)) {
+    if (!on) continue;
+    if (typeof on === "number") { total += on; continue; }
+    if (typeof on === "object") {
+      const rate = Number(on.rate) || 0;
+      if (on.mode === "percent") {
+        const b = Number(subtotalBasis);
+        total += Number.isFinite(b) && b > 0 ? (b * rate) / 100 : 0;
+      } else {
+        total += rate;
+      }
+    }
+  }
+  return Math.round(total * 100) / 100;
+}
+
 export function snapshotExtraForQuote(entry) {
   if (!entry) return 0;
-  if (entry.mode === "percent") {
-    return { mode: "percent", rate: Number(entry.rate) || 0 };
-  }
-  return Number(entry.rate) || 0;
+  const rate = Number(entry.rate) || 0;
+  const basis = normalizeExtraBasis(entry.basis);
+  const isPercent = entry.mode === "percent";
+  // Bare number only for the historical default (per_garment flat).
+  if (!isPercent && basis === DEFAULT_EXTRA_BASIS) return rate;
+  const snap = { mode: isPercent ? "percent" : "flat", rate };
+  if (basis !== DEFAULT_EXTRA_BASIS) snap.basis = basis;
+  return snap;
 }

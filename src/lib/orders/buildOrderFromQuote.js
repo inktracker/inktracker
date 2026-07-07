@@ -96,6 +96,11 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     // (under-bills the fees / over-charges by not crediting the deposit).
     // deposit_paid is already carried below.
     additional_charges: q.additional_charges ?? null,
+    // Per-job add-ons (toggled once for the whole order) — carry forward for the
+    // same reason as additional_charges: the order total already includes them,
+    // and the order/invoice recompute (sumJobExtras) needs them or the fee drops
+    // silently on conversion.
+    job_extras: q.job_extras ?? null,
     deposit_pct: q.deposit_pct ?? null,
     status: "Art Approval",
     line_items: q.line_items,
