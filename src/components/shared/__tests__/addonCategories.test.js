@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   calcLinkedLinePrice,
   calcQuoteTotalsWithLinking,
+  buildQBInvoicePayload,
   loadShopPricingConfig,
 } from "../pricing";
 
@@ -74,5 +75,47 @@ describe("per_job (routed through additional_charges — once per order)", () =>
     const li = line();
     const delta = base(li, { art: { mode: "flat", rate: 25, basis: "per_job" } }) - base(li, {});
     expect(delta).toBe(0);
+  });
+});
+
+// ── QuickBooks payload — nothing silently dropped, no double-count ────────────
+// buildQBInvoicePayload is what the frontend sends to qbSync (the edge fn does
+// NOT recompute), so QB correctness lives here. sum(line.amount) must equal the
+// engine subtotal + fees for all three categories.
+describe("QuickBooks payload translation", () => {
+  const salesSum = (p) => p.lines.filter((l) => !l.isFee).reduce((s, l) => s + l.amount, 0);
+  const allSum = (p) => p.lines.reduce((s, l) => s + l.amount, 0);
+
+  it("per_print + per_garment fold into the taxable garment line amount", () => {
+    const withPrint = { ...line(), extras: { underbase: { mode: "flat", rate: 0.5, basis: "per_print" } } };
+    const withGarment = { ...line(), extras: { tags: 1 } }; // per_garment flat
+    const pPrint = buildQBInvoicePayload({ line_items: [withPrint], rush_rate: 0, tax_rate: 0 });
+    const pGarment = buildQBInvoicePayload({ line_items: [withGarment], rush_rate: 0, tax_rate: 0 });
+    const pPlain = buildQBInvoicePayload({ line_items: [line()], rush_rate: 0, tax_rate: 0 });
+    expect(Math.round((salesSum(pPrint) - salesSum(pPlain)) * 100) / 100).toBe(48); // 0.5 × 2 × 48
+    expect(Math.round((salesSum(pGarment) - salesSum(pPlain)) * 100) / 100).toBe(48); // 1 × 48
+  });
+
+  it("a per_job fee becomes its own taxable QB fee line (not dropped)", () => {
+    const p = buildQBInvoicePayload({
+      line_items: [line()], rush_rate: 0, tax_rate: 0,
+      additional_charges: [{ id: "jobfee_art", label: "Art fee", amount: 25, taxable: true }],
+    });
+    const feeLine = p.lines.find((l) => l.isFee && (l.description || "").includes("Art fee"));
+    expect(feeLine).toBeTruthy();
+    expect(feeLine.amount).toBe(25);
+    expect(feeLine.taxable).toBe(true);
+  });
+
+  it("QB line sum equals engine subtotal + fees with all three categories at once", () => {
+    const q = {
+      line_items: [{ ...line(), extras: { underbase: { mode: "flat", rate: 0.5, basis: "per_print" }, tags: 1 } }],
+      rush_rate: 0, tax_rate: 0,
+      additional_charges: [{ id: "jobfee_art", label: "Art fee", amount: 25, taxable: true }],
+    };
+    const p = buildQBInvoicePayload(q);
+    const t = calcQuoteTotalsWithLinking(q);
+    // garment lines = subtotal (incl. per-print + per-garment), fee line = 25.
+    expect(Math.round(allSum(p) * 100) / 100).toBe(Math.round((t.subtotal + 25) * 100) / 100);
   });
 });
