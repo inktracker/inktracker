@@ -11,7 +11,7 @@ import {
   uid,
   getLineExtras,
 } from "../shared/pricing";
-import { getAddonsForTechniques, pruneExtrasForTechniques, excludeJobAddons } from "@/lib/pricing/extrasScopes";
+import { getAddonsForTechnique, getAddonsForTechniques, pruneExtrasForTechniques, filterAddonsByBasis } from "@/lib/pricing/extrasScopes";
 import { snapshotExtraForQuote } from "@/lib/pricing/extras";
 import BrokerPricePanel from "./BrokerPricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
@@ -396,8 +396,12 @@ export default function BrokerLineItemEditor({
   const lineTechniques = [
     ...new Set((li.imprints || []).map((im) => im?.technique).filter(Boolean)),
   ];
-  // per_job fees are toggled once on the quote, not per line.
-  const addonsMeta = excludeJobAddons(getAddonsForTechniques(addonsByScope, lineTechniques));
+  // Line-level block shows PER-GARMENT fees only. per_print attaches to a
+  // specific print (rendered inside each imprint); per_job is quote-level.
+  const addonsMeta = filterAddonsByBasis(
+    getAddonsForTechniques(addonsByScope, lineTechniques),
+    "per_garment",
+  );
   // Header label that follows the decoration type (see LineItemEditor).
   const locationsHeader = (() => {
     const techs = [
@@ -1053,6 +1057,49 @@ export default function BrokerLineItemEditor({
                         className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                       />
                     </div>
+
+                    {/* Per-print add-ons — attach to THIS print only. */}
+                    {(() => {
+                      const impPrintAddons = filterAddonsByBasis(
+                        getAddonsForTechnique(addonsByScope, imp.technique),
+                        "per_print",
+                      );
+                      if (!impPrintAddons.length) return null;
+                      const impExtras = imp.extras || {};
+                      return (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">
+                            Add-ons for this print
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                            {impPrintAddons.map(({ key, label, rate, mode }) => {
+                              const isOn = !!impExtras[key];
+                              const isPercent = mode === "percent";
+                              const snapshot = snapshotExtraForQuote({ mode, rate: parseFloat(rate) || 0, basis: "per_print" });
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => updateImprint(idx, { extras: { ...impExtras, [key]: isOn ? false : snapshot } })}
+                                  className={`rounded-lg border px-2 py-1.5 text-left transition ${
+                                    isOn ? "border-teal-600 bg-teal-50" : "border-slate-200 hover:border-slate-300 bg-white"
+                                  }`}
+                                >
+                                  <div className={`text-[11px] font-semibold leading-tight ${isOn ? "text-teal-700" : "text-slate-700"}`}>
+                                    {label}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 leading-tight">
+                                    {isPercent
+                                      ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
+                                      : `+$${(parseFloat(rate) || 0).toFixed(2)}/print`}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>

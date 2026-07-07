@@ -154,7 +154,13 @@ export function getAddonsForTechnique(byScope, technique) {
  */
 export function getActiveAddonLabels(li, quote, cfg) {
   const lineExtras = getLineExtras(li, quote || {});
-  const activeKeys = Object.keys(lineExtras || {}).filter((k) => !!lineExtras[k]);
+  // Line-level (per_garment) fees + per-print fees attached to each imprint.
+  const activeKeys = [...new Set([
+    ...Object.keys(lineExtras || {}).filter((k) => !!lineExtras[k]),
+    ...(li?.imprints || []).flatMap((im) =>
+      Object.keys(im?.extras || {}).filter((k) => !!im.extras[k])
+    ),
+  ])];
   if (!activeKeys.length) return [];
   const byScope = buildAddonsByScope(cfg || {});
   // Resolve labels across ALL the line's techniques, not just the first — a fee
@@ -251,6 +257,15 @@ export function getJobAddons(byScope) {
  */
 export function excludeJobAddons(list) {
   return (list || []).filter((a) => a && a.basis !== "per_job");
+}
+
+/**
+ * Add-ons of a single category. Absent basis counts as per_garment (the
+ * default). Used to split fees between the line-level block (per_garment) and
+ * each imprint's block (per_print).
+ */
+export function filterAddonsByBasis(list, basis) {
+  return (list || []).filter((a) => a && (a.basis || "per_garment") === basis);
 }
 
 export function pruneExtrasForTechniques(extras, byScope, techniques) {
