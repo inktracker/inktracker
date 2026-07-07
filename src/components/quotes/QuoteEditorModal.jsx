@@ -26,6 +26,7 @@ import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { normalizeShipTo, isShipToComplete, parseUsAddress, addressOneLine } from "@/lib/tax/address";
 import AddressFields from "@/components/shared/AddressFields";
 import { buildAddonsByScope, getActiveAddonLabels } from "@/lib/pricing/extrasScopes";
+import JobFeesSection from "@/components/quotes/JobFeesSection";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
@@ -1369,6 +1370,16 @@ export default function QuoteEditorModal({
                   </div>
                 </div>
               )}
+
+              {/* Job fees — the per_job add-on category, toggled once for the
+                  whole order (configured in Pricing & Fees). Self-hides when the
+                  shop has none. */}
+              <JobFeesSection
+                addonsByScope={addonsByScope}
+                additionalCharges={q.additional_charges}
+                subtotal={totals.subtotal}
+                onChange={(next) => setQ({ ...q, additional_charges: next })}
+              />
 
               {/* Additional fees — one-off named charges (shipping, rush, …)
                   with a custom amount and a taxable toggle. Taxable charges

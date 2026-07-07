@@ -11,7 +11,8 @@ import {
   uid,
   getLineExtras,
 } from "../shared/pricing";
-import { getAddonsForTechniques, pruneExtrasForTechniques } from "@/lib/pricing/extrasScopes";
+import { getAddonsForTechniques, pruneExtrasForTechniques, excludeJobAddons } from "@/lib/pricing/extrasScopes";
+import { snapshotExtraForQuote } from "@/lib/pricing/extras";
 import BrokerPricePanel from "./BrokerPricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
@@ -395,7 +396,8 @@ export default function BrokerLineItemEditor({
   const lineTechniques = [
     ...new Set((li.imprints || []).map((im) => im?.technique).filter(Boolean)),
   ];
-  const addonsMeta = getAddonsForTechniques(addonsByScope, lineTechniques);
+  // per_job fees are toggled once on the quote, not per line.
+  const addonsMeta = excludeJobAddons(getAddonsForTechniques(addonsByScope, lineTechniques));
   // Header label that follows the decoration type (see LineItemEditor).
   const locationsHeader = (() => {
     const techs = [
@@ -1078,13 +1080,12 @@ export default function BrokerLineItemEditor({
                     Add-ons (this line only)
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                    {addonsMeta.map(({ key, label, rate, mode }) => {
+                    {addonsMeta.map(({ key, label, rate, mode, basis }) => {
                       const lineExtras = getLineExtras(li, { extras });
                       const isOn = !!lineExtras[key];
                       const isPercent = mode === "percent";
-                      const snapshot = isPercent
-                        ? { mode: "percent", rate: parseFloat(rate) || 0 }
-                        : (parseFloat(rate) || 0);
+                      const perPrint = basis === "per_print";
+                      const snapshot = snapshotExtraForQuote({ mode, rate: parseFloat(rate) || 0, basis });
                       return (
                         <button
                           key={key}
@@ -1103,8 +1104,8 @@ export default function BrokerLineItemEditor({
                           </div>
                           <div className="text-[10px] text-slate-500 leading-tight">
                             {isPercent
-                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
-                              : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}
+                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration${perPrint ? " / print" : ""}`
+                              : `+$${(parseFloat(rate) || 0).toFixed(2)}/${perPrint ? "print" : "pc"}`}
                           </div>
                         </button>
                       );

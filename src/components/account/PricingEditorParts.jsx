@@ -17,6 +17,7 @@ export function ExtrasEditor({
   getSlice,
   updateExtraLabel,
   setExtraMode,
+  setExtraBasis,
   updateExtra,
   removeExtra,
   addExtra,
@@ -25,8 +26,9 @@ export function ExtrasEditor({
   const extras = slice.extras || {};
   const extraLabels = slice.extraLabels || {};
   const extraModes = slice.extraModes || {};
-  const title = opts.title ?? "Extra Fees (per piece)";
-  const description = opts.description ?? "Rename, reprice, or remove fees. Toggle the $ / % button to charge a flat dollar amount per piece OR a percentage of the line's per-piece decoration cost.";
+  const extraBasis = slice.extraBasis || {};
+  const title = opts.title ?? "Extra Fees";
+  const description = opts.description ?? "Rename, reprice, recategorize, or remove fees. The category sets how a fee applies: per garment (× pieces), per print (× print locations × pieces), or per job (once for the whole order). Toggle $ / % for a flat amount or a percentage of the line's decoration cost.";
   return (
     <div>
       <h4 className="text-xs font-bold text-slate-600 uppercase tracking-widest mb-2">{title}</h4>
@@ -35,6 +37,7 @@ export function ExtrasEditor({
         {Object.entries(extras).map(([key, val]) => {
           const mode = extraModes[key] === "percent" ? "percent" : "flat";
           const isPercent = mode === "percent";
+          const basis = ["per_print", "per_garment", "per_job"].includes(extraBasis[key]) ? extraBasis[key] : "per_garment";
           return (
             <div key={key} className="flex items-center gap-2">
               <input
@@ -43,6 +46,16 @@ export function ExtrasEditor({
                 onChange={e => updateExtraLabel(key, e.target.value, scope)}
                 className="flex-1 text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
               />
+              <select
+                value={basis}
+                onChange={e => setExtraBasis(key, e.target.value, scope)}
+                className="shrink-0 text-xs border border-slate-200 rounded px-1.5 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-teal-300"
+                title="How this fee applies"
+              >
+                <option value="per_garment">Per garment</option>
+                <option value="per_print">Per print</option>
+                <option value="per_job">Per job</option>
+              </select>
               <div className="flex shrink-0 border border-slate-200 rounded overflow-hidden">
                 <button
                   type="button"

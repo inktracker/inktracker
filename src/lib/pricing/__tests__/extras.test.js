@@ -11,25 +11,100 @@ import {
   resolveExtraRatePerPiece,
   snapshotExtraForQuote,
   getLineExtras,
+  resolveExtraBasis,
+  normalizeExtraBasis,
+  computeJobFeeAmount,
+  DEFAULT_EXTRA_BASIS,
+  EXTRA_BASES,
 } from "../extras";
+
+describe("add-on categories (basis)", () => {
+  it("EXTRA_BASES is the three categories; default is per_garment", () => {
+    expect(EXTRA_BASES.slice().sort()).toEqual(["per_garment", "per_job", "per_print"]);
+    expect(DEFAULT_EXTRA_BASIS).toBe("per_garment");
+  });
+
+  it("normalizeExtraBasis clamps unknowns to per_garment", () => {
+    expect(normalizeExtraBasis("per_print")).toBe("per_print");
+    expect(normalizeExtraBasis("per_job")).toBe("per_job");
+    expect(normalizeExtraBasis("nonsense")).toBe("per_garment");
+    expect(normalizeExtraBasis(undefined)).toBe("per_garment");
+  });
+
+  it("resolveExtraBasis prefers the SNAPSHOT's basis (immutability) over config", () => {
+    // Saved snapshot says per_print; shop later recategorized to per_job → snapshot wins.
+    expect(resolveExtraBasis({ mode: "flat", rate: 1, basis: "per_print" }, "per_job")).toBe("per_print");
+  });
+
+  it("resolveExtraBasis falls back to config, then per_garment", () => {
+    expect(resolveExtraBasis(2, "per_print")).toBe("per_print");   // bare number → no own basis → config
+    expect(resolveExtraBasis(true, "per_job")).toBe("per_job");
+    expect(resolveExtraBasis(2, undefined)).toBe("per_garment");
+    expect(resolveExtraBasis({ mode: "flat", rate: 1 }, undefined)).toBe("per_garment");
+  });
+});
+
+describe("snapshotExtraForQuote — carries the category", () => {
+  it("keeps per_garment FLAT as a bare number (backward compatible)", () => {
+    expect(snapshotExtraForQuote({ mode: "flat", rate: 1.5, basis: "per_garment" })).toBe(1.5);
+    expect(snapshotExtraForQuote({ mode: "flat", rate: 1.5 })).toBe(1.5); // basis defaults
+  });
+  it("snapshots percent as an object (per_garment basis stays implicit)", () => {
+    expect(snapshotExtraForQuote({ mode: "percent", rate: 10, basis: "per_garment" }))
+      .toEqual({ mode: "percent", rate: 10 });
+  });
+  it("includes basis for per_print / per_job", () => {
+    expect(snapshotExtraForQuote({ mode: "flat", rate: 0.5, basis: "per_print" }))
+      .toEqual({ mode: "flat", rate: 0.5, basis: "per_print" });
+    expect(snapshotExtraForQuote({ mode: "flat", rate: 25, basis: "per_job" }))
+      .toEqual({ mode: "flat", rate: 25, basis: "per_job" });
+    expect(snapshotExtraForQuote({ mode: "percent", rate: 5, basis: "per_job" }))
+      .toEqual({ mode: "percent", rate: 5, basis: "per_job" });
+  });
+});
+
+describe("computeJobFeeAmount — the once-per-order dollar amount", () => {
+  it("flat → the rate, once", () => {
+    expect(computeJobFeeAmount({ mode: "flat", rate: 25 }, 840)).toBe(25);
+  });
+  it("percent → rate% of the line subtotal", () => {
+    expect(computeJobFeeAmount({ mode: "percent", rate: 5 }, 840)).toBe(42);
+  });
+  it("percent with no/zero subtotal → 0", () => {
+    expect(computeJobFeeAmount({ mode: "percent", rate: 5 }, 0)).toBe(0);
+  });
+  it("returns 0 for bad input", () => {
+    expect(computeJobFeeAmount(null, 100)).toBe(0);
+    expect(computeJobFeeAmount(undefined, 100)).toBe(0);
+  });
+});
 
 describe("normalizeExtraConfigEntry — shop-side config normalization", () => {
   it("returns flat 0 when the key is missing from both maps", () => {
-    expect(normalizeExtraConfigEntry({}, {}, "tags")).toEqual({ mode: "flat", rate: 0 });
-    expect(normalizeExtraConfigEntry(undefined, undefined, "tags")).toEqual({ mode: "flat", rate: 0 });
+    expect(normalizeExtraConfigEntry({}, {}, "tags")).toEqual({ mode: "flat", rate: 0, basis: "per_garment" });
+    expect(normalizeExtraConfigEntry(undefined, undefined, "tags")).toEqual({ mode: "flat", rate: 0, basis: "per_garment" });
   });
 
   it("reads a v1 plain-number entry as flat", () => {
     const extras = { tags: 1.5 };
     expect(normalizeExtraConfigEntry(extras, undefined, "tags"))
-      .toEqual({ mode: "flat", rate: 1.5 });
+      .toEqual({ mode: "flat", rate: 1.5, basis: "per_garment" });
   });
 
   it("reads explicit percent mode", () => {
     const extras = { waterbased: 5 };
     const extraModes = { waterbased: "percent" };
     expect(normalizeExtraConfigEntry(extras, extraModes, "waterbased"))
-      .toEqual({ mode: "percent", rate: 5 });
+      .toEqual({ mode: "percent", rate: 5, basis: "per_garment" });
+  });
+
+  it("reads the fee category (basis) from extraBasis, defaulting to per_garment", () => {
+    const extras = { underbase: 0.5, artFee: 25 };
+    const extraBasis = { underbase: "per_print", artFee: "per_job" };
+    expect(normalizeExtraConfigEntry(extras, undefined, "underbase", extraBasis).basis).toBe("per_print");
+    expect(normalizeExtraConfigEntry(extras, undefined, "artFee", extraBasis).basis).toBe("per_job");
+    expect(normalizeExtraConfigEntry(extras, undefined, "underbase", {}).basis).toBe("per_garment");
+    expect(normalizeExtraConfigEntry(extras, undefined, "underbase", { underbase: "bogus" }).basis).toBe("per_garment");
   });
 
   it("treats unknown mode strings as flat (defensive default)", () => {

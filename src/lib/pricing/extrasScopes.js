@@ -19,7 +19,7 @@
 // is unchanged — once a fee is snapshotted onto li.extras it
 // computes identically regardless of which scope it came from.
 
-import { getLineExtras } from "./extras";
+import { getLineExtras, normalizeExtraBasis } from "./extras";
 
 const TECHNIQUE_EMBROIDERY = "Embroidery";
 
@@ -55,6 +55,9 @@ export function sliceToAddons(slice, defaultLabels = {}) {
     label: slice.extraLabels?.[key] || defaultLabels[key] || autoLabel(key),
     rate: parseFloat(slice.extras[key]) || 0,
     mode: slice.extraModes?.[key] === "percent" ? "percent" : "flat",
+    // Category (per_print / per_garment / per_job). Absent → per_garment, so
+    // every existing fee behaves exactly as before.
+    basis: normalizeExtraBasis(slice.extraBasis?.[key]),
   }));
   return list.sort((a, b) =>
     (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: "base" })
@@ -215,6 +218,41 @@ export function getAddonsForTechniques(byScope, techniques) {
  * technique never wipes a fee that a DIFFERENT location still supports (the bug
  * the single-technique prune caused on mixed-technique lines).
  */
+/**
+ * All per-JOB add-ons across every scope (root + embroidery + custom), deduped
+ * by key. Per-job fees apply to the whole quote regardless of technique, so the
+ * quote-level "Job fees" section shows them all in one place — unlike per_print/
+ * per_garment fees, which are technique-scoped on each line.
+ *
+ * @param {{root:any[], embroidery:any[], custom:Record<string, any[]>}|null|undefined} byScope
+ * @returns {any[]}  per_job add-ons, deduped by key, sorted by label
+ */
+export function getJobAddons(byScope) {
+  if (!byScope) return [];
+  const all = [
+    ...(byScope.root || []),
+    ...(byScope.embroidery || []),
+    ...Object.values(byScope.custom || {}).flat(),
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const a of all) {
+    if (a && a.key && a.basis === "per_job" && !seen.has(a.key)) {
+      seen.add(a.key);
+      out.push(a);
+    }
+  }
+  return out.sort((x, y) => (x.label || "").localeCompare(y.label || "", undefined, { sensitivity: "base" }));
+}
+
+/**
+ * Line-level add-ons only — per_print + per_garment (NOT per_job, which is
+ * toggled once on the quote). Used by the per-line add-on toggle block.
+ */
+export function excludeJobAddons(list) {
+  return (list || []).filter((a) => a && a.basis !== "per_job");
+}
+
 export function pruneExtrasForTechniques(extras, byScope, techniques) {
   if (!extras || typeof extras !== "object") return {};
   const allowed = new Set(
