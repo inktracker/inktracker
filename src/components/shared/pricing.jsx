@@ -954,27 +954,36 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   //   - { mode:"percent", rate:N } (new)           → decorationPpp × N/100
   //   - { mode:"flat",    rate:N }                 → N $/pc
   //   - true (no snapshot, look up shop rate)      → use er[k]
-  // Number of print/decoration locations on the line — the multiplier for
-  // per_print fees (e.g. underbase on front + back = ×2). Always ≥1 here.
   const prints = printBreakdown.length;
   let extraPPP = 0;
+
+  // LINE-level fees (li.extras): per_garment applies once per piece. per_job is
+  // quote-level (skip). A per_print key here is LEGACY (fees were line-level with
+  // a ×locations multiplier before per-print moved onto individual imprints,
+  // 2026-07) — keep it working × prints so quotes saved in that window are exact.
   Object.entries(extras || {}).forEach(([k, on]) => {
     if (!on) return;
-    // per_job fees are once-per-quote — applied in calcQuoteTotalsWithLinking,
-    // never per line. Category comes from the snapshot (immutable) or config.
     const basis = _resolveExtraBasis(on, erBasis[k]);
     if (basis === "per_job") return;
-    let ppp;
-    if (on === true) {
-      // True-toggle (no snapshot) — fall back to shop's current rate.
-      ppp = Number(er[k] || EXTRA_RATES[k] || 0);
-    } else {
-      ppp = _resolveExtraRatePerPiece(on, decorationPpp);
-    }
-    // per_print scales by the number of locations; per_garment does not.
-    if (basis === "per_print") ppp *= prints;
+    let ppp = on === true ? Number(er[k] || EXTRA_RATES[k] || 0) : _resolveExtraRatePerPiece(on, decorationPpp);
+    if (basis === "per_print") ppp *= prints; // legacy line-level per-print
     extraPPP += ppp;
   });
+
+  // PER-IMPRINT fees (imprint.extras): a per_print fee attaches to ONE specific
+  // print, so it costs rate × qty for that print only — NOT × all locations.
+  // Toggle underbase on the back and not the front → charged for the back alone.
+  (li.imprints || []).forEach((imp) => {
+    const impExtras = imp?.extras;
+    if (!impExtras || typeof impExtras !== "object") return;
+    Object.entries(impExtras).forEach(([k, on]) => {
+      if (!on) return;
+      const basis = _resolveExtraBasis(on, erBasis[k]);
+      if (basis === "per_job") return; // never valid on an imprint; guard anyway
+      extraPPP += on === true ? Number(er[k] || EXTRA_RATES[k] || 0) : _resolveExtraRatePerPiece(on, decorationPpp);
+    });
+  });
+
   const extraCost = Math.round(extraPPP * qty * 100) / 100;
 
   // Per-piece print + extras cost (same for all sizes)

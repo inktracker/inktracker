@@ -39,21 +39,30 @@ describe("per_garment (the historical default)", () => {
   });
 });
 
-describe("per_print", () => {
-  it("adds rate × print locations × pieces", () => {
-    const li = line(); // 2 prints, 48 pcs
-    const delta = base(li, { underbase: { mode: "flat", rate: 0.5, basis: "per_print" } }) - base(li, {});
-    expect(Math.round(delta * 100) / 100).toBe(48); // 0.5 × 2 × 48
+describe("per_print — attaches to a SPECIFIC print (imprint.extras)", () => {
+  const snap = { mode: "flat", rate: 0.5, basis: "per_print" };
+
+  it("a fee on ONE print costs rate × qty — not × all prints", () => {
+    // front has underbase, back does not → charged for the front alone.
+    const li = line({ imprints: [imp({ extras: { underbase: snap } }), imp()] });
+    expect(Math.round((base(li) - base(line())) * 100) / 100).toBe(24); // 0.5 × 48
   });
 
-  it("scales with the number of locations (1 print → half of 2 prints)", () => {
-    const one = line({ imprints: [imp()] });
-    const two = line({ imprints: [imp(), imp()] });
-    const snap = { mode: "flat", rate: 0.5, basis: "per_print" };
-    const d1 = base(one, { underbase: snap }) - base(one, {});
-    const d2 = base(two, { underbase: snap }) - base(two, {});
-    expect(Math.round(d1 * 100) / 100).toBe(24); // 0.5 × 1 × 48
-    expect(Math.round(d2 * 100) / 100).toBe(48); // 0.5 × 2 × 48
+  it("the same fee on BOTH prints costs rate × 2 × qty", () => {
+    const li = line({ imprints: [imp({ extras: { underbase: snap } }), imp({ extras: { underbase: snap } })] });
+    expect(Math.round((base(li) - base(line())) * 100) / 100).toBe(48); // 0.5 × 2 × 48
+  });
+
+  it("front-only and back-only cost the same (fee follows the print it's on)", () => {
+    const front = line({ imprints: [imp({ extras: { underbase: snap } }), imp()] });
+    const back = line({ imprints: [imp(), imp({ extras: { underbase: snap } })] });
+    expect(base(front)).toBeCloseTo(base(back), 5);
+  });
+
+  it("LEGACY line-level per_print (pre-2026-07 quotes) still bills × locations", () => {
+    // Quotes saved in the brief window before per-print moved onto imprints.
+    const li = line(); // 2 prints
+    expect(Math.round((base(li, { underbase: snap }) - base(li, {})) * 100) / 100).toBe(48); // 0.5 × 2 × 48
   });
 });
 
@@ -86,13 +95,13 @@ describe("QuickBooks payload translation", () => {
   const salesSum = (p) => p.lines.filter((l) => !l.isFee).reduce((s, l) => s + l.amount, 0);
   const allSum = (p) => p.lines.reduce((s, l) => s + l.amount, 0);
 
-  it("per_print + per_garment fold into the taxable garment line amount", () => {
-    const withPrint = { ...line(), extras: { underbase: { mode: "flat", rate: 0.5, basis: "per_print" } } };
+  it("per_print (on one print) + per_garment fold into the taxable garment line amount", () => {
+    const withPrint = line({ imprints: [imp({ extras: { underbase: { mode: "flat", rate: 0.5, basis: "per_print" } } }), imp()] });
     const withGarment = { ...line(), extras: { tags: 1 } }; // per_garment flat
     const pPrint = buildQBInvoicePayload({ line_items: [withPrint], rush_rate: 0, tax_rate: 0 });
     const pGarment = buildQBInvoicePayload({ line_items: [withGarment], rush_rate: 0, tax_rate: 0 });
     const pPlain = buildQBInvoicePayload({ line_items: [line()], rush_rate: 0, tax_rate: 0 });
-    expect(Math.round((salesSum(pPrint) - salesSum(pPlain)) * 100) / 100).toBe(48); // 0.5 × 2 × 48
+    expect(Math.round((salesSum(pPrint) - salesSum(pPlain)) * 100) / 100).toBe(24); // 0.5 × 48 (one print)
     expect(Math.round((salesSum(pGarment) - salesSum(pPlain)) * 100) / 100).toBe(48); // 1 × 48
   });
 
@@ -109,7 +118,10 @@ describe("QuickBooks payload translation", () => {
 
   it("QB line sum equals engine subtotal + fees with all three categories at once", () => {
     const q = {
-      line_items: [{ ...line(), extras: { underbase: { mode: "flat", rate: 0.5, basis: "per_print" }, tags: 1 } }],
+      line_items: [line({
+        extras: { tags: 1 }, // per_garment on the line
+        imprints: [imp({ extras: { underbase: { mode: "flat", rate: 0.5, basis: "per_print" } } }), imp()], // per_print on one imprint
+      })],
       rush_rate: 0, tax_rate: 0,
       additional_charges: [{ id: "jobfee_art", label: "Art fee", amount: 25, taxable: true }],
     };
