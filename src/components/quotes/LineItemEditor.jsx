@@ -12,7 +12,7 @@ import {
   STANDARD_MARKUP,
   getLineExtras,
 } from "../shared/pricing";
-import { getAddonsForTechnique, pruneExtrasForTechnique } from "@/lib/pricing/extrasScopes";
+import { getAddonsForTechniques, pruneExtrasForTechniques } from "@/lib/pricing/extrasScopes";
 import PricePanel from "./PricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
@@ -545,10 +545,15 @@ export default function LineItemEditor({
   onDuplicate,
   canRemove,
 }) {
-  // Resolve the addons list for this specific line's technique. Falls
-  // back to the root (Screen Print) scope for unknown or empty techniques.
-  const lineTechnique = (li.imprints || [])[0]?.technique;
-  const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
+  // Resolve the add-ons list from the UNION of ALL the line's imprint
+  // techniques — not just the first location. Gating to imprints[0] hid an
+  // add-on (e.g. Screen Print "underbase") whenever the location that needed it
+  // wasn't first, so it couldn't be toggled at all (Kato's report, 2026-07).
+  // Falls back to the root (Screen Print) scope when no technique is set.
+  const lineTechniques = [
+    ...new Set((li.imprints || []).map((im) => im?.technique).filter(Boolean)),
+  ];
+  const addonsMeta = getAddonsForTechniques(addonsByScope, lineTechniques);
   // Header label that follows the decoration type. Techniques are per
   // imprint, so a line can mix them — show the shared technique's label
   // when they all match, else a neutral "Decoration Locations". "Screen
@@ -795,16 +800,18 @@ export default function LineItemEditor({
     const imprints = (li.imprints || []).map((im, i) =>
       i === idx ? { ...normalizeImprint(im), ...patch } : normalizeImprint(im)
     );
-    // When the "active" technique (imprint[0]) changes, prune any
-    // toggled extras that aren't available in the new technique's
-    // addon list. Without this, a "Custom Tags" snapshot set while
-    // on Screen Print would keep charging $1.50/pc after the user
-    // switched to Embroidery — the user can't see the toggle to
-    // turn it off.
-    const oldTechnique = (li.imprints || [])[0]?.technique;
-    const newTechnique = imprints[0]?.technique;
-    if (idx === 0 && newTechnique !== oldTechnique) {
-      const prunedExtras = pruneExtrasForTechnique(lineExtras, addonsByScope, newTechnique);
+    // When the SET of techniques across the line's locations changes, prune any
+    // toggled extras no longer available under ANY current technique. Without
+    // this, a "Custom Tags" snapshot set while a location was Screen Print would
+    // keep charging $1.50/pc after that technique was dropped from the line, and
+    // the user can't see the toggle to turn it off. Union-based (not imprint[0])
+    // so switching one location's technique never wipes a fee another location
+    // still supports.
+    const techsOf = (arr) => [...new Set((arr || []).map((im) => im?.technique).filter(Boolean))].sort();
+    const oldTechs = techsOf(li.imprints);
+    const newTechs = techsOf(imprints);
+    if (oldTechs.join("|") !== newTechs.join("|")) {
+      const prunedExtras = pruneExtrasForTechniques(lineExtras, addonsByScope, newTechs);
       onChange({ ...li, imprints, extras: prunedExtras });
       return;
     }

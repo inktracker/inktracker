@@ -11,7 +11,7 @@ import {
   uid,
   getLineExtras,
 } from "../shared/pricing";
-import { getAddonsForTechnique, pruneExtrasForTechnique } from "@/lib/pricing/extrasScopes";
+import { getAddonsForTechniques, pruneExtrasForTechniques } from "@/lib/pricing/extrasScopes";
 import BrokerPricePanel from "./BrokerPricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
@@ -389,8 +389,13 @@ export default function BrokerLineItemEditor({
   onDuplicate,
   canRemove,
 }) {
-  const lineTechnique = (li.imprints || [])[0]?.technique;
-  const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
+  // Union across ALL the line's imprint techniques — not just the first — so an
+  // add-on (e.g. Screen Print "underbase") is reachable even when the location
+  // that needs it isn't first. Mirrors the fix in LineItemEditor (Kato, 2026-07).
+  const lineTechniques = [
+    ...new Set((li.imprints || []).map((im) => im?.technique).filter(Boolean)),
+  ];
+  const addonsMeta = getAddonsForTechniques(addonsByScope, lineTechniques);
   // Header label that follows the decoration type (see LineItemEditor).
   const locationsHeader = (() => {
     const techs = [
@@ -523,14 +528,16 @@ export default function BrokerLineItemEditor({
     const imprints = (li.imprints || []).map((im, i) =>
       i === idx ? { ...im, ...patch } : im
     );
-    // Mirror of LineItemEditor: prune extras when the active
-    // (imprint[0]) technique changes, so fees that don't exist on
-    // the new technique stop applying silently.
-    const oldTechnique = (li.imprints || [])[0]?.technique;
-    const newTechnique = imprints[0]?.technique;
-    if (idx === 0 && newTechnique !== oldTechnique) {
+    // Mirror of LineItemEditor: prune extras when the SET of the line's
+    // techniques changes, so fees no longer supported by ANY location stop
+    // applying silently — union-based, so switching one location's technique
+    // never wipes a fee another location still supports.
+    const techsOf = (arr) => [...new Set((arr || []).map((im) => im?.technique).filter(Boolean))].sort();
+    const oldTechs = techsOf(li.imprints);
+    const newTechs = techsOf(imprints);
+    if (oldTechs.join("|") !== newTechs.join("|")) {
       const lineExtras = getLineExtras(li, { extras });
-      const prunedExtras = pruneExtrasForTechnique(lineExtras, addonsByScope, newTechnique);
+      const prunedExtras = pruneExtrasForTechniques(lineExtras, addonsByScope, newTechs);
       onChange({ ...li, imprints, extras: prunedExtras });
       return;
     }
