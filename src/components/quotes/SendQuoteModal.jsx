@@ -500,6 +500,19 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     setSending(true);
 
     try {
+      // Force a session refresh right before sending. supabase.functions.invoke
+      // attaches whatever token the client holds; if it's stale (tab left open
+      // past expiry — the qbSync 401s that preceded this), the authed send
+      // silently falls through to sendQuoteEmail's ANONYMOUS path, which
+      // rejects the PDF + pay link with a 403 shown only as the opaque "Edge
+      // Function returned a non-2xx status code". getSession() refreshes if it
+      // can; a null result means the login is truly dead → say so plainly.
+      const { data: { session: sendSession } } = await supabase.auth.getSession();
+      if (!sendSession?.access_token) {
+        setError("Your session expired. Refresh the page and sign in again, then resend.");
+        return;
+      }
+
       // Public token: reuse if present, mint+persist if missing.
       // NEVER rotate an existing token — old email links must stay
       // valid on resends. Contract pinned by decidePublicToken
@@ -597,7 +610,17 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         body: sendRequest,
       });
 
-      if (invokeErr) throw new Error(invokeErr.message);
+      if (invokeErr) {
+        // Unwrap the FunctionsHttpError — its .message is the useless generic
+        // "non-2xx status code"; the real reason ({ error: "..." }) is in the
+        // unread Response on .context. Same pattern as the createInvoice path.
+        let realMessage = "";
+        try {
+          const body = await invokeErr.context?.json?.();
+          realMessage = body?.error || body?.message || "";
+        } catch { /* body unreadable — fall back below */ }
+        throw new Error(realMessage || invokeErr.message || "Couldn't send the quote email. Please try again.");
+      }
       if (res?.error) throw new Error(res.error);
 
       // Post-send patch: status / sent_to / sent_date / totals /
