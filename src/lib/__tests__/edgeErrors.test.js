@@ -69,14 +69,18 @@ describe("describeEdgeError — never leaks the opaque message", () => {
   });
 });
 
-describe("guard — base44.functions.invoke stays normalized", () => {
-  it("the invoke wrapper routes errors through describeEdgeError", () => {
-    const src = readFileSync(
-      fileURLToPath(new URL("../../api/supabaseClient.js", import.meta.url)),
-      "utf8",
-    );
-    // The wrapper must translate the error, not return the raw FunctionsHttpError.
-    const invokeBlock = src.slice(src.indexOf("const functions ="), src.indexOf("const functions =") + 800);
-    expect(invokeBlock).toMatch(/describeEdgeError/);
+describe("guard — supabase.functions.invoke is globally translated", () => {
+  const src = readFileSync(
+    fileURLToPath(new URL("../../api/supabaseClient.js", import.meta.url)),
+    "utf8",
+  );
+
+  it("supabase.functions.invoke is patched, and the patch runs describeEdgeError", () => {
+    const idx = src.indexOf("supabase.functions.invoke =");
+    expect(idx, "the global invoke patch must exist").toBeGreaterThan(-1);
+    const patchBlock = src.slice(idx, idx + 600);
+    expect(patchBlock).toMatch(/describeEdgeError/);
+    // Must preserve context so self-unwrapping money-flow callers keep working.
+    expect(patchBlock).toMatch(/\.context/);
   });
 });
