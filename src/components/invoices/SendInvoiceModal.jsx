@@ -6,6 +6,7 @@ import { exportInvoiceToPDF } from "../shared/pdfExport";
 import { isValidEmail } from "@/lib/email";
 import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { deriveQbSendState } from "@/lib/quotes/qbSendState";
+import { describeEdgeError } from "@/lib/edgeErrors";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
 import ModalBackdrop from "../shared/ModalBackdrop";
 
@@ -186,6 +187,16 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
     setError("");
     setSending(true);
     try {
+      // Force a session refresh before sending — a stale token would make the
+      // authed send fall through to sendQuoteEmail's anonymous path, which
+      // rejects the PDF + pay link with a confusing 403 (same trap as the
+      // quote-send path). getSession() refreshes if it can.
+      const { data: { session: sendSession } } = await supabase.auth.getSession();
+      if (!sendSession?.access_token) {
+        setError("Your session expired. Refresh the page and sign in again, then resend.");
+        return;
+      }
+
       // If we're missing a payment link but the recipient email is
       // valid, try one more mint with the entered email before sending.
       // Resolves the common case where the customer record has an
@@ -242,7 +253,7 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
         },
       });
 
-      if (invokeErr) throw new Error(invokeErr.message);
+      if (invokeErr) throw new Error(await describeEdgeError(invokeErr));
       if (res?.error) throw new Error(res.error);
 
       await base44.entities.Invoice.update(invoice.id, { status: "Sent" });
