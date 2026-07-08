@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { queryClientInstance } from "@/lib/query-client";
 import { describeEdgeError } from "@/lib/edgeErrors";
+import { enrichEntityError } from "@/lib/entityErrors";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -87,7 +88,7 @@ function createEntityProxy(tableName) {
       if (s) q = q.order(s.column, { ascending: s.ascending });
       if (limit) q = q.limit(limit);
       const { data, error } = await q;
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       return data ?? [];
     },
 
@@ -106,7 +107,7 @@ function createEntityProxy(tableName) {
       if (s) q = q.order(s.column, { ascending: s.ascending });
       if (limit) q = q.limit(limit);
       const { data, error } = await q;
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       return data ?? [];
     },
 
@@ -117,7 +118,7 @@ function createEntityProxy(tableName) {
         .select("*")
         .eq("id", id)
         .single();
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       return data;
     },
 
@@ -128,7 +129,7 @@ function createEntityProxy(tableName) {
         .insert(payload)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       invalidateTable(tableName);
       return data;
     },
@@ -141,7 +142,7 @@ function createEntityProxy(tableName) {
         .eq("id", id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       invalidateTable(tableName);
       return data;
     },
@@ -149,7 +150,7 @@ function createEntityProxy(tableName) {
     /** Delete a row by id */
     async delete(id) {
       const { error } = await supabase.from(tableName).delete().eq("id", id);
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       invalidateTable(tableName);
     },
 
@@ -213,7 +214,7 @@ const auth = {
       .eq("auth_id", user.id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw enrichEntityError(error);
     // This updates the caller's own profile row directly (bypassing the entity
     // proxy), so bust the deduped auth.me() cache explicitly.
     try { queryClientInstance.invalidateQueries({ queryKey: ["auth", "me"] }); } catch { /* best-effort */ }
