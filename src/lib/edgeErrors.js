@@ -22,9 +22,14 @@ export async function describeEdgeError(err, fallback = "Something went wrong. P
   // `.context` is the Response (supabase-js v2). Some older shapes nest it at
   // `.context.response`. Read the body as text and try JSON — covers both the
   // { error } contract and a plain-text 500.
-  const ctx = err.context?.response ?? err.context;
+  const ctx0 = err.context?.response ?? err.context;
+  // Clone before reading so the ORIGINAL Response body stays unconsumed —
+  // the global invoke patch (supabaseClient.js) calls this on every edge
+  // error, and callers that unwrap `.context` themselves (QB invoice create,
+  // quote/invoice send) must still be able to read it.
+  const ctx = ctx0 && typeof ctx0.clone === "function" ? ctx0.clone() : ctx0;
   if (ctx && typeof ctx.text === "function") {
-    status = Number(ctx.status) || status;
+    status = Number(ctx0.status) || status;
     try {
       const raw = await ctx.text();
       try {
