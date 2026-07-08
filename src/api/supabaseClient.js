@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { queryClientInstance } from "@/lib/query-client";
+import { describeEdgeError } from "@/lib/edgeErrors";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -255,10 +256,20 @@ const entities = new Proxy(
 );
 
 // ─── Functions compatibility layer ───────────────────────────────────────────
+// Every base44.functions.invoke error is normalized to a real, user-facing
+// message here (via describeEdgeError) so no call site can leak supabase-js's
+// opaque "Edge Function returned a non-2xx status code". Callers keep reading
+// `error.message`; it's now the actual reason. `error.status` and `error.raw`
+// are preserved for the few sites that branch on them.
 const functions = {
   async invoke(name, params) {
     const { data, error } = await supabase.functions.invoke(name, { body: params });
-    return { data, error };
+    if (!error) return { data, error: null };
+    const message = await describeEdgeError(error);
+    const norm = new Error(message);
+    norm.status = error?.context?.status ?? error?.status ?? 0;
+    norm.raw = error;
+    return { data, error: norm };
   },
 };
 
