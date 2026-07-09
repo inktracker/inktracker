@@ -209,6 +209,17 @@ export default function Orders() {
 
   async function handleDelete(id) {
     const order = orders.find((o) => o.id === id);
+    // Completed orders are preserved on purpose: a BEFORE DELETE trigger
+    // refuses the delete so their invoices never dangle. Explain the "why"
+    // and the way out instead of firing a doomed delete that throws a
+    // check-constraint error the user can't act on.
+    if (order?.status === "Completed") {
+      notify.info(
+        "Completed orders are kept on file",
+        "This order is marked Completed, so it stays as a historical record and its invoice remains linked. To remove it, move it back a step first (Revert), then delete.",
+      );
+      return;
+    }
     // Honest confirm copy: an order made from a quote isn't lost — the quote is
     // restored (to the broker for broker jobs, else to your Quotes list).
     const msg = !order?.quote_id

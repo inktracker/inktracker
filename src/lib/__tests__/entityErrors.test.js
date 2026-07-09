@@ -21,6 +21,24 @@ describe("describeEntityError — no raw SQL reaches the user", () => {
     expect(describeEntityError(pg("23505", "duplicate key value violates unique constraint"))).toMatch(/already exists/i);
   });
 
+  it("completed-order delete guard (23514 RAISE) → clean 'kept on file' guidance, not the generic 23514 text", () => {
+    // The refuse_completed_order_delete trigger raises with ERRCODE=check_violation.
+    const msg = describeEntityError(pg(
+      "23514",
+      "Cannot delete a Completed order (order_id: abc-123, customer: Acme). Completed orders are preserved as historical records — update the status instead if you really mean it.",
+    ));
+    expect(msg).toMatch(/completed.*historical record|kept as a historical record|move it back/i);
+    expect(msg).toMatch(/revert/i);
+    // Never leak the raw internals (UUID / "order_id:") or the generic 23514 text.
+    expect(msg).not.toMatch(/order_id:|abc-123|isn't allowed here/i);
+  });
+
+  it("a real check-constraint violation (23514) still maps to the generic guidance", () => {
+    const msg = describeEntityError(pg("23514", 'new row for relation "quotes" violates check constraint "quotes_total_nonneg"'));
+    expect(msg).toMatch(/isn't allowed here|double-check/i);
+    expect(msg).not.toMatch(/quotes_total_nonneg|violates check constraint/i);
+  });
+
   it("23502 not_null → required field missing", () => {
     expect(describeEntityError(pg("23502", "null value in column \"name\" violates not-null constraint"))).toMatch(/required field/i);
   });

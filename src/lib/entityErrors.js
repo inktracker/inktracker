@@ -20,6 +20,16 @@ export function describeEntityError(err, fallback = "Something went wrong. Pleas
     return "Couldn't reach the server. Check your internet connection and try again.";
   }
 
+  // Intentional guard trigger: deleting a Completed order is refused so its
+  // invoice never dangles. The trigger RAISEs with ERRCODE=check_violation
+  // (23514) + a human message — without this the generic 23514 branch below
+  // would clobber it into "One of the values isn't allowed here" (the exact
+  // cryptic error a shop owner hit deleting completed orders from the
+  // production calendar). Surface a clean, actionable version on any path.
+  if (/cannot delete a completed order/i.test(msg)) {
+    return "This order is marked Completed, so it's kept as a historical record and can't be deleted. Move it back a step first (Revert), then delete.";
+  }
+
   switch (code) {
     case "23505": // unique_violation
       return "That already exists — it looks like a duplicate of an existing record.";
