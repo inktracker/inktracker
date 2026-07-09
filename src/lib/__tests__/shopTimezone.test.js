@@ -30,22 +30,22 @@ describe("loadShopTimezone / getShopTimezone", () => {
     expect(getShopTimezone()).toBe("America/Chicago");
   });
 
-  it("falls back when given null / empty / whitespace / non-string", () => {
-    loadShopTimezone("America/Denver");
-    loadShopTimezone(null);
-    expect(getShopTimezone()).not.toBe("America/Denver");
+  it("falls back to browser tz when given null / empty / whitespace / non-string", () => {
+    // Baseline = the browser tz getShopTimezone() returns with nothing
+    // loaded. Don't hardcode a zone: this test previously asserted the
+    // fallback was `not "America/Denver"`, which fails on any machine
+    // actually in Mountain time (the fallback legitimately IS Denver).
+    // Instead pick a valid "other" zone guaranteed to differ from the
+    // baseline, and assert bad input reverts to the baseline.
+    const browserTz = getShopTimezone();
+    const otherTz = browserTz === "America/Denver" ? "America/New_York" : "America/Denver";
 
-    loadShopTimezone("America/Denver");
-    loadShopTimezone("");
-    expect(getShopTimezone()).not.toBe("America/Denver");
-
-    loadShopTimezone("America/Denver");
-    loadShopTimezone("   ");
-    expect(getShopTimezone()).not.toBe("America/Denver");
-
-    loadShopTimezone("America/Denver");
-    loadShopTimezone(42);
-    expect(getShopTimezone()).not.toBe("America/Denver");
+    for (const bad of [null, "", "   ", 42]) {
+      loadShopTimezone(otherTz);
+      expect(getShopTimezone()).toBe(otherTz); // a valid zone takes effect
+      loadShopTimezone(bad);
+      expect(getShopTimezone()).toBe(browserTz); // bad input → browser fallback
+    }
   });
 });
 
