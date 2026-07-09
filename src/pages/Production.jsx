@@ -210,7 +210,17 @@ export default function Production() {
   // Extracted to lib/calendar/pointEvents.js (unit-tested there). Key rule:
   // a Completed order renders ONE "Completed" chip, sourced from
   // completed_date — step_dates["Completed"] used to add a second one.
-  const pointEvents = useMemo(() => buildPointEvents(orders, quotes), [orders, quotes]);
+  // The "Hide Completed" toggle (shared with the table view) also clears
+  // finished work off the calendar — a Completed order drops all its chips
+  // (its green completed chip AND any historical step chips) so the grid
+  // shows only active work. Quote chips are unaffected.
+  const pointEvents = useMemo(
+    () => buildPointEvents(
+      hideCompleted ? orders.filter((o) => o.status !== "Completed") : orders,
+      quotes,
+    ),
+    [orders, quotes, hideCompleted],
+  );
 
   const allActiveOrders = useMemo(() => {
     const active = orders.filter((o) => o.status !== "Completed");
@@ -727,6 +737,13 @@ export default function Production() {
               <ChevronRight className="w-4 h-4 text-slate-600" />
             </button>
             <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 ml-2">{MONTH_NAMES[month]} {year}</h3>
+            <button
+              onClick={() => setHideCompleted((v) => !v)}
+              className={`ml-auto text-xs font-semibold px-3 py-1.5 rounded-full border transition ${hideCompleted ? "bg-emerald-600 text-white border-emerald-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-emerald-300"}`}
+              title="Hide orders marked Completed so the calendar shows only active work"
+            >
+              {hideCompleted ? "Show Completed" : "Hide Completed"}
+            </button>
           </div>
 
           {/* Chip legend — quick visual key so users can decode colors without
@@ -741,7 +758,7 @@ export default function Production() {
               { label: "Printing",       cls: STATUS_COLORS["Printing"] },
               { label: "Due",            cls: "bg-rose-50 border-rose-300 text-rose-700" },
               { label: "Completed",      cls: STATUS_COLORS["Completed"] },
-            ].map((item) => (
+            ].filter((item) => !(hideCompleted && item.label === "Completed")).map((item) => (
               <span key={item.label} className={`px-1.5 py-0.5 rounded border ${item.cls}`}>
                 {item.label}
               </span>
