@@ -33,6 +33,7 @@ import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare, UserCheck, UserX, Paperclip } from "lucide-react";
 import { notify } from "@/lib/notify";
 import AttachmentGallery from "../shared/AttachmentGallery";
+import { DEPOSITS_ENABLED } from "@/lib/deposits";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
@@ -765,7 +766,7 @@ export default function QuoteDetailModal({
 
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <Badge s={quote.status} />
-              {quote.deposit_paid ? (
+              {DEPOSITS_ENABLED && quote.deposit_paid ? (
                 <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                   Paid
                 </span>
@@ -854,12 +855,14 @@ export default function QuoteDetailModal({
                     {Number(quote.rush_rate) > 0 ? "Yes" : "No"}
                   </span>
                 </div>
-                <div className="flex justify-between text-sm text-slate-500">
-                  <span>Deposit</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {quote.deposit_pct || 50}%
-                  </span>
-                </div>
+                {DEPOSITS_ENABLED && (
+                  <div className="flex justify-between text-sm text-slate-500">
+                    <span>Deposit</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {quote.deposit_pct || 50}%
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1139,10 +1142,12 @@ export default function QuoteDetailModal({
                     );
                   })()}
 
-                  <div className="flex justify-between text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
-                    <span className="font-semibold">Deposit Due</span>
-                    <span className="font-bold">{fmtMoney(totals.deposit)}</span>
-                  </div>
+                  {DEPOSITS_ENABLED && (
+                    <div className="flex justify-between text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
+                      <span className="font-semibold">Deposit Due</span>
+                      <span className="font-bold">{fmtMoney(totals.deposit)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {quote.notes && (
@@ -1288,7 +1293,7 @@ export default function QuoteDetailModal({
               </button>
             )}
 
-            {onTogglePaid && (
+            {DEPOSITS_ENABLED && onTogglePaid && (
               <button
                 onClick={() => callAction(onTogglePaid, quote)}
                 disabled={saving}
