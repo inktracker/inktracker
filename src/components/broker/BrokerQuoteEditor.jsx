@@ -21,6 +21,7 @@ import BrokerLineItemEditor from "./BrokerLineItemEditor";
 import JobFeesSection from "@/components/quotes/JobFeesSection";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { Eye } from "lucide-react";
+import { DEPOSITS_ENABLED } from "@/lib/deposits";
 
 const DEFAULT_EXTRAS_META = [
   { key: "colorMatch", label: "Ink Color Match", rate: 1.0 },
@@ -764,6 +765,7 @@ export default function BrokerQuoteEditor({
                 </span>
               </div>
 
+              {DEPOSITS_ENABLED && (
               <div className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -803,8 +805,9 @@ export default function BrokerQuoteEditor({
                   </span>
                 )}
               </div>
+              )}
 
-              {Number(q.deposit_pct) > 0 && (
+              {DEPOSITS_ENABLED && Number(q.deposit_pct) > 0 && (
                 <div className="flex justify-between text-xs text-slate-500">
                   <span>Remaining Balance</span>
                   <span className="font-semibold text-slate-700">

@@ -29,6 +29,7 @@ import { quoteAlreadyApproved, quoteAlreadyPaid } from "@/lib/quotes/approvalSta
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
+import { DEPOSITS_ENABLED } from "@/lib/deposits";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -887,9 +888,12 @@ export default function QuotePayment() {
               qbStale: qbStaleFlag,
               fallbackTotal: totals.total,
             }).total) || 0;
-            const depositPct = customer?.default_deposit_pct != null
+            // Deposits aren't collectible online (QB bills full; Stripe path
+            // removed) — force 0 so the button says "Approve & Pay $full"
+            // instead of promising a deposit the QB link can't take.
+            const depositPct = !DEPOSITS_ENABLED ? 0 : (customer?.default_deposit_pct != null
               ? Number(customer.default_deposit_pct) || 0
-              : parseFloat(quote?.deposit_pct) || 0;
+              : parseFloat(quote?.deposit_pct) || 0);
             const depositAmount = Math.round(effectiveTotal * (depositPct / 100) * 100) / 100;
             const depositPaid = quote?.deposit_paid;
 

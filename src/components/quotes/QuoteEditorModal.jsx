@@ -31,6 +31,7 @@ import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
+import { DEPOSITS_ENABLED } from "@/lib/deposits";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -1479,6 +1480,7 @@ export default function QuoteEditorModal({
                 </span>
               </div>
 
+              {DEPOSITS_ENABLED && (
               <div className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -1518,6 +1520,7 @@ export default function QuoteEditorModal({
                   </span>
                 )}
               </div>
+              )}
             </div>
           </div>
         </div>
