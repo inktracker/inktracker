@@ -523,3 +523,77 @@ describe("sendAndLogApprovalNotification (SLN)", () => {
     expect(sb.calls[0].row.quote_id).toBe("q1");
   });
 });
+
+// Spy that also answers the notification_log dedup read used by the
+// quote_payment guard. `priorRows` seeds the "have we already sent?"
+// lookup; `selectThrows` simulates a DB failure on that read.
+function makePaymentSpy({ priorRows = [], selectThrows = false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    from(table) {
+      return {
+        insert(row) {
+          calls.push({ table, op: "insert", row });
+          return Promise.resolve({ error: null });
+        },
+        select() {
+          const chain = {
+            eq() { return chain; },
+            limit() {
+              calls.push({ table, op: "select" });
+              if (selectThrows) return Promise.reject(new Error("db down"));
+              return Promise.resolve({ data: priorRows });
+            },
+          };
+          return chain;
+        },
+      };
+    },
+  };
+}
+
+describe("sendAndLogApprovalNotification — payment dedup (DEDUP)", () => {
+  it("DEDUP1 — quote_payment with a prior 'sent' row: returns deduped, sends nothing, logs nothing", async () => {
+    const sb = makePaymentSpy({ priorRows: [{ id: "n1" }] });
+    const result = await sendAndLogApprovalNotification(sb, {
+      shop_owner: "x", event_type: "quote_payment", quote_id: "q1",
+      to: "j@x.com", subject: "Paid", html: "<x>", reply_to: "c@x.com",
+    });
+    expect(result.deduped).toBe(true);
+    expect(result.ok).toBe(true);
+    // A select happened; no insert (no send, no log row) followed.
+    expect(sb.calls.some((c) => c.op === "insert")).toBe(false);
+  });
+
+  it("DEDUP2 — quote_payment with no prior row: proceeds to send (not deduped)", async () => {
+    const sb = makePaymentSpy({ priorRows: [] });
+    const result = await sendAndLogApprovalNotification(sb, {
+      shop_owner: "x", event_type: "quote_payment", quote_id: "q1",
+      to: "j@x.com", subject: "Paid", html: "<x>", reply_to: "c@x.com",
+    });
+    expect(result.deduped).toBeUndefined();
+    // No Resend key in vitest → send fails; a 'failed' row is still logged.
+    expect(sb.calls.some((c) => c.op === "insert")).toBe(true);
+  });
+
+  it("DEDUP3 — dedup read failure does NOT block the send (send proceeds)", async () => {
+    const sb = makePaymentSpy({ selectThrows: true });
+    const result = await sendAndLogApprovalNotification(sb, {
+      shop_owner: "x", event_type: "quote_payment", quote_id: "q1",
+      to: "j@x.com", subject: "Paid", html: "<x>", reply_to: "c@x.com",
+    });
+    expect(result.deduped).toBeUndefined();
+    expect(sb.calls.some((c) => c.op === "insert")).toBe(true);
+  });
+
+  it("DEDUP4 — non-payment event types skip the dedup read entirely", async () => {
+    const sb = makePaymentSpy({ priorRows: [{ id: "n1" }] });
+    await sendAndLogApprovalNotification(sb, {
+      shop_owner: "x", event_type: "quote_approval", quote_id: "q1",
+      to: "j@x.com", subject: "Approved", html: "<x>", reply_to: "c@x.com",
+    });
+    // Guard is scoped to quote_payment, so no select was issued.
+    expect(sb.calls.some((c) => c.op === "select")).toBe(false);
+  });
+});

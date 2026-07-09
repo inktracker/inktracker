@@ -374,6 +374,34 @@ export async function sendAndLogApprovalNotification(supabase, args) {
   const { shop_owner, event_type, quote_id, order_id, recipient_email, recipient_role,
           to, subject, html, reply_to } = args;
 
+  // Dedup guard for payment confirmations. A quote is paid once, so the
+  // "payment received" email must go out at most once per quote — no
+  // matter how many code paths converge on it. Three do: qbWebhook (on
+  // the QB payment webhook), the nightly qbReconcile (catches missed
+  // webhooks), and QB itself occasionally redelivers the same webhook.
+  // Without this, the shop owner gets two (or more) identical
+  // confirmation emails for a single payment. Scoped to 'quote_payment'
+  // with a known quote_id; every other event type falls through
+  // unchanged. If the lookup itself fails we proceed with the send —
+  // one duplicate email is a lesser evil than silently dropping a real
+  // payment notification.
+  if (event_type === "quote_payment" && quote_id) {
+    try {
+      const { data: prior } = await supabase
+        .from("notification_log")
+        .select("id")
+        .eq("quote_id", quote_id)
+        .eq("event_type", "quote_payment")
+        .eq("status", "sent")
+        .limit(1);
+      if (Array.isArray(prior) && prior.length > 0) {
+        return { ok: true, deduped: true, reason: "already_notified" };
+      }
+    } catch (err) {
+      console.error("[notification_log] payment dedup check failed:", err?.message || err);
+    }
+  }
+
   // Skipped path — caller decided not to send (e.g., no recipient
   // resolved). Still log so the row exists for forensics.
   if (!to) {
