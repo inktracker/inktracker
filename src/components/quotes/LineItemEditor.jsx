@@ -62,11 +62,16 @@ async function lookupStyle(styleNumber) {
   return { matches };
 }
 
-function normalizeImprint(imprint) {
+export function normalizeImprint(imprint) {
   return {
     id: imprint?.id || uid(),
     title: imprint?.title || "",
-    location: imprint?.location || "Front",
+    // `??` not `||`: PlacementSelect enters "custom location" mode by setting
+    // location to an empty string, then renders a free-text input. With `||`
+    // that empty string was coerced back to "Front" on the next normalize
+    // pass, so the "Custom…" option silently did nothing. Preserve an explicit
+    // "" (custom, not-yet-typed) while still defaulting a truly-absent location.
+    location: imprint?.location ?? "Front",
     width: imprint?.width || "",
     height: imprint?.height || "",
     colors: imprint?.colors === 0 || imprint?.colors ? imprint.colors : 1,
