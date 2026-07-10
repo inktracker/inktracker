@@ -882,7 +882,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
           AllowOnlineACHPayment: true,
           Line: lines,
           CustomerMemo: { value: quote.notes || "" },
-          PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`,
+          PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`
+            + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
         };
         if (billEmail) {
           updateBody.BillEmail = { Address: billEmail };
@@ -974,9 +975,13 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       AllowOnlineACHPayment: true,
       Line: lines,
       CustomerMemo: { value: quote.notes || "" },
-      PrivateNote: isRevision
+      // PrivateNote is QB's internal memo (visible to the shop in QB, not on
+      // the customer's invoice). Append the InkTracker job title so it flows
+      // to accounting for reference.
+      PrivateNote: (isRevision
         ? `InkTracker Quote ${baseDocNumber} — revision (${docNumber})`
-        : `InkTracker Quote ${baseDocNumber}`,
+        : `InkTracker Quote ${baseDocNumber}`)
+        + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
     };
 
     if (billEmail) {

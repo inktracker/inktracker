@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
+  getOrderDisplayJobTitle,
   getBrokerClientDisplay,
   getQty,
   getShortfallQty,
@@ -1664,5 +1665,21 @@ describe("getBrokerClientDisplay — broker-facing end-client, company-first", (
     expect(getBrokerClientDisplay({ company: "  Acme  " })).toBe("Acme");
     expect(getBrokerClientDisplay({})).toBe("—");
     expect(getBrokerClientDisplay(null)).toBe("—");
+  });
+});
+
+describe("getOrderDisplayJobTitle — surfaced for direct orders too", () => {
+  it("returns the job title on a DIRECT (non-broker) order", () => {
+    expect(getOrderDisplayJobTitle({ job_title: "Event Shirts" })).toBe("Event Shirts");
+  });
+
+  it("returns '' when a direct order has no job title (consumers hide the line)", () => {
+    expect(getOrderDisplayJobTitle({ job_title: "" })).toBe("");
+    expect(getOrderDisplayJobTitle({})).toBe("");
+  });
+
+  it("keeps broker behavior: job title, then broker_client_name fallback", () => {
+    expect(getOrderDisplayJobTitle({ broker_id: "b1", job_title: "Team Tees" })).toBe("Team Tees");
+    expect(getOrderDisplayJobTitle({ broker_id: "b1", broker_client_name: "Acme Co" })).toBe("Acme Co");
   });
 });

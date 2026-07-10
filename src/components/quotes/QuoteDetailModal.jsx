@@ -750,6 +750,11 @@ export default function QuoteDetailModal({
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
                 {getShopFacingCustomer(quote, customer)}
               </h2>
+              {quote.job_title && (
+                <div className="text-xs sm:text-sm text-slate-500 mt-0.5 truncate">
+                  Job: {quote.job_title}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 {quote.date && (
                   <div className="text-xs sm:text-sm text-slate-500">
