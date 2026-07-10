@@ -2,6 +2,7 @@ import { useState } from "react";
 import { uploadFile, openSignedArtwork } from "@/lib/uploadFile";
 import { filterAndSortClients } from "@/lib/broker/clientFilter";
 import ModalBackdrop from "../shared/ModalBackdrop";
+import PlacementSelect from "../shared/PlacementSelect";
 import {
   Users,
   Search,
@@ -10,7 +11,7 @@ import {
   Trash2,
   ExternalLink,
 } from "lucide-react";
-import { getEnabledTechniques } from "../shared/pricing";
+import { getEnabledTechniques, LOCATIONS } from "../shared/pricing";
 
 const FIELDS = [
   { key: "name", label: "Name *", placeholder: "Jane Smith" },
@@ -397,17 +398,17 @@ export default function BrokerClientList({ clients, shopPricingConfig, onAdd, on
                         </div>
                         <div className="w-28">
                           <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Location</label>
-                          <select
+                          <PlacementSelect
                             value={imp.location || "Front"}
-                            onChange={(e) => {
+                            onChange={(val) => {
                               const updated = [...editing.saved_imprints];
-                              updated[i] = { ...updated[i], location: e.target.value };
+                              updated[i] = { ...updated[i], location: val };
                               setEditing({ ...editing, saved_imprints: updated });
                             }}
+                            options={LOCATIONS}
+                            customPlaceholder="Custom location"
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none"
-                          >
-                            {["Front","Back","Left Chest","Right Chest","Left Sleeve","Right Sleeve","Pocket","Hood","Other"].map(l => <option key={l}>{l}</option>)}
-                          </select>
+                          />
                         </div>
                         <div className="w-16">
                           <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Width</label>
