@@ -204,7 +204,9 @@ function getOrderPdfJobTitle(order) {
   if (isBrokerQuote(order)) {
     return order?.job_title || order?.broker_client_name || '';
   }
-  return '';
+  // Direct orders: include the job label on the PDF header when set. Callers
+  // guard on a truthy value, so an empty title prints nothing.
+  return order?.job_title || '';
 }
 
 function fmtDate(d) {

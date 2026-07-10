@@ -547,7 +547,7 @@ export default function OrderDetailModal({
     : getDisplayName(customer || order.customer_name);
   const displayJobTitle = isBrokerOrder
     ? (order?.job_title || order?.broker_client_name || "")
-    : "";
+    : (order?.job_title || "");
 
   const discVal = parseFloat(order.discount) || 0;
   const isFlat = order.discount_type === "flat" || (discVal > 100 && order.discount_type !== "percent");

@@ -565,7 +565,10 @@ export function getOrderDisplayJobTitle(order, fallbackCustomer = null) {
     return order?.job_title || order?.broker_client_name || getDisplayName(fallbackCustomer || order?.broker_client_name || order?.customer_name);
   }
 
-  return "";
+  // Direct (non-broker) orders: show the shop's own job label when set.
+  // Every consumer guards on a truthy result, so an empty job title simply
+  // renders nothing (no bare "Job:" line).
+  return order?.job_title || "";
 }
 
 // Company-first END-CLIENT name for BROKER-FACING surfaces (a broker's own
