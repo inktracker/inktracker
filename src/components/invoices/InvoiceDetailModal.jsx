@@ -64,7 +64,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
     if (invoice.qb_invoice_id) {
       setQbStatus({
         type: "info",
-        message: `This invoice is already in QuickBooks (QB ID ${invoice.qb_invoice_id}). Use "View in QB" to open it.`,
+        // the banner renderer reads .text — a .message key rendered as an
+        // empty blue bar
+        text: `This invoice is already in QuickBooks (QB ID ${invoice.qb_invoice_id}). Use "View in QB" to open it.`,
       });
       return;
     }

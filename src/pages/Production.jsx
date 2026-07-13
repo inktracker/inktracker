@@ -21,6 +21,7 @@ import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List, LayoutGrid } from "lucide-react";
 import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
+import { localDateStr } from "@/lib/dateRangeUtils";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
@@ -146,7 +147,9 @@ export default function Production() {
     // Monday-start weeks. JS Sunday=0, so a Sunday-on-load lands on
     // the prior Monday (dow=0 → -6, else 1-dow).
     d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-    return d.toISOString().split("T")[0];
+    // localDateStr, not toISOString — the UTC date is tomorrow after
+    // ~5pm Pacific, which started the week strip on Tuesday.
+    return localDateStr(d);
   });
   const [draggingOrderId, setDraggingOrderId] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
@@ -379,7 +382,7 @@ export default function Production() {
     const newPaid = !order.paid;
     const updated = await base44.entities.Order.update(order.id, {
       paid: newPaid,
-      paid_date: newPaid ? new Date().toISOString().split("T")[0] : null,
+      paid_date: newPaid ? todayInShopTz() : null,
     });
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(updated);
@@ -1096,7 +1099,7 @@ export default function Production() {
                   const d = new Date();
                   const dow = d.getDay();
                   d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-                  setScheduleWeekStart(d.toISOString().split("T")[0]);
+                  setScheduleWeekStart(localDateStr(d));
                 }}
                 className="text-sm font-semibold text-teal-600 hover:underline"
               >

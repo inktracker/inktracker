@@ -109,7 +109,7 @@ export default function Inventory() {
       return;
     }
     setItems(prev => [...prev, created].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
-    setForm({ item:"", sku:"", category:"Blanks", qty:0, unit:"pcs", reorder:0, cost:0 });
+    setForm({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0 });
     setShowForm(false);
     setAdding(false);
   }
