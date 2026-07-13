@@ -754,6 +754,7 @@ export default function OrderWizard({ onSubmit, styles: stylesProp, shopOwner, s
           total={total}
           totalQtyAll={totalQtyAll}
           livePpp={livePpp}
+          livePerGarmentPpp={livePerGarmentPpp}
           submitError={submitError}
           submitting={submitting}
           handleSubmit={handleSubmit}

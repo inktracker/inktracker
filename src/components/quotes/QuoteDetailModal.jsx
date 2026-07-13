@@ -20,7 +20,7 @@ import {
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
-import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
+import { savedAfterDiscount, savedRushTotal } from "@/lib/quotes/effectiveTotals";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -713,10 +713,15 @@ export default function QuoteDetailModal({
   // shop's view stays in lockstep with what the broker / shop quoted.
   const totals = useMemo(() => {
     if (quote?.total != null && quote?.subtotal != null) {
+      // Rush from the saved per-line _rushFee stamps — quote.rushTotal was
+      // never persisted, so the old read was always 0 and the rush row never
+      // rendered on a saved quote. subtotal is shown ex-rush with a separate
+      // rush row, footing to the saved total.
+      const rush = savedRushTotal(quote);
       return {
         sub: Number(quote.subtotal),
-        subtotal: Number(quote.subtotal) - (Number(quote.rushTotal) || 0),
-        rushTotal: Number(quote.rushTotal) || 0,
+        subtotal: Number(quote.subtotal) - rush,
+        rushTotal: rush,
         afterDisc: savedAfterDiscount(quote),
         tax: Number(quote.tax || 0),
         total: Number(quote.total),
@@ -1459,7 +1464,11 @@ export default function QuoteDetailModal({
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
                 <div className="text-xs text-slate-500 mb-0.5">Amount</div>
-                <div className="font-bold text-teal-700">{fmtMoney(getQuoteTotalsForDisplay(quote).total)}</div>
+                {/* Saved total (what the QB invoice bills) — NOT a live recompute.
+                    getQuoteTotalsForDisplay excludes setup/screen fees and reprices
+                    under the viewer's config, so it showed e.g. $1,000 next to a
+                    saved "Total $1,060" and the actual QB invoice of $1,060. */}
+                <div className="font-bold text-teal-700">{fmtMoney(totals.total)}</div>
               </div>
             </div>
 

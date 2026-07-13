@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { effectiveQuoteTotals } from "../effectiveTotals.js";
+import { effectiveQuoteTotals, savedRushTotal } from "../effectiveTotals.js";
 import { loadShopPricingConfig, BROKER_MARKUP } from "../../../components/shared/pricing.jsx";
 
 beforeEach(() => {
@@ -193,6 +193,46 @@ describe("effectiveQuoteTotals — saved wins, live is fallback", () => {
       expect(t.total).toBe(999);
       // subtotal field populated from live calc (no saved value to use)
       expect(t.subtotal).toBeGreaterThan(0);
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────
+  // Rush from SAVED per-line _rushFee stamps (not the never-persisted
+  // quote.rushTotal, and not the drift-prone live recompute). The PDF and
+  // detail modal print Subtotal(ex-rush) + Rush; both must foot to Total.
+  // ──────────────────────────────────────────────────────────────────
+  describe("rush total — saved stamps drive the rush line", () => {
+    it("savedRushTotal sums _rushFee across line items", () => {
+      const q = { line_items: [{ _rushFee: 60 }, { _rushFee: 40 }, { _rushFee: 0 }] };
+      expect(savedRushTotal(q)).toBe(100);
+    });
+
+    it("savedRushTotal is 0 (not NaN) for missing / empty line items", () => {
+      expect(savedRushTotal({})).toBe(0);
+      expect(savedRushTotal(null)).toBe(0);
+      expect(savedRushTotal({ line_items: [{}] })).toBe(0);
+    });
+
+    it("saved-branch rushTotal comes from the stamps, and Subtotal−rush foots to it", () => {
+      // subtotal INCLUDES rush (as the editor saves it). The display subtracts
+      // rushTotal to show an ex-rush subtotal, and the two must recombine to
+      // the saved subtotal exactly.
+      const saved = {
+        line_items: [{ _rushFee: 100 }],
+        subtotal: 1100, tax: 0, total: 1100,
+      };
+      const t = effectiveQuoteTotals(saved);
+      expect(t.source).toBe("saved");
+      expect(t.rushTotal).toBe(100);
+      expect(t.subtotal - t.rushTotal).toBe(1000); // ex-rush subtotal
+      expect((t.subtotal - t.rushTotal) + t.rushTotal).toBe(t.subtotal); // foots
+    });
+
+    it("no-rush quote: rushTotal is 0 and the subtotal is unchanged", () => {
+      const saved = { line_items: [{ _rushFee: 0 }], subtotal: 500, tax: 0, total: 500 };
+      const t = effectiveQuoteTotals(saved);
+      expect(t.rushTotal).toBe(0);
+      expect(t.subtotal).toBe(500);
     });
   });
 });

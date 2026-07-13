@@ -716,9 +716,13 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   yPos += 6;
 
   const rr = parseFloat(rushRate) || 0;
-  // Always use calcQuoteTotals values — one source of truth for all views
-  const subWithoutRush = totals.subtotal ?? totals.sub;
+  // totals.subtotal INCLUDES rush (saved snapshot), and totals.rushTotal is now
+  // the saved rush (effectiveTotals.savedRushTotal). Subtract so the printed
+  // "Subtotal" excludes rush and Subtotal + Rush + fees + tax foots to Total —
+  // previously the subtotal still included rush AND a rush line was printed
+  // below it, double-counting.
   const rushAmount = totals.rushTotal ?? 0;
+  const subWithoutRush = (totals.subtotal ?? totals.sub) - rushAmount;
 
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);

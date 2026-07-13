@@ -1357,7 +1357,18 @@ export default function LineItemEditor({
                           <label className="block text-xs text-slate-500 mb-0.5">Technique</label>
                           <select
                             value={imp.technique}
-                            onChange={(e) => updateImprint(idx, { technique: e.target.value })}
+                            onChange={(e) => {
+                              const t = e.target.value;
+                              // imp.colors means an ink-color count for print
+                              // methods but a 1-based stitch-tier INDEX for
+                              // Embroidery. Crossing that boundary without a
+                              // reset leaves a stale value that selects the
+                              // wrong price tier and shows no valid option in
+                              // the stitch dropdown (same fix as the wizard's
+                              // ConfigureStep).
+                              const crossed = (t === "Embroidery") !== (imp.technique === "Embroidery");
+                              updateImprint(idx, { technique: t, ...(crossed ? { colors: 1 } : {}) });
+                            }}
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                           >
                             {/* getTechniqueOptions always includes the technique

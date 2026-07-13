@@ -18,6 +18,7 @@ export default function ReviewStep({
   total,
   totalQtyAll,
   livePpp,
+  livePerGarmentPpp = {},
   submitError,
   submitting,
   handleSubmit,
@@ -107,6 +108,15 @@ export default function ReviewStep({
                   <span className="text-slate-500">{gg.style.name} · {gg.color} ({gQty} pcs)</span>
                   <span className="text-white font-semibold">
                     {(() => {
+                      // Use the parent's per-garment ppp — the SAME effective
+                      // cost + shared combined-quantity linked tiers that produce
+                      // the Estimated Total below. Recomputing here with the flat
+                      // garmentCost and unlinked imprints made the rows disagree
+                      // with (and not sum to) the total.
+                      const ppp = livePerGarmentPpp[gg.id];
+                      if (ppp != null) return fmtMoney(ppp * gQty);
+                      // Fallback for a garment the parent didn't price (shouldn't
+                      // happen for a valid garment): keep the old independent calc.
                       const gPrice = calcLinkedLinePrice(
                         { garmentCost: gg.style.garmentCost, sizes: gg.sizes, imprints: imprints.length ? imprints : [{colors:1}] },
                         rush ? getWizardRushDisplay().rate : 0, {}, undefined, {}
