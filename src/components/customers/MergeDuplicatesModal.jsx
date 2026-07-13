@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
-import { describeMergeFor } from "@/lib/customers/mergeCustomerData";
+import { describeMergeFor, formatMergeValue } from "@/lib/customers/mergeCustomerData";
 import { Loader2, GitMerge, Check, AlertTriangle, RefreshCw } from "lucide-react";
 import { notify } from "@/lib/notify";
 
@@ -322,9 +322,7 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                           return <li key={idx}><span className="font-semibold">Saved imprints</span> — merged (no duplicates)</li>;
                         }
                         const label = it.field.replace(/_/g, " ");
-                        let val = it.to ?? it.from;
-                        if (typeof val === "boolean") val = val ? "yes" : "no";
-                        return <li key={idx}>Fill <span className="font-semibold">{label}</span>: {String(val)}</li>;
+                        return <li key={idx}>Fill <span className="font-semibold">{label}</span>: {formatMergeValue(it.to ?? it.from)}</li>;
                       })}
                     </ul>
                   )}
