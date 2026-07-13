@@ -10,7 +10,7 @@ const ROOT = join(process.cwd());
 const read = (...p) => readFileSync(join(ROOT, ...p), "utf8");
 const HUB = read("public", "tools", "index.html");
 const CALC = read("public", "tools", "screen-printing-price-calculator", "index.html");
-const BASE = "https://inktracker.app";
+const BASE = "https://www.inktracker.app";
 
 describe("shared chart math (calc.mjs) — the one source", () => {
   it("computes cost-per-print and base from overhead", () => {

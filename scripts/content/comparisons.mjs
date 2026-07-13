@@ -22,8 +22,11 @@
 
 export const SITE = Object.freeze({
   name: "InkTracker",
-  baseUrl: "https://inktracker.app",
-  logo: "https://inktracker.app/icon-512.png",
+  // www is the primary host — apex inktracker.app 307-redirects to it. All
+  // canonicals/sitemap/JSON-LD must use www so Google indexes the served
+  // URL, not a redirect hop.
+  baseUrl: "https://www.inktracker.app",
+  logo: "https://www.inktracker.app/icon-512.png",
   price: "$99/mo",
   priceYear: "$999/yr",
   trial: "14-day free trial",
@@ -91,7 +94,7 @@ export const GUIDE = Object.freeze({
     },
     {
       name: "InkTracker",
-      url: "https://inktracker.app/",
+      url: "https://www.inktracker.app/",
       blurb:
         "A focused operations tool at one flat price ($99/mo, everything included): live garment pricing from S&S and AS Colour inside quoting, a two-way QuickBooks Online sync, an embeddable customer quote wizard, a broker portal, and production/shop-floor tracking. Built by a screen printer.",
       bestFor: "Shops that want transparent pricing with tight QuickBooks + supplier integration.",
