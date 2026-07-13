@@ -222,14 +222,24 @@ export default function Customers() {
     const partiallyFailed = [];
 
     for (const dup of duplicates) {
-      const [quotesById, ordersByName, invoicesById, quotesByName, invoicesByName] = await Promise.all([
+      // Fetch children by BOTH customer_id and customer_name for all three
+      // entities. Orders used to be fetched by name only, so an order whose
+      // stored name drifted from the duplicate's current name survived the
+      // merge pointing at a deleted customer id. A null name matches
+      // nothing, so name lookups are skipped for unnamed records.
+      const byName = (entity) =>
+        dup.name ? base44.entities[entity].filter({ customer_name: dup.name }) : Promise.resolve([]);
+      const [quotesById, ordersById, invoicesById, quotesByName, ordersByName, invoicesByName, artworkDocsForDup] = await Promise.all([
         base44.entities.Quote.filter({ customer_id: dup.id }),
-        base44.entities.Order.filter({ customer_name: dup.name }),
+        base44.entities.Order.filter({ customer_id: dup.id }),
         base44.entities.Invoice.filter({ customer_id: dup.id }),
-        base44.entities.Quote.filter({ customer_name: dup.name }),
-        base44.entities.Invoice.filter({ customer_name: dup.name }),
+        byName("Quote"),
+        byName("Order"),
+        byName("Invoice"),
+        base44.entities.BrokerDocument.filter({ broker_id: getClientArtworkKey(dup.id), shop_owner: shopScope(user) }),
       ]);
       const allQuotes = [...new Map([...quotesById, ...quotesByName].map((q) => [q.id, q])).values()];
+      const allOrders = [...new Map([...ordersById, ...ordersByName].map((o) => [o.id, o])).values()];
       const allInvoices = [...new Map([...invoicesById, ...invoicesByName].map((i) => [i.id, i])).values()];
 
       let dupReassignsOk = true;
@@ -237,13 +247,30 @@ export default function Customers() {
         try { await base44.entities.Quote.update(q.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
         catch (e) { console.error("Quote reassign failed:", e); dupReassignsOk = false; }
       }
-      for (const o of ordersByName) {
+      for (const o of allOrders) {
         try { await base44.entities.Order.update(o.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
         catch (e) { console.error("Order reassign failed:", e); dupReassignsOk = false; }
       }
       for (const inv of allInvoices) {
         try { await base44.entities.Invoice.update(inv.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
         catch (e) { console.error("Invoice reassign failed:", e); dupReassignsOk = false; }
+      }
+      // The duplicate's artwork library rows are keyed client:<id>; without
+      // reassignment they dangle on the deleted id and vanish from every
+      // customer card ("nothing gets silently dropped" contract).
+      const movedArtworkIds = [];
+      for (const doc of artworkDocsForDup) {
+        try {
+          await base44.entities.BrokerDocument.update(doc.id, { broker_id: getClientArtworkKey(primary.id) });
+          movedArtworkIds.push(doc.id);
+          totalMoved++;
+        } catch (e) { console.error("Artwork reassign failed:", e); dupReassignsOk = false; }
+      }
+      if (movedArtworkIds.length > 0) {
+        const movedSet = new Set(movedArtworkIds);
+        setArtworkDocs((prev) =>
+          prev.map((doc) => (movedSet.has(doc.id) ? { ...doc, broker_id: getClientArtworkKey(primary.id) } : doc)),
+        );
       }
 
       const mergeFields = buildAdditiveMergePatch(primary, dup);

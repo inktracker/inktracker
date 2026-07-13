@@ -386,7 +386,7 @@ export default function Quotes() {
     }
     setConverting(true);
     try {
-      const orderPayload = buildOrderFromQuote(q, { userEmail: user.email, today: todayInShopTz() });
+      const orderPayload = buildOrderFromQuote(q, { userEmail: shopScope(user), today: todayInShopTz() });
       await base44.entities.Order.create(orderPayload);
 
       // Broker pricing reference rows (legacy "commissions" table) are

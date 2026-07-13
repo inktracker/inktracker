@@ -452,7 +452,7 @@ export default function ShopFloor() {
     try {
       const updated = await runOrderCompletion({
         order,
-        userEmail: user?.email,
+        user,
         base44,
       });
       setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));

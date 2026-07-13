@@ -17,11 +17,27 @@ const SIMPLE_EMPTY_FILL_FIELDS = [
   "company",
   "tax_id",
   "qb_customer_id",
+  // Structured addresses feed QB AST sales tax — losing a ship-to on
+  // merge silently changes what tax QB charges downstream.
+  "bill_to_address",
+  "ship_to_address",
+  // Exemption certificate set. These travel together with tax_exempt
+  // (handled separately below): dropping a certificate on merge makes
+  // an exempt customer taxable in QB with no visible warning.
+  "exemption_type",
+  "exemption_certificate_number",
+  "exemption_certificate_path",
+  "exemption_expires_at",
+  "exemption_states",
 ];
 
 function isBlank(v) {
   if (v === null || v === undefined) return true;
   if (typeof v === "string") return v.trim() === "";
+  if (Array.isArray(v)) return v.length === 0;
+  // jsonb address objects: {} or all-blank values counts as blank so a
+  // real address on the duplicate can fill it.
+  if (typeof v === "object") return Object.values(v).every(isBlank);
   return false;
 }
 
@@ -108,6 +124,39 @@ export function buildAdditiveMergePatch(primary, dup) {
   if (mergedImprints != null) patch.saved_imprints = mergedImprints;
 
   return Object.keys(patch).length > 0 ? patch : null;
+}
+
+/**
+ * Shop-readable rendering of a describeMergeFor() value. Handles the
+ * jsonb fields (address objects, state arrays) that String() would
+ * render as "[object Object]".
+ */
+export function formatMergeValue(val) {
+  if (typeof val === "boolean") return val ? "yes" : "no";
+  if (Array.isArray(val)) return val.map(String).join(", ");
+  if (val && typeof val === "object") {
+    return Object.values(val)
+      .filter((v) => typeof v === "string" && v.trim() !== "")
+      .join(", ");
+  }
+  return String(val ?? "");
+}
+
+/**
+ * One describeMergeFor() item → one plain string for list rendering.
+ * (QbReconcileReviewModal once rendered the raw item objects as React
+ * children, which crashes the page — keep this a string.)
+ */
+export function describeMergeLine(it) {
+  if (!it) return "";
+  if (it.mode === "append" && it.field === "notes") {
+    return "Notes — appended (kept primary's, added this one's)";
+  }
+  if (it.mode === "union" && it.field === "saved_imprints") {
+    return "Saved imprints — merged (no duplicates)";
+  }
+  const label = it.field.replace(/_/g, " ");
+  return `Fill ${label}: ${formatMergeValue(it.to ?? it.from)}`;
 }
 
 /**

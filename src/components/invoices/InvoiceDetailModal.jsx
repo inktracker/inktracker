@@ -488,7 +488,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
 
         {/* Footer */}
         <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
-          {!invoice.paid && (
+          {!invoice.paid && onMarkPaid && (
             <button onClick={() => { onMarkPaid(invoice.id); onClose(); }}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
               Mark as Paid

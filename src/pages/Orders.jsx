@@ -199,7 +199,7 @@ export default function Orders() {
 
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
-    const updated = await runOrderCompletion({ order, userEmail: user.email, base44 });
+    const updated = await runOrderCompletion({ order, user, base44 });
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     // Keep the modal open on the just-completed order so its action bar can
     // reveal Create Invoice → Send. Only updates if this order is the one
@@ -412,8 +412,10 @@ export default function Orders() {
           invoice={viewingInvoice}
           customer={null}
           onClose={() => setViewingInvoice(null)}
-          onMarkPaid={() => {}}
-          onDelete={() => {}}
+          // No onMarkPaid/onDelete here on purpose: those are money actions
+          // with QB-sync semantics that live on the Invoices page. Passing
+          // stub handlers rendered buttons that silently did nothing — the
+          // modal hides both when the handlers are absent.
           // Successful Send returns operator to the orders queue.
           onSendSuccess={() => setViewing(null)}
         />
