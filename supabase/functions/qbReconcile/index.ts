@@ -52,6 +52,7 @@ import { parseRetryAfterMs } from "../_shared/qbRateLimit.ts";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
 import {
   isInvoiceFullyPaid,
+  isRecentQbPayment,
   cascadeMarkLinkedPaid,
   cascadeMarkInvoicePaid,
 } from "../_shared/qbWebhookLogic.js";
@@ -326,7 +327,22 @@ async function reconcileCascadeQuote(
     response_body: { cascade: true, ...updates },
   });
 
-  if (updates.quoteUpdated || updates.orderUpdated || updates.invoiceUpdated) {
+  // Only email when a local flag actually flipped AND the QB payment is
+  // recent. A flag flipping on an invoice QB last touched months ago is
+  // stale bookkeeping (e.g. a backfill), not a fresh payment worth a
+  // "Payment received" email — see isRecentQbPayment. The DB flips above
+  // and the audit log already happened regardless.
+  const somethingFlipped = updates.quoteUpdated || updates.orderUpdated || updates.invoiceUpdated;
+  if (somethingFlipped && !isRecentQbPayment(freshInvoice)) {
+    await logEvent(adminClient, {
+      shop_owner:    shopOwner,
+      action:        "reconcile_invoice_cascade",
+      status:        "skipped",
+      quote_id:      quote.id,
+      qb_invoice_id: quote.qb_invoice_id,
+      response_body: { notify_skipped: "stale_payment", last_updated: freshInvoice?.MetaData?.LastUpdatedTime ?? null },
+    });
+  } else if (somethingFlipped) {
     try {
       const recipient = chooseQuotePaymentRecipient(quote);
       let email: any = null;
@@ -451,34 +467,50 @@ async function reconcileOneQuote(
     // — without this, the shop sees the order materialize but never
     // gets the payment heads-up. Best-effort: a Resend failure must
     // not roll back the conversion or the audit log.
-    try {
-      const q = latestQuote || quote;
-      const recipient = chooseQuotePaymentRecipient(q);
-      let email: any = null;
-      if (recipient) {
-        const { data: shopRow } = await adminClient
-          .from("shops")
-          .select("shop_name")
-          .eq("owner_email", shopOwner)
-          .maybeSingle();
-        email = buildQuotePaymentEmail({
-          quote: q, shop: shopRow, customer: null, recipient,
-          orderId, amountPaid: q?.total,
-        });
-      }
-      await sendAndLogApprovalNotification(adminClient, {
-        shop_owner: shopOwner,
-        event_type: "quote_payment",
-        quote_id:   q?.id,
-        recipient_email: recipient?.to ?? "",
-        recipient_role:  recipient?.role,
-        to:       recipient?.to,
-        subject:  email?.subject,
-        html:     email?.html,
-        reply_to: email?.reply_to,
+    //
+    // Gated on isRecentQbPayment: a PAID_NOT_RECORDED invoice QB last
+    // touched months ago is stale history being reconciled, not a fresh
+    // payment — convert + record it, but don't email a "Payment received"
+    // heads-up for an old invoice (the 2026-07-13 stale-blast guard).
+    if (!isRecentQbPayment(freshInvoice)) {
+      await logEvent(adminClient, {
+        shop_owner:    shopOwner,
+        action:        "reconcile_invoice",
+        status:        "skipped",
+        quote_id:      quote.id,
+        qb_invoice_id: quote.qb_invoice_id,
+        response_body: { notify_skipped: "stale_payment", last_updated: freshInvoice?.MetaData?.LastUpdatedTime ?? null },
       });
-    } catch (notifyErr) {
-      console.error("[qbReconcile] payment notification failed:", notifyErr);
+    } else {
+      try {
+        const q = latestQuote || quote;
+        const recipient = chooseQuotePaymentRecipient(q);
+        let email: any = null;
+        if (recipient) {
+          const { data: shopRow } = await adminClient
+            .from("shops")
+            .select("shop_name")
+            .eq("owner_email", shopOwner)
+            .maybeSingle();
+          email = buildQuotePaymentEmail({
+            quote: q, shop: shopRow, customer: null, recipient,
+            orderId, amountPaid: q?.total,
+          });
+        }
+        await sendAndLogApprovalNotification(adminClient, {
+          shop_owner: shopOwner,
+          event_type: "quote_payment",
+          quote_id:   q?.id,
+          recipient_email: recipient?.to ?? "",
+          recipient_role:  recipient?.role,
+          to:       recipient?.to,
+          subject:  email?.subject,
+          html:     email?.html,
+          reply_to: email?.reply_to,
+        });
+      } catch (notifyErr) {
+        console.error("[qbReconcile] payment notification failed:", notifyErr);
+      }
     }
 
     return classification;
