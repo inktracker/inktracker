@@ -337,7 +337,7 @@ export default function Production() {
 
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
-    const updated = await runOrderCompletion({ order, userEmail: user.email, base44 });
+    const updated = await runOrderCompletion({ order, user, base44 });
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     // Keep the modal open on the just-completed order so its action bar can
     // reveal Create Invoice → Send. Only updates if this order is being viewed.
@@ -476,13 +476,39 @@ export default function Production() {
 
   async function handleBulkStatusUpdate() {
     if (!bulkStatus || selectedIds.size === 0) return;
+    // Bulk "Completed" must run the full completion flow, not a bare
+    // status write: a bare write skips completed_date (order vanishes
+    // from the calendar and revenue stats) and skips invoice /
+    // performance-row creation entirely.
+    if (bulkStatus === "Completed" && billingGate("complete orders")) return;
     const ids = [...selectedIds];
-    await Promise.all(ids.map((id) => base44.entities.Order.update(id, { status: bulkStatus })));
-    setOrders((prev) =>
-      prev.map((o) => (selectedIds.has(o.id) ? { ...o, status: bulkStatus } : o))
-    );
+    const updatedById = {};
+    const failed = [];
+    for (const id of ids) {
+      const order = orders.find((o) => o.id === id);
+      if (!order) continue;
+      try {
+        if (bulkStatus === "Completed") {
+          updatedById[id] = order.status === "Completed"
+            ? order
+            : await runOrderCompletion({ order, user, base44 });
+        } else {
+          updatedById[id] = await base44.entities.Order.update(id, { status: bulkStatus });
+        }
+      } catch (e) {
+        console.error("Bulk status update failed:", e);
+        failed.push(order.order_id || order.customer_name || id);
+      }
+    }
+    setOrders((prev) => prev.map((o) => updatedById[o.id] || o));
     setSelectedIds(new Set());
     setBulkStatus("");
+    if (failed.length > 0) {
+      notify.error(
+        `Updated ${ids.length - failed.length} of ${ids.length} orders`,
+        `These didn't update: ${failed.join(", ")}. They were left unchanged — try them individually.`,
+      );
+    }
   }
 
   function toggleSelectAll() {
@@ -1429,8 +1455,10 @@ export default function Production() {
           invoice={viewingInvoice}
           customer={null}
           onClose={() => setViewingInvoice(null)}
-          onMarkPaid={() => {}}
-          onDelete={() => {}}
+          // No onMarkPaid/onDelete on purpose — money actions with QB-sync
+          // semantics live on the Invoices page; stub handlers here rendered
+          // buttons that silently did nothing. The modal hides both when the
+          // handlers are absent.
           // After a successful Send: close the order modal too. The
           // operator just shipped the deliverable; they want to return
           // to the production queue, not get stranded on the order
