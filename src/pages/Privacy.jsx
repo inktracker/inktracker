@@ -1,4 +1,7 @@
+import { usePageMeta } from "@/lib/seo/usePageMeta";
+
 export default function Privacy() {
+  usePageMeta({ title: "Privacy Policy — InkTracker", path: "/privacy" });
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-6">

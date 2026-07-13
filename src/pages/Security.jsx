@@ -1,7 +1,10 @@
+import { usePageMeta } from "@/lib/seo/usePageMeta";
+
 // Public trust & security page. Honest about what we do today and what we don't.
 // If something here changes, update it. Don't claim certifications we don't have.
 
 export default function Security() {
+  usePageMeta({ title: "Security & Trust — InkTracker", path: "/security" });
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-8">

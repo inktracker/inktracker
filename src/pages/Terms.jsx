@@ -1,3 +1,5 @@
+import { usePageMeta } from "@/lib/seo/usePageMeta";
+
 // ─────────────────────────────────────────────────────────────────────────
 // ATTORNEY REVIEW PENDING (drafted 2026-06-14; self-review revisions 2026-06-16).
 // 2026-06-16 pass closed self-identified red flags before the attorney review:
@@ -13,6 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 
 export default function Terms() {
+  usePageMeta({ title: "Terms of Service — InkTracker", path: "/terms" });
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-6">
