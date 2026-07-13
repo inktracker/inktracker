@@ -1,4 +1,4 @@
-# InkTracker — https://inktracker.app
+# InkTracker — https://www.inktracker.app
 # The public marketing pages are open to all crawlers, including AI /
 # answer-engine bots. App routes are client-rendered and behind auth, so
 # they expose no content to crawl. Nothing sensitive lives here.
@@ -29,4 +29,4 @@ Allow: /
 User-agent: Google-Extended
 Allow: /
 
-Sitemap: https://inktracker.app/sitemap.xml
+Sitemap: https://www.inktracker.app/sitemap.xml
