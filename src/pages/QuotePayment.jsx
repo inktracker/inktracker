@@ -28,6 +28,7 @@ import { isQbStale } from "@/lib/quotes/qbStale";
 import { quoteAlreadyApproved, quoteAlreadyPaid } from "@/lib/quotes/approvalState";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
+import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
 
@@ -254,7 +255,12 @@ export default function QuotePayment() {
   const isExpired = (() => {
     if (!quote?.expires_date) return false;
     if (alreadyApproved || alreadyPaid) return false;
-    return new Date(quote.expires_date) < new Date();
+    // expires_date is a date-only string ("2026-08-11"). new Date(str) parses
+    // it as UTC midnight, so `< new Date()` flipped the quote to "expired" the
+    // evening BEFORE its date for any US (negative-offset) customer, costing
+    // them the whole final day. Compare date strings in the viewer's local
+    // date instead: valid through the end of expires_date.
+    return localDateStr(new Date()) > quote.expires_date;
   })();
 
   // ── Payment-provider availability ──────────────────────────────────

@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { queryClientInstance } from "@/lib/query-client";
 import { describeEdgeError } from "@/lib/edgeErrors";
 import { enrichEntityError } from "@/lib/entityErrors";
+import { resolveTeamSubscription } from "@/lib/billing";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -214,7 +215,30 @@ const auth = {
           .maybeSingle();
 
         if (!profile) return null;
-        return { ...profile, email: user.email };
+        const merged = { ...profile, email: user.email };
+
+        // Resolve the OWNER's subscription for team members (manager/
+        // employee/broker), exactly as AuthContext.fetchUserWithProfile
+        // does. Without this, pages that gate off base44.auth.me() (Quotes,
+        // Production, Orders → useBillingGate) evaluate a manager against
+        // their OWN 'trial'/'expired' tier and block every save at a shop
+        // the owner is actively paying for. Never gate a team member by
+        // their own subscription_tier. Best-effort: a failed owner lookup
+        // leaves them on their own tier rather than breaking me().
+        const assignedShop = Array.isArray(profile.assigned_shops) ? profile.assigned_shops[0] : null;
+        const shopOwner = profile.shop_owner || assignedShop || merged.email;
+        const isTeamMember = !!shopOwner && shopOwner !== merged.email;
+        if (!isTeamMember) return merged;
+        try {
+          const { data: ownerSub } = await supabase
+            .from("profiles")
+            .select("subscription_tier, subscription_status, trial_ends_at, past_due_since, cancel_at_period_end, subscription_ends_at")
+            .eq("email", shopOwner)
+            .maybeSingle();
+          return resolveTeamSubscription(merged, ownerSub || null);
+        } catch {
+          return merged;
+        }
       },
     });
   },

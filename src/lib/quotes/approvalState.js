@@ -37,11 +37,20 @@ export function quoteAlreadyApproved(quote) {
 }
 
 // Fully settled — the page shows "Paid — Thank You!" instead of any CTA.
-// Unchanged from the inline QuotePayment.jsx logic (deliberately does NOT
-// treat "Converted to Order" as paid: a quote converted before payment may
-// still owe its balance through the QB link).
+//
+// The `paid` flag is the authoritative signal: it's set true by the QB
+// payment webhook + reconcile cascade when the invoice balance hits 0.
+// Status alone is NOT enough in v1 — the live QB path converts a paid
+// quote to "Converted to Order" and never writes "Paid"/"Approved and
+// Paid" (those come only from the disabled Stripe path). Without the
+// `paid` check a customer who already paid via the QB link, reopening
+// their emailed link, saw a live "Approve & Pay $X" button instead of a
+// confirmation. We deliberately do NOT key off "Converted to Order"
+// itself, because a shop can manually convert a quote to an order with
+// no payment taken — that quote still legitimately owes its balance.
 export function quoteAlreadyPaid(quote) {
   return (
+    quote?.paid === true ||
     quote?.status === "Approved and Paid" ||
     quote?.status === "Paid" ||
     (quote?.status === "Approved" && Boolean(quote?.deposit_paid))

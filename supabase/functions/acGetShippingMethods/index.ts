@@ -66,6 +66,22 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
+    // Rate-limit by client IP — this is anonymous and falls back to the
+    // platform's env creds, so an unbounded caller is a cost/quota-
+    // amplification vector against AS Colour. Same server-derived-key
+    // pattern as acSearchCatalog (never a client-supplied key).
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+    const rlAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: underLimit } = await rlAdmin.rpc("check_request_rate", {
+      p_key: `ac_shipmethods:${ip}`, p_limit_per_hr: 60,
+    });
+    if (underLimit === false) {
+      return Response.json(
+        { error: "Too many requests — please slow down and try again shortly." },
+        { status: 429, headers: CORS },
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const { accessToken } = body;
     const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
