@@ -366,7 +366,7 @@ export default function OrderDetailModal({
       const lh = parseFloat(laborHours) || 0;
       const lc = parseFloat(laborCost) || 0;
       const eh = estimatedHours === "" ? null : parseFloat(estimatedHours);
-      await base44.entities.Order.update(order.id, {
+      const updated = await base44.entities.Order.update(order.id, {
         actual_cost: ac,
         actual_labor_hours: lh,
         actual_labor_cost: lc,
@@ -375,6 +375,10 @@ export default function OrderDetailModal({
         assigned_operator: assignedOperator,
         step_notes: stepNotes,
       });
+      // Propagate to the parent list — without this, /Orders (which has no
+      // realtime subscription) keeps the stale row and reopening the modal
+      // re-seeds the old cost/labor/press values, reading as a lost save.
+      onUpdated?.(updated || { ...order, actual_cost: ac, actual_labor_hours: lh, actual_labor_cost: lc, estimated_hours: Number.isFinite(eh) ? eh : null, assigned_press: assignedPress, assigned_operator: assignedOperator, step_notes: stepNotes });
       setCostSaved(true);
       setTimeout(() => setCostSaved(false), 2000);
     } catch (err) {

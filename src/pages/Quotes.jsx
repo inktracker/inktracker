@@ -451,12 +451,30 @@ export default function Quotes() {
             <button onClick={async () => {
               if (!window.confirm(`Delete ${bulkSelect.size} selected quote(s)?`)) return;
               setBulkDeleting(true);
+              // Only drop from the UI the quotes that actually deleted. The old
+              // code swallowed per-item errors then removed ALL selected, so a
+              // failed delete made a quote vanish from the list while it still
+              // existed in the DB (it reappeared on reload).
+              const deletedIds = new Set();
+              const failed = [];
               for (const id of bulkSelect) {
-                try { await base44.entities.Quote.delete(id); } catch {}
+                try {
+                  await base44.entities.Quote.delete(id);
+                  deletedIds.add(id);
+                } catch (err) {
+                  console.error("[Quotes] bulk delete failed for", id, err);
+                  failed.push(id);
+                }
               }
-              setQuotes(prev => prev.filter(q => !bulkSelect.has(q.id)));
+              setQuotes(prev => prev.filter(q => !deletedIds.has(q.id)));
               setBulkSelect(new Set());
               setBulkDeleting(false);
+              if (failed.length > 0) {
+                notify.error(
+                  `Deleted ${deletedIds.size} of ${bulkSelect.size} quotes`,
+                  `${failed.length} couldn't be deleted and are still in your list. Try again or remove them individually.`,
+                );
+              }
             }} disabled={bulkDeleting}
               className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-50">
               <Trash2 className="w-4 h-4" />

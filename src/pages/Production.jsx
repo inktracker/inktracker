@@ -290,31 +290,39 @@ export default function Production() {
     if (step === "Completed" && order.status === "Completed" && newDate) {
       payload.completed_date = newDate;
     }
-    const updated = await base44.entities.Order.update(orderId, payload);
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    try {
+      const updated = await base44.entities.Order.update(orderId, payload);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    } catch (err) {
+      notify.error("Couldn't save that schedule date", err);
+    }
   }
 
   async function handleUpdateDueDate(orderId, newDate) {
-    const updated = await base44.entities.Order.update(orderId, { due_date: newDate || null });
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    try {
+      const updated = await base44.entities.Order.update(orderId, { due_date: newDate || null });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    } catch (err) {
+      notify.error("Couldn't update the due date", err);
+    }
   }
 
   async function handleAdvance(id) {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
-    if (idx >= 0 && idx < O_STATUSES.length - 1) {
-      const nextStatus = O_STATUSES[idx + 1];
-      // When advancing INTO Completed, also stamp completed_date.
-      // Calendar's green chip requires BOTH status==="Completed" AND
-      // completed_date — without the stamp the order silently
-      // disappears from the calendar.
-      const payload = { status: nextStatus };
-      if (nextStatus === "Completed" && !order.completed_date) {
-        payload.completed_date = todayInShopTz();
-      }
+    if (idx < 0 || idx >= O_STATUSES.length - 1) return;
+    const nextStatus = O_STATUSES[idx + 1];
+    // When advancing INTO Completed, also stamp completed_date.
+    // Calendar's green chip requires BOTH status==="Completed" AND
+    // completed_date — without the stamp the order silently
+    // disappears from the calendar.
+    const payload = { status: nextStatus };
+    if (nextStatus === "Completed" && !order.completed_date) {
+      payload.completed_date = todayInShopTz();
+    }
+    try {
       const updated = await base44.entities.Order.update(id, payload);
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-
       // Modal lifecycle: keep the order modal open while the operator
       // walks through the production pipeline (Art Approval → Order
       // Goods → Pre-Press → Printing). Closing on every click made
@@ -325,26 +333,35 @@ export default function Production() {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
       }
+    } catch (err) {
+      notify.error("Couldn't update the order status", err);
     }
   }
 
   async function handleRevert(id) {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
-    if (idx > 0) {
+    if (idx <= 0) return;
+    try {
       const updated = await base44.entities.Order.update(id, { status: O_STATUSES[idx - 1] });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       if (viewing?.id === id) setViewing(updated);
+    } catch (err) {
+      notify.error("Couldn't move the order back a step", err);
     }
   }
 
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
-    const updated = await runOrderCompletion({ order, user, base44 });
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
-    // Keep the modal open on the just-completed order so its action bar can
-    // reveal Create Invoice → Send. Only updates if this order is being viewed.
-    setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+    try {
+      const updated = await runOrderCompletion({ order, user, base44 });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      // Keep the modal open on the just-completed order so its action bar can
+      // reveal Create Invoice → Send. Only updates if this order is being viewed.
+      setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+    } catch (err) {
+      notify.error("Couldn't complete the order", err);
+    }
   }
 
   async function handleDelete(id) {
@@ -369,7 +386,12 @@ export default function Production() {
         ? "Delete this order?\n\nIts quote goes back to the broker, so nothing is lost."
         : "Delete this order?\n\nIts originating quote returns to your Quotes list, so nothing is lost.";
     if (!window.confirm(msg)) return;
-    await base44.entities.Order.delete(id);
+    try {
+      await base44.entities.Order.delete(id);
+    } catch (err) {
+      notify.error("Couldn't delete the order", err);
+      return;
+    }
     setOrders((prev) => prev.filter((o) => o.id !== id));
     setViewing(null);
 
@@ -380,10 +402,16 @@ export default function Production() {
 
   async function handleTogglePaid(order) {
     const newPaid = !order.paid;
-    const updated = await base44.entities.Order.update(order.id, {
-      paid: newPaid,
-      paid_date: newPaid ? todayInShopTz() : null,
-    });
+    let updated;
+    try {
+      updated = await base44.entities.Order.update(order.id, {
+        paid: newPaid,
+        paid_date: newPaid ? todayInShopTz() : null,
+      });
+    } catch (err) {
+      notify.error(`Couldn't mark the order ${newPaid ? "paid" : "unpaid"}`, err);
+      return;
+    }
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(updated);
   }
@@ -398,8 +426,12 @@ export default function Production() {
     } else if (step === "Order Goods") {
       // "Order Goods" maps to the order.date field
       if (orderId) {
-        const updated = await base44.entities.Order.update(orderId, { date: dateStr });
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+        try {
+          const updated = await base44.entities.Order.update(orderId, { date: dateStr });
+          setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+        } catch (err) {
+          notify.error("Couldn't move that order on the calendar", err);
+        }
       }
     } else if (orderId && step) {
       if (orderId) handleUpdateStepDate(orderId, step, dateStr);

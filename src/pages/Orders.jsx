@@ -159,23 +159,23 @@ export default function Orders() {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
     const nextStatus = idx >= 0 && idx < O_STATUSES.length - 1 ? O_STATUSES[idx + 1] : null;
-    if (nextStatus) {
-      // Calendar/Production filter requires completed_date to show the
-      // green "Completed" chip. Mirror Production.jsx handleAdvance so
-      // the order doesn't fall off the calendar when marked complete
-      // from this list.
-      const payload = { status: nextStatus };
-      if (nextStatus === "Completed" && !order.completed_date) {
-        // Shop-tz, not UTC. After ~5pm Pacific the UTC date is
-        // already tomorrow — using toISOString() here stamped
-        // tomorrow's date and the Calendar's green chip landed on
-        // the wrong day. The Alder Creek "didn't show on today"
-        // regression (2026-05-30).
-        payload.completed_date = todayInShopTz();
-      }
+    if (!nextStatus) return;
+    // Calendar/Production filter requires completed_date to show the
+    // green "Completed" chip. Mirror Production.jsx handleAdvance so
+    // the order doesn't fall off the calendar when marked complete
+    // from this list.
+    const payload = { status: nextStatus };
+    if (nextStatus === "Completed" && !order.completed_date) {
+      // Shop-tz, not UTC. After ~5pm Pacific the UTC date is
+      // already tomorrow — using toISOString() here stamped
+      // tomorrow's date and the Calendar's green chip landed on
+      // the wrong day. The Alder Creek "didn't show on today"
+      // regression (2026-05-30).
+      payload.completed_date = todayInShopTz();
+    }
+    try {
       const updated = await base44.entities.Order.update(id, payload);
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-
       // Modal lifecycle: keep open through the pipeline stages so the
       // operator doesn't lose their place mid-job. Final transition
       // to Completed → close so they return to the order queue.
@@ -183,6 +183,8 @@ export default function Orders() {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
       }
+    } catch (err) {
+      notify.error("Couldn't update the order status", err);
     }
   }
 
@@ -190,21 +192,28 @@ export default function Orders() {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
     const prevStatus = idx > 0 ? O_STATUSES[idx - 1] : null;
-    if (prevStatus) {
+    if (!prevStatus) return;
+    try {
       const updated = await base44.entities.Order.update(id, { status: prevStatus });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       if (viewing?.id === id) setViewing(updated);
+    } catch (err) {
+      notify.error("Couldn't move the order back a step", err);
     }
   }
 
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
-    const updated = await runOrderCompletion({ order, user, base44 });
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
-    // Keep the modal open on the just-completed order so its action bar can
-    // reveal Create Invoice → Send. Only updates if this order is the one
-    // being viewed; a completion triggered outside the modal leaves it closed.
-    setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+    try {
+      const updated = await runOrderCompletion({ order, user, base44 });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      // Keep the modal open on the just-completed order so its action bar can
+      // reveal Create Invoice → Send. Only updates if this order is the one
+      // being viewed; a completion triggered outside the modal leaves it closed.
+      setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+    } catch (err) {
+      notify.error("Couldn't complete the order", err);
+    }
   }
 
   async function handleDelete(id) {
@@ -228,7 +237,12 @@ export default function Orders() {
         ? "Delete this order?\n\nIts quote goes back to the broker, so nothing is lost."
         : "Delete this order?\n\nIts originating quote returns to your Quotes list, so nothing is lost.";
     if (!window.confirm(msg)) return;
-    await base44.entities.Order.delete(id);
+    try {
+      await base44.entities.Order.delete(id);
+    } catch (err) {
+      notify.error("Couldn't delete the order", err);
+      return;
+    }
     setOrders((prev) => prev.filter((o) => o.id !== id));
     setViewing(null);
 
@@ -250,12 +264,16 @@ export default function Orders() {
 
   async function handleTogglePaid(order) {
     const newPaid = !order.paid;
-    const updated = await base44.entities.Order.update(order.id, {
-      paid: newPaid,
-      paid_date: newPaid ? new Date().toISOString().split("T")[0] : null,
-    });
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
-    setViewing(updated);
+    try {
+      const updated = await base44.entities.Order.update(order.id, {
+        paid: newPaid,
+        paid_date: newPaid ? todayInShopTz() : null,
+      });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      setViewing(updated);
+    } catch (err) {
+      notify.error(`Couldn't mark the order ${newPaid ? "paid" : "unpaid"}`, err);
+    }
   }
 
   return (

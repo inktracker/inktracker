@@ -278,7 +278,14 @@ export default function Customers() {
         try {
           const updated = await base44.entities.Customer.update(primary.id, mergeFields);
           primary = updated || { ...primary, ...mergeFields };
-        } catch {}
+        } catch (e) {
+          // If carrying the duplicate's fields onto the survivor fails, we must
+          // NOT delete the duplicate — doing so would lose the very data
+          // (exemption cert, ship-to, notes) the patch was meant to preserve.
+          // Keep the duplicate in place and report it as a partial merge.
+          console.error("Customer merge additive-patch failed:", e);
+          dupReassignsOk = false;
+        }
       }
 
       if (dupReassignsOk) {
