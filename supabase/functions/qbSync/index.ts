@@ -826,7 +826,17 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       const existing = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(qbInvoiceId)}'`);
       existingInv = existing?.QueryResponse?.Invoice?.[0] ?? null;
     } catch (e) {
+      // A FAILED fetch is not the same as "invoice deleted in QB". Falling
+      // through with existingInv=null would take the create-fresh branch
+      // below and mint a -rN duplicate of a live (possibly paid) invoice —
+      // the Shana-Krochmal books-split via the error path. It would also
+      // leave existingInvoiceHadPayment=false, re-posting any deposit.
+      // Refuse and let the operator retry once QB is reachable.
       console.error(`[createInvoice] Could not fetch existing QB invoice ${qbInvoiceId}:`, (e as Error)?.message);
+      throw new Error(
+        `Couldn't reach QuickBooks to check the existing invoice for this quote. ` +
+        `Nothing was created or changed — try again in a minute.`,
+      );
     }
 
     // Record whether a payment is already applied BEFORE we mutate the invoice,

@@ -11,7 +11,7 @@ import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profile
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { decideTokenRefresh, buildRefreshedTokenFields } from "../_shared/connectionLogic.js";
 import { captureError } from "../_shared/observability.ts";
-import { claimWebhookEventDetailed, CLAIM_OUTCOMES, extractQbEventId } from "../_shared/webhookIdempotency.js";
+import { claimWebhookEventDetailed, releaseWebhookEvent, CLAIM_OUTCOMES, extractQbEventId } from "../_shared/webhookIdempotency.js";
 import { logEvent } from "../_shared/qbAudit.js";
 import { verifyQbSignature } from "../_shared/qbWebhookSignature.js";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
@@ -322,11 +322,21 @@ async function processNotification(supabase: any, notification: any) {
   for (const entity of dataChangeEvent.entities) {
     try {
       if (entity.name === "Payment" && entity.operation === "Create") {
-        // Fetch the payment to find which invoices it paid
+        // Fetch the payment to find which invoices it touched, then verify
+        // each invoice's Balance is actually 0 before flipping local state.
+        // A PARTIAL "Receive payment" in QBO fires this event too — treating
+        // it as fully paid marked the order/invoice paid locally while QB
+        // still showed an open balance, so the remainder was silently never
+        // collected (and an unconverted quote converted on a part-payment).
         const data = await qbGet(accessToken, realmId, `payment/${entity.id}`);
         const invoiceIds = extractInvoiceIdsFromPayment(data?.Payment);
         for (const invId of invoiceIds) {
-          await handlePaidInvoice(supabase, invId, shopOwner);
+          const invData = await qbGet(accessToken, realmId, `invoice/${invId}`);
+          if (isInvoiceFullyPaid(invData?.Invoice)) {
+            await handlePaidInvoice(supabase, invId, shopOwner);
+          } else {
+            console.error(`[qbWebhook] Payment ${entity.id} left invoice ${invId} with an open balance — not marking paid locally`);
+          }
         }
       }
 
@@ -396,13 +406,30 @@ Deno.serve(async (req) => {
     // can trigger QB API calls + a Resend send; a large multi-entity batch
     // fanning out simultaneously is the exact shape that trips Resend's
     // ~2 req/s account limit and spikes concurrent QB token refreshes.
-    const NOTIFICATION_CONCURRENCY = 2;
-    for (let i = 0; i < notifications.length; i += NOTIFICATION_CONCURRENCY) {
-      await Promise.all(
-        notifications
-          .slice(i, i + NOTIFICATION_CONCURRENCY)
-          .map((n: any) => processNotification(supabase, n)),
-      );
+    //
+    // Two-phase idempotency (see _shared/webhookIdempotency.js): the claim
+    // above is only a commit once this work succeeds. If a notification
+    // throws (e.g. token refresh hiccup in processNotification, before its
+    // per-entity try/catch), RELEASE the claim and return 503 so QB
+    // redelivers — otherwise the payment event is permanently dropped from
+    // real-time processing and only the nightly reconcile rescues it, up
+    // to ~24h late. Per-entity errors are still swallowed inside
+    // processNotification by design; the redelivered batch is safe to
+    // re-run because conversion/cascade steps are individually gated.
+    try {
+      const NOTIFICATION_CONCURRENCY = 2;
+      for (let i = 0; i < notifications.length; i += NOTIFICATION_CONCURRENCY) {
+        await Promise.all(
+          notifications
+            .slice(i, i + NOTIFICATION_CONCURRENCY)
+            .map((n: any) => processNotification(supabase, n)),
+        );
+      }
+    } catch (procErr) {
+      await captureError(procErr, { fn: "qbWebhook", phase: "processNotification" });
+      console.error(`[qbWebhook] Processing failed after claim ${dedupId} — releasing claim, asking QB to redeliver`);
+      await releaseWebhookEvent(supabase, "qb", dedupId as string);
+      return new Response("processing failed, retry", { status: 503, headers: CORS });
     }
 
     // QB expects a 200 response to confirm receipt
