@@ -504,7 +504,7 @@ export default function Customers() {
   };
 
   const filtered = customers.filter((c) => {
-    if (filters.name && !c.name.toLowerCase().includes(filters.name.toLowerCase())) {
+    if (filters.name && !c.name?.toLowerCase().includes(filters.name.toLowerCase())) {
       return false;
     }
     if (filters.company && !c.company?.toLowerCase().includes(filters.company.toLowerCase())) {

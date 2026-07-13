@@ -3,7 +3,7 @@ import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
 import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2 } from "lucide-react";
 import { fmtDate, getOrderDisplayClient } from "../components/shared/pricing";
-import { imprintCountText } from "@/lib/quotes/imprintLabels";
+import { imprintCountText, imprintColorLabel } from "@/lib/quotes/imprintLabels";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
 
@@ -317,7 +317,9 @@ export default function ArtApproval() {
                             </div>
                             {imp.pantones && (
                               <div className="mt-1 text-xs text-teal-700 font-medium">
-                                Ink Colors: {imp.pantones}
+                                {/* "Thread Colors" for embroidery — this is the
+                                    customer's legally-significant approval record */}
+                                {imprintColorLabel(imp)}: {imp.pantones}
                               </div>
                             )}
                             {imp.details && (

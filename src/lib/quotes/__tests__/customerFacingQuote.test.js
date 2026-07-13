@@ -118,6 +118,43 @@ describe("toCustomerFacingQuote — broker quotes", () => {
     expect(facing.subtotal).toBe(500);
     expect(facing.line_items[0]._ppp).toBe(10);
   });
+
+  it("BQ7 — client_* of 0 (the NOT NULL DEFAULT 0 migration, no backfill) also falls back", () => {
+    // Every broker quote saved BEFORE 20260607_quote_client_totals.sql has
+    // client_subtotal/tax/total = 0, not NULL — `??` alone never fell back
+    // and the customer payment page rendered "Total $0.00" next to broker
+    // wholesale per-piece prices.
+    const preMigration = {
+      broker_id: "bo@example.com",
+      subtotal: 500,
+      tax: 41.25,
+      total: 541.25,
+      client_subtotal: 0,
+      client_tax: 0,
+      client_total: 0,
+      line_items: [{ id: "x", _ppp: 10, _lineTotal: 500 }],
+    };
+    const facing = toCustomerFacingQuote(preMigration);
+    expect(facing.total).toBe(541.25);
+    expect(facing.subtotal).toBe(500);
+    expect(facing.tax).toBe(41.25);
+  });
+
+  it("BQ8 — genuinely stamped client totals still win over broker values", () => {
+    const stamped = {
+      broker_id: "bo@example.com",
+      subtotal: 500,
+      tax: 0,
+      total: 500,
+      client_subtotal: 650,
+      client_tax: 53.63,
+      client_total: 703.63,
+    };
+    const facing = toCustomerFacingQuote(stamped);
+    expect(facing.total).toBe(703.63);
+    expect(facing.subtotal).toBe(650);
+    expect(facing.tax).toBe(53.63);
+  });
 });
 
 describe("toCustomerFacingQuote — non-broker quotes", () => {

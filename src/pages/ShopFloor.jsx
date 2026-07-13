@@ -17,6 +17,7 @@ import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 import { getStageTasks } from "@/lib/productionTasks";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
+import { todayInShopTz } from "@/lib/shopTimezone";
 
 // Collect every artwork file attached to an order so press operators
 // can preview them inline. Mirrors OrderDetailModal.getOrderArtwork:
@@ -492,7 +493,9 @@ export default function ShopFloor() {
   const getQty = (order) => (order.line_items || []).reduce((sum, li) =>
     sum + Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0), 0);
 
-  const isOverdue = (order) => order.due_date && order.due_date < new Date().toISOString().split("T")[0] && order.status !== "Completed";
+  // Shop-timezone "today", NOT the UTC date — toISOString flips to
+  // tomorrow at ~5pm Pacific and flagged orders LATE while still due today.
+  const isOverdue = (order) => order.due_date && order.due_date < todayInShopTz() && order.status !== "Completed";
 
   // Error state
   if (error) {

@@ -5,6 +5,7 @@ import {
 } from "@/lib/orderGoodsProgress";
 import { sortSizeEntries } from "../../shared/pricing";
 import { getStageTasks } from "@/lib/productionTasks";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 
 // Floor Mode Panel — stage-aware per-size tracking.
 //   Order Goods: ordered/received cycle (goods_progress).
@@ -138,13 +139,15 @@ export default function FloorModePanel({
                       ? `${imp.width}" × ${imp.height}"`
                       : imp.width ? `${imp.width}" wide`
                       : imp.height ? `${imp.height}" tall` : "";
-                    const nColors = Number(imp.colors) || 0;
                     return (
                       <div key={ii} className="flex flex-wrap items-baseline gap-x-1.5 text-xs text-slate-600 bg-slate-50 rounded-lg px-2.5 py-1.5">
                         {imp.title && <span className="font-bold text-slate-800">{imp.title}</span>}
                         <span className="font-semibold text-teal-700">{imp.location || "Print"}</span>
                         <span className="text-slate-300">·</span>
-                        <span>{nColors} color{nColors === 1 ? "" : "s"}</span>
+                        {/* imprintCountText, never raw imp.colors — for
+                            Embroidery colors is a stitch-tier INDEX and the
+                            operator would set up against a fake color count */}
+                        <span>{imprintCountText(imp)}</span>
                         {imp.technique && (<><span className="text-slate-300">·</span><span>{imp.technique}</span></>)}
                         {imp.pantones && (<><span className="text-slate-300">·</span><span className="text-slate-500">{imp.pantones}</span></>)}
                         {dim && (<><span className="text-slate-300">·</span><span className="text-slate-500">{dim}</span></>)}

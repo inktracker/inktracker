@@ -11,11 +11,14 @@ import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import { shopScope } from "@/lib/shopScope";
+import { localDateStr } from "@/lib/dateRangeUtils";
 
 function getThisMonth() {
+  // localDateStr, not toISOString — UTC conversion shifted the month
+  // boundaries a day for shops east of UTC (see dateRangeUtils.js).
   const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+  const from = localDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
+  const to = localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   return { from, to };
 }
 
