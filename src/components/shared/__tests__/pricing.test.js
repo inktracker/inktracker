@@ -1482,6 +1482,26 @@ describe("calcSetupScreenCount", () => {
     expect(calcSetupScreenCount([li1, li2])).toBe(4); // 3 (front) + 1 (back), front not double-counted
   });
 
+  it("does NOT collapse untitled prints at different locations (the $25 undercount)", () => {
+    // Title/width/height are all blank by default in both the editor and
+    // every wizard submission, so getPrintKey alone can't tell Front from
+    // Back — placement must. 4 + 1 = 5 screens, not max(4,1) = 4.
+    const li = {
+      imprints: [
+        { technique: "Screen Print", location: "Front", colors: 4 },
+        { technique: "Screen Print", location: "Back", colors: 1 },
+      ],
+    };
+    expect(calcSetupScreenCount([li])).toBe(5);
+  });
+
+  it("still dedupes the same untitled print shared across line items at one location", () => {
+    // Run-level wizard imprints repeat identically on every garment line —
+    // one set of screens regardless of how many garments share the run.
+    const front = { technique: "Screen Print", location: "Front", colors: 3 };
+    expect(calcSetupScreenCount([{ imprints: [front] }, { imprints: [front] }])).toBe(3);
+  });
+
   it("ignores embroidery imprints (no screens used)", () => {
     const li = {
       imprints: [

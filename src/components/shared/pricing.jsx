@@ -621,7 +621,7 @@ const DEFAULT_EMB_PRICING = {
   "10K-15K":  { 12: 12.50, 24: 11.00, 48: 9.75, 72: 8.75, 144: 8.00 },
   "15K+":     { 12: 15.00, 24: 13.50, 48: 12.00, 72: 10.75, 144: 9.75 },
 };
-const DEFAULT_EMB_STITCH_TIERS = ["Under 5K", "5K-10K", "10K-15K", "15K+"];
+export const DEFAULT_EMB_STITCH_TIERS = ["Under 5K", "5K-10K", "10K-15K", "15K+"];
 const DEFAULT_EMB_QTY_TIERS = [12, 24, 48, 72, 144];
 
 function getEmbroideryPPP(stitchIdx, qty, configOverride) {
@@ -692,15 +692,26 @@ export function buildLinkedQtyMap(lineItems) {
 // Same artwork shared across multiple line items (same `getPrintKey`)
 // only counts ONCE — the shop only burns one set of screens for it.
 // Embroidery imprints aren't counted (no screens, separate digitizing).
+//
+// The dedupe key here adds `location` on top of getPrintKey. getPrintKey
+// is technique|title|width|height, and title/width/height are all blank
+// by default (editor addImprint + every wizard submission) — so an
+// untitled Front 4-color and Back 1-color would otherwise collapse to
+// one key and bill max(4,1)=4 screens instead of 5. Placement is the
+// one field that always distinguishes two prints on the same job.
+// Deliberately NOT changed in getPrintKey itself: the qty-linking maps
+// (findLinkedPrints/buildLinkedQtyMap) want same-art imprints combined
+// across line items regardless, and location is stable across lines in
+// the run-level wizard flow, so those semantics stay put.
 export function calcSetupScreenCount(lineItems) {
-  const seen = new Map();  // print-key → max color count seen for this print
+  const seen = new Map();  // print-key+location → max color count seen for this print
   (lineItems || []).forEach((li) => {
     (li.imprints || []).forEach((imp) => {
       const tech = imp?.technique || "Screen Print";
       if (tech !== "Screen Print") return;
       const colors = Math.max(0, Number(imp?.colors) || 0);
       if (colors === 0) return;
-      const key = getPrintKey(imp);
+      const key = `${getPrintKey(imp)}|${imp?.location || ""}`;
       // If the same print key shows up twice with different color counts
       // (shouldn't normally — colors are part of the imprint config not
       // the key — but be defensive), take the higher count so we don't
