@@ -339,3 +339,35 @@ export function isInvoiceFullyPaid(invoice) {
   if (!Number.isFinite(balance) || !Number.isFinite(total)) return false;
   return total > 0 && balance === 0;
 }
+
+// Was this QB invoice paid RECENTLY, per its own MetaData.LastUpdatedTime?
+//
+// The nightly reconcile is a catch-up for MISSED webhooks — so its
+// "payment received" email should only fire for a genuinely fresh
+// payment. Without this gate, anything that flips a quote's local `paid`
+// flag long after the fact (a schema backfill, a re-connected QB company
+// with months of paid history) makes the reconcile treat every old
+// already-paid invoice as a brand-new payment and email the shop owner
+// once per invoice. That is exactly the 2026-07-13 blast: adding the
+// quotes.paid column let the flag finally flip, and 14 stale
+// notifications went out across two shops.
+//
+// LastUpdatedTime is the same field qbSync uses to derive a QB paid date
+// (handlePullInvoices). For a paid invoice that hasn't been edited since,
+// it is ~when the payment posted. A conservative window (default 7 days)
+// keeps real missed-webhook catch-ups notifying while suppressing history.
+//
+// Fails CLOSED (returns false = "not fresh, don't notify") when the
+// timestamp is missing or unparseable: a suppressed heads-up email is a
+// far lesser evil than a stale-payment blast, and the DB flip + audit log
+// still happen regardless of this return.
+export function isRecentQbPayment(invoice, { now = Date.now(), windowDays = 7 } = {}) {
+  const raw = invoice?.MetaData?.LastUpdatedTime;
+  if (!raw) return false;
+  const ts = Date.parse(raw);
+  if (!Number.isFinite(ts)) return false;
+  const ageMs = now - ts;
+  // Future timestamps (clock skew) count as recent, not stale.
+  if (ageMs < 0) return true;
+  return ageMs <= windowDays * 24 * 60 * 60 * 1000;
+}

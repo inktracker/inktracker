@@ -8,6 +8,7 @@ import {
   buildOrderInsertFromQuote,
   extractInvoiceIdsFromPayment,
   isInvoiceFullyPaid,
+  isRecentQbPayment,
   PAID_INVOICE_ACTIONS,
 } from "../qbWebhookLogic.js";
 
@@ -441,6 +442,49 @@ describe("isInvoiceFullyPaid", () => {
     // Negative balance means QB has more from the customer than owed —
     // typically a credit on file. We don't auto-convert in that case.
     expect(isInvoiceFullyPaid({ Balance: -1 })).toBe(false);
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// isRecentQbPayment — the 2026-07-13 stale-notification-blast guard
+// ════════════════════════════════════════════════════════════════════════════
+
+describe("isRecentQbPayment", () => {
+  const NOW = Date.parse("2026-07-13T08:00:00Z");
+
+  it("true when the invoice was last updated within the window", () => {
+    const inv = { MetaData: { LastUpdatedTime: "2026-07-12T10:00:00Z" } }; // ~22h ago
+    expect(isRecentQbPayment(inv, { now: NOW })).toBe(true);
+  });
+
+  it("false for an invoice QB last touched months ago (the stale-blast case)", () => {
+    // This is exactly what fired 14 owner emails: old paid invoices whose
+    // local paid flag only just flipped from a schema backfill.
+    const inv = { MetaData: { LastUpdatedTime: "2026-01-15T10:00:00Z" } };
+    expect(isRecentQbPayment(inv, { now: NOW })).toBe(false);
+  });
+
+  it("respects a custom window", () => {
+    const inv = { MetaData: { LastUpdatedTime: "2026-07-08T08:00:00Z" } }; // 5 days
+    expect(isRecentQbPayment(inv, { now: NOW, windowDays: 3 })).toBe(false);
+    expect(isRecentQbPayment(inv, { now: NOW, windowDays: 7 })).toBe(true);
+  });
+
+  it("fails CLOSED (false) when the timestamp is missing or unparseable", () => {
+    expect(isRecentQbPayment({}, { now: NOW })).toBe(false);
+    expect(isRecentQbPayment({ MetaData: {} }, { now: NOW })).toBe(false);
+    expect(isRecentQbPayment({ MetaData: { LastUpdatedTime: "not-a-date" } }, { now: NOW })).toBe(false);
+    expect(isRecentQbPayment(null, { now: NOW })).toBe(false);
+  });
+
+  it("treats a future timestamp (clock skew) as recent, not stale", () => {
+    const inv = { MetaData: { LastUpdatedTime: "2026-07-14T08:00:00Z" } };
+    expect(isRecentQbPayment(inv, { now: NOW })).toBe(true);
+  });
+
+  it("boundary: exactly at the window edge counts as recent", () => {
+    const inv = { MetaData: { LastUpdatedTime: "2026-07-06T08:00:00Z" } }; // exactly 7 days
+    expect(isRecentQbPayment(inv, { now: NOW, windowDays: 7 })).toBe(true);
   });
 });
 
