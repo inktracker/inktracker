@@ -54,12 +54,16 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await supaUser.auth.getUser(accessToken);
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
-    // Subscription check — FedEx labels cost money
+    // Subscription check — FedEx labels cost money. Also resolve the shop
+    // tenant key: for a team member (manager) shop_owner points at the owner,
+    // and the order rows are keyed by the owner's email, not the manager's.
+    let shopOwner = user.email as string;
     {
       const admin = adminClient();
-      const { data: subProfile } = await admin.from("profiles").select("subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+      const { data: subProfile } = await admin.from("profiles").select("shop_owner, email, subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
       const blocked = requireActiveSubscription(subProfile);
       if (blocked) return blocked;
+      shopOwner = subProfile?.shop_owner || subProfile?.email || user.email;
     }
 
     // ── validateAddress ────────────────────────────────────────────
@@ -264,7 +268,7 @@ Deno.serve(async (req) => {
             shipping_status: "Label Created",
           })
             .eq("id", orderId)
-            .eq("shop_owner", user.email);
+            .eq("shop_owner", shopOwner);
           if (updErr) {
             console.error("[fedex-ship] order update failed:", updErr.message);
           }

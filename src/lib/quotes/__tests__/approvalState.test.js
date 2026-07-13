@@ -66,8 +66,17 @@ describe("quoteAlreadyPaid — unchanged from the inline QuotePayment logic", ()
     expect(quoteAlreadyPaid({ status: "Approved", deposit_paid: false })).toBe(false);
   });
 
-  it("false for Converted to Order — the balance may still be owed through the QB link", () => {
+  it("false for a MANUALLY converted quote with no payment (balance still owed)", () => {
     expect(quoteAlreadyPaid({ status: "Converted to Order" })).toBe(false);
+    expect(quoteAlreadyPaid({ status: "Converted to Order", paid: false })).toBe(false);
+  });
+
+  it("true when the QB-set paid flag is true, regardless of status (the live QB-paid path)", () => {
+    // The QB payment path converts to "Converted to Order" and sets paid=true;
+    // it never writes "Paid". Without the flag check the customer saw a live
+    // Approve & Pay button after already paying.
+    expect(quoteAlreadyPaid({ status: "Converted to Order", paid: true })).toBe(true);
+    expect(quoteAlreadyPaid({ status: "Approved", paid: true })).toBe(true);
   });
 
   it("false on null quote", () => {

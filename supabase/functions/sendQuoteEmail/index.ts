@@ -246,7 +246,9 @@ Deno.serve(async (req) => {
     }
 
     const emailSubject = subject || `Your Quote from ${shopName} - Quote #${quoteId}`;
-    const total = Number(quoteTotal || 0).toFixed(2);
+    const totalNum = Number(quoteTotal);
+    const hasRealTotal = Number.isFinite(totalNum) && totalNum > 0;
+    const total = (hasRealTotal ? totalNum : 0).toFixed(2);
 
     // Anything that flows from user-controlled fields (customer name from
     // the public wizard, broker-set display name + email, the custom body)
@@ -291,7 +293,10 @@ Deno.serve(async (req) => {
         `
       }
       ${proofHtml}
-      ${renderEmailHighlight("Quote Total", `$${total}`)}
+      ${/* Suppress the total on the public-wizard confirmation, which sends no
+           quoteTotal — otherwise every "we received your request" email showed
+           a prominent "Quote Total $0.00" contradicting the message. */ ""}
+      ${hasRealTotal ? renderEmailHighlight("Quote Total", `$${total}`) : ""}
       ${(paymentLink || approveLink) ? renderEmailButton(buttonLabel || "View Quote & Pay Online", paymentLink || approveLink) : ""}
       ${brokerName ? `<p style="color:${EMAIL_MUTED};font-size:13px;margin:8px 0 0;">Submitted by ${safeBrokerName}${brokerEmail ? ` &middot; ${safeBrokerEmail}` : ""}</p>` : ""}
     `;
