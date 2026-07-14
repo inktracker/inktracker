@@ -131,6 +131,14 @@ export default function BrokerQuoteEditor({
   const isTaxExempt = selectedCustomer?.tax_exempt || false;
   const clientArtwork = selectedCustomer?.artwork_files || [];
 
+  // CACHE-01: price EXPLICITLY against the target shop's config, not the module
+  // global `_pc`. The broker dashboard is multi-shop — `_pc` holds whichever
+  // shop was last viewed, so a live recompute here could bleed shop A's rates
+  // onto a shop-B quote. Threading `shop.pricing_config` makes the broker
+  // editor's money path config-explicit; falls back to the global (undefined)
+  // for early shops whose record has no pricing_config, matching prior behavior.
+  const shopConfig = shop?.pricing_config || undefined;
+
   const brokerQuote = useMemo(
     () => ({
       ...q,
@@ -144,13 +152,14 @@ export default function BrokerQuoteEditor({
   // matching the regular shop quote behavior.
   const clientTaxRate = isTaxExempt ? 0 : (parseFloat(q.broker_tax_rate) || 0);
 
-  const totals = calcQuoteTotals(brokerQuote, BROKER_MARKUP);
+  const totals = calcQuoteTotals(brokerQuote, BROKER_MARKUP, shopConfig);
   const retailTotals = calcQuoteTotals(
     {
       ...q,
       tax_rate: clientTaxRate,
     },
-    STANDARD_MARKUP
+    STANDARD_MARKUP,
+    shopConfig
   );
 
   const brokerProfit = Math.max(0, retailTotals.total - totals.total);
@@ -287,8 +296,8 @@ export default function BrokerQuoteEditor({
         const qty = getQty(li);
         if (!qty) return li;
         const lineExtras = getLineExtras(li, q);
-        const brokerR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, BROKER_MARKUP, linkedQtyMap);
-        const clientR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, STANDARD_MARKUP, linkedQtyMap);
+        const brokerR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, BROKER_MARKUP, linkedQtyMap, undefined, shopConfig);
+        const clientR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, STANDARD_MARKUP, linkedQtyMap, undefined, shopConfig);
         const clientOverride = Number(li?.clientPpp);
         const hasClientOverride = Number.isFinite(clientOverride) && clientOverride > 0;
 

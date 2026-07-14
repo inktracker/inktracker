@@ -1731,3 +1731,38 @@ describe("getOrderDisplayJobTitle — surfaced for direct orders too", () => {
     expect(getOrderDisplayJobTitle({ broker_id: "b1", broker_client_name: "Acme Co" })).toBe("Acme Co");
   });
 });
+
+// ── CACHE-01 config-explicit guarantee ──────────────────────────────────────
+// The money-path entry points must price against an EXPLICITLY threaded config
+// (configOverride), NOT the module global `_pc`. This is the guard that a
+// multi-shop surface (broker dashboard) can't bleed the last-viewed shop's
+// rates onto another shop's quote. See docs/cache-01-pricing-config-scope.md.
+describe("calcQuoteTotals — threaded config wins over the global (CACHE-01)", () => {
+  const quote = {
+    line_items: [{
+      id: "L1", style: "1717", garmentCost: "5.00", garmentColor: "Black",
+      sizes: { M: "50" },
+      imprints: [{ id: "i1", location: "Front", colors: 1, technique: "Screen Print" }],
+    }],
+    rush_rate: 0, discount: 0, discount_type: "percent", tax_rate: 0,
+  };
+
+  // Two configs with clearly different first-print rate tables.
+  const configCheap = { firstPrint: { 1: { 25: 1.00, 50: 1.00, 100: 1.00, 200: 1.00 } }, tiers: [25, 50, 100, 200] };
+  const configPricey = { firstPrint: { 1: { 25: 9.00, 50: 9.00, 100: 9.00, 200: 9.00 } }, tiers: [25, 50, 100, 200] };
+
+  beforeEach(() => loadShopPricingConfig(null));
+
+  it("uses the threaded config, not the loaded global", () => {
+    // Global holds the CHEAP shop; we price with the PRICEY shop threaded in.
+    loadShopPricingConfig(configCheap, "cheap@shop.com");
+    const withThread = calcQuoteTotals(quote, STANDARD_MARKUP, configPricey);
+    const globalOnly = calcQuoteTotals(quote, STANDARD_MARKUP); // reads the cheap global
+    expect(withThread.total).toBeGreaterThan(globalOnly.total);
+    // And the threaded result must match pricing as if the pricey shop were loaded.
+    loadShopPricingConfig(configPricey, "pricey@shop.com");
+    const asLoaded = calcQuoteTotals(quote, STANDARD_MARKUP);
+    expect(withThread.total).toBeCloseTo(asLoaded.total, 2);
+    loadShopPricingConfig(null);
+  });
+});
