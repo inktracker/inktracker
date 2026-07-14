@@ -53,6 +53,22 @@ export function savedAfterDiscount(quote) {
 }
 
 /**
+ * The saved rush total, summed from the immutable per-line `_rushFee` stamps
+ * the editor wrote at save time. This is the ONE source of truth for the rush
+ * amount on a saved quote: `quote.rushTotal` was never persisted (so every
+ * viewer that read it got 0 and hid the rush row), and the live-recomputed
+ * `rushTotal` from calcQuoteTotals drifts when the shop's rush rate changes
+ * after send — which made the PDF print a live rush figure alongside a saved
+ * subtotal that already included rush, double-counting it. For a broker quote
+ * already passed through toCustomerFacingQuote, `_rushFee` has been swapped to
+ * the client-facing value, so this sums the correct number either way.
+ */
+export function savedRushTotal(quote) {
+  const items = Array.isArray(quote?.line_items) ? quote.line_items : [];
+  return items.reduce((s, li) => s + (Number(li?._rushFee) || 0), 0);
+}
+
+/**
  * Resolve the effective totals for a quote — saved values win, fall
  * back to live calc when missing or blank.
  *
@@ -91,6 +107,11 @@ export function effectiveQuoteTotals(quote, markup = undefined) {
       sub:   savedSubtotal != null ? savedSubtotal : live.sub,
       tax:   effTax,
       total: quote.total,
+      // Rush from the SAVED per-line stamps, not the live recompute spread in
+      // by `...live`. `savedSubtotal` includes rush, so a rush line must be
+      // "subtotal − rushTotal + rushTotal" to foot; using the live figure here
+      // let the PDF's rush line drift from what's baked into the saved subtotal.
+      rushTotal: savedRushTotal(quote),
       // Derive afterDisc from SAVED total/tax/setup/fees — NOT the live calc —
       // so the discount the PDF prints matches the saved snapshot and the
       // column foots. (Previously left as the live `...live` value, which

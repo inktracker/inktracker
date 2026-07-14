@@ -1,4 +1,4 @@
-import { fmtMoney, getMinOrderQty } from "@/components/shared/pricing";
+import { fmtMoney, getMinOrderQty, getWizardRushDisplay } from "@/components/shared/pricing";
 import { summarizeImprints } from "@/components/wizard/steps/wizardHelpers";
 
 // Desktop pricing side panel + mobile bottom pricing bar. Extracted
@@ -103,7 +103,7 @@ export default function PriceSidebar({
                   {rush && (
                     <div className="flex justify-between text-sm">
                       <span style={{ color: "rgba(255,255,255,0.75)" }}>Turnaround</span>
-                      <span style={{ color: "#FDBA74" }}>Rush · +20%</span>
+                      <span style={{ color: "#FDBA74" }}>Rush · +{Math.round(getWizardRushDisplay().rate * 100)}%</span>
                     </div>
                   )}
                   <div className="pt-3 border-t flex items-baseline justify-between" style={{ borderColor: "rgba(255,255,255,0.2)" }}>

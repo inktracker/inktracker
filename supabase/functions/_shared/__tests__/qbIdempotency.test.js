@@ -153,8 +153,14 @@ describe("withQbIdempotency — replay paths (QR1–QR4)", () => {
     expect(result.result).toBe(null);
   });
 
-  it("QR3 — failed prior call → returns CACHED with null result (caller can mint new key to retry)", async () => {
-    const sb = makeSupabase([{
+  it("QR3 — failed prior call (same key) → RECLAIMS the row and re-runs fn (retry), never a fake empty success", async () => {
+    // A failed attempt stored no result; replaying it as CACHED returned a
+    // null result the caller read as a fake success. A retry with the same
+    // key must actually re-execute (a failed attempt created nothing, so
+    // there's no duplicate risk). Stateful mock so the failed-reclaim
+    // conditional UPDATE (.eq status=failed) returns count=1 → EXECUTED.
+    const rows = new Map();
+    rows.set("k-bad", {
       key: "k-bad",
       shop_owner: ctx.shop_owner,
       action: ctx.action,
@@ -162,13 +168,45 @@ describe("withQbIdempotency — replay paths (QR1–QR4)", () => {
       result: null,
       error_message: "previous attempt died",
       expires_at: new Date(Date.now() + IDEMPOTENCY_TTL_MS).toISOString(),
-    }]);
-    const fn = vi.fn();
+    });
+    const sb = {
+      rows,
+      from() {
+        return {
+          insert() { return Promise.resolve({ error: { code: "23505", message: "duplicate" } }); },
+          update(patch, opts = {}) {
+            const preds = [];
+            const exec = () => {
+              let count = 0;
+              for (const [k, r] of rows.entries()) {
+                if (preds.every((p) => p(r))) { rows.set(k, { ...r, ...patch }); count++; }
+              }
+              return { error: null, count: opts.count === "exact" ? count : null };
+            };
+            const b = {
+              eq(col, val) { preds.push((r) => r[col] === val); return b; },
+              lt(col, val) { preds.push((r) => r[col] < val); return b; },
+              then(resolve) { resolve(exec()); },
+            };
+            return b;
+          },
+          select() {
+            return {
+              eq() { return this; },
+              maybeSingle() {
+                return Promise.resolve({ data: rows.get("k-bad") || null, error: null });
+              },
+            };
+          },
+        };
+      },
+    };
+    const fn = vi.fn(() => Promise.resolve({ qbInvoiceId: "RETRIED-1" }));
     const result = await withQbIdempotency(sb, "k-bad", ctx, fn);
 
-    expect(fn).not.toHaveBeenCalled();
-    expect(result.outcome).toBe(IDEMPOTENCY_OUTCOMES.CACHED);
-    expect(result.result).toBe(null);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(result.outcome).toBe(IDEMPOTENCY_OUTCOMES.EXECUTED);
+    expect(result.result).toEqual({ qbInvoiceId: "RETRIED-1" });
   });
 
   it("QR4b — in_flight EXPIRED but another retry won the conditional UPDATE → signal IN_FLIGHT, do NOT run fn", async () => {

@@ -9,7 +9,7 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
   const [merging, setMerging] = useState(false);
   const [merged, setMerged] = useState([]);
   // Confirm dialog state — single overlay shared across groups.
-  const [confirm, setConfirm] = useState(null); // { gi, primary, duplicates, descriptions }
+  const [confirm, setConfirm] = useState(null); // { key, primary, duplicates, descriptions }
   // QB reconcile state, keyed by group index → { loading, results: [{id, status, ...}] }
   const [reconcile, setReconcile] = useState({});
 
@@ -45,11 +45,15 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
     return groups;
   }, [customers]);
 
-  const [selected, setSelected] = useState(() => {
-    const s = {};
-    duplicateGroups.forEach((g, gi) => { s[gi] = 0; });
-    return s;
-  });
+  // Stable identity for a group, independent of its position in the list.
+  // State (selected keeper, merged badge, reconcile results) is keyed by this,
+  // NOT the array index — after a merge the parent drops the merged ids, the
+  // groups recompute and RE-INDEX, and index-keyed state would then paint the
+  // "Merged" badge / selection onto a different, unmerged group.
+  const groupKey = (group) => group.map((c) => c.id).sort().join("|");
+
+  // Keeper selection per group key; reads default to 0 (first member).
+  const [selected, setSelected] = useState({});
 
   // Per-group QB status: how many customers in the group are linked
   // to a QuickBooks customer. Drives whether we surface a merge
@@ -65,11 +69,11 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
     };
   }
 
-  async function runActualMerge(gi, primary, duplicates) {
+  async function runActualMerge(key, primary, duplicates) {
     setMerging(true);
     try {
       await onMerge(primary, duplicates);
-      setMerged(prev => [...prev, gi]);
+      setMerged(prev => [...prev, key]);
     } catch (err) {
       notify.error("Merge failed", err);
     } finally {
@@ -80,16 +84,16 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
   // Called when the operator hits "Merge into selected" on a safe
   // (≤1 QB-linked) group. Builds a per-duplicate preview of what
   // will move using describeMergeFor, opens the confirm dialog.
-  function handleMergeClick(groupIdx) {
-    const group = duplicateGroups[groupIdx];
-    const primaryIdx = selected[groupIdx] || 0;
+  function handleMergeClick(group) {
+    const key = groupKey(group);
+    const primaryIdx = selected[key] || 0;
     const primary = group[primaryIdx];
     const duplicates = group.filter((_, i) => i !== primaryIdx);
     const descriptions = duplicates.map((dup) => ({
       dup,
       items: describeMergeFor(primary, dup),
     }));
-    setConfirm({ gi: groupIdx, primary, duplicates, descriptions });
+    setConfirm({ key, primary, duplicates, descriptions });
   }
 
   // Read-only QB query for every linked customer in the group. Used
@@ -97,9 +101,9 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
   // each qb_customer_id to figure out which one is now Active=false
   // (the loser of the QB merge) so we can finish the InkTracker side
   // safely. No destructive QB write is ever attempted from here.
-  async function handleReconcile(gi) {
-    const group = duplicateGroups[gi];
-    setReconcile(prev => ({ ...prev, [gi]: { loading: true, results: null, error: null } }));
+  async function handleReconcile(group) {
+    const key = groupKey(group);
+    setReconcile(prev => ({ ...prev, [key]: { loading: true, results: null, error: null } }));
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Not signed in");
@@ -122,9 +126,9 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
           mergedIntoId: data?.mergedIntoId || null,
         });
       }
-      setReconcile(prev => ({ ...prev, [gi]: { loading: false, results, error: null } }));
+      setReconcile(prev => ({ ...prev, [key]: { loading: false, results, error: null } }));
     } catch (err) {
-      setReconcile(prev => ({ ...prev, [gi]: { loading: false, results: null, error: err.message || String(err) } }));
+      setReconcile(prev => ({ ...prev, [key]: { loading: false, results: null, error: err.message || String(err) } }));
     }
   }
 
@@ -132,9 +136,9 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
   // others are Inactive/notfound (i.e. QB merge was already done),
   // the operator can finish the InkTracker side. We pick the active
   // one as primary and merge everyone else into it.
-  function handleReconcileMerge(gi) {
-    const group = duplicateGroups[gi];
-    const { results } = reconcile[gi] || {};
+  function handleReconcileMerge(group) {
+    const key = groupKey(group);
+    const { results } = reconcile[key] || {};
     if (!results) return;
     const activeIdx = group.findIndex((c) => {
       const r = results.find(rr => rr.id === c.id);
@@ -150,7 +154,7 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
       dup,
       items: describeMergeFor(primary, dup),
     }));
-    setConfirm({ gi, primary, duplicates, descriptions });
+    setConfirm({ key, primary, duplicates, descriptions });
   }
 
   return (
@@ -171,17 +175,19 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
           )}
 
           {duplicateGroups.map((group, gi) => {
-            if (merged.includes(gi)) return (
-              <div key={gi} className="px-6 py-4 border-b border-slate-50 bg-emerald-50 flex items-center gap-2 text-sm text-emerald-700 font-semibold">
+            const key = groupKey(group);
+            if (merged.includes(key)) return (
+              <div key={key} className="px-6 py-4 border-b border-slate-50 bg-emerald-50 flex items-center gap-2 text-sm text-emerald-700 font-semibold">
                 <Check className="w-4 h-4" /> Merged
               </div>
             );
 
             const qb = groupQbStatus(group);
-            const rec = reconcile[gi];
+            const rec = reconcile[key];
+            const keeperIdx = selected[key] ?? 0;
 
             return (
-              <div key={gi} className="px-6 py-4 border-b border-slate-100">
+              <div key={key} className="px-6 py-4 border-b border-slate-100">
                 <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">
                   Group {gi + 1} — {group.length} records
                 </div>
@@ -191,10 +197,10 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                     const recRow = rec?.results?.find((r) => r.id === c.id);
                     return (
                       <label key={c.id}
-                        className={`flex items-center gap-3 p-3 rounded-xl border ${qb.multiLinked ? "cursor-default" : "cursor-pointer"} transition ${selected[gi] === ci && !qb.multiLinked ? "border-teal-400 bg-teal-50" : "border-slate-100 hover:border-slate-200"}`}>
+                        className={`flex items-center gap-3 p-3 rounded-xl border ${qb.multiLinked ? "cursor-default" : "cursor-pointer"} transition ${keeperIdx === ci && !qb.multiLinked ? "border-teal-400 bg-teal-50" : "border-slate-100 hover:border-slate-200"}`}>
                         {!qb.multiLinked && (
-                          <input type="radio" name={`group-${gi}`} checked={selected[gi] === ci}
-                            onChange={() => setSelected(prev => ({ ...prev, [gi]: ci }))}
+                          <input type="radio" name={`group-${key}`} checked={keeperIdx === ci}
+                            onChange={() => setSelected(prev => ({ ...prev, [key]: ci }))}
                             className="accent-teal-600" />
                         )}
                         <div className="flex-1 min-w-0">
@@ -207,7 +213,7 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                             {recRow?.qbStatus === "notfound" && <span className="text-slate-500 font-semibold bg-slate-100 px-1.5 rounded">QB · Not found</span>}
                           </div>
                         </div>
-                        {!qb.multiLinked && selected[gi] === ci && (
+                        {!qb.multiLinked && keeperIdx === ci && (
                           <span className="text-xs font-semibold text-teal-600 bg-teal-100 px-2 py-0.5 rounded-full">Keep</span>
                         )}
                       </label>
@@ -237,7 +243,7 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                     </div>
                     <div className="mt-3 flex items-center gap-2 flex-wrap">
                       <button
-                        onClick={() => handleReconcile(gi)}
+                        onClick={() => handleReconcile(group)}
                         disabled={rec?.loading}
                         className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                       >
@@ -252,7 +258,7 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                         if (activeCount === 1) {
                           return (
                             <button
-                              onClick={() => handleReconcileMerge(gi)}
+                              onClick={() => handleReconcileMerge(group)}
                               disabled={merging}
                               className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
                             >
@@ -274,7 +280,7 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                      additive-merge helper handles everything; the
                      confirm dialog shows the operator the exact diff
                      before any write happens. */
-                  <button onClick={() => handleMergeClick(gi)} disabled={merging}
+                  <button onClick={() => handleMergeClick(group)} disabled={merging}
                     className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">
                     {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
                     Merge into selected
@@ -338,9 +344,9 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
               </button>
               <button
                 onClick={async () => {
-                  const { gi, primary, duplicates } = confirm;
+                  const { key, primary, duplicates } = confirm;
                   setConfirm(null);
-                  await runActualMerge(gi, primary, duplicates);
+                  await runActualMerge(key, primary, duplicates);
                 }}
                 disabled={merging}
                 className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 px-4 py-1.5 rounded-lg transition disabled:opacity-50"

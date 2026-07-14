@@ -873,7 +873,21 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     } else {
       tier = getTier(tierQty, techTiers);
       const table = isFirstInGroup ? techFp : techAp;
-      rate = table[colors]?.[tier] ?? table[Math.min(colors, techMaxColors)]?.[tier] ?? 0;
+      // Per-cell fallback to the Screen Print rate for a missing custom cell.
+      // A custom technique table can be sparse (the Account editor writes it
+      // cell-by-cell, and it promises "fields with no value fall back to your
+      // Screen Print rates"). getTechniqueRates uses the whole sparse object,
+      // so a filled 1-color row but empty 3-color row left table[3] undefined
+      // and priced the decoration at $0. Fall back to the base Screen Print
+      // cell (keyed by the base tiers) before giving up to 0.
+      const baseTable = isFirstInGroup ? fp : ap;
+      const baseTier = getTier(tierQty, pc?.tiers || [25, 50, 100, 200]);
+      rate =
+        table[colors]?.[tier] ??
+        table[Math.min(colors, techMaxColors)]?.[tier] ??
+        baseTable[colors]?.[baseTier] ??
+        baseTable[Math.min(colors, maxColors)]?.[baseTier] ??
+        0;
     }
     const lineCost = Math.round(rate * qty * 100) / 100;
 

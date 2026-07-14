@@ -322,6 +322,9 @@ export default function Invoices() {
             {!loading && invoices.length === 0 && (
               <tr><td colSpan={9}><EmptyState type="invoices" /></td></tr>
             )}
+            {!loading && invoices.length > 0 && sorted.length === 0 && (
+              <tr><td colSpan={9} className="py-8 text-center text-sm text-slate-500">No invoices match your current filters.</td></tr>
+            )}
             {sorted.map(inv=>(
               <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 transition cursor-pointer" onClick={() => setSelected(inv)}>
                 <td className="px-4 py-3.5 font-mono text-xs text-slate-500">{inv.invoice_id}</td>
@@ -351,6 +354,9 @@ export default function Invoices() {
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <ListCardsSkeleton />}
           {!loading && invoices.length === 0 && <EmptyState type="invoices" />}
+          {!loading && invoices.length > 0 && sorted.length === 0 && (
+            <div className="py-8 text-center text-sm text-slate-500">No invoices match your current filters.</div>
+          )}
           {sorted.map(inv => (
             <div key={inv.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setSelected(inv)}>
               <div className="flex justify-between items-start mb-2">

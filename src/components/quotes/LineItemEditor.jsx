@@ -4,6 +4,7 @@ import {
   BIG_SIZES,
   LOCATIONS,
   getTechniqueOptions,
+  getTechniqueRates,
   getShopPricingConfig,
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
@@ -1334,7 +1335,13 @@ export default function LineItemEditor({
                                   {imp.colors}
                                 </div>
                                 <button
-                                  onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
+                                  onClick={() => {
+                                    // Cap at the technique's CONFIGURED maxColors, not a
+                                    // hardcoded 8 — a shop with more color rows could never
+                                    // select them here.
+                                    const maxColors = getTechniqueRates(imp.technique)?.maxColors || 8;
+                                    updateImprint(idx, { colors: Math.min(maxColors, imp.colors + 1) });
+                                  }}
                                   className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
                                 >
                                   +
@@ -1357,7 +1364,18 @@ export default function LineItemEditor({
                           <label className="block text-xs text-slate-500 mb-0.5">Technique</label>
                           <select
                             value={imp.technique}
-                            onChange={(e) => updateImprint(idx, { technique: e.target.value })}
+                            onChange={(e) => {
+                              const t = e.target.value;
+                              // imp.colors means an ink-color count for print
+                              // methods but a 1-based stitch-tier INDEX for
+                              // Embroidery. Crossing that boundary without a
+                              // reset leaves a stale value that selects the
+                              // wrong price tier and shows no valid option in
+                              // the stitch dropdown (same fix as the wizard's
+                              // ConfigureStep).
+                              const crossed = (t === "Embroidery") !== (imp.technique === "Embroidery");
+                              updateImprint(idx, { technique: t, ...(crossed ? { colors: 1 } : {}) });
+                            }}
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                           >
                             {/* getTechniqueOptions always includes the technique

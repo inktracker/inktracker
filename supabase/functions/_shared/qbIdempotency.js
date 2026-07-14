@@ -180,8 +180,33 @@ async function tryClaimKey(supabase, key, ctx) {
     return { outcome: IDEMPOTENCY_OUTCOMES.IN_FLIGHT };
   }
 
-  // completed OR failed — return the cached outcome. Either way, the
-  // second caller doesn't fire a duplicate write.
+  if (existing.status === "failed") {
+    // A prior attempt FAILED and stored no result. Returning it as CACHED
+    // replayed a null result as a fake success ({success:true} with no
+    // qbInvoiceId and no error) — and callers like SendQuoteModal
+    // deliberately reuse the key to RETRY, expecting either a real result or
+    // the surfaced failure. Reclaim the row atomically (same race-safe pattern
+    // as the stale-in-flight reclaim) so a retry actually re-runs the QB call;
+    // a failed attempt created nothing, so re-execution can't duplicate.
+    const { count, error: reclaimErr } = await supabase
+      .from("qb_idempotency")
+      .update(
+        { status: "in_flight", expires_at: expiresAt, result: null, error_message: null },
+        { count: "exact" },
+      )
+      .eq("key", key)
+      .eq("status", "failed");
+    if (reclaimErr) {
+      console.error("[qbIdempotency] failed-row reclaim update failed:", reclaimErr.message);
+      return { outcome: IDEMPOTENCY_OUTCOMES.EXECUTED };
+    }
+    if ((count ?? 0) > 0) return { outcome: IDEMPOTENCY_OUTCOMES.EXECUTED };
+    // Lost the race to another retry — it's now in-flight.
+    return { outcome: IDEMPOTENCY_OUTCOMES.IN_FLIGHT };
+  }
+
+  // completed — return the cached result so the second caller doesn't fire a
+  // duplicate write.
   return { outcome: IDEMPOTENCY_OUTCOMES.CACHED, cachedResult: existing.result };
 }
 

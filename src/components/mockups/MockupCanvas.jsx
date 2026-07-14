@@ -369,7 +369,10 @@ const MockupCanvas = forwardRef(function MockupCanvas({
         onMouseDown={handleMouseDown}
       >
         {garmentImageUrl ? (
-          <img src={garmentImageUrl} alt="Garment" className="w-full h-full object-contain" crossOrigin="anonymous" />
+          // Only set crossOrigin for http(s) sources — on a data:/blob: custom
+          // upload it can make the image fail to LOAD in some browsers, blanking
+          // the on-screen preview (same invariant as setCorsForRemote above).
+          <img src={garmentImageUrl} alt="Garment" className="w-full h-full object-contain" crossOrigin={/^https?:/i.test(String(garmentImageUrl || "")) ? "anonymous" : undefined} />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-300 text-sm">
             No garment image

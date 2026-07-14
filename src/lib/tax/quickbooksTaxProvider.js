@@ -91,8 +91,10 @@ export function buildQBOInvoiceJSON(quote, { customer = {} } = {}) {
  * (the caller is responsible for persisting via base44/supabase).
  */
 export function syncBackFromQBO(quote, qbResponse) {
-  const tax   = qbResponse?.qb_tax   ?? qbResponse?.qbTax   ?? null;
-  const total = qbResponse?.qb_total ?? qbResponse?.qbTotal ?? null;
+  // qbSync's createInvoice returns qbTaxAmount / qbTotal (camelCase); keep the
+  // legacy aliases in the chain for any other caller shape.
+  const tax   = qbResponse?.qbTaxAmount ?? qbResponse?.qb_tax   ?? qbResponse?.qbTax   ?? null;
+  const total = qbResponse?.qbTotal     ?? qbResponse?.qb_total ?? null;
   const externalId = qbResponse?.qbInvoiceId ?? qbResponse?.qb_invoice_id ?? null;
   return {
     ...quote,
@@ -139,6 +141,11 @@ export function createQuickBooksTaxProvider({
       const body = {
         action: "createInvoice",
         accessToken,
+        // Stable idempotency key per quote — without it a double-click / retry
+        // on "Create QB Invoice" from QuoteDetailModal fired two parallel
+        // creates and the second hit Duplicate Document Number → a -r2
+        // duplicate invoice. Matches createInvoiceInQB.js's key shape.
+        idempotencyKey: `createInvoice:${quote?.id || quote?.quote_id || ""}`,
         quote,
         customer,
         // We send BOTH:
@@ -176,8 +183,11 @@ export function createQuickBooksTaxProvider({
 
       return {
         externalId: data.qbInvoiceId ?? null,
-        taxFromProvider: data.qb_tax ?? null,
-        totalFromProvider: data.qb_total ?? null,
+        // qbSync returns qbTaxAmount / qbTotal (camelCase) — reading qb_tax /
+        // qb_total made these always null, so the caller never got QB's
+        // authoritative tax/total back from a sync.
+        taxFromProvider: data.qbTaxAmount ?? null,
+        totalFromProvider: data.qbTotal ?? null,
         // Echo full response so the caller can sync-back via syncBackFromQBO.
         raw: data,
       };

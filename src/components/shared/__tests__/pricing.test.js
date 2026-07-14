@@ -435,6 +435,34 @@ describe("calcLinkedLinePrice", () => {
       expect(r.printCost).toBeCloseTo(FIRST_PRINT[3][25] * 45, 2);
     });
 
+    it("sparse custom technique falls back to Screen Print rate for an unfilled cell (not $0)", () => {
+      // Shop configured a DTF technique but only filled the 1-color row.
+      // A 3-color DTF imprint used to resolve table[3] → undefined → $0.
+      // It must now fall back to the Screen Print 3-color cell.
+      loadShopPricingConfig({
+        custom_techniques: {
+          DTF: { firstPrint: { 1: { 25: 9.0, 50: 8.0, 100: 7.0, 200: 6.0 } } },
+        },
+      });
+      const li = makeLineItem({ imprints: [makeImprint({ colors: 3, technique: "DTF" })] });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r.printCost).toBeGreaterThan(0);
+      expect(r.printCost).toBeCloseTo(FIRST_PRINT[3][25] * 45, 2);
+      loadShopPricingConfig(null);
+    });
+
+    it("filled custom technique cell wins over the Screen Print fallback", () => {
+      loadShopPricingConfig({
+        custom_techniques: {
+          DTF: { firstPrint: { 1: { 25: 9.0, 50: 8.0, 100: 7.0, 200: 6.0 } } },
+        },
+      });
+      const li = makeLineItem({ imprints: [makeImprint({ colors: 1, technique: "DTF" })] });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r.printCost).toBeCloseTo(9.0 * 45, 2); // the custom 1-color/25 rate
+      loadShopPricingConfig(null);
+    });
+
     it("uses ADDL_PRINT table for second location", () => {
       // First: 1 color front, Second: 1 color back
       const li = makeLineItem({

@@ -171,7 +171,9 @@ export default function OrderScheduleRow({ order, companyName, onUpdateStepDate,
   const stepDates = order.step_dates || {};
 
   // Count scheduled steps (Printing counts if it has a start date)
-  const scheduledCount = Object.keys(stepDates).length;
+  // Count only REAL pipeline steps with a date — not every key in step_dates
+  // (a legacy phantom "Artwork" key would otherwise inflate the "N/5" count).
+  const scheduledCount = O_STATUSES.filter((s) => stepDates[s]).length;
 
   const isPast = order.due_date && order.due_date < today;
   const isToday = order.due_date === today;
@@ -234,19 +236,13 @@ export default function OrderScheduleRow({ order, companyName, onUpdateStepDate,
               onSave={(d) => onUpdateDueDate(order.id, d)}
             />
             <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pt-3 pb-1">Production Steps</div>
-            <StepDateRow
-              step="Artwork"
-              value={stepDates["Artwork"]}
-              onSave={(d) => onUpdateStepDate(order.id, "Artwork", d)}
-              onDragStart={setDraggingStep}
-            />
-            <StepDateRow
-              step="Order Goods"
-              value={stepDates["Order Goods"]}
-              onSave={(d) => onUpdateStepDate(order.id, "Order Goods", d)}
-              onDragStart={setDraggingStep}
-            />
-            {O_STATUSES.filter(s => s !== "Artwork").map((step) => (
+            {/* One row per REAL pipeline step (O_STATUSES). Previously a
+                hardcoded "Artwork" row (a step that doesn't exist — the real
+                first stage is "Art Approval") saved dates under a key the
+                calendar never reads, and a hardcoded "Order Goods" row plus a
+                no-op filter (s !== "Artwork" never matches) rendered "Order
+                Goods" twice. */}
+            {O_STATUSES.map((step) => (
               <StepDateRow
                 key={step}
                 step={step}

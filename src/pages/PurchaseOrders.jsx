@@ -25,6 +25,20 @@ import { shopScope } from "@/lib/shopScope";
 
 const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", cancelled: "Cancelled" };
 
+// Free-text field that edits LOCALLY and only persists on blur. The PO detail
+// inputs used to await a DB write on every keystroke and rebind to the server
+// row — so under latency an out-of-order response snapped typed characters
+// back. Local draft state fixes both the snapback and the per-keystroke write.
+// Mount with key={`${po.id}-<field>`} so switching to a different PO remounts
+// it with the new value (editable fields must not effect-sync, but must reseed
+// on identity change).
+function BlurField({ value, onCommit, textarea = false, ...props }) {
+  const [draft, setDraft] = useState(value ?? "");
+  const commit = () => { if ((draft ?? "") !== (value ?? "")) onCommit(draft); };
+  const common = { ...props, value: draft, onChange: (e) => setDraft(e.target.value), onBlur: commit };
+  return textarea ? <textarea {...common} /> : <input {...common} />;
+}
+
 export default function PurchaseOrders() {
   const [user, setUser] = useState(null);
   const [pos, setPos] = useState([]);
@@ -573,9 +587,10 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <input
+          <BlurField
+            key={`${po.id}-reference`}
             value={po.reference || ""}
-            onChange={(e) => onPatch({ reference: e.target.value })}
+            onCommit={(v) => onPatch({ reference: v })}
             disabled={isLocked}
             maxLength={!isLocked && po.supplier === "AS Colour" ? AC_REFERENCE_MAX : undefined}
             className={`text-lg font-bold bg-transparent border-b border-transparent hover:border-slate-200 focus:border-teal-400 focus:outline-none w-full disabled:text-slate-500 ${
@@ -760,6 +775,7 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
         <div>
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ship to</div>
           <ShipToEditor
+            key={`${po.id}-shipto`}
             value={po.ship_to || {}}
             disabled={isLocked}
             onChange={(ship_to) => onPatch({ ship_to })}
@@ -797,9 +813,11 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
               to the SKU. */}
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Order notes</label>
-            <textarea
+            <BlurField
+              textarea
+              key={`${po.id}-notes`}
               value={po.notes || ""}
-              onChange={(e) => onPatch({ notes: e.target.value })}
+              onCommit={(v) => onPatch({ notes: v })}
               disabled={isLocked}
               rows={2}
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
@@ -807,9 +825,11 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
           </div>
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Courier instructions</label>
-            <textarea
+            <BlurField
+              textarea
+              key={`${po.id}-courier`}
               value={po.courier_instructions || ""}
-              onChange={(e) => onPatch({ courier_instructions: e.target.value })}
+              onCommit={(v) => onPatch({ courier_instructions: v })}
               disabled={isLocked}
               rows={2}
               className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
@@ -907,9 +927,9 @@ function ShipToEditor({ value, disabled, onChange }) {
   function field(key, placeholder, { required } = {}) {
     const isMissing = required && !value[key];
     return (
-      <input
+      <BlurField
         value={value[key] || ""}
-        onChange={(e) => onChange({ ...value, [key]: e.target.value })}
+        onCommit={(v) => onChange({ ...value, [key]: v })}
         disabled={disabled}
         placeholder={required ? `${placeholder} *` : placeholder}
         className={`w-full text-sm border rounded-lg px-2.5 py-1.5 ${
