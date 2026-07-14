@@ -7,11 +7,38 @@
 // in the orders list (covers the case where a broker's order row
 // got deleted but the quote audit trail remains).
 //
-// Broker/client totals are computed off the raw quote when one is
-// linked, so the broker sees the live broker-markup price even if
-// the order row's `total` was saved at retail. Falls back to the
-// order's saved total if no quote is linked. calc fns are
+// Broker/client totals come from the quote's SAVED snapshot stamps:
+// `quote.total` is the broker wholesale price (what the shop reads) and
+// `quote.client_total` is what the broker charged their client (BrokerQuoteEditor
+// writes both on save). Reading the saved stamps — not a live recompute — is the
+// snapshot invariant: it stops broker history from repricing when the shop later
+// changes rates, and it closes the CACHE-01 `_pc` bleed (a live calc runs under
+// whatever shop's pricing config is currently loaded on this multi-shop surface).
+// The injected calc fns are used ONLY as a fallback for legacy quotes that
+// predate the client_* stamps (the 20260607 migration), and stay
 // dependency-injected to keep this module pricing-jsx-free for tests.
+
+// Resolve one job's { brokerTotal, clientTotal } — saved stamps win; live calc
+// (or the order's own total) is the legacy fallback.
+function resolveJobTotals(quote, fallbackTotal, { calcBroker, calcClient } = {}) {
+  const fb = Number(fallbackTotal) || 0;
+  const savedBroker = Number(quote?.total);
+  const savedClient = Number(quote?.client_total);
+
+  let brokerTotal = Number.isFinite(savedBroker) && savedBroker > 0 ? savedBroker : null;
+  if (brokerTotal == null) {
+    try { if (calcBroker) brokerTotal = Number(calcBroker(quote)?.total) || null; } catch { brokerTotal = null; }
+  }
+  if (brokerTotal == null) brokerTotal = fb;
+
+  let clientTotal = Number.isFinite(savedClient) && savedClient > 0 ? savedClient : null;
+  if (clientTotal == null) {
+    try { if (calcClient) clientTotal = Number(calcClient(quote)?.total) || null; } catch { clientTotal = null; }
+  }
+  if (clientTotal == null) clientTotal = fb;
+
+  return { brokerTotal, clientTotal };
+}
 
 export function assembleCompletedJobs(orders, quotes, { calcBroker, calcClient } = {}) {
   const orderList = Array.isArray(orders) ? orders : [];
@@ -23,12 +50,11 @@ export function assembleCompletedJobs(orders, quotes, { calcBroker, calcClient }
       const matchingQuote = quoteList.find(
         (q) => q.converted_order_id === o.order_id || q.converted_order_id === o.id,
       );
-      let brokerTotal = Number(o.total) || 0;
-      let clientTotal = Number(o.total) || 0;
-      if (matchingQuote) {
-        try { if (calcBroker) brokerTotal = Number(calcBroker(matchingQuote)?.total) || brokerTotal; } catch {}
-        try { if (calcClient) clientTotal = Number(calcClient(matchingQuote)?.total) || clientTotal; } catch {}
-      }
+      // Saved stamps from the linked quote win; fall back to the order's own
+      // total when no quote is linked (no snapshot to read).
+      const { brokerTotal, clientTotal } = matchingQuote
+        ? resolveJobTotals(matchingQuote, o.total, { calcBroker, calcClient })
+        : { brokerTotal: Number(o.total) || 0, clientTotal: Number(o.total) || 0 };
       return {
         ...o,
         _type: "order",
@@ -57,10 +83,7 @@ export function assembleCompletedJobs(orders, quotes, { calcBroker, calcClient }
         !orderIdSet.has(q.converted_order_id),
     )
     .map((q) => {
-      let brokerTotal = 0;
-      let clientTotal = 0;
-      try { if (calcBroker) brokerTotal = Number(calcBroker(q)?.total) || 0; } catch {}
-      try { if (calcClient) clientTotal = Number(calcClient(q)?.total) || 0; } catch {}
+      const { brokerTotal, clientTotal } = resolveJobTotals(q, 0, { calcBroker, calcClient });
       return {
         ...q,
         order_id: q.converted_order_id,

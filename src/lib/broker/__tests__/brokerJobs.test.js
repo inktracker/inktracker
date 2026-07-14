@@ -30,6 +30,19 @@ describe("assembleCompletedJobs", () => {
     expect(out[0]._rawQuote.id).toBe("q1");
   });
 
+  it("prefers the linked quote's SAVED stamps (total / client_total) over a live recompute", () => {
+    // Broker quotes stamp total = wholesale, client_total = client price. The
+    // analytics must read those, not recompute (snapshot invariant + CACHE-01).
+    const calcThatShouldNotRun = () => { throw new Error("should not recompute a stamped quote"); };
+    const orders = [{ id: "o1", order_id: "ORD-1", status: "Completed", total: 999, customer_name: "Acme" }];
+    const quotes = [
+      { id: "q1", converted_order_id: "ORD-1", status: "Converted to Order", total: 800, client_total: 1000 },
+    ];
+    const out = assembleCompletedJobs(orders, quotes, { calcBroker: calcThatShouldNotRun, calcClient: calcThatShouldNotRun });
+    expect(out[0]._brokerTotal).toBe(800);   // saved wholesale stamp, not order.total
+    expect(out[0]._clientTotal).toBe(1000);  // saved client stamp
+  });
+
   it("falls back to order.total when no matching quote", () => {
     const out = assembleCompletedJobs(
       [{ order_id: "ORD-1", status: "Completed", total: 125 }],

@@ -1457,7 +1457,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
             sibling that replaced them). */}
 
         {tab === "performance" && user && (
-          <BrokerPerformance orders={orders} />
+          <BrokerPerformance orders={orders} quotes={quotes} />
         )}
 
         {tab === "invoices" && user && (
