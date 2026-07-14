@@ -4,6 +4,7 @@ import {
   BIG_SIZES,
   LOCATIONS,
   getTechniqueOptions,
+  getTechniqueRates,
   getShopPricingConfig,
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
@@ -1334,7 +1335,13 @@ export default function LineItemEditor({
                                   {imp.colors}
                                 </div>
                                 <button
-                                  onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
+                                  onClick={() => {
+                                    // Cap at the technique's CONFIGURED maxColors, not a
+                                    // hardcoded 8 — a shop with more color rows could never
+                                    // select them here.
+                                    const maxColors = getTechniqueRates(imp.technique)?.maxColors || 8;
+                                    updateImprint(idx, { colors: Math.min(maxColors, imp.colors + 1) });
+                                  }}
                                   className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
                                 >
                                   +

@@ -1,4 +1,4 @@
-import { calcLinkedLinePrice, BIG_SIZES, SIZES, fmtMoney, fmtDate, getMinOrderQty, getWizardRushDisplay } from "@/components/shared/pricing";
+import { calcLinkedLinePrice, BIG_SIZES, SIZES, fmtMoney, fmtDate, getMinOrderQty, getWizardRushDisplay, getStandardTurnaroundDays } from "@/components/shared/pricing";
 
 // STEP 3: Review & Submit. Extracted verbatim from OrderWizard.jsx as a
 // pure structural move. IMPORTANT: the per-garment price display below
@@ -81,7 +81,7 @@ export default function ReviewStep({
 
           <div className="flex justify-between text-sm bg-white rounded-2xl border border-slate-100 p-5">
             <span className="text-slate-500">Turnaround</span>
-            <span className={`font-semibold ${rush ? "text-orange-600" : ""}`}>{rush ? "Rush — 7 days" : "Standard — 14 days"}</span>
+            <span className={`font-semibold ${rush ? "text-orange-600" : ""}`}>{rush ? `Rush — ${getWizardRushDisplay().daysLabel}` : `Standard — ${getStandardTurnaroundDays()} business days`}</span>
           </div>
 
           {/* Contact */}
@@ -129,7 +129,7 @@ export default function ReviewStep({
             })}
             {rush && (
               <div className="flex justify-between py-2 border-b border-slate-800 text-xs">
-                <span className="text-orange-400 uppercase tracking-wide">Rush Fee (+20%)</span>
+                <span className="text-orange-400 uppercase tracking-wide">Rush Fee (+{Math.round(getWizardRushDisplay().rate * 100)}%)</span>
                 <span className="text-orange-400 font-semibold">included</span>
               </div>
             )}

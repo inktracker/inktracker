@@ -15,6 +15,7 @@ vi.mock("@/components/shared/pricing", async () => {
     fmtDate: (d) => String(d),
     getMinOrderQty: () => 25,
     getWizardRushDisplay: () => ({ rate: 0.2, daysLabel: "7 days" }),
+    getStandardTurnaroundDays: () => 14,
   };
 });
 

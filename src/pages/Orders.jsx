@@ -335,6 +335,13 @@ export default function Orders() {
                   </td>
                 </tr>
               )}
+              {!loading && orders.length > 0 && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-sm text-slate-500">
+                    No orders match your current filters.
+                  </td>
+                </tr>
+              )}
               {filtered.map((o) => {
                 const artworkCount = getOrderArtworkCount(o);
                 return (
@@ -377,6 +384,9 @@ export default function Orders() {
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <ListCardsSkeleton />}
           {!loading && orders.length === 0 && <EmptyState type="orders" />}
+          {!loading && orders.length > 0 && filtered.length === 0 && (
+            <div className="py-8 text-center text-sm text-slate-500">No orders match your current filters.</div>
+          )}
           {filtered.map((o) => {
             const artworkCount = getOrderArtworkCount(o);
             return (
