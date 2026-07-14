@@ -9,10 +9,16 @@ describe("getQuoteTotalSafe", () => {
     expect(getQuoteTotalSafe({ line_items: [1, 2] }, brokerCalc)).toBe(100);
   });
 
-  it("ALWAYS recomputes via the calc — ignores quote.total even if saved", () => {
-    // Broker total is never saved on the quote (we save retail total),
-    // so a saved quote.total must NOT shortcut the broker calc.
-    expect(getQuoteTotalSafe({ total: 999, line_items: [1] }, brokerCalc)).toBe(50);
+  it("prefers the SAVED broker total (quote.total) over a live recompute", () => {
+    // BrokerQuoteEditor saves the broker wholesale price to quote.total, so
+    // the saved stamp is authoritative — reading it holds the snapshot
+    // invariant and avoids the CACHE-01 recompute. Live calc is fallback only.
+    expect(getQuoteTotalSafe({ total: 999, line_items: [1] }, brokerCalc)).toBe(999);
+  });
+
+  it("falls back to the broker calc when quote.total is missing/zero (legacy)", () => {
+    expect(getQuoteTotalSafe({ line_items: [1] }, brokerCalc)).toBe(50);
+    expect(getQuoteTotalSafe({ total: 0, line_items: [1] }, brokerCalc)).toBe(50);
   });
 
   it("returns 0 when calc throws", () => {
@@ -31,7 +37,11 @@ describe("getQuoteTotalSafe", () => {
 });
 
 describe("getClientTotalSafe", () => {
-  it("prefers the saved quote.total when present and positive", () => {
+  it("prefers the saved client_total stamp over everything", () => {
+    expect(getClientTotalSafe({ client_total: 200, total: 123, line_items: [1, 2] }, clientCalc)).toBe(200);
+  });
+
+  it("falls back to the legacy saved total when client_total is absent", () => {
     expect(getClientTotalSafe({ total: 123, line_items: [1, 2] }, clientCalc)).toBe(123);
   });
 
