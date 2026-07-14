@@ -3,6 +3,7 @@ import { resolveArtworkPath } from "./artworkPath";
 import {
   validateUploadCandidate,
   rejectDangerousSvg,
+  getLogoDownscaleDims,
   ALLOWED_UPLOAD_EXTS,
   MAX_UPLOAD_BYTES,
 } from "./uploadValidation";
@@ -73,9 +74,47 @@ export async function uploadFile(file) {
 // path is no less safe than the artwork one. `ownerId` namespaces the key and
 // is sanitized — never trust it raw in a storage path.
 const LOGO_BUCKET = "logos";
+
+// Downscale a raster logo to MAX_LOGO_DIMENSION before upload. jsPDF embeds
+// images at native resolution regardless of draw size, so an oversized logo
+// inflates every quote/invoice PDF — a 4200×4200 upload produced a 70 MB PDF
+// that OOM-killed sendQuoteEmail (546) on every send from that shop. Fail-open:
+// any decode/encode error returns the original file so uploads never break on
+// an exotic-but-valid image. No crossOrigin involved — the source is a local
+// File via object URL, so the canvas stays untainted.
+async function downscaleLogoIfNeeded(file, ext) {
+  let objectUrl = null;
+  try {
+    objectUrl = URL.createObjectURL(file);
+    const img = await new Promise((resolve, reject) => {
+      const i = new window.Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = objectUrl;
+    });
+    const dims = getLogoDownscaleDims(ext, img.naturalWidth, img.naturalHeight);
+    if (!dims) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = dims.width;
+    canvas.height = dims.height;
+    canvas.getContext("2d").drawImage(img, 0, 0, dims.width, dims.height);
+    // PNG keeps transparency; JPEGs re-encode as JPEG so the stored
+    // extension stays truthful.
+    const mime = ext === "png" ? "image/png" : "image/jpeg";
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.9));
+    if (!blob) return file;
+    return new File([blob], file.name, { type: mime });
+  } catch {
+    return file;
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+}
+
 export async function uploadLogo(file, ownerId = "") {
   const ext = validateUploadCandidate(file);
   await rejectDangerousSvg(file, ext);
+  file = await downscaleLogoIfNeeded(file, ext);
   const safeId = String(ownerId || "logo").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || "logo";
   const path = `logos/${safeId}_${Date.now()}.${ext}`;
   const { error } = await supabase.storage

@@ -128,10 +128,14 @@ async function appendArtworkPages(doc, record) {
         const i = new Image();
         i.crossOrigin = 'anonymous';
         i.onload = () => {
+          // Cap the encoded pixels (same 546-OOM class as the header logo —
+          // a print-res attachment would otherwise dominate the PDF). Layout
+          // below only uses w/h for aspect ratio, so original dims are fine.
+          const capScale = Math.min(MAX_PDF_ARTWORK_PX / Math.max(i.width, i.height), 1);
           const c = document.createElement('canvas');
-          c.width = i.width;
-          c.height = i.height;
-          c.getContext('2d').drawImage(i, 0, 0);
+          c.width = Math.max(1, Math.round(i.width * capScale));
+          c.height = Math.max(1, Math.round(i.height * capScale));
+          c.getContext('2d').drawImage(i, 0, 0, c.width, c.height);
           resolve({ dataUrl: c.toDataURL('image/png'), w: i.width, h: i.height });
         };
         i.onerror = reject;
@@ -235,6 +239,33 @@ function loadImage(src) {
     img.onerror = reject;
     img.src = src;
   });
+}
+
+// jsPDF embeds images at NATIVE resolution no matter how small they're drawn,
+// so an oversized source inflates the whole PDF — a shop's 4200×4200 logo
+// (drawn at 14mm) produced a 70 MB quote PDF whose base64 payload OOM-killed
+// the sendQuoteEmail edge function (546 WORKER_LIMIT). Cap the pixels we hand
+// to addImage. Returns a canvas (jsPDF accepts one directly) or the original
+// image when it's already within bounds or the canvas is tainted/unusable.
+const MAX_PDF_LOGO_PX = 512;      // logos draw at 14mm — 512px is 3x-retina headroom
+const MAX_PDF_ARTWORK_PX = 2000;  // artwork pages are proofs — keep more detail
+
+function capImagePixels(img, maxDim) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (!w || !h || (w <= maxDim && h <= maxDim)) return img;
+  try {
+    const scale = maxDim / Math.max(w, h);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * scale));
+    c.height = Math.max(1, Math.round(h * scale));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    // Encode here so a tainted canvas throws HERE (caught → full-res
+    // fallback, the pre-cap behavior) instead of inside jsPDF.addImage.
+    return c.toDataURL('image/png');
+  } catch {
+    return img;
+  }
 }
 
 function extractTrailingGarmentNumber(title) {
@@ -390,7 +421,7 @@ async function addHeader(
   const logoSrc = logoUrl || INKTRACKER_LOGO;
   try {
     const img = await loadImage(logoSrc);
-    doc.addImage(img, 'PNG', margin, yPos - 2, 14, 14);
+    doc.addImage(capImagePixels(img, MAX_PDF_LOGO_PX), 'PNG', margin, yPos - 2, 14, 14);
   } catch (e) {
     // ignore logo errors
   }

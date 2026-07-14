@@ -24,6 +24,35 @@ export const ALLOWED_UPLOAD_EXTS = Object.freeze(new Set([
 // the worst case while leaving headroom for high-res PSDs.
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
+// Logos render at ~50px in email headers and 14mm in PDF headers, so 512px
+// covers 3x-retina display with headroom. The cap exists because jsPDF embeds
+// images at NATIVE resolution regardless of draw size — a shop's 4200×4200
+// print-res logo produced a 70 MB quote PDF whose base64 payload OOM-killed
+// the sendQuoteEmail edge function (546 WORKER_LIMIT) on every send.
+export const MAX_LOGO_DIMENSION = 512;
+
+// Only formats the canvas can decode + re-encode get downscaled; vector /
+// design formats (ai, eps, pdf, psd) pass through untouched.
+const RASTER_LOGO_EXTS = new Set(["png", "jpg", "jpeg"]);
+
+/**
+ * Decide whether (and to what size) an uploaded logo needs downscaling.
+ * Pure: returns null when the file should upload as-is, else the target
+ * {width, height} preserving aspect ratio with max dimension capped.
+ */
+export function getLogoDownscaleDims(ext, width, height, maxDim = MAX_LOGO_DIMENSION) {
+  if (!RASTER_LOGO_EXTS.has(String(ext || "").toLowerCase())) return null;
+  const w = Number(width);
+  const h = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null;
+  if (w <= maxDim && h <= maxDim) return null;
+  const scale = maxDim / Math.max(w, h);
+  return {
+    width: Math.max(1, Math.round(w * scale)),
+    height: Math.max(1, Math.round(h * scale)),
+  };
+}
+
 /**
  * Validate the file shape BEFORE handing it to Supabase storage.
  * Throws a user-facing Error string callers can pass straight to
