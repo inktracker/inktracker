@@ -89,8 +89,9 @@ describe("createQuickBooksTaxProvider.pushInvoice", () => {
       status: 200,
       json: async () => ({
         qbInvoiceId: "INV-42",
-        qb_tax: 8.88,
-        qb_total: 108.88,
+        // qbSync returns camelCase qbTaxAmount / qbTotal (NOT qb_tax/qb_total).
+        qbTaxAmount: 8.88,
+        qbTotal: 108.88,
         paymentLink: "https://pay.example.com/xyz",
       }),
     });
@@ -118,6 +119,9 @@ describe("createQuickBooksTaxProvider.pushInvoice", () => {
     const sentBody = JSON.parse(calledOpts.body);
     expect(sentBody.action).toBe("createInvoice");
     expect(sentBody.accessToken).toBe("token-abc");
+    // Idempotency key derived from the quote id — guards against double-click
+    // / retry minting a duplicate invoice.
+    expect(sentBody.idempotencyKey).toContain("createInvoice:");
     expect(sentBody.qboInvoice.Line[0].SalesItemLineDetail.TaxCodeRef.value).toBe("TAX");
     expect(sentBody.qboInvoice.BillAddr.PostalCode).toBe("78701");
     expect(sentBody.qboInvoice.TxnTaxDetail).toEqual({});

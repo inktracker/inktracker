@@ -292,15 +292,23 @@ async function processNotification(supabase: any, notification: any) {
   // EVERY real webhook returned "No profile found" — so no paid invoice ever
   // converted, even though QB was delivering Payment/Invoice events correctly.
   // Same bug class as the billing webhook fix.
-  const { data: secretRow } = await supabase
+  // Use maybeSingle-free select: if the SAME QBO company is connected from two
+  // InkTracker accounts, two profile_secrets rows share the realm and
+  // .maybeSingle() would ERROR (and, swallowed, drop every webhook for that
+  // realm as "No profile found"). Take the first row with a live token.
+  const { data: secretRows } = await supabase
     .from("profile_secrets")
     .select("profile_id")
     .eq("qb_realm_id", realmId)
-    .maybeSingle();
-  const profile = secretRow ? await loadProfileWithSecrets(supabase, { id: secretRow.profile_id }) : null;
+    .limit(5);
+  let profile: any = null;
+  for (const row of secretRows ?? []) {
+    const p = await loadProfileWithSecrets(supabase, { id: row.profile_id });
+    if (p?.qb_access_token) { profile = p; break; }
+  }
 
   if (!profile?.qb_access_token) {
-    console.error(`[qbWebhook] No profile found for realmId ${realmId}`);
+    console.error(`[qbWebhook] No profile with a live token found for realmId ${realmId}`);
     return;
   }
   // Resolve the shop-owner KEY the quotes/orders are scoped by. For an OWNER

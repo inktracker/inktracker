@@ -1262,8 +1262,27 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // totals back to the source record. Both ids matter — the internal id
   // for API calls, the DocNumber for the operator-facing UI.
   if (quote.id) {
-    // Try quotes table first (quote-originated invoices)
-    await supabase.from("quotes").update({
+    // Recording qb_invoice_id locally is CRITICAL: the QB invoice already
+    // exists, so if this write-back is lost we have an invoice in QB that
+    // InkTracker doesn't know about, and a re-send after the idempotency TTL
+    // takes the CREATE path and mints a -rN DUPLICATE. The updates used to
+    // discard their Supabase error entirely (zero observability). Now each is
+    // retried on failure and logged loudly; the row targets either the quotes
+    // or the invoices table (same id format), so success on EITHER is enough.
+    const updateWithRetry = async (table: string, patch: Record<string, unknown>) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { error } = await supabase.from(table).update(patch).eq("id", quote.id);
+        if (!error) return true;
+        // 22P02 / PGRST116-style "no row in this table" is expected for one of
+        // the two tables (a quote-originated invoice isn't in `invoices` and
+        // vice versa) — an empty match is NOT an error from PostgREST, so any
+        // returned error here is a real write failure worth retrying.
+        console.error(`[createInvoice] write-back to ${table} failed (attempt ${attempt + 1}) for ${quote.id}:`, error.message);
+      }
+      return false;
+    };
+
+    const okQuotes = await updateWithRetry("quotes", {
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
       ...linkField,
@@ -1274,13 +1293,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       ...adoptQbTaxFields,
       // Don't advance a held invoice to "Sent" — it hasn't been sent.
       status:          (!taxBlocked && quote.status === "Draft") ? "Sent" : quote.status,
-    }).eq("id", quote.id);
+    });
 
-    // Also try invoices table (invoice-originated, same ID format). Mirror
-    // QB's authoritative subtotal/tax/total so the InkTracker invoice record
-    // reflects QB exactly (the IT-side `tax`/`total` are what the quote
-    // billed; these qb_* fields are what QB recorded — see docs/qb-tax-sync.md).
-    await supabase.from("invoices").update({
+    // Also mirror onto the invoices table (invoice-originated, same ID format).
+    const okInvoices = await updateWithRetry("invoices", {
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
       ...linkField,
@@ -1288,7 +1304,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
       ...adoptQbTaxFields,
-    }).eq("id", quote.id);
+    });
+
+    if (!okQuotes && !okInvoices) {
+      // Neither table recorded the link after retries. The QB invoice exists
+      // but nothing local points at it — flag it so this doesn't silently
+      // become a duplicate on the next send.
+      console.error(`[createInvoice] CRITICAL: QB invoice ${qbInvoiceId} created but link write-back FAILED on both tables for ${quote.id}. Re-send risks a duplicate.`);
+    }
   }
 
   // Phase 3: immutable tax-audit record. Snapshots QB's authoritative
