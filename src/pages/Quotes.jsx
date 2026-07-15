@@ -24,7 +24,8 @@ import { validateQuoteForSave } from "../lib/quotes/validation";
 import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
 import { isConvertedToOrder } from "../lib/quotes/approvalState";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
-import { useBillingGate } from "../lib/billing-gate";
+import { useBillingGate, useReadOnly } from "../lib/billing-gate";
+import ReactivateLink from "../components/shared/ReactivateLink";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { notify } from "@/lib/notify";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
@@ -69,6 +70,9 @@ export default function Quotes() {
   // AuthContext, but we pass the locally-loaded user too so the gate
   // decides off the freshest copy.
   const { gate: billingGate, isReadOnly: billingReadOnly } = useBillingGate(user);
+  // Read-only affordance state (subscription lapsed) — the one hook every
+  // create/edit control on this page consults. billingReadOnly === readOnly.
+  const { readOnly, reason: readOnlyReason, reactivateHref } = useReadOnly(user);
   const [brokerMap, setBrokerMap] = useState({});
   const [converting, setConverting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
@@ -483,10 +487,13 @@ export default function Quotes() {
           )}
           <button
             onClick={() => setShowNew(true)}
-            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+            disabled={readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-600"
           >
             + New Quote
           </button>
+          <ReactivateLink show={readOnly} href={reactivateHref} />
         </div>
       </div>
       {showEmailPaste && (
@@ -633,7 +640,7 @@ export default function Quotes() {
             {!loading && quotes.length === 0 && (
               <tr>
                 <td colSpan={9}>
-                  <EmptyState type="quotes" onAction={() => setShowNew(true)} />
+                  <EmptyState type="quotes" onAction={() => setShowNew(true)} readOnly={readOnly} reactivateHref={reactivateHref} />
                 </td>
               </tr>
             )}
@@ -732,7 +739,7 @@ export default function Quotes() {
 
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <ListCardsSkeleton />}
-          {!loading && quotes.length === 0 && <EmptyState type="quotes" onAction={() => setShowNew(true)} />}
+          {!loading && quotes.length === 0 && <EmptyState type="quotes" onAction={() => setShowNew(true)} readOnly={readOnly} reactivateHref={reactivateHref} />}
           {pagedQuotes.map((q) => {
             const t = getQuoteTotalsForDisplay(q);
             return (
@@ -796,6 +803,8 @@ export default function Quotes() {
         <QuoteDetailModal
           quote={quotes.find((x) => x.id === viewing.id) || viewing}
           customer={customerMap[viewing.customer_id] || null}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
           onClose={() => setViewing(null)}
           onEdit={() => {
             setEditing(quotes.find((x) => x.id === viewing.id));
@@ -817,6 +826,8 @@ export default function Quotes() {
           quote={editing}
           prefillLineItem={showNew?.prefillLineItem ?? null}
           customers={customers}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
           onSave={saveQuote}
           onClose={() => {
             setShowNew(false);

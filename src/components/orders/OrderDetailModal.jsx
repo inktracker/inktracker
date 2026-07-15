@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import ReactivateLink from "../shared/ReactivateLink";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import ArtworkPreviewOverlay from "../shared/ArtworkPreviewOverlay";
 import SendInvoiceModal from "../invoices/SendInvoiceModal";
@@ -70,6 +71,13 @@ export default function OrderDetailModal({
   // add/remove) so reopening the modal doesn't re-seed from a stale order —
   // the "removed attachment comes back" bug.
   onUpdated,
+  // Read-only (lapsed subscription) gate. The modal opens for VIEW even when
+  // read-only; these disable the WRITE affordances (status flow, invoice,
+  // job cost, shipping, artwork, delete, shortfall). Defaults keep writable
+  // users 100% unchanged. Parent (Orders/Production/etc.) passes the freshest
+  // value via useReadOnly(user); the hook also has an AuthContext fallback.
+  readOnly = false,
+  reactivateHref,
 }) {
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -389,6 +397,7 @@ export default function OrderDetailModal({
   }
 
   async function handleArtworkUpload(e) {
+    if (readOnly) { e.target.value = ""; return; }
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     setUploading(true);
@@ -429,6 +438,7 @@ export default function OrderDetailModal({
   }
 
   async function removeArtwork(art) {
+    if (readOnly) return;
     const key = art?.id || art?.url || art?.name;
     const next = (localArtwork || []).filter((a) => (a.id || a.url || a.name) !== key);
     try {
@@ -600,6 +610,7 @@ export default function OrderDetailModal({
           onClose={onClose}
           onAdvance={onAdvance}
           onRevert={onRevert}
+          readOnly={readOnly}
         />
 
         <div className="p-4 sm:p-6 space-y-5">
@@ -612,16 +623,25 @@ export default function OrderDetailModal({
                 <div className="text-sm text-slate-500 -mt-1 mb-3">
                   Files uploaded here appear on the customer art approval page.
                 </div>
+                {/* Read-only (lapsed subscription): drop the upload/remove
+                    handlers so the gallery renders view-only — no "Add files"
+                    tile, no per-tile ×. Reads/thumbnails stay intact. */}
                 <AttachmentGallery
                   record={{ ...liveOrder, selected_artwork: localArtwork }}
                   title={null}
                   backLabel="Back to order"
                   accept=".png,.jpg,.jpeg,.pdf,.ai,.eps,.psd"
-                  onUpload={handleArtworkUpload}
-                  onRemove={removeArtwork}
+                  onUpload={readOnly ? undefined : handleArtworkUpload}
+                  onRemove={readOnly ? undefined : removeArtwork}
                   uploading={uploading}
                   uploadError={uploadError}
                 />
+                {readOnly && (
+                  <div className="text-xs text-slate-500 flex items-center gap-2">
+                    <span>Reactivate to upload or remove artwork.</span>
+                    <ReactivateLink show={readOnly} href={reactivateHref} />
+                  </div>
+                )}
               </CollapsibleSection>
             </div>
 
@@ -638,6 +658,8 @@ export default function OrderDetailModal({
                 setPreviewArt={setPreviewArt}
                 handleReorderShortfall={handleReorderShortfall}
                 reorderCreating={reorderCreating}
+                readOnly={readOnly}
+                reactivateHref={reactivateHref}
               />
 
               <FloorModePanel
@@ -649,6 +671,8 @@ export default function OrderDetailModal({
                 floorToggleGoods={floorToggleGoods}
                 bulkOrderGoodsStep={bulkOrderGoodsStep}
                 saveShortfall={saveShortfall}
+                readOnly={readOnly}
+                reactivateHref={reactivateHref}
               />
 
               <OrderShippingSection
@@ -687,6 +711,8 @@ export default function OrderDetailModal({
                 handleSaveShipping={handleSaveShipping}
                 handleCreateLabel={handleCreateLabel}
                 handleTrackShipment={handleTrackShipment}
+                readOnly={readOnly}
+                reactivateHref={reactivateHref}
               />
 
               <OrderJobCostSection
@@ -710,6 +736,8 @@ export default function OrderDetailModal({
                 handleSaveJobCost={handleSaveJobCost}
                 savingCost={savingCost}
                 costSaved={costSaved}
+                readOnly={readOnly}
+                reactivateHref={reactivateHref}
               />
             </>
           ) : (
@@ -741,6 +769,8 @@ export default function OrderDetailModal({
             handleCreateInvoice={handleCreateInvoice}
             handleOpenSend={handleOpenSend}
             onCreateSlip={() => setShowPackingSlip(true)}
+            readOnly={readOnly}
+            reactivateHref={reactivateHref}
           />
 
           <OrderUtilityActions
@@ -756,6 +786,8 @@ export default function OrderDetailModal({
             saving={saving}
             onDelete={onDelete}
             callAction={callAction}
+            readOnly={readOnly}
+            reactivateHref={reactivateHref}
           />
         </div>
       </div>

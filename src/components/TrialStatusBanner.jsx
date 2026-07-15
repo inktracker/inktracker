@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
-import { getEffectiveTier } from "@/lib/billing";
+import { getEffectiveTier, computeReadOnly } from "@/lib/billing";
 
 // Banner that surfaces the user's billing state at the top of every
 // page so they can't be surprised by a silent trial expiry.
@@ -30,15 +30,13 @@ function daysLeft(user, now = Date.now()) {
 export default function TrialStatusBanner({ user }) {
   if (!user) return null;
   if (user.role !== "shop" && user.role !== "admin") return null;
-  const tier = getEffectiveTier(user);
-  if (tier === "shop") return null;
-
   const plansUrl = createPageUrl("Account") + "?billing=1";
 
   // 'incomplete' = card-required signup with no payment method yet.
-  // getEffectiveTier collapses it to "expired", but "your trial has ended"
-  // is wrong for someone whose trial never started — give them the
-  // start-your-trial message instead of the scary red one.
+  // computeReadOnly treats it as read-only (correct for the gates), but
+  // "your subscription has ended" is wrong for someone whose trial never
+  // started — give them the start-your-trial message instead of the red
+  // banner. Must come BEFORE the computeReadOnly branch.
   if (user.subscription_tier === "incomplete") {
     return (
       <div className="bg-teal-50 border-b border-teal-200 px-4 sm:px-6 py-2.5">
@@ -57,23 +55,31 @@ export default function TrialStatusBanner({ user }) {
     );
   }
 
-  if (tier === "expired") {
+  // Read-only (subscription lapsed — expired / canceled / trial-expired /
+  // past_due beyond the 7-day grace): a NON-dismissable view-only banner.
+  // Driven by the SAME canonical computeReadOnly rule the create/edit
+  // affordances use, so the banner shows exactly when writes are blocked —
+  // including past_due, which a tier check alone would miss.
+  if (computeReadOnly(user)) {
     return (
       <div className="bg-red-50 border-b border-red-200 px-4 sm:px-6 py-2.5">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
           <p className="flex-1 text-sm text-red-800 font-semibold">
-            Your free trial has ended. Subscribe to keep using InkTracker.
+            View-only — your subscription has ended. Reactivate to create and edit.
           </p>
           <Link
             to={plansUrl}
             className="shrink-0 inline-flex items-center justify-center text-xs sm:text-sm font-semibold bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl transition whitespace-nowrap"
           >
-            Subscribe →
+            Reactivate →
           </Link>
         </div>
       </div>
     );
   }
+
+  const tier = getEffectiveTier(user);
+  if (tier === "shop") return null;
 
   // tier === "trial" — figure out urgency
   const left = daysLeft(user);

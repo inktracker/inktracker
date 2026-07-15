@@ -12,7 +12,7 @@ import { fmtMoney } from "@/components/shared/pricing";
 //
 // Scoped to one supplier per panel because the PO is supplier-scoped.
 
-export default function AddItemsPanel({ supplier, defaultWarehouse = "CA", onAddItems }) {
+export default function AddItemsPanel({ supplier, defaultWarehouse = "CA", onAddItems, disabled = false, disabledReason }) {
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -92,13 +92,13 @@ export default function AddItemsPanel({ supplier, defaultWarehouse = "CA", onAdd
       )}
 
       {product && (
-        <ProductVariantPicker product={product} onAdd={addVariant} />
+        <ProductVariantPicker product={product} onAdd={addVariant} disabled={disabled} disabledReason={disabledReason} />
       )}
     </div>
   );
 }
 
-function ProductVariantPicker({ product, onAdd }) {
+function ProductVariantPicker({ product, onAdd, disabled = false, disabledReason }) {
   // Group variants by colour, then list sizes within each colour.
   const variants = product.variants || [];
   const byColour = variants.reduce((acc, v) => {
@@ -116,6 +116,7 @@ function ProductVariantPicker({ product, onAdd }) {
   }
 
   function add(variant) {
+    if (disabled) return;
     const qty = Number(qtyByVariant[variant.sku]) || 0;
     if (qty <= 0) return;
     onAdd(variant, qty);
@@ -172,8 +173,9 @@ function ProductVariantPicker({ product, onAdd }) {
             />
             <button
               onClick={() => add(v)}
-              disabled={!Number(qtyByVariant[v.sku])}
-              className="flex items-center gap-1 text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:text-slate-300 px-2 py-1"
+              disabled={disabled || !Number(qtyByVariant[v.sku])}
+              title={disabled ? disabledReason : undefined}
+              className="flex items-center gap-1 text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:text-slate-300 disabled:cursor-not-allowed px-2 py-1"
             >
               <Plus className="w-3.5 h-3.5" /> Add
             </button>

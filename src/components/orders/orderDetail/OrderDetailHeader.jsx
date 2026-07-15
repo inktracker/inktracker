@@ -16,6 +16,10 @@ export default function OrderDetailHeader({
   onClose,
   onAdvance,
   onRevert,
+  // Read-only (lapsed subscription): the clickable stage pipeline advances /
+  // reverts status — a write. Disable those transitions but keep the pipeline
+  // fully visible so the operator can still read where the job stands.
+  readOnly = false,
 }) {
   return (
     <>
@@ -96,7 +100,8 @@ export default function OrderDetailHeader({
                     if (onAdvance && i === currentIdx + 1) onAdvance(order.id);
                     else if (onRevert && i === currentIdx - 1) onRevert(order.id);
                   }}
-                  disabled={Math.abs(i - currentIdx) > 1}
+                  disabled={readOnly || Math.abs(i - currentIdx) > 1}
+                  title={readOnly ? "Your subscription has ended — reactivate to change status." : undefined}
                   className={`flex items-center gap-1 sm:gap-1.5 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-semibold transition whitespace-nowrap ${
                     active ? "bg-teal-600 text-white shadow-sm" :
                     done ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 cursor-pointer" :

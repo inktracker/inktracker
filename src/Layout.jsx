@@ -45,7 +45,11 @@ const NAV = [
     ],
   },
   { label: "Invoices", page: "Invoices" },
-  { label: "Performance", page: "Performance", feature: "reports" },
+  // Performance is a READ surface — reports on the shop's own data, nothing to
+  // write. Intentionally NOT feature-gated, so a read-only/expired shop can
+  // still view AND export it ("reads + your data stay accessible"). Mockups /
+  // Wizard stay gated — they create/configure, they aren't pure reads.
+  { label: "Performance", page: "Performance" },
   { label: "Mockups", page: "Mockups", feature: "mockups" },
   { label: "Wizard", page: "Wizard", feature: "wizard" },
   { label: "Account", page: "Account" },
@@ -62,9 +66,9 @@ const PARENT_OF = (() => {
   return m;
 })();
 
-// Map page names to required billing features
+// Map page names to required billing features. (Performance is intentionally
+// absent — it's a read surface that stays viewable/exportable in read-only mode.)
 const PAGE_FEATURES = {
-  Performance: "reports",
   Mockups: "mockups",
   Wizard: "wizard",
 };

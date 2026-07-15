@@ -4,8 +4,10 @@ import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { describeMergeFor, formatMergeValue } from "@/lib/customers/mergeCustomerData";
 import { Loader2, GitMerge, Check, AlertTriangle, RefreshCw } from "lucide-react";
 import { notify } from "@/lib/notify";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 
-export default function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncUrl }) {
+export default function MergeDuplicatesModal({ customers, user, onMerge, onClose, supabaseFuncUrl, readOnly = false, reactivateHref }) {
+  const readOnlyReason = "Your subscription has ended — reactivate to create and edit.";
   const [merging, setMerging] = useState(false);
   const [merged, setMerged] = useState([]);
   // Confirm dialog state — single overlay shared across groups.
@@ -259,8 +261,9 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                           return (
                             <button
                               onClick={() => handleReconcileMerge(group)}
-                              disabled={merging}
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50"
+                              disabled={merging || readOnly}
+                              title={readOnly ? readOnlyReason : undefined}
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <GitMerge className="w-3.5 h-3.5" />
                               Finish merge in InkTracker
@@ -280,11 +283,15 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                      additive-merge helper handles everything; the
                      confirm dialog shows the operator the exact diff
                      before any write happens. */
-                  <button onClick={() => handleMergeClick(group)} disabled={merging}
-                    className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50">
-                    {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
-                    Merge into selected
-                  </button>
+                  <div className="mt-3 flex items-center gap-3">
+                    <button onClick={() => handleMergeClick(group)} disabled={merging || readOnly}
+                      title={readOnly ? readOnlyReason : undefined}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
+                      {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
+                      Merge into selected
+                    </button>
+                    <ReactivateLink show={readOnly} href={reactivateHref} />
+                  </div>
                 )}
               </div>
             );
@@ -348,8 +355,9 @@ export default function MergeDuplicatesModal({ customers, user, onMerge, onClose
                   setConfirm(null);
                   await runActualMerge(key, primary, duplicates);
                 }}
-                disabled={merging}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 px-4 py-1.5 rounded-lg transition disabled:opacity-50"
+                disabled={merging || readOnly}
+                title={readOnly ? readOnlyReason : undefined}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-teal-600 hover:bg-teal-700 px-4 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <GitMerge className="w-4 h-4" />
                 Merge

@@ -1,4 +1,5 @@
 import { fmtMoney } from "../../shared/pricing";
+import ReactivateLink from "../../shared/ReactivateLink";
 
 // Job Costing & Production Assignment section for the Order Detail modal:
 // collapsible panel with estimated/actual hours, material + labor cost,
@@ -26,6 +27,10 @@ export default function OrderJobCostSection({
   handleSaveJobCost,
   savingCost,
   costSaved,
+  // Read-only (lapsed subscription): disable the Save (a write). Inputs stay
+  // interactive-looking but the save is blocked; the reactivate hint explains.
+  readOnly = false,
+  reactivateHref,
 }) {
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -152,11 +157,13 @@ export default function OrderJobCostSection({
           })()}
 
           <div className="flex items-center gap-2">
-            <button onClick={handleSaveJobCost} disabled={savingCost}
-              className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+            <button onClick={handleSaveJobCost} disabled={savingCost || readOnly}
+              title={readOnly ? "Your subscription has ended — reactivate to save." : undefined}
+              className="bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
               {savingCost ? "Saving…" : "Save"}
             </button>
             {costSaved && <span className="text-xs text-emerald-600 font-semibold">Saved</span>}
+            <ReactivateLink show={readOnly} href={reactivateHref} />
           </div>
         </div>
       )}

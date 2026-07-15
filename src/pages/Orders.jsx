@@ -11,7 +11,7 @@ import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
-import { useBillingGate } from "@/lib/billing-gate";
+import { useBillingGate, useReadOnly } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
 import { todayInShopTz } from "@/lib/shopTimezone";
@@ -50,6 +50,7 @@ export default function Orders() {
   const [viewing, setViewing] = useState(null);
   const [user, setUser] = useState(null);
   const { gate: billingGate } = useBillingGate(user);
+  const { readOnly, reactivateHref } = useReadOnly(user);
   const [viewingInvoice, setViewingInvoice] = useState(null);
   const [advFilters, setAdvFilters] = useState(initialCustomer ? { customer: initialCustomer } : {});
   const [originFilter, setOriginFilter] = useState("All");
@@ -432,6 +433,8 @@ export default function Orders() {
           onTogglePaid={handleTogglePaid}
           onShowInvoice={(invoice) => setViewingInvoice(invoice)}
           onUpdated={(u) => setOrders((prev) => prev.map((o) => (o.id === u.id ? { ...o, ...u } : o)))}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
         />
       )}
 

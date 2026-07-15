@@ -17,7 +17,8 @@ import {
   countCustomerDependents,
   formatDependentsMessage,
 } from "@/lib/customers/countCustomerDependents";
-import { useBillingGate } from "@/lib/billing-gate";
+import { useBillingGate, useReadOnly } from "@/lib/billing-gate";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 import { notify } from "@/lib/notify";
 import { isValidEmail } from "@/lib/email";
 import { shopScope } from "@/lib/shopScope";
@@ -80,6 +81,8 @@ export default function Customers() {
   const [editSaved, setEditSaved] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [user, setUser] = useState(null);
+  // Read-only affordance state — declared AFTER `user` so the hook can read it.
+  const { readOnly, reason: readOnlyReason, reactivateHref } = useReadOnly(user);
   const [filters, setFilters] = useState({});
   const [artworkNote, setArtworkNote] = useState("");
   const [artworkColorCount, setArtworkColorCount] = useState("");
@@ -537,14 +540,19 @@ export default function Customers() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Customers</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <ReactivateLink show={readOnly} href={reactivateHref} />
           <button onClick={() => setShowMerge(true)}
-            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-teal-300">
+            disabled={readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-teal-300 disabled:opacity-50 disabled:cursor-not-allowed">
             <GitMerge className="w-4 h-4" /> Merge Duplicates
           </button>
           <button
             onClick={() => setShowForm((v) => !v)}
-            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+            disabled={readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {showForm ? "✕ Cancel" : "+ Add Customer"}
           </button>
@@ -594,13 +602,15 @@ export default function Customers() {
           setForm={setForm}
           handleAdd={handleAdd}
           addingCustomer={addingCustomer}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
         />
       )}
 
       {loading ? (
         <CardGridSkeleton />
       ) : customers.length === 0 ? (
-        <EmptyState type="customers" onAction={() => { setForm(emptyCustomerForm); setShowForm(true); }} />
+        <EmptyState type="customers" onAction={() => { setForm(emptyCustomerForm); setShowForm(true); }} readOnly={readOnly} reactivateHref={reactivateHref} />
       ) : (
         <CustomerCardGrid
           filtered={filtered}
@@ -632,6 +642,8 @@ export default function Customers() {
           uploadingArtwork={uploadingArtwork}
           currentEditingArtwork={currentEditingArtwork}
           handleRemoveArtwork={handleRemoveArtwork}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
         />
       )}
 
@@ -642,6 +654,8 @@ export default function Customers() {
           onMerge={runCustomerMerge}
           onClose={() => setShowMerge(false)}
           supabaseFuncUrl={SUPABASE_FUNC_URL}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
         />
       )}
 

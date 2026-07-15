@@ -1,4 +1,5 @@
 import { MessageSquare, CheckCircle2, Package } from "lucide-react";
+import ReactivateLink from "../../shared/ReactivateLink";
 
 // Row 1 of the Order Detail footer: workflow actions (status flow +
 // invoice create/preview/send + QB link + mark-paid + close) and the
@@ -24,7 +25,14 @@ export default function OrderInvoiceActions({
   handleCreateInvoice,
   handleOpenSend,
   onCreateSlip,
+  // Read-only (lapsed subscription): disable the write actions in this row
+  // (status flow, Create Invoice → QB, Send, Mark Paid). Preview Invoice /
+  // View in QB / Close are reads and stay enabled. Defaults keep writable
+  // users unchanged.
+  readOnly = false,
+  reactivateHref,
 }) {
+  const roTitle = "Your subscription has ended — reactivate to make changes.";
   return (
     <>
       {/* Row 1: workflow actions (status flow + payment) */}
@@ -32,8 +40,9 @@ export default function OrderInvoiceActions({
         {onRevert && prevStatus && (
           <button
             onClick={() => callAction(onRevert, order.id)}
-            disabled={saving}
-            className="px-3 py-2 text-sm font-semibold text-slate-500 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition disabled:opacity-50"
+            disabled={saving || readOnly}
+            title={readOnly ? roTitle : undefined}
+            className="px-3 py-2 text-sm font-semibold text-slate-500 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             ← {prevStatus}
           </button>
@@ -41,8 +50,9 @@ export default function OrderInvoiceActions({
         {onAdvance && nextStatus && (
           <button
             onClick={advanceWithGoodsGuard}
-            disabled={saving}
-            className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
+            disabled={saving || readOnly}
+            title={readOnly ? roTitle : undefined}
+            className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? "Saving…" : `${order.status} Complete →`}
           </button>
@@ -74,7 +84,9 @@ export default function OrderInvoiceActions({
                 already-paid invoices it sends the PDF as a receipt. */}
             <button
               onClick={handleOpenSend}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition"
+              disabled={readOnly}
+              title={readOnly ? roTitle : undefined}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <MessageSquare className="w-4 h-4" /> Send
             </button>
@@ -93,8 +105,9 @@ export default function OrderInvoiceActions({
         {order.status === "Completed" && !relatedInvoice && onComplete && (
           <button
             onClick={handleCreateInvoice}
-            disabled={saving || creatingInvoice}
-            className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50"
+            disabled={saving || creatingInvoice || readOnly}
+            title={readOnly ? roTitle : undefined}
+            className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {creatingInvoice ? "Creating…" : "Create Invoice"}
           </button>
@@ -113,8 +126,9 @@ export default function OrderInvoiceActions({
         {onTogglePaid && (
           <button
             onClick={() => callAction(onTogglePaid, order)}
-            disabled={saving}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 ${
+            disabled={saving || readOnly}
+            title={readOnly ? roTitle : undefined}
+            className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 disabled:cursor-not-allowed ${
               order.paid
                 ? "text-slate-500 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                 : "text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
@@ -124,9 +138,10 @@ export default function OrderInvoiceActions({
             {order.paid ? "Unmark Paid" : "Mark Paid"}
           </button>
         )}
+        <ReactivateLink show={readOnly} href={reactivateHref} className="ml-auto" />
         <button
           onClick={onClose}
-          className="ml-auto px-4 py-2 text-sm font-semibold text-slate-500 rounded-xl hover:bg-slate-100 transition"
+          className={`${readOnly ? "" : "ml-auto"} px-4 py-2 text-sm font-semibold text-slate-500 rounded-xl hover:bg-slate-100 transition`}
         >
           Close
         </button>

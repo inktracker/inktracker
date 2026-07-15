@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Link2, Eye, Trash2, CheckCircle2, Truck } from "lucide-react";
 import { exportOrderToPDF } from "../../shared/pdfExport";
+import ReactivateLink from "../../shared/ReactivateLink";
 
 // Row 2 of the Order Detail footer: utility actions (share art/status
 // links, preview PDF, create AS Colour PO, delete). Includes the
@@ -20,7 +21,12 @@ export default function OrderUtilityActions({
   saving,
   onDelete,
   callAction,
+  // Read-only (lapsed subscription): disable the write actions (create AS
+  // Colour PO, delete order). Share-link / Preview PDF are reads and stay on.
+  readOnly = false,
+  reactivateHref,
 }) {
+  const roTitle = "Your subscription has ended — reactivate to make changes.";
   return (
     <div className="flex flex-wrap items-center gap-2">
       <button
@@ -59,14 +65,15 @@ export default function OrderUtilityActions({
           the footer to actions that are relevant to the current
           stage. */}
       {onOrderFromAC && liveOrder.status === "Order Goods" && (
-        <ACOrderButton order={order} sourcePO={sourcePO} onOrderFromAC={onOrderFromAC} disabled={saving} />
+        <ACOrderButton order={order} sourcePO={sourcePO} onOrderFromAC={onOrderFromAC} disabled={saving || readOnly} readOnly={readOnly} />
       )}
+      <ReactivateLink show={readOnly} href={reactivateHref} className="ml-auto" />
       {onDelete && (
         <button
           onClick={() => callAction(onDelete, order.id)}
-          disabled={saving}
-          title="Delete order"
-          className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50"
+          disabled={saving || readOnly}
+          title={readOnly ? roTitle : "Delete order"}
+          className={`${readOnly ? "" : "ml-auto"} inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-400 border border-red-200 rounded-lg hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed`}
         >
           <Trash2 className="w-3.5 h-3.5" />
           {saving ? "Deleting…" : "Delete"}
@@ -83,7 +90,7 @@ export default function OrderUtilityActions({
 //
 // The signal-it-was-ordered behaviour is what differentiates this from
 // the old SS button which always invited a re-order.
-function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled }) {
+function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled, readOnly = false }) {
   if (sourcePO?.status === "submitted") {
     return (
       <Link
@@ -110,8 +117,10 @@ function ACOrderButton({ order, sourcePO, onOrderFromAC, disabled }) {
     <button
       onClick={() => onOrderFromAC(order)}
       disabled={disabled}
-      title="Create a draft AS Colour PO from this order's line items"
-      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-600 border border-teal-200 rounded-lg hover:bg-teal-50 transition disabled:opacity-50"
+      title={readOnly
+        ? "Your subscription has ended — reactivate to create a PO."
+        : "Create a draft AS Colour PO from this order's line items"}
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-600 border border-teal-200 rounded-lg hover:bg-teal-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
     >
       <Truck className="w-3.5 h-3.5" /> Create PO
     </button>

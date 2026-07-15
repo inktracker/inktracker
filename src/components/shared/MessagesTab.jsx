@@ -12,6 +12,8 @@
 
 import { useEffect, useState } from "react";
 import { base44 } from "@/api/supabaseClient";
+import { useReadOnly } from "@/lib/billing-gate";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 import { Mail, MailOpen, Loader2, ArrowUpRight, ArrowDownLeft, Send, Lock, AlertCircle } from "lucide-react";
 import {
   parseStoredBody,
@@ -172,13 +174,19 @@ function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
   const [internal, setInternal] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const { readOnly, reactivateHref } = useReadOnly();
 
-  const canSend = body.trim().length > 0 && !sending;
+  // A PUBLIC reply hits the sendReply edge function, which is blocked for lapsed
+  // subscriptions server-side. Internal notes only write the (ungated) messages
+  // table, so they stay available read-only. Gate only the public reply.
+  const publicReplyBlocked = readOnly && !internal;
+  const canSend = body.trim().length > 0 && !sending && !publicReplyBlocked;
   const hasRecipient = !!customerEmail;
 
   async function handleSend() {
     setError("");
     if (!body.trim()) return;
+    if (publicReplyBlocked) return;
     if (!internal && !hasRecipient) {
       setError("No customer email on file. Add one to send a reply, or check Internal note.");
       return;
@@ -261,16 +269,20 @@ function ReplyBox({ replyContext, threadId, currentUserEmail, onPosted }) {
           <Lock className="w-3 h-3 text-amber-600" />
           Internal note (don't email)
         </label>
-        <button
-          onClick={handleSend}
-          disabled={!canSend}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition disabled:opacity-50 ${
-            internal ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-teal-600 hover:bg-teal-700 text-white"
-          }`}
-        >
-          {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-          {sending ? "Sending…" : internal ? "Save note" : "Send reply"}
-        </button>
+        <div className="flex items-center gap-2">
+          <ReactivateLink show={publicReplyBlocked} href={reactivateHref} />
+          <button
+            onClick={handleSend}
+            disabled={!canSend}
+            title={publicReplyBlocked ? "Your subscription has ended — reactivate to send replies" : undefined}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed ${
+              internal ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-teal-600 hover:bg-teal-700 text-white"
+            }`}
+          >
+            {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+            {sending ? "Sending…" : internal ? "Save note" : "Send reply"}
+          </button>
+        </div>
       </div>
     </div>
   );
