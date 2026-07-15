@@ -18,13 +18,18 @@
 // the userOverride arg so the gate decides off the freshest state.
 
 import { useAuth } from "@/lib/AuthContext";
-import { getEffectiveTier, isReadOnly } from "@/lib/billing";
+import { getEffectiveTier, computeReadOnly } from "@/lib/billing";
+import { createPageUrl } from "@/utils";
+
+// The Account billing deep-link every reactivate CTA points at.
+export const REACTIVATE_HREF = createPageUrl("Account") + "?billing=1";
 
 export function useBillingGate(userOverride) {
   const { user: ctxUser } = useAuth();
   const user = userOverride ?? ctxUser;
   const tier = getEffectiveTier(user);
-  const readOnly = isReadOnly(tier, user?.subscription_status, user?.past_due_since);
+  // Canonical rule (role bypass + governing sub) — matches the server gate.
+  const readOnly = computeReadOnly(user);
 
   /**
    * Returns true if the caller should ABORT the mutation. Shows an
@@ -45,4 +50,40 @@ export function useBillingGate(userOverride) {
   }
 
   return { tier, isReadOnly: readOnly, gate, user };
+}
+
+// Human-readable reason shown in tooltips / the banner when read-only.
+function readOnlyReason(user) {
+  const status = user?.subscription_status;
+  const tier = getEffectiveTier(user);
+  if (status === "past_due") {
+    return "Your subscription is past due — reactivate to create and edit.";
+  }
+  if (user?.subscription_tier === "trial" || status === "trialing") {
+    return "Your free trial has ended — reactivate to create and edit.";
+  }
+  if (user?.subscription_tier === "incomplete" || status === "incomplete") {
+    return "Finish setting up billing to create and edit.";
+  }
+  // expired / canceled / anything else lapsed
+  return "Your subscription has ended — reactivate to create and edit.";
+}
+
+/**
+ * The ONE hook every create/edit affordance consults. Derives read-only state
+ * from the canonical `computeReadOnly` rule (which mirrors the server gate),
+ * so affordances disable honestly instead of letting a user click into a raw
+ * DB rejection. No ad-hoc tier checks at call sites.
+ *
+ * @returns {{ readOnly: boolean, reason: string, reactivateHref: string }}
+ */
+export function useReadOnly(userOverride) {
+  const { user: ctxUser } = useAuth();
+  const user = userOverride ?? ctxUser;
+  const readOnly = computeReadOnly(user);
+  return {
+    readOnly,
+    reason: readOnly ? readOnlyReason(user) : "",
+    reactivateHref: REACTIVATE_HREF,
+  };
 }

@@ -32,6 +32,7 @@ import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
+import ReactivateLink from "../shared/ReactivateLink";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -110,6 +111,11 @@ export default function QuoteEditorModal({
   onClose,
   onAddCustomer,
   defaultTaxRate,
+  // Subscription-lapsed read-only mode. When true, Save is disabled so
+  // no write can be committed; a reactivate hint appears in the footer.
+  // Inputs stay editable (harmless) — disabling Save is the write gate.
+  readOnly = false,
+  reactivateHref,
 }) {
   const [q, setQ] = useState(() => {
     const base = quote ? { ...quote } : blankQuote(defaultTaxRate || 8.265);
@@ -1533,11 +1539,14 @@ export default function QuoteEditorModal({
           )}
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || readOnly}
+            title={readOnly ? "Your subscription has ended — reactivate to create and edit" : undefined}
             className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 rounded-xl transition"
           >
             {saving ? "Saving…" : "Save Quote"}
           </button>
+          {/* Explains the disabled Save; renders nothing when writable. */}
+          <ReactivateLink show={readOnly} href={reactivateHref} className="self-center" />
           <button
             onClick={onClose}
             className="px-5 border border-slate-200 dark:border-slate-700 text-slate-500 text-sm font-semibold py-2.5 rounded-xl hover:bg-slate-100 transition"

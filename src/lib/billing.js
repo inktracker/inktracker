@@ -152,6 +152,33 @@ export function isReadOnly(tier, status, pastDueSince, now = Date.now()) {
   return false;
 }
 
+// ── CANONICAL READ-ONLY PREDICATE (client ↔ server, ONE rule) ───────────────
+// Single source of truth for "is this user write-blocked?" — the EXACT INVERSE
+// of the server gate `public.has_active_subscription()` (migration
+// 20260811000000_bill03_past_due_grace.sql). Keep them in lockstep.
+//
+//   WRITABLE (not read-only) iff:
+//     • role is admin or broker                        → always writable
+//     • OR the governing subscription is NOT lapsed, where "lapsed" =
+//         tier expired  OR  tier incomplete (never-subscribed)
+//         OR status canceled
+//         OR (trial AND trial_ends_at in the past)
+//         OR (past_due AND past_due_since older than the 7-day grace)
+//   READ-ONLY otherwise.
+//
+// Team members (manager/employee) inherit the shop OWNER's subscription — the
+// owner's fields are applied to `user` upstream in AuthContext via
+// resolveTeamSubscription, so this evaluates the governing sub for them too.
+// Unresolved/absent user → NOT read-only, mirroring the server's fail-safe
+// "NOT FOUND → allow". getEffectiveTier collapses expired/incomplete/canceled/
+// expired-trial into 'expired', so isReadOnly's checks line up with the SQL.
+export function computeReadOnly(user, now = Date.now()) {
+  if (!user) return false;
+  if (user.role === "admin" || user.role === "broker") return false;
+  const tier = getEffectiveTier(user, now);
+  return isReadOnly(tier, user.subscription_status, user.past_due_since, now);
+}
+
 // PLANS now represent BILLING CADENCE (monthly vs annual), not feature
 // tiers — every cadence gets every feature. The displayed price on the
 // monthly plan is the standard $99; the founding $50 rate is auto-

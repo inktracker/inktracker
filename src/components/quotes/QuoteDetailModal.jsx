@@ -34,6 +34,12 @@ import { MessageSquare, UserCheck, UserX, Paperclip } from "lucide-react";
 import { notify } from "@/lib/notify";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
+import ReactivateLink from "../shared/ReactivateLink";
+
+// Shown on every disabled write affordance when the shop is read-only
+// (subscription lapsed). Viewing stays fully intact — only DB-mutating
+// actions are gated, never hidden without explanation.
+const RO_TITLE = "Your subscription has ended — reactivate to create and edit";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
@@ -290,6 +296,11 @@ export default function QuoteDetailModal({
   // re-linked from the possible-duplicate banner). Parent splices the
   // updated row into its quotes state so the modal re-renders.
   onUpdated,
+  // Subscription-lapsed read-only mode. When true, every DB-mutating
+  // action is disabled (not hidden) with a reactivate hint; all reads,
+  // the PDF preview, and Close stay fully functional.
+  readOnly = false,
+  reactivateHref,
 }) {
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -1231,7 +1242,9 @@ export default function QuoteDetailModal({
           </CollapsibleSection>
 
           <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
-            {!quote?.broker_id && (
+            {/* Edit is hidden entirely when read-only — the user must not be
+                able to open the editor at all. ReactivateLink below explains. */}
+            {!quote?.broker_id && !readOnly && (
               <button
                 onClick={onEdit}
                 className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
@@ -1242,7 +1255,9 @@ export default function QuoteDetailModal({
 
             <button
               onClick={() => setShowSendModal(true)}
-              className="px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-200 bg-teal-50 rounded-xl hover:bg-teal-100 transition"
+              disabled={readOnly}
+              title={readOnly ? RO_TITLE : undefined}
+              className="px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-200 bg-teal-50 rounded-xl hover:bg-teal-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send Quote
             </button>
@@ -1274,16 +1289,18 @@ export default function QuoteDetailModal({
               <>
                 <button
                   onClick={() => callAction(onApprove, quote.id)}
-                  disabled={saving}
-                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50"
+                  disabled={saving || readOnly}
+                  title={readOnly ? RO_TITLE : undefined}
+                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? "Saving…" : "Approve"}
                 </button>
 
                 <button
                   onClick={() => callAction(onDecline, quote.id)}
-                  disabled={saving}
-                  className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition disabled:opacity-50"
+                  disabled={saving || readOnly}
+                  title={readOnly ? RO_TITLE : undefined}
+                  className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? "Saving…" : "Decline"}
                 </button>
@@ -1296,8 +1313,9 @@ export default function QuoteDetailModal({
             {(quote.status === "Approved" || quote.status === "Approved and Paid" || quote.status === "Client Approved") && !isConvertedToOrder(quote) && (
               <button
                 onClick={() => callAction(onConvert, quote)}
-                disabled={saving}
-                className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
+                disabled={saving || readOnly}
+                title={readOnly ? RO_TITLE : undefined}
+                className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? "Converting…" : "Convert to Order"}
               </button>
@@ -1306,8 +1324,9 @@ export default function QuoteDetailModal({
             {DEPOSITS_ENABLED && onTogglePaid && (
               <button
                 onClick={() => callAction(onTogglePaid, quote)}
-                disabled={saving}
-                className={`px-4 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 ${
+                disabled={saving || readOnly}
+                title={readOnly ? RO_TITLE : undefined}
+                className={`px-4 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 disabled:cursor-not-allowed ${
                   quote.deposit_paid
                     ? "text-slate-600 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                     : "text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
@@ -1320,7 +1339,9 @@ export default function QuoteDetailModal({
             {onDuplicate && (
               <button
                 onClick={() => onDuplicate(quote)}
-                className="px-4 py-2 text-sm font-semibold text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+                disabled={readOnly}
+                title={readOnly ? RO_TITLE : undefined}
+                className="px-4 py-2 text-sm font-semibold text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Duplicate
               </button>
@@ -1329,12 +1350,17 @@ export default function QuoteDetailModal({
             {onDelete && (
               <button
                 onClick={() => callAction(onDelete, quote.id)}
-                disabled={saving}
-                className="px-4 py-2 text-sm font-semibold text-red-400 border border-red-200 rounded-xl hover:bg-red-50 transition disabled:opacity-50"
+                disabled={saving || readOnly}
+                title={readOnly ? RO_TITLE : undefined}
+                className="px-4 py-2 text-sm font-semibold text-red-400 border border-red-200 rounded-xl hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? "Deleting…" : "Delete Quote"}
               </button>
             )}
+
+            {/* Explains why the write actions above are disabled. Renders
+                nothing when the shop can still write. */}
+            <ReactivateLink show={readOnly} href={reactivateHref} className="self-center" />
 
             <button
               onClick={onClose}

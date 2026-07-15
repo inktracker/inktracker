@@ -14,6 +14,7 @@ import {
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { getImprintArtwork } from "./orderDetailHelpers";
+import ReactivateLink from "../../shared/ReactivateLink";
 
 // Line-items display for the Order Detail modal: per-line pricing table,
 // per-imprint design breakdown, order totals, notes, and the reorder-
@@ -31,6 +32,10 @@ export default function OrderLineItems({
   setPreviewArt,
   handleReorderShortfall,
   reorderCreating,
+  // Read-only (lapsed subscription): the only write here is Reorder Shortfall
+  // (creates a draft PO). Disable it; the pricing table / totals are reads.
+  readOnly = false,
+  reactivateHref,
 }) {
   return (
     <>
@@ -305,14 +310,18 @@ export default function OrderLineItems({
                 Reorder to make the customer whole — creates a draft PO with these sizes.
               </div>
             </div>
-            <button
-              onClick={handleReorderShortfall}
-              disabled={reorderCreating}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl transition disabled:opacity-60"
-            >
-              <ShoppingCart className="w-4 h-4" />
-              {reorderCreating ? "Creating…" : `Reorder Shortfall (${totalShort} pcs)`}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleReorderShortfall}
+                disabled={reorderCreating || readOnly}
+                title={readOnly ? "Your subscription has ended — reactivate to reorder." : undefined}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                {reorderCreating ? "Creating…" : `Reorder Shortfall (${totalShort} pcs)`}
+              </button>
+              <ReactivateLink show={readOnly} href={reactivateHref} />
+            </div>
           </div>
         );
       })()}

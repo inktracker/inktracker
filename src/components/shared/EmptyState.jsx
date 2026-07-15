@@ -1,9 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 import {
   FileText, Package, Users, Archive, Receipt,
   Plus, ArrowRight, Wand2
 } from "lucide-react";
+
+const READ_ONLY_TITLE = "Your subscription has ended — reactivate to create and edit";
 
 const CONFIGS = {
   quotes: {
@@ -45,14 +48,20 @@ const CONFIGS = {
   },
 };
 
-export default function EmptyState({ type, onAction, className = "" }) {
+export default function EmptyState({ type, onAction, className = "", readOnly = false, reactivateHref }) {
   const navigate = useNavigate();
   const config = CONFIGS[type];
   if (!config) return null;
 
   const Icon = config.icon;
+  // Only the "new" (create) primary action is a WRITE — gate it when read-only.
+  // Page-navigation CTAs (e.g. "Connect QuickBooks", "Create a Quote First")
+  // are reads/navigations and stay enabled.
+  const primaryIsCreate = config.primaryAction.action === "new";
+  const primaryGated = primaryIsCreate && readOnly;
 
   function handlePrimary() {
+    if (primaryGated) return;
     if (config.primaryAction.action === "new" && onAction) {
       onAction();
     } else if (config.primaryAction.page) {
@@ -78,11 +87,14 @@ export default function EmptyState({ type, onAction, className = "" }) {
       <div className="flex items-center justify-center gap-3 flex-wrap">
         <button
           onClick={handlePrimary}
-          className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition"
+          disabled={primaryGated}
+          title={primaryGated ? READ_ONLY_TITLE : undefined}
+          className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-600"
         >
           {config.primaryAction.action === "new" ? <Plus className="w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
           {config.primaryAction.label}
         </button>
+        <ReactivateLink show={primaryGated} href={reactivateHref} />
         {config.secondaryAction && (
           <button
             onClick={handleSecondary}

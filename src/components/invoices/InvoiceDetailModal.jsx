@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import ReactivateLink from "../shared/ReactivateLink";
 import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload, getDisplayName, getShopPricingConfig } from "../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
@@ -14,7 +15,7 @@ import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
 
-export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onSendSuccess }) {
+export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
   const [loading, setLoading] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [reordered, setReordered] = useState(false);
@@ -492,19 +493,25 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
           {!invoice.paid && onMarkPaid && (
             <button onClick={() => { onMarkPaid(invoice.id); onClose(); }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
               Mark as Paid
             </button>
           )}
           {invoice.status === "Draft" && onConvertToInvoice && (
             <button onClick={() => { onConvertToInvoice(invoice); onClose(); }}
-              className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
               Convert to Invoice
             </button>
           )}
           {!invoice.paid && (
             <button onClick={() => setShowSendModal(true)}
-              className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition">
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
               Send Invoice
             </button>
           )}
@@ -537,8 +544,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               View in QB
             </a>
           ) : (
-            <button onClick={handleCreateInQB} disabled={qbCreating}
-              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50">
+            <button onClick={handleCreateInQB} disabled={qbCreating || readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50 disabled:cursor-not-allowed">
               {qbCreating ? "Creating…" : "Create in QB"}
             </button>
           )}
@@ -557,14 +565,18 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
             Preview PDF
           </button>
-          <button onClick={handleReorder} disabled={reordering}
-            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition disabled:opacity-50">
+          <button onClick={handleReorder} disabled={reordering || readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed">
             {reordered ? "✓ Reordered" : reordering ? "Creating…" : "Reorder"}
           </button>
           {onDelete && <button onClick={() => onDelete(invoice.id)}
-            className="text-xs font-semibold text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition">
+            disabled={readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="text-xs font-semibold text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
             Delete
           </button>}
+          <ReactivateLink show={readOnly} href={reactivateHref} />
           <button onClick={onClose} className="ml-auto text-xs font-semibold text-slate-500 hover:text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">Close</button>
         </div>
         {qbStatus && (

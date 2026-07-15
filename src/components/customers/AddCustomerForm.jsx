@@ -1,11 +1,12 @@
 import { normalizeShipTo } from "@/lib/tax/address";
 import AddressFields from "@/components/shared/AddressFields";
 import ExemptionFields from "@/components/customers/ExemptionFields";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 
 // The "New Customer" inline form shown when Add Customer is toggled open.
 // Pure move of the JSX out of Customers.jsx — parent still owns `form`
 // state and the `handleAdd` submit path.
-export default function AddCustomerForm({ form, setForm, handleAdd, addingCustomer }) {
+export default function AddCustomerForm({ form, setForm, handleAdd, addingCustomer, readOnly = false, reactivateHref }) {
   return (
     <div className="bg-teal-50 border border-teal-200 rounded-2xl p-5 space-y-3">
       <div className="text-xs font-bold text-teal-700 uppercase tracking-widest">
@@ -129,13 +130,17 @@ export default function AddCustomerForm({ form, setForm, handleAdd, addingCustom
         Add the customer first. Then open Edit Customer to upload artwork files that persist after reload.
       </div>
 
-      <button
-        onClick={handleAdd}
-        disabled={addingCustomer || !form.name.trim()}
-        className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
-      >
-        {addingCustomer ? "Adding…" : "Add Customer"}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={handleAdd}
+          disabled={addingCustomer || !form.name.trim() || readOnly}
+          title={readOnly ? "Your subscription has ended — reactivate to create and edit." : undefined}
+          className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+        >
+          {addingCustomer ? "Adding…" : "Add Customer"}
+        </button>
+        <ReactivateLink show={readOnly} href={reactivateHref} />
+      </div>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import {
 import { sortSizeEntries } from "../../shared/pricing";
 import { getStageTasks } from "@/lib/productionTasks";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
+import ReactivateLink from "../../shared/ReactivateLink";
 
 // Floor Mode Panel — stage-aware per-size tracking.
 //   Order Goods: ordered/received cycle (goods_progress).
@@ -24,7 +25,14 @@ export default function FloorModePanel({
   floorToggleGoods,
   bulkOrderGoodsStep,
   saveShortfall,
+  // Read-only (lapsed subscription): Floor Mode is all writes (checklist
+  // toggles, per-size ordered/received/print taps, bulk step, misprint entry).
+  // Disable the interactive controls; the panel still renders so the operator
+  // can read current progress. Defaults keep writable users unchanged.
+  readOnly = false,
+  reactivateHref,
 }) {
+  const roTitle = "Your subscription has ended — reactivate to update production.";
   const step = liveOrder.status || "Pre-Press";
   const tasks = getStageTasks(step);
   const checklist = liveOrder.checklist || {};
@@ -62,6 +70,12 @@ export default function FloorModePanel({
       </button>
       {!floorCollapsed && (
       <div className="p-4 space-y-4">
+        {readOnly && (
+          <div className="text-xs text-slate-500 flex items-center gap-2">
+            <span>Production updates are paused — reactivate to check off tasks and log progress.</span>
+            <ReactivateLink show={readOnly} href={reactivateHref} />
+          </div>
+        )}
         {/* Checklist — Order Goods has two auto-derived
             tasks (Place blank order / Receive goods) so
             operators don't double-confirm what the
@@ -100,10 +114,13 @@ export default function FloorModePanel({
                   return (
                     <button key={task}
                       onClick={handleClick}
-                      title={bulkTarget
-                        ? `Marks every size as ${bulkTarget}. Or tap individual sizes below for partial.`
-                        : undefined}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
+                      disabled={readOnly}
+                      title={readOnly
+                        ? roTitle
+                        : bulkTarget
+                          ? `Marks every size as ${bulkTarget}. Or tap individual sizes below for partial.`
+                          : undefined}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition disabled:opacity-60 disabled:cursor-not-allowed ${done ? "bg-emerald-50 border border-emerald-200" : "bg-slate-50 hover:bg-slate-100 border border-transparent"}`}>
                       <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${done ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`}>
                         {done && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                       </div>
@@ -175,8 +192,9 @@ export default function FloorModePanel({
                     return (
                       <button key={size}
                         onClick={() => floorToggleGoods(liIdx, size)}
-                        title={tooltip}
-                        className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition flex flex-col items-center min-w-[64px] ${
+                        disabled={readOnly}
+                        title={readOnly ? roTitle : tooltip}
+                        className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition flex flex-col items-center min-w-[64px] disabled:opacity-60 disabled:cursor-not-allowed ${
                           status === "received"
                             ? "bg-emerald-100 border-emerald-400 text-emerald-700 hover:bg-emerald-50"
                             : status === "ordered"
@@ -210,15 +228,18 @@ export default function FloorModePanel({
                             if (next !== -1) floorTogglePrint(liIdx, size, next);
                           }
                         }}
-                          className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-slate-200 text-slate-700 hover:border-teal-300"}`}>
+                          disabled={readOnly}
+                          title={readOnly ? roTitle : undefined}
+                          className={`text-sm rounded-xl px-3 py-2 font-bold border-2 transition disabled:opacity-60 disabled:cursor-not-allowed ${allDone ? "bg-emerald-100 border-emerald-400 text-emerald-700" : partial ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-white border-slate-200 text-slate-700 hover:border-teal-300"}`}>
                           {size}: {count}{allDone && " ✓"}
                         </button>
                         {imprints.length > 1 && (
                           <div className="flex gap-0.5 mt-1">
                             {imprints.map((imp, ii) => (
                               <button key={ii} onClick={() => floorTogglePrint(liIdx, size, ii)}
-                                title={imp.location}
-                                className={`w-2.5 h-2.5 rounded-full transition ${printProgress[`${liIdx}-${size}-${ii}`] ? "bg-emerald-400" : "bg-slate-300 hover:bg-slate-400"}`} />
+                                disabled={readOnly}
+                                title={readOnly ? roTitle : imp.location}
+                                className={`w-2.5 h-2.5 rounded-full transition disabled:cursor-not-allowed ${printProgress[`${liIdx}-${size}-${ii}`] ? "bg-emerald-400" : "bg-slate-300 hover:bg-slate-400"}`} />
                             ))}
                           </div>
                         )}
@@ -256,15 +277,17 @@ export default function FloorModePanel({
                           min="0"
                           max={(li.sizes || {})[size] || 0}
                           defaultValue={(li._shortfall || {})[size] || 0}
+                          disabled={readOnly}
                           onBlur={(e) => {
+                            if (readOnly) return;
                             const v = e.target.value;
                             const cur = (li._shortfall || {})[size] || 0;
                             if (String(cur) !== String(v)) {
                               saveShortfall(li.id, size, v);
                             }
                           }}
-                          className="w-12 text-center text-xs font-semibold text-amber-800 bg-white border border-amber-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-amber-400"
-                          title={`Misprints for ${size}`}
+                          className="w-12 text-center text-xs font-semibold text-amber-800 bg-white border border-amber-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-60 disabled:cursor-not-allowed"
+                          title={readOnly ? roTitle : `Misprints for ${size}`}
                         />
                       </label>
                     ))}

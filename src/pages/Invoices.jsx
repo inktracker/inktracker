@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
+import { useReadOnly } from "@/lib/billing-gate";
 import { base44, supabase } from "@/api/supabaseClient";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
@@ -47,6 +48,12 @@ export default function Invoices() {
   const [qbTruncated, setQbTruncated] = useState(false);
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
+
+  // Read-only gate: when the shop's subscription has lapsed, write
+  // affordances (mark paid, send, delete, push-to-QB, reorder…) are
+  // disabled with a reactivate hint. Viewing/printing stays allowed.
+  // Pass the page's loaded `user` so the gate reads the freshest state.
+  const { readOnly, reason: readOnlyReason, reactivateHref } = useReadOnly(user);
 
   useEffect(() => {
     async function loadData() {
@@ -342,7 +349,10 @@ export default function Invoices() {
                 </td>
                 <td className="px-4 py-3.5">
                   {!inv.paid && (
-                    <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }} className="text-xs font-semibold text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-lg hover:bg-emerald-50 transition whitespace-nowrap">Mark Paid</button>
+                    <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }}
+                      disabled={readOnly}
+                      title={readOnly ? readOnlyReason : undefined}
+                      className="text-xs font-semibold text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-lg hover:bg-emerald-50 transition whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">Mark Paid</button>
                   )}
                 </td>
               </tr>
@@ -385,6 +395,9 @@ export default function Invoices() {
           onMarkPaid={(id) => { markPaid(id); setSelected(prev => ({ ...prev, paid: true })); }}
           onConvertToInvoice={handleConvertToInvoice}
           onDelete={handleDelete}
+          readOnly={readOnly}
+          readOnlyReason={readOnlyReason}
+          reactivateHref={reactivateHref}
         />
       )}
     </div>
