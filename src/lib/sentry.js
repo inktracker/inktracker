@@ -62,6 +62,11 @@ export function initSentry() {
       /error loading dynamically imported module/i,
       /ChunkLoadError/i,
       /Loading chunk \d+ failed/i,
+      // Instagram/Facebook in-app browser noise: their injected tracking
+      // script (sendDataToNative / sendPageHideMessage) calls
+      // window.webkit.messageHandlers after the bridge is torn down on
+      // page-hide. Their code, not ours — fires on every link-in-bio visit.
+      /window\.webkit\.messageHandlers/,
     ],
 
     beforeSend: scrubSentryEvent,
