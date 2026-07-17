@@ -22,10 +22,10 @@ body{margin:0;color:var(--ink);background:#fff;font-family:"Inter",-apple-system
 a{color:var(--forest)}
 .wrap{max-width:820px;margin:0 auto;padding:0 20px}
 header.site{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:2px solid var(--ink)}
-header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px}
+header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px}
 .brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .brand span{color:var(--forest)}
-.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0;white-space:nowrap}
 .nav{display:flex;align-items:center;gap:18px}
 .nav a:not(.cta){font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .nav a:not(.cta):hover{color:var(--forest)}
@@ -93,7 +93,18 @@ ul.body-list li{margin:.55em 0}
 .proof{list-style:none;padding:0;margin:1.4em 0;display:grid;gap:12px}
 .proof li{padding:14px 18px 14px 42px;position:relative;border:1px solid var(--hair);border-radius:10px}
 .proof li:before{content:"\2713";position:absolute;left:16px;top:14px;color:var(--forest);font-weight:800}
-@media(min-width:640px){}</style>
+@media(min-width:640px){}
+/* Mobile header: at desktop sizes the 26px brand + nav link + CTA fit in
+   72px; on phones they collided (brand jammed against the nav link, CTA
+   wrapping to two lines). Shrink everything and keep the CTA one line. */
+@media(max-width:600px){
+header.site .wrap{height:60px}
+.brand{font-size:19px}
+.nav{gap:10px}
+.nav a:not(.cta){font-size:11px;letter-spacing:.12em}
+.cta{font-size:11px;letter-spacing:.06em;padding:10px 12px}
+}
+@media(max-width:344px){.nav a:not(.cta){display:none}}</style>
 </head>
 <body>
 <header class="site"><div class="wrap">
