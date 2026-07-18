@@ -48,17 +48,20 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const [sent, setSent] = useState(false);
 
   const [emailsInput, setEmailsInput] = useState(quote.customer_email || customer?.email || "");
-  // Broker-side totals — used for the post-send patch which writes back
-  // to the row (must stay broker-side or we'd corrupt the saved record).
-  const totals = getQuoteTotalsForSend(quote);
   // When the shop accepts QB's tax on a held send, the edge adopts QB's
   // authoritative tax/total/rate onto the quote row; we re-fetch it and use
-  // that fresh copy (`q`) for EVERYTHING customer-facing below — totals, the
-  // email body/{{total}}, and the PDF — so the quote the customer receives
-  // matches what QB charges and the /QuotePayment page. Falls back to the
-  // prop on a normal (non-adopted) send.
+  // that fresh copy (`q`) for EVERYTHING below — totals, the email
+  // body/{{total}}, the PDF, AND the post-send write-back — so the quote the
+  // customer receives matches what QB charges and the /QuotePayment page.
+  // Falls back to the prop on a normal (non-adopted) send.
   const [adoptedQuote, setAdoptedQuote] = useState(null);
   const q = adoptedQuote || quote;
+  // Broker-side totals — used for the post-send patch which writes back
+  // to the row (must stay broker-side or we'd corrupt the saved record).
+  // MUST derive from `q`, not the prop: deriving from the stale prop made
+  // the post-send patch revert the row to the pre-adopt tax/total seconds
+  // after qbSync had adopted QB's numbers (Dragon Head, 2026-07-17).
+  const totals = getQuoteTotalsForSend(q);
   // Tax-hold detail (set when QB computed a different tax) → drives the
   // "Use QuickBooks' tax" affordance instead of a dead-end error.
   const [taxHold, setTaxHold] = useState(null); // { quotedTax, qbTax, qbTotal } | null
@@ -627,11 +630,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // customer_email + tax_rate (forced to 0 for broker quotes).
       // Contract pinned by buildPostSendQuotePatch tests P1–P7.
       await base44.entities.Quote.update(quote.id, buildPostSendQuotePatch({
-        currentStatus: quote.status,
+        currentStatus: q.status,
         recipients: recipientEmails,
         totals,
-        isBrokerQuote: isBrokerQuote(quote),
-        currentTaxRate: quote.tax_rate,
+        isBrokerQuote: isBrokerQuote(q),
+        currentTaxRate: q.tax_rate,
       }));
 
       // Log the sent email into the per-job message thread.
