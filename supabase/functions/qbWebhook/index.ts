@@ -30,6 +30,12 @@ import {
   isInvoiceFullyPaid,
   PAID_INVOICE_ACTIONS,
 } from "../_shared/qbWebhookLogic.js";
+import {
+  detectQbInvoiceModification,
+  buildQbMirrorPatch,
+  buildQbModifiedNotification,
+} from "../_shared/qbInvoiceModified.js";
+import { recordShopNotification } from "../_shared/shopNotifications.js";
 // Set secret: npx supabase secrets set QB_WEBHOOK_VERIFIER_TOKEN=<from Intuit Developer Portal>
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
@@ -116,6 +122,63 @@ async function getAccessToken(supabase: any, profile: any): Promise<string> {
 }
 
 // ── Core: find quote by QB invoice ID and mark paid ──────────────────────────
+
+// Mirror a QB-side invoice edit onto the linked local rows (quotes +
+// invoices, matched by qb_invoice_id within the tenant) and notify the
+// shop when the edit created NEW disagreement with the as-sold total.
+// Notify-on-transition only: redelivered webhooks and edits that bring
+// QB into agreement stay silent. One notification per event, preferring
+// the invoice row (that's where the Sync button lives).
+async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId: string, shopOwner: string) {
+  if (!freshInvoice) return;
+  const freshQbTotal = Number(freshInvoice.TotalAmt ?? 0);
+
+  const [{ data: quote }, { data: invoiceRow }] = await Promise.all([
+    supabase.from("quotes")
+      .select("id, quote_id, total, qb_total, paid")
+      .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
+    supabase.from("invoices")
+      .select("id, invoice_id, total, qb_total, paid")
+      .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
+  ]);
+  if (!quote && !invoiceRow) return; // not an InkTracker-linked invoice
+
+  let notified = false;
+  for (const [table, row] of [["invoices", invoiceRow], ["quotes", quote]] as const) {
+    if (!row) continue;
+    const detection = detectQbInvoiceModification({
+      localTotal: row.total,
+      priorQbTotal: row.qb_total,
+      freshQbTotal,
+    });
+    const patch = buildQbMirrorPatch(freshInvoice, row);
+    if (patch) {
+      const { error: patchErr } = await supabase.from(table).update(patch)
+        .eq("id", row.id).eq("shop_owner", shopOwner);
+      if (patchErr) console.error(`[qbWebhook] qb mirror patch failed on ${table} for ${qbInvoiceId}:`, patchErr.message);
+    }
+    if (detection.shouldNotify && !notified) {
+      notified = true;
+      await recordShopNotification(supabase, buildQbModifiedNotification({
+        shopOwner,
+        ref: (table === "invoices" ? (row as any).invoice_id : (row as any).quote_id) || `QB #${qbInvoiceId}`,
+        rowId: row.id,
+        relatedEntity: table === "invoices" ? "invoice" : "quote",
+        qbInvoiceId,
+        localTotal: row.total,
+        freshQbTotal,
+      }));
+      await logEvent(supabase, {
+        shop_owner: shopOwner,
+        action: "qb_invoice_modified",
+        direction: "inbound",
+        status: "success",
+        qb_invoice_id: qbInvoiceId,
+        response_body: { local_total: row.total, qb_total: freshQbTotal, table },
+      });
+    }
+  }
+}
 
 async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: string) {
   // CRITICAL: scope the lookup by BOTH qb_invoice_id and shop_owner.
@@ -353,6 +416,20 @@ async function processNotification(supabase: any, notification: any) {
         const data = await qbGet(accessToken, realmId, `invoice/${entity.id}`);
         if (isInvoiceFullyPaid(data?.Invoice)) {
           await handlePaidInvoice(supabase, entity.id, shopOwner);
+        }
+        // QB-side EDIT propagation. We used to fetch the fresh invoice
+        // and discard everything but paid state — edited amounts then
+        // coasted invisibly until the nightly reconcile. Mirror the
+        // fresh numbers onto the linked rows' qb_* columns now, and if
+        // the edit makes QB disagree with the as-sold total, notify the
+        // shop in-app ("modified in QuickBooks — sync?"). As-sold
+        // totals are never rewritten here; the shop consents via the
+        // Sync from QuickBooks button. Best-effort: must never break
+        // the webhook.
+        try {
+          await mirrorQbInvoiceEdit(supabase, data?.Invoice, entity.id, shopOwner);
+        } catch (mirrorErr) {
+          console.error(`[qbWebhook] edit mirror failed for invoice ${entity.id}:`, mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr));
         }
       }
     } catch (err) {
