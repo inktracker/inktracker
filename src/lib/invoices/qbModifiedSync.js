@@ -42,8 +42,19 @@ export function buildAdoptPatches(invoice) {
   // accept-QB-tax path derives it (qbSync adoptQbTaxFields).
   const taxRate = qbSubtotal > 0 ? Number(((qbTax / qbSubtotal) * 100).toFixed(4)) : 0;
 
+  // Local `subtotal` is PRE-discount by app semantics; QB's is
+  // post-discount. Overwriting it on a discounted row would make the
+  // displayed breakdown subtract the discount twice (same rule the
+  // pullInvoices item-preservation guard follows). Adopt subtotal only
+  // when there's no discount in play; total/tax are always adopted —
+  // they're the money truth.
+  const hasDiscount = (Number(invoice?.discount) || 0) > 0;
+  const invoicePatch = hasDiscount
+    ? { tax: qbTax, total: qbTotal, tax_rate: taxRate }
+    : { subtotal: qbSubtotal, tax: qbTax, total: qbTotal, tax_rate: taxRate };
+
   return {
-    invoice: { subtotal: qbSubtotal, tax: qbTax, total: qbTotal, tax_rate: taxRate },
+    invoice: invoicePatch,
     quote:   { tax: qbTax, total: qbTotal, tax_rate: taxRate },
     order:   { tax: qbTax, total: qbTotal, tax_rate: taxRate },
   };
