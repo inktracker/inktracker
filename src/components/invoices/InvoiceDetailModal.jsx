@@ -14,8 +14,9 @@ import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
+import { qbModifiedState, buildAdoptPatches } from "@/lib/invoices/qbModifiedSync";
 
-export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
+export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onInvoiceUpdated, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
   const [loading, setLoading] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [reordered, setReordered] = useState(false);
@@ -37,7 +38,56 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   // source). The "View Order" button only renders when this is true.
   const [orderExists, setOrderExists] = useState(null);
 
+  // "Modified in QuickBooks — sync?" state. The qbWebhook keeps the
+  // qb_* mirror fresh in real time; when it disagrees with the as-sold
+  // total the notice below the line items offers a one-click adopt.
+  // syncedInvoice overlays the prop after a successful sync so the
+  // notice clears immediately even if the parent doesn't re-render.
+  const [syncedInvoice, setSyncedInvoice] = useState(null);
+  const [syncingQb, setSyncingQb] = useState(false);
+  const activeInvoice = syncedInvoice || invoice;
+  const qbModified = qbModifiedState(activeInvoice);
+
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
+
+  async function handleSyncFromQb() {
+    const ok = window.confirm(
+      `QuickBooks shows ${fmtMoney(qbModified.qbTotal)} for this invoice; InkTracker has ${fmtMoney(qbModified.localTotal)}.\n\n` +
+      `Update InkTracker (invoice, quote, and order totals) to match QuickBooks? ` +
+      `Line items and production details are not changed.`
+    );
+    if (!ok) return;
+    setSyncingQb(true);
+    try {
+      const patches = buildAdoptPatches(activeInvoice);
+      if (!patches) throw new Error("No QuickBooks totals on this invoice yet.");
+
+      // Quote and order first; the INVOICE row last. The "modified in
+      // QB" notice is keyed off the invoice row, so a partial failure
+      // leaves the notice up and re-clicking Sync retries everything
+      // (all three patches are idempotent).
+      let linkedQuote = null;
+      if (invoice.qb_invoice_id) {
+        const quotes = await base44.entities.Quote.filter({ qb_invoice_id: invoice.qb_invoice_id });
+        linkedQuote = quotes?.[0] || null;
+        if (linkedQuote) await base44.entities.Quote.update(linkedQuote.id, patches.quote);
+      }
+      const orderId = invoice.order_id || linkedQuote?.converted_order_id;
+      if (orderId) {
+        const orders = await base44.entities.Order.filter({ order_id: orderId });
+        if (orders?.[0]) await base44.entities.Order.update(orders[0].id, patches.order);
+      }
+      const updated = await base44.entities.Invoice.update(invoice.id, patches.invoice);
+
+      setSyncedInvoice(updated);
+      onInvoiceUpdated?.(updated);
+    } catch (err) {
+      console.error("[InvoiceDetailModal] QB sync failed:", err);
+      window.alert(`Sync from QuickBooks didn't complete: ${err?.message || "unknown error"}. Click Sync again to retry.`);
+    } finally {
+      setSyncingQb(false);
+    }
+  }
 
   // One-time check on mount: does the referenced order still exist?
   // Cheaper than discovering the orphan only when the user clicks
@@ -488,9 +538,29 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             </div>
           )}
 
+          {/* Modified in QuickBooks — offer a consented one-click adopt.
+              Keyed off the fresh qb_* mirror (webhook keeps it current);
+              clears itself once the totals agree. */}
+          {qbModified.modified && (
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-slate-700 dark:text-slate-200">
+                <span className="font-semibold">This invoice was modified in QuickBooks.</span>{" "}
+                QuickBooks shows {fmtMoney(qbModified.qbTotal)}; InkTracker has {fmtMoney(qbModified.localTotal)}.
+              </div>
+              <button
+                onClick={handleSyncFromQb}
+                disabled={syncingQb || readOnly}
+                title={readOnly ? readOnlyReason : undefined}
+                className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {syncingQb ? "Syncing…" : "Sync from QuickBooks"}
+              </button>
+            </div>
+          )}
+
           {/* Totals */}
           <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
-            <div className="flex justify-between text-sm text-slate-500"><span>Subtotal</span><span>{fmtMoney(invoice.subtotal)}</span></div>
+            <div className="flex justify-between text-sm text-slate-500"><span>Subtotal</span><span>{fmtMoney(activeInvoice.subtotal)}</span></div>
             {invoice.discount > 0 && (
               <div className="flex justify-between text-sm text-emerald-600">
                 <span>
@@ -500,10 +570,10 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                 <span>−{fmtMoney(sub - afterDisc)}</span>
               </div>
             )}
-            {invoice.tax > 0 && (
+            {activeInvoice.tax > 0 && (
               <div className="flex justify-between text-sm text-slate-500">
-                <span>Tax {invoice.tax_rate ? `(${invoice.tax_rate}%)` : ""}</span>
-                <span>{fmtMoney(invoice.tax)}</span>
+                <span>Tax {activeInvoice.tax_rate ? `(${activeInvoice.tax_rate}%)` : ""}</span>
+                <span>{fmtMoney(activeInvoice.tax)}</span>
               </div>
             )}
             {invoice.rush_rate > 0 && (
@@ -511,7 +581,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             )}
             <div className="flex justify-between font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 pt-2">
               <span className="text-base">Total</span>
-              <span className="text-2xl">{fmtMoney(invoice.total)}</span>
+              <span className="text-2xl">{fmtMoney(activeInvoice.total)}</span>
             </div>
           </div>
         </div>

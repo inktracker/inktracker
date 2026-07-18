@@ -511,6 +511,7 @@ export default function Invoices() {
           onConvertToInvoice={handleConvertToInvoice}
           onDelete={handleDelete}
           onAddToProduction={(invoice) => setAddingToProduction(invoice)}
+          onInvoiceUpdated={applyInvoicePatch}
           readOnly={readOnly}
           readOnlyReason={readOnlyReason}
           reactivateHref={reactivateHref}
