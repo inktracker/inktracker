@@ -1,7 +1,13 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import { useReadOnly } from "@/lib/billing-gate";
 import { base44, supabase } from "@/api/supabaseClient";
+import { todayInShopTz } from "@/lib/shopTimezone";
+import {
+  ADD_TO_PRODUCTION,
+  decideAddToProduction,
+  buildOrderFromInvoice,
+} from "@/lib/orders/buildOrderFromInvoice";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
@@ -9,6 +15,7 @@ import { computeOutstanding } from "@/lib/reports/invoiceStats";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
+import AddToProductionModal from "../components/invoices/AddToProductionModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import { shopScope } from "@/lib/shopScope";
@@ -48,6 +55,14 @@ export default function Invoices() {
   const [qbTruncated, setQbTruncated] = useState(false);
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
+  // "Add to Production" flow — the invoice being bridged, and a busy flag
+  // so the confirm button can't double-fire.
+  const [addingToProduction, setAddingToProduction] = useState(null);
+  const [atpBusy, setAtpBusy] = useState(false);
+  // Session-scoped duplicate net: invoice.id → order_id for orders we
+  // created whose invoice backlink write FAILED. A retry click reuses the
+  // already-created order instead of creating a sibling.
+  const atpCreatedRef = useRef({});
 
   // Read-only gate: when the shop's subscription has lapsed, write
   // affordances (mark paid, send, delete, push-to-QB, reorder…) are
@@ -247,6 +262,106 @@ export default function Invoices() {
     setSelected(updated);
   }
 
+  // Bridge a QB-originated invoice onto the production schedule.
+  // Guard sequence (all against FRESH rows, decided at click time — see
+  // decideAddToProduction for the dedupe contract):
+  //   already linked        → no-op, refresh UI
+  //   quote-born, converted → LINK invoice to the quote's existing order
+  //   quote-born, pending   → refuse; the quote flow owns order creation
+  //   otherwise             → create order, write order_id backlink
+  async function handleAddToProduction(invoice, { dueDate, status }) {
+    setAtpBusy(true);
+    try {
+      const fresh = await base44.entities.Invoice.get(invoice.id);
+      const scope = shopScope(user);
+      const [byQb, byDoc] = await Promise.all([
+        fresh.qb_invoice_id
+          ? base44.entities.Quote.filter({ shop_owner: scope, qb_invoice_id: fresh.qb_invoice_id })
+          : Promise.resolve([]),
+        fresh.invoice_id
+          ? base44.entities.Quote.filter({ shop_owner: scope, quote_id: fresh.invoice_id })
+          : Promise.resolve([]),
+      ]);
+      const decision = decideAddToProduction(fresh, [...(byQb || []), ...(byDoc || [])]);
+
+      if (decision.action === ADD_TO_PRODUCTION.ALREADY_LINKED) {
+        window.alert(`This invoice is already on production as ${decision.orderId}.`);
+        applyInvoicePatch(fresh);
+        setAddingToProduction(null);
+        return;
+      }
+      if (decision.action === ADD_TO_PRODUCTION.LINK_EXISTING) {
+        const updated = await base44.entities.Invoice.update(fresh.id, { order_id: decision.orderId });
+        window.alert(
+          `This invoice came from quote ${decision.quote.quote_id}, which is already on production as ` +
+          `${decision.orderId} — linked them instead of creating a duplicate order.`
+        );
+        applyInvoicePatch(updated);
+        setAddingToProduction(null);
+        return;
+      }
+      if (decision.action === ADD_TO_PRODUCTION.BLOCKED_QUOTE) {
+        window.alert(
+          `This invoice came from quote ${decision.quote.quote_id}. Convert that quote to an order ` +
+          `on the Quotes page instead — creating one here would duplicate the job.`
+        );
+        setAddingToProduction(null);
+        return;
+      }
+
+      // CREATE. Reuse a this-session order whose backlink write failed
+      // rather than creating a sibling on retry.
+      let orderId = atpCreatedRef.current[fresh.id];
+      if (!orderId) {
+        const payload = buildOrderFromInvoice(fresh, {
+          userEmail: scope,
+          customer: customers[fresh.customer_id] || null,
+          dueDate,
+          status,
+          today: todayInShopTz(),
+        });
+        await base44.entities.Order.create(payload);
+        orderId = payload.order_id;
+        atpCreatedRef.current[fresh.id] = orderId;
+      }
+
+      // Backlink write — this is what the paid cascade walks, so retry it.
+      let linked = null;
+      let linkErr = null;
+      for (let attempt = 0; attempt < 3 && !linked; attempt++) {
+        try {
+          linked = await base44.entities.Invoice.update(fresh.id, { order_id: orderId });
+        } catch (err) {
+          linkErr = err;
+        }
+      }
+      if (!linked) throw Object.assign(new Error("backlink"), { cause: linkErr, orderId });
+
+      delete atpCreatedRef.current[fresh.id];
+      applyInvoicePatch(linked);
+      setAddingToProduction(null);
+      window.alert(`Added to production as ${orderId}. It's now on the Production schedule.`);
+    } catch (err) {
+      if (err?.message === "backlink") {
+        window.alert(
+          `Order ${err.orderId} was created, but linking it back to this invoice failed. ` +
+          `Click "Add to Production" again to retry the link — it will reuse the same order, not create a second one.`
+        );
+      } else {
+        console.error("[Invoices] add to production failed:", err);
+        window.alert(`Couldn't add to production: ${err?.message || "unknown error"}. Nothing was created.`);
+      }
+    } finally {
+      setAtpBusy(false);
+    }
+  }
+
+  // Keep both the list row and the open detail modal in sync after a write.
+  function applyInvoicePatch(row) {
+    setInvoices(prev => prev.map(i => (i.id === row.id ? { ...i, ...row } : i)));
+    setSelected(prev => (prev && prev.id === row.id ? { ...prev, ...row } : prev));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -395,9 +510,18 @@ export default function Invoices() {
           onMarkPaid={(id) => { markPaid(id); setSelected(prev => ({ ...prev, paid: true })); }}
           onConvertToInvoice={handleConvertToInvoice}
           onDelete={handleDelete}
+          onAddToProduction={(invoice) => setAddingToProduction(invoice)}
           readOnly={readOnly}
           readOnlyReason={readOnlyReason}
           reactivateHref={reactivateHref}
+        />
+      )}
+      {addingToProduction && (
+        <AddToProductionModal
+          invoice={addingToProduction}
+          busy={atpBusy}
+          onConfirm={(opts) => handleAddToProduction(addingToProduction, opts)}
+          onClose={() => setAddingToProduction(null)}
         />
       )}
     </div>

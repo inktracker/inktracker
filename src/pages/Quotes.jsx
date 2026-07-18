@@ -390,7 +390,17 @@ export default function Quotes() {
     }
     setConverting(true);
     try {
-      const orderPayload = buildOrderFromQuote(q, { userEmail: shopScope(user), today: todayInShopTz() });
+      // Refetch before building the order — the in-memory row can be stale
+      // (another window may have adopted QB's tax, recorded a payment, or
+      // already converted). Converting from the stale copy bakes outdated
+      // totals into the order (Dragon Head, 2026-07-17: order carried the
+      // pre-adopt tax while the QB invoice charged the adopted amount).
+      const fresh = await base44.entities.Quote.get(q.id);
+      if (fresh.converted_order_id) {
+        notify.info("This quote has already been converted to an order.");
+        return;
+      }
+      const orderPayload = buildOrderFromQuote(fresh, { userEmail: shopScope(user), today: todayInShopTz() });
       await base44.entities.Order.create(orderPayload);
 
       // Broker pricing reference rows (legacy "commissions" table) are

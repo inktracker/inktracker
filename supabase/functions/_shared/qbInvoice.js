@@ -759,6 +759,24 @@ export function shouldReplaceLocalInvoiceItems(existingRow) {
   return items.every((li) => String(li?.id ?? "").startsWith("qb-"));
 }
 
+/**
+ * Should a pullInvoices row-update also cascade paid-state to the linked
+ * order? Only on the unpaid→paid TRANSITION of a row that HAS a linked
+ * order. Without this, a Sync-All that lands before the webhook/reconcile
+ * flips the invoice paid directly — and the nightly reconcile then skips
+ * it forever (its candidate query filters paid=false), leaving the order
+ * permanently unpaid. The transition guard keeps re-pulls of already-paid
+ * invoices from re-walking the cascade on every sync.
+ */
+export function shouldCascadeImportedPaid(existingRow, isPaidInQb) {
+  return Boolean(
+    isPaidInQb &&
+    existingRow &&
+    existingRow.paid !== true &&
+    existingRow.order_id,
+  );
+}
+
 // ── Adopt-before-create (no-duplicate invariant) ─────────────────────────────
 // When createInvoice is about to CREATE because the local row carries no
 // qb_invoice_id, an invoice for this quote may nonetheless already exist in

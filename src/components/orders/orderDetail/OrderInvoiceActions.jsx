@@ -57,10 +57,16 @@ export default function OrderInvoiceActions({
             {saving ? "Saving…" : `${order.status} Complete →`}
           </button>
         )}
-        {/* Invoice action — three states:
-              1. Order Completed + invoice exists → "Preview Invoice" (opens InvoiceDetailModal via parent)
-              2. Order Completed + no invoice    → "Create Invoice" (calls onComplete)
-              3. Order Completed + invoice has qb_invoice_id → also show "View in QB" link
+        {/* Invoice actions.
+            READ actions (Preview Invoice / View in QB) render whenever a
+            linked invoice exists, at ANY status — invoice-born orders
+            ("Add to Production" on a QB-written invoice) carry their
+            invoice from day one, and the calendar/production views need
+            the trail back to it mid-production, not just at Completed.
+            WRITE actions stay gated:
+              - "Send" only at Completed (mid-production sends would
+                change when customers get billed)
+              - "Create Invoice" only at Completed + no invoice.
             The "Create" path was previously labeled "Convert to Invoice" and
             ran on every click — Joe found that this duplicated invoices when
             a quote had already been invoiced via the Send-Quote-via-QB flow.
@@ -69,7 +75,7 @@ export default function OrderInvoiceActions({
               - handleComplete's pre-fetch + buildOrderCompletionPlan
               - DB unique index on (shop_owner, order_id) in
                 20260519_invoices_no_duplicates.sql */}
-        {order.status === "Completed" && relatedInvoice && (
+        {relatedInvoice && (
           <>
             {onShowInvoice && (
               <button
@@ -82,14 +88,16 @@ export default function OrderInvoiceActions({
             {/* Send the invoice to the customer (Resend email + QB pay
                 link when one exists). Reuses the standard Send flow; for
                 already-paid invoices it sends the PDF as a receipt. */}
-            <button
-              onClick={handleOpenSend}
-              disabled={readOnly}
-              title={readOnly ? roTitle : undefined}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <MessageSquare className="w-4 h-4" /> Send
-            </button>
+            {order.status === "Completed" && (
+              <button
+                onClick={handleOpenSend}
+                disabled={readOnly}
+                title={readOnly ? roTitle : undefined}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <MessageSquare className="w-4 h-4" /> Send
+              </button>
+            )}
             {relatedInvoice.qb_invoice_id && (
               <a
                 href={`https://qbo.intuit.com/app/invoice?txnId=${encodeURIComponent(relatedInvoice.qb_invoice_id)}`}
