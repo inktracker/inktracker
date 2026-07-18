@@ -758,3 +758,70 @@ export function shouldReplaceLocalInvoiceItems(existingRow) {
   if (items.length === 0) return true;                 // nothing local to lose
   return items.every((li) => String(li?.id ?? "").startsWith("qb-"));
 }
+
+// ── Adopt-before-create (no-duplicate invariant) ─────────────────────────────
+// When createInvoice is about to CREATE because the local row carries no
+// qb_invoice_id, an invoice for this quote may nonetheless already exist in
+// QB: a concurrent sync from another surface won the race, or a prior sync's
+// write-back was lost. Minting the next -rN there duplicates the invoice
+// (the INV-2026-OW0M1 / Lisa Gotts incident, 2026-07-17 — same books-split
+// shape as Shana Krochmal). Instead, the caller queries QB for the whole
+// DocNumber family (base + -rN) and this picker decides:
+//
+//   { paid }  — a live family member is fully paid → the job is already
+//               invoiced AND collected; caller must refuse to create and
+//               surface "already paid".
+//   { adopt } — a live unpaid member exists → caller UPDATEs it instead of
+//               creating. Prefers a member that already carries a payment
+//               (protects applied money), else the most recently created.
+//   { live }  — all live (non-voided) members, so the caller can warn the
+//               shop when more than one exists (pre-existing damage that
+//               needs a manual void — adoption alone can't fix that).
+//
+// Voided invoices (TotalAmt 0) are ignored: QB keeps them queryable, but
+// updating one would silently resurrect a document the shop chose to kill.
+export function pickQbInvoiceForAdoption(candidates) {
+  const list = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
+  const live = list.filter((inv) => Number(inv?.TotalAmt ?? 0) > 0);
+  const paid = live.find((inv) => isQbInvoicePaid(inv)) || null;
+  if (paid) return { paid, adopt: null, live };
+
+  const createTime = (inv) => {
+    const t = Date.parse(inv?.MetaData?.CreateTime ?? "");
+    return Number.isFinite(t) ? t : 0;
+  };
+  const adopt =
+    live.find((inv) => qbInvoiceHasPayment(inv)) ||
+    live.slice().sort((a, b) => createTime(b) - createTime(a))[0] ||
+    null;
+  return { paid: null, adopt, live };
+}
+
+// ── Authoritative customer merge ─────────────────────────────────────────────
+// The customer payload a caller sends is a snapshot of the customers row as
+// that browser window last saw it — possibly minutes stale, possibly a
+// minimal {id, name} stub (a modal opened without its customer loaded). All
+// of these fields LIVE on the customers row, so when the row is readable the
+// DB is the authority and the payload only fills fields the row lacks.
+// Sending a stub straight to QB is how the duplicate "Lisa Gotts" QB
+// customer was minted: empty email + empty company matched nothing, so a
+// second customer record was created for an existing customer.
+const CUSTOMER_AUTHORITATIVE_FIELDS = [
+  "name", "company", "email", "phone", "address",
+  "qb_customer_id", "tax_exempt", "tax_id", "ship_to_address",
+  "exemption_expires_at", "exemption_states", "exemption_type",
+  "exemption_certificate_number",
+];
+
+export function mergeCustomerAuthoritative(payloadCustomer, dbRow) {
+  if (!dbRow) return payloadCustomer;
+  const merged = { ...(payloadCustomer || {}) };
+  merged.id = payloadCustomer?.id || dbRow.id;
+  for (const field of CUSTOMER_AUTHORITATIVE_FIELDS) {
+    const dbVal = dbRow[field];
+    const hasDbVal = !(dbVal === null || dbVal === undefined || dbVal === "");
+    if (hasDbVal) merged[field] = dbVal;
+    else if (merged[field] === undefined) merged[field] = dbVal ?? null;
+  }
+  return merged;
+}

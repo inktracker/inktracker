@@ -259,3 +259,106 @@ function sanitizeResult(value) {
 }
 
 export { IDEMPOTENCY_TTL_MS };
+
+// ── Per-row write serialization ───────────────────────────────────────
+//
+// withQbIdempotency collapses duplicate requests that carry the SAME
+// key — but every UI surface mints its own key, so two different
+// buttons (order-completion auto-push + the invoice modal's "Create in
+// QB") pushing the same row concurrently sail past it and both CREATE
+// (the INV-2026-OW0M1 duplicate, 2026-07-17). This wrapper serializes
+// on the ROW instead: one holder per key at a time, later callers WAIT
+// (poll) for release rather than getting a cached result — the second
+// sync must still run so its authoritative re-read can route it onto
+// the UPDATE path.
+//
+// Semantics differ from idempotency on purpose:
+//   - the lock row is DELETEd on release (success or failure) — there
+//     is no result caching; every acquirer runs fn() itself.
+//   - a crashed holder's row expires via lock_ttl and is reclaimed with
+//     the same conditional-UPDATE race collapse used above.
+//   - on wait timeout the caller gets { acquired: false } and should
+//     surface "still processing" — NEVER run fn() concurrently.
+//   - unexpected DB errors degrade to running fn() unlocked (matching
+//     withQbIdempotency's availability-first philosophy).
+
+const ROW_LOCK_DEFAULTS = Object.freeze({
+  waitMs: 20_000,   // how long a contender waits for the holder
+  pollMs: 750,
+  lockTtlMs: 90_000, // crash-recovery: max plausible createInvoice runtime
+});
+
+export async function withQbRowSerialization(supabase, key, ctx, fn, opts = {}) {
+  if (!key) {
+    return { acquired: true, result: await fn() };
+  }
+  if (!ctx?.shop_owner || !ctx?.action) {
+    throw new Error("withQbRowSerialization: ctx.shop_owner and ctx.action are required");
+  }
+  const { waitMs, pollMs, lockTtlMs } = { ...ROW_LOCK_DEFAULTS, ...opts };
+  const sleep = opts.sleep || ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const deadline = Date.now() + waitMs;
+
+  for (;;) {
+    const claimed = await tryClaimRowLock(supabase, key, ctx, lockTtlMs);
+    if (claimed) {
+      try {
+        const result = await fn();
+        return { acquired: true, result };
+      } finally {
+        await releaseRowLock(supabase, key);
+      }
+    }
+    if (Date.now() >= deadline) {
+      return { acquired: false, result: null };
+    }
+    await sleep(pollMs);
+  }
+}
+
+async function tryClaimRowLock(supabase, key, ctx, lockTtlMs) {
+  const expiresAt = new Date(Date.now() + lockTtlMs).toISOString();
+  const { error } = await supabase
+    .from("qb_idempotency")
+    .insert({
+      key,
+      shop_owner: ctx.shop_owner,
+      action:     ctx.action,
+      status:     "in_flight",
+      result:     null,
+      expires_at: expiresAt,
+    });
+  if (!error) return true;
+
+  if (error.code !== "23505") {
+    // Unexpected DB error — degrade to unlocked rather than block the write.
+    console.error("[qbRowLock] claim insert failed:", error.message);
+    return true;
+  }
+
+  // Row exists. Live holder → wait. Expired holder (crash) → reclaim with
+  // the same predicate-bound UPDATE that collapses concurrent reclaimers.
+  const nowIso = new Date().toISOString();
+  const { count, error: updErr } = await supabase
+    .from("qb_idempotency")
+    .update(
+      { status: "in_flight", expires_at: new Date(Date.now() + lockTtlMs).toISOString(), result: null, error_message: null },
+      { count: "exact" },
+    )
+    .eq("key", key)
+    .lt("expires_at", nowIso);
+  if (updErr) {
+    console.error("[qbRowLock] stale-lock reclaim failed:", updErr.message);
+    return true;
+  }
+  return (count ?? 0) > 0;
+}
+
+async function releaseRowLock(supabase, key) {
+  try {
+    const { error } = await supabase.from("qb_idempotency").delete().eq("key", key);
+    if (error) console.error("[qbRowLock] release delete failed:", error.message);
+  } catch (err) {
+    console.error("[qbRowLock] release threw:", err?.message || err);
+  }
+}
