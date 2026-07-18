@@ -10,6 +10,7 @@ import { ShoppingBag, DollarSign, Receipt, Layers, Activity, FileText, ExternalL
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
 import { shopScope } from "@/lib/shopScope";
+import { computeTotalVolume } from "@/lib/reports/totalVolume";
 
 const COMPLETED_STATUSES = new Set(["Completed", "Shipped", "Delivered", "Picked Up"]);
 const CANCELLED_STATUSES = new Set(["Cancelled", "Canceled", "Voided"]);
@@ -40,6 +41,7 @@ function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
 export default function Performance() {
   const [orders, setOrders] = useState([]);     // live orders (for active count)
   const [invoices, setInvoices] = useState([]); // local invoices (for outstanding)
+  const [quotes, setQuotes] = useState([]);     // for Total Volume dedup only
   const [loading, setLoading] = useState(true);
   const [qbConnected, setQbConnected] = useState(false);
   const [qbMetrics, setQbMetrics] = useState(null);
@@ -113,13 +115,17 @@ export default function Performance() {
       // the UI as a banner instead of silently rendering zeros. Each
       // bucket falls back to [] so the math below stays safe.
       let failures = 0;
-      const [allOrders, allInvoices] = await Promise.all([
+      const [allOrders, allInvoices, allQuotes] = await Promise.all([
         base44.entities.Order.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] orders fetch failed:", e); failures++; return []; }),
         base44.entities.Invoice.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] invoices fetch failed:", e); failures++; return []; }),
+        // Quotes feed ONLY the Total Volume dedup (quote-born invoices carry
+        // the order pointer on the quote, not the invoice row).
+        base44.entities.Quote.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] quotes fetch failed:", e); failures++; return []; }),
       ]);
       setOrders(allOrders);
       setInvoices(allInvoices);
-      if (failures > 0) setLoadError(`Some performance data couldn't load (${failures} of 2 sources). Numbers below may be incomplete.`);
+      setQuotes(allQuotes);
+      if (failures > 0) setLoadError(`Some performance data couldn't load (${failures} of 3 sources). Numbers below may be incomplete.`);
 
       setLoading(false);
     }
@@ -208,6 +214,16 @@ export default function Performance() {
   }, [orders]);
   const activeCount = serverStats?.active_orders_count ?? activeOrders.length;
   const activeValue = serverStats?.active_orders_value ?? activeOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+
+  // Total Volume — completed orders + QB-only invoices (imported history /
+  // QB-first jobs). RPC primary, client math as fallback; both implement
+  // docs/total-volume-scope.md and stay in lockstep via totalVolume.js tests.
+  const clientVolume = useMemo(
+    () => computeTotalVolume({ orders, invoices, quotes, from, to }),
+    [orders, invoices, quotes, from, to],
+  );
+  const totalVolume = serverStats?.period_total_volume ?? clientVolume.units;
+  const volumeInvoiceCount = serverStats?.period_qb_only_invoice_count ?? clientVolume.invoiceCount;
 
   const clientOutstanding = useMemo(() => computeOutstanding(invoices), [invoices]);
   const outstandingTotals = serverStats
@@ -314,8 +330,15 @@ export default function Performance() {
               />
             </div>
 
-            {/* Current state (not date-bound) */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Total Volume (period-bound) + current state */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <StatCard
+                icon={Layers}
+                label="Total Volume"
+                value={totalVolume.toLocaleString()}
+                sub={`${totalOrders} order${totalOrders === 1 ? "" : "s"} + ${volumeInvoiceCount} QB invoice${volumeInvoiceCount === 1 ? "" : "s"}`}
+                color="violet"
+              />
               <StatCard
                 icon={Activity}
                 label="Active Orders"
