@@ -496,6 +496,29 @@ async function updateQBCustomer(token: string, realmId: string, qbId: string, cu
 
 async function findOrCreateCustomer(token: string, realmId: string, customer: any, supabase: any) {
   if (!customer) throw new Error("No customer data provided");
+
+  // Authoritative re-read, INSIDE the resolver so every caller inherits it
+  // (createInvoice, estimateTax, syncCustomer — and anything added later).
+  // The payload may be a stub ({id, name} from a modal whose customer never
+  // loaded); matching a stub against QB finds nothing and MINTS A DUPLICATE
+  // QB customer (the email-less "Lisa Gotts", 2026-07-17). The customers row
+  // is the authority for identity + the stored QB link; the payload only
+  // fills fields the row lacks. Redundant with handleCreateInvoice's own
+  // merge (one extra PK lookup) — kept here so the invariant doesn't depend
+  // on callers remembering to hydrate.
+  if (customer.id) {
+    try {
+      const { data: dbCust } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("id", customer.id)
+        .maybeSingle();
+      if (dbCust) customer = mergeCustomerAuthoritative(customer, dbCust);
+    } catch (e) {
+      console.error("[QB] customer authoritative re-read failed (using payload):", (e as Error)?.message);
+    }
+  }
+
   // If already linked, push non-empty fields back to QB (sparse update — never wipes QB data)
   if (customer.qb_customer_id) {
     try {
