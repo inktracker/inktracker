@@ -102,6 +102,25 @@ describe("Helper Functions", () => {
     it("ignores non-numeric values", () => {
       expect(getQty({ sizes: { S: "abc", M: "10" } })).toBe(10);
     });
+
+    it("falls back to bare qty when sizes are empty (QB-imported lines)", () => {
+      expect(getQty({ sizes: {}, qty: 2675 })).toBe(2675);
+      expect(getQty({ qty: "100" })).toBe(100);
+    });
+
+    it("sizes win over qty when both are present", () => {
+      expect(getQty({ sizes: { S: "10", M: "15" }, qty: 999 })).toBe(25);
+    });
+
+    it("any sizes key — even zero/negative — keeps sizes-sum semantics (no qty fallback)", () => {
+      expect(getQty({ sizes: { S: "-10", M: "5" }, qty: 999 })).toBe(-5);
+      expect(getQty({ sizes: { S: 0 }, qty: 999 })).toBe(0);
+    });
+
+    it("qty fallback tolerates junk", () => {
+      expect(getQty({ sizes: {}, qty: "abc" })).toBe(0);
+      expect(getQty({ sizes: {}, qty: null })).toBe(0);
+    });
   });
 
   // Shortfall tracking — added 2026-05-27 so the shop can record
