@@ -38,7 +38,9 @@ import {
   qbJurisdictionRate,
   stripQbDiscountNote,
   shouldReplaceLocalInvoiceItems,
+  shouldCascadeImportedPaid,
 } from "../_shared/qbInvoice.js";
+import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
 import {
   reconcileQbInvoice,
   RECONCILE_SEVERITY,
@@ -1658,7 +1660,7 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   // know whether a matched row has local itemization worth preserving.
   const { data: existingInvoices } = await supabase
     .from("invoices")
-    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name, order_id, line_items")
+    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name, order_id, line_items, paid")
     .eq("shop_owner", shopOwner);
   const existingByDoc = new Map<string, any>();
   const existingByQbId = new Map<string, any>();
@@ -1783,7 +1785,27 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       }
       const { error } = await supabase.from("invoices").update(payload).eq("id", existingId);
       if (error) { console.error("[pullInvoices] update failed:", error.message, docNumber); skipped++; }
-      else { updated++; }
+      else {
+        updated++;
+        // Unpaid→paid transition on an order-linked invoice: walk the paid
+        // state through to the order too. Without this, a Sync-All that
+        // beats the webhook flips the invoice paid directly and the nightly
+        // reconcile (candidate filter: paid=false) skips the order forever.
+        // Same cascade the webhook/reconcile use; best-effort — a cascade
+        // failure must not fail the pull (reconcile can't retry the invoice
+        // side, but the order stays visible as unpaid for the operator).
+        if (shouldCascadeImportedPaid(existingRow, isPaid)) {
+          try {
+            await cascadeMarkInvoicePaid(
+              supabase,
+              { ...existingRow, shop_owner: shopOwner },
+              (paidDate || new Date().toISOString().split("T")[0]),
+            );
+          } catch (cascadeErr) {
+            console.error("[pullInvoices] paid cascade to order failed:", (cascadeErr as Error)?.message, docNumber);
+          }
+        }
+      }
     } else {
       const { error } = await supabase.from("invoices").insert(payload);
       if (error) { console.error("[pullInvoices] insert failed:", error.message, docNumber); skipped++; }
