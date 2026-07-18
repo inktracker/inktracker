@@ -277,9 +277,13 @@ export function buildBrandOptions(matches, typedStyleNumber) {
 
   matches.forEach((match, index) => {
     const canonicalStyle = getCanonicalStyleNumber(typed, match);
-    const brand = cleanText(match.brandName) || "Unknown Brand";
+    // Brandless match → EMPTY brandName (never the literal "Unknown Brand" —
+    // it gets persisted onto the line and printed on customer-facing docs).
+    // See LineItemEditor.jsx buildBrandOptions for the full story.
+    const brand = cleanText(match.brandName);
+    const brandLabel = brand || "Unknown brand";
     const description = getBestDescription(match) || "Untitled";
-    const key = `${canonicalStyle}|${brand}|${description}`;
+    const key = `${canonicalStyle}|${brandLabel}|${description}`;
 
     if (seen.has(key)) return;
     seen.add(key);
@@ -291,7 +295,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     // up with the same <option value> and the find-by-id resolution
     // always returns the first one in array order.
     unique.push({
-      id: `${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
+      id: `${brandLabel.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,
@@ -303,7 +307,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
       piecePrice: match.piecePrice,
       casePrice: match.casePrice,
       raw: match.raw || match,
-      label: `${brand} — ${canonicalStyle} — ${description}`,
+      label: `${brandLabel} — ${canonicalStyle} — ${description}`,
     });
   });
 
