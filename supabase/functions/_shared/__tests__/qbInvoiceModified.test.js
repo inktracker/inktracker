@@ -4,7 +4,11 @@ import {
   detectQbPaidRegression,
   buildQbMirrorPatch,
   buildQbModifiedNotification,
+<<<<<<< HEAD
   buildQbPaidRegressionNotification,
+=======
+  mergeNotesPreservingSyncLines,
+>>>>>>> origin/main
 } from "../qbInvoiceModified.js";
 
 describe("detectQbInvoiceModification", () => {
@@ -104,6 +108,7 @@ describe("buildQbModifiedNotification", () => {
   });
 });
 
+<<<<<<< HEAD
 // A deleted/unapplied/refunded payment in QBO reopens the Balance WITHOUT
 // moving TotalAmt — the total-based detector stays silent, so this detector
 // is the only signal before the books diverge permanently.
@@ -164,5 +169,26 @@ describe("buildQbPaidRegressionNotification", () => {
     expect(row.title).toContain("Q-2026-GR55");
     expect(row.body).toContain("did NOT un-mark");
     expect(row.metadata.qb_balance).toBe(68.21);
+=======
+describe("mergeNotesPreservingSyncLines (pullInvoices notes overwrite)", () => {
+  const syncLine = "[2026-07-18] Synced from QuickBooks: total $100.00 → $110.00";
+
+  it("keeps local sync-audit lines under QB's fresh memo", () => {
+    const merged = mergeNotesPreservingSyncLines("thanks for your business", `old memo\n${syncLine}`);
+    expect(merged).toBe(`thanks for your business\n${syncLine}`);
+  });
+
+  it("drops non-sync local notes (QB memo is authoritative for prose)", () => {
+    expect(mergeNotesPreservingSyncLines("new memo", "old local prose")).toBe("new memo");
+  });
+
+  it("no memo + only sync lines → sync lines survive alone", () => {
+    expect(mergeNotesPreservingSyncLines(null, syncLine)).toBe(syncLine);
+  });
+
+  it("nothing on either side → null (matches prior CustomerMemo || null shape)", () => {
+    expect(mergeNotesPreservingSyncLines(null, null)).toBeNull();
+    expect(mergeNotesPreservingSyncLines("", "")).toBeNull();
+>>>>>>> origin/main
   });
 });

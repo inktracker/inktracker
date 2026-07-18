@@ -215,6 +215,36 @@ export function normalizeItemName(name) {
   return normalizeForMatch(name).split(" ").filter(Boolean).map(singularizeWord).join(" ");
 }
 
+// ── Item variant matching (don't create near-duplicate QB items) ─────────────
+// Exact + normalized matching still creates a NEW QB item when the name is an
+// obvious variant of one the shop already has — "Customer Supplied" pushed
+// against an existing "Customer Supplied Goods" spawned a duplicate item
+// (Joe's shop, 2026-07-18). This picks an existing item whose normalized name
+// extends (or is extended by) the outgoing name at a token boundary, but only
+// when it's SAFE to assume they're the same thing:
+//   - exactly ONE such candidate exists (any ambiguity → create, like today)
+//   - the shorter of the two names has ≥ 2 tokens ("customer supplied" may
+//     claim "customer supplied good"; a bare "embroidery" may NOT claim
+//     "embroidery digitizing" — single words are too generic to assume)
+//
+// @param {string} targetNorm      normalizeItemName() of the outgoing name
+// @param {Iterable<string>} existingNorms  normalized names of the shop's QB items
+// @returns {string|null} the single matching normalized name, or null
+export function pickItemVariantMatch(targetNorm, existingNorms) {
+  if (!targetNorm) return null;
+  const candidates = [];
+  for (const key of existingNorms ?? []) {
+    if (!key || key === targetNorm) continue;
+    const extendsTarget = key.startsWith(`${targetNorm} `);
+    const targetExtends = targetNorm.startsWith(`${key} `);
+    if (!extendsTarget && !targetExtends) continue;
+    const shorter = extendsTarget ? targetNorm : key;
+    if (shorter.split(" ").length < 2) continue;
+    candidates.push(key);
+  }
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 // ── Payment amount clamp (never overpay) ─────────────────────────────────────
 // A repeated "Mark as Paid" (e.g. after the idempotency TTL) or an explicit
 // amount larger than what's owed must never drive a QB invoice's balance

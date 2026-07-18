@@ -18,6 +18,7 @@ import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
 import { imprintColorLabel, imprintCountText } from '../../lib/quotes/imprintLabels';
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
+import { stripSyncNotes } from '../../lib/invoices/qbModifiedSync';
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -1710,7 +1711,11 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   }
 
   // ── Notes ────────────────────────────────────────────────────────────────
-  if (invoice.notes) {
+  // Sync-audit lines ("[date] Synced from QuickBooks: …") are internal
+  // bookkeeping — stripped from this customer-facing PDF. Shop sees the
+  // full notes in the invoice modal.
+  const customerNotes = stripSyncNotes(invoice.notes);
+  if (customerNotes) {
     yPos += 4;
     if (yPos > pageHeight - 30) { doc.addPage(); yPos = margin; }
     doc.setFontSize(8);
@@ -1720,7 +1725,7 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     yPos += 4;
     doc.setFont(undefined, 'normal');
     doc.setTextColor(60, 60, 80);
-    const noteLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin);
+    const noteLines = doc.splitTextToSize(customerNotes, pageWidth - 2 * margin);
     noteLines.forEach((l) => { doc.text(l, margin, yPos); yPos += 4 });
   }
 

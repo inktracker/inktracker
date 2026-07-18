@@ -14,7 +14,7 @@ import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
-import { qbModifiedState, buildAdoptPatches } from "@/lib/invoices/qbModifiedSync";
+import { qbModifiedState, buildAdoptPatches, stripSyncNotes } from "@/lib/invoices/qbModifiedSync";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onInvoiceUpdated, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
   const [loading, setLoading] = useState(false);
@@ -186,6 +186,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         ...inv,
         quote_id: inv.invoice_id,
         customer_email: cust?.email || "",
+        // notes become QB's CustomerMemo (customer-visible on the QB
+        // invoice) — internal sync-audit lines must not ride along.
+        notes: stripSyncNotes(inv.notes),
       };
       let invoicePayload = buildQBInvoicePayload(quoteShape);
 
@@ -323,7 +326,8 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         date: todayInShopTz(),
         due_date: null,
         status: "Draft",
-        notes: invoice.notes || "",
+        // Reorder starts a fresh job — drop internal sync-audit lines.
+        notes: stripSyncNotes(invoice.notes),
         rush_rate: invoice.rush_rate || 0,
         extras: invoice.extras || {},
         line_items: invoice.line_items || [],
