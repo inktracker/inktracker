@@ -71,6 +71,43 @@ export function shouldSendBooksDriftAlert(summary) {
   return Boolean(summary && (summary.driftCount > 0 || summary.stuckCount > 0));
 }
 
+/**
+ * Verify a mirror-flagged drift candidate against the LIVE QB invoice.
+ *
+ * The first prod firing (2026-07-17) taught this the hard way: qb_total
+ * mirrors are written at create/refresh time and can go stale — Kato's
+ * two "major drifts" were invoices corrected inside QBO before the
+ * customer paid, with the quote mirror frozen at the born-wrong values.
+ * A mirror-based comparison alone produces false alarms, so every
+ * candidate must be re-checked against QB's current TotalAmt before it
+ * is allowed into the operator email.
+ *
+ * @param {object} row          candidate: { shop_owner, ref, total, qb_total }
+ * @param {object|null} liveInvoice  fresh QB invoice (null = gone from QB)
+ * @returns {{ status: "confirmed"|"stale-mirror"|"missing-in-qb",
+ *             row?: object, mirrorPatch?: object }}
+ *   - confirmed:    still diverges vs live QB → alert, row.qb_total = live total
+ *   - stale-mirror: matches live QB → no alert; mirrorPatch refreshes the row
+ *   - missing-in-qb: invoice deleted in QB → not drift (reconcile's
+ *     missing_in_qb classification owns that signal)
+ */
+export function verifyDriftRow(row, liveInvoice) {
+  if (!liveInvoice) return { status: "missing-in-qb" };
+  const liveTotal = Number(liveInvoice.TotalAmt ?? 0);
+  const liveTax = Number(liveInvoice?.TxnTaxDetail?.TotalTax ?? 0);
+  const mirrorPatch = {
+    qb_total: liveTotal,
+    qb_tax_amount: liveTax,
+    qb_subtotal: Number((liveTotal - liveTax).toFixed(2)),
+    qb_synced_at: new Date().toISOString(),
+  };
+  const drift = Number((Number(row.total) - liveTotal).toFixed(2));
+  if (Math.abs(drift) > DRIFT_TOLERANCE) {
+    return { status: "confirmed", row: { ...row, qb_total: liveTotal, drift }, mirrorPatch };
+  }
+  return { status: "stale-mirror", mirrorPatch };
+}
+
 const money = (n) => `$${Number(n).toFixed(2)}`;
 
 /** Plain-text operator email body. */

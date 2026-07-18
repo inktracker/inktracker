@@ -79,6 +79,7 @@ import {
 } from "../_shared/dataIntegrity.js";
 import {
   findDriftRows,
+  verifyDriftRow,
   summarizeBooksDrift,
   shouldSendBooksDriftAlert,
   buildBooksDriftAlertText,
@@ -302,7 +303,62 @@ async function reconcileShop(adminClient: any, profile: any) {
     }
   }
 
-  return { shopOwner, classifications };
+  // Fourth pass — books-drift verification. Mirror-flagged candidates
+  // (row total vs qb_total) are re-checked against the LIVE QB invoice
+  // while we hold this shop's token: stale mirrors self-heal (the Kato
+  // false-alarm class — invoice corrected in QBO after create, mirror
+  // frozen at the born value), and only rows that STILL diverge from
+  // QB's current TotalAmt are returned for the operator alert.
+  const driftRows: any[] = [];
+  try {
+    const DRIFT_LIVE_CHECK_CAP = 25;
+    const [{ data: qRows }, { data: iRows }] = await Promise.all([
+      adminClient
+        .from("quotes")
+        .select("id, quote_id, shop_owner, qb_invoice_id, total, qb_total")
+        .eq("shop_owner", shopOwner)
+        .not("qb_total", "is", null)
+        .not("qb_invoice_id", "is", null)
+        .limit(2000),
+      adminClient
+        .from("invoices")
+        .select("id, invoice_id, shop_owner, qb_invoice_id, total, qb_total")
+        .eq("shop_owner", shopOwner)
+        .not("qb_total", "is", null)
+        .not("qb_invoice_id", "is", null)
+        .limit(2000),
+    ]);
+    const candidatesToVerify: any[] = [
+      ...findDriftRows((qRows ?? []).map((r: any) => ({ ...r, ref: r.quote_id, table: "quotes" }))),
+      ...findDriftRows((iRows ?? []).map((r: any) => ({ ...r, ref: r.invoice_id, table: "invoices" }))),
+    ];
+    if (candidatesToVerify.length > DRIFT_LIVE_CHECK_CAP) {
+      console.warn(`[qbReconcile] drift verify capped at ${DRIFT_LIVE_CHECK_CAP}/${candidatesToVerify.length} for ${shopOwner}`);
+    }
+    for (const cand of candidatesToVerify.slice(0, DRIFT_LIVE_CHECK_CAP)) {
+      try {
+        const resp = await qbQuery(accessToken, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(cand.qb_invoice_id)}'`);
+        const live = resp?.QueryResponse?.Invoice?.[0] ?? null;
+        const verdict = verifyDriftRow(cand, live);
+        // Self-heal the mirror regardless of verdict — next scan starts honest.
+        if (verdict.mirrorPatch) {
+          await adminClient.from(cand.table).update(verdict.mirrorPatch)
+            .eq("id", cand.id).eq("shop_owner", shopOwner);
+        }
+        if (verdict.status === "confirmed") {
+          driftRows.push({ ...verdict.row, source: cand.table });
+        }
+      } catch (err) {
+        // A failed live check must not fabricate OR suppress an alert row —
+        // skip it this run; the mirror stays flagged for the next night.
+        console.warn(`[qbReconcile] drift verify failed for ${cand.ref}:`, (err as Error)?.message);
+      }
+    }
+  } catch (err) {
+    console.warn(`[qbReconcile] drift pass failed for ${shopOwner}:`, (err as Error)?.message);
+  }
+
+  return { shopOwner, classifications, driftRows };
 }
 
 // Cascade handler for converted-but-unpaid quotes. If QB shows the
@@ -691,33 +747,19 @@ async function scanAndAlertDataIntegrity(adminClient: any): Promise<{ violations
 // never trigger on their own. 24h dedup via qb_event_log; failures
 // swallowed — monitoring, not the work. Pure logic + tests in
 // _shared/booksDriftAlert.js.
-async function scanAndAlertBooksDrift(adminClient: any): Promise<{ findings: number; alerted: boolean }> {
+async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): Promise<{ findings: number; alerted: boolean }> {
   if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { findings: 0, alerted: false };
   try {
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    // Scale note: filtered to QB-linked rows only; capped well above the
-    // current fleet's row counts. If a cap is ever hit the scan still
-    // alerts on what it saw — worst case is an undercount, never silence.
-    const { data: quoteRows } = await adminClient
-      .from("quotes")
-      .select("shop_owner, quote_id, total, qb_total")
-      .not("qb_total", "is", null)
-      .not("qb_invoice_id", "is", null)
-      .limit(5000);
-    const { data: invoiceRows } = await adminClient
-      .from("invoices")
-      .select("shop_owner, invoice_id, total, qb_total")
-      .not("qb_total", "is", null)
-      .not("qb_invoice_id", "is", null)
-      .limit(5000);
-
-    const quoteDrift = findDriftRows(
-      (quoteRows ?? []).map((r: any) => ({ ...r, ref: r.quote_id })),
-    );
-    const invoiceDrift = findDriftRows(
-      (invoiceRows ?? []).map((r: any) => ({ ...r, ref: r.invoice_id })),
-    );
+    // Drift rows arrive PRE-VERIFIED against live QB by each shop's
+    // reconcile pass (see the fourth pass in reconcileShop) — a stale
+    // qb_total mirror alone can no longer reach this email. First prod
+    // firing (2026-07-17) alerted on two Kato invoices that QBO had
+    // already corrected; never again.
+    const rows = Array.isArray(verifiedDrift) ? verifiedDrift : [];
+    const quoteDrift = rows.filter((r: any) => r.source === "quotes");
+    const invoiceDrift = rows.filter((r: any) => r.source === "invoices");
 
     // Paid invoice → unpaid order. No FK between invoices.order_id and
     // orders.order_id, so match in two passes.
@@ -948,9 +990,7 @@ Deno.serve(async (req) => {
   // could itself generate new error rows for tomorrow's digest.
   const alertResult = await scanAndAlertQbErrors(adminClient);
   const integrityResult = await scanAndAlertDataIntegrity(adminClient);
-  const booksDrift = await scanAndAlertBooksDrift(adminClient);
   console.error(`[qbReconcile] integrity: ${integrityResult.violations} violation(s), alerted=${integrityResult.alerted}`);
-  console.error(`[qbReconcile] books-drift: ${booksDrift.findings} finding(s), alerted=${booksDrift.alerted}`);
   const emailHealth = await scanAndAlertEmailHealth(adminClient);
   console.error(`[qbReconcile] email-health: ${emailHealth.failed} failed send(s) in 24h, alerted=${emailHealth.alerted}`);
 
@@ -1014,6 +1054,13 @@ Deno.serve(async (req) => {
     // If the reconcile had to clean up payments the webhook missed, that's
     // the signal the QB payment webhook is down — alert the operator.
     const webhookHealth = await alertWebhookHealth(adminClient, summary.paid_not_recorded);
+
+    // Books-drift alert — fed by the per-shop live-verified drift rows
+    // (runs after the shop loop because verification needs each shop's
+    // QB token inside reconcileShop).
+    const verifiedDrift = shopResults.flatMap((s: any) => s.driftRows ?? []);
+    const booksDrift = await scanAndAlertBooksDrift(adminClient, verifiedDrift);
+    console.error(`[qbReconcile] books-drift: ${booksDrift.findings} finding(s), alerted=${booksDrift.alerted}`);
 
     // Log one rollup row per cron run so operators can see "did
     // reconciliation actually run last night?" without scrolling
