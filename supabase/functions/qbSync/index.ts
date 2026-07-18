@@ -43,6 +43,7 @@ import {
   mergeCustomerAuthoritative,
 } from "../_shared/qbInvoice.js";
 import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
+import { mergeNotesPreservingSyncLines } from "../_shared/qbInvoiceModified.js";
 import {
   reconcileQbInvoice,
   RECONCILE_SEVERITY,
@@ -1859,7 +1860,7 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   // know whether a matched row has local itemization worth preserving.
   const { data: existingInvoices } = await supabase
     .from("invoices")
-    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name, order_id, line_items, paid")
+    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name, order_id, line_items, paid, notes")
     .eq("shop_owner", shopOwner);
   const existingByDoc = new Map<string, any>();
   const existingByQbId = new Map<string, any>();
@@ -1958,7 +1959,9 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       paid_date: paidDate,
       status: isPaid ? "Completed" : "Pending",
       line_items: lineItems,
-      notes: qbInv.CustomerMemo?.value || null,
+      // QB's memo, but keep any local "[date] Synced from QuickBooks"
+      // audit lines — a Sync-All must not erase the shop's sync history.
+      notes: mergeNotesPreservingSyncLines(qbInv.CustomerMemo?.value, existingRow?.notes),
       discount: 0,
       tax_rate: 0,
       rush_rate: 0,

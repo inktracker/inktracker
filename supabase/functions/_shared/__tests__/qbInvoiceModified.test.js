@@ -3,6 +3,7 @@ import {
   detectQbInvoiceModification,
   buildQbMirrorPatch,
   buildQbModifiedNotification,
+  mergeNotesPreservingSyncLines,
 } from "../qbInvoiceModified.js";
 
 describe("detectQbInvoiceModification", () => {
@@ -99,5 +100,27 @@ describe("buildQbModifiedNotification", () => {
     expect(row.body).toContain("Sync from QuickBooks");
     expect(row.related_id).toBe("row-uuid");
     expect(row.metadata.qb_total).toBe(19777.53);
+  });
+});
+
+describe("mergeNotesPreservingSyncLines (pullInvoices notes overwrite)", () => {
+  const syncLine = "[2026-07-18] Synced from QuickBooks: total $100.00 → $110.00";
+
+  it("keeps local sync-audit lines under QB's fresh memo", () => {
+    const merged = mergeNotesPreservingSyncLines("thanks for your business", `old memo\n${syncLine}`);
+    expect(merged).toBe(`thanks for your business\n${syncLine}`);
+  });
+
+  it("drops non-sync local notes (QB memo is authoritative for prose)", () => {
+    expect(mergeNotesPreservingSyncLines("new memo", "old local prose")).toBe("new memo");
+  });
+
+  it("no memo + only sync lines → sync lines survive alone", () => {
+    expect(mergeNotesPreservingSyncLines(null, syncLine)).toBe(syncLine);
+  });
+
+  it("nothing on either side → null (matches prior CustomerMemo || null shape)", () => {
+    expect(mergeNotesPreservingSyncLines(null, null)).toBeNull();
+    expect(mergeNotesPreservingSyncLines("", "")).toBeNull();
   });
 });

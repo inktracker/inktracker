@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { qbModifiedState, buildAdoptPatches, buildSyncNote } from "../qbModifiedSync.js";
+import { qbModifiedState, buildAdoptPatches, buildSyncNote, stripSyncNotes } from "../qbModifiedSync.js";
 
 describe("qbModifiedState", () => {
   it("flags a row whose as-sold total disagrees with the QB mirror", () => {
@@ -85,5 +85,34 @@ describe("buildSyncNote", () => {
     expect(second.split("\n")).toHaveLength(2);
     expect(second).toContain("$100.00 → $110.00");
     expect(second).toContain("$110.00 → $120.00");
+  });
+});
+
+describe("stripSyncNotes (customer-facing surfaces)", () => {
+  it("removes sync lines, keeps the shop's real notes", () => {
+    const notes = buildSyncNote({ existingNotes: "rush job — deliver by Friday", localTotal: 100, qbTotal: 110, today: "2026-07-18" });
+    expect(stripSyncNotes(notes)).toBe("rush job — deliver by Friday");
+  });
+
+  it("returns empty when notes are ONLY sync lines (PDF omits the Notes block)", () => {
+    const notes = buildSyncNote({ existingNotes: "", localTotal: 100, qbTotal: 110, today: "2026-07-18" });
+    expect(stripSyncNotes(notes)).toBe("");
+  });
+
+  it("shop notes that merely mention QuickBooks survive", () => {
+    expect(stripSyncNotes("Customer pays via QuickBooks link")).toBe("Customer pays via QuickBooks link");
+  });
+
+  it("round-trip: every line buildSyncNote produces is stripped", () => {
+    const stacked = buildSyncNote({
+      existingNotes: buildSyncNote({ existingNotes: "keep me", localTotal: 1, qbTotal: 2, today: "2026-07-01" }),
+      localTotal: 2, qbTotal: 3, localTax: 0.1, qbTax: 0.3, today: "2026-07-18",
+    });
+    expect(stripSyncNotes(stacked)).toBe("keep me");
+  });
+
+  it("tolerates junk input", () => {
+    expect(stripSyncNotes(null)).toBe("");
+    expect(stripSyncNotes(undefined)).toBe("");
   });
 });
