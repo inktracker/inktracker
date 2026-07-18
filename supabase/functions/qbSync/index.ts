@@ -30,6 +30,7 @@ import {
   pickIncomeAccountId,
   customerIdentityMatches,
   normalizeItemName,
+  pickItemVariantMatch,
   clampPaymentAmount,
   dominantItemIncomeAccount,
   buildQbShipAddr,
@@ -699,6 +700,18 @@ async function resolveItemIdMap(
   const map = new Map<string, string>();
   for (const name of names) {
     let id = byExact.get(name) || byNorm.get(normalizeItemName(name)) || null;
+    if (!id) {
+      // Obvious-variant reuse before creating anything: an outgoing name
+      // that uniquely extends (or is extended by) one existing item at a
+      // token boundary books onto that item instead of spawning a
+      // near-duplicate ("Customer Supplied" vs "Customer Supplied Goods").
+      // Ambiguous or single-word cases fall through to create, as before.
+      const variant = pickItemVariantMatch(normalizeItemName(name), byNorm.keys());
+      if (variant) {
+        id = byNorm.get(variant) ?? null;
+        if (id) console.log(`[qbSync] item "${name}" reusing existing QB item variant "${variant}" (id ${id})`);
+      }
+    }
     if (!id) {
       const created = await qbCreate(token, realmId, "item", {
         Name: name,
