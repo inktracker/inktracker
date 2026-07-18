@@ -42,4 +42,13 @@ describe("buildAdoptPatches", () => {
     expect(buildAdoptPatches({})).toBeNull();
     expect(buildAdoptPatches(null)).toBeNull();
   });
+
+  it("discounted invoices keep their pre-discount subtotal (QB's is post-discount)", () => {
+    const p = buildAdoptPatches({ ...invoice, discount: 10 });
+    expect(p.invoice).not.toHaveProperty("subtotal");
+    expect(p.invoice.total).toBe(19777.53);
+    expect(p.invoice.tax).toBe(1422.03);
+    const noDisc = buildAdoptPatches({ ...invoice, discount: 0 });
+    expect(noDisc.invoice.subtotal).toBe(18355.5);
+  });
 });
