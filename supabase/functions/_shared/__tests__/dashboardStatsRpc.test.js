@@ -85,6 +85,15 @@ describe("performance_stats RPC — status literals stay in lockstep with Perfor
     expect(last.sql, "period stats must not read shop_performance").not.toMatch(/from\s+public\.shop_performance/i);
   });
 
+  it("v3: Total Volume unions QB-only invoices with the quote-born dedup", () => {
+    // The dedup MUST check quotes.converted_order_id — quote-born invoices
+    // carry order_id NULL with the linkage on the quote; dropping this
+    // clause double-counts every quoted job. See docs/total-volume-scope.md.
+    expect(last.sql).toMatch(/period_total_volume/);
+    expect(last.sql).toMatch(/converted_order_id/);
+    expect(last.sql).toMatch(/period_qb_only_invoice_count/);
+  });
+
   it("is RLS-scoped (SECURITY INVOKER) and authenticated-only", () => {
     const body = last.sql.match(/function\s+public\.performance_stats[\s\S]*?\$\$;/i)?.[0] || "";
     expect(body).toBeTruthy();
