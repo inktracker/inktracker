@@ -27,6 +27,8 @@ import {
   customerIdentityMatches,
   normalizeItemName,
   clampPaymentAmount,
+  pickItemVariantMatch,
+  normalizeItemName as normItem,
 } from "../qbInvoice";
 
 describe("qbInvoiceHasPayment (NEW-12 deposit double-post guard)", () => {
@@ -1315,5 +1317,44 @@ describe("shouldCascadeImportedPaid", () => {
   });
   it("legacy row with paid=null counts as unpaid → cascade", () => {
     expect(shouldCascadeImportedPaid({ ...linkedUnpaid, paid: null }, true)).toBe(true);
+  });
+});
+
+describe("pickItemVariantMatch (near-duplicate QB item guard)", () => {
+  const pick = pickItemVariantMatch;
+  const norm = normItem;
+
+  it("the Joe case: 'Customer Supplied' claims the existing 'Customer Supplied Goods'", () => {
+    expect(pick(norm("Customer Supplied"), [norm("Customer Supplied Goods"), norm("Sweatshirts")]))
+      .toBe(norm("Customer Supplied Goods"));
+  });
+
+  it("reverse direction: outgoing longer name claims the existing shorter one", () => {
+    expect(pick(norm("Customer Supplied Goods"), [norm("Customer Supplied")]))
+      .toBe(norm("Customer Supplied"));
+  });
+
+  it("ambiguity → null (create, like today)", () => {
+    expect(pick(norm("Customer Supplied"), [norm("Customer Supplied Goods"), norm("Customer Supplied Garments")]))
+      .toBeNull();
+  });
+
+  it("single-word names never variant-match (too generic to assume)", () => {
+    expect(pick(norm("Embroidery"), [norm("Embroidery Digitizing")])).toBeNull();
+    expect(pick(norm("Setup"), [norm("Setup Fee")])).toBeNull();
+  });
+
+  it("token-boundary only — no substring matches", () => {
+    expect(pick(norm("Screen Print"), [norm("Screen Printing Supplies")])).toBeNull();
+    expect(pick(norm("Custom Er"), [norm("Customer Supplied Goods")])).toBeNull();
+  });
+
+  it("exact normalized equality is not a variant (handled upstream)", () => {
+    expect(pick(norm("Customer Supplied"), [norm("customer supplied")])).toBeNull();
+  });
+
+  it("empty/junk input → null", () => {
+    expect(pick("", [norm("Anything")])).toBeNull();
+    expect(pick(norm("Customer Supplied"), null)).toBeNull();
   });
 });
