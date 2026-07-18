@@ -337,10 +337,18 @@ export function buildBrandOptions(matches, typedStyleNumber) {
 
   matches.forEach((match, index) => {
     const canonicalStyle = getCanonicalStyleNumber(typed, match);
-    const brand = cleanText(match.brandName) || "Unknown Brand";
+    // A brandless match keeps brandName EMPTY. It used to fall back to the
+    // literal "Unknown Brand", which applySelectedMatch then persisted onto
+    // the line — and from there it printed on the quote email, the PDF, and
+    // the QB invoice ("Unknown Brand Customer Supplied Goods…"). The label
+    // below still says "Unknown brand" for the dropdown; the empty brandName
+    // means the line keeps whatever the user typed in the Brand field (or
+    // stays blank) instead of a placeholder masquerading as data.
+    const brand = cleanText(match.brandName);
+    const brandLabel = brand || "Unknown brand";
     const description = getBestDescription(match) || "Untitled";
     // Key includes brand to prevent deduplication when different brands have same style
-    const key = `${canonicalStyle}|${brand}|${description}`;
+    const key = `${canonicalStyle}|${brandLabel}|${description}`;
 
     if (seen.has(key)) return;
     seen.add(key);
@@ -355,7 +363,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     // clicked. Result: dropdown visually showed AS Colour but the
     // applied data was always Augusta.
     unique.push({
-      id: `${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
+      id: `${brandLabel.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,
@@ -367,7 +375,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
       piecePrice: match.piecePrice,
       casePrice: match.casePrice,
       raw: match.raw || match,
-      label: `${brand} — ${canonicalStyle} — ${description}`,
+      label: `${brandLabel} — ${canonicalStyle} — ${description}`,
     });
   });
 
