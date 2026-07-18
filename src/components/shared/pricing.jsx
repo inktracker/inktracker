@@ -424,7 +424,14 @@ export function getTier(qty, tiersOverride) {
 }
 
 export function getQty(li) {
-  return Object.values(li?.sizes || {}).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
+  const sizes = li?.sizes || {};
+  // QB-imported lines (pullInvoices, Add to Production orders) carry a bare
+  // `qty` with an EMPTY sizes map — without this fallback a 2,675-piece
+  // imported job counted as 0 units everywhere (Units Sold, packing slips,
+  // per-line displays). Any sizes key at all — including zero or negative
+  // entries — keeps the original sizes-sum semantics untouched.
+  if (Object.keys(sizes).length === 0) return parseInt(li?.qty, 10) || 0;
+  return Object.values(sizes).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
 }
 
 // Shortfall tracking — the shop can record per-size misprints / losses
