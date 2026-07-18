@@ -77,6 +77,12 @@ import {
   shouldSendIntegrityAlert,
   buildIntegrityAlertText,
 } from "../_shared/dataIntegrity.js";
+import {
+  findDriftRows,
+  summarizeBooksDrift,
+  shouldSendBooksDriftAlert,
+  buildBooksDriftAlertText,
+} from "../_shared/booksDriftAlert.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -677,6 +683,121 @@ async function scanAndAlertDataIntegrity(adminClient: any): Promise<{ violations
   }
 }
 
+// ── Books-drift alert ───────────────────────────────────────────────
+// Detects rows whose local money disagrees with QuickBooks (the
+// Dragon Head / Thunder House class, 2026-07-17): QB-linked quotes and
+// invoices where total ≠ qb_total, plus paid invoices whose linked
+// order is still unpaid. Tax-hold firings ride along as context but
+// never trigger on their own. 24h dedup via qb_event_log; failures
+// swallowed — monitoring, not the work. Pure logic + tests in
+// _shared/booksDriftAlert.js.
+async function scanAndAlertBooksDrift(adminClient: any): Promise<{ findings: number; alerted: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { findings: 0, alerted: false };
+  try {
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    // Scale note: filtered to QB-linked rows only; capped well above the
+    // current fleet's row counts. If a cap is ever hit the scan still
+    // alerts on what it saw — worst case is an undercount, never silence.
+    const { data: quoteRows } = await adminClient
+      .from("quotes")
+      .select("shop_owner, quote_id, total, qb_total")
+      .not("qb_total", "is", null)
+      .not("qb_invoice_id", "is", null)
+      .limit(5000);
+    const { data: invoiceRows } = await adminClient
+      .from("invoices")
+      .select("shop_owner, invoice_id, total, qb_total")
+      .not("qb_total", "is", null)
+      .not("qb_invoice_id", "is", null)
+      .limit(5000);
+
+    const quoteDrift = findDriftRows(
+      (quoteRows ?? []).map((r: any) => ({ ...r, ref: r.quote_id })),
+    );
+    const invoiceDrift = findDriftRows(
+      (invoiceRows ?? []).map((r: any) => ({ ...r, ref: r.invoice_id })),
+    );
+
+    // Paid invoice → unpaid order. No FK between invoices.order_id and
+    // orders.order_id, so match in two passes.
+    const { data: paidLinked } = await adminClient
+      .from("invoices")
+      .select("shop_owner, invoice_id, order_id")
+      .eq("paid", true)
+      .not("order_id", "is", null)
+      .limit(5000);
+    let stuckOrders: any[] = [];
+    const linkedIds = (paidLinked ?? []).map((r: any) => r.order_id);
+    if (linkedIds.length) {
+      const { data: unpaidOrders } = await adminClient
+        .from("orders")
+        .select("shop_owner, order_id")
+        .eq("paid", false)
+        .in("order_id", linkedIds);
+      const unpaidKey = new Set((unpaidOrders ?? []).map((o: any) => `${o.shop_owner}|${o.order_id}`));
+      stuckOrders = (paidLinked ?? []).filter((r: any) => unpaidKey.has(`${r.shop_owner}|${r.order_id}`));
+    }
+
+    const { count: taxHoldCount } = await adminClient
+      .from("qb_event_log")
+      .select("id", { count: "exact", head: true })
+      .eq("action", "create_invoice")
+      .eq("response_body->>taxBlocked", "true")
+      .gte("created_at", since24h);
+
+    const summary = summarizeBooksDrift({ quoteDrift, invoiceDrift, stuckOrders, taxHoldCount: taxHoldCount ?? 0 });
+    if (!shouldSendBooksDriftAlert(summary)) {
+      return { findings: 0, alerted: false };
+    }
+
+    // Once-per-day dedup, same pattern as the integrity alert.
+    const { data: recentAlert } = await adminClient
+      .from("qb_event_log")
+      .select("id")
+      .eq("action", "books_drift_alert")
+      .gte("created_at", since24h)
+      .limit(1)
+      .maybeSingle();
+    if (recentAlert) return { findings: summary.driftCount + summary.stuckCount, alerted: false };
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: `InkTracker <${ALERT_FROM_EMAIL}>`,
+        to: [OPERATOR_ALERT_EMAIL],
+        subject: `[InkTracker] Books drift — ${summary.driftCount} row(s) disagree with QuickBooks` +
+                 (summary.stuckCount ? `, ${summary.stuckCount} stuck paid order(s)` : ""),
+        text: buildBooksDriftAlertText(summary),
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[qbReconcile] books-drift alert send failed: ${res.status} ${await res.text()}`);
+      return { findings: summary.driftCount + summary.stuckCount, alerted: false };
+    }
+    await logEvent(adminClient, {
+      shop_owner:    "__system__",
+      action:        "books_drift_alert",
+      direction:     "outbound",
+      status:        "success",
+      response_body: {
+        drift: summary.driftCount,
+        stuck: summary.stuckCount,
+        shops: summary.shopCount,
+        tax_holds_24h: summary.taxHoldCount,
+      },
+    });
+    return { findings: summary.driftCount + summary.stuckCount, alerted: true };
+  } catch (err) {
+    console.warn("[qbReconcile] books-drift scan exception:", (err as Error)?.message);
+    return { findings: 0, alerted: false };
+  }
+}
+
 // ── Webhook-health alert ────────────────────────────────────────────
 // The recurring blind spot: the QB payment webhook silently stops
 // delivering (token mismatch, Test/Live toggle, deleted endpoint) and
@@ -827,7 +948,9 @@ Deno.serve(async (req) => {
   // could itself generate new error rows for tomorrow's digest.
   const alertResult = await scanAndAlertQbErrors(adminClient);
   const integrityResult = await scanAndAlertDataIntegrity(adminClient);
+  const booksDrift = await scanAndAlertBooksDrift(adminClient);
   console.error(`[qbReconcile] integrity: ${integrityResult.violations} violation(s), alerted=${integrityResult.alerted}`);
+  console.error(`[qbReconcile] books-drift: ${booksDrift.findings} finding(s), alerted=${booksDrift.alerted}`);
   const emailHealth = await scanAndAlertEmailHealth(adminClient);
   console.error(`[qbReconcile] email-health: ${emailHealth.failed} failed send(s) in 24h, alerted=${emailHealth.alerted}`);
 
@@ -918,6 +1041,7 @@ Deno.serve(async (req) => {
       duration_ms: durationMs,
       alert:    alertResult,
       webhook_health: webhookHealth,
+      books_drift: booksDrift,
     });
   } catch (err) {
     await captureError(err, { fn: "qbReconcile" });
