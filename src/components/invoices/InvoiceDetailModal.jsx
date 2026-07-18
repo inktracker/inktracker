@@ -15,7 +15,7 @@ import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
 
-export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
+export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
   const [loading, setLoading] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [reordered, setReordered] = useState(false);
@@ -513,6 +513,18 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               title={readOnly ? readOnlyReason : undefined}
               className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
               Send Invoice
+            </button>
+          )}
+          {/* Add to Production — bridges a QB-originated invoice (no
+              linked order) onto the schedule. Renders only when the
+              invoice has no order_id; the page-level handler re-checks
+              against fresh rows before creating anything. */}
+          {!invoice.order_id && onAddToProduction && (
+            <button onClick={() => onAddToProduction(invoice)}
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
+              Add to Production
             </button>
           )}
           {orderExists && (

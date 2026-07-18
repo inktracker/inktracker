@@ -1245,7 +1245,7 @@ describe("buildTaxRecordFromQbInvoice — ShipAddr fallback (backfill)", () => {
 });
 
 // ── Pull-path round-trip guards (INV-2026-CQY1X, 2026-07-03) ────────────────
-import { stripQbDiscountNote, shouldReplaceLocalInvoiceItems } from "../qbInvoice.js";
+import { stripQbDiscountNote, shouldReplaceLocalInvoiceItems, shouldCascadeImportedPaid } from "../qbInvoice.js";
 
 describe("stripQbDiscountNote", () => {
   it("strips the flat-discount label our push appends", () => {
@@ -1291,5 +1291,29 @@ describe("shouldReplaceLocalInvoiceItems", () => {
   it("empty/absent items → replace (nothing local to lose)", () => {
     expect(shouldReplaceLocalInvoiceItems({ order_id: null, line_items: [] })).toBe(true);
     expect(shouldReplaceLocalInvoiceItems({ order_id: null })).toBe(true);
+  });
+});
+
+describe("shouldCascadeImportedPaid", () => {
+  const linkedUnpaid = { id: "i1", paid: false, order_id: "ORD-2026-AAAAA" };
+
+  it("unpaid→paid transition on an order-linked row → cascade", () => {
+    expect(shouldCascadeImportedPaid(linkedUnpaid, true)).toBe(true);
+  });
+  it("still unpaid in QB → no cascade", () => {
+    expect(shouldCascadeImportedPaid(linkedUnpaid, false)).toBe(false);
+  });
+  it("already paid locally → no cascade (re-pulls must not re-walk)", () => {
+    expect(shouldCascadeImportedPaid({ ...linkedUnpaid, paid: true }, true)).toBe(false);
+  });
+  it("no linked order → nothing to cascade to", () => {
+    expect(shouldCascadeImportedPaid({ ...linkedUnpaid, order_id: null }, true)).toBe(false);
+  });
+  it("fresh INSERT (no existing row) → no cascade", () => {
+    expect(shouldCascadeImportedPaid(null, true)).toBe(false);
+    expect(shouldCascadeImportedPaid(undefined, true)).toBe(false);
+  });
+  it("legacy row with paid=null counts as unpaid → cascade", () => {
+    expect(shouldCascadeImportedPaid({ ...linkedUnpaid, paid: null }, true)).toBe(true);
   });
 });
