@@ -114,6 +114,11 @@ export async function createInvoiceInQB({ base44, invoice, customer, session }) 
       return { ok: false, error: error.message || "Failed to create in QuickBooks." };
     }
     if (data?.error) return { ok: false, error: data.error };
+    if (data?.inFlight) {
+      // Another sync for this same invoice is mid-flight (row lock). Not a
+      // failure — the other sync's result will land on the row; refetch.
+      return { ok: false, error: data.message || "Another sync for this invoice is still running." };
+    }
     if (data?.taxBlocked) {
       return { ok: false, taxBlocked: true, taxBlockDetail: data.taxBlockDetail || {} };
     }

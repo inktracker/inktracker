@@ -81,11 +81,47 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Not signed in");
 
+      // Re-fetch the row before pushing: the `invoice` prop is a snapshot
+      // from the list fetch, which may predate another surface's QB push
+      // (order completion auto-pushes on the same screen flow). Pushing the
+      // stale snapshot is what minted the INV-2026-OW0M1 -r2 duplicate —
+      // its empty qb_invoice_id sent qbSync down the CREATE path. qbSync
+      // now re-reads the row server-side too; this keeps the modal honest.
+      let inv = invoice;
+      try {
+        const freshRows = await base44.entities.Invoice.filter({
+          shop_owner: invoice.shop_owner,
+          id: invoice.id,
+        });
+        if (freshRows?.length) inv = freshRows[0];
+      } catch { /* fall back to the prop */ }
+      if (inv.qb_invoice_id) {
+        setQbStatus({
+          type: "info",
+          text: `This invoice is already in QuickBooks (QB ID ${inv.qb_invoice_id}). Use "View in QB" to open it.`,
+        });
+        return;
+      }
+      // The customer prop can be null (list rendered without customers
+      // loaded). Pushing a customer payload with an empty email + company
+      // gives qbSync nothing to match on and mints a DUPLICATE QB customer —
+      // resolve the real record first.
+      let cust = customer;
+      if (!cust?.email && inv.customer_id) {
+        try {
+          const rows = await base44.entities.Customer.filter({
+            shop_owner: inv.shop_owner,
+            id: inv.customer_id,
+          });
+          if (rows?.length) cust = rows[0];
+        } catch { /* server-side merge is the backstop */ }
+      }
+
       // Treat invoice like a quote so buildQBInvoicePayload works
       const quoteShape = {
-        ...invoice,
-        quote_id: invoice.invoice_id,
-        customer_email: customer?.email || "",
+        ...inv,
+        quote_id: inv.invoice_id,
+        customer_email: cust?.email || "",
       };
       let invoicePayload = buildQBInvoicePayload(quoteShape);
 
@@ -93,11 +129,11 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       // order with no sizes object), build a simple single-line payload from the
       // invoice totals so the QB sync still works.
       if (!invoicePayload?.lines?.length) {
-        const lineItems = invoice.line_items || [];
+        const lineItems = inv.line_items || [];
         const lines = lineItems.length > 0
           ? lineItems.map(li => {
               const qty = getQty(li) || Number(li.qty) || 1;
-              const amount = Number(li.total) || Number(li.amount) || (invoice.subtotal || invoice.total || 0);
+              const amount = Number(li.total) || Number(li.amount) || (inv.subtotal || inv.total || 0);
               return {
                 description: [li.brand, li.style, li.garmentColor, li.description].filter(Boolean).join(" ") || "Service",
                 qty,
@@ -109,19 +145,19 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           : [{
               description: "Invoice",
               qty: 1,
-              unitPrice: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
-              amount: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
+              unitPrice: Number((inv.subtotal || inv.total || 0).toFixed(2)),
+              amount: Number((inv.subtotal || inv.total || 0).toFixed(2)),
               itemName: "Screen Print",
             }];
 
-        const discVal = parseFloat(invoice.discount) || 0;
-        const isFlat = invoice.discount_type === "flat";
+        const discVal = parseFloat(inv.discount) || 0;
+        const isFlat = inv.discount_type === "flat";
         invoicePayload = {
           lines,
           discountPercent: isFlat ? 0 : discVal,
           discountAmount: isFlat ? discVal : 0,
           discountType: isFlat ? "flat" : "percent",
-          taxPercent: parseFloat(invoice.tax_rate) || 0,
+          taxPercent: parseFloat(inv.tax_rate) || 0,
           depositAmount: 0,
         };
       }
@@ -139,20 +175,20 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         quote: quoteShape,
         invoicePayload,
         customer: {
-          id: invoice.customer_id,
-          name: invoice.customer_name,
-          email: customer?.email || "",
-          company: customer?.company || "",
-          phone: customer?.phone || "",
-          address: customer?.address || "",
-          qb_customer_id: customer?.qb_customer_id || "",
-          tax_exempt: customer?.tax_exempt || false,
-          tax_id: customer?.tax_id || "",
-          ship_to_address: customer?.ship_to_address || null,
-          exemption_expires_at: customer?.exemption_expires_at || null,
-          exemption_states: customer?.exemption_states || null,
-          exemption_type: customer?.exemption_type || null,
-          exemption_certificate_number: customer?.exemption_certificate_number || null,
+          id: inv.customer_id,
+          name: inv.customer_name,
+          email: cust?.email || "",
+          company: cust?.company || "",
+          phone: cust?.phone || "",
+          address: cust?.address || "",
+          qb_customer_id: cust?.qb_customer_id || "",
+          tax_exempt: cust?.tax_exempt || false,
+          tax_id: cust?.tax_id || "",
+          ship_to_address: cust?.ship_to_address || null,
+          exemption_expires_at: cust?.exemption_expires_at || null,
+          exemption_states: cust?.exemption_states || null,
+          exemption_type: cust?.exemption_type || null,
+          exemption_certificate_number: cust?.exemption_certificate_number || null,
         },
       });
       if (invErr) {
@@ -173,6 +209,14 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         throw new Error(invErr.message || "Failed to create");
       }
       if (data?.error) throw new Error(data.error);
+      if (data?.inFlight) {
+        // Row lock: another surface's sync for this invoice is mid-flight.
+        setQbStatus({
+          type: "info",
+          text: data.message || "Another sync for this invoice is still running — wait a moment, then refresh.",
+        });
+        return;
+      }
       if (data?.taxBlocked) {
         // QB computed a different sales tax than the invoice — on hold, no
         // payment link minted. Don't present this as a clean success.
@@ -185,7 +229,12 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             `No payment link was minted. Fix the customer's QB tax setup or this invoice's tax rate, then Refresh. See docs/qb-tax-sync.md.`,
         });
       } else {
-        setQbStatus({ type: "success", text: `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}` });
+        setQbStatus({
+          type: "success",
+          text: data.adoptionSource
+            ? `Linked to the existing QuickBooks invoice (#${data.qbDocNumber || data.qbInvoiceId}) — no duplicate was created.${data.paymentLink ? " Payment link ready." : ""}`
+            : `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}`,
+        });
       }
     } catch (err) {
       setQbStatus({ type: "error", text: err.message });
