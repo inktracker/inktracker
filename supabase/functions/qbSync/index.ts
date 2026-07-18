@@ -926,6 +926,42 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }
   }
 
+  // ── Adoption guard 1b: quote-born push whose ORDER'S INVOICE is in QB ─────
+  // The mirror image of guard 1. If the order was completed first (its
+  // invoice row pushed to QB as INV-…), a later push of the source QUOTE
+  // would land in a different DocNumber family and guard 2 would never see
+  // the existing invoice — second QB invoice for the same job. Walk
+  // quotes.quote_id → orders → invoices.order_id and adopt.
+  if (!qbInvoiceId && quote?.shop_owner && quote?.quote_id && !String(quote?.order_id || "")) {
+    try {
+      const { data: ordRows } = await supabase
+        .from("orders")
+        .select("order_id")
+        .eq("shop_owner", quote.shop_owner)
+        .eq("quote_id", quote.quote_id)
+        .limit(1);
+      const orderId = ordRows?.[0]?.order_id;
+      if (orderId) {
+        const { data: invRows } = await supabase
+          .from("invoices")
+          .select("qb_invoice_id, invoice_id")
+          .eq("shop_owner", quote.shop_owner)
+          .eq("order_id", orderId)
+          .limit(1);
+        if (invRows?.[0]?.qb_invoice_id) {
+          qbInvoiceId = String(invRows[0].qb_invoice_id);
+          adoptionSource = "order_invoice_row";
+          console.error(
+            `[createInvoice] Adopting QB invoice ${qbInvoiceId} from this quote's order invoice ` +
+            `${invRows[0].invoice_id} (order ${orderId}) instead of creating a duplicate.`,
+          );
+        }
+      }
+    } catch (e) {
+      console.error("[createInvoice] quote→order-invoice adoption lookup failed:", (e as Error)?.message);
+    }
+  }
+
   // ── Adoption guard 2: DocNumber family already exists in QB ───────────────
   // No local row points at a QB invoice, but one may exist anyway (lost
   // write-back, or a concurrent sync that won the race — its write-back
@@ -1203,36 +1239,34 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       invoiceBody.ShipAddr = shipAddr;
     }
 
-    let attempt = 0;
-    let activeBody = invoiceBody;
-    while (attempt < 5) {
-      try {
-        created = await qbCreate(token, realmId, "invoice", activeBody);
-        qbInvoiceId = created?.Invoice?.Id;
-        if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
-        qbInvoiceFinal = created?.Invoice ?? created;
-        break;
-      } catch (createErr: any) {
-        const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
-        if (!isDuplicate) throw createErr;
+    try {
+      created = await qbCreate(token, realmId, "invoice", invoiceBody);
+      qbInvoiceId = created?.Invoice?.Id;
+      if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
+      qbInvoiceFinal = created?.Invoice ?? created;
+    } catch (createErr: any) {
+      const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
+      if (!isDuplicate) throw createErr;
 
-        existingDocs.push(activeBody.DocNumber);
-        const nextDoc = nextAvailableDocNumber(baseDocNumber, existingDocs);
-        console.error(
-          `[createInvoice] DocNumber ${activeBody.DocNumber} taken — retrying as ${nextDoc}`
-        );
-        activeBody = {
-          ...activeBody,
-          DocNumber: nextDoc,
-          PrivateNote: `InkTracker Quote ${baseDocNumber} — revision (${nextDoc})`,
-        };
-        attempt++;
-      }
-    }
-    if (!qbInvoiceId) {
+      // A Duplicate-DocNumber rejection here means an invoice with this
+      // number appeared between our family query and the create — a racer
+      // that slipped every guard (degraded lock, QB query hiccup, or an
+      // operator creating it inside QBO at that exact moment). The OLD
+      // behavior was to mint the next free -rN — i.e. CREATE THE DUPLICATE
+      // ANYWAY under a new number, which is precisely the books-split this
+      // whole path exists to prevent. Refuse instead: nothing was created,
+      // and the NEXT attempt's entry family query finds the winner and
+      // adopts it (UPDATE path). The only legitimate -rN mint left is the
+      // pre-computed one above, when the family holds VOIDED members whose
+      // DocNumbers are permanently occupied.
+      console.error(
+        `[createInvoice] DocNumber ${invoiceBody.DocNumber} taken at create time — ` +
+        `refusing to mint a revision. Next sync will adopt the existing invoice.`,
+      );
       throw new Error(
-        `Could not create QB invoice for ${baseDocNumber} after retries. ` +
-        `Existing revisions: ${existingDocs.join(", ")}`
+        `QuickBooks already has an invoice numbered ${invoiceBody.DocNumber}. ` +
+        `Nothing was duplicated — wait a few seconds and sync again; ` +
+        `InkTracker will link to the existing invoice.`,
       );
     }
   }
@@ -2693,8 +2727,35 @@ Deno.serve(async (req) => {
         //     (INV-2026-OW0M1, 2026-07-17). Later arrivals now WAIT for the
         //     holder, then run against fresh DB state — the authoritative
         //     re-read inside handleCreateInvoice routes them onto UPDATE.
-        const rowLockKey = quote?.id
-          ? `create_invoice_row:${quote.id}`
+        // Lock on the JOB, not the row. A quote row and its order's invoice
+        // row are two different row ids for ONE job — locking each on its
+        // own id lets a quote push and an order-completion push run
+        // concurrently and create two QB invoices under different
+        // DocNumbers (neither adoption guard can see the other mid-flight).
+        // Canonical key: the source QUOTE row's id when the push is an
+        // order-born invoice (resolved via orders.quote_id), else own id.
+        // Both surfaces then contend on one lock, and the loser's
+        // authoritative re-read + adoption guards route it onto UPDATE.
+        let lockRowId: string | null = quote?.id ? String(quote.id) : null;
+        try {
+          const orderIdForLock = String(quote?.order_id || "");
+          if (lockRowId && orderIdForLock && quoteShop) {
+            const { data: ordRows } = await adminClient
+              .from("orders").select("quote_id")
+              .eq("shop_owner", quoteShop).eq("order_id", orderIdForLock).limit(1);
+            const srcQuoteId = ordRows?.[0]?.quote_id;
+            if (srcQuoteId) {
+              const { data: qRows } = await adminClient
+                .from("quotes").select("id")
+                .eq("shop_owner", quoteShop).eq("quote_id", srcQuoteId).limit(1);
+              if (qRows?.[0]?.id) lockRowId = String(qRows[0].id);
+            }
+          }
+        } catch (e) {
+          console.error("[createInvoice] canonical lock-key resolution failed (using own row id):", (e as Error)?.message);
+        }
+        const rowLockKey = lockRowId
+          ? `create_invoice_row:${lockRowId}`
           : (quote?.quote_id ? `create_invoice_row:${quoteShop}:${quote.quote_id}` : null);
         const idempOutcome = await withQbIdempotency(
           adminClient,
@@ -2909,9 +2970,32 @@ Deno.serve(async (req) => {
             amount:     params?.amount ?? null,
           },
         };
-        result = await withQbAudit(adminClient, auditCtx, () =>
-          handleRecordPayment(qbToken, realmId, params, adminClient, shopOwnerEmail),
+        // Row-serialize payments per target row. Same-amount double-submits
+        // already collapse on the derived idempotency key inside, but two
+        // concurrent submits with DIFFERENT amounts (an explicit partial +
+        // a default full-balance) get different keys, both read the same QB
+        // balance, both clamp against it, and both post — overpaying the
+        // invoice. Serialized, the second reads the post-payment balance
+        // and clamps correctly (to the remainder, possibly $0 = no-op).
+        const paymentRowKey = (params?.invoice_id || params?.quote_id)
+          ? `record_payment_row:${params?.invoice_id || params?.quote_id}`
+          : null;
+        const paySerialized = await withQbRowSerialization(
+          adminClient,
+          paymentRowKey,
+          { shop_owner: shopOwnerEmail, action: "record_payment_lock" },
+          () => withQbAudit(adminClient, auditCtx, () =>
+            handleRecordPayment(qbToken, realmId, params, adminClient, shopOwnerEmail),
+          ),
         );
+        if (!paySerialized.acquired) {
+          result = {
+            inFlight: true,
+            message: "Another payment for this invoice is still being recorded — wait a moment, then refresh.",
+          };
+          break;
+        }
+        result = paySerialized.result;
         break;
       }
       case "listIncomeAccounts": {

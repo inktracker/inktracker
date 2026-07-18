@@ -32,8 +32,10 @@ import {
 } from "../_shared/qbWebhookLogic.js";
 import {
   detectQbInvoiceModification,
+  detectQbPaidRegression,
   buildQbMirrorPatch,
   buildQbModifiedNotification,
+  buildQbPaidRegressionNotification,
 } from "../_shared/qbInvoiceModified.js";
 import { recordShopNotification } from "../_shared/shopNotifications.js";
 // Set secret: npx supabase secrets set QB_WEBHOOK_VERIFIER_TOKEN=<from Intuit Developer Portal>
@@ -133,17 +135,28 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
   if (!freshInvoice) return;
   const freshQbTotal = Number(freshInvoice.TotalAmt ?? 0);
 
-  const [{ data: quote }, { data: invoiceRow }] = await Promise.all([
+  // limit(1) with a stable order, NOT maybeSingle: if a duplicate local row
+  // ever shares this qb_invoice_id (e.g. a Sync-All pull racing a create's
+  // write-back), maybeSingle ERRORS and the whole mirror — and with the same
+  // pattern in the paid path, paid-marking — silently dies for that invoice.
+  // Degrading to the oldest row keeps the pipeline alive; the books-drift
+  // nightly pass surfaces whatever the duplicate desynced.
+  const [{ data: quoteRows }, { data: invoiceRowsFound }] = await Promise.all([
     supabase.from("quotes")
       .select("id, quote_id, total, qb_total, paid")
-      .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
+      .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner)
+      .order("created_at", { ascending: true }).limit(1),
     supabase.from("invoices")
       .select("id, invoice_id, total, qb_total, paid")
-      .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
+      .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner)
+      .order("created_at", { ascending: true }).limit(1),
   ]);
+  const quote = quoteRows?.[0] ?? null;
+  const invoiceRow = invoiceRowsFound?.[0] ?? null;
   if (!quote && !invoiceRow) return; // not an InkTracker-linked invoice
 
   let notified = false;
+  let paidRegressionNotified = false;
   for (const [table, row] of [["invoices", invoiceRow], ["quotes", quote]] as const) {
     if (!row) continue;
     const detection = detectQbInvoiceModification({
@@ -151,6 +164,32 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
       priorQbTotal: row.qb_total,
       freshQbTotal,
     });
+    // Paid regression: local says paid, QB shows an open balance again — a
+    // payment was deleted/unapplied/refunded in QBO. This moves Balance
+    // without moving TotalAmt, so the total-based detector above stays
+    // silent; without this check the books diverge PERMANENTLY with no
+    // signal. We surface it, never auto-un-pay (that cascade is a human
+    // decision).
+    if (!paidRegressionNotified && detectQbPaidRegression({ localPaid: row.paid, freshInvoice })) {
+      paidRegressionNotified = true;
+      await recordShopNotification(supabase, buildQbPaidRegressionNotification({
+        shopOwner,
+        ref: (table === "invoices" ? (row as any).invoice_id : (row as any).quote_id) || `QB #${qbInvoiceId}`,
+        rowId: row.id,
+        relatedEntity: table === "invoices" ? "invoice" : "quote",
+        qbInvoiceId,
+        qbBalance: Number(freshInvoice.Balance ?? 0),
+        qbTotal: freshQbTotal,
+      }));
+      await logEvent(supabase, {
+        shop_owner: shopOwner,
+        action: "qb_payment_removed",
+        direction: "inbound",
+        status: "success",
+        qb_invoice_id: qbInvoiceId,
+        response_body: { qb_balance: Number(freshInvoice.Balance ?? 0), qb_total: freshQbTotal, table },
+      });
+    }
     const patch = buildQbMirrorPatch(freshInvoice, row);
     if (patch) {
       const { error: patchErr } = await supabase.from(table).update(patch)
@@ -364,30 +403,47 @@ async function processNotification(supabase: any, notification: any) {
     .select("profile_id")
     .eq("qb_realm_id", realmId)
     .limit(5);
-  let profile: any = null;
+  // Collect EVERY live-token profile for this realm, deduped by shop key.
+  // The old first-match-wins pick was deterministic-WRONG when two
+  // InkTracker accounts connect the same QBO company: all of that realm's
+  // payment/edit events landed on whichever shop sorted first, so the other
+  // shop's rows (same realm-scoped qb_invoice_id values, imported by its
+  // own pulls) never marked paid. Each connected shop keeps its own local
+  // mirror of the shared books — process the event for each of them; the
+  // per-shop handlers are already shop_owner-scoped so a shop without a
+  // matching row is a clean no-op.
+  const shopProfiles = new Map<string, any>();
   for (const row of secretRows ?? []) {
     const p = await loadProfileWithSecrets(supabase, { id: row.profile_id });
-    if (p?.qb_access_token) { profile = p; break; }
+    if (!p?.qb_access_token) continue;
+    // Resolve the shop-owner KEY the quotes/orders are scoped by. For an
+    // OWNER (role shop/admin) `profiles.shop_owner` is NULL — they're
+    // identified by their own email, and their rows carry `shop_owner =
+    // their email`. Only employees/brokers have shop_owner pointing at the
+    // owner, so the canonical key is `shop_owner || email`. Skip when BOTH
+    // are somehow null (can't safely scope a tenant query).
+    const key = p.shop_owner || p.email;
+    if (key && !shopProfiles.has(key)) shopProfiles.set(key, p);
   }
 
-  if (!profile?.qb_access_token) {
+  if (shopProfiles.size === 0) {
     console.error(`[qbWebhook] No profile with a live token found for realmId ${realmId}`);
     return;
   }
-  // Resolve the shop-owner KEY the quotes/orders are scoped by. For an OWNER
-  // (role shop/admin) `profiles.shop_owner` is NULL — they're identified by
-  // their own email, and their rows carry `shop_owner = their email`. Only
-  // employees/brokers have shop_owner pointing at the owner. So the canonical
-  // key is `shop_owner || email`. Reading the bare `shop_owner` here made the
-  // handler refuse EVERY owner's payment (shop_owner null) even after the
-  // realm→profile lookup was fixed — so nothing converted. We still refuse if
-  // BOTH are somehow null (can't safely scope a tenant query).
-  const shopOwner: string = profile.shop_owner || profile.email;
-  if (!shopOwner) {
-    console.error(`[qbWebhook] Profile for realmId ${realmId} has no shop_owner or email — refusing to process`);
-    return;
+  if (shopProfiles.size > 1) {
+    console.error(`[qbWebhook] realm ${realmId} is connected by ${shopProfiles.size} shops — processing for each`);
   }
 
+  for (const [shopOwner, profile] of shopProfiles) {
+    try {
+      await processEntitiesForShop(supabase, dataChangeEvent, realmId, shopOwner, profile);
+    } catch (err) {
+      console.error(`[qbWebhook] processing failed for shop ${shopOwner} realm ${realmId}:`, err instanceof Error ? err.message : String(err));
+    }
+  }
+}
+
+async function processEntitiesForShop(supabase: any, dataChangeEvent: any, realmId: string, shopOwner: string, profile: any) {
   const accessToken = await getAccessToken(supabase, profile);
 
   for (const entity of dataChangeEvent.entities) {

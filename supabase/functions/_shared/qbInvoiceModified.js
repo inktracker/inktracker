@@ -68,7 +68,45 @@ export function buildQbMirrorPatch(freshInvoice, currentRow) {
   return patch;
 }
 
+/**
+ * A paid-side REGRESSION: the local row says paid, but the fresh QB invoice
+ * has an open balance again (payment deleted/unapplied in QBO, or a partial
+ * refund reopened it). The mirror deliberately never un-pays local rows
+ * (forward-only; un-paying cascades into orders and is a human decision) —
+ * but staying SILENT about it left the books permanently diverged with no
+ * signal (a voided payment changes Balance without touching TotalAmt, so
+ * the total-based modification detector never fires). Voids that zero
+ * TotalAmt are excluded here — those DO move the total and are already
+ * surfaced by detectQbInvoiceModification.
+ */
+export function detectQbPaidRegression({ localPaid, freshInvoice }) {
+  if (!localPaid || !freshInvoice) return false;
+  const total = Number(freshInvoice.TotalAmt ?? 0);
+  const balance = Number(freshInvoice.Balance ?? 0);
+  return total > 0 && balance > QB_MODIFIED_TOLERANCE;
+}
+
 const fmt = (n) => `$${Number(n).toFixed(2)}`;
+
+/**
+ * In-app notification for a paid regression (see detectQbPaidRegression).
+ */
+export function buildQbPaidRegressionNotification({ shopOwner, ref, rowId, relatedEntity, qbInvoiceId, qbBalance, qbTotal }) {
+  return buildNotificationRow({
+    shopOwner,
+    eventType: "qb_payment_removed",
+    severity: "warning",
+    title: `Payment removed in QuickBooks on invoice ${ref}`,
+    body:
+      `InkTracker has this invoice marked paid, but QuickBooks now shows ${fmt(qbBalance)} ` +
+      `of ${fmt(qbTotal)} outstanding — a payment was deleted, unapplied, or refunded in QuickBooks. ` +
+      `InkTracker did NOT un-mark it: review the payment in QuickBooks, and if the removal was ` +
+      `intentional, update the invoice's paid status in InkTracker to match.`,
+    relatedEntity,
+    relatedId: rowId,
+    metadata: { qb_invoice_id: qbInvoiceId ?? null, qb_balance: Number(qbBalance), qb_total: Number(qbTotal) },
+  });
+}
 
 /**
  * In-app notification row for a QB-side modification. related_entity /

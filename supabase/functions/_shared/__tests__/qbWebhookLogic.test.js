@@ -35,6 +35,26 @@ function mockSupabase(quotes = []) {
         const found = quotes.find((q) => matches(q, filters));
         return { data: found ?? null, error: null };
       },
+      // The paid-invoice lookups moved from maybeSingle() to
+      // order().limit(1) so a duplicate qb_invoice_id row degrades to the
+      // oldest match instead of erroring the whole paid path.
+      order(col, opts = {}) {
+        calls.order = [col, opts];
+        return chain(filters);
+      },
+      async limit(n) {
+        calls.limitCalled = (calls.limitCalled || 0) + 1;
+        const found = quotes.filter((q) => matches(q, filters));
+        const sorted = calls.order?.[0]
+          ? found.slice().sort((a, b) => {
+              const [col, opts] = calls.order;
+              const av = a?.[col] ?? "", bv = b?.[col] ?? "";
+              const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+              return opts?.ascending === false ? -cmp : cmp;
+            })
+          : found;
+        return { data: sorted.slice(0, n), error: null };
+      },
     };
   }
 
@@ -103,7 +123,10 @@ describe("buildPaidInvoiceQuery — cross-tenant isolation", () => {
     const sb = mockSupabase([]);
     await buildPaidInvoiceQuery(sb, "1042", "shopA@example.com");
     expect(sb._calls.from).toEqual(["quotes"]);
-    expect(sb._calls.maybeSingleCalled).toBe(1);
+    // limit(1) with a stable order replaced maybeSingle so a duplicate
+    // qb_invoice_id row degrades to the oldest match instead of erroring
+    // the whole paid path.
+    expect(sb._calls.limitCalled).toBe(1);
   });
 
   it("applies BOTH .eq filters in a single query (regression guard)", async () => {
@@ -116,15 +139,15 @@ describe("buildPaidInvoiceQuery — cross-tenant isolation", () => {
     expect(sb._calls.eqs).toHaveLength(2);
   });
 
-  it("throws when qbInvoiceId is missing — defensive guard", () => {
-    expect(() => buildPaidInvoiceQuery(mockSupabase(), "", "shopA@example.com")).toThrow(/qbInvoiceId required/);
-    expect(() => buildPaidInvoiceQuery(mockSupabase(), null, "shopA@example.com")).toThrow(/qbInvoiceId required/);
+  it("throws when qbInvoiceId is missing — defensive guard", async () => {
+    await expect(buildPaidInvoiceQuery(mockSupabase(), "", "shopA@example.com")).rejects.toThrow(/qbInvoiceId required/);
+    await expect(buildPaidInvoiceQuery(mockSupabase(), null, "shopA@example.com")).rejects.toThrow(/qbInvoiceId required/);
   });
 
-  it("throws when shopOwner is missing — defensive guard against tenant-scope bypass", () => {
-    expect(() => buildPaidInvoiceQuery(mockSupabase(), "1042", "")).toThrow(/shopOwner required/);
-    expect(() => buildPaidInvoiceQuery(mockSupabase(), "1042", null)).toThrow(/shopOwner required/);
-    expect(() => buildPaidInvoiceQuery(mockSupabase(), "1042", undefined)).toThrow(/shopOwner required/);
+  it("throws when shopOwner is missing — defensive guard against tenant-scope bypass", async () => {
+    await expect(buildPaidInvoiceQuery(mockSupabase(), "1042", "")).rejects.toThrow(/shopOwner required/);
+    await expect(buildPaidInvoiceQuery(mockSupabase(), "1042", null)).rejects.toThrow(/shopOwner required/);
+    await expect(buildPaidInvoiceQuery(mockSupabase(), "1042", undefined)).rejects.toThrow(/shopOwner required/);
   });
 });
 
@@ -516,12 +539,12 @@ describe("buildPaidInvoiceQueryFromInvoices — tenant-scoped invoice lookup", (
     expect(data).toBeNull();
   });
 
-  it("throws on missing qbInvoiceId", () => {
-    expect(() => buildPaidInvoiceQueryFromInvoices(mockSupabase(), "", "x@y.com")).toThrow(/qbInvoiceId required/);
+  it("throws on missing qbInvoiceId", async () => {
+    await expect(buildPaidInvoiceQueryFromInvoices(mockSupabase(), "", "x@y.com")).rejects.toThrow(/qbInvoiceId required/);
   });
 
-  it("throws on missing shopOwner — tenant-scope bypass guard", () => {
-    expect(() => buildPaidInvoiceQueryFromInvoices(mockSupabase(), "1042", "")).toThrow(/shopOwner required/);
+  it("throws on missing shopOwner — tenant-scope bypass guard", async () => {
+    await expect(buildPaidInvoiceQueryFromInvoices(mockSupabase(), "1042", "")).rejects.toThrow(/shopOwner required/);
   });
 });
 

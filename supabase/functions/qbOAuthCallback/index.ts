@@ -5,6 +5,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { buildOAuthTokenFields, refreshExpiryFromTokens } from "../_shared/connectionLogic.js";
 import { validateQbTokenResponse } from "../_shared/qbOAuthResponse.js";
+import { recordShopNotification } from "../_shared/shopNotifications.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -110,9 +111,11 @@ Deno.serve(async (req) => {
     // "state stays valid forever" property the column-less design had.
     let profileId: string | null = null;
     let profileRole: string | null = null;
+    let profileShopKey: string | null = null;
+    let priorRealmId: string | null = null;
     const { data: secretRow } = await supabaseAdmin
       .from("profile_secrets")
-      .select("profile_id, qb_oauth_state_at")
+      .select("profile_id, qb_oauth_state_at, qb_realm_id")
       .eq("qb_oauth_state", state)
       .maybeSingle();
 
@@ -129,12 +132,14 @@ Deno.serve(async (req) => {
         return Response.redirect(`${appBaseUrl}/Account?qb_error=state_expired`);
       }
       profileId = secretRow.profile_id;
+      priorRealmId = secretRow.qb_realm_id ? String(secretRow.qb_realm_id) : null;
       const { data: p } = await supabaseAdmin
         .from("profiles")
-        .select("role")
+        .select("role, email, shop_owner")
         .eq("id", profileId)
         .maybeSingle();
       profileRole = p?.role ?? null;
+      profileShopKey = p?.shop_owner || p?.email || null;
     }
 
     if (!profileId) {
@@ -168,6 +173,57 @@ Deno.serve(async (req) => {
     if (upsertErr) {
       console.error("Failed to store QB tokens in profile_secrets:", upsertErr);
       return Response.redirect(`${appBaseUrl}/Account?qb_error=storage_failed`);
+    }
+
+    // ── Realm-switch safety ──────────────────────────────────────────────
+    // QB record ids (invoice/customer) are REALM-scoped. If this connect is
+    // to a DIFFERENT QBO company than before, every stored qb_invoice_id /
+    // qb_customer_id on this shop's rows now points at an arbitrary record
+    // in the new company: a resync would UPDATE an unrelated invoice in the
+    // new books, and old payment links would still collect money for the
+    // OLD company. Clear the links (mirror fields included — they describe
+    // the old company's invoice). Local as-sold totals and paid history are
+    // untouched. Best-effort but loud: a partial clear is still strictly
+    // safer than a full carry-over.
+    if (priorRealmId && priorRealmId !== realmId && profileShopKey) {
+      console.error(
+        `[qbOAuthCallback] REALM CHANGE for ${profileShopKey}: ${priorRealmId} → ${realmId}. ` +
+        `Clearing stale QB links on quotes/invoices/customers.`,
+      );
+      const linkClear = {
+        qb_invoice_id: null, qb_doc_number: null, qb_payment_link: null,
+        qb_synced_at: null, qb_subtotal: null, qb_tax_amount: null, qb_total: null,
+      };
+      for (const table of ["quotes", "invoices"]) {
+        const { error: clearErr } = await supabaseAdmin
+          .from(table).update(linkClear)
+          .eq("shop_owner", profileShopKey)
+          .not("qb_invoice_id", "is", null);
+        if (clearErr) console.error(`[qbOAuthCallback] realm-change clear failed on ${table}:`, clearErr.message);
+      }
+      const { error: custClearErr } = await supabaseAdmin
+        .from("customers").update({ qb_customer_id: null })
+        .eq("shop_owner", profileShopKey)
+        .not("qb_customer_id", "is", null);
+      if (custClearErr) console.error("[qbOAuthCallback] realm-change clear failed on customers:", custClearErr.message);
+      try {
+        await recordShopNotification(supabaseAdmin, {
+          shopOwner: profileShopKey,
+          eventType: "qb_realm_changed",
+          severity: "warning",
+          title: "Connected to a different QuickBooks company",
+          body:
+            "This connection is to a different QuickBooks company than before, so links between " +
+            "InkTracker records and the previous company's invoices/customers were cleared " +
+            "(they would have pointed at the wrong records). Invoices and totals in InkTracker are " +
+            "unchanged. Re-sync any open invoices you want in the new QuickBooks company.",
+          relatedEntity: "account",
+          relatedId: String(profileId),
+          metadata: { prior_realm_id: priorRealmId, new_realm_id: realmId },
+        });
+      } catch (notifErr) {
+        console.error("[qbOAuthCallback] realm-change notification failed:", notifErr);
+      }
     }
 
     console.error("QB OAuth success for profile:", profileId, "realmId:", realmId);
