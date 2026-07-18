@@ -138,3 +138,49 @@ describe("mergeCustomerAuthoritative", () => {
     expect(mergeCustomerAuthoritative(payload, null)).toBe(payload);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// pickNameOnlyCustomerMatch — the Lisa Gotts retrieval-gap fix
+// ─────────────────────────────────────────────────────────────────────
+
+import { pickNameOnlyCustomerMatch } from "../qbInvoice.js";
+
+describe("pickNameOnlyCustomerMatch", () => {
+  const california89 = {
+    Id: "52",
+    DisplayName: "California 89 (Lisa Gotts)",
+    CompanyName: "California 89",
+    GivenName: "Lisa Gotts",
+  };
+
+  it("matches the company-first QB customer from a sparse name-only record (the Lisa case)", () => {
+    const hit = pickNameOnlyCustomerMatch([california89], { name: "Lisa Gotts", company: "" });
+    expect(hit).toBe(california89);
+  });
+
+  it("never auto-matches when WE know a company (rung 3 already disagreed — contradiction)", () => {
+    const hit = pickNameOnlyCustomerMatch([california89], { name: "Lisa Gotts", company: "Tahoe Gift Co." });
+    expect(hit).toBeNull();
+  });
+
+  it("refuses ambiguity: two same-name candidates → null (human resolves)", () => {
+    const other = { Id: "99", DisplayName: "Truckee Trading (Lisa Gotts)", CompanyName: "Truckee Trading", GivenName: "Lisa Gotts" };
+    expect(pickNameOnlyCustomerMatch([california89, other], { name: "Lisa Gotts", company: "" })).toBeNull();
+  });
+
+  it("normalizes case/punctuation on the name comparison", () => {
+    const hit = pickNameOnlyCustomerMatch([california89], { name: "lisa   gotts", company: "" });
+    expect(hit).toBe(california89);
+  });
+
+  it("ignores candidates whose name doesn't actually equal ours", () => {
+    const lisaSmith = { Id: "7", DisplayName: "Lisa Smith", GivenName: "Lisa Smith" };
+    expect(pickNameOnlyCustomerMatch([lisaSmith], { name: "Lisa Gotts", company: "" })).toBeNull();
+  });
+
+  it("empty name or empty candidate list → null", () => {
+    expect(pickNameOnlyCustomerMatch([], { name: "Lisa Gotts" })).toBeNull();
+    expect(pickNameOnlyCustomerMatch([california89], { name: "" })).toBeNull();
+    expect(pickNameOnlyCustomerMatch(null, { name: "Lisa Gotts" })).toBeNull();
+  });
+});

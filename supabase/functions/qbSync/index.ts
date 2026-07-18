@@ -41,6 +41,7 @@ import {
   shouldCascadeImportedPaid,
   pickQbInvoiceForAdoption,
   mergeCustomerAuthoritative,
+  pickNameOnlyCustomerMatch,
 } from "../_shared/qbInvoice.js";
 import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
 import {
@@ -529,6 +530,38 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
     return customer.qb_customer_id;
   }
 
+  // ── Per-CUSTOMER serialization ────────────────────────────────────────────
+  // The invoice-level row lock serializes pushes of the same JOB — but two
+  // different jobs for the same brand-new customer, pushed concurrently,
+  // reach this point with different locks, both miss the search, and both
+  // CREATE → two QB customers for one person. Serialize resolution per
+  // customer row: the second entrant re-reads the row inside the lock and
+  // short-circuits on the first entrant's write-back.
+  if (customer.id) {
+    const lockAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+    const serialized = await withQbRowSerialization(
+      lockAdmin,
+      `create_customer_row:${customer.id}`,
+      { shop_owner: customer.shop_owner || customer.email || String(customer.id), action: "create_customer_lock" },
+      async () => {
+        const { data: fresh } = await supabase
+          .from("customers").select("qb_customer_id").eq("id", customer.id).maybeSingle();
+        if (fresh?.qb_customer_id) return String(fresh.qb_customer_id);
+        return await resolveQbCustomer(token, realmId, customer, supabase, lockAdmin);
+      },
+    );
+    if (!serialized.acquired) {
+      throw new Error("This customer is being synced by another request — wait a moment and try again.");
+    }
+    return serialized.result;
+  }
+  return await resolveQbCustomer(token, realmId, customer, supabase, null);
+}
+
+async function resolveQbCustomer(token: string, realmId: string, customer: any, supabase: any, adminClient: any) {
   const displayName = buildQBDisplayName(customer);
 
   // Search QB for existing customer by email or name.
@@ -572,6 +605,27 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
     );
     const hit = rows.find((r: any) => customerIdentityMatches(r, customer));
     if (hit) qbCustomerId = hit.Id;
+  }
+
+  // 3b. Contact-name candidate fetch — GivenName holds the FULL contact name
+  // for every InkTracker-created QB customer, so this retrieves company-first
+  // DisplayNames ("California 89 (Lisa Gotts)") that rung 4's prefix LIKE
+  // misses when the record on file is sparse (no email, no company). This
+  // was the retrieval gap behind the duplicate "Lisa Gotts": the VERIFIER
+  // would have matched, but the candidate was never fetched. Auto-match only
+  // on the strict pickNameOnlyCustomerMatch rules (single unambiguous
+  // candidate, no company contradiction); anything weaker is recorded as a
+  // near-miss and surfaced to the shop if we end up creating.
+  let nearMissCandidates: any[] = [];
+  if (!qbCustomerId && String(customer?.name || "").trim()) {
+    const rows = await queryCustomers(`GivenName = '${escapeQbStringLiteral(String(customer.name).trim())}'`);
+    const hit = pickNameOnlyCustomerMatch(rows, customer);
+    if (hit) {
+      qbCustomerId = hit.Id;
+      console.error(`[QB] customer matched by contact name (single unambiguous candidate): ${hit.DisplayName} (${hit.Id})`);
+    } else if (rows.length > 0) {
+      nearMissCandidates = rows;
+    }
   }
 
   // 4. Normalized fuzzy match — catches cosmetic duplicates (case /
@@ -619,6 +673,31 @@ async function findOrCreateCustomer(token: string, realmId: string, customer: an
       );
       const created = await qbCreate(token, realmId, "customer", minimalCustomer);
       qbCustomerId = created?.Customer?.Id;
+    }
+  }
+
+  // Near-miss surfacing: we CREATED a new QB customer while same-name
+  // candidates existed that the strict rules couldn't safely auto-match
+  // (ambiguous, or a conflicting company). A human can tell in two seconds
+  // whether they're the same person — silence here is how "California 89
+  // (Lisa Gotts)" and a bare "Lisa Gotts" quietly coexisted. Best-effort.
+  if (qbCustomerId && nearMissCandidates.length > 0 && adminClient && customer?.shop_owner) {
+    try {
+      const names = nearMissCandidates.slice(0, 3).map((r: any) => r.DisplayName).filter(Boolean).join(", ");
+      await recordShopNotification(adminClient, {
+        shopOwner: customer.shop_owner,
+        eventType: "qb_customer_possible_duplicate",
+        severity:  "warning",
+        title:     `New QuickBooks customer "${displayName}" may be a duplicate`,
+        body:      `QuickBooks already has ${nearMissCandidates.length > 1 ? "customers" : "a customer"} with the same contact name (${names}). ` +
+                   `If ${nearMissCandidates.length > 1 ? "one of these is" : "this is"} the same person, merge them in QuickBooks ` +
+                   `(Sales → Customers → Make inactive on the duplicate) and re-sync — otherwise ignore this.`,
+        relatedEntity: "customer",
+        relatedId:     String(customer.id ?? ""),
+        metadata: { qb_customer_id: qbCustomerId, near_misses: nearMissCandidates.slice(0, 5).map((r: any) => ({ id: r.Id, name: r.DisplayName })) },
+      });
+    } catch (notifErr) {
+      console.error("[QB] possible-duplicate-customer notification failed:", notifErr);
     }
   }
 

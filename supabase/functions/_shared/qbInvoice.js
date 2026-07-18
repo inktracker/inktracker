@@ -173,6 +173,31 @@ export function customerIdentityMatches(qbRow, customer) {
   return false;
 }
 
+// Decide whether a contact-NAME-only candidate fetch (GivenName = name) can
+// be auto-matched. This is the weakest identity signal, so it is deliberately
+// strict — the failure modes are asymmetric: a missed match creates a
+// duplicate QB customer (annoying, mergeable), a WRONG match books another
+// person's invoice onto this customer (money on the wrong account).
+//
+//   - candidate's contact name must equal ours (normalized);
+//   - if WE know a company, a name-only match is never taken (the
+//     company+name rung already ran and disagreed — that's a contradiction,
+//     not a match);
+//   - if we know NO company, exactly ONE candidate may match. Two "Lisa
+//     Gotts" at different companies is an ambiguity a human must resolve.
+//
+// Returns the matched QB row or null. Callers should treat a null WITH
+// candidates present as a near-miss worth surfacing to the shop.
+export function pickNameOnlyCustomerMatch(candidates, customer) {
+  const name = normalizeForMatch(customer?.name);
+  if (!name) return null;
+  if (normalizeForMatch(customer?.company)) return null; // contradiction, not a match
+  const list = (Array.isArray(candidates) ? candidates : []).filter(
+    (row) => normalizeForMatch(row?.GivenName) === name || normalizeForMatch(row?.DisplayName) === name,
+  );
+  return list.length === 1 ? list[0] : null;
+}
+
 // ── Item-name matching (prevent duplicate QB items) ──────────────────────────
 // findOrCreate of a QB Item is exact-name; "T-Shirts" won't match an existing
 // "T-Shirt", so InkTracker would create a duplicate item — splitting the
