@@ -4,11 +4,8 @@ import {
   detectQbPaidRegression,
   buildQbMirrorPatch,
   buildQbModifiedNotification,
-<<<<<<< HEAD
   buildQbPaidRegressionNotification,
-=======
   mergeNotesPreservingSyncLines,
->>>>>>> origin/main
 } from "../qbInvoiceModified.js";
 
 describe("detectQbInvoiceModification", () => {
@@ -108,7 +105,6 @@ describe("buildQbModifiedNotification", () => {
   });
 });
 
-<<<<<<< HEAD
 // A deleted/unapplied/refunded payment in QBO reopens the Balance WITHOUT
 // moving TotalAmt — the total-based detector stays silent, so this detector
 // is the only signal before the books diverge permanently.
@@ -169,7 +165,9 @@ describe("buildQbPaidRegressionNotification", () => {
     expect(row.title).toContain("Q-2026-GR55");
     expect(row.body).toContain("did NOT un-mark");
     expect(row.metadata.qb_balance).toBe(68.21);
-=======
+  });
+});
+
 describe("mergeNotesPreservingSyncLines (pullInvoices notes overwrite)", () => {
   const syncLine = "[2026-07-18] Synced from QuickBooks: total $100.00 → $110.00";
 
@@ -189,6 +187,5 @@ describe("mergeNotesPreservingSyncLines (pullInvoices notes overwrite)", () => {
   it("nothing on either side → null (matches prior CustomerMemo || null shape)", () => {
     expect(mergeNotesPreservingSyncLines(null, null)).toBeNull();
     expect(mergeNotesPreservingSyncLines("", "")).toBeNull();
->>>>>>> origin/main
   });
 });
