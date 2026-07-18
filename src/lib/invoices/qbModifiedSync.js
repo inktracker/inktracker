@@ -25,13 +25,32 @@ export function qbModifiedState(row) {
   return { modified: centsDelta(localTotal, qbTotal) > TOLERANCE, localTotal, qbTotal, delta };
 }
 
+const fmtUsd = (n) => `$${Number(n).toFixed(2)}`;
+
+/**
+ * One-line audit note describing what a QB sync changed, appended to
+ * the invoice's existing notes so the change survives on the invoice
+ * (and its PDF) permanently. Each sync appends its own dated line —
+ * repeated syncs build a history, not a overwrite.
+ */
+export function buildSyncNote({ existingNotes, localTotal, qbTotal, localTax, qbTax, today }) {
+  const date = today || new Date().toISOString().split("T")[0];
+  let line = `[${date}] Synced from QuickBooks: total ${fmtUsd(localTotal)} → ${fmtUsd(qbTotal)}`;
+  if (centsDelta(localTax ?? 0, qbTax ?? 0) > TOLERANCE) {
+    line += `, tax ${fmtUsd(localTax ?? 0)} → ${fmtUsd(qbTax ?? 0)}`;
+  }
+  const prior = typeof existingNotes === "string" ? existingNotes.trim() : "";
+  return prior ? `${prior}\n${line}` : line;
+}
+
 /**
  * Build the adopt patches for the invoice row and (when linked) its
  * quote and order, from the invoice's qb_* mirror. QB is the billing
  * authority: totals/tax follow QB; line items and production detail
- * are never touched.
+ * are never touched. The invoice patch appends a dated sync note so
+ * the adopted change is recorded on the invoice itself.
  */
-export function buildAdoptPatches(invoice) {
+export function buildAdoptPatches(invoice, { today } = {}) {
   const qbTotal = Number(invoice?.qb_total);
   if (!Number.isFinite(qbTotal)) return null;
   const qbTax = Number(invoice?.qb_tax_amount) || 0;
@@ -49,9 +68,17 @@ export function buildAdoptPatches(invoice) {
   // when there's no discount in play; total/tax are always adopted —
   // they're the money truth.
   const hasDiscount = (Number(invoice?.discount) || 0) > 0;
+  const notes = buildSyncNote({
+    existingNotes: invoice?.notes,
+    localTotal: invoice?.total ?? 0,
+    qbTotal,
+    localTax: invoice?.tax ?? 0,
+    qbTax,
+    today,
+  });
   const invoicePatch = hasDiscount
-    ? { tax: qbTax, total: qbTotal, tax_rate: taxRate }
-    : { subtotal: qbSubtotal, tax: qbTax, total: qbTotal, tax_rate: taxRate };
+    ? { tax: qbTax, total: qbTotal, tax_rate: taxRate, notes }
+    : { subtotal: qbSubtotal, tax: qbTax, total: qbTotal, tax_rate: taxRate, notes };
 
   return {
     invoice: invoicePatch,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { qbModifiedState, buildAdoptPatches } from "../qbModifiedSync.js";
+import { qbModifiedState, buildAdoptPatches, buildSyncNote } from "../qbModifiedSync.js";
 
 describe("qbModifiedState", () => {
   it("flags a row whose as-sold total disagrees with the QB mirror", () => {
@@ -25,7 +25,8 @@ describe("buildAdoptPatches", () => {
 
   it("adopts QB totals/tax onto invoice, quote, and order patches", () => {
     const p = buildAdoptPatches(invoice);
-    expect(p.invoice).toEqual({ subtotal: 18355.5, tax: 1422.03, total: 19777.53, tax_rate: 7.7472 });
+    expect(p.invoice).toMatchObject({ subtotal: 18355.5, tax: 1422.03, total: 19777.53, tax_rate: 7.7472 });
+    expect(p.invoice.notes).toContain("Synced from QuickBooks");
     expect(p.quote.total).toBe(19777.53);
     expect(p.order.tax).toBe(1422.03);
   });
@@ -50,5 +51,39 @@ describe("buildAdoptPatches", () => {
     expect(p.invoice.tax).toBe(1422.03);
     const noDisc = buildAdoptPatches({ ...invoice, discount: 0 });
     expect(noDisc.invoice.subtotal).toBe(18355.5);
+  });
+
+  it("invoice patch records a dated sync note describing the change", () => {
+    const p = buildAdoptPatches(
+      { ...invoice, total: 19477.53, tax: 1422.03, notes: "rush job" },
+      { today: "2026-07-18" },
+    );
+    expect(p.invoice.notes).toBe(
+      "rush job\n[2026-07-18] Synced from QuickBooks: total $19477.53 → $19777.53",
+    );
+    // Quote/order patches carry no notes — the audit line lives on the invoice.
+    expect(p.quote).not.toHaveProperty("notes");
+    expect(p.order).not.toHaveProperty("notes");
+  });
+});
+
+describe("buildSyncNote", () => {
+  it("mentions tax only when it changed, and starts clean without prior notes", () => {
+    const withTax = buildSyncNote({
+      existingNotes: "", localTotal: 100, qbTotal: 110, localTax: 8, qbTax: 9, today: "2026-07-18",
+    });
+    expect(withTax).toBe("[2026-07-18] Synced from QuickBooks: total $100.00 → $110.00, tax $8.00 → $9.00");
+    const sameTax = buildSyncNote({
+      existingNotes: null, localTotal: 100, qbTotal: 110, localTax: 8, qbTax: 8, today: "2026-07-18",
+    });
+    expect(sameTax).not.toContain("tax");
+  });
+
+  it("repeated syncs stack as history lines", () => {
+    const first = buildSyncNote({ existingNotes: "", localTotal: 100, qbTotal: 110, today: "2026-07-01" });
+    const second = buildSyncNote({ existingNotes: first, localTotal: 110, qbTotal: 120, today: "2026-07-18" });
+    expect(second.split("\n")).toHaveLength(2);
+    expect(second).toContain("$100.00 → $110.00");
+    expect(second).toContain("$110.00 → $120.00");
   });
 });
