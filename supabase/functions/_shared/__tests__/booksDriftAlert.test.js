@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   findDriftRows,
+  verifyDriftRow,
   summarizeBooksDrift,
   shouldSendBooksDriftAlert,
   buildBooksDriftAlertText,
@@ -32,6 +33,37 @@ describe("findDriftRows", () => {
     const rows = findDriftRows([{ shop_owner: "a", ref: "Q", total: "609.10", qb_total: "617.45" }]);
     expect(rows).toHaveLength(1);
     expect(rows[0].drift).toBe(-8.35);
+  });
+});
+
+describe("verifyDriftRow (the Kato false-positive guard)", () => {
+  const candidate = { shop_owner: "kato@x.com", ref: "Q-2026-TOOV", total: 1634.69, qb_total: 1185.28 };
+
+  it("stale mirror: live QB now matches the row → NO alert, mirror patch refreshes", () => {
+    // Kato's exact case: invoice born 1185.28, corrected in QBO to 1634.69
+    // before payment; quote mirror frozen at birth value.
+    const v = verifyDriftRow(candidate, { TotalAmt: 1634.69, TxnTaxDetail: { TotalTax: 124.69 } });
+    expect(v.status).toBe("stale-mirror");
+    expect(v.mirrorPatch.qb_total).toBe(1634.69);
+    expect(v.mirrorPatch.qb_tax_amount).toBe(124.69);
+    expect(v.mirrorPatch.qb_subtotal).toBe(1510);
+  });
+
+  it("confirmed: still diverges vs live QB → alert with LIVE total, not the mirror", () => {
+    const v = verifyDriftRow(candidate, { TotalAmt: 1400.0, TxnTaxDetail: { TotalTax: 100 } });
+    expect(v.status).toBe("confirmed");
+    expect(v.row.qb_total).toBe(1400);
+    expect(v.row.drift).toBe(234.69);
+    expect(v.mirrorPatch.qb_total).toBe(1400);
+  });
+
+  it("missing in QB: deleted invoice is not drift (missing_in_qb owns that signal)", () => {
+    expect(verifyDriftRow(candidate, null).status).toBe("missing-in-qb");
+  });
+
+  it("live match within tolerance counts as stale-mirror, not confirmed", () => {
+    const v = verifyDriftRow(candidate, { TotalAmt: 1634.68, TxnTaxDetail: { TotalTax: 124.69 } });
+    expect(v.status).toBe("stale-mirror");
   });
 });
 
