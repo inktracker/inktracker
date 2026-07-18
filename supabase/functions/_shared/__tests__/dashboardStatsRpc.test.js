@@ -75,8 +75,14 @@ describe("performance_stats RPC — status literals stay in lockstep with Perfor
     }
   });
 
-  it("keeps the orphan cross-reference (deleted orders must not keep counting)", () => {
-    expect(last.sql).toMatch(/exists\s*\(\s*select\s+1\s+from\s+public\.orders/i);
+  it("sources period stats from completed ORDERS, not shop_performance (v2)", () => {
+    // v1 read the shop_performance archive, which only runOrderCompletion
+    // wrote — completions via other paths were invisible (Biota showed 2 of
+    // 8 July orders, 2026-07-18). v2 reads orders.completed_date directly;
+    // deleted orders drop out by definition, so no orphan cross-reference.
+    expect(last.sql).toMatch(/completed_date/i);
+    expect(last.sql).toMatch(/from\s+public\.orders\s+o/i);
+    expect(last.sql, "period stats must not read shop_performance").not.toMatch(/from\s+public\.shop_performance/i);
   });
 
   it("is RLS-scoped (SECURITY INVOKER) and authenticated-only", () => {
