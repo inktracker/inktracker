@@ -27,6 +27,25 @@ export function qbModifiedState(row) {
 
 const fmtUsd = (n) => `$${Number(n).toFixed(2)}`;
 
+// Matches lines produced by buildSyncNote. Anchored on the dated prefix
+// so ordinary shop notes that merely mention QuickBooks survive.
+const SYNC_NOTE_LINE = /^\[\d{4}-\d{2}-\d{2}\] Synced from QuickBooks:.*$/;
+
+/**
+ * Remove sync-audit lines from a notes string for CUSTOMER-facing
+ * surfaces (invoice PDF, QB CustomerMemo). The audit trail is internal
+ * bookkeeping — clients should never see "total $X → $Y" plumbing.
+ * Returns "" when nothing but sync lines remain.
+ */
+export function stripSyncNotes(notes) {
+  if (typeof notes !== "string" || !notes) return "";
+  return notes
+    .split("\n")
+    .filter((line) => !SYNC_NOTE_LINE.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
 /**
  * One-line audit note describing what a QB sync changed, appended to
  * the invoice's existing notes so the change survives on the invoice

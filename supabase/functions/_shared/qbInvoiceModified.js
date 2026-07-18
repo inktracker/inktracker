@@ -68,6 +68,26 @@ export function buildQbMirrorPatch(freshInvoice, currentRow) {
   return patch;
 }
 
+// Matches audit lines the frontend's buildSyncNote appends to invoice
+// notes ("[YYYY-MM-DD] Synced from QuickBooks: …"). Keep in lockstep
+// with SYNC_NOTE_LINE in src/lib/invoices/qbModifiedSync.js.
+const SYNC_NOTE_LINE = /^\[\d{4}-\d{2}-\d{2}\] Synced from QuickBooks:.*$/;
+
+/**
+ * Merge QB's CustomerMemo with the sync-audit lines already on the
+ * local row. pullInvoices overwrites notes from QB for import-born
+ * rows — without this, a Sync-All erases the shop's sync history from
+ * exactly the invoices most likely to have one.
+ */
+export function mergeNotesPreservingSyncLines(qbMemo, existingNotes) {
+  const syncLines = (typeof existingNotes === "string" ? existingNotes : "")
+    .split("\n")
+    .filter((line) => SYNC_NOTE_LINE.test(line.trim()));
+  const memo = (typeof qbMemo === "string" ? qbMemo : "").trim();
+  const parts = [memo, ...syncLines].filter(Boolean);
+  return parts.length ? parts.join("\n") : null;
+}
+
 const fmt = (n) => `$${Number(n).toFixed(2)}`;
 
 /**
