@@ -19,6 +19,7 @@ import PricePanel from "./PricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
+import { notify } from "@/lib/notify";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results.
 // AS Colour uses `styleCode`, S&S uses `styleNumber` — same wire format on the
@@ -1081,8 +1082,20 @@ export default function LineItemEditor({
                   // tester's "changing the cost did not update price"
                   // (2026-07-18). Drop them and flag the line so the
                   // re-attach effect below doesn't resurrect them.
+                  // Toast ONCE at the transition (flag not yet set +
+                  // supplier prices actually present) — not per
+                  // keystroke, and never on manual lines where nothing
+                  // changes.
+                  const hadSupplierPrices = !li.garmentCostManual &&
+                    ((li.sizePrices && Object.keys(li.sizePrices).length > 0) || !!sizePricesRef.current);
                   sizePricesRef.current = null;
                   onChange({ ...li, garmentCost: e.target.value, garmentCostManual: true, sizePrices: {} });
+                  if (hadSupplierPrices) {
+                    notify.info(
+                      "Manual garment cost",
+                      "Supplier per-size pricing is off for this line — your typed cost now drives the price. Re-select the style or color to restore supplier pricing."
+                    );
+                  }
                 }}
                 placeholder="0.00"
                 className="w-full text-sm border border-slate-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"

@@ -17,6 +17,7 @@ import BrokerPricePanel from "./BrokerPricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
+import { notify } from "@/lib/notify";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results,
 // matching the shop-side LineItemEditor. Either supplier failing/returning
@@ -777,8 +778,17 @@ export default function BrokerLineItemEditor({
                   // override. Supplier per-size prices outrank garmentCost
                   // in calcLinkedLinePrice, so they must be dropped or the
                   // field is inert on looked-up styles (tester 2026-07-18).
+                  // Toast once at the transition only — see LineItemEditor.
+                  const hadSupplierPrices = !li.garmentCostManual &&
+                    ((li.sizePrices && Object.keys(li.sizePrices).length > 0) || !!sizePricesRef.current);
                   sizePricesRef.current = null;
                   onChange({ ...li, garmentCost: e.target.value, garmentCostManual: true, sizePrices: {} });
+                  if (hadSupplierPrices) {
+                    notify.info(
+                      "Manual garment cost",
+                      "Supplier per-size pricing is off for this line — your typed cost now drives the price. Re-select the style or color to restore supplier pricing."
+                    );
+                  }
                 }}
                 placeholder="0.00"
                 className="w-full text-sm border border-slate-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
