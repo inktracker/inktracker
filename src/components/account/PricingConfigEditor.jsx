@@ -8,6 +8,7 @@ import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { DEFAULT_TIERS, DEFAULT_COLORS, DEFAULTS } from "./pricingConfigDefaults";
 import { ExtrasEditor, PrintTableEditor, EmbroideryTab, CustomTechniqueTab, SetupFeesEditor } from "./PricingEditorParts";
+import BrokerPricingSection from "./BrokerPricingSection";
 
 // Account → Pricing & Fees editor. Extracted verbatim from Account.jsx
 // as a pure decomposition — no behavior change. Receives the current
@@ -445,6 +446,12 @@ export default function PricingConfigEditor({ user }) {
           <span className="text-xs text-slate-500">off garment markup for brokers</span>
         </div>
       </div>
+
+      {/* Per-broker overrides — stored in the broker_pricing table (its
+          own storage on purpose: never rides into the public wizard's
+          pricing_config payload). Saves independently of the Save
+          Pricing button below. */}
+      <BrokerPricingSection user={user} config={config} />
 
       {/* Standard turnaround — shop-wide, lives above the decoration
           tabs because the default due date and rush surcharge are not

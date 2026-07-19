@@ -16,6 +16,7 @@ import {
   getRushRateForDaysOut,
 } from "../shared/pricing";
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
+import { mergeBrokerPricing } from "@/lib/broker/brokerPricing";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import BrokerLineItemEditor from "./BrokerLineItemEditor";
 import JobFeesSection from "@/components/quotes/JobFeesSection";
@@ -98,6 +99,9 @@ export default function BrokerQuoteEditor({
   shopAddonsByScope,
   shop,
   broker,
+  // Per-broker pricing overrides row (broker_pricing.overrides) for
+  // THIS broker at THIS shop. null/undefined = no overlay.
+  brokerOverrides,
 }) {
   const addonsMeta = shopAddons?.length ? shopAddons : DEFAULT_EXTRAS_META;
   const addonsByScope = shopAddonsByScope || {
@@ -139,6 +143,17 @@ export default function BrokerQuoteEditor({
   // for early shops whose record has no pricing_config, matching prior behavior.
   const shopConfig = shop?.pricing_config || undefined;
 
+  // Effective WHOLESALE config: the shop sheet with this broker's
+  // per-broker overrides layered on (per-broker markup share, garment
+  // brackets, contract print rates). Applies ONLY to the broker-side
+  // (BROKER_MARKUP) calc + stamps below. The client-side retail
+  // suggestion keeps pricing off the plain shopConfig — the overlay is
+  // the shop→broker deal, not the broker→client price.
+  const brokerConfig = useMemo(
+    () => mergeBrokerPricing(shopConfig, brokerOverrides),
+    [shopConfig, brokerOverrides]
+  );
+
   const brokerQuote = useMemo(
     () => ({
       ...q,
@@ -152,7 +167,7 @@ export default function BrokerQuoteEditor({
   // matching the regular shop quote behavior.
   const clientTaxRate = isTaxExempt ? 0 : (parseFloat(q.broker_tax_rate) || 0);
 
-  const totals = calcQuoteTotals(brokerQuote, BROKER_MARKUP, shopConfig);
+  const totals = calcQuoteTotals(brokerQuote, BROKER_MARKUP, brokerConfig);
   const retailTotals = calcQuoteTotals(
     {
       ...q,
@@ -296,7 +311,7 @@ export default function BrokerQuoteEditor({
         const qty = getQty(li);
         if (!qty) return li;
         const lineExtras = getLineExtras(li, q);
-        const brokerR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, BROKER_MARKUP, linkedQtyMap, undefined, shopConfig);
+        const brokerR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, BROKER_MARKUP, linkedQtyMap, undefined, brokerConfig);
         const clientR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, STANDARD_MARKUP, linkedQtyMap, undefined, shopConfig);
         const clientOverride = Number(li?.clientPpp);
         const hasClientOverride = Number.isFinite(clientOverride) && clientOverride > 0;
@@ -670,6 +685,7 @@ export default function BrokerQuoteEditor({
                 allLineItems={q.line_items}
                 savedImprints={selectedCustomer?.saved_imprints || []}
                 shopPricingConfig={shop?.pricing_config}
+                brokerPricingConfig={brokerConfig}
                 onChange={(updated) => updateLineItem(idx, updated)}
                 onRemove={() => removeLineItem(idx)}
                 onDuplicate={() => duplicateLineItem(idx)}

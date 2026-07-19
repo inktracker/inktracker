@@ -73,6 +73,10 @@ const TABLE_MAP = {
   // reference_broker_pricing.md.
   Commission: "commissions",
   BrokerPricing: "commissions",
+  // Per-broker pricing OVERRIDES (overlay on the shop sheet) — distinct
+  // from the legacy BrokerPricing→commissions alias above, which is a
+  // per-order commission ledger. See migration 20260911000000.
+  BrokerPricingOverride: "broker_pricing",
   BrokerNotification: "broker_notifications",
   BrokerPerformance: "broker_performance",
   ShopPerformance: "shop_performance",
