@@ -375,6 +375,8 @@ function applySelectedMatch(li, selectedMatch) {
     supplier: supplierFromMatch,
     supplierLastLookupAt: new Date().toISOString(),
     sizePrices: (selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {},
+    // Re-selecting a supplier style is opting back into supplier pricing.
+    garmentCostManual: false,
   };
 }
 
@@ -447,6 +449,10 @@ export default function BrokerLineItemEditor({
 
   // Persist sizePrices on the line item when color data is available
   useEffect(() => {
+    // Broker typed their own Garment Cost — don't resurrect supplier
+    // per-size prices (they outrank it in the calc). Cleared when the
+    // broker re-selects a style/color.
+    if (li.garmentCostManual) return;
     const colorPrices = (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices;
     if (colorPrices && Object.keys(colorPrices).length > 0) {
       sizePricesRef.current = colorPrices;
@@ -522,6 +528,8 @@ export default function BrokerLineItemEditor({
       casePrice:
         selectedPrice.casePrice != null ? Number(selectedPrice.casePrice) : li.casePrice,
       sizePrices: colorSizePrices,
+      // Picking a supplier color is opting back into supplier pricing.
+      garmentCostManual: false,
     });
   }
 
@@ -764,11 +772,24 @@ export default function BrokerLineItemEditor({
                 min="0"
                 step="0.01"
                 value={li.garmentCost}
-                onChange={(e) => onChange({ ...li, garmentCost: e.target.value })}
+                onChange={(e) => {
+                  // Mirror of LineItemEditor: a typed cost is an explicit
+                  // override. Supplier per-size prices outrank garmentCost
+                  // in calcLinkedLinePrice, so they must be dropped or the
+                  // field is inert on looked-up styles (tester 2026-07-18).
+                  sizePricesRef.current = null;
+                  onChange({ ...li, garmentCost: e.target.value, garmentCostManual: true, sizePrices: {} });
+                }}
                 placeholder="0.00"
                 className="w-full text-sm border border-slate-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
               />
             </div>
+            {li.garmentCostManual && (
+              <p className="text-[10px] text-slate-500 mt-1">
+                Manual cost — supplier per-size pricing is off for this line.
+                Re-select the style or color to restore it.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -1170,7 +1191,15 @@ export default function BrokerLineItemEditor({
                 extras={getLineExtras(li, { extras })}
                 allLineItems={previewLineItems}
                 onChange={onChange}
-                sizePrices={(ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices || undefined}
+                sizePrices={
+                  // Manual-cost lines: session lookup data must not
+                  // outrank the typed cost in the panel, or the preview
+                  // and the saved stamps diverge (save reads li.sizePrices,
+                  // which the override cleared).
+                  li.garmentCostManual
+                    ? undefined
+                    : ((ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices || undefined)
+                }
               />
             </div>
           </div>

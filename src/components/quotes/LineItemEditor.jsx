@@ -542,6 +542,8 @@ function applySelectedMatch(li, selectedMatch) {
     supplierLastLookupAt: new Date().toISOString(),
     // Per-size wholesale prices from the API (e.g. { S: 4.62, M: 4.62, "2XL": 5.62 })
     sizePrices: JSON.parse(JSON.stringify((selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {})),
+    // Re-selecting a supplier style is opting back into supplier pricing.
+    garmentCostManual: false,
   };
 }
 
@@ -662,6 +664,10 @@ export default function LineItemEditor({
   // Ensure sizePrices is persisted on the line item whenever we have per-size data.
   // This runs after React state settles, so it won't get overwritten.
   useEffect(() => {
+    // The shop typed their own Garment Cost — don't resurrect the
+    // supplier per-size prices (they outrank it in the calc). The flag
+    // clears when the user re-selects a style/color.
+    if (li.garmentCostManual) return;
     const colorPrices = ssSizePriceMap[li.garmentColor]
       || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices;
     if (colorPrices && Object.keys(colorPrices).length > 0) {
@@ -796,6 +802,8 @@ export default function LineItemEditor({
           ? Number(selectedPrice.casePrice)
           : li.casePrice,
       sizePrices: colorSizePrices,
+      // Picking a supplier color is opting back into supplier pricing.
+      garmentCostManual: false,
     });
   }
 
@@ -1065,11 +1073,27 @@ export default function LineItemEditor({
                 min="0"
                 step="0.01"
                 value={li.garmentCost}
-                onChange={(e) => onChange({ ...li, garmentCost: e.target.value })}
+                onChange={(e) => {
+                  // A typed cost is an explicit override. Supplier
+                  // per-size prices (li.sizePrices) OUTRANK garmentCost
+                  // in calcLinkedLinePrice, so leaving them on the line
+                  // made this field inert on any looked-up style — the
+                  // tester's "changing the cost did not update price"
+                  // (2026-07-18). Drop them and flag the line so the
+                  // re-attach effect below doesn't resurrect them.
+                  sizePricesRef.current = null;
+                  onChange({ ...li, garmentCost: e.target.value, garmentCostManual: true, sizePrices: {} });
+                }}
                 placeholder="0.00"
                 className="w-full text-sm border border-slate-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
               />
             </div>
+            {li.garmentCostManual && (
+              <p className="text-[10px] text-slate-500 mt-1">
+                Manual cost — supplier per-size pricing is off for this line.
+                Re-select the style or color to restore it.
+              </p>
+            )}
           </div>
         </div>
 
@@ -1539,10 +1563,16 @@ export default function LineItemEditor({
               markup={STANDARD_MARKUP}
               onChange={onChange}
               sizePrices={
-                ssSizePriceMap[li.garmentColor]
-                || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices
-                || sizePricesRef.current
-                || undefined
+                // Manual-cost lines must not have session lookup data
+                // outrank the typed cost in the panel — the save path
+                // reads li.sizePrices (cleared), so the panel must
+                // match or the preview and the saved stamps diverge.
+                li.garmentCostManual
+                  ? undefined
+                  : (ssSizePriceMap[li.garmentColor]
+                    || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices
+                    || sizePricesRef.current
+                    || undefined)
               }
             />
           </div>

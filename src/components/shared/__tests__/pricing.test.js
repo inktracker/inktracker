@@ -699,6 +699,32 @@ describe("calcLinkedLinePrice", () => {
       const ppp = Math.round(4.62 * getAdminMarkup(4.62) * 100) / 100;
       expect(r.gCost).toBeCloseTo(ppp * 45, 2);
     });
+
+    // The manual-cost override contract (tester 2026-07-18: "changing
+    // the cost did not update price"). sizePrices OUTRANK garmentCost,
+    // so the editors implement a typed cost as clearing sizePrices
+    // (garmentCostManual flag guards re-attachment). These two pin the
+    // engine behavior both fixes rely on.
+    it("typed garmentCost is IGNORED while supplier sizePrices remain on the line", () => {
+      const li = makeLineItem({
+        garmentCost: "99.99",
+        sizePrices: { S: 4.0, M: 4.0, L: 4.0, XL: 4.0 },
+      });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      const perPc = Math.round(4.0 * getAdminMarkup(4.0) * 100) / 100;
+      expect(r.gCost).toBeCloseTo(perPc * 45, 2);
+    });
+
+    it("typed garmentCost drives the price once sizePrices are cleared (the editor override patch)", () => {
+      const li = makeLineItem({
+        garmentCost: "8.00",
+        garmentCostManual: true,
+        sizePrices: {},
+      });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      const perPc = Math.round(8.0 * getAdminMarkup(8.0) * 100) / 100;
+      expect(r.gCost).toBeCloseTo(perPc * 45, 2);
+    });
   });
 
   describe("rush fee", () => {
