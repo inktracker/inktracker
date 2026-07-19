@@ -140,4 +140,16 @@ describe("buildOrderFromInvoice (B1–B8)", () => {
     expect(o.shop_owner).toBe("shop@example.com");
     expect(o.order_date).toBe("2026-07-18");
   });
+
+  it("B9: missing/empty invoice customer_id falls back to the resolved customer's id", () => {
+    // QB-pulled invoices arrive with customer_id=null; the caller resolves
+    // (matches or creates) a customer and the order must carry its id so
+    // the job doesn't flow through production orphaned.
+    const orphanNull = { ...importedInvoice, customer_id: null };
+    expect(buildOrderFromInvoice(orphanNull, opts).customer_id).toBe("cust-1");
+    const orphanEmpty = { ...importedInvoice, customer_id: "" };
+    expect(buildOrderFromInvoice(orphanEmpty, opts).customer_id).toBe("cust-1");
+    const noResolve = buildOrderFromInvoice(orphanNull, { ...opts, customer: null });
+    expect(noResolve.customer_id).toBeNull();
+  });
 });
