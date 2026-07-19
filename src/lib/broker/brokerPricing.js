@@ -33,6 +33,18 @@ export const BROKER_OVERRIDABLE_KEYS = [
   "maxColors",
 ];
 
+// How the shop prices this broker (the editor's toggle, Joe 2026-07-19):
+//   "markup" — the original way: the shop sheet with a broker discount
+//              share (shop-wide default, or a per-broker share). No
+//              other sections may ride along in this mode.
+//   "sheet"  — a custom price sheet: garment brackets + print matrices
+//              applied AS-IS (the editor stores brokerMarkupShare: 0 so
+//              the brackets are exactly what the broker pays — no
+//              further share discount on top).
+// Rows saved before the mode existed have no `mode`; brokerPricingMode()
+// derives it from which sections are present.
+export const BROKER_PRICING_MODES = ["markup", "sheet"];
+
 function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
@@ -61,6 +73,7 @@ function cleanPrintTable(table) {
  */
 export function sanitizeBrokerOverrides(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const mode = BROKER_PRICING_MODES.includes(raw.mode) ? raw.mode : null;
   const out = {};
 
   if (raw.brokerMarkupShare != null) {
@@ -68,33 +81,48 @@ export function sanitizeBrokerOverrides(raw) {
     if (n != null) out.brokerMarkupShare = Math.min(1, Math.max(0, n));
   }
 
-  if (Array.isArray(raw.garmentMarkup)) {
-    const brackets = raw.garmentMarkup
-      .map((t) => ({ above: num(t?.above), markup: num(t?.markup) }))
-      .filter((t) => t.above != null && t.markup != null && t.markup >= 1);
-    if (brackets.length) out.garmentMarkup = brackets;
-  }
-
-  const fp = cleanPrintTable(raw.firstPrint);
-  const ap = cleanPrintTable(raw.addlPrint);
-  if (fp) out.firstPrint = fp;
-  if (ap) out.addlPrint = ap;
-
-  // tiers/maxColors only mean anything alongside a matrix override.
-  if (fp || ap) {
-    if (Array.isArray(raw.tiers)) {
-      const tiers = raw.tiers.map(num).filter((t) => t != null && t > 0);
-      if (tiers.length) out.tiers = tiers;
+  // Sheet sections are only meaningful outside markup mode — a markup
+  // row that somehow carries matrices (bad write, older editor) must
+  // not price with them.
+  if (mode !== "markup") {
+    if (Array.isArray(raw.garmentMarkup)) {
+      const brackets = raw.garmentMarkup
+        .map((t) => ({ above: num(t?.above), markup: num(t?.markup) }))
+        .filter((t) => t.above != null && t.markup != null && t.markup >= 1);
+      if (brackets.length) out.garmentMarkup = brackets;
     }
-    const mc = num(raw.maxColors);
-    if (mc != null && mc >= 1) out.maxColors = Math.round(mc);
+
+    const fp = cleanPrintTable(raw.firstPrint);
+    const ap = cleanPrintTable(raw.addlPrint);
+    if (fp) out.firstPrint = fp;
+    if (ap) out.addlPrint = ap;
+
+    // tiers/maxColors only mean anything alongside a matrix override.
+    if (fp || ap) {
+      if (Array.isArray(raw.tiers)) {
+        const tiers = raw.tiers.map(num).filter((t) => t != null && t > 0);
+        if (tiers.length) out.tiers = tiers;
+      }
+      const mc = num(raw.maxColors);
+      if (mc != null && mc >= 1) out.maxColors = Math.round(mc);
+    }
   }
+
+  // mode is metadata — carried only when there's substance under it.
+  if (mode && Object.keys(out).length) out.mode = mode;
 
   return out;
 }
 
 export function hasBrokerOverrides(raw) {
-  return Object.keys(sanitizeBrokerOverrides(raw)).length > 0;
+  return Object.keys(sanitizeBrokerOverrides(raw)).some((k) => k !== "mode");
+}
+
+/** The editor toggle's position for a saved row (derived for pre-mode rows). */
+export function brokerPricingMode(raw) {
+  const ov = sanitizeBrokerOverrides(raw);
+  if (ov.mode) return ov.mode;
+  return ov.firstPrint || ov.addlPrint || ov.garmentMarkup ? "sheet" : "markup";
 }
 
 /**
@@ -109,8 +137,9 @@ export function hasBrokerOverrides(raw) {
  * fallback in BrokerQuoteEditor).
  */
 export function mergeBrokerPricing(shopConfig, overrides) {
-  const picked = sanitizeBrokerOverrides(overrides);
-  if (Object.keys(picked).length === 0) return shopConfig;
+  // eslint-disable-next-line no-unused-vars
+  const { mode, ...sections } = sanitizeBrokerOverrides(overrides);
+  if (Object.keys(sections).length === 0) return shopConfig;
   const base = shopConfig || getShopPricingConfig() || {};
-  return { ...base, ...picked };
+  return { ...base, ...sections };
 }

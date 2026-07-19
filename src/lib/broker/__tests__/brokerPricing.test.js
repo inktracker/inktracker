@@ -3,6 +3,7 @@ import {
   sanitizeBrokerOverrides,
   hasBrokerOverrides,
   mergeBrokerPricing,
+  brokerPricingMode,
 } from "../brokerPricing";
 import {
   calcLinkedLinePrice,
@@ -160,5 +161,65 @@ describe("hasBrokerOverrides", () => {
     expect(hasBrokerOverrides(null)).toBe(false);
     expect(hasBrokerOverrides({ rushTiers: [] })).toBe(false);
     expect(hasBrokerOverrides({ brokerMarkupShare: 0.9 })).toBe(true);
+  });
+});
+
+describe("pricing modes (the markup-% vs custom-sheet toggle)", () => {
+  const SHEET_ROW = {
+    mode: "sheet",
+    brokerMarkupShare: 0,
+    garmentMarkup: [{ above: 0, markup: 1.2 }],
+    firstPrint: { 1: { 25: 1.0 } },
+    addlPrint: { 1: { 25: 0.5 } },
+    tiers: [25, 50],
+    maxColors: 2,
+  };
+
+  it("markup mode strips any sheet sections that snuck into the row", () => {
+    const out = sanitizeBrokerOverrides({
+      mode: "markup",
+      brokerMarkupShare: 0.7,
+      firstPrint: { 1: { 25: 1.0 } },
+      garmentMarkup: [{ above: 0, markup: 1.2 }],
+    });
+    expect(out).toEqual({ mode: "markup", brokerMarkupShare: 0.7 });
+  });
+
+  it("sheet mode keeps all sections including a 0 share (brackets apply exactly)", () => {
+    const out = sanitizeBrokerOverrides(SHEET_ROW);
+    expect(out.mode).toBe("sheet");
+    expect(out.brokerMarkupShare).toBe(0);
+    expect(out.firstPrint).toEqual(SHEET_ROW.firstPrint);
+    expect(out.garmentMarkup).toEqual(SHEET_ROW.garmentMarkup);
+  });
+
+  it("mode alone (no substance) sanitizes to {} — pure default, row deletable", () => {
+    expect(sanitizeBrokerOverrides({ mode: "markup" })).toEqual({});
+    expect(hasBrokerOverrides({ mode: "markup" })).toBe(false);
+  });
+
+  it("brokerPricingMode derives the toggle for pre-mode rows", () => {
+    expect(brokerPricingMode({ brokerMarkupShare: 0.8 })).toBe("markup");
+    expect(brokerPricingMode({ firstPrint: { 1: { 25: 1.0 } } })).toBe("sheet");
+    expect(brokerPricingMode(null)).toBe("markup");
+    expect(brokerPricingMode(SHEET_ROW)).toBe("sheet");
+  });
+
+  it("merge never leaks the mode key into the pricing config", () => {
+    const merged = mergeBrokerPricing(SHOP_CONFIG, SHEET_ROW);
+    expect(merged.mode).toBeUndefined();
+    expect(merged.brokerMarkupShare).toBe(0);
+    expect(merged.firstPrint).toEqual(SHEET_ROW.firstPrint);
+  });
+
+  it("sheet mode with share 0: broker pays the sheet's brackets exactly", () => {
+    const merged = mergeBrokerPricing(SHOP_CONFIG, {
+      mode: "sheet",
+      brokerMarkupShare: 0,
+      garmentMarkup: [{ above: 0, markup: 1.2 }],
+    });
+    const r = linePrice(BROKER_MARKUP, merged);
+    // share 0 → no discount on the bracket: broker pays cost × 1.2.
+    expect(r.gCost).toBeCloseTo(25 * 10 * 1.2, 2);
   });
 });
