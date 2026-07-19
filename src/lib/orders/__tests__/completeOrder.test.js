@@ -322,6 +322,38 @@ describe("buildOrderCompletionPlan — purity", () => {
   });
 });
 
+describe("buildOrderCompletionPlan — QB linkage (complete-before-first-pull dedup)", () => {
+  // The quote was pushed to QB, but the Invoices page never pulled, so
+  // no invoices row exists at completion time. The fresh invoice MUST
+  // carry the quote's qb_invoice_id — it's pullInvoices' primary dedup
+  // key. Without it the next pull inserted the same QB invoice again
+  // as a Q-... sibling row (tester note 2026-07-18).
+  it("stamps sourceQbInvoiceId onto the freshly created invoice", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, {
+      today: TODAY,
+      shopOwner: SHOP,
+      sourceQbInvoiceId: "1042",
+    });
+    expect(plan.invoiceCreate.qb_invoice_id).toBe("1042");
+  });
+
+  it("writes an explicit null when the quote never went to QB", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, { today: TODAY, shopOwner: SHOP });
+    expect(plan.invoiceCreate.qb_invoice_id).toBeNull();
+  });
+
+  it("linking an existing invoice ignores sourceQbInvoiceId (patch stays order_id-only)", () => {
+    const plan = buildOrderCompletionPlan(baseOrder, {
+      today: TODAY,
+      shopOwner: SHOP,
+      existingInvoice: { id: "uuid-inv-1" },
+      sourceQbInvoiceId: "1042",
+    });
+    expect(plan.invoiceCreate).toBeNull();
+    expect(plan.invoiceLink.patch).toEqual({ order_id: baseOrder.order_id });
+  });
+});
+
 describe("COMPLETED_ORDER_STATUS export", () => {
   it("is exactly the string 'Completed' — matches the schema CHECK and the DB trigger", () => {
     expect(COMPLETED_ORDER_STATUS).toBe("Completed");
