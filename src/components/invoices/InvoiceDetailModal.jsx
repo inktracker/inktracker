@@ -48,6 +48,61 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   const activeInvoice = syncedInvoice || invoice;
   const qbModified = qbModifiedState(activeInvoice);
 
+  // Invoice-number rename (tester 2026-07-18: "Add a way to change the
+  // invoice name/number (throw a flag if its been used)"). QB-linked
+  // invoices are excluded: their DocNumber lives in QuickBooks and the
+  // next pull would revert a local rename — rename it in QB instead
+  // and the webhook/pull mirrors it here.
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [numberDraft, setNumberDraft] = useState("");
+  const [numberFlag, setNumberFlag] = useState("");
+  const [savingNumber, setSavingNumber] = useState(false);
+
+  function startEditNumber() {
+    setNumberDraft(activeInvoice.invoice_id || "");
+    setNumberFlag("");
+    setEditingNumber(true);
+  }
+
+  async function handleSaveInvoiceNumber() {
+    const next = (numberDraft || "").trim();
+    if (!next) { setNumberFlag("Invoice number can't be empty."); return; }
+    if (next.length > 40) { setNumberFlag("Keep it under 40 characters."); return; }
+    if (next === activeInvoice.invoice_id) { setEditingNumber(false); return; }
+    setSavingNumber(true);
+    setNumberFlag("");
+    try {
+      // The in-use flag: another invoice with this number, or a quote —
+      // quote ids become invoice DocNumbers on the QB path, so reusing
+      // one would tangle the pull's DocNumber matching.
+      const [dupInvoices, dupQuotes] = await Promise.all([
+        base44.entities.Invoice.filter({ shop_owner: activeInvoice.shop_owner, invoice_id: next }),
+        base44.entities.Quote.filter({ shop_owner: activeInvoice.shop_owner, quote_id: next }).catch(() => []),
+      ]);
+      const clash = (dupInvoices || []).find((r) => r.id !== activeInvoice.id);
+      if (clash) {
+        setNumberFlag(`⚑ ${next} is already used by another invoice.`);
+        return;
+      }
+      if ((dupQuotes || []).length > 0) {
+        setNumberFlag(`⚑ ${next} is already used by a quote.`);
+        return;
+      }
+      const updated = await base44.entities.Invoice.update(activeInvoice.id, { invoice_id: next });
+      // Same overlay trick as the QB sync above: show the new number
+      // immediately even if the parent list hasn't re-rendered yet.
+      setSyncedInvoice({ ...activeInvoice, ...updated });
+      onInvoiceUpdated?.({ ...activeInvoice, ...updated });
+      setEditingNumber(false);
+    } catch (err) {
+      // DB backstop: the (shop_owner, invoice_id) unique index refuses
+      // a race we didn't catch above.
+      setNumberFlag(err?.message || "Couldn't rename the invoice.");
+    } finally {
+      setSavingNumber(false);
+    }
+  }
+
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
   async function handleSyncFromQb() {
@@ -382,7 +437,47 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         {/* Header */}
         <div className="px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-start">
           <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{invoice.invoice_id} · {fmtDate(invoice.date)}</div>
+            {editingNumber ? (
+              <div className="mb-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={numberDraft}
+                    onChange={(e) => { setNumberDraft(e.target.value); setNumberFlag(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveInvoiceNumber(); if (e.key === "Escape") setEditingNumber(false); }}
+                    autoFocus
+                    className="text-xs font-semibold uppercase tracking-widest border border-slate-300 rounded px-2 py-1 w-44 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                  <button
+                    onClick={handleSaveInvoiceNumber}
+                    disabled={savingNumber}
+                    className="text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-50"
+                  >
+                    {savingNumber ? "Checking…" : "Save"}
+                  </button>
+                  <button onClick={() => setEditingNumber(false)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                </div>
+                {numberFlag && <div className="text-xs font-semibold text-red-600 mt-1">{numberFlag}</div>}
+              </div>
+            ) : (
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                {activeInvoice.invoice_id} · {fmtDate(invoice.date)}
+                {!readOnly && (
+                  activeInvoice.qb_invoice_id ? (
+                    <span
+                      className="text-slate-300 cursor-not-allowed"
+                      title={`Number is synced with QuickBooks (QB ID ${activeInvoice.qb_invoice_id}). Rename it in QuickBooks and it will mirror here.`}
+                    >✎</span>
+                  ) : (
+                    <button
+                      onClick={startEditNumber}
+                      title="Change invoice number"
+                      className="text-slate-400 hover:text-teal-600 transition"
+                    >✎</button>
+                  )
+                )}
+              </div>
+            )}
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{getDisplayName(customer || invoice.customer_name)}</h2>
             {invoice.due && <div className="text-sm text-slate-500 mt-0.5">Due: {fmtDate(invoice.due)}</div>}
           </div>
