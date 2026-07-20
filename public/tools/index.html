@@ -28,7 +28,18 @@ header.site .wrap{display:flex;align-items:center;justify-content:space-between;
 .nav{display:flex;align-items:center;gap:18px}
 .nav a:not(.cta){font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .nav a:not(.cta):hover{color:var(--forest)}
-.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0;white-space:nowrap}
+/* Mobile header: at desktop sizes the 26px brand + nav link + CTA fit in
+   72px; on phones they collided (brand jammed against the nav link, CTA
+   wrapping to two lines). Shrink everything and keep the CTA one line. */
+@media(max-width:600px){
+header.site .wrap{height:60px}
+.brand{font-size:19px}
+.nav{gap:10px}
+.nav a:not(.cta){font-size:11px;letter-spacing:.12em}
+.cta{font-size:11px;letter-spacing:.06em;padding:10px 12px}
+}
+@media(max-width:344px){.nav a:not(.cta){display:none}}
 .cta:hover{background:var(--forest-dark)}
 nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
 nav.crumbs a{color:var(--muted)}
