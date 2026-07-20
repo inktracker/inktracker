@@ -734,6 +734,19 @@ export default function Quotes() {
                           Expired
                         </span>
                       )}
+                      {/* Tester 2026-07-18 "does it make a duplicate":
+                          a QB-sent quote also appears on Invoices once
+                          pullInvoices imports it. Labeling the quote
+                          explains the second artifact instead of
+                          letting it read as a dup. */}
+                      {q.qb_invoice_id && (
+                        <span
+                          title="This quote has an invoice in QuickBooks — it also appears on your Invoices page. Same job, not a duplicate."
+                          className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full w-fit whitespace-nowrap"
+                        >
+                          In QuickBooks
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -777,7 +790,14 @@ export default function Quotes() {
                       </div>
                     )}
                   </div>
-                  <Badge s={q.status} />
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge s={q.status} />
+                    {q.qb_invoice_id && (
+                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                        In QuickBooks
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                   <span>Due: {q.due_date ? fmtDate(q.due_date) : "—"}</span>
