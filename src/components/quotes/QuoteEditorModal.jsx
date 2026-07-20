@@ -589,6 +589,10 @@ export default function QuoteEditorModal({
         throw new Error(msg || "Couldn't reach QuickBooks. Try again.");
       }
       if (data?.error) throw new Error(data.error);
+      // Row-lock contention (another calc for this quote holds the QB
+      // Estimate lock). Without this guard the undefined effectiveRate
+      // below would silently write tax_rate: 0 onto the quote.
+      if (data?.inFlight) throw new Error(data.message || "A tax calculation for this quote is already running — try again in a moment.");
       const rate = Number(data.effectiveRate || 0);
       setQ((prev) => ({ ...prev, tax_rate: rate }));
       setCalcTax({

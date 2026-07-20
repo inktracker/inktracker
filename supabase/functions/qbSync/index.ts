@@ -2750,9 +2750,38 @@ Deno.serve(async (req) => {
       }
       case "estimateTax": {
         // Quote-time "Calculate tax" — non-posting Estimate round-trip to read
-        // QB's authoritative tax. No idempotency/audit envelope: it's a
-        // read-style compute (the Estimate is reused per quote, not a ledger write).
-        result = await handleEstimateTax(qbToken, realmId, params, supabase);
+        // QB's authoritative tax. Wrapped in the per-row lock (same primitive
+        // as createInvoice): handleEstimateTax's create-vs-update decision is
+        // a read-then-write on the Estimate's DocNumber, so two racing calls
+        // (two open editors, a double-fire that beats the button disable)
+        // both read "no estimate yet" and both CREATE — QB happily accepts
+        // duplicate Estimate DocNumbers, and the shop sees two estimates for
+        // one quote. Serializing per quote makes the second caller wait, see
+        // the first one's Estimate, and route onto UPDATE. No idempotency-key
+        // cache: the result is a live tax read, not a ledger write — a repeat
+        // call SHOULD recompute.
+        const estQuote = params?.quote ?? {};
+        const estLockKey = estQuote?.id
+          ? `estimate_tax_row:${estQuote.id}`
+          : (estQuote?.quote_id ? `estimate_tax_row:${shopOwnerEmail}:${estQuote.quote_id}` : null);
+        const estAdmin = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const estSerialized = await withQbRowSerialization(
+          estAdmin,
+          estLockKey,
+          { shop_owner: shopOwnerEmail, action: "estimate_tax_lock" },
+          () => handleEstimateTax(qbToken, realmId, params, supabase),
+        );
+        if (!estSerialized.acquired) {
+          result = {
+            inFlight: true,
+            message: "A tax calculation for this quote is still running — wait a moment and try again.",
+          };
+          break;
+        }
+        result = estSerialized.result;
         break;
       }
       case "syncCustomer": {
