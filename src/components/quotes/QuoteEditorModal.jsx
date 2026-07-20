@@ -29,6 +29,8 @@ import { buildAddonsByScope, getActiveAddonLabels } from "@/lib/pricing/extrasSc
 import JobFeesSection from "@/components/quotes/JobFeesSection";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isRushManuallyOverridden, nextRushRateForDueDateChange } from "@/lib/pricing/rushOverride";
+import { hasEventPackages, normalizeEventPackages } from "@/lib/pricing/eventPackages";
+import EventPackageModal from "./EventPackageModal";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
@@ -177,6 +179,8 @@ export default function QuoteEditorModal({
   // "Calculate tax" — fetch QB's authoritative tax for the ship-to and fill the
   // rate, so the quote matches what QB will charge (no send-time hold).
   const [calcTax, setCalcTax] = useState({ loading: false, error: "", result: null });
+  // Event / package pricing picker (Account → Pricing → Event Packages).
+  const [showEventPackages, setShowEventPackages] = useState(false);
   // Inline ship-to editor — edit the selected customer's ship-to address right
   // here (it drives the tax), instead of leaving to Customers → edit. Persisted
   // back to the customer on calculate/save.
@@ -1439,13 +1443,27 @@ export default function QuoteEditorModal({
                   <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-500 font-semibold">Additional Fees</span>
-                      <button
-                        type="button"
-                        onClick={addCharge}
-                        className="text-xs text-teal-600 font-semibold hover:text-teal-800"
-                      >
-                        + Add fee
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {/* Event / package pricing (Reagan's live-printing
+                            tiers): inserts a package's itemized charges. Only
+                            shows when the shop has packages configured. */}
+                        {hasEventPackages(getShopPricingConfig()) && (
+                          <button
+                            type="button"
+                            onClick={() => setShowEventPackages(true)}
+                            className="text-xs text-teal-600 font-semibold hover:text-teal-800"
+                          >
+                            + Event package
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={addCharge}
+                          className="text-xs text-teal-600 font-semibold hover:text-teal-800"
+                        >
+                          + Add fee
+                        </button>
+                      </div>
                     </div>
                     {charges.length === 0 && (
                       <p className="text-xs text-slate-500">Add shipping, rush, or other one-off charges.</p>
@@ -1586,6 +1604,22 @@ export default function QuoteEditorModal({
           </button>
         </div>
       </div>
+
+      {showEventPackages && (
+        <EventPackageModal
+          eventConfig={normalizeEventPackages(getShopPricingConfig()?.eventPackages)}
+          onInsert={(rows) =>
+            setQ((prev) => ({
+              ...prev,
+              additional_charges: [
+                ...(Array.isArray(prev.additional_charges) ? prev.additional_charges : []),
+                ...rows,
+              ],
+            }))
+          }
+          onClose={() => setShowEventPackages(false)}
+        />
+      )}
     </div>,
     document.body,
   );
