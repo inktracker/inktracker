@@ -169,6 +169,80 @@ export function hasBrokerOverrides(raw) {
   return Object.keys(sanitizeBrokerOverrides(raw)).some((k) => k !== "mode");
 }
 
+/**
+ * "Quick price" (Joe 2026-07-20): build a complete custom-sheet draft
+ * where every rate is `percent`% of the SHOP's standard sheet — one
+ * move instead of editing every cell. Always derives from the shop
+ * config, never from a previous scale, so re-applying 85% after 90%
+ * yields 85% of standard (no compounding). The result seeds the
+ * editor's draft; every cell stays individually editable afterward.
+ *
+ * Scaling semantics:
+ *   - $ rates (print matrices, embroidery pricing, digitizing fee):
+ *     rate × pct, rounded to cents.
+ *   - Garment markup brackets are PERCENTAGES, so the MARGIN scales:
+ *     markup' = 1 + (markup − 1) × pct. (A 40% bracket at 90% → 36%.
+ *     This mirrors getBrokerMarkup's share semantics: pct = 1 − share.)
+ */
+export function buildScaledSheet(shopConfig, percent) {
+  const pc = shopConfig || {};
+  const pct = Math.min(2, Math.max(0.01, (Number(percent) || 0) / 100));
+  const money = (v) => Math.round((Number(v) || 0) * pct * 100) / 100;
+
+  const scaleGrid = (table, rowKeys, colKeys) => {
+    const out = {};
+    for (const r of rowKeys) {
+      out[r] = {};
+      for (const c of colKeys) out[r][c] = money(table?.[r]?.[c] ?? 0);
+    }
+    return out;
+  };
+
+  const tiers = pc.tiers || [25, 50, 100, 200];
+  const maxColors = pc.maxColors || 8;
+  const colorRows = Array.from({ length: maxColors }, (_, i) => i + 1);
+
+  const garmentMarkup = (pc.garmentMarkup || []).map((t) => ({
+    above: t.above,
+    markup: Math.round((1 + ((Number(t.markup) || 1) - 1) * pct) * 10000) / 10000,
+  }));
+
+  let embroidery = null;
+  if (pc.embroidery?.enabled) {
+    const qtyTiers = pc.embroidery.qtyTiers || [12, 24, 48, 72, 144];
+    const stitchTiers = pc.embroidery.stitchTiers || [];
+    embroidery = {
+      qtyTiers,
+      stitchTiers,
+      digitizingFee: money(pc.embroidery.digitizingFee),
+      pricing: scaleGrid(pc.embroidery.pricing, stitchTiers, qtyTiers),
+    };
+  }
+
+  const customTechniques = {};
+  for (const [name, tech] of Object.entries(pc.custom_techniques || {})) {
+    const tTiers = tech.tiers || tiers;
+    const tMax = tech.maxColors || maxColors;
+    const tRows = Array.from({ length: tMax }, (_, i) => i + 1);
+    customTechniques[name] = {
+      tiers: tTiers,
+      maxColors: tMax,
+      firstPrint: scaleGrid(tech.firstPrint, tRows, tTiers),
+      addlPrint: scaleGrid(tech.addlPrint, tRows, tTiers),
+    };
+  }
+
+  return {
+    garmentMarkup,
+    firstPrint: scaleGrid(pc.firstPrint, colorRows, tiers),
+    addlPrint: scaleGrid(pc.addlPrint, colorRows, tiers),
+    tiers,
+    maxColors,
+    embroidery,
+    customTechniques,
+  };
+}
+
 /** The editor toggle's position for a saved row (derived for pre-mode rows). */
 export function brokerPricingMode(raw) {
   const ov = sanitizeBrokerOverrides(raw);

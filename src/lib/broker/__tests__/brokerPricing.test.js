@@ -4,6 +4,7 @@ import {
   hasBrokerOverrides,
   mergeBrokerPricing,
   brokerPricingMode,
+  buildScaledSheet,
 } from "../brokerPricing";
 import {
   calcLinkedLinePrice,
@@ -318,5 +319,65 @@ describe("sheet covers ALL decoration methods (Joe 2026-07-19)", () => {
     expect(shopR.lineTotal).toBeCloseTo(25 * 9.0, 2);
     // addlPrint not overridden → inherits the shop's DTG table
     expect(merged.custom_techniques.DTG.addlPrint[1][25]).toBe(4.0);
+  });
+});
+
+describe("buildScaledSheet — the Quick Price scaler (Joe 2026-07-20)", () => {
+  const SHOP = {
+    tiers: [25, 50],
+    maxColors: 2,
+    firstPrint: { 1: { 25: 6.0, 50: 5.0 }, 2: { 25: 7.0, 50: 6.0 } },
+    addlPrint: { 1: { 25: 3.0, 50: 2.5 }, 2: { 25: 3.5, 50: 3.0 } },
+    garmentMarkup: [{ above: 0, markup: 1.4 }],
+    embroidery: {
+      enabled: true,
+      digitizingFee: 50,
+      qtyTiers: [12, 24],
+      stitchTiers: ["Under 5K"],
+      pricing: { "Under 5K": { 12: 8.0, 24: 7.0 } },
+    },
+    custom_techniques: {
+      DTG: { tiers: [25, 50], maxColors: 1, firstPrint: { 1: { 25: 10.0, 50: 9.0 } }, addlPrint: { 1: { 25: 5.0, 50: 4.0 } } },
+    },
+  };
+
+  it("scales every dollar rate to the given percent, rounded to cents", () => {
+    const s = buildScaledSheet(SHOP, 90);
+    expect(s.firstPrint[1][25]).toBe(5.4);
+    expect(s.addlPrint[2][50]).toBe(2.7);
+    expect(s.embroidery.pricing["Under 5K"][12]).toBe(7.2);
+    expect(s.embroidery.digitizingFee).toBe(45);
+    expect(s.customTechniques.DTG.firstPrint[1][50]).toBe(8.1);
+  });
+
+  it("garment markup scales its MARGIN, not the multiplier (40% at 90% -> 36%)", () => {
+    const s = buildScaledSheet(SHOP, 90);
+    expect(s.garmentMarkup[0].markup).toBeCloseTo(1.36, 4);
+    expect(s.garmentMarkup[0].above).toBe(0);
+  });
+
+  it("always derives from the shop sheet — re-applying never compounds", () => {
+    const first = buildScaledSheet(SHOP, 90);
+    const second = buildScaledSheet(SHOP, 85);
+    expect(second.firstPrint[1][25]).toBe(5.1); // 85% of 6.00, not 85% of 5.40
+    expect(first.firstPrint[1][25]).toBe(5.4);
+  });
+
+  it("carries tier snapshots and fills sparse/missing cells with 0", () => {
+    const s = buildScaledSheet({ ...SHOP, firstPrint: { 1: { 25: 6.0 } } }, 90);
+    expect(s.tiers).toEqual([25, 50]);
+    expect(s.maxColors).toBe(2);
+    expect(s.firstPrint[1][50]).toBe(0);
+    expect(s.firstPrint[2][25]).toBe(0);
+  });
+
+  it("no embroidery section when the shop has it disabled", () => {
+    const s = buildScaledSheet({ ...SHOP, embroidery: { ...SHOP.embroidery, enabled: false } }, 90);
+    expect(s.embroidery).toBeNull();
+  });
+
+  it("clamps absurd percents instead of zeroing or exploding the sheet", () => {
+    expect(buildScaledSheet(SHOP, 0).firstPrint[1][25]).toBeCloseTo(0.06, 2);   // floors at 1%
+    expect(buildScaledSheet(SHOP, 999).firstPrint[1][25]).toBeCloseTo(12.0, 2); // caps at 200%
   });
 });

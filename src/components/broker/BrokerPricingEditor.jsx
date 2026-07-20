@@ -6,6 +6,7 @@ import { BROKER_MARKUP_SHARE } from "@/components/shared/pricing";
 import {
   sanitizeBrokerOverrides,
   brokerPricingMode,
+  buildScaledSheet,
 } from "@/lib/broker/brokerPricing";
 import { DEFAULT_TIERS, DEFAULT_COLORS } from "@/components/account/pricingConfigDefaults";
 
@@ -200,6 +201,24 @@ const colorRowsFor = (maxColors) =>
 export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, existingRow, onSaved }) {
   const [draft, setDraft] = useState(() => buildDraft(existingRow?.overrides, shopConfig || {}));
   const [saving, setSaving] = useState(false);
+  // "Quick price" (Joe 2026-07-20): one control that sets every cell of
+  // the sheet to a % of the shop's standard rates. Always derives from
+  // the STANDARD sheet (no compounding); cells stay editable after.
+  const [quickPct, setQuickPct] = useState(90);
+
+  function applyQuickScale() {
+    const scaled = buildScaledSheet(shopConfig || {}, quickPct);
+    setDraft((d) => ({
+      ...d,
+      garmentMarkup: scaled.garmentMarkup.length ? scaled.garmentMarkup : d.garmentMarkup,
+      firstPrint: scaled.firstPrint,
+      addlPrint: scaled.addlPrint,
+      tiers: scaled.tiers,
+      maxColors: scaled.maxColors,
+      embroidery: d.embroidery && scaled.embroidery ? scaled.embroidery : d.embroidery,
+      customTechniques: Object.keys(scaled.customTechniques).length ? scaled.customTechniques : d.customTechniques,
+    }));
+  }
 
   const inputCls = "w-full text-xs text-center border border-slate-200 rounded px-1 py-1.5 focus:outline-none focus:ring-1 focus:ring-teal-300";
   const shopSharePct = Math.round(((shopConfig?.brokerMarkupShare ?? BROKER_MARKUP_SHARE)) * 100);
@@ -291,6 +310,50 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
 
       {draft.mode === "sheet" && (
         <div className="space-y-3">
+          {/* Quick price — scale everything at once, then fine-tune. */}
+          <div className="border border-teal-200 bg-teal-50/50 rounded-xl p-3">
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <span className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Quick Price</span>
+              <span className="text-[10px] text-slate-500">optional — cells below stay individually editable</span>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap">
+              <input
+                type="range"
+                min={50}
+                max={110}
+                step={1}
+                value={Math.min(110, Math.max(50, quickPct))}
+                onChange={(e) => setQuickPct(Number(e.target.value))}
+                aria-label="Quick price percent of standard rates"
+                className="flex-1 min-w-[140px] accent-teal-600"
+              />
+              <div className="relative w-20">
+                <NumericInput
+                  value={quickPct}
+                  onChange={(n) => setQuickPct(Math.min(200, Math.max(1, Math.round(Number(n) || 0))))}
+                  min={1}
+                  max={200}
+                  integer
+                  label="Quick price percent"
+                  className={inputCls}
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">%</span>
+              </div>
+              <button
+                type="button"
+                onClick={applyQuickScale}
+                className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+              >
+                Apply {quickPct}% of standard
+              </button>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1.5">
+              Fills every rate below with {quickPct}% of your current standard sheet (garment markup
+              scales its margin: a 40% markup becomes {Math.round(40 * quickPct) / 100}%). Applying
+              replaces the rates below — always from your standard sheet, so re-applying never compounds.
+            </p>
+          </div>
+
           <div>
             <h5 className="text-[11px] font-bold text-slate-600 uppercase tracking-widest mb-1.5">
               Garment Markup (what this broker pays over wholesale cost)
