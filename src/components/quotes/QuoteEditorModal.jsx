@@ -28,6 +28,7 @@ import AddressFields from "@/components/shared/AddressFields";
 import { buildAddonsByScope, getActiveAddonLabels } from "@/lib/pricing/extrasScopes";
 import JobFeesSection from "@/components/quotes/JobFeesSection";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { isRushManuallyOverridden, nextRushRateForDueDateChange } from "@/lib/pricing/rushOverride";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
@@ -141,6 +142,13 @@ export default function QuoteEditorModal({
     return base;
   });
 
+  // True once the operator explicitly picks a Turnaround option (or a
+  // saved quote's rush_rate already disagrees with the tier table —
+  // which can only mean it was overridden before saving). While set
+  // AND the choice is a waive (rate 0), due-date edits stop
+  // auto-applying the tier rate. Tester 2026-07-18: "the rush fee
+  // should not automatically be enforced when toggled off."
+  const [rushManuallySet, setRushManuallySet] = useState(() => isRushManuallyOverridden(quote));
   const [showNewClient, setShowNewClient] = useState(false);
   const [nc, setNc] = useState({
     name: "",
@@ -858,13 +866,15 @@ export default function QuoteEditorModal({
                             (1000 * 60 * 60 * 24)
                         )
                       : null;
-                    // Variable rush: the rate is determined by the
-                    // shop's rushTiers + the days-out. Any change in
-                    // due date can move the rate to a different tier
-                    // (or to zero when standard).
-                    const autoRate = diffDays !== null
-                      ? getRushRateForDaysOut(diffDays)
-                      : q.rush_rate;
+                    // Variable rush: the rate follows the due date via
+                    // the shop's rushTiers — EXCEPT when the operator
+                    // has explicitly waived rush (Standard picked, rate
+                    // 0). A manual waive sticks; see rushOverride.js.
+                    const autoRate = nextRushRateForDueDateChange({
+                      diffDays,
+                      currentRate: q.rush_rate,
+                      rushManuallySet,
+                    });
 
                     setQ({
                       ...q,
@@ -879,9 +889,20 @@ export default function QuoteEditorModal({
                   const diff = Math.round((new Date(q.due_date) - new Date(q.date)) / (1000 * 60 * 60 * 24));
                   const rate = getRushRateForDaysOut(diff);
                   if (rate <= 0) return null;
+                  const actual = parseFloat(q.rush_rate) || 0;
+                  // Honest badge: what's actually charged, not just what
+                  // the tier table suggests — a waived rush must not
+                  // display as if a fee were applied.
+                  if (actual <= 0) {
+                    return (
+                      <div className="text-xs text-slate-500 font-semibold mt-1">
+                        Rush waived — tier table suggests +{Math.round(rate * 100)}%
+                      </div>
+                    );
+                  }
                   return (
                     <div className="text-xs text-orange-500 font-semibold mt-1">
-                      ⚡ Rush +{Math.round(rate * 100)}% (auto from tier table)
+                      ⚡ Rush +{Math.round(actual * 100)}%{Math.abs(actual - rate) < 0.0001 ? " (auto from tier table)" : ""}
                     </div>
                   );
                 })()}
@@ -1034,14 +1055,20 @@ export default function QuoteEditorModal({
                 })().map((opt) => (
                   <button
                     key={opt.key}
-                    onClick={() => setQ({
-                      ...q,
-                      rush_rate: opt.rate,
-                      // Slide the due date to match the picked tier's
-                      // representative window. Operators were doing
-                      // this by hand after every toggle change.
-                      due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
-                    })}
+                    onClick={() => {
+                      // An explicit Turnaround pick is a manual choice —
+                      // from here on, a waive (Standard) survives
+                      // due-date edits instead of being re-enforced.
+                      setRushManuallySet(true);
+                      setQ({
+                        ...q,
+                        rush_rate: opt.rate,
+                        // Slide the due date to match the picked tier's
+                        // representative window. Operators were doing
+                        // this by hand after every toggle change.
+                        due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
+                      });
+                    }}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
                       Math.abs((q.rush_rate || 0) - opt.rate) < 0.0001
                         ? "border-teal-600 bg-teal-50"
