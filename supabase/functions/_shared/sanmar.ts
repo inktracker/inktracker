@@ -31,6 +31,11 @@ export const SM_PROD_BASE = "https://ws.sanmar.com:8080/SanMarWebService";
 export const SM_TEST_BASE = "https://test-ws.sanmar.com:8080/SanMarWebService";
 
 export function smBase(): string {
+  // Integration-testing hook: point the whole SanMar client at a mock
+  // upstream (local SOAP fixture server) without touching prod/test
+  // routing. Never set in deployed environments.
+  const override = Deno.env.get("SANMAR_BASE_OVERRIDE");
+  if (override) return override;
   return Deno.env.get("SANMAR_USE_TEST") === "1" ? SM_TEST_BASE : SM_PROD_BASE;
 }
 
@@ -318,36 +323,45 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     }
   }
 
-  const byColor = new Map<string, { entry: SmProductEntry; sizes: Set<string>; piece: number; casePrice: number }>();
+  const byColor = new Map<string, { entry: SmProductEntry; sizes: Set<string>; piece: number; pieceSale: number; casePrice: number; caseSale: number }>();
   const sizeOrder: string[] = [];
   for (const e of entries) {
     if (!e.color) continue;
     let rec = byColor.get(e.color);
     if (!rec) {
-      rec = { entry: e, sizes: new Set(), piece: 0, casePrice: 0 };
+      rec = { entry: e, sizes: new Set(), piece: 0, pieceSale: 0, casePrice: 0, caseSale: 0 };
       byColor.set(e.color, rec);
     }
     if (e.size) {
       rec.sizes.add(e.size);
       if (!sizeOrder.includes(e.size)) sizeOrder.push(e.size);
     }
-    // Cheapest catalog piece/case price across the color's sizes.
+    // Cheapest catalog piece/case (and sale) price across the color's sizes.
     if (e.piecePrice > 0 && (rec.piece === 0 || e.piecePrice < rec.piece)) rec.piece = e.piecePrice;
+    if (e.pieceSalePrice > 0 && (rec.pieceSale === 0 || e.pieceSalePrice < rec.pieceSale)) rec.pieceSale = e.pieceSalePrice;
     if (e.casePrice > 0 && (rec.casePrice === 0 || e.casePrice < rec.casePrice)) rec.casePrice = e.casePrice;
+    if (e.caseSalePrice > 0 && (rec.caseSale === 0 || e.caseSalePrice < rec.caseSale)) rec.caseSale = e.caseSalePrice;
     // Prefer an entry that has a color image for the color's display record.
     if (!rec.entry.colorProductImage && e.colorProductImage) rec.entry = e;
   }
 
   const priceMap: Record<string, { piecePrice: number; casePrice: number }> = {};
   const colors = Array.from(byColor.entries()).map(([colorName, rec]) => {
-    const piece = myPriceByColor[colorName] || rec.piece;
-    if (piece > 0) priceMap[colorName] = { piecePrice: piece, casePrice: rec.casePrice || piece };
+    // Cost resolution: myPrice (the shop's contracted cost, from the
+    // Pricing service) → catalog SALE piece price → catalog piece price.
+    // The parser always captured pieceSalePrice but the old chain skipped
+    // it — an account without myPrice was quoted the full original price
+    // even while SanMar had the style on sale (Joe's 1717 check,
+    // 2026-07-20: site said $6.34 sale, fallback said $8.62).
+    const piece = myPriceByColor[colorName] || rec.pieceSale || rec.piece;
+    const casePx = rec.caseSale || rec.casePrice;
+    if (piece > 0) priceMap[colorName] = { piecePrice: piece, casePrice: casePx || piece };
     return {
       colorName,
       colorCode: rec.entry.catalogColor,
       sku: rec.entry.inventoryKey,
       piecePrice: piece,
-      casePrice: rec.casePrice || piece,
+      casePrice: casePx || piece,
       imageUrl: rec.entry.colorProductImage || rec.entry.productImage || "",
       sizeQuantities: {}, // live inventory is a later phase (SanMar Product Inventory Service)
     };

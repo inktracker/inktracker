@@ -209,3 +209,40 @@ describe("buildMatchFromEntries", () => {
     expect(match).toHaveProperty("sizes");
   });
 });
+
+// Fallback pricing chain (Joe's 1717 accuracy check, 2026-07-20):
+// myPrice → catalog SALE piece price → catalog piece price. The parser
+// always captured pieceSalePrice, but the old normalizer skipped it —
+// an account without contract pricing was quoted the full original
+// price ($8.62) while sanmar.com showed the style on sale ($6.34).
+describe("buildMatchFromEntries — sale-price fallback", () => {
+  const saleEntries = [
+    {
+      style: "1717", brandName: "Comfort Colors", productTitle: "CC 1717",
+      productDescription: "tee", category: "T-Shirts", availableSizes: "S-3XL",
+      color: "Bay", catalogColor: "Bay", inventoryKey: "k1", size: "S", sizeIndex: "2",
+      piecePrice: 8.62, casePrice: 8.62, pieceSalePrice: 6.34, caseSalePrice: 6.34,
+      priceText: "", colorProductImage: "https://x/img.jpg", productImage: "", specSheet: "",
+      uniqueKey: "u1", pieceWeight: "0.42", caseSize: "60", productStatus: "Active",
+    },
+  ];
+
+  it("no myPrice → the SALE piece price wins over the original", () => {
+    const match = buildMatchFromEntries(saleEntries, []);
+    expect(match.colors[0].piecePrice).toBe(6.34);
+    expect(match.priceMap.Bay.piecePrice).toBe(6.34);
+    expect(match.colors[0].casePrice).toBe(6.34);
+  });
+
+  it("myPrice still outranks the sale price when present", () => {
+    const pricing = [{ style: "1717", color: "Bay", size: "S", sizeIndex: "2", inventoryKey: "k1", piecePrice: 8.62, casePrice: 8.62, myPrice: 5.87 }];
+    const match = buildMatchFromEntries(saleEntries, pricing);
+    expect(match.colors[0].piecePrice).toBe(5.87);
+  });
+
+  it("no sale, no myPrice → original catalog price (unchanged legacy behavior)", () => {
+    const noSale = [{ ...saleEntries[0], pieceSalePrice: 0, caseSalePrice: 0 }];
+    const match = buildMatchFromEntries(noSale, []);
+    expect(match.colors[0].piecePrice).toBe(8.62);
+  });
+});
