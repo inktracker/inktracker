@@ -35,6 +35,7 @@ export async function runOrderCompletion({ order, user, base44 }) {
   // duplicate invoice row whenever the Send-Quote path had already
   // pushed one to QB (the bug Joe hit 2026-05-12 with Shana K).
   let existingInvoice = null;
+  let sourceQbInvoiceId = null;
   try {
     const byOrderId = await base44.entities.Invoice.filter({
       shop_owner: shopOwner,
@@ -57,6 +58,7 @@ export async function runOrderCompletion({ order, user, base44 }) {
         converted_order_id: order.order_id,
       });
       const qId = originatingQuotes?.[0]?.quote_id;
+      sourceQbInvoiceId = originatingQuotes?.[0]?.qb_invoice_id || null;
       if (qId) {
         const byReversedQuoteId = await base44.entities.Invoice.filter({
           shop_owner: shopOwner,
@@ -64,6 +66,33 @@ export async function runOrderCompletion({ order, user, base44 }) {
         });
         if (byReversedQuoteId.length > 0) existingInvoice = byReversedQuoteId[0];
       }
+    }
+
+    // Resolve the originating quote's QB linkage. When the quote was
+    // pushed to QB but the Invoices page never pulled (so no invoices
+    // row exists yet), the fresh invoice we're about to create must
+    // carry quote.qb_invoice_id — that's pullInvoices' primary dedup
+    // key. Without it, completing an order before the first pull left
+    // a null-qb_invoice_id INV- row that the next pull couldn't match,
+    // so it inserted the same QB invoice again as a Q-... sibling
+    // (tester note 2026-07-18, "does it make a duplicate").
+    if (!sourceQbInvoiceId && order.quote_id) {
+      const sourceQuotes = await base44.entities.Quote.filter({
+        shop_owner: shopOwner,
+        quote_id: order.quote_id,
+      });
+      sourceQbInvoiceId = sourceQuotes?.[0]?.qb_invoice_id || null;
+    }
+
+    // Fourth dedup: an invoices row already carrying that QB id under
+    // a different DocNumber (e.g. QB renamed it). Most authoritative
+    // match of all — mirrors pullInvoices' own priority order.
+    if (!existingInvoice && sourceQbInvoiceId) {
+      const byQbId = await base44.entities.Invoice.filter({
+        shop_owner: shopOwner,
+        qb_invoice_id: sourceQbInvoiceId,
+      });
+      if (byQbId.length > 0) existingInvoice = byQbId[0];
     }
   } catch (err) {
     console.error("[runOrderCompletion] failed to look up existing invoice:", err);
@@ -76,6 +105,7 @@ export async function runOrderCompletion({ order, user, base44 }) {
     today,
     shopOwner,
     existingInvoice,
+    sourceQbInvoiceId,
   });
 
   if (plan.invoiceLink) {

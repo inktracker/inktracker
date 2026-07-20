@@ -8,6 +8,7 @@ import {
   decideAddToProduction,
   buildOrderFromInvoice,
 } from "@/lib/orders/buildOrderFromInvoice";
+import { matchCustomerByName } from "@/lib/customers/matchCustomerByName";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
@@ -309,13 +310,38 @@ export default function Invoices() {
         return;
       }
 
+      // Resolve a customer BEFORE the order is created. QB-pulled invoices
+      // arrive with customer_id=null (QB connect imports invoices, not
+      // customers), and without this the job flows through production
+      // orphaned — invisible to customer history and the nightly
+      // data-integrity check fires. Reuse an exact-name match, else create
+      // a minimal record the shop can flesh out later. Never block the
+      // production add on this: a resolution failure just preserves
+      // today's (orphaned) behavior.
+      let customer = customers[fresh.customer_id] || null;
+      if (!customer) {
+        try {
+          customer = matchCustomerByName(Object.values(customers), fresh.customer_name);
+          if (!customer && (fresh.customer_name || "").trim()) {
+            customer = await base44.entities.Customer.create({
+              shop_owner: scope,
+              name: fresh.customer_name.trim(),
+            });
+          }
+          if (customer) setCustomers((prev) => ({ ...prev, [customer.id]: customer }));
+        } catch (err) {
+          console.error("[Invoices] customer resolve failed (continuing without):", err);
+          customer = null;
+        }
+      }
+
       // CREATE. Reuse a this-session order whose backlink write failed
       // rather than creating a sibling on retry.
       let orderId = atpCreatedRef.current[fresh.id];
       if (!orderId) {
         const payload = buildOrderFromInvoice(fresh, {
           userEmail: scope,
-          customer: customers[fresh.customer_id] || null,
+          customer,
           dueDate,
           status,
           today: todayInShopTz(),
@@ -326,11 +352,15 @@ export default function Invoices() {
       }
 
       // Backlink write — this is what the paid cascade walks, so retry it.
+      // Piggyback the customer backfill so the invoice/order pair stays
+      // consistent (both point at the same customer, or neither does).
+      const linkPatch = { order_id: orderId };
+      if (!fresh.customer_id && customer) linkPatch.customer_id = customer.id;
       let linked = null;
       let linkErr = null;
       for (let attempt = 0; attempt < 3 && !linked; attempt++) {
         try {
-          linked = await base44.entities.Invoice.update(fresh.id, { order_id: orderId });
+          linked = await base44.entities.Invoice.update(fresh.id, linkPatch);
         } catch (err) {
           linkErr = err;
         }
