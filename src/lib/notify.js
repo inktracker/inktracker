@@ -16,7 +16,10 @@ export const notify = {
   success(title, description) {
     toast({ title, description });
   },
-  info(title, description) {
-    toast({ title, description });
+  info(title, description, opts) {
+    // opts passes through to the Toast component — e.g. { className }
+    // for a one-off tint (the manual-garment-cost notice uses a light
+    // yellow so it reads as a heads-up, not a success confirmation).
+    toast({ title, description, ...(opts || {}) });
   },
 };
