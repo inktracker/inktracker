@@ -31,6 +31,7 @@ import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/
 import { isRushManuallyOverridden, nextRushRateForDueDateChange } from "@/lib/pricing/rushOverride";
 import { hasEventPackages, normalizeEventPackages } from "@/lib/pricing/eventPackages";
 import EventPackageModal from "./EventPackageModal";
+import CollapsibleSection from "../shared/CollapsibleSection";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
@@ -1284,7 +1285,14 @@ export default function QuoteEditorModal({
                   shop quotes only; broker quotes use broker_tax_rate. The
                   ship-to is editable inline (saves back to the customer). */}
               {!isBrokerQuote(q) && q.customer_id && shipTo && billTo && (
-                <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5">
+                <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5">
+                <CollapsibleSection
+                  title="Addresses & QuickBooks Tax"
+                  defaultCollapsed
+                  storageKey="quote-tax-address-collapsed"
+                  className="[&>button]:mb-0 [&>button+*]:mt-3 space-y-0"
+                >
+                <div className="space-y-3">
                   <AddressFields
                     label="Billing"
                     sublabel="saves to the customer"
@@ -1324,6 +1332,8 @@ export default function QuoteEditorModal({
                   {calcTax.error && (
                     <p className="text-[11px] text-amber-600">{calcTax.error}</p>
                   )}
+                </div>
+                </CollapsibleSection>
                 </div>
               )}
 
