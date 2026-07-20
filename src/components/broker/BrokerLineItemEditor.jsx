@@ -786,7 +786,9 @@ export default function BrokerLineItemEditor({
                   if (hadSupplierPrices) {
                     notify.info(
                       "Manual garment cost",
-                      "Supplier per-size pricing is off for this line — your typed cost now drives the price. Re-select the style or color to restore supplier pricing."
+                      "Supplier per-size pricing is off for this line — your typed cost now drives the price. Re-select the style or color to restore supplier pricing.",
+                      // Light yellow — matches LineItemEditor.
+                      { className: "bg-yellow-50 border-yellow-200" }
                     );
                   }
                 }}
