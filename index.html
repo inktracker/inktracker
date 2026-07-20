@@ -88,6 +88,31 @@
       ]
     }
     </script>
+
+    <!-- The static landing snapshot in #root below is landing-page marketing
+         meant only for crawlers and the pre-boot blink on "/". App routes
+         (/QuoteRequest embedded on shop sites, /QuotePayment, …) must never
+         show it — hide it here in the head so it applies before first paint. -->
+    <script>
+      if (location.pathname !== "/") document.documentElement.setAttribute("data-app-route", "");
+      // Self-heal for stale HTML: after a redeploy, previously-hashed /assets/
+      // files 404 and React can never boot, stranding visitors on the snapshot
+      // (or a blank app route). Reload once — index.html is must-revalidate,
+      // so the retry fetches the current asset hashes. main.jsx clears the
+      // guard on successful boot.
+      addEventListener("error", function (e) {
+        var t = e.target;
+        var src = (t && t !== window && (t.src || t.href)) || "";
+        if (typeof src !== "string" || src.indexOf("/assets/") === -1) return;
+        var firstFailure = false;
+        try {
+          firstFailure = !sessionStorage.getItem("assetReloaded");
+          if (firstFailure) sessionStorage.setItem("assetReloaded", "1");
+        } catch (err) { /* storage unavailable — never reload, avoids loops */ }
+        if (firstFailure) location.reload();
+      }, true);
+    </script>
+    <style>html[data-app-route] [data-landing-static] { display: none }</style>
   </head>
   <body>
     <!-- Static landing snapshot between the markers is GENERATED — edit
@@ -95,7 +120,7 @@
          React replaces #root's children on boot; this exists so crawlers
          and no-JS fetches see the real landing content. -->
     <div id="root"><!-- landing-static:start -->
-    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:0 auto;padding:48px 20px;line-height:1.6;color:#0e0e0e">
+    <div data-landing-static style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:0 auto;padding:48px 20px;line-height:1.6;color:#0e0e0e">
       <header>
         <p style="text-transform:uppercase;letter-spacing:.2em;font-size:12px;color:#6b6b6b">InkTracker — print-shop management software</p>
         <h1>Run your shop without the chaos.</h1>
