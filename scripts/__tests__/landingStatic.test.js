@@ -37,6 +37,31 @@ describe("static landing snapshot — plumbing", () => {
   it("keeps the JSON-LD block (snapshot must not clobber the head)", () => {
     expect(indexHtml()).toContain('"@type": "SoftwareApplication"');
   });
+
+  // The snapshot is landing marketing — app routes (/QuoteRequest embedded on
+  // shop storefronts, /QuotePayment, …) must never show it, even for the
+  // pre-boot blink. The head script tags <html data-app-route> off-root and a
+  // head style hides the [data-landing-static] subtree before first paint.
+  it("is hidden on app routes before first paint", () => {
+    const html = indexHtml();
+    expect(html).toContain('if (location.pathname !== "/") document.documentElement.setAttribute("data-app-route", "");');
+    expect(html).toContain("html[data-app-route] [data-landing-static] { display: none }");
+    // The generated snapshot's top-level div must carry the hide hook.
+    const snapshot = html.slice(html.indexOf("landing-static:start"), html.indexOf("landing-static:end"));
+    expect(snapshot).toContain("<div data-landing-static ");
+  });
+
+  it("self-heals when stale HTML references deleted asset hashes", () => {
+    // One guarded reload when an /assets/ script or stylesheet fails to load —
+    // without it, visitors holding a pre-deploy index.html are stranded on the
+    // snapshot forever (React can never boot). main.jsx clears the guard.
+    const html = indexHtml();
+    expect(html).toContain('sessionStorage.getItem("assetReloaded")');
+    expect(html).toContain('indexOf("/assets/")');
+    const mainSrc = readFileSync(join(ROOT, "src", "main.jsx"), "utf8");
+    expect(mainSrc).toContain("sessionStorage.removeItem('assetReloaded')");
+    expect(mainSrc).toContain("vite:preloadError");
+  });
 });
 
 describe("static landing snapshot — copy parity with landingCopy.js", () => {

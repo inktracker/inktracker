@@ -55,8 +55,10 @@ function render() {
   // Minimal inline styling: readable during the pre-JS blink, invisible to
   // the app (React discards this subtree on mount). System fonts only —
   // no webfont requests for a block that lives milliseconds for most users.
+  // data-landing-static lets the head hide it on app routes (/QuoteRequest
+  // embedded in shop sites must never flash landing marketing).
   return `${START}
-    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:0 auto;padding:48px 20px;line-height:1.6;color:#0e0e0e">
+    <div data-landing-static style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:720px;margin:0 auto;padding:48px 20px;line-height:1.6;color:#0e0e0e">
       <header>
         <p style="text-transform:uppercase;letter-spacing:.2em;font-size:12px;color:#6b6b6b">InkTracker — print-shop management software</p>
         <h1>${esc(HERO.h1)}</h1>

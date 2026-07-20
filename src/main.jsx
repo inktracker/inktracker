@@ -34,6 +34,26 @@ class RootErrorBoundary extends React.Component {
   }
 }
 
+// Boot reached — clear the stale-asset reload guards (set by the self-heal
+// script in index.html and the vite:preloadError handler below) so a future
+// redeploy can heal again.
+try {
+  sessionStorage.removeItem('assetReloaded')
+  sessionStorage.removeItem('chunkReloaded')
+} catch { /* storage unavailable */ }
+
+// A tab opened before a redeploy requests lazy chunks that no longer exist
+// (hashed filenames changed). One guarded reload picks up the fresh
+// index.html instead of stranding the visitor on a broken route.
+window.addEventListener('vite:preloadError', (e) => {
+  try {
+    if (sessionStorage.getItem('chunkReloaded')) return
+    sessionStorage.setItem('chunkReloaded', '1')
+  } catch { return }
+  e.preventDefault()
+  window.location.reload()
+})
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <RootErrorBoundary>
     <App />
