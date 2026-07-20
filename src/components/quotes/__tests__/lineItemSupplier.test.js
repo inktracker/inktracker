@@ -1,6 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { applySelectedMatch as applyShop } from "../LineItemEditor";
-import { applySelectedMatch as applyBroker } from "../../broker/BrokerLineItemEditor";
+import {
+  applySelectedMatch as applyShop,
+  getResultCandidates as candidatesShop,
+  buildBrandOptions as optionsShop,
+} from "../LineItemEditor";
+import {
+  applySelectedMatch as applyBroker,
+  getResultCandidates as candidatesBroker,
+  buildBrandOptions as optionsBroker,
+} from "../../broker/BrokerLineItemEditor";
 
 // Regression tests for the brand-ternary bug (SanMar integration):
 // `supplier` used to be INFERRED from brandName —
@@ -54,5 +62,38 @@ describe.each([
       match({ brandName: "AS Colour", raw: { brandName: "AS Colour" } })
     );
     expect(li.supplier).toBe("");
+  });
+});
+
+// The FULL pipeline: raw lookup payload → getResultCandidates →
+// buildBrandOptions. Caught live on 2026-07-20: buildBrandOptions was
+// supplier-aware but getResultCandidates rebuilt each match with an
+// explicit field list that DROPPED _supplier — so the dropdown still
+// collapsed the two suppliers into one option. Unit tests that fed
+// buildBrandOptions directly couldn't see it; this one walks the same
+// path handleStyleBlur does.
+describe.each([
+  ["LineItemEditor", candidatesShop, optionsShop],
+  ["BrokerLineItemEditor", candidatesBroker, optionsBroker],
+])("%s pipeline: candidates preserve _supplier", (_label, getResultCandidates, buildBrandOptions) => {
+  const RAW_LOOKUP = {
+    matches: [
+      { id: 9001, _supplier: "S&S Activewear", brandName: "Gildan", styleNumber: "5000",
+        description: "Heavy Cotton T-Shirt", colors: [], priceMap: {} },
+      { id: 9001, _supplier: "SanMar", brandName: "Gildan", styleNumber: "5000",
+        description: "Heavy Cotton T-Shirt", colors: [], priceMap: {} },
+    ],
+  };
+
+  it("getResultCandidates carries the fetch-time tag through normalization", () => {
+    const candidates = getResultCandidates(RAW_LOOKUP);
+    expect(candidates.map((c) => c._supplier).sort()).toEqual(["S&S Activewear", "SanMar"]);
+  });
+
+  it("the dropdown built from candidates keeps one option per supplier", () => {
+    const options = buildBrandOptions(getResultCandidates(RAW_LOOKUP), "5000");
+    expect(options).toHaveLength(2);
+    expect(options.map((o) => o._supplier).sort()).toEqual(["S&S Activewear", "SanMar"]);
+    expect(new Set(options.map((o) => o.id)).size).toBe(2);
   });
 });

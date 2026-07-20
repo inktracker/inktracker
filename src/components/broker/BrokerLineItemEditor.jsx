@@ -85,7 +85,7 @@ function stripTrailingCode(title) {
   return txt.replace(/\s*-\s*[A-Z0-9-]{2,30}\s*$/i, "").trim();
 }
 
-function getResultCandidates(result) {
+export function getResultCandidates(result) {
   const rawMatches = Array.isArray(result?.matches)
     ? result.matches
     : Array.isArray(result?.results)
@@ -147,6 +147,9 @@ function getResultCandidates(result) {
       piecePrice: item?.piecePrice,
       casePrice: item?.casePrice,
       raw: item,
+      // Fetch-time supplier tag — must survive normalization or the
+      // supplier-aware dedup/labels downstream see every match as untagged.
+      _supplier: item?._supplier || "",
     }));
   }
 
@@ -194,6 +197,7 @@ function getResultCandidates(result) {
       piecePrice: result?.piecePrice,
       casePrice: result?.casePrice,
       raw: result,
+      _supplier: result?._supplier || "",
     },
   ];
 }
