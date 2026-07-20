@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { clampRushTierMaxDays, defaultNewRushTierMaxDays } from "@/lib/pricing/rushTierClamp";
+import { createUndoHistory, recordChange, undoTo } from "@/lib/pricing/undoHistory";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import NumericInput from "@/components/shared/NumericInput";
@@ -20,6 +21,24 @@ export default function PricingConfigEditor({ user }) {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pricingTab, setPricingTab] = useState("screen_print");
+  // In-session undo (tester 2026-07-18). Every config change lands in
+  // the history via the effect below; rapid keystrokes coalesce into
+  // one step. Undo also recovers from "Reset to Defaults". Cleared by
+  // nothing — the stack only exists until the component unmounts.
+  const undoHistoryRef = useRef(createUndoHistory());
+  const [undoDepth, setUndoDepth] = useState(0);
+
+  useEffect(() => {
+    if (!config) return;
+    setUndoDepth(recordChange(undoHistoryRef.current, config, Date.now()));
+  }, [config]);
+
+  function handleUndo() {
+    const prev = undoTo(undoHistoryRef.current);
+    if (!prev) return;
+    setConfig(prev);
+    setUndoDepth(undoHistoryRef.current.stack.length);
+  }
 
   useEffect(() => {
     async function load() {
@@ -743,6 +762,13 @@ export default function PricingConfigEditor({ user }) {
         <button onClick={handleSave} disabled={saving}
           className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
           {saving ? "Saving..." : saved ? "Saved" : "Save Pricing"}
+        </button>
+        <button
+          onClick={handleUndo}
+          disabled={undoDepth === 0}
+          title="Undo the last pricing edit (also recovers a Reset). Doesn't touch what's already saved."
+          className="text-xs text-slate-500 hover:text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
+          ↩ Undo
         </button>
         <button
           onClick={() => {
