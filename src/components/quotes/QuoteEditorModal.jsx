@@ -610,10 +610,59 @@ export default function QuoteEditorModal({
     }
   }
 
+  // Quote-number customization is only allowed BEFORE approval (Joe
+  // 2026-07-20): once approved, the number is on the customer's
+  // paperwork; once pushed to QB it's the QB DocNumber and a local
+  // rename would desync (mirror of the invoice-rename rule, #657).
+  // Gate on the SAVED quote's state (the `quote` prop), not the
+  // in-editor status dropdown.
+  const quoteIdLocked =
+    ["Approved", "Approved and Paid"].includes(quote?.status) || !!quote?.qb_invoice_id;
+
   async function handleSave() {
     setSaving(true);
     setSaveError("");
     try {
+      // Quote-number change: validate + in-use flag before anything
+      // writes. Checks BOTH quotes and invoices in the shop — quote ids
+      // become QB DocNumbers, and the pull's DocNumber matching relies
+      // on them staying distinct. The (shop_owner, quote_id) unique
+      // index (20260523) remains the race backstop.
+      const nextQuoteId = (q.quote_id || "").trim();
+      if (!nextQuoteId) {
+        setSaveError("Quote number can't be empty.");
+        setSaving(false);
+        return;
+      }
+      if (nextQuoteId.length > 40) {
+        setSaveError("Keep the quote number under 40 characters.");
+        setSaving(false);
+        return;
+      }
+      if (nextQuoteId !== (quote?.quote_id ?? nextQuoteId) && quoteIdLocked) {
+        setSaveError("This quote's number can no longer be changed (approved or already in QuickBooks).");
+        setSaving(false);
+        return;
+      }
+      if (nextQuoteId !== quote?.quote_id) {
+        const scope = shopScope(user);
+        const [dupQuotes, dupInvoices] = await Promise.all([
+          base44.entities.Quote.filter({ shop_owner: scope, quote_id: nextQuoteId }).catch(() => []),
+          base44.entities.Invoice.filter({ shop_owner: scope, invoice_id: nextQuoteId }).catch(() => []),
+        ]);
+        const quoteClash = (dupQuotes || []).find((r) => r.id !== quote?.id);
+        if (quoteClash) {
+          setSaveError(`⚑ ${nextQuoteId} is already used by another quote.`);
+          setSaving(false);
+          return;
+        }
+        if ((dupInvoices || []).length > 0) {
+          setSaveError(`⚑ ${nextQuoteId} is already used by an invoice.`);
+          setSaving(false);
+          return;
+        }
+        if (nextQuoteId !== q.quote_id) setQ((prev) => ({ ...prev, quote_id: nextQuoteId }));
+      }
       // Persist unique imprint presets to the customer record BEFORE closing the modal
       if (q.customer_id) {
         try {
@@ -705,6 +754,9 @@ export default function QuoteEditorModal({
       const stampedQuote = { ...q, line_items: stampedItems };
       await onSave({
         ...stampedQuote,
+        // Explicit: the trimmed/validated number from the check above —
+        // the setQ trim is async and wouldn't land in this save.
+        quote_id: nextQuoteId,
         subtotal: sub,
         setup_total: setupTotalSnap,
         is_reorder: !!q.is_reorder,
@@ -741,9 +793,26 @@ export default function QuoteEditorModal({
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl my-4">
         <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-t-2xl">
           <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
-              {q.quote_id}
-            </div>
+            {quoteIdLocked ? (
+              <div
+                className="text-xs font-semibold text-slate-500 uppercase tracking-widest"
+                title={quote?.qb_invoice_id
+                  ? "Number locked — this quote is in QuickBooks (its DocNumber). Rename in QB if needed."
+                  : "Number locked — approved quotes keep their number."}
+              >
+                {q.quote_id}
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={q.quote_id}
+                onChange={(e) => setQ({ ...q, quote_id: e.target.value })}
+                maxLength={40}
+                title="Customize the quote number (editable until the quote is approved)"
+                aria-label="Quote number"
+                className="text-xs font-semibold text-slate-500 uppercase tracking-widest bg-transparent border border-transparent hover:border-slate-300 focus:border-slate-300 rounded px-1 py-0.5 -ml-1 w-44 focus:outline-none focus:ring-1 focus:ring-teal-300"
+              />
+            )}
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Quote Builder</h2>
           </div>
 
