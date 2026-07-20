@@ -114,7 +114,21 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
     if (!ok) return;
     setSyncingQb(true);
     try {
-      const patches = buildAdoptPatches(activeInvoice);
+      // Adopt from the FRESH row, not the prop snapshot. The qb_* mirror on
+      // the prop is whatever this window last fetched — if QuickBooks was
+      // edited again since (webhook mirror advanced the row), adopting the
+      // snapshot writes outdated totals onto quote/order/invoice and the
+      // "modified in QB" banner immediately returns. Same stale-snapshot
+      // class as the INV-2026-OW0M1 duplicate.
+      let freshest = activeInvoice;
+      try {
+        const rows = await base44.entities.Invoice.filter({
+          shop_owner: invoice.shop_owner,
+          id: invoice.id,
+        });
+        if (rows?.length) freshest = rows[0];
+      } catch { /* fall back to the snapshot */ }
+      const patches = buildAdoptPatches(freshest);
       if (!patches) throw new Error("No QuickBooks totals on this invoice yet.");
 
       // Quote and order first; the INVOICE row last. The "modified in

@@ -285,7 +285,14 @@ export { IDEMPOTENCY_TTL_MS };
 const ROW_LOCK_DEFAULTS = Object.freeze({
   waitMs: 20_000,   // how long a contender waits for the holder
   pollMs: 750,
-  lockTtlMs: 90_000, // crash-recovery: max plausible createInvoice runtime
+  // Crash-recovery TTL. MUST exceed the longest plausible createInvoice
+  // runtime (QB create + link mint with retries + deposit + write-backs can
+  // approach the edge-function ceiling under QB slowness) — a TTL shorter
+  // than the holder's runtime lets a contender "reclaim" a LIVE lock and
+  // run concurrently, resurrecting the duplicate race the lock exists to
+  // kill. 170s > the 150s function ceiling, so a live holder can never be
+  // reclaimed; only a genuinely dead one can.
+  lockTtlMs: 170_000,
 });
 
 export async function withQbRowSerialization(supabase, key, ctx, fn, opts = {}) {

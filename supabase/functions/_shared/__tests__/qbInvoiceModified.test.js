@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   detectQbInvoiceModification,
+  detectQbPaidRegression,
   buildQbMirrorPatch,
   buildQbModifiedNotification,
+  buildQbPaidRegressionNotification,
   mergeNotesPreservingSyncLines,
 } from "../qbInvoiceModified.js";
 
@@ -100,6 +102,69 @@ describe("buildQbModifiedNotification", () => {
     expect(row.body).toContain("Sync from QuickBooks");
     expect(row.related_id).toBe("row-uuid");
     expect(row.metadata.qb_total).toBe(19777.53);
+  });
+});
+
+// A deleted/unapplied/refunded payment in QBO reopens the Balance WITHOUT
+// moving TotalAmt — the total-based detector stays silent, so this detector
+// is the only signal before the books diverge permanently.
+describe("detectQbPaidRegression", () => {
+  it("fires when local says paid but QB shows an open balance again", () => {
+    expect(detectQbPaidRegression({
+      localPaid: true,
+      freshInvoice: { TotalAmt: 68.21, Balance: 68.21 },
+    })).toBe(true);
+  });
+
+  it("stays quiet when local isn't paid (normal unpaid invoice)", () => {
+    expect(detectQbPaidRegression({
+      localPaid: false,
+      freshInvoice: { TotalAmt: 68.21, Balance: 68.21 },
+    })).toBe(false);
+  });
+
+  it("stays quiet when QB still shows fully paid", () => {
+    expect(detectQbPaidRegression({
+      localPaid: true,
+      freshInvoice: { TotalAmt: 68.21, Balance: 0 },
+    })).toBe(false);
+  });
+
+  it("excludes voids that zero the total (covered by the modification detector)", () => {
+    expect(detectQbPaidRegression({
+      localPaid: true,
+      freshInvoice: { TotalAmt: 0, Balance: 0 },
+    })).toBe(false);
+  });
+
+  it("ignores sub-cent float noise in Balance", () => {
+    expect(detectQbPaidRegression({
+      localPaid: true,
+      freshInvoice: { TotalAmt: 100, Balance: 0.005 },
+    })).toBe(false);
+  });
+
+  it("handles a missing invoice payload without firing", () => {
+    expect(detectQbPaidRegression({ localPaid: true, freshInvoice: null })).toBe(false);
+  });
+});
+
+describe("buildQbPaidRegressionNotification", () => {
+  it("builds a warning that says InkTracker did NOT un-pay", () => {
+    const row = buildQbPaidRegressionNotification({
+      shopOwner: "shop@x.com",
+      ref: "Q-2026-GR55",
+      rowId: "row-uuid",
+      relatedEntity: "invoice",
+      qbInvoiceId: "582",
+      qbBalance: 68.21,
+      qbTotal: 68.21,
+    });
+    expect(row.event_type).toBe("qb_payment_removed");
+    expect(row.severity).toBe("warning");
+    expect(row.title).toContain("Q-2026-GR55");
+    expect(row.body).toContain("did NOT un-mark");
+    expect(row.metadata.qb_balance).toBe(68.21);
   });
 });
 

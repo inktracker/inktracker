@@ -26,15 +26,22 @@
  * @param {string} shopOwner  the shop_owner email, looked up from the
  *                            profile that owns the realmId
  */
-export function buildPaidInvoiceQuery(supabase, qbInvoiceId, shopOwner) {
+export async function buildPaidInvoiceQuery(supabase, qbInvoiceId, shopOwner) {
   if (!qbInvoiceId) throw new Error("buildPaidInvoiceQuery: qbInvoiceId required");
   if (!shopOwner)   throw new Error("buildPaidInvoiceQuery: shopOwner required");
-  return supabase
+  // Oldest-row limit(1), NOT maybeSingle: a duplicate local row sharing the
+  // qb_invoice_id (pull racing a create's write-back) would make maybeSingle
+  // ERROR — and a swallowed error here means the payment silently never
+  // marks paid. Degrade to the canonical (oldest) row instead; the nightly
+  // books-drift pass surfaces whatever the duplicate desynced.
+  const { data, error } = await supabase
     .from("quotes")
     .select("*")
     .eq("qb_invoice_id", qbInvoiceId)
     .eq("shop_owner", shopOwner)
-    .maybeSingle();
+    .order("created_at", { ascending: true })
+    .limit(1);
+  return { data: data?.[0] ?? null, error };
 }
 
 /**
@@ -45,15 +52,18 @@ export function buildPaidInvoiceQuery(supabase, qbInvoiceId, shopOwner) {
  * and pushed to QB independently). Required for the order-already-exists
  * payment path to flow.
  */
-export function buildPaidInvoiceQueryFromInvoices(supabase, qbInvoiceId, shopOwner) {
+export async function buildPaidInvoiceQueryFromInvoices(supabase, qbInvoiceId, shopOwner) {
   if (!qbInvoiceId) throw new Error("buildPaidInvoiceQueryFromInvoices: qbInvoiceId required");
   if (!shopOwner)   throw new Error("buildPaidInvoiceQueryFromInvoices: shopOwner required");
-  return supabase
+  // Same limit(1) degradation rationale as buildPaidInvoiceQuery above.
+  const { data, error } = await supabase
     .from("invoices")
     .select("*")
     .eq("qb_invoice_id", qbInvoiceId)
     .eq("shop_owner", shopOwner)
-    .maybeSingle();
+    .order("created_at", { ascending: true })
+    .limit(1);
+  return { data: data?.[0] ?? null, error };
 }
 
 // ── Idempotency / conversion decision ────────────────────────────────────────
