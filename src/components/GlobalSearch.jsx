@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import { Search, X } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import ModalBackdrop from "./shared/ModalBackdrop";
@@ -34,30 +34,44 @@ export default function GlobalSearch() {
 
     const searchEntities = async () => {
       setLoading(true);
-      const q = query.toLowerCase();
-      const shopOwner = user.email;
+
+      // Server-side ilike with a hard limit per table. The old version pulled
+      // the ENTIRE tenant (every quote/order/invoice ever) into the browser
+      // per keystroke-batch to find 5 matches — linear cost in shop history.
+      // No shop_owner filter on purpose: RLS scopes results to what the
+      // caller can see, which also fixes managers/brokers (filtering on
+      // user.email returned nothing for them — their rows key to the OWNER).
+      //
+      // Characters with meaning in PostgREST or() / LIKE syntax are dropped
+      // from the search term, not escaped — search UX is unaffected and the
+      // filter string can't be broken out of.
+      const term = query.replace(/[,()"'\\%_]/g, " ").trim();
+      if (!term) { setLoading(false); return; }
+      const pat = `*${term}*`;
+
+      const grab = (table, orClause, sort) =>
+        supabase.from(table).select("*").or(orClause).order(sort, { ascending: true }).limit(5)
+          .then(({ data, error }) => {
+            if (error) { console.error(`[GlobalSearch] ${table}:`, error.message); return []; }
+            return data || [];
+          });
 
       try {
         const [customers, orders, quotes, invoices, inventory] = await Promise.all([
-          base44.entities.Customer.filter({ shop_owner: shopOwner }),
-          base44.entities.Order.filter({ shop_owner: shopOwner }),
-          base44.entities.Quote.filter({ shop_owner: shopOwner }),
-          base44.entities.Invoice.filter({ shop_owner: shopOwner }),
-          base44.entities.InventoryItem.list(),
+          grab("customers",       `name.ilike.${pat},company.ilike.${pat},email.ilike.${pat}`, "name"),
+          grab("orders",          `customer_name.ilike.${pat},order_id.ilike.${pat}`,          "order_id"),
+          grab("quotes",          `customer_name.ilike.${pat},quote_id.ilike.${pat}`,          "quote_id"),
+          grab("invoices",        `customer_name.ilike.${pat},invoice_id.ilike.${pat}`,        "invoice_id"),
+          grab("inventory_items", `item.ilike.${pat},sku.ilike.${pat}`,                        "item"),
         ]);
 
         setResults({
           customers: customers
-            .filter(c => c.name?.toLowerCase().includes(q) || c.company?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q))
-            .sort((a, b) => ((a.company || a.name) || "").localeCompare((b.company || b.name) || "", undefined, { sensitivity: 'base' }))
-            .slice(0, 5),
-          orders: orders.filter(o => o.customer_name?.toLowerCase().includes(q) || o.order_id?.toLowerCase().includes(q)).slice(0, 5),
-          quotes: quotes.filter(qt => qt.customer_name?.toLowerCase().includes(q) || qt.quote_id?.toLowerCase().includes(q)).slice(0, 5),
-          invoices: invoices.filter(i => i.customer_name?.toLowerCase().includes(q) || i.invoice_id?.toLowerCase().includes(q)).slice(0, 5),
-          inventory: inventory
-            .filter(i => i.item?.toLowerCase().includes(q) || i.sku?.toLowerCase().includes(q))
-            .sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' }))
-            .slice(0, 5),
+            .sort((a, b) => ((a.company || a.name) || "").localeCompare((b.company || b.name) || "", undefined, { sensitivity: 'base' })),
+          orders,
+          quotes,
+          invoices,
+          inventory,
         });
       } finally {
         setLoading(false);

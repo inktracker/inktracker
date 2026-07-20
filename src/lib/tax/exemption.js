@@ -1,3 +1,5 @@
+import { localDateStr } from "@/lib/dateRangeUtils";
+
 // Tax-exemption helpers (Phase 2 of multi-state tax —
 // docs/qb-multistate-tax-scope.md). A `tax_exempt` flag alone isn't
 // audit-defensible: you need the type, certificate, coverage, and expiry.
@@ -24,7 +26,10 @@ export function parseStateList(text) {
     .filter((s) => /^[A-Z]{2}$/.test(s));
 }
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+// Local calendar date, not UTC — toISOString() rolls to tomorrow after
+// ~5pm Pacific, which flagged a cert expiring today as "expired" hours
+// early on its last valid day (display-only badge).
+const todayIso = () => localDateStr(new Date());
 
 /** True when the cert has an expiry strictly before today. */
 export function isExemptionExpired(customer, asOf = todayIso()) {

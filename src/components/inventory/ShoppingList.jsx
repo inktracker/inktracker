@@ -16,6 +16,7 @@ import { useMemo, useState } from "react";
 import { ShoppingCart, CheckCircle2, Truck, Package } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 
 const ALL = "All";
 const UNSPECIFIED = "Unspecified";
@@ -24,7 +25,7 @@ function supplierLabel(s) {
   return s && String(s).trim().length > 0 ? s : UNSPECIFIED;
 }
 
-export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
+export default function ShoppingList({ items, onItemUpdated, onRefresh, readOnly = false, reason = "", reactivateHref = "" }) {
   // Auto-derived: anything below reorder threshold is on the list.
   const lowItems = useMemo(
     () => items.filter((i) => Number(i.qty) <= Number(i.reorder)),
@@ -171,14 +172,18 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
           </div>
         </div>
         {checkedCount > 0 && (
-          <button
-            onClick={markCheckedAsOrdered}
-            disabled={busy}
-            className="bg-orange-500 hover:bg-orange-600 disabled:bg-slate-300 text-white text-sm font-semibold px-4 py-2 rounded-xl transition flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            Mark {checkedCount} as ordered
-          </button>
+          <div className="flex items-center gap-3">
+            <ReactivateLink show={readOnly} href={reactivateHref} />
+            <button
+              onClick={markCheckedAsOrdered}
+              disabled={readOnly || busy}
+              title={readOnly ? reason : undefined}
+              className="bg-orange-500 hover:bg-orange-600 disabled:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition flex items-center gap-2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Mark {checkedCount} as ordered
+            </button>
+          </div>
         )}
       </div>
 
@@ -219,7 +224,8 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
                   Clear selection
                 </button>
               ) : (
-                <button onClick={checkAllVisible} className="text-[11px] font-semibold text-slate-500 hover:text-slate-600">
+                <button onClick={checkAllVisible} disabled={readOnly} title={readOnly ? reason : undefined}
+                  className="text-[11px] font-semibold text-slate-500 hover:text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed">
                   Select all
                 </button>
               )}
@@ -231,6 +237,8 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
               item={item}
               checked={checkedIds.has(item.id)}
               onToggle={() => toggleChecked(item.id)}
+              readOnly={readOnly}
+              reason={reason}
             />
           ))}
         </div>
@@ -251,6 +259,8 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
               busy={busy}
               onReceive={() => receiveItem(item)}
               onCancel={() => cancelOrder(item)}
+              readOnly={readOnly}
+              reason={reason}
             />
           ))}
         </div>
@@ -265,19 +275,21 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh }) {
   );
 }
 
-function PendingRow({ item, checked, onToggle }) {
+function PendingRow({ item, checked, onToggle, readOnly = false, reason = "" }) {
   const need = Math.max(Number(item.reorder) - Number(item.qty), 1);
   return (
     <label
-      className={`flex items-center gap-3 px-5 py-3 cursor-pointer transition ${
-        checked ? "bg-orange-50/60" : "hover:bg-slate-50"
-      }`}
+      title={readOnly ? reason : undefined}
+      className={`flex items-center gap-3 px-5 py-3 transition ${
+        readOnly ? "cursor-not-allowed" : "cursor-pointer"
+      } ${checked ? "bg-orange-50/60" : "hover:bg-slate-50"}`}
     >
       <input
         type="checkbox"
         checked={checked}
         onChange={onToggle}
-        className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+        disabled={readOnly}
+        className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
       />
       <Package className="w-4 h-4 text-slate-300 flex-shrink-0" />
       <div className="flex-1 min-w-0">
@@ -300,7 +312,7 @@ function PendingRow({ item, checked, onToggle }) {
   );
 }
 
-function OrderedRow({ item, busy, onReceive, onCancel }) {
+function OrderedRow({ item, busy, onReceive, onCancel, readOnly = false, reason = "" }) {
   return (
     <div className="flex items-center gap-3 px-5 py-3">
       <CheckCircle2 className="w-4 h-4 text-blue-500 flex-shrink-0" />
@@ -314,15 +326,17 @@ function OrderedRow({ item, busy, onReceive, onCancel }) {
       </div>
       <button
         onClick={onCancel}
-        disabled={busy}
-        className="text-xs font-semibold text-slate-500 hover:text-red-500 transition px-2"
+        disabled={readOnly || busy}
+        title={readOnly ? reason : undefined}
+        className="text-xs font-semibold text-slate-500 hover:text-red-500 transition px-2 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Cancel
       </button>
       <button
         onClick={onReceive}
-        disabled={busy}
-        className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+        disabled={readOnly || busy}
+        title={readOnly ? reason : undefined}
+        className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
       >
         Received
       </button>

@@ -48,12 +48,14 @@ serve(async (req) => {
     // Use service-role client to look up profile — avoids any RLS restrictions
     const { data: callerProfile } = await adminClient
       .from("profiles")
-      .select("role, email, shop_name, shop_owner")
+      .select("role, email, shop_name, shop_owner, manager_permissions")
       .eq("auth_id", user.id)
       .maybeSingle();
 
-    if (callerProfile?.role !== "admin" && callerProfile?.role !== "shop") {
-      return new Response(JSON.stringify({ error: "Forbidden: admin only", yourRole: callerProfile?.role ?? null }), {
+    const callerRole = callerProfile?.role;
+    const isManager = callerRole === "manager";
+    if (callerRole !== "admin" && callerRole !== "shop" && !isManager) {
+      return new Response(JSON.stringify({ error: "Forbidden: admin only", yourRole: callerRole ?? null }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -62,13 +64,36 @@ serve(async (req) => {
     const body = await req.json();
     const { action, profileId, role } = body;
 
+    // Managers get the roster VIEW only ("Team roster (Admin panel — view
+    // only)" in MANAGER_SECTIONS). Every mutation stays owner/admin-only,
+    // and a manager whose Team section was explicitly revoked is blocked
+    // here too — mirroring manager_section_allowed()'s null-means-allowed
+    // semantics.
+    if (isManager) {
+      const teamAllowed =
+        callerProfile?.manager_permissions == null ||
+        callerProfile.manager_permissions["Team"] !== false;
+      if (action !== "listUsers" || !teamAllowed) {
+        return new Response(
+          JSON.stringify({ error: "Forbidden: managers have view-only roster access", yourRole: callerRole }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+    }
+
     if (action === "listUsers") {
-      const adminEmail = callerProfile?.email || user.email;
+      // For a manager the roster tenant is the OWNER's email — their own
+      // email would match nothing. The extra email.eq clause pulls the
+      // owner's own profile row into the roster a manager sees (it has
+      // shop_owner NULL, so the shop_owner clause misses it).
+      const adminEmail = isManager
+        ? (callerProfile?.shop_owner || callerProfile?.email || user.email)
+        : (callerProfile?.email || user.email);
       // Query only profiles belonging to this admin's shop — scoped at DB level
       const { data: profiles, error } = await adminClient
         .from("profiles")
         .select("id, auth_id, role, shop_name, logo_url, created_at, email, shop_owner, assigned_shops, full_name, manager_permissions")
-        .or(`auth_id.eq.${user.id},shop_owner.eq.${adminEmail},assigned_shops.cs.["${adminEmail}"]`)
+        .or(`auth_id.eq.${user.id},email.eq.${adminEmail},shop_owner.eq.${adminEmail},assigned_shops.cs.["${adminEmail}"]`)
         .order("created_at", { ascending: false })
         .limit(200);
 
@@ -337,10 +362,11 @@ serve(async (req) => {
               shop_owner: user.email,
             };
             if (assignRole === "broker" || assignRole === "manager" || assignRole === "employee") updatePayload.assigned_shops = assignedShops;
-            await adminClient
+            const { error: updateErr } = await adminClient
               .from("profiles")
               .update(updatePayload)
               .eq("id", existingByAuth.id);
+            if (updateErr) throw updateErr;
           } else {
             const insertPayload: any = {
               auth_id: invitedAuthId,
@@ -351,10 +377,25 @@ serve(async (req) => {
               shop_owner: user.email,
             };
             if (assignRole === "broker" || assignRole === "manager" || assignRole === "employee") insertPayload.assigned_shops = assignedShops;
-            await adminClient.from("profiles").insert(insertPayload);
+            const { error: insertErr } = await adminClient.from("profiles").insert(insertPayload);
+            if (insertErr) throw insertErr;
           }
         } catch (profileErr) {
-          console.error("Profile create/update failed (invite was sent):", profileErr);
+          // Do NOT return { invited: true } here. handle_new_user created this
+          // auth user as a fresh SHOP OWNER (role 'shop', tier 'incomplete');
+          // if the corrective role/shop_owner update fails, the invitee would
+          // land in the onboarding wizard as a stranded fake owner instead of
+          // joining this shop. Supabase's .update() doesn't throw — it returns
+          // { error } — which is why the old catch never even fired on a DB
+          // failure. Surface it so the admin re-sends the invite (the retry
+          // hits the existingByAuth branch and repairs the profile).
+          console.error("Invite role assignment failed:", profileErr);
+          return new Response(JSON.stringify({
+            error: "Invite email was sent, but assigning their role failed. Send the invite again to the same address to fix it.",
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
 
         return new Response(JSON.stringify({ invited: true, email: cleanEmail, role: assignRole }), {

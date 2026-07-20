@@ -190,6 +190,36 @@ export function normalizeItemName(name) {
   return normalizeForMatch(name).split(" ").filter(Boolean).map(singularizeWord).join(" ");
 }
 
+// ── Item variant matching (don't create near-duplicate QB items) ─────────────
+// Exact + normalized matching still creates a NEW QB item when the name is an
+// obvious variant of one the shop already has — "Customer Supplied" pushed
+// against an existing "Customer Supplied Goods" spawned a duplicate item
+// (Joe's shop, 2026-07-18). This picks an existing item whose normalized name
+// extends (or is extended by) the outgoing name at a token boundary, but only
+// when it's SAFE to assume they're the same thing:
+//   - exactly ONE such candidate exists (any ambiguity → create, like today)
+//   - the shorter of the two names has ≥ 2 tokens ("customer supplied" may
+//     claim "customer supplied good"; a bare "embroidery" may NOT claim
+//     "embroidery digitizing" — single words are too generic to assume)
+//
+// @param {string} targetNorm      normalizeItemName() of the outgoing name
+// @param {Iterable<string>} existingNorms  normalized names of the shop's QB items
+// @returns {string|null} the single matching normalized name, or null
+export function pickItemVariantMatch(targetNorm, existingNorms) {
+  if (!targetNorm) return null;
+  const candidates = [];
+  for (const key of existingNorms ?? []) {
+    if (!key || key === targetNorm) continue;
+    const extendsTarget = key.startsWith(`${targetNorm} `);
+    const targetExtends = targetNorm.startsWith(`${key} `);
+    if (!extendsTarget && !targetExtends) continue;
+    const shorter = extendsTarget ? targetNorm : key;
+    if (shorter.split(" ").length < 2) continue;
+    candidates.push(key);
+  }
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
 // ── Payment amount clamp (never overpay) ─────────────────────────────────────
 // A repeated "Mark as Paid" (e.g. after the idempotency TTL) or an explicit
 // amount larger than what's owed must never drive a QB invoice's balance
@@ -713,4 +743,133 @@ export function resolveInvoiceCustomerFields(custMatch, existingRow, qbCustomerN
     };
   }
   return { customer_id: null, customer_name: qbCustomerName || "Unknown" };
+}
+
+// ── Pull-path round-trip guards ─────────────────────────────────────────────
+//
+// buildInvoiceLinesFromPayload (above) appends " (less $X discount)" to each
+// QB line so QB taxes the post-discount amount. When handlePullInvoices later
+// imports QB lines back, that note must NOT ride along — the local invoice
+// carries discount/discount_type as real fields, and the note duplicated onto
+// every line is what made INV-2026-CQY1X's PDF unreadable (2026-07-03).
+// End-anchored and matching exactly the two label formats we emit, so a
+// legitimate description that merely mentions a discount is untouched.
+// pdfExport.jsx carries a copy of this regex for already-damaged rows — keep
+// the two in lockstep.
+export const QB_DISCOUNT_NOTE_RE = / \(less (?:\$[\d,.]+|[\d.]+%) discount\)(?=$|\s*\()/;
+
+export function stripQbDiscountNote(description) {
+  let s = String(description ?? "");
+  // Multiple imprints can each carry the note after joins — strip repeatedly.
+  for (let i = 0; i < 8 && QB_DISCOUNT_NOTE_RE.test(s); i++) {
+    s = s.replace(QB_DISCOUNT_NOTE_RE, "");
+  }
+  return s;
+}
+
+/**
+ * Should the pull path REPLACE this existing local invoice's pricing fields
+ * (line_items, discount, discount_type, tax_rate, extras, subtotal) with the
+ * flattened QB shape?
+ *
+ * Only when the row has nothing local to lose: no rich line items (empty, or
+ * every item is a prior QB import — id "qb-…") AND it isn't order-born.
+ * Locally-born invoices keep their itemization (sizes, imprints, stamped
+ * per-line pricing, discount fields); QB stays authoritative for money state
+ * (paid/status/total/tax + the qb_* mirrors), which the caller still updates.
+ *
+ * This is the guard for the INV-2026-CQY1X clobbering: a Sync-All replaced an
+ * order-born invoice's rich lines with five qb-N stubs.
+ */
+export function shouldReplaceLocalInvoiceItems(existingRow) {
+  if (!existingRow) return true;                       // fresh INSERT — QB shape is all we have
+  if (existingRow.order_id) return false;              // order-born — always preserve
+  const items = Array.isArray(existingRow.line_items) ? existingRow.line_items : [];
+  if (items.length === 0) return true;                 // nothing local to lose
+  return items.every((li) => String(li?.id ?? "").startsWith("qb-"));
+}
+
+/**
+ * Should a pullInvoices row-update also cascade paid-state to the linked
+ * order? Only on the unpaid→paid TRANSITION of a row that HAS a linked
+ * order. Without this, a Sync-All that lands before the webhook/reconcile
+ * flips the invoice paid directly — and the nightly reconcile then skips
+ * it forever (its candidate query filters paid=false), leaving the order
+ * permanently unpaid. The transition guard keeps re-pulls of already-paid
+ * invoices from re-walking the cascade on every sync.
+ */
+export function shouldCascadeImportedPaid(existingRow, isPaidInQb) {
+  return Boolean(
+    isPaidInQb &&
+    existingRow &&
+    existingRow.paid !== true &&
+    existingRow.order_id,
+  );
+}
+
+// ── Adopt-before-create (no-duplicate invariant) ─────────────────────────────
+// When createInvoice is about to CREATE because the local row carries no
+// qb_invoice_id, an invoice for this quote may nonetheless already exist in
+// QB: a concurrent sync from another surface won the race, or a prior sync's
+// write-back was lost. Minting the next -rN there duplicates the invoice
+// (the INV-2026-OW0M1 / Lisa Gotts incident, 2026-07-17 — same books-split
+// shape as Shana Krochmal). Instead, the caller queries QB for the whole
+// DocNumber family (base + -rN) and this picker decides:
+//
+//   { paid }  — a live family member is fully paid → the job is already
+//               invoiced AND collected; caller must refuse to create and
+//               surface "already paid".
+//   { adopt } — a live unpaid member exists → caller UPDATEs it instead of
+//               creating. Prefers a member that already carries a payment
+//               (protects applied money), else the most recently created.
+//   { live }  — all live (non-voided) members, so the caller can warn the
+//               shop when more than one exists (pre-existing damage that
+//               needs a manual void — adoption alone can't fix that).
+//
+// Voided invoices (TotalAmt 0) are ignored: QB keeps them queryable, but
+// updating one would silently resurrect a document the shop chose to kill.
+export function pickQbInvoiceForAdoption(candidates) {
+  const list = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
+  const live = list.filter((inv) => Number(inv?.TotalAmt ?? 0) > 0);
+  const paid = live.find((inv) => isQbInvoicePaid(inv)) || null;
+  if (paid) return { paid, adopt: null, live };
+
+  const createTime = (inv) => {
+    const t = Date.parse(inv?.MetaData?.CreateTime ?? "");
+    return Number.isFinite(t) ? t : 0;
+  };
+  const adopt =
+    live.find((inv) => qbInvoiceHasPayment(inv)) ||
+    live.slice().sort((a, b) => createTime(b) - createTime(a))[0] ||
+    null;
+  return { paid: null, adopt, live };
+}
+
+// ── Authoritative customer merge ─────────────────────────────────────────────
+// The customer payload a caller sends is a snapshot of the customers row as
+// that browser window last saw it — possibly minutes stale, possibly a
+// minimal {id, name} stub (a modal opened without its customer loaded). All
+// of these fields LIVE on the customers row, so when the row is readable the
+// DB is the authority and the payload only fills fields the row lacks.
+// Sending a stub straight to QB is how the duplicate "Lisa Gotts" QB
+// customer was minted: empty email + empty company matched nothing, so a
+// second customer record was created for an existing customer.
+const CUSTOMER_AUTHORITATIVE_FIELDS = [
+  "name", "company", "email", "phone", "address",
+  "qb_customer_id", "tax_exempt", "tax_id", "ship_to_address",
+  "exemption_expires_at", "exemption_states", "exemption_type",
+  "exemption_certificate_number",
+];
+
+export function mergeCustomerAuthoritative(payloadCustomer, dbRow) {
+  if (!dbRow) return payloadCustomer;
+  const merged = { ...(payloadCustomer || {}) };
+  merged.id = payloadCustomer?.id || dbRow.id;
+  for (const field of CUSTOMER_AUTHORITATIVE_FIELDS) {
+    const dbVal = dbRow[field];
+    const hasDbVal = !(dbVal === null || dbVal === undefined || dbVal === "");
+    if (hasDbVal) merged[field] = dbVal;
+    else if (merged[field] === undefined) merged[field] = dbVal ?? null;
+  }
+  return merged;
 }

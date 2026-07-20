@@ -11,7 +11,7 @@ import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profile
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { decideTokenRefresh, buildRefreshedTokenFields } from "../_shared/connectionLogic.js";
 import { captureError } from "../_shared/observability.ts";
-import { claimWebhookEventDetailed, CLAIM_OUTCOMES, extractQbEventId } from "../_shared/webhookIdempotency.js";
+import { claimWebhookEventDetailed, releaseWebhookEvent, CLAIM_OUTCOMES, extractQbEventId } from "../_shared/webhookIdempotency.js";
 import { logEvent } from "../_shared/qbAudit.js";
 import { verifyQbSignature } from "../_shared/qbWebhookSignature.js";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
@@ -30,6 +30,12 @@ import {
   isInvoiceFullyPaid,
   PAID_INVOICE_ACTIONS,
 } from "../_shared/qbWebhookLogic.js";
+import {
+  detectQbInvoiceModification,
+  buildQbMirrorPatch,
+  buildQbModifiedNotification,
+} from "../_shared/qbInvoiceModified.js";
+import { recordShopNotification } from "../_shared/shopNotifications.js";
 // Set secret: npx supabase secrets set QB_WEBHOOK_VERIFIER_TOKEN=<from Intuit Developer Portal>
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
@@ -116,6 +122,63 @@ async function getAccessToken(supabase: any, profile: any): Promise<string> {
 }
 
 // ── Core: find quote by QB invoice ID and mark paid ──────────────────────────
+
+// Mirror a QB-side invoice edit onto the linked local rows (quotes +
+// invoices, matched by qb_invoice_id within the tenant) and notify the
+// shop when the edit created NEW disagreement with the as-sold total.
+// Notify-on-transition only: redelivered webhooks and edits that bring
+// QB into agreement stay silent. One notification per event, preferring
+// the invoice row (that's where the Sync button lives).
+async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId: string, shopOwner: string) {
+  if (!freshInvoice) return;
+  const freshQbTotal = Number(freshInvoice.TotalAmt ?? 0);
+
+  const [{ data: quote }, { data: invoiceRow }] = await Promise.all([
+    supabase.from("quotes")
+      .select("id, quote_id, total, qb_total, paid")
+      .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
+    supabase.from("invoices")
+      .select("id, invoice_id, total, qb_total, paid")
+      .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
+  ]);
+  if (!quote && !invoiceRow) return; // not an InkTracker-linked invoice
+
+  let notified = false;
+  for (const [table, row] of [["invoices", invoiceRow], ["quotes", quote]] as const) {
+    if (!row) continue;
+    const detection = detectQbInvoiceModification({
+      localTotal: row.total,
+      priorQbTotal: row.qb_total,
+      freshQbTotal,
+    });
+    const patch = buildQbMirrorPatch(freshInvoice, row);
+    if (patch) {
+      const { error: patchErr } = await supabase.from(table).update(patch)
+        .eq("id", row.id).eq("shop_owner", shopOwner);
+      if (patchErr) console.error(`[qbWebhook] qb mirror patch failed on ${table} for ${qbInvoiceId}:`, patchErr.message);
+    }
+    if (detection.shouldNotify && !notified) {
+      notified = true;
+      await recordShopNotification(supabase, buildQbModifiedNotification({
+        shopOwner,
+        ref: (table === "invoices" ? (row as any).invoice_id : (row as any).quote_id) || `QB #${qbInvoiceId}`,
+        rowId: row.id,
+        relatedEntity: table === "invoices" ? "invoice" : "quote",
+        qbInvoiceId,
+        localTotal: row.total,
+        freshQbTotal,
+      }));
+      await logEvent(supabase, {
+        shop_owner: shopOwner,
+        action: "qb_invoice_modified",
+        direction: "inbound",
+        status: "success",
+        qb_invoice_id: qbInvoiceId,
+        response_body: { local_total: row.total, qb_total: freshQbTotal, table },
+      });
+    }
+  }
+}
 
 async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: string) {
   // CRITICAL: scope the lookup by BOTH qb_invoice_id and shop_owner.
@@ -292,15 +355,23 @@ async function processNotification(supabase: any, notification: any) {
   // EVERY real webhook returned "No profile found" — so no paid invoice ever
   // converted, even though QB was delivering Payment/Invoice events correctly.
   // Same bug class as the billing webhook fix.
-  const { data: secretRow } = await supabase
+  // Use maybeSingle-free select: if the SAME QBO company is connected from two
+  // InkTracker accounts, two profile_secrets rows share the realm and
+  // .maybeSingle() would ERROR (and, swallowed, drop every webhook for that
+  // realm as "No profile found"). Take the first row with a live token.
+  const { data: secretRows } = await supabase
     .from("profile_secrets")
     .select("profile_id")
     .eq("qb_realm_id", realmId)
-    .maybeSingle();
-  const profile = secretRow ? await loadProfileWithSecrets(supabase, { id: secretRow.profile_id }) : null;
+    .limit(5);
+  let profile: any = null;
+  for (const row of secretRows ?? []) {
+    const p = await loadProfileWithSecrets(supabase, { id: row.profile_id });
+    if (p?.qb_access_token) { profile = p; break; }
+  }
 
   if (!profile?.qb_access_token) {
-    console.error(`[qbWebhook] No profile found for realmId ${realmId}`);
+    console.error(`[qbWebhook] No profile with a live token found for realmId ${realmId}`);
     return;
   }
   // Resolve the shop-owner KEY the quotes/orders are scoped by. For an OWNER
@@ -322,11 +393,21 @@ async function processNotification(supabase: any, notification: any) {
   for (const entity of dataChangeEvent.entities) {
     try {
       if (entity.name === "Payment" && entity.operation === "Create") {
-        // Fetch the payment to find which invoices it paid
+        // Fetch the payment to find which invoices it touched, then verify
+        // each invoice's Balance is actually 0 before flipping local state.
+        // A PARTIAL "Receive payment" in QBO fires this event too — treating
+        // it as fully paid marked the order/invoice paid locally while QB
+        // still showed an open balance, so the remainder was silently never
+        // collected (and an unconverted quote converted on a part-payment).
         const data = await qbGet(accessToken, realmId, `payment/${entity.id}`);
         const invoiceIds = extractInvoiceIdsFromPayment(data?.Payment);
         for (const invId of invoiceIds) {
-          await handlePaidInvoice(supabase, invId, shopOwner);
+          const invData = await qbGet(accessToken, realmId, `invoice/${invId}`);
+          if (isInvoiceFullyPaid(invData?.Invoice)) {
+            await handlePaidInvoice(supabase, invId, shopOwner);
+          } else {
+            console.error(`[qbWebhook] Payment ${entity.id} left invoice ${invId} with an open balance — not marking paid locally`);
+          }
         }
       }
 
@@ -335,6 +416,20 @@ async function processNotification(supabase: any, notification: any) {
         const data = await qbGet(accessToken, realmId, `invoice/${entity.id}`);
         if (isInvoiceFullyPaid(data?.Invoice)) {
           await handlePaidInvoice(supabase, entity.id, shopOwner);
+        }
+        // QB-side EDIT propagation. We used to fetch the fresh invoice
+        // and discard everything but paid state — edited amounts then
+        // coasted invisibly until the nightly reconcile. Mirror the
+        // fresh numbers onto the linked rows' qb_* columns now, and if
+        // the edit makes QB disagree with the as-sold total, notify the
+        // shop in-app ("modified in QuickBooks — sync?"). As-sold
+        // totals are never rewritten here; the shop consents via the
+        // Sync from QuickBooks button. Best-effort: must never break
+        // the webhook.
+        try {
+          await mirrorQbInvoiceEdit(supabase, data?.Invoice, entity.id, shopOwner);
+        } catch (mirrorErr) {
+          console.error(`[qbWebhook] edit mirror failed for invoice ${entity.id}:`, mirrorErr instanceof Error ? mirrorErr.message : String(mirrorErr));
         }
       }
     } catch (err) {
@@ -392,7 +487,35 @@ Deno.serve(async (req) => {
       return new Response("idempotency store unavailable", { status: 503, headers: CORS });
     }
 
-    await Promise.all(notifications.map((n: any) => processNotification(supabase, n)));
+    // Bounded concurrency (was an uncapped Promise.all). Each notification
+    // can trigger QB API calls + a Resend send; a large multi-entity batch
+    // fanning out simultaneously is the exact shape that trips Resend's
+    // ~2 req/s account limit and spikes concurrent QB token refreshes.
+    //
+    // Two-phase idempotency (see _shared/webhookIdempotency.js): the claim
+    // above is only a commit once this work succeeds. If a notification
+    // throws (e.g. token refresh hiccup in processNotification, before its
+    // per-entity try/catch), RELEASE the claim and return 503 so QB
+    // redelivers — otherwise the payment event is permanently dropped from
+    // real-time processing and only the nightly reconcile rescues it, up
+    // to ~24h late. Per-entity errors are still swallowed inside
+    // processNotification by design; the redelivered batch is safe to
+    // re-run because conversion/cascade steps are individually gated.
+    try {
+      const NOTIFICATION_CONCURRENCY = 2;
+      for (let i = 0; i < notifications.length; i += NOTIFICATION_CONCURRENCY) {
+        await Promise.all(
+          notifications
+            .slice(i, i + NOTIFICATION_CONCURRENCY)
+            .map((n: any) => processNotification(supabase, n)),
+        );
+      }
+    } catch (procErr) {
+      await captureError(procErr, { fn: "qbWebhook", phase: "processNotification" });
+      console.error(`[qbWebhook] Processing failed after claim ${dedupId} — releasing claim, asking QB to redeliver`);
+      await releaseWebhookEvent(supabase, "qb", dedupId as string);
+      return new Response("processing failed, retry", { status: 503, headers: CORS });
+    }
 
     // QB expects a 200 response to confirm receipt
     return new Response("ok", { status: 200, headers: CORS });

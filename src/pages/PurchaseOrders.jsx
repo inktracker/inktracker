@@ -22,11 +22,31 @@ import { buildPOCsv, buildPOCsvFilename } from "@/lib/orders/poCsv";
 import { Plus, Trash2, Loader2, Truck, CheckCircle2, AlertCircle, X, GitMerge, Check, Download } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
+import { useReadOnly } from "@/lib/billing-gate";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 
 const STATUS_LABEL = { draft: "Draft", submitted: "Submitted", cancelled: "Cancelled" };
 
+// Free-text field that edits LOCALLY and only persists on blur. The PO detail
+// inputs used to await a DB write on every keystroke and rebind to the server
+// row — so under latency an out-of-order response snapped typed characters
+// back. Local draft state fixes both the snapback and the per-keystroke write.
+// Mount with key={`${po.id}-<field>`} so switching to a different PO remounts
+// it with the new value (editable fields must not effect-sync, but must reseed
+// on identity change).
+function BlurField({ value, onCommit, textarea = false, ...props }) {
+  const [draft, setDraft] = useState(value ?? "");
+  const commit = () => { if ((draft ?? "") !== (value ?? "")) onCommit(draft); };
+  const common = { ...props, value: draft, onChange: (e) => setDraft(e.target.value), onBlur: commit };
+  return textarea ? <textarea {...common} /> : <input {...common} />;
+}
+
 export default function PurchaseOrders() {
   const [user, setUser] = useState(null);
+  // Read-only gate — declared AFTER the user useState so it never
+  // references `user` before initialization. Writable users default
+  // to not-read-only (computeReadOnly returns false for no/active user).
+  const { readOnly, reason, reactivateHref } = useReadOnly(user);
   const [pos, setPos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("drafts"); // drafts | history
@@ -141,7 +161,7 @@ export default function PurchaseOrders() {
   );
 
   async function createDraft() {
-    if (!user) return;
+    if (!user || readOnly) return;
     setCreating(true);
     try {
       const defaults = {
@@ -161,13 +181,13 @@ export default function PurchaseOrders() {
   }
 
   async function patchSelected(patch) {
-    if (!selected) return;
+    if (!selected || readOnly) return;
     const updated = await base44.entities.PurchaseOrder.update(selected.id, patch);
     setPos((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   }
 
   async function deleteSelected() {
-    if (!selected) return;
+    if (!selected || readOnly) return;
     if (!confirm(`Delete "${selected.reference}"? This cannot be undone.`)) return;
     await base44.entities.PurchaseOrder.delete(selected.id);
     setPos((prev) => prev.filter((p) => p.id !== selected.id));
@@ -179,7 +199,7 @@ export default function PurchaseOrders() {
   // come from the first selected. All sources delete after the new
   // row is in place.
   async function mergeMultipleSelected() {
-    if (!user || mergeSelection.size < 2) return;
+    if (!user || readOnly || mergeSelection.size < 2) return;
     // Preserve the order users see in the list (visible's order) so
     // the comma-separated reference and the ship_to inheritance are
     // predictable rather than dependent on Set iteration order.
@@ -220,7 +240,7 @@ export default function PurchaseOrders() {
   // SKUs, sums quantities), update target, delete source. Destination's
   // ship_to / shipping_method / notes are kept as-is.
   async function mergeSelectedInto(targetPO) {
-    if (!selected || !targetPO) return;
+    if (!selected || !targetPO || readOnly) return;
     const sourceLabel = selected.reference || "this draft";
     const destLabel = targetPO.reference || "the destination";
     if (!confirm(
@@ -239,7 +259,7 @@ export default function PurchaseOrders() {
   }
 
   async function submitSelected() {
-    if (!selected) return;
+    if (!selected || readOnly) return;
     const errors = validateForSubmit(selected);
     if (errors.length) {
       setSubmitError(errors.join("\n"));
@@ -294,7 +314,7 @@ export default function PurchaseOrders() {
   // those were handled in the supplier's tool. Still runs the source-order
   // goods auto-mark so the Floor panel reflects the order.
   async function markSubmittedManually() {
-    if (!selected) return;
+    if (!selected || readOnly) return;
     if (!Array.isArray(selected.items) || selected.items.length === 0) {
       setSubmitError("Add at least one item before marking this PO submitted.");
       return;
@@ -349,7 +369,9 @@ export default function PurchaseOrders() {
                 if (mergeMode) setMergeSelection(new Set());
                 setMergeMode((v) => !v);
               }}
-              className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition border ${
+              disabled={readOnly}
+              title={readOnly ? reason : undefined}
+              className={`flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl transition border disabled:opacity-50 disabled:cursor-not-allowed ${
                 mergeMode
                   ? "bg-teal-50 border-teal-300 text-teal-700"
                   : "bg-white border-slate-200 text-slate-600 hover:border-teal-300"
@@ -358,10 +380,12 @@ export default function PurchaseOrders() {
               <GitMerge className="w-4 h-4" /> {mergeMode ? "Exit merge mode" : "Merge POs"}
             </button>
           )}
+          <ReactivateLink show={readOnly} href={reactivateHref} />
           <button
             onClick={createDraft}
-            disabled={creating}
-            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm disabled:opacity-60"
+            disabled={creating || readOnly}
+            title={readOnly ? reason : undefined}
+            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             New PO
@@ -488,6 +512,9 @@ export default function PurchaseOrders() {
           ) : (
             <PoDetail
               po={selected}
+              readOnly={readOnly}
+              reason={reason}
+              reactivateHref={reactivateHref}
               defaultWarehouse={user?.default_ac_warehouse || "CA"}
               threshold={Number(thresholds[selected.supplier]) || 0}
               submitting={submitting}
@@ -535,8 +562,9 @@ export default function PurchaseOrders() {
           </button>
           <button
             onClick={mergeMultipleSelected}
-            disabled={mergeSelection.size < 2 || merging}
-            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
+            disabled={mergeSelection.size < 2 || merging || readOnly}
+            title={readOnly ? reason : undefined}
+            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
           >
             {merging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <GitMerge className="w-3.5 h-3.5" />}
             Merge {mergeSelection.size >= 2 ? mergeSelection.size : ""}
@@ -563,20 +591,28 @@ function defaultShipTo(user) {
   };
 }
 
-function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError }) {
+function PoDetail({ po, readOnly = false, reason = "", reactivateHref, defaultWarehouse = "CA", threshold, submitting, submitError, shippingMethods, shippingMethodsLoading, shippingMethodsError, mergeTargets, mergeOpen, onMergeOpen, onMergeClose, onMergeInto, onPatch, onItemRemove, onItemQty, onItemSku, onDelete, onSubmit, onMarkSubmitted, onDismissError }) {
   const subtotal = poSubtotal(po.items);
   const fp = freightProgress(po.items, threshold);
   const isLocked = po.status !== "draft";
+  // Editing is off when the PO is already submitted (isLocked) OR the
+  // shop is read-only. `isLocked` HIDES edit UI (submitted POs); when the
+  // shop is merely read-only on a still-editable draft we keep the fields
+  // visible but DISABLED with a reactivate hint. `editDisabled` gates the
+  // form inputs; the action buttons OR readOnly into their own disabled.
+  const editDisabled = isLocked || readOnly;
 
   return (
     <div className="bg-white border border-slate-100 rounded-xl p-5 space-y-5">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <input
+          <BlurField
+            key={`${po.id}-reference`}
             value={po.reference || ""}
-            onChange={(e) => onPatch({ reference: e.target.value })}
-            disabled={isLocked}
+            onCommit={(v) => onPatch({ reference: v })}
+            disabled={editDisabled}
+            title={readOnly && !isLocked ? reason : undefined}
             maxLength={!isLocked && po.supplier === "AS Colour" ? AC_REFERENCE_MAX : undefined}
             className={`text-lg font-bold bg-transparent border-b border-transparent hover:border-slate-200 focus:border-teal-400 focus:outline-none w-full disabled:text-slate-500 ${
               (po.reference || "").length > AC_REFERENCE_MAX && po.supplier === "AS Colour" && !isLocked
@@ -595,12 +631,14 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
         </div>
         {!isLocked && (
           <div className="flex items-center gap-1 relative">
+            <ReactivateLink show={readOnly} href={reactivateHref} className="mr-1" />
             {mergeTargets?.length > 0 && (
               <>
                 <button
                   onClick={onMergeOpen}
-                  title="Combine this draft into another draft to hit free freight"
-                  className="text-slate-500 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50"
+                  disabled={readOnly}
+                  title={readOnly ? reason : "Combine this draft into another draft to hit free freight"}
+                  className="text-slate-500 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <GitMerge className="w-4 h-4" />
                 </button>
@@ -613,7 +651,12 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                 )}
               </>
             )}
-            <button onClick={onDelete} className="text-slate-500 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50">
+            <button
+              onClick={onDelete}
+              disabled={readOnly}
+              title={readOnly ? reason : undefined}
+              className="text-slate-500 hover:text-red-500 p-1.5 rounded-lg hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
@@ -645,6 +688,8 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
         <AddItemsPanel
           supplier={po.supplier}
           defaultWarehouse={defaultWarehouse}
+          disabled={readOnly}
+          disabledReason={reason}
           onAddItems={(updater) => onPatch({ items: typeof updater === "function" ? updater(po.items || []) : updater })}
         />
       )}
@@ -680,7 +725,9 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                         <input
                           value={it.sku || ""}
                           onChange={(e) => onItemSku(i, e.target.value)}
-                          className="w-full font-mono text-xs text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                          disabled={editDisabled}
+                          title={readOnly ? reason : undefined}
+                          className="w-full font-mono text-xs text-slate-700 border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-teal-300 disabled:opacity-60 disabled:cursor-not-allowed"
                           placeholder="e.g. 5102-WHI_M-H-M"
                         />
                       )}
@@ -697,15 +744,18 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                             next[i] = { ...next[i], warehouse: e.target.value };
                             onPatch({ items: next });
                           }}
-                          className={`text-[10px] font-bold rounded px-1 py-0.5 border ${
+                          disabled={editDisabled}
+                          className={`text-[10px] font-bold rounded px-1 py-0.5 border disabled:opacity-60 disabled:cursor-not-allowed ${
                             it.warehouse && it.warehouse !== defaultWarehouse
                               ? "border-amber-300 bg-amber-50 text-amber-700"
                               : "border-slate-200 bg-white text-slate-700"
                           }`}
                           title={
-                            it.warehouse && it.warehouse !== defaultWarehouse
-                              ? `Routed to ${it.warehouse} (default is ${defaultWarehouse})`
-                              : `Default warehouse ${defaultWarehouse}`
+                            readOnly
+                              ? reason
+                              : it.warehouse && it.warehouse !== defaultWarehouse
+                                ? `Routed to ${it.warehouse} (default is ${defaultWarehouse})`
+                                : `Default warehouse ${defaultWarehouse}`
                           }
                         >
                           <option value="CA">CA</option>
@@ -722,7 +772,9 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                           min="0"
                           value={it.quantity}
                           onChange={(e) => onItemQty(i, e.target.value)}
-                          className="w-16 text-right border border-slate-200 rounded px-1.5 py-0.5"
+                          disabled={editDisabled}
+                          title={readOnly ? reason : undefined}
+                          className="w-16 text-right border border-slate-200 rounded px-1.5 py-0.5 disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       )}
                     </td>
@@ -734,7 +786,9 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
                       {!isLocked && (
                         <button
                           onClick={() => onItemRemove(i)}
-                          className="text-slate-300 hover:text-red-500 p-1"
+                          disabled={readOnly}
+                          title={readOnly ? reason : undefined}
+                          className="text-slate-300 hover:text-red-500 p-1 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -760,8 +814,10 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
         <div>
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ship to</div>
           <ShipToEditor
+            key={`${po.id}-shipto`}
             value={po.ship_to || {}}
-            disabled={isLocked}
+            disabled={editDisabled}
+            title={readOnly ? reason : undefined}
             onChange={(ship_to) => onPatch({ ship_to })}
           />
         </div>
@@ -771,8 +827,9 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
             <select
               value={po.shipping_method || ""}
               onChange={(e) => onPatch({ shipping_method: e.target.value })}
-              disabled={isLocked || shippingMethodsLoading}
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
+              disabled={editDisabled || shippingMethodsLoading}
+              title={readOnly ? reason : undefined}
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white disabled:opacity-60 disabled:cursor-not-allowed"
             >
               <option value="">
                 {shippingMethodsLoading ? "Loading…" : "Select a method"}
@@ -797,22 +854,28 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
               to the SKU. */}
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Order notes</label>
-            <textarea
+            <BlurField
+              textarea
+              key={`${po.id}-notes`}
               value={po.notes || ""}
-              onChange={(e) => onPatch({ notes: e.target.value })}
-              disabled={isLocked}
+              onCommit={(v) => onPatch({ notes: v })}
+              disabled={editDisabled}
+              title={readOnly ? reason : undefined}
               rows={2}
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
           <div>
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Courier instructions</label>
-            <textarea
+            <BlurField
+              textarea
+              key={`${po.id}-courier`}
               value={po.courier_instructions || ""}
-              onChange={(e) => onPatch({ courier_instructions: e.target.value })}
-              disabled={isLocked}
+              onCommit={(v) => onPatch({ courier_instructions: v })}
+              disabled={editDisabled}
+              title={readOnly ? reason : undefined}
               rows={2}
-              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+              className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -846,8 +909,9 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
           )}
           <button
             onClick={onSubmit}
-            disabled={submitting}
-            className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-60"
+            disabled={submitting || readOnly}
+            title={readOnly ? reason : undefined}
+            className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
             Submit to {po.supplier}
@@ -857,13 +921,16 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
               done. No API call. */}
           <button
             onClick={onMarkSubmitted}
-            disabled={submitting}
-            title="Already placed this order yourself (CSV / Order Assistant)? Mark it submitted without sending anything to the supplier."
-            className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 px-4 py-2 rounded-xl transition disabled:opacity-60"
+            disabled={submitting || readOnly}
+            title={readOnly ? reason : "Already placed this order yourself (CSV / Order Assistant)? Mark it submitted without sending anything to the supplier."}
+            className="w-full flex items-center justify-center gap-2 text-sm font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 px-4 py-2 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <CheckCircle2 className="w-4 h-4" />
             Mark as Submitted (ordered manually)
           </button>
+          <div className="flex justify-center">
+            <ReactivateLink show={readOnly} href={reactivateHref} />
+          </div>
         </div>
       )}
 
@@ -903,16 +970,17 @@ function PoDetail({ po, defaultWarehouse = "CA", threshold, submitting, submitEr
   );
 }
 
-function ShipToEditor({ value, disabled, onChange }) {
+function ShipToEditor({ value, disabled, title, onChange }) {
   function field(key, placeholder, { required } = {}) {
     const isMissing = required && !value[key];
     return (
-      <input
+      <BlurField
         value={value[key] || ""}
-        onChange={(e) => onChange({ ...value, [key]: e.target.value })}
+        onCommit={(v) => onChange({ ...value, [key]: v })}
         disabled={disabled}
+        title={title}
         placeholder={required ? `${placeholder} *` : placeholder}
-        className={`w-full text-sm border rounded-lg px-2.5 py-1.5 ${
+        className={`w-full text-sm border rounded-lg px-2.5 py-1.5 disabled:opacity-60 disabled:cursor-not-allowed ${
           isMissing ? "border-red-300 bg-red-50/30" : "border-slate-200"
         }`}
       />

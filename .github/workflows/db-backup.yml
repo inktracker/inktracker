@@ -1,0 +1,55 @@
+name: DB backup
+
+# Off-platform logical DATA backup of every public table. The Supabase org
+# is on the FREE plan — no automated database backups exist until the Pro
+# upgrade (planned at 5 paying shops). Until then this nightly export is
+# the only recovery point for quotes/orders/invoices/customers/expenses.
+#
+# Schema restores from supabase/migrations/; auth.users identities are NOT
+# covered (auth schema is unreachable over PostgREST) — users re-verify by
+# email after a restore. Storage is covered by storage-backup.yml.
+#
+# Uses the same repo secrets as the storage backup:
+#   SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
+#
+# NOTE: artifact retention is capped (30d) — this is a recovery point, not
+# a substitute for real Supabase backups. Delete this workflow after the
+# Pro upgrade if you'd rather not keep both.
+
+on:
+  schedule:
+    - cron: "0 4 * * *" # 04:00 UTC daily (before storage backup 04:30 + reconcile 05:00)
+  workflow_dispatch: {}
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: Install supabase-js
+        run: npm ci --omit=dev || npm install @supabase/supabase-js@2
+      - name: Export public tables
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] || [ -z "$SUPABASE_URL" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY repo secrets not set."
+            exit 1
+          fi
+          node scripts/backup-database.mjs
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: db-backup/
+          retention-days: 30
+          if-no-files-found: error

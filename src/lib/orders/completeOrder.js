@@ -27,6 +27,12 @@ const COMPLETED_STATUS = "Completed";
  * @param {string} args.today   ISO date string (YYYY-MM-DD)
  * @param {string} args.shopOwner  the authenticated user's email
  * @param {string} [args.invoiceId]  override id for tests; otherwise generated
+ * @param {string} [args.sourceQbInvoiceId]  the originating quote's
+ *   qb_invoice_id, when the quote was already pushed to QuickBooks.
+ *   Stamped onto a freshly created invoice so pullInvoices' primary
+ *   dedup key (qb_invoice_id) matches this row and UPDATES it instead
+ *   of inserting a sibling Q-... row — the complete-before-first-pull
+ *   duplicate window (tester note 2026-07-18).
  *
  * @returns {{
  *   orderUpdate: { id, patch: { status, completed_date } },
@@ -37,7 +43,7 @@ const COMPLETED_STATUS = "Completed";
  */
 export function buildOrderCompletionPlan(
   order,
-  { today, shopOwner, invoiceId, existingInvoice } = {},
+  { today, shopOwner, invoiceId, existingInvoice, sourceQbInvoiceId } = {},
 ) {
   if (!order || typeof order !== "object") {
     throw new Error("buildOrderCompletionPlan: order required");
@@ -141,8 +147,13 @@ export function buildOrderCompletionPlan(
     //   - deposit_pct/deposit_paid: credits a paid deposit (was absent → over-charge)
     additional_charges: order.additional_charges ?? null,
     discount_type: order.discount_type || "percent",
+    discount_description: order.discount_description ?? null,
     deposit_pct: order.deposit_pct ?? 0,
     deposit_paid: !!order.deposit_paid,
+    // QB linkage inherited from the originating quote (null when the
+    // quote never went to QB). Without it, this row and the later
+    // QB pull can't recognize each other — see param doc above.
+    qb_invoice_id: sourceQbInvoiceId || null,
     paid: false,
     status: "Sent",
     line_items: order.line_items || [],

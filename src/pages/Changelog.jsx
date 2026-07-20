@@ -1,3 +1,5 @@
+import { usePageMeta } from "@/lib/seo/usePageMeta";
+
 // Public changelog. Add new entries to the top of the ENTRIES array.
 // Keep it honest — only ship things you actually shipped.
 
@@ -56,6 +58,7 @@ const ENTRIES = [
 ];
 
 export default function Changelog() {
+  usePageMeta({ title: "Changelog — InkTracker", path: "/changelog" });
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-6">

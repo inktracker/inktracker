@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import {
@@ -26,10 +26,17 @@ import { isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { normalizeShipTo, isShipToComplete, parseUsAddress, addressOneLine } from "@/lib/tax/address";
 import AddressFields from "@/components/shared/AddressFields";
 import { buildAddonsByScope, getActiveAddonLabels } from "@/lib/pricing/extrasScopes";
+import JobFeesSection from "@/components/quotes/JobFeesSection";
 import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { isRushManuallyOverridden, nextRushRateForDueDateChange } from "@/lib/pricing/rushOverride";
+import { hasEventPackages, normalizeEventPackages } from "@/lib/pricing/eventPackages";
+import EventPackageModal from "./EventPackageModal";
+import CollapsibleSection from "../shared/CollapsibleSection";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
+import { DEPOSITS_ENABLED } from "@/lib/deposits";
+import ReactivateLink from "../shared/ReactivateLink";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -80,6 +87,7 @@ function blankQuote(defaultTaxRate = 8.265) {
     line_items: [newLineItem()],
     discount: 0,
     discount_type: "percent",
+    discount_description: "",
     tax_rate: defaultTaxRate,
     deposit_pct: 0,
     deposit_paid: false,
@@ -107,6 +115,11 @@ export default function QuoteEditorModal({
   onClose,
   onAddCustomer,
   defaultTaxRate,
+  // Subscription-lapsed read-only mode. When true, Save is disabled so
+  // no write can be committed; a reactivate hint appears in the footer.
+  // Inputs stay editable (harmless) — disabling Save is the write gate.
+  readOnly = false,
+  reactivateHref,
 }) {
   const [q, setQ] = useState(() => {
     const base = quote ? { ...quote } : blankQuote(defaultTaxRate || 8.265);
@@ -132,6 +145,13 @@ export default function QuoteEditorModal({
     return base;
   });
 
+  // True once the operator explicitly picks a Turnaround option (or a
+  // saved quote's rush_rate already disagrees with the tier table —
+  // which can only mean it was overridden before saving). While set
+  // AND the choice is a waive (rate 0), due-date edits stop
+  // auto-applying the tier rate. Tester 2026-07-18: "the rush fee
+  // should not automatically be enforced when toggled off."
+  const [rushManuallySet, setRushManuallySet] = useState(() => isRushManuallyOverridden(quote));
   const [showNewClient, setShowNewClient] = useState(false);
   const [nc, setNc] = useState({
     name: "",
@@ -160,6 +180,8 @@ export default function QuoteEditorModal({
   // "Calculate tax" — fetch QB's authoritative tax for the ship-to and fill the
   // rate, so the quote matches what QB will charge (no send-time hold).
   const [calcTax, setCalcTax] = useState({ loading: false, error: "", result: null });
+  // Event / package pricing picker (Account → Pricing → Event Packages).
+  const [showEventPackages, setShowEventPackages] = useState(false);
   // Inline ship-to editor — edit the selected customer's ship-to address right
   // here (it drives the tax), instead of leaving to Customers → edit. Persisted
   // back to the customer on calculate/save.
@@ -335,10 +357,33 @@ export default function QuoteEditorModal({
     }));
   }
 
+  // Autoscroll to a just-added / just-duplicated garment. Add appends to the
+  // bottom and Duplicate inserts below the source — both land off-screen, so
+  // people re-clicked thinking nothing happened and racked up stray garments.
+  // handlers stamp the new line's id here; the effect below scrolls to it once
+  // it's rendered, then clears the stamp. A DOM-node map keyed by line id
+  // survives reorders/removals (index would go stale).
+  const lineItemNodes = useRef(new Map());
+  const pendingScrollId = useRef(null);
+
+  useEffect(() => {
+    const id = pendingScrollId.current;
+    if (!id) return;
+    pendingScrollId.current = null;
+    const node = lineItemNodes.current.get(id);
+    if (!node) return;
+    // rAF so the scroll runs after layout of the newly-committed node.
+    requestAnimationFrame(() => {
+      node.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  }, [q.line_items]);
+
   function addLineItem() {
+    const item = newLineItem();
+    pendingScrollId.current = item.id;
     setQ((prev) => ({
       ...prev,
-      line_items: [...prev.line_items, newLineItem()],
+      line_items: [...prev.line_items, item],
     }));
   }
 
@@ -446,6 +491,7 @@ export default function QuoteEditorModal({
   function duplicateLineItem(idx) {
     const li = q.line_items[idx];
     const copy = { ...li, id: uid() };
+    pendingScrollId.current = copy.id;
     setQ((prev) => ({
       ...prev,
       line_items: [
@@ -548,6 +594,10 @@ export default function QuoteEditorModal({
         throw new Error(msg || "Couldn't reach QuickBooks. Try again.");
       }
       if (data?.error) throw new Error(data.error);
+      // Row-lock contention (another calc for this quote holds the QB
+      // Estimate lock). Without this guard the undefined effectiveRate
+      // below would silently write tax_rate: 0 onto the quote.
+      if (data?.inFlight) throw new Error(data.message || "A tax calculation for this quote is already running — try again in a moment.");
       const rate = Number(data.effectiveRate || 0);
       setQ((prev) => ({ ...prev, tax_rate: rate }));
       setCalcTax({
@@ -560,10 +610,59 @@ export default function QuoteEditorModal({
     }
   }
 
+  // Quote-number customization is only allowed BEFORE approval (Joe
+  // 2026-07-20): once approved, the number is on the customer's
+  // paperwork; once pushed to QB it's the QB DocNumber and a local
+  // rename would desync (mirror of the invoice-rename rule, #657).
+  // Gate on the SAVED quote's state (the `quote` prop), not the
+  // in-editor status dropdown.
+  const quoteIdLocked =
+    ["Approved", "Approved and Paid"].includes(quote?.status) || !!quote?.qb_invoice_id;
+
   async function handleSave() {
     setSaving(true);
     setSaveError("");
     try {
+      // Quote-number change: validate + in-use flag before anything
+      // writes. Checks BOTH quotes and invoices in the shop — quote ids
+      // become QB DocNumbers, and the pull's DocNumber matching relies
+      // on them staying distinct. The (shop_owner, quote_id) unique
+      // index (20260523) remains the race backstop.
+      const nextQuoteId = (q.quote_id || "").trim();
+      if (!nextQuoteId) {
+        setSaveError("Quote number can't be empty.");
+        setSaving(false);
+        return;
+      }
+      if (nextQuoteId.length > 40) {
+        setSaveError("Keep the quote number under 40 characters.");
+        setSaving(false);
+        return;
+      }
+      if (nextQuoteId !== (quote?.quote_id ?? nextQuoteId) && quoteIdLocked) {
+        setSaveError("This quote's number can no longer be changed (approved or already in QuickBooks).");
+        setSaving(false);
+        return;
+      }
+      if (nextQuoteId !== quote?.quote_id) {
+        const scope = shopScope(user);
+        const [dupQuotes, dupInvoices] = await Promise.all([
+          base44.entities.Quote.filter({ shop_owner: scope, quote_id: nextQuoteId }).catch(() => []),
+          base44.entities.Invoice.filter({ shop_owner: scope, invoice_id: nextQuoteId }).catch(() => []),
+        ]);
+        const quoteClash = (dupQuotes || []).find((r) => r.id !== quote?.id);
+        if (quoteClash) {
+          setSaveError(`⚑ ${nextQuoteId} is already used by another quote.`);
+          setSaving(false);
+          return;
+        }
+        if ((dupInvoices || []).length > 0) {
+          setSaveError(`⚑ ${nextQuoteId} is already used by an invoice.`);
+          setSaving(false);
+          return;
+        }
+        if (nextQuoteId !== q.quote_id) setQ((prev) => ({ ...prev, quote_id: nextQuoteId }));
+      }
       // Persist unique imprint presets to the customer record BEFORE closing the modal
       if (q.customer_id) {
         try {
@@ -655,6 +754,9 @@ export default function QuoteEditorModal({
       const stampedQuote = { ...q, line_items: stampedItems };
       await onSave({
         ...stampedQuote,
+        // Explicit: the trimmed/validated number from the check above —
+        // the setQ trim is async and wouldn't land in this save.
+        quote_id: nextQuoteId,
         subtotal: sub,
         setup_total: setupTotalSnap,
         is_reorder: !!q.is_reorder,
@@ -691,9 +793,26 @@ export default function QuoteEditorModal({
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl my-4">
         <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-t-2xl">
           <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest">
-              {q.quote_id}
-            </div>
+            {quoteIdLocked ? (
+              <div
+                className="text-xs font-semibold text-slate-500 uppercase tracking-widest"
+                title={quote?.qb_invoice_id
+                  ? "Number locked — this quote is in QuickBooks (its DocNumber). Rename in QB if needed."
+                  : "Number locked — approved quotes keep their number."}
+              >
+                {q.quote_id}
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={q.quote_id}
+                onChange={(e) => setQ({ ...q, quote_id: e.target.value })}
+                maxLength={40}
+                title="Customize the quote number (editable until the quote is approved)"
+                aria-label="Quote number"
+                className="text-xs font-semibold text-slate-500 uppercase tracking-widest bg-transparent border border-transparent hover:border-slate-300 focus:border-slate-300 rounded px-1 py-0.5 -ml-1 w-44 focus:outline-none focus:ring-1 focus:ring-teal-300"
+              />
+            )}
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Quote Builder</h2>
           </div>
 
@@ -825,13 +944,15 @@ export default function QuoteEditorModal({
                             (1000 * 60 * 60 * 24)
                         )
                       : null;
-                    // Variable rush: the rate is determined by the
-                    // shop's rushTiers + the days-out. Any change in
-                    // due date can move the rate to a different tier
-                    // (or to zero when standard).
-                    const autoRate = diffDays !== null
-                      ? getRushRateForDaysOut(diffDays)
-                      : q.rush_rate;
+                    // Variable rush: the rate follows the due date via
+                    // the shop's rushTiers — EXCEPT when the operator
+                    // has explicitly waived rush (Standard picked, rate
+                    // 0). A manual waive sticks; see rushOverride.js.
+                    const autoRate = nextRushRateForDueDateChange({
+                      diffDays,
+                      currentRate: q.rush_rate,
+                      rushManuallySet,
+                    });
 
                     setQ({
                       ...q,
@@ -846,9 +967,20 @@ export default function QuoteEditorModal({
                   const diff = Math.round((new Date(q.due_date) - new Date(q.date)) / (1000 * 60 * 60 * 24));
                   const rate = getRushRateForDaysOut(diff);
                   if (rate <= 0) return null;
+                  const actual = parseFloat(q.rush_rate) || 0;
+                  // Honest badge: what's actually charged, not just what
+                  // the tier table suggests — a waived rush must not
+                  // display as if a fee were applied.
+                  if (actual <= 0) {
+                    return (
+                      <div className="text-xs text-slate-500 font-semibold mt-1">
+                        Rush waived — tier table suggests +{Math.round(rate * 100)}%
+                      </div>
+                    );
+                  }
                   return (
                     <div className="text-xs text-orange-500 font-semibold mt-1">
-                      ⚡ Rush +{Math.round(rate * 100)}% (auto from tier table)
+                      ⚡ Rush +{Math.round(actual * 100)}%{Math.abs(actual - rate) < 0.0001 ? " (auto from tier table)" : ""}
                     </div>
                   );
                 })()}
@@ -1001,14 +1133,20 @@ export default function QuoteEditorModal({
                 })().map((opt) => (
                   <button
                     key={opt.key}
-                    onClick={() => setQ({
-                      ...q,
-                      rush_rate: opt.rate,
-                      // Slide the due date to match the picked tier's
-                      // representative window. Operators were doing
-                      // this by hand after every toggle change.
-                      due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
-                    })}
+                    onClick={() => {
+                      // An explicit Turnaround pick is a manual choice —
+                      // from here on, a waive (Standard) survives
+                      // due-date edits instead of being re-enforced.
+                      setRushManuallySet(true);
+                      setQ({
+                        ...q,
+                        rush_rate: opt.rate,
+                        // Slide the due date to match the picked tier's
+                        // representative window. Operators were doing
+                        // this by hand after every toggle change.
+                        due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
+                      });
+                    }}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
                       Math.abs((q.rush_rate || 0) - opt.rate) < 0.0001
                         ? "border-teal-600 bg-teal-50"
@@ -1097,19 +1235,27 @@ export default function QuoteEditorModal({
             )}
 
             {q.line_items.map((li, idx) => (
-              <LineItemEditor
+              <div
                 key={li.id}
-                li={li}
-                rushRate={q.rush_rate}
-                extras={q.extras}
-                addonsByScope={addonsByScope}
-                allLineItems={q.line_items}
-                savedImprints={savedImprints}
-                onChange={(updated) => updateLineItem(idx, updated)}
-                onRemove={() => removeLineItem(idx)}
-                onDuplicate={() => duplicateLineItem(idx)}
-                canRemove={q.line_items.length > 1}
-              />
+                ref={(node) => {
+                  if (node) lineItemNodes.current.set(li.id, node);
+                  else lineItemNodes.current.delete(li.id);
+                }}
+                style={{ scrollMarginTop: "80px" }}
+              >
+                <LineItemEditor
+                  li={li}
+                  rushRate={q.rush_rate}
+                  extras={q.extras}
+                  addonsByScope={addonsByScope}
+                  allLineItems={q.line_items}
+                  savedImprints={savedImprints}
+                  onChange={(updated) => updateLineItem(idx, updated)}
+                  onRemove={() => removeLineItem(idx)}
+                  onDuplicate={() => duplicateLineItem(idx)}
+                  canRemove={q.line_items.length > 1}
+                />
+              </div>
             ))}
           </div>
 
@@ -1158,6 +1304,17 @@ export default function QuoteEditorModal({
               </div>
 
               {parseFloat(q.discount) > 0 && (
+                <input
+                  type="text"
+                  value={q.discount_description || ""}
+                  onChange={(e) => setQ({ ...q, discount_description: e.target.value })}
+                  placeholder="Discount reason (optional) — e.g. loyal customer, bulk"
+                  maxLength={120}
+                  className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+              )}
+
+              {parseFloat(q.discount) > 0 && (
                 <div className="flex justify-between text-sm text-emerald-600">
                   <span>Savings</span>
                   <span className="font-semibold">
@@ -1197,7 +1354,14 @@ export default function QuoteEditorModal({
                   shop quotes only; broker quotes use broker_tax_rate. The
                   ship-to is editable inline (saves back to the customer). */}
               {!isBrokerQuote(q) && q.customer_id && shipTo && billTo && (
-                <div className="space-y-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5">
+                <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 rounded-xl p-2.5">
+                <CollapsibleSection
+                  title="Addresses & QuickBooks Tax"
+                  defaultCollapsed
+                  storageKey="quote-tax-address-collapsed"
+                  className="[&>button]:mb-0 [&>button+*]:mt-3 space-y-0"
+                >
+                <div className="space-y-3">
                   <AddressFields
                     label="Billing"
                     sublabel="saves to the customer"
@@ -1237,6 +1401,8 @@ export default function QuoteEditorModal({
                   {calcTax.error && (
                     <p className="text-[11px] text-amber-600">{calcTax.error}</p>
                   )}
+                </div>
+                </CollapsibleSection>
                 </div>
               )}
 
@@ -1326,6 +1492,16 @@ export default function QuoteEditorModal({
                 </div>
               )}
 
+              {/* Job fees — the per_job add-on category, toggled once for the
+                  whole order (configured in Pricing & Fees). Self-hides when the
+                  shop has none. */}
+              <JobFeesSection
+                addonsByScope={addonsByScope}
+                additionalCharges={q.additional_charges}
+                subtotal={totals.subtotal}
+                onChange={(next) => setQ({ ...q, additional_charges: next })}
+              />
+
               {/* Additional fees — one-off named charges (shipping, rush, …)
                   with a custom amount and a taxable toggle. Taxable charges
                   join the taxed base; non-taxable are added after tax. */}
@@ -1346,13 +1522,27 @@ export default function QuoteEditorModal({
                   <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-slate-500 font-semibold">Additional Fees</span>
-                      <button
-                        type="button"
-                        onClick={addCharge}
-                        className="text-xs text-teal-600 font-semibold hover:text-teal-800"
-                      >
-                        + Add fee
-                      </button>
+                      <div className="flex items-center gap-3">
+                        {/* Event / package pricing (Reagan's live-printing
+                            tiers): inserts a package's itemized charges. Only
+                            shows when the shop has packages configured. */}
+                        {hasEventPackages(getShopPricingConfig()) && (
+                          <button
+                            type="button"
+                            onClick={() => setShowEventPackages(true)}
+                            className="text-xs text-teal-600 font-semibold hover:text-teal-800"
+                          >
+                            + Event package
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={addCharge}
+                          className="text-xs text-teal-600 font-semibold hover:text-teal-800"
+                        >
+                          + Add fee
+                        </button>
+                      </div>
                     </div>
                     {charges.length === 0 && (
                       <p className="text-xs text-slate-500">Add shipping, rush, or other one-off charges.</p>
@@ -1424,6 +1614,7 @@ export default function QuoteEditorModal({
                 </span>
               </div>
 
+              {DEPOSITS_ENABLED && (
               <div className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -1463,6 +1654,7 @@ export default function QuoteEditorModal({
                   </span>
                 )}
               </div>
+              )}
             </div>
           </div>
         </div>
@@ -1475,11 +1667,14 @@ export default function QuoteEditorModal({
           )}
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || readOnly}
+            title={readOnly ? "Your subscription has ended — reactivate to create and edit" : undefined}
             className="flex-1 bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 rounded-xl transition"
           >
             {saving ? "Saving…" : "Save Quote"}
           </button>
+          {/* Explains the disabled Save; renders nothing when writable. */}
+          <ReactivateLink show={readOnly} href={reactivateHref} className="self-center" />
           <button
             onClick={onClose}
             className="px-5 border border-slate-200 dark:border-slate-700 text-slate-500 text-sm font-semibold py-2.5 rounded-xl hover:bg-slate-100 transition"
@@ -1488,6 +1683,22 @@ export default function QuoteEditorModal({
           </button>
         </div>
       </div>
+
+      {showEventPackages && (
+        <EventPackageModal
+          eventConfig={normalizeEventPackages(getShopPricingConfig()?.eventPackages)}
+          onInsert={(rows) =>
+            setQ((prev) => ({
+              ...prev,
+              additional_charges: [
+                ...(Array.isArray(prev.additional_charges) ? prev.additional_charges : []),
+                ...rows,
+              ],
+            }))
+          }
+          onClose={() => setShowEventPackages(false)}
+        />
+      )}
     </div>,
     document.body,
   );

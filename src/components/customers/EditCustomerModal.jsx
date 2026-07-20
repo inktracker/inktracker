@@ -1,8 +1,11 @@
 import { openSignedArtwork } from "@/lib/uploadFile";
 import { normalizeShipTo } from "@/lib/tax/address";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
+import PlacementSelect from "@/components/shared/PlacementSelect";
+import { LOCATIONS } from "@/components/shared/pricing";
 import AddressFields from "@/components/shared/AddressFields";
 import ExemptionFields from "@/components/customers/ExemptionFields";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 
 // The Edit Customer modal — fields, addresses, exemption, payment terms,
 // saved imprints editor, artwork library, and the delete confirm. Pure move
@@ -25,7 +28,10 @@ export default function EditCustomerModal({
   uploadingArtwork,
   currentEditingArtwork,
   handleRemoveArtwork,
+  readOnly = false,
+  reactivateHref,
 }) {
+  const readOnlyReason = "Your subscription has ended — reactivate to create and edit.";
   return (
     <ModalBackdrop
       onClose={() => {
@@ -205,17 +211,17 @@ export default function EditCustomerModal({
                     </div>
                     <div className="w-28">
                       <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Location</label>
-                      <select
+                      <PlacementSelect
                         value={imp.location || "Front"}
-                        onChange={(e) => {
+                        onChange={(val) => {
                           const updated = [...editing.saved_imprints];
-                          updated[i] = { ...updated[i], location: e.target.value };
+                          updated[i] = { ...updated[i], location: val };
                           setEditing({ ...editing, saved_imprints: updated });
                         }}
+                        options={LOCATIONS}
+                        customPlaceholder="Custom location"
                         className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900 focus:outline-none"
-                      >
-                        {["Front","Back","Left Chest","Right Chest","Left Sleeve","Right Sleeve","Pocket","Hood","Other"].map(l => <option key={l}>{l}</option>)}
-                      </select>
+                      />
                     </div>
                     <div className="w-16">
                       <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-0.5">Width</label>
@@ -322,10 +328,13 @@ export default function EditCustomerModal({
             </div>
 
             <label
-              className={`flex items-center gap-2 cursor-pointer w-fit text-sm font-semibold px-4 py-2 rounded-xl border transition ${
-                uploadingArtwork
-                  ? "bg-slate-100 text-slate-500 border-slate-200 dark:border-slate-700"
-                  : "bg-teal-600 text-white border-teal-600 hover:bg-teal-700"
+              title={readOnly ? readOnlyReason : undefined}
+              className={`flex items-center gap-2 w-fit text-sm font-semibold px-4 py-2 rounded-xl border transition ${
+                readOnly
+                  ? "bg-slate-100 text-slate-400 border-slate-200 dark:border-slate-700 opacity-50 cursor-not-allowed"
+                  : uploadingArtwork
+                  ? "bg-slate-100 text-slate-500 border-slate-200 dark:border-slate-700 cursor-pointer"
+                  : "bg-teal-600 text-white border-teal-600 hover:bg-teal-700 cursor-pointer"
               }`}
             >
               {uploadingArtwork ? "Uploading…" : "Choose File & Upload Artwork"}
@@ -333,9 +342,10 @@ export default function EditCustomerModal({
                 type="file"
                 className="hidden"
                 onChange={handleArtworkUpload}
-                disabled={uploadingArtwork}
+                disabled={uploadingArtwork || readOnly}
               />
             </label>
+            <ReactivateLink show={readOnly} href={reactivateHref} />
           </div>
 
           {currentEditingArtwork.length === 0 ? (
@@ -386,7 +396,9 @@ export default function EditCustomerModal({
                     </a>
                     <button
                       onClick={() => handleRemoveArtwork(art.id)}
-                      className="text-xs font-semibold text-red-500 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition"
+                      disabled={readOnly}
+                      title={readOnly ? readOnlyReason : undefined}
+                      className="text-xs font-semibold text-red-500 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Remove
                     </button>
@@ -405,7 +417,9 @@ export default function EditCustomerModal({
             <div className="flex gap-2">
               <button
                 onClick={() => handleDelete(editing.id)}
-                className="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+                disabled={readOnly}
+                title={readOnly ? readOnlyReason : undefined}
+                className="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Yes, Delete
               </button>
@@ -421,11 +435,13 @@ export default function EditCustomerModal({
           <div className="flex gap-2 pt-2 items-center">
             <button
               onClick={handleSaveEdit}
-              disabled={editSaving}
-              className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+              disabled={editSaving || readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-400 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
             >
               {editSaving ? "Saving…" : "Save Changes"}
             </button>
+            <ReactivateLink show={readOnly} href={reactivateHref} />
             {editSaved && (
               <span className="text-sm font-semibold text-emerald-600 flex items-center gap-1">
                 <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0L3.3 9.7a1 1 0 011.4-1.4L8.5 12l6.8-6.7a1 1 0 011.4 0z" clipRule="evenodd" /></svg>
@@ -434,7 +450,9 @@ export default function EditCustomerModal({
             )}
             <button
               onClick={() => setConfirmDelete(true)}
-              className="ml-auto text-red-400 border border-red-200 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-red-50 transition"
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="ml-auto text-red-400 border border-red-200 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Delete
             </button>

@@ -16,6 +16,8 @@ import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profile
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { decideTokenRefresh, buildRefreshedTokenFields } from "../_shared/connectionLogic.js";
 import { claimWebhookEvent, releaseWebhookEvent, extractStripeEventId } from "../_shared/webhookIdempotency.js";
+import { sendResendEmail } from "../_shared/resendClient.js";
+import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import { insertShopNotification } from "../_shared/notifications.js";
 import {
   renderEmailLayout,
@@ -39,7 +41,7 @@ const STRIPE_WEBHOOK_SECRET  = Deno.env.get("STRIPE_WEBHOOK_SECRET") ?? "";
 const SUPABASE_URL           = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY   = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RESEND_API_KEY         = Deno.env.get("RESEND_API_KEY") ?? "";
-const FROM_EMAIL             = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
+const FROM_EMAIL             = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 const FROM_NAME              = Deno.env.get("FROM_NAME")  ?? "InkTracker";
 
 const CORS = {
@@ -189,10 +191,22 @@ async function sendOwnerNotification(quote: any, amountPaid: number, isDeposit: 
     logoUrl: shopLogoUrl ?? undefined,
   });
 
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: `${FROM_NAME} <${FROM_EMAIL}>`, to: [quote.shop_owner], subject, html }),
+  // Retried + logged: the result of this fetch used to be discarded
+  // entirely — a Resend error silently lost the payment notification.
+  const result = await sendResendEmail(
+    { from: `${FROM_NAME} <${FROM_EMAIL}>`, to: [quote.shop_owner], subject, html },
+    { apiKey: RESEND_API_KEY },
+  );
+  await logNotificationAttempt(serviceClient(), {
+    shop_owner: quote.shop_owner,
+    event_type: "payment_confirmation",
+    quote_id: quote.id ?? null,
+    recipient_email: quote.shop_owner,
+    recipient_role: "shop_owner",
+    subject,
+    status: result.ok ? "sent" : "failed",
+    failure_reason: result.ok ? null : result.reason,
+    resend_id: result.id ?? null,
   });
 }
 
@@ -237,10 +251,21 @@ async function sendCustomerConfirmation(quote: any, amountPaid: number, isDeposi
     logoUrl: shopLogoUrl ?? undefined,
   });
 
-  await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: `${shopName} <${FROM_EMAIL}>`, to: [customerEmail], subject, html }),
+  // Retried + logged (see sendOwnerNotification).
+  const result = await sendResendEmail(
+    { from: `${shopName} <${FROM_EMAIL}>`, to: [customerEmail], subject, html },
+    { apiKey: RESEND_API_KEY },
+  );
+  await logNotificationAttempt(serviceClient(), {
+    shop_owner: quote.shop_owner,
+    event_type: "payment_confirmation",
+    quote_id: quote.id ?? null,
+    recipient_email: customerEmail,
+    recipient_role: "customer",
+    subject,
+    status: result.ok ? "sent" : "failed",
+    failure_reason: result.ok ? null : result.reason,
+    resend_id: result.id ?? null,
   });
 }
 

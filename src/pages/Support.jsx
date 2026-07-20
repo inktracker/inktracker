@@ -1,3 +1,5 @@
+import { usePageMeta } from "@/lib/seo/usePageMeta";
+
 // Public support page. Required by the QuickBooks App Store listing —
 // they want a URL where users can get help, not just an email. This
 // page also covers the most common QuickBooks-specific support
@@ -7,6 +9,7 @@
 // When you change content here, also bump the "Last updated" date.
 
 export default function Support() {
+  usePageMeta({ title: "Support & Help — InkTracker", path: "/support" });
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-6">
       <div className="max-w-2xl mx-auto bg-white rounded-2xl border border-slate-200 p-8 space-y-8">

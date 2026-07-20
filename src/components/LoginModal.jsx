@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { useModalA11y } from "@/lib/useModalA11y";
+import { track } from "@/lib/analytics";
 
 // MFA is enforced by <MfaGate> in AuthenticatedApp, not here. This
 // modal's only job is to establish a Supabase session — the gate kicks
@@ -161,6 +162,10 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
           options: { emailRedirectTo: `${window.location.origin}/` },
         });
         if (signUpError) throw signUpError;
+        // Funnel step 3: the account was created (distinct from opening the
+        // modal). Fired before the confirmation-email branch so it counts
+        // whether or not email confirmation is enabled.
+        track("signup_submitted");
         // If email confirmation is disabled, user is immediately signed in
         if (data?.session) {
           onClose();
@@ -273,8 +278,8 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               <div>
                 <div className="text-sm font-semibold text-teal-900">New users</div>
                 <p className="text-sm text-teal-800 leading-6 mt-1">
-                  After creating your account, access remains pending until it is approved. Use
-                  the same email address each time.
+                  Create your account and set up your shop, then add a payment method to start
+                  your 14-day free trial. Use the same email address each time.
                 </p>
               </div>
             </div>

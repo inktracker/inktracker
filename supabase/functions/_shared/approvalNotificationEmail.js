@@ -1,3 +1,5 @@
+import { sendResendEmail } from "./resendClient.js";
+
 // Email notifications fired when a client approves something via the
 // public links (quote-approval, artwork-approval). Reaches the shop
 // owner OR the broker depending on the quote shape, so the right
@@ -16,10 +18,13 @@
 // nothing user-visible). The 2026-05-31 "approval emails not
 // arriving" report.
 //
-// quotes@inktracker.app is verified end-to-end (SPF/DKIM/DMARC on
-// inktracker.app pointing at Resend). Any future sender address must
-// be added in Resend's dashboard before being used here.
-const SEND_FROM_DEFAULT = "quotes@inktracker.app";
+// The Resend-verified sending domain is info.inktracker.app — NOT the
+// root domain. This default previously pointed at quotes@inktracker.app
+// (root), and because APPROVAL_SEND_FROM was never set, every approval /
+// payment notification 403'd silently from June 1 to July 2, 2026. Any
+// future sender address must be added in Resend's dashboard before being
+// used here.
+const SEND_FROM_DEFAULT = "quotes@info.inktracker.app";
 
 // ── Recipient routing ───────────────────────────────────────────────
 //
@@ -262,37 +267,30 @@ export async function sendApprovalNotification({ to, subject, html, reply_to }, 
   // when the SLN2 test wired through to this code path.
   const runtimeEnv = env ?? (typeof Deno !== "undefined" ? Deno.env : undefined);
   const apiKey  = runtimeEnv?.get?.("RESEND_API_KEY") || "";
-  const sendFrom = runtimeEnv?.get?.("APPROVAL_SEND_FROM") || SEND_FROM_DEFAULT;
+  // Fall back to FROM_EMAIL — the secret every other sender reads — before
+  // the hardcoded default, so this path can never diverge from them again.
+  const sendFrom =
+    runtimeEnv?.get?.("APPROVAL_SEND_FROM") ||
+    runtimeEnv?.get?.("FROM_EMAIL") ||
+    SEND_FROM_DEFAULT;
 
   if (!apiKey)  return { ok: false, reason: "no_api_key" };
   if (!to)      return { ok: false, reason: "no_recipient" };
   if (!subject) return { ok: false, reason: "no_subject" };
 
-  try {
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${apiKey}`,
-        "Content-Type":  "application/json",
-      },
-      body: JSON.stringify({
-        from: `InkTracker <${sendFrom}>`,
-        to: [to],
-        subject,
-        html,
-        ...(reply_to ? { reply_to } : {}),
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      console.error("[approvalNotification] Resend error:", res.status, body);
-      return { ok: false, reason: `resend_${res.status}` };
-    }
-    return { ok: true };
-  } catch (err) {
-    console.error("[approvalNotification] threw:", err?.message || err);
-    return { ok: false, reason: "exception" };
+  // Transport (retry/backoff on 429/5xx/network) lives in resendClient —
+  // this used to be a bare fetch where any transient error lost the email.
+  const result = await sendResendEmail({
+    from: `InkTracker <${sendFrom}>`,
+    to: [to],
+    subject,
+    html,
+    ...(reply_to ? { reply_to } : {}),
+  }, { apiKey, env: runtimeEnv });
+  if (!result.ok) {
+    return { ok: false, reason: result.reason || "exception" };
   }
+  return { ok: true, id: result.id };
 }
 
 // ── notification_log writer ─────────────────────────────────────────
@@ -311,15 +309,18 @@ export async function sendApprovalNotification({ to, subject, html, reply_to }, 
 /**
  * @typedef {Object} NotificationLogContext
  * @property {string} shop_owner       Required. Tenant scope.
- * @property {'quote_approval'|'artwork_approval'|'quote_payment'} event_type
+ * @property {'quote_approval'|'artwork_approval'|'quote_payment'|'quote_send'|'reply'|'payment_confirmation'|'trial_reminder'|'signup_notify'} event_type
+ *   Mirror of the notification_log_event_type_check constraint
+ *   (20260825000000, extended by 20260905000000) — keep the two lists
+ *   in lockstep.
  * @property {string} recipient_email
- * @property {string} [recipient_role]  Free-form log field (e.g. 'shop_owner', 'broker')
- * @property {string} [quote_id]       UUID
- * @property {string} [order_id]       UUID
- * @property {string} [subject]
+ * @property {string|null} [recipient_role]  'shop_owner' | 'broker' | 'customer'
+ * @property {string|null} [quote_id]       quotes.id UUID (NOT the human "Q-####")
+ * @property {string|null} [order_id]       UUID
+ * @property {string|null} [subject]
  * @property {'sent'|'failed'|'skipped'} status
- * @property {string} [failure_reason] Required when status='failed' or 'skipped'.
- * @property {string} [resend_id]      Resend's message id, when known.
+ * @property {string|null} [failure_reason] Required when status='failed' or 'skipped'.
+ * @property {string|null} [resend_id]      Resend's message id, when known.
  */
 
 /**
@@ -374,6 +375,34 @@ export async function sendAndLogApprovalNotification(supabase, args) {
   const { shop_owner, event_type, quote_id, order_id, recipient_email, recipient_role,
           to, subject, html, reply_to } = args;
 
+  // Dedup guard for payment confirmations. A quote is paid once, so the
+  // "payment received" email must go out at most once per quote — no
+  // matter how many code paths converge on it. Three do: qbWebhook (on
+  // the QB payment webhook), the nightly qbReconcile (catches missed
+  // webhooks), and QB itself occasionally redelivers the same webhook.
+  // Without this, the shop owner gets two (or more) identical
+  // confirmation emails for a single payment. Scoped to 'quote_payment'
+  // with a known quote_id; every other event type falls through
+  // unchanged. If the lookup itself fails we proceed with the send —
+  // one duplicate email is a lesser evil than silently dropping a real
+  // payment notification.
+  if (event_type === "quote_payment" && quote_id) {
+    try {
+      const { data: prior } = await supabase
+        .from("notification_log")
+        .select("id")
+        .eq("quote_id", quote_id)
+        .eq("event_type", "quote_payment")
+        .eq("status", "sent")
+        .limit(1);
+      if (Array.isArray(prior) && prior.length > 0) {
+        return { ok: true, deduped: true, reason: "already_notified" };
+      }
+    } catch (err) {
+      console.error("[notification_log] payment dedup check failed:", err?.message || err);
+    }
+  }
+
   // Skipped path — caller decided not to send (e.g., no recipient
   // resolved). Still log so the row exists for forensics.
   if (!to) {
@@ -395,6 +424,9 @@ export async function sendAndLogApprovalNotification(supabase, args) {
     subject,
     status: result.ok ? "sent" : "failed",
     failure_reason: result.ok ? null : result.reason,
+    // Resend's message id — joins a log row to the Resend dashboard. The
+    // column existed since 20260618 but nothing populated it.
+    resend_id: result.id ?? null,
   });
   return result;
 }

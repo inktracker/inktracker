@@ -8,6 +8,8 @@ import EmptyState from "../components/shared/EmptyState";
 import ShoppingList from "../components/inventory/ShoppingList";
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
+import { useReadOnly } from "@/lib/billing-gate";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -32,6 +34,7 @@ export default function Inventory() {
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedProducts, setExpandedProducts] = useState(new Set());
   const [user, setUser] = useState(null);
+  const { readOnly, reason, reactivateHref } = useReadOnly(user);
   const [saveStatus, setSaveStatus] = useState(null);
   const [restockSetup, setRestockSetup] = useState(null);
   const [ssCart, setSsCart] = useState(() => {
@@ -109,7 +112,7 @@ export default function Inventory() {
       return;
     }
     setItems(prev => [...prev, created].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
-    setForm({ item:"", sku:"", category:"Blanks", qty:0, unit:"pcs", reorder:0, cost:0 });
+    setForm({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0 });
     setShowForm(false);
     setAdding(false);
   }
@@ -199,9 +202,11 @@ export default function Inventory() {
           <button onClick={() => setShowCatEditor(v=>!v)} className="bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-3 py-2 rounded-xl transition hover:border-teal-300">
             {showCatEditor ? <X className="w-4 h-4" /> : "Categories"}
           </button>
-          <button onClick={() => setShowForm(v=>!v)} className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm">
+          <button onClick={() => setShowForm(v=>!v)} disabled={readOnly} title={readOnly ? reason : undefined}
+            className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
             {showForm ? <X className="w-4 h-4" /> : <><Plus className="w-4 h-4" /> Add Item</>}
           </button>
+          <ReactivateLink show={readOnly} href={reactivateHref} className="self-center" />
           {ssCart.length > 0 && (
             <button onClick={() => setShowCart(true)}
               className="relative flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold px-3 py-2 rounded-xl transition">
@@ -243,6 +248,9 @@ export default function Inventory() {
           by supplier, with bulk "Mark as Ordered" + per-item Receive. */}
       <ShoppingList
         items={items}
+        readOnly={readOnly}
+        reason={reason}
+        reactivateHref={reactivateHref}
         onItemUpdated={(updated) => setItems(prev => prev.map(i => i.id === updated.id ? updated : i))}
         onRefresh={() => {
           if (!user?.email) return;
@@ -313,13 +321,17 @@ export default function Inventory() {
               </div>
             ))}
           </div>
-          <button
-            onClick={handleAdd}
-            disabled={adding || !form.item.trim() || !form.sku.trim()}
-            className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
-          >
-            {adding ? "Adding…" : "Add Item"}
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleAdd}
+              disabled={readOnly || adding || !form.item.trim() || !form.sku.trim()}
+              title={readOnly ? reason : undefined}
+              className="bg-teal-600 hover:bg-teal-700 disabled:bg-teal-300 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-xl transition"
+            >
+              {adding ? "Adding…" : "Add Item"}
+            </button>
+            <ReactivateLink show={readOnly} href={reactivateHref} />
+          </div>
         </div>
       )}
 
@@ -353,7 +365,7 @@ export default function Inventory() {
         )}
 
         {!loading && items.length === 0 && (
-          <EmptyState type="inventory" onAction={() => { setForm({ item:"", sku:"", category:"Blanks", qty:0, unit:"pcs", reorder:0, cost:0 }); setShowForm(true); }} />
+          <EmptyState type="inventory" onAction={() => { setForm({ item:"", sku:"", category:"Blanks", qty:0, unit:"pcs", reorder:0, cost:0 }); setShowForm(true); }} readOnly={readOnly} reactivateHref={reactivateHref} />
         )}
 
         {grouped.map(group => {
@@ -402,12 +414,14 @@ export default function Inventory() {
                 {/* Actions */}
                 <div className="flex-shrink-0 flex items-center gap-1">
                   <button onClick={(e) => { e.stopPropagation(); setRestockSetup(group); }}
-                    className="p-1.5 text-slate-300 hover:text-orange-500 transition" title="Setup Restock">
+                    disabled={readOnly}
+                    className="p-1.5 text-slate-300 hover:text-orange-500 transition disabled:opacity-50 disabled:cursor-not-allowed" title={readOnly ? reason : "Setup Restock"}>
                     <ShoppingCart className="w-4 h-4" />
                   </button>
                   {!hasVariants && (
                     <button onClick={(e) => { e.stopPropagation(); setEditing({...firstItem}); }}
-                      className="p-1.5 text-slate-300 hover:text-slate-600 transition" title="Edit">
+                      disabled={readOnly}
+                      className="p-1.5 text-slate-300 hover:text-slate-600 transition disabled:opacity-50 disabled:cursor-not-allowed" title={readOnly ? reason : "Edit"}>
                       <Edit3 className="w-4 h-4" />
                     </button>
                   )}
@@ -437,7 +451,8 @@ export default function Inventory() {
                       <div className="col-span-2 flex justify-center">
                         <input type="number" min="0" defaultValue={item.qty}
                           onBlur={e => updateQty(item.id, e.target.value)}
-                          className="w-16 text-center font-bold text-slate-800 border border-slate-200 rounded-lg py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300" />
+                          disabled={readOnly} title={readOnly ? reason : undefined}
+                          className="w-16 text-center font-bold text-slate-800 border border-slate-200 rounded-lg py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300 disabled:opacity-50 disabled:cursor-not-allowed" />
                       </div>
                       <div className="col-span-1 text-center text-xs text-slate-500">{item.reorder}</div>
                       <div className="col-span-1 text-right text-sm text-slate-600">{fmtMoney(item.cost)}</div>
@@ -449,7 +464,8 @@ export default function Inventory() {
                       </div>
                       <div className="col-span-1 text-right">
                         <button onClick={() => setEditing({...item})}
-                          className="p-1 text-slate-300 hover:text-slate-600 transition">
+                          disabled={readOnly} title={readOnly ? reason : "Edit"}
+                          className="p-1 text-slate-300 hover:text-slate-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -467,6 +483,9 @@ export default function Inventory() {
         <RestockModal
           group={restockSetup}
           supabaseFuncUrl={SUPABASE_FUNC_URL}
+          readOnly={readOnly}
+          reason={reason}
+          reactivateHref={reactivateHref}
           onAddToCart={addToSsCart}
           onSave={async (updates) => {
             for (const { id, ...fields } of updates) {
@@ -489,6 +508,9 @@ export default function Inventory() {
           onClose={() => setShowCart(false)}
           supabaseFuncUrl={SUPABASE_FUNC_URL}
           user={user}
+          readOnly={readOnly}
+          reason={reason}
+          reactivateHref={reactivateHref}
         />
       )}
 
@@ -539,14 +561,18 @@ export default function Inventory() {
                 </div>
               ))}
             </div>
-            <div className="flex gap-2 pt-2">
-              <button onClick={handleEdit} disabled={saveStatus === "saving" || saveStatus === "saved"}
-                className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition ${saveStatus === "saved" ? "bg-emerald-600 text-white" : "bg-teal-600 hover:bg-teal-700 text-white"} disabled:opacity-80`}>
+            <div className="flex gap-2 pt-2 items-center">
+              <button onClick={handleEdit} disabled={readOnly || saveStatus === "saving" || saveStatus === "saved"}
+                title={readOnly ? reason : undefined}
+                className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition ${saveStatus === "saved" ? "bg-emerald-600 text-white" : "bg-teal-600 hover:bg-teal-700 text-white"} disabled:opacity-50 disabled:cursor-not-allowed`}>
                 {saveStatus === "saving" && <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>}
                 {saveStatus === "saved" && <><Check className="w-4 h-4" /> Saved</>}
                 {!saveStatus && "Save Changes"}
               </button>
-              <button onClick={() => handleDelete(editing.id)} className="flex items-center gap-1.5 text-red-400 border border-red-200 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-red-50 transition ml-auto">
+              <ReactivateLink show={readOnly} href={reactivateHref} />
+              <button onClick={() => handleDelete(editing.id)} disabled={readOnly}
+                title={readOnly ? reason : undefined}
+                className="flex items-center gap-1.5 text-red-400 border border-red-200 text-sm font-semibold px-4 py-2 rounded-xl hover:bg-red-50 transition ml-auto disabled:opacity-50 disabled:cursor-not-allowed">
                 <Trash2 className="w-3.5 h-3.5" /> Delete
               </button>
             </div>
@@ -557,7 +583,7 @@ export default function Inventory() {
   );
 }
 
-function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) {
+function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart, readOnly, reason, reactivateHref }) {
   const firstItem = group.items[0];
   const [styleNumber, setStyleNumber] = useState(firstItem?.ss_style_number || "");
   const [ssColor, setSsColor] = useState(firstItem?.ss_color || "");
@@ -703,10 +729,14 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
         </div>
 
         <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between">
-          <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+            <ReactivateLink show={readOnly} href={reactivateHref} />
+          </div>
           <div className="flex gap-2">
-            <button onClick={handleSave} disabled={saving || saved}
-              className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-80 ${saved ? "bg-emerald-600 text-white" : "bg-white border border-teal-200 text-teal-600 hover:bg-teal-50"}`}>
+            <button onClick={handleSave} disabled={readOnly || saving || saved}
+              title={readOnly ? reason : undefined}
+              className={`flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-80 disabled:cursor-not-allowed ${saved ? "bg-emerald-600 text-white" : "bg-white border border-teal-200 text-teal-600 hover:bg-teal-50"}`}>
               {saving && <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>}
               {saved && <><Check className="w-4 h-4" /> Saved</>}
               {!saving && !saved && "Save Settings"}
@@ -757,8 +787,9 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
               } finally {
                 setOrdering(false);
               }
-            }} disabled={ordering}
-              className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white transition disabled:opacity-60">
+            }} disabled={readOnly || ordering}
+              title={readOnly ? reason : undefined}
+              className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white transition disabled:opacity-60 disabled:cursor-not-allowed">
               {ordering ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
               {ordering ? "Adding…" : "Add to S&S Cart"}
             </button>
@@ -769,7 +800,7 @@ function RestockModal({ group, supabaseFuncUrl, onSave, onClose, onAddToCart }) 
   );
 }
 
-function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }) {
+function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user, readOnly, reason, reactivateHref }) {
   const [ordering, setOrdering] = useState(false);
   const [orderResult, setOrderResult] = useState(null);
   const [orderError, setOrderError] = useState("");
@@ -906,10 +937,18 @@ function SsCartModal({ cart, onRemove, onClear, onClose, supabaseFuncUrl, user }
 
         <div className="px-6 py-4 border-t border-slate-100 space-y-3">
           {cart.length > 0 && !orderResult && (
-            <button onClick={handlePlaceOrder} disabled={ordering}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-sm font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-2">
-              {ordering ? <><Loader2 className="w-4 h-4 animate-spin" /> Placing Order...</> : <><ShoppingCart className="w-4 h-4" /> Place Order with S&S ({totalQty} items)</>}
-            </button>
+            <>
+              <button onClick={handlePlaceOrder} disabled={readOnly || ordering}
+                title={readOnly ? reason : undefined}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold py-2.5 rounded-xl transition flex items-center justify-center gap-2">
+                {ordering ? <><Loader2 className="w-4 h-4 animate-spin" /> Placing Order...</> : <><ShoppingCart className="w-4 h-4" /> Place Order with S&S ({totalQty} items)</>}
+              </button>
+              {readOnly && (
+                <div className="text-center">
+                  <ReactivateLink show={readOnly} href={reactivateHref} />
+                </div>
+              )}
+            </>
           )}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">

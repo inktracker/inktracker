@@ -200,6 +200,14 @@ export function extractProofImageUrls(quote) {
 
 // ── buildSendQuoteEmailRequest ──────────────────────────────────────
 
+// The sendQuoteEmail edge function OOMs (546 WORKER_LIMIT) somewhere between
+// a 25 MB body (verified fine) and the 94 MB one a shop's 4200×4200 logo once
+// produced. Upload + PDF-embed downscaling should keep PDFs ~1 MB now; this is
+// the last-ditch net so a pathological PDF degrades to "email without
+// attachment" (the customer still gets the payment link) instead of a failed
+// send that also strands the already-created QB invoice.
+export const MAX_PDF_ATTACHMENT_B64_CHARS = 15 * 1024 * 1024;
+
 /**
  * Build the request body for the `sendQuoteEmail` edge function.
  * All keys are explicit so the wire contract is auditable in one
@@ -237,6 +245,14 @@ export function buildSendQuoteEmailRequest({
     shopName,
     fallback: "Your Shop",
   });
+
+  if (pdfBase64 && pdfBase64.length > MAX_PDF_ATTACHMENT_B64_CHARS) {
+    console.warn(
+      `[buildSendQuoteEmailRequest] dropping ${Math.round(pdfBase64.length / 1024 / 1024)} MB ` +
+      "PDF attachment — payload this large would OOM the sendQuoteEmail edge function (546)."
+    );
+    pdfBase64 = null;
+  }
 
   return {
     customerEmails: recipients,

@@ -12,6 +12,8 @@
 import { useEffect, useRef, useState } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { displayFirstName } from "@/lib/displayName";
+import { useReadOnly } from "@/lib/billing-gate";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 import { MessageCircle, X, Send, Loader2, Sparkles } from "lucide-react";
 
 const STORAGE_KEY_PREFIX = "inktracker-onboarding-assistant:";
@@ -34,6 +36,10 @@ const BROKER_SUGGESTED_QUESTIONS = [
 export default function OnboardingAssistant({ user }) {
   const storageKey = user?.id ? `${STORAGE_KEY_PREFIX}${user.id}` : null;
   const isBroker = user?.role === "broker";
+  // The assistant is a paid feature — the edge function blocks lapsed subs
+  // server-side (requireActiveSubscription). Gate the input in read-only mode
+  // so the user gets an honest reactivate prompt instead of a raw non-2xx error.
+  const { readOnly, reactivateHref } = useReadOnly(user);
   const SUGGESTED_QUESTIONS = isBroker ? BROKER_SUGGESTED_QUESTIONS : SHOP_SUGGESTED_QUESTIONS;
 
   const [open, setOpen] = useState(false);
@@ -86,7 +92,7 @@ export default function OnboardingAssistant({ user }) {
 
   async function send(text) {
     const trimmed = String(text || "").trim();
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || readOnly) return;
     setError(null);
 
     const nextHistory = [...messages, { role: "user", content: trimmed }].slice(-MAX_HISTORY);
@@ -182,7 +188,7 @@ export default function OnboardingAssistant({ user }) {
 
           {/* Messages */}
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-slate-50">
-            {messages.length === 0 && (
+            {messages.length === 0 && !readOnly && (
               <div className="space-y-3">
                 <div className="text-sm text-slate-600 leading-relaxed">
                   {(() => {
@@ -238,30 +244,38 @@ export default function OnboardingAssistant({ user }) {
             )}
           </div>
 
-          {/* Input */}
-          <form
-            onSubmit={handleSubmit}
-            className="border-t border-slate-200 bg-white p-2 flex items-end gap-2"
-          >
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask about pricing, integrations, sending quotes…"
-              rows={1}
-              className="flex-1 resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300 max-h-32"
-              disabled={sending}
-            />
-            <button
-              type="submit"
-              disabled={sending || !input.trim()}
-              aria-label="Send"
-              className="shrink-0 w-9 h-9 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white flex items-center justify-center transition"
+          {/* Input — or, when read-only, an honest reactivate prompt instead of
+              letting the send fail against the server's subscription gate. */}
+          {readOnly ? (
+            <div className="border-t border-slate-200 bg-white p-3 text-center text-sm text-slate-500 flex flex-col items-center gap-1.5">
+              <span>The Setup Assistant is available on an active plan.</span>
+              <ReactivateLink show href={reactivateHref} />
+            </div>
+          ) : (
+            <form
+              onSubmit={handleSubmit}
+              className="border-t border-slate-200 bg-white p-2 flex items-end gap-2"
             >
-              <Send className="w-4 h-4" />
-            </button>
-          </form>
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask about pricing, integrations, sending quotes…"
+                rows={1}
+                className="flex-1 resize-none text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-200 focus:border-teal-300 max-h-32"
+                disabled={sending}
+              />
+              <button
+                type="submit"
+                disabled={sending || !input.trim()}
+                aria-label="Send"
+                className="shrink-0 w-9 h-9 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white flex items-center justify-center transition"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </form>
+          )}
         </div>
       )}
     </>

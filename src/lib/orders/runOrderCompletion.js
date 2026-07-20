@@ -17,10 +17,17 @@
 import { buildOrderCompletionPlan } from "./completeOrder";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
+import { shopScope } from "@/lib/shopScope";
 
-export async function runOrderCompletion({ order, userEmail, base44 }) {
+// Takes the whole `user` object (not an email) and derives the tenant
+// key itself: when a manager or employee completes an order, the
+// invoice/performance rows must land under the OWNER's email
+// (user.shop_owner), never the team member's own — otherwise they're
+// invisible to the shop and the modal offers to create a duplicate.
+export async function runOrderCompletion({ order, user, base44 }) {
   if (!order) throw new Error("runOrderCompletion: order required");
-  if (!userEmail) throw new Error("runOrderCompletion: userEmail required");
+  const shopOwner = shopScope(user);
+  if (!shopOwner) throw new Error("runOrderCompletion: user with a resolvable shop required");
 
   const today = todayInShopTz();
 
@@ -28,16 +35,17 @@ export async function runOrderCompletion({ order, userEmail, base44 }) {
   // duplicate invoice row whenever the Send-Quote path had already
   // pushed one to QB (the bug Joe hit 2026-05-12 with Shana K).
   let existingInvoice = null;
+  let sourceQbInvoiceId = null;
   try {
     const byOrderId = await base44.entities.Invoice.filter({
-      shop_owner: userEmail,
+      shop_owner: shopOwner,
       order_id: order.order_id,
     });
     if (byOrderId.length > 0) {
       existingInvoice = byOrderId[0];
     } else if (order.quote_id) {
       const byQuoteId = await base44.entities.Invoice.filter({
-        shop_owner: userEmail,
+        shop_owner: shopOwner,
         invoice_id: order.quote_id,
       });
       if (byQuoteId.length > 0) existingInvoice = byQuoteId[0];
@@ -46,17 +54,45 @@ export async function runOrderCompletion({ order, userEmail, base44 }) {
     // Walk Quote.converted_order_id → quote_id to recover the link.
     if (!existingInvoice) {
       const originatingQuotes = await base44.entities.Quote.filter({
-        shop_owner: userEmail,
+        shop_owner: shopOwner,
         converted_order_id: order.order_id,
       });
       const qId = originatingQuotes?.[0]?.quote_id;
+      sourceQbInvoiceId = originatingQuotes?.[0]?.qb_invoice_id || null;
       if (qId) {
         const byReversedQuoteId = await base44.entities.Invoice.filter({
-          shop_owner: userEmail,
+          shop_owner: shopOwner,
           invoice_id: qId,
         });
         if (byReversedQuoteId.length > 0) existingInvoice = byReversedQuoteId[0];
       }
+    }
+
+    // Resolve the originating quote's QB linkage. When the quote was
+    // pushed to QB but the Invoices page never pulled (so no invoices
+    // row exists yet), the fresh invoice we're about to create must
+    // carry quote.qb_invoice_id — that's pullInvoices' primary dedup
+    // key. Without it, completing an order before the first pull left
+    // a null-qb_invoice_id INV- row that the next pull couldn't match,
+    // so it inserted the same QB invoice again as a Q-... sibling
+    // (tester note 2026-07-18, "does it make a duplicate").
+    if (!sourceQbInvoiceId && order.quote_id) {
+      const sourceQuotes = await base44.entities.Quote.filter({
+        shop_owner: shopOwner,
+        quote_id: order.quote_id,
+      });
+      sourceQbInvoiceId = sourceQuotes?.[0]?.qb_invoice_id || null;
+    }
+
+    // Fourth dedup: an invoices row already carrying that QB id under
+    // a different DocNumber (e.g. QB renamed it). Most authoritative
+    // match of all — mirrors pullInvoices' own priority order.
+    if (!existingInvoice && sourceQbInvoiceId) {
+      const byQbId = await base44.entities.Invoice.filter({
+        shop_owner: shopOwner,
+        qb_invoice_id: sourceQbInvoiceId,
+      });
+      if (byQbId.length > 0) existingInvoice = byQbId[0];
     }
   } catch (err) {
     console.error("[runOrderCompletion] failed to look up existing invoice:", err);
@@ -67,8 +103,9 @@ export async function runOrderCompletion({ order, userEmail, base44 }) {
 
   const plan = buildOrderCompletionPlan(order, {
     today,
-    shopOwner: userEmail,
+    shopOwner,
     existingInvoice,
+    sourceQbInvoiceId,
   });
 
   if (plan.invoiceLink) {
@@ -85,7 +122,7 @@ export async function runOrderCompletion({ order, userEmail, base44 }) {
     if (order.pdf_url) {
       await base44.entities.BrokerFile.create({
         broker_id: order.broker_id,
-        shop_owner: userEmail,
+        shop_owner: shopOwner,
         order_id: order.order_id,
         customer_name: order.customer_name,
         file_url: order.pdf_url,
@@ -102,7 +139,7 @@ export async function runOrderCompletion({ order, userEmail, base44 }) {
   notifyBrokerOfShopAction({
     quote: { ...updated, quote_id: updated.order_id || updated.quote_id },
     action: "shop_completed_order",
-    shopEmail: userEmail,
+    shopEmail: shopOwner,
   });
 
   return updated;

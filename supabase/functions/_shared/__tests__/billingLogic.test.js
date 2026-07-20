@@ -19,6 +19,8 @@ import {
   resolveShopOwnerKey,
   isCustomerStaleError,
   isCustomerDeleted,
+  cancellationFieldsFromSubscription,
+  isCancellationNewlyScheduled,
 } from "../billingLogic.js";
 
 // ── Role gate ─────────────────────────────────────────────────────────
@@ -548,5 +550,49 @@ describe("subscriptionBlocksWrites", () => {
     expect(pastDueGraceElapsed({ status: "past_due" }, NOW)).toBe(false);              // no stamp
     expect(pastDueGraceElapsed({ status: "past_due", pastDueSince: daysFromNow(-2) }, NOW)).toBe(false);
     expect(pastDueGraceElapsed({ status: "past_due", pastDueSince: daysFromNow(-9) }, NOW)).toBe(true);
+  });
+});
+
+// ── Pending-cancellation display state ────────────────────────────────
+describe("cancellationFieldsFromSubscription", () => {
+  it("maps a pending cancel to the flag + ISO period-end date", () => {
+    // 2026-07-09T00:00:00Z = 1783555200 unix seconds
+    const out = cancellationFieldsFromSubscription({
+      cancel_at_period_end: true,
+      current_period_end: 1783555200,
+    });
+    expect(out.cancel_at_period_end).toBe(true);
+    expect(out.subscription_ends_at).toBe("2026-07-09T00:00:00.000Z");
+  });
+
+  it("clears both fields when not canceling", () => {
+    expect(cancellationFieldsFromSubscription({ cancel_at_period_end: false, current_period_end: 1783555200 }))
+      .toEqual({ cancel_at_period_end: false, subscription_ends_at: null });
+  });
+
+  it("returns a null date when pending but period_end is missing", () => {
+    expect(cancellationFieldsFromSubscription({ cancel_at_period_end: true }))
+      .toEqual({ cancel_at_period_end: true, subscription_ends_at: null });
+  });
+
+  it("coerces missing/undefined subscription to a clean cleared shape", () => {
+    expect(cancellationFieldsFromSubscription(undefined))
+      .toEqual({ cancel_at_period_end: false, subscription_ends_at: null });
+    expect(cancellationFieldsFromSubscription({}))
+      .toEqual({ cancel_at_period_end: false, subscription_ends_at: null });
+  });
+});
+
+describe("isCancellationNewlyScheduled (email transition guard)", () => {
+  it("emails only on the false→true transition", () => {
+    expect(isCancellationNewlyScheduled(false, true)).toBe(true);   // just scheduled → send
+    expect(isCancellationNewlyScheduled(true, true)).toBe(false);   // already pending → no re-send
+    expect(isCancellationNewlyScheduled(true, false)).toBe(false);  // un-cancel → clears, no email
+    expect(isCancellationNewlyScheduled(false, false)).toBe(false); // unrelated update → no email
+  });
+  it("treats a missing/undefined prior flag as not-pending", () => {
+    expect(isCancellationNewlyScheduled(undefined, true)).toBe(true);
+    expect(isCancellationNewlyScheduled(null, true)).toBe(true);
+    expect(isCancellationNewlyScheduled(undefined, false)).toBe(false);
   });
 });

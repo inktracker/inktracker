@@ -170,3 +170,42 @@ describe.each([
     expect(options).toHaveLength(1);
   });
 });
+
+// Bug story (2026-07-17, Lisa Gotts): a brandless match ("customer supplied
+// goods" typed into the style field) fell back to the literal string
+// "Unknown Brand", which applySelectedMatch persisted onto the line and every
+// description builder then printed on the quote email, PDF, and QB invoice
+// ("Unknown Brand Customer Supplied Goods Natural | OS:400 | …"). The
+// contract now: brandName stays EMPTY (so the line keeps the user's typed
+// brand, or stays blank); only the dropdown LABEL says "Unknown brand".
+describe.each([
+  ["shop editor",   buildBrandOptionsShop],
+  ["broker editor", buildBrandOptionsBroker],
+])("buildBrandOptions — brandless match (%s)", (_name, buildBrandOptions) => {
+  const BRANDLESS = [{
+    id: "cs-1",
+    brandName: "",
+    styleNumber: "CUSTOMER SUPPLIED GOODS",
+    description: "Customer Supplied Goods",
+    colors: [],
+  }];
+
+  it("never emits the literal 'Unknown Brand' as brandName", () => {
+    const [option] = buildBrandOptions(BRANDLESS, "customer supplied goods");
+    expect(option.brandName).toBe("");
+  });
+
+  it("keeps a human label for the dropdown", () => {
+    const [option] = buildBrandOptions(BRANDLESS, "customer supplied goods");
+    expect(option.label).toMatch(/^Unknown brand — /);
+  });
+
+  it("keeps option ids unique between a brandless and a branded match with the same style id", () => {
+    const mixed = [
+      ...BRANDLESS,
+      { ...BRANDLESS[0], brandName: "Gildan" },
+    ];
+    const ids = buildBrandOptions(mixed, "customer supplied goods").map((o) => o.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

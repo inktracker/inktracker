@@ -19,7 +19,7 @@
 // is unchanged — once a fee is snapshotted onto li.extras it
 // computes identically regardless of which scope it came from.
 
-import { getLineExtras } from "./extras";
+import { getLineExtras, normalizeExtraBasis } from "./extras";
 
 const TECHNIQUE_EMBROIDERY = "Embroidery";
 
@@ -55,6 +55,9 @@ export function sliceToAddons(slice, defaultLabels = {}) {
     label: slice.extraLabels?.[key] || defaultLabels[key] || autoLabel(key),
     rate: parseFloat(slice.extras[key]) || 0,
     mode: slice.extraModes?.[key] === "percent" ? "percent" : "flat",
+    // Category (per_print / per_garment / per_job). Absent → per_garment, so
+    // every existing fee behaves exactly as before.
+    basis: normalizeExtraBasis(slice.extraBasis?.[key]),
   }));
   return list.sort((a, b) =>
     (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: "base" })
@@ -151,12 +154,20 @@ export function getAddonsForTechnique(byScope, technique) {
  */
 export function getActiveAddonLabels(li, quote, cfg) {
   const lineExtras = getLineExtras(li, quote || {});
-  const activeKeys = Object.keys(lineExtras || {}).filter((k) => !!lineExtras[k]);
+  // Line-level (per_garment) fees + per-print fees attached to each imprint.
+  const activeKeys = [...new Set([
+    ...Object.keys(lineExtras || {}).filter((k) => !!lineExtras[k]),
+    ...(li?.imprints || []).flatMap((im) =>
+      Object.keys(im?.extras || {}).filter((k) => !!im.extras[k])
+    ),
+  ])];
   if (!activeKeys.length) return [];
   const byScope = buildAddonsByScope(cfg || {});
-  const technique = (li?.imprints || [])[0]?.technique;
+  // Resolve labels across ALL the line's techniques, not just the first — a fee
+  // toggled for a non-first location must still label correctly in descriptions.
+  const techniques = [...new Set((li?.imprints || []).map((im) => im?.technique).filter(Boolean))];
   const labelByKey = {};
-  for (const a of getAddonsForTechnique(byScope, technique)) {
+  for (const a of getAddonsForTechniques(byScope, techniques)) {
     if (a && a.key) labelByKey[a.key] = a.label;
   }
   return activeKeys.map((k) => labelByKey[k] || autoLabel(k));
@@ -166,6 +177,102 @@ export function pruneExtrasForTechnique(extras, byScope, technique) {
   if (!extras || typeof extras !== "object") return {};
   const list = getAddonsForTechnique(byScope, technique);
   const allowed = new Set((list || []).map((a) => a && a.key).filter(Boolean));
+  const out = {};
+  for (const [k, v] of Object.entries(extras)) {
+    if (allowed.has(k)) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Union of add-ons across ALL of a line's imprint techniques, deduped by key.
+ *
+ * A line's add-ons must not be gated to the FIRST imprint's technique — a line
+ * with an Embroidery front and a Screen Print back should still surface the
+ * Screen Print "underbase" fee for the back, even though it isn't the first
+ * location. (Kato's report, 2026-07: "add underbase to the second print location
+ * isn't possible if I don't select it for the first.") With no techniques,
+ * falls back to the root (Screen Print) scope — same default as the single-
+ * technique resolver. First occurrence wins on a key collision across scopes.
+ *
+ * @param {{root:any[], embroidery:any[], custom:Record<string, any[]>}|null|undefined} byScope
+ * @param {(string|undefined)[]|undefined} techniques
+ * @returns {any[]}  sorted alphabetically by label, deduped by key
+ */
+export function getAddonsForTechniques(byScope, techniques) {
+  if (!byScope) return [];
+  const techs = Array.isArray(techniques) ? techniques.filter(Boolean) : [];
+  const source = techs.length ? [...new Set(techs)] : [undefined];
+  const seen = new Set();
+  const out = [];
+  for (const t of source) {
+    for (const a of getAddonsForTechnique(byScope, t)) {
+      if (a && a.key && !seen.has(a.key)) {
+        seen.add(a.key);
+        out.push(a);
+      }
+    }
+  }
+  return out.sort((a, b) =>
+    (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: "base" })
+  );
+}
+
+/**
+ * Prune extras against the union of ALL the line's techniques. A key survives if
+ * ANY current technique's addon list allows it — so changing one location's
+ * technique never wipes a fee that a DIFFERENT location still supports (the bug
+ * the single-technique prune caused on mixed-technique lines).
+ */
+/**
+ * All per-JOB add-ons across every scope (root + embroidery + custom), deduped
+ * by key. Per-job fees apply to the whole quote regardless of technique, so the
+ * quote-level "Job fees" section shows them all in one place — unlike per_print/
+ * per_garment fees, which are technique-scoped on each line.
+ *
+ * @param {{root:any[], embroidery:any[], custom:Record<string, any[]>}|null|undefined} byScope
+ * @returns {any[]}  per_job add-ons, deduped by key, sorted by label
+ */
+export function getJobAddons(byScope) {
+  if (!byScope) return [];
+  const all = [
+    ...(byScope.root || []),
+    ...(byScope.embroidery || []),
+    ...Object.values(byScope.custom || {}).flat(),
+  ];
+  const seen = new Set();
+  const out = [];
+  for (const a of all) {
+    if (a && a.key && a.basis === "per_job" && !seen.has(a.key)) {
+      seen.add(a.key);
+      out.push(a);
+    }
+  }
+  return out.sort((x, y) => (x.label || "").localeCompare(y.label || "", undefined, { sensitivity: "base" }));
+}
+
+/**
+ * Line-level add-ons only — per_print + per_garment (NOT per_job, which is
+ * toggled once on the quote). Used by the per-line add-on toggle block.
+ */
+export function excludeJobAddons(list) {
+  return (list || []).filter((a) => a && a.basis !== "per_job");
+}
+
+/**
+ * Add-ons of a single category. Absent basis counts as per_garment (the
+ * default). Used to split fees between the line-level block (per_garment) and
+ * each imprint's block (per_print).
+ */
+export function filterAddonsByBasis(list, basis) {
+  return (list || []).filter((a) => a && (a.basis || "per_garment") === basis);
+}
+
+export function pruneExtrasForTechniques(extras, byScope, techniques) {
+  if (!extras || typeof extras !== "object") return {};
+  const allowed = new Set(
+    getAddonsForTechniques(byScope, techniques).map((a) => a && a.key).filter(Boolean)
+  );
   const out = {};
   for (const [k, v] of Object.entries(extras)) {
     if (allowed.has(k)) out[k] = v;

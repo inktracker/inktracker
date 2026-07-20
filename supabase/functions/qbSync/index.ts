@@ -30,13 +30,21 @@ import {
   pickIncomeAccountId,
   customerIdentityMatches,
   normalizeItemName,
+  pickItemVariantMatch,
   clampPaymentAmount,
   dominantItemIncomeAccount,
   buildQbShipAddr,
   isExemptionActive,
   buildTaxRecordFromQbInvoice,
   qbJurisdictionRate,
+  stripQbDiscountNote,
+  shouldReplaceLocalInvoiceItems,
+  shouldCascadeImportedPaid,
+  pickQbInvoiceForAdoption,
+  mergeCustomerAuthoritative,
 } from "../_shared/qbInvoice.js";
+import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
+import { mergeNotesPreservingSyncLines } from "../_shared/qbInvoiceModified.js";
 import {
   reconcileQbInvoice,
   RECONCILE_SEVERITY,
@@ -51,6 +59,7 @@ import {
 import { withQbAudit, logEvent } from "../_shared/qbAudit.js";
 import {
   withQbIdempotency,
+  withQbRowSerialization,
   IDEMPOTENCY_OUTCOMES,
 } from "../_shared/qbIdempotency.js";
 import {
@@ -489,6 +498,29 @@ async function updateQBCustomer(token: string, realmId: string, qbId: string, cu
 
 async function findOrCreateCustomer(token: string, realmId: string, customer: any, supabase: any) {
   if (!customer) throw new Error("No customer data provided");
+
+  // Authoritative re-read, INSIDE the resolver so every caller inherits it
+  // (createInvoice, estimateTax, syncCustomer — and anything added later).
+  // The payload may be a stub ({id, name} from a modal whose customer never
+  // loaded); matching a stub against QB finds nothing and MINTS A DUPLICATE
+  // QB customer (the email-less "Lisa Gotts", 2026-07-17). The customers row
+  // is the authority for identity + the stored QB link; the payload only
+  // fills fields the row lacks. Redundant with handleCreateInvoice's own
+  // merge (one extra PK lookup) — kept here so the invariant doesn't depend
+  // on callers remembering to hydrate.
+  if (customer.id) {
+    try {
+      const { data: dbCust } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("id", customer.id)
+        .maybeSingle();
+      if (dbCust) customer = mergeCustomerAuthoritative(customer, dbCust);
+    } catch (e) {
+      console.error("[QB] customer authoritative re-read failed (using payload):", (e as Error)?.message);
+    }
+  }
+
   // If already linked, push non-empty fields back to QB (sparse update — never wipes QB data)
   if (customer.qb_customer_id) {
     try {
@@ -669,6 +701,18 @@ async function resolveItemIdMap(
   for (const name of names) {
     let id = byExact.get(name) || byNorm.get(normalizeItemName(name)) || null;
     if (!id) {
+      // Obvious-variant reuse before creating anything: an outgoing name
+      // that uniquely extends (or is extended by) one existing item at a
+      // token boundary books onto that item instead of spawning a
+      // near-duplicate ("Customer Supplied" vs "Customer Supplied Goods").
+      // Ambiguous or single-word cases fall through to create, as before.
+      const variant = pickItemVariantMatch(normalizeItemName(name), byNorm.keys());
+      if (variant) {
+        id = byNorm.get(variant) ?? null;
+        if (id) console.log(`[qbSync] item "${name}" reusing existing QB item variant "${variant}" (id ${id})`);
+      }
+    }
+    if (!id) {
       const created = await qbCreate(token, realmId, "item", {
         Name: name,
         Type: "Service",
@@ -702,13 +746,52 @@ const extractPaymentLink = (invoiceData: any, _realmId?: string) => sharedExtrac
 // ── Action: createInvoice ───────────────────────────────────────────────────
 
 async function handleCreateInvoice(token: string, realmId: string, params: any, supabase: any) {
-  const { quote, customer, invoicePayload } = params;
+  const { quote, invoicePayload } = params;
   // When true, suppress QBO's /send fallback so creating the invoice never
   // emails the customer (invoice/order flow — the shop sends via InkTracker).
   const noEmail = !!params?.noEmail;
 
   if (!invoicePayload?.lines?.length) {
     throw new Error("Missing invoicePayload — frontend must compute quote totals");
+  }
+
+  // ── Authoritative state re-read ──────────────────────────────────────────
+  // The payload's quote/customer are snapshots of DB rows as the calling
+  // window last saw them — possibly fetched before another surface's sync
+  // finished its write-back. Trusting a stale snapshot's empty qb_invoice_id
+  // is how the INV-2026-OW0M1 duplicate was minted (2026-07-17): the invoice
+  // modal pushed seconds after the order-completion push, its snapshot
+  // predated the write-back, and the CREATE path fired a -r2 under a
+  // freshly-duplicated customer. The DB is the authority for both links;
+  // the payload only fills in when the row can't be read.
+  let sourceRow: any = null;
+  if (quote?.id) {
+    for (const table of ["invoices", "quotes"]) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(table === "invoices"
+          ? "id, qb_invoice_id, qb_doc_number, order_id"
+          : "id, qb_invoice_id, qb_doc_number, quote_id")
+        .eq("id", quote.id)
+        .maybeSingle();
+      if (!error && data) { sourceRow = data; break; }
+    }
+    if (sourceRow?.qb_invoice_id && String(sourceRow.qb_invoice_id) !== String(quote.qb_invoice_id || "")) {
+      console.error(
+        `[createInvoice] Payload qb_invoice_id ("${quote.qb_invoice_id || ""}") is stale — ` +
+        `DB row ${quote.id} says "${sourceRow.qb_invoice_id}". Using the DB value.`,
+      );
+    }
+  }
+
+  let customer = params.customer;
+  if (customer?.id) {
+    const { data: dbCust, error: custErr } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("id", customer.id)
+      .maybeSingle();
+    if (!custErr && dbCust) customer = mergeCustomerAuthoritative(customer, dbCust);
   }
 
   // 1. Find or create customer in QB
@@ -802,14 +885,137 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   console.error(`[createInvoice] Tax: rate=${taxPercent}%, isTaxExempt=${isTaxExempt}, lines=${lines.length}`);
 
   let created: any;
-  let qbInvoiceId: string = quote.qb_invoice_id || "";
+  // DB row wins over the caller's snapshot (see authoritative re-read above).
+  let qbInvoiceId: string = String(sourceRow?.qb_invoice_id || quote.qb_invoice_id || "");
   let qbInvoiceFinal: any;
+  // How the invoice-to-update was found when the caller's snapshot had no
+  // qb_invoice_id. Surfaced in the response (→ qb_event_log) for forensics.
+  let adoptionSource: string | null = null;
+  if (qbInvoiceId && !quote.qb_invoice_id) adoptionSource = "db_row";
   // NEW-12 idempotency: true when we're resyncing an invoice that ALREADY has a
   // payment applied in QB (e.g. the deposit posted on a prior sync). Gates the
   // deposit-recording step below so a re-send / re-"Create in QB" can't post the
   // deposit twice. Stays false on a first-time create (no existing invoice), so
   // a genuine deposit is still recorded exactly once.
   let existingInvoiceHadPayment = false;
+
+  // ── Adoption guard 1: order-born invoice whose source QUOTE is in QB ──────
+  // A quote pushed to QB stamps qb_invoice_id on the QUOTES row only; an
+  // invoices row for it appears when the next pull imports it. Complete the
+  // order inside that window and the fresh INV- row knows nothing about the
+  // Q- invoice already in QB — pushing it would mint a SECOND QB invoice for
+  // the same job under a different DocNumber (no -rN to even hint at the
+  // duplicate). Walk invoices.order_id → orders.quote_id → quotes.qb_invoice_id
+  // and adopt the quote's invoice; the update path keeps its Q- DocNumber.
+  if (!qbInvoiceId && quote?.shop_owner) {
+    const orderId = String(quote?.order_id || sourceRow?.order_id || "");
+    if (orderId) {
+      try {
+        const { data: orderRow } = await supabase
+          .from("orders")
+          .select("quote_id")
+          .eq("shop_owner", quote.shop_owner)
+          .eq("order_id", orderId)
+          .maybeSingle();
+        if (orderRow?.quote_id) {
+          const { data: srcQuote } = await supabase
+            .from("quotes")
+            .select("qb_invoice_id, quote_id")
+            .eq("shop_owner", quote.shop_owner)
+            .eq("quote_id", orderRow.quote_id)
+            .maybeSingle();
+          if (srcQuote?.qb_invoice_id) {
+            qbInvoiceId = String(srcQuote.qb_invoice_id);
+            adoptionSource = "order_source_quote";
+            console.error(
+              `[createInvoice] Adopting QB invoice ${qbInvoiceId} from source quote ` +
+              `${srcQuote.quote_id} (order ${orderId}) instead of creating a duplicate.`,
+            );
+          }
+        }
+      } catch (e) {
+        // Non-fatal: guard 2 (DocNumber family) and the create path still run.
+        console.error("[createInvoice] order→quote adoption lookup failed:", (e as Error)?.message);
+      }
+    }
+  }
+
+  // ── Adoption guard 2: DocNumber family already exists in QB ───────────────
+  // No local row points at a QB invoice, but one may exist anyway (lost
+  // write-back, or a concurrent sync that won the race — its write-back
+  // lands while we run). Query the whole family (base + -rN) up front:
+  // fully-paid member → refuse (books already settled); live unpaid member →
+  // adopt and UPDATE it. Only when the family is empty do we CREATE.
+  // The old behavior — query DocNumbers only to pick "the next free -rN" —
+  // is what turned every one of these races into a duplicate.
+  let familyDocNumbers: string[] | null = null;
+  if (!qbInvoiceId) {
+    const escapedBaseForFamily = escapeQbStringLiteral(String(quote.quote_id || ""));
+    try {
+      const familyResp = await qbQuery(
+        token,
+        realmId,
+        `SELECT * FROM Invoice WHERE DocNumber = '${escapedBaseForFamily}' OR DocNumber LIKE '${escapedBaseForFamily}-r%'`,
+      );
+      const family = familyResp?.QueryResponse?.Invoice || [];
+      familyDocNumbers = family.map((i: any) => String(i.DocNumber || "")).filter(Boolean);
+      const picked = pickQbInvoiceForAdoption(family);
+      if (picked.paid) {
+        console.error(
+          `[createInvoice] QB invoice ${picked.paid.Id} (${picked.paid.DocNumber}) for this ` +
+          `quote is already PAID. Refusing to create a duplicate.`,
+        );
+        return {
+          qbInvoiceId: String(picked.paid.Id),
+          paymentLink: sharedExtractPaymentLink(picked.paid) ?? null,
+          linkFailureReason: null,
+          alreadyPaid: true,
+          alreadyPaidMessage:
+            `This quote already has a paid QuickBooks invoice (#${picked.paid.DocNumber ?? picked.paid.Id}). ` +
+            `No new invoice was created.`,
+        };
+      }
+      if (picked.adopt) {
+        qbInvoiceId = String(picked.adopt.Id);
+        adoptionSource = "doc_family";
+        console.error(
+          `[createInvoice] QB already has invoice ${qbInvoiceId} (${picked.adopt.DocNumber}) for ` +
+          `this quote — adopting it instead of creating a duplicate.`,
+        );
+        if (picked.live.length > 1) {
+          // Pre-existing duplicates: adoption picks a canonical one but can't
+          // void the others — the shop has to. Tell them, loudly.
+          try {
+            const adminNotify = createClient(
+              Deno.env.get("SUPABASE_URL")!,
+              Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+            );
+            await recordShopNotification(adminNotify, {
+              shopOwner: quote.shop_owner,
+              eventType: "qb_duplicate_invoices_detected",
+              severity:  "warning",
+              title:     `Duplicate QuickBooks invoices exist for ${quote.quote_id}`,
+              body:      `QuickBooks has ${picked.live.length} live invoices for this quote ` +
+                         `(${picked.live.map((i: any) => i.DocNumber).join(", ")}). InkTracker is now ` +
+                         `tracking #${picked.adopt.DocNumber}; please void the other copy in QuickBooks ` +
+                         `so the customer can't be billed twice.`,
+              relatedEntity: "quote",
+              relatedId:     String(quote.id ?? ""),
+              metadata: { quote_id: quote.quote_id, docs: picked.live.map((i: any) => i.DocNumber) },
+            });
+          } catch (notifErr) {
+            console.error("[createInvoice] duplicate-invoice notification failed:", notifErr);
+          }
+        }
+      }
+    } catch (e) {
+      // Family lookup failed (QB hiccup). Don't guess: the create path
+      // retries its own DocNumber query, and its Duplicate-DocNumber retry
+      // loop is the last-resort backstop.
+      console.error("[createInvoice] DocNumber family lookup failed:", (e as Error)?.message);
+      familyDocNumbers = null;
+    }
+  }
 
   // If the quote already has a QB invoice ID, UPDATE the existing invoice
   // instead of creating a duplicate. This is the "resync" path.
@@ -824,7 +1030,17 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       const existing = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(qbInvoiceId)}'`);
       existingInv = existing?.QueryResponse?.Invoice?.[0] ?? null;
     } catch (e) {
+      // A FAILED fetch is not the same as "invoice deleted in QB". Falling
+      // through with existingInv=null would take the create-fresh branch
+      // below and mint a -rN duplicate of a live (possibly paid) invoice —
+      // the Shana-Krochmal books-split via the error path. It would also
+      // leave existingInvoiceHadPayment=false, re-posting any deposit.
+      // Refuse and let the operator retry once QB is reachable.
       console.error(`[createInvoice] Could not fetch existing QB invoice ${qbInvoiceId}:`, (e as Error)?.message);
+      throw new Error(
+        `Couldn't reach QuickBooks to check the existing invoice for this quote. ` +
+        `Nothing was created or changed — try again in a minute.`,
+      );
     }
 
     // Record whether a payment is already applied BEFORE we mutate the invoice,
@@ -880,7 +1096,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
           AllowOnlineACHPayment: true,
           Line: lines,
           CustomerMemo: { value: quote.notes || "" },
-          PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`,
+          PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`
+            + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
         };
         if (billEmail) {
           updateBody.BillEmail = { Address: billEmail };
@@ -932,21 +1149,28 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     }
   }
 
-  // Create new invoice if we don't have one yet (first sync or update failed)
+  // Create new invoice if we don't have one yet. Reached only when the
+  // adoption guards found NOTHING to update: no DB-linked invoice, no source
+  // quote's invoice, and an empty (or unreadable) DocNumber family in QB.
   if (!qbInvoiceId) {
     const escapedBase = escapeQbStringLiteral(baseDocNumber);
-    let existingDocs: string[] = [];
-    try {
-      const existingResp = await qbQuery(
-        token,
-        realmId,
-        `SELECT DocNumber FROM Invoice WHERE DocNumber = '${escapedBase}' OR DocNumber LIKE '${escapedBase}-r%'`,
-      );
-      existingDocs = (existingResp?.QueryResponse?.Invoice || [])
-        .map((i: any) => String(i.DocNumber || ""))
-        .filter(Boolean);
-    } catch (e) {
-      console.error("[createInvoice] DocNumber lookup failed (will try base only):", e);
+    // Reuse the family query from adoption guard 2 when it succeeded; only
+    // re-query when that lookup failed (familyDocNumbers === null) or was
+    // skipped because a stale qb_invoice_id got cleared by the resync path.
+    let existingDocs: string[] = familyDocNumbers ?? [];
+    if (familyDocNumbers === null) {
+      try {
+        const existingResp = await qbQuery(
+          token,
+          realmId,
+          `SELECT DocNumber FROM Invoice WHERE DocNumber = '${escapedBase}' OR DocNumber LIKE '${escapedBase}-r%'`,
+        );
+        existingDocs = (existingResp?.QueryResponse?.Invoice || [])
+          .map((i: any) => String(i.DocNumber || ""))
+          .filter(Boolean);
+      } catch (e) {
+        console.error("[createInvoice] DocNumber lookup failed (will try base only):", e);
+      }
     }
     const docNumber = nextAvailableDocNumber(baseDocNumber, existingDocs);
     const isRevision = docNumber !== baseDocNumber;
@@ -972,9 +1196,13 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       AllowOnlineACHPayment: true,
       Line: lines,
       CustomerMemo: { value: quote.notes || "" },
-      PrivateNote: isRevision
+      // PrivateNote is QB's internal memo (visible to the shop in QB, not on
+      // the customer's invoice). Append the InkTracker job title so it flows
+      // to accounting for reference.
+      PrivateNote: (isRevision
         ? `InkTracker Quote ${baseDocNumber} — revision (${docNumber})`
-        : `InkTracker Quote ${baseDocNumber}`,
+        : `InkTracker Quote ${baseDocNumber}`)
+        + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
     };
 
     if (billEmail) {
@@ -1245,8 +1473,27 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // totals back to the source record. Both ids matter — the internal id
   // for API calls, the DocNumber for the operator-facing UI.
   if (quote.id) {
-    // Try quotes table first (quote-originated invoices)
-    await supabase.from("quotes").update({
+    // Recording qb_invoice_id locally is CRITICAL: the QB invoice already
+    // exists, so if this write-back is lost we have an invoice in QB that
+    // InkTracker doesn't know about, and a re-send after the idempotency TTL
+    // takes the CREATE path and mints a -rN DUPLICATE. The updates used to
+    // discard their Supabase error entirely (zero observability). Now each is
+    // retried on failure and logged loudly; the row targets either the quotes
+    // or the invoices table (same id format), so success on EITHER is enough.
+    const updateWithRetry = async (table: string, patch: Record<string, unknown>) => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const { error } = await supabase.from(table).update(patch).eq("id", quote.id);
+        if (!error) return true;
+        // 22P02 / PGRST116-style "no row in this table" is expected for one of
+        // the two tables (a quote-originated invoice isn't in `invoices` and
+        // vice versa) — an empty match is NOT an error from PostgREST, so any
+        // returned error here is a real write failure worth retrying.
+        console.error(`[createInvoice] write-back to ${table} failed (attempt ${attempt + 1}) for ${quote.id}:`, error.message);
+      }
+      return false;
+    };
+
+    const okQuotes = await updateWithRetry("quotes", {
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
       ...linkField,
@@ -1257,13 +1504,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       ...adoptQbTaxFields,
       // Don't advance a held invoice to "Sent" — it hasn't been sent.
       status:          (!taxBlocked && quote.status === "Draft") ? "Sent" : quote.status,
-    }).eq("id", quote.id);
+    });
 
-    // Also try invoices table (invoice-originated, same ID format). Mirror
-    // QB's authoritative subtotal/tax/total so the InkTracker invoice record
-    // reflects QB exactly (the IT-side `tax`/`total` are what the quote
-    // billed; these qb_* fields are what QB recorded — see docs/qb-tax-sync.md).
-    await supabase.from("invoices").update({
+    // Also mirror onto the invoices table (invoice-originated, same ID format).
+    const okInvoices = await updateWithRetry("invoices", {
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
       ...linkField,
@@ -1271,7 +1515,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
       ...adoptQbTaxFields,
-    }).eq("id", quote.id);
+    });
+
+    if (!okQuotes && !okInvoices) {
+      // Neither table recorded the link after retries. The QB invoice exists
+      // but nothing local points at it — flag it so this doesn't silently
+      // become a duplicate on the next send.
+      console.error(`[createInvoice] CRITICAL: QB invoice ${qbInvoiceId} created but link write-back FAILED on both tables for ${quote.id}. Re-send risks a duplicate.`);
+    }
   }
 
   // Phase 3: immutable tax-audit record. Snapshots QB's authoritative
@@ -1311,6 +1562,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     qbInvoiceId,
     qbDocNumber,
     isRevision: qbDocNumber !== baseDocNumber,
+    // Non-null when the caller's snapshot had no qb_invoice_id but the sync
+    // found the existing invoice anyway ("db_row" | "order_source_quote" |
+    // "doc_family") and UPDATEd it instead of creating a duplicate.
+    adoptionSource,
     paymentLink,
     // Surfaces to the frontend so it can show actionable guidance:
     //   null                 → success (paymentLink populated)
@@ -1614,9 +1869,11 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
   // QB lands on the row that holds the base DocNumber instead of
   // spawning a sibling row. Closes the "two rows for one quote" bug
   // surfaced by the Shana Krochmal invoice.
+  // line_items + order_id feed shouldReplaceLocalInvoiceItems — the pull must
+  // know whether a matched row has local itemization worth preserving.
   const { data: existingInvoices } = await supabase
     .from("invoices")
-    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name")
+    .select("id, invoice_id, qb_invoice_id, customer_id, customer_name, order_id, line_items, paid, notes")
     .eq("shop_owner", shopOwner);
   const existingByDoc = new Map<string, any>();
   const existingByQbId = new Map<string, any>();
@@ -1674,12 +1931,15 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     const balance = Number(qbInv.Balance ?? 0);
     const isPaid = balance === 0 && totalAmt > 0;
 
-    // Map QB line items
+    // Map QB line items. stripQbDiscountNote removes the " (less $X
+    // discount)" label OUR push appended for QB's tax math — the local row
+    // carries discount as real fields; importing the note back duplicated it
+    // onto every line (the INV-2026-CQY1X PDF).
     const lineItems = (qbInv.Line ?? [])
       .filter((l: any) => l.DetailType === "SalesItemLineDetail")
       .map((l: any) => ({
         id: `qb-${l.Id || Math.random().toString(36).slice(2)}`,
-        style: l.Description || l.SalesItemLineDetail?.ItemRef?.name || "Item",
+        style: stripQbDiscountNote(l.Description || l.SalesItemLineDetail?.ItemRef?.name || "Item"),
         garmentCost: 0,
         sizes: {},
         imprints: [],
@@ -1712,7 +1972,9 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       paid_date: paidDate,
       status: isPaid ? "Completed" : "Pending",
       line_items: lineItems,
-      notes: qbInv.CustomerMemo?.value || null,
+      // QB's memo, but keep any local "[date] Synced from QuickBooks"
+      // audit lines — a Sync-All must not erase the shop's sync history.
+      notes: mergeNotesPreservingSyncLines(qbInv.CustomerMemo?.value, existingRow?.notes),
       discount: 0,
       tax_rate: 0,
       rush_rate: 0,
@@ -1720,9 +1982,45 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     };
 
     if (existingId) {
+      // Locally-born invoices (order-born, or rich local line items) keep
+      // their itemization and pricing semantics — a Sync-All used to replace
+      // them with flattened qb-N stubs and zero the discount (INV-2026-CQY1X,
+      // 2026-07-03). QB stays authoritative for money STATE (paid/status/
+      // total/tax/dates), which remains in the payload. Local `subtotal` is
+      // pre-discount by app semantics; QB's is post-discount — overwriting it
+      // while keeping discount>0 would double-discount the display.
+      if (!shouldReplaceLocalInvoiceItems(existingRow)) {
+        delete payload.line_items;
+        delete payload.discount;
+        delete payload.tax_rate;
+        delete payload.rush_rate;
+        delete payload.extras;
+        delete payload.subtotal;
+        delete payload.notes;
+      }
       const { error } = await supabase.from("invoices").update(payload).eq("id", existingId);
       if (error) { console.error("[pullInvoices] update failed:", error.message, docNumber); skipped++; }
-      else { updated++; }
+      else {
+        updated++;
+        // Unpaid→paid transition on an order-linked invoice: walk the paid
+        // state through to the order too. Without this, a Sync-All that
+        // beats the webhook flips the invoice paid directly and the nightly
+        // reconcile (candidate filter: paid=false) skips the order forever.
+        // Same cascade the webhook/reconcile use; best-effort — a cascade
+        // failure must not fail the pull (reconcile can't retry the invoice
+        // side, but the order stays visible as unpaid for the operator).
+        if (shouldCascadeImportedPaid(existingRow, isPaid)) {
+          try {
+            await cascadeMarkInvoicePaid(
+              supabase,
+              { ...existingRow, shop_owner: shopOwner },
+              (paidDate || new Date().toISOString().split("T")[0]),
+            );
+          } catch (cascadeErr) {
+            console.error("[pullInvoices] paid cascade to order failed:", (cascadeErr as Error)?.message, docNumber);
+          }
+        }
+      }
     } else {
       const { error } = await supabase.from("invoices").insert(payload);
       if (error) { console.error("[pullInvoices] insert failed:", error.message, docNumber); skipped++; }
@@ -2404,13 +2702,37 @@ Deno.serve(async (req) => {
             has_deposit:    Boolean(quote?.deposit_paid),
           },
         };
+        // (c) withQbRowSerialization — the per-ROW lock. Caller keys only
+        //     collapse duplicates of the SAME button; two different surfaces
+        //     (order-completion auto-push + the invoice modal) carry
+        //     different keys and previously ran concurrently, double-creating
+        //     (INV-2026-OW0M1, 2026-07-17). Later arrivals now WAIT for the
+        //     holder, then run against fresh DB state — the authoritative
+        //     re-read inside handleCreateInvoice routes them onto UPDATE.
+        const rowLockKey = quote?.id
+          ? `create_invoice_row:${quote.id}`
+          : (quote?.quote_id ? `create_invoice_row:${quoteShop}:${quote.quote_id}` : null);
         const idempOutcome = await withQbIdempotency(
           adminClient,
           idempKey,
           { shop_owner: quoteShop, action: "create_invoice" },
-          () => withQbAudit(adminClient, auditCtx, () =>
-            handleCreateInvoice(qbToken, realmId, params, supabase),
-          ),
+          async () => {
+            const serialized = await withQbRowSerialization(
+              adminClient,
+              rowLockKey,
+              { shop_owner: quoteShop, action: "create_invoice_lock" },
+              () => withQbAudit(adminClient, auditCtx, () =>
+                handleCreateInvoice(qbToken, realmId, params, supabase),
+              ),
+            );
+            if (!serialized.acquired) {
+              return {
+                inFlight: true,
+                message: "Another sync for this invoice is still running — wait a moment, then refresh.",
+              };
+            }
+            return serialized.result;
+          },
         );
         if (idempOutcome.outcome === IDEMPOTENCY_OUTCOMES.IN_FLIGHT) {
           // Another request with the same key is mid-flight. Don't
@@ -2428,9 +2750,38 @@ Deno.serve(async (req) => {
       }
       case "estimateTax": {
         // Quote-time "Calculate tax" — non-posting Estimate round-trip to read
-        // QB's authoritative tax. No idempotency/audit envelope: it's a
-        // read-style compute (the Estimate is reused per quote, not a ledger write).
-        result = await handleEstimateTax(qbToken, realmId, params, supabase);
+        // QB's authoritative tax. Wrapped in the per-row lock (same primitive
+        // as createInvoice): handleEstimateTax's create-vs-update decision is
+        // a read-then-write on the Estimate's DocNumber, so two racing calls
+        // (two open editors, a double-fire that beats the button disable)
+        // both read "no estimate yet" and both CREATE — QB happily accepts
+        // duplicate Estimate DocNumbers, and the shop sees two estimates for
+        // one quote. Serializing per quote makes the second caller wait, see
+        // the first one's Estimate, and route onto UPDATE. No idempotency-key
+        // cache: the result is a live tax read, not a ledger write — a repeat
+        // call SHOULD recompute.
+        const estQuote = params?.quote ?? {};
+        const estLockKey = estQuote?.id
+          ? `estimate_tax_row:${estQuote.id}`
+          : (estQuote?.quote_id ? `estimate_tax_row:${shopOwnerEmail}:${estQuote.quote_id}` : null);
+        const estAdmin = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const estSerialized = await withQbRowSerialization(
+          estAdmin,
+          estLockKey,
+          { shop_owner: shopOwnerEmail, action: "estimate_tax_lock" },
+          () => handleEstimateTax(qbToken, realmId, params, supabase),
+        );
+        if (!estSerialized.acquired) {
+          result = {
+            inFlight: true,
+            message: "A tax calculation for this quote is still running — wait a moment and try again.",
+          };
+          break;
+        }
+        result = estSerialized.result;
         break;
       }
       case "syncCustomer": {

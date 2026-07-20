@@ -12,6 +12,7 @@ import { managerCanAccess, hasOwnerAccess } from "@/lib/managerPermissions";
 import { shopScope } from "@/lib/shopScope";
 import { resolveRoleRedirect } from "@/lib/broker/roleRedirect";
 import TrialStatusBanner from "@/components/TrialStatusBanner";
+import CancellationBanner from "@/components/CancellationBanner";
 
 const ICON_MAP = {
   Dashboard: Home,
@@ -44,13 +45,20 @@ const NAV = [
     ],
   },
   { label: "Invoices", page: "Invoices" },
-  { label: "Performance", page: "Performance", feature: "reports" },
+  // Performance is a READ surface — reports on the shop's own data, nothing to
+  // write. Intentionally NOT feature-gated, so a read-only/expired shop can
+  // still view AND export it ("reads + your data stay accessible"). Mockups /
+  // Wizard stay gated — they create/configure, they aren't pure reads.
+  { label: "Performance", page: "Performance" },
   { label: "Mockups", page: "Mockups", feature: "mockups" },
   { label: "Wizard", page: "Wizard", feature: "wizard" },
   { label: "Account", page: "Account" },
-  // Opens the public blog/resources in a new tab (static page, outside the SPA).
-  { label: "Resources", page: "Resources", href: "/blog", external: true },
 ];
+
+// Opens the public blog/resources in a new tab (static page, outside the
+// SPA). Rendered in the sidebar FOOTER above Search, not in the main nav —
+// it's an addition to the product, not a part of it (Joe 2026-07-19).
+const RESOURCES_ITEM = { label: "Resources", page: "Resources", href: "/blog", external: true };
 
 // Pages that should auto-expand a parent group when active.
 const PARENT_OF = (() => {
@@ -61,9 +69,9 @@ const PARENT_OF = (() => {
   return m;
 })();
 
-// Map page names to required billing features
+// Map page names to required billing features. (Performance is intentionally
+// absent — it's a read surface that stays viewable/exportable in read-only mode.)
 const PAGE_FEATURES = {
-  Performance: "reports",
   Mockups: "mockups",
   Wizard: "wizard",
 };
@@ -297,6 +305,9 @@ export default function Layout({ children, currentPageName }) {
           )}
         </nav>
 
+        <div className="px-2 py-2 border-t border-slate-100 dark:border-slate-800">
+          {renderNavItem(RESOURCES_ITEM)}
+        </div>
         <div className="px-2 py-4 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
           <div className="flex-1 min-w-0">
             <GlobalSearch />
@@ -314,6 +325,9 @@ export default function Layout({ children, currentPageName }) {
             the operator can't miss it. Self-hides for paid subs and
             non-shop roles. */}
         <TrialStatusBanner user={user} />
+        {/* Pending-cancellation notice ("plan ends on X"). Self-hides unless a
+            cancel is scheduled with a future end date. Display only. */}
+        <CancellationBanner user={user} />
         {/* Mobile header */}
         <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 sticky top-0 z-30">
           <button onClick={() => setMobileMenuOpen(true)} aria-label="Open menu" className="p-1 text-slate-500 hover:text-slate-700">
@@ -354,6 +368,11 @@ export default function Layout({ children, currentPageName }) {
                   </Link>
                 )}
               </nav>
+              {/* Resources sits at the drawer's bottom, mirroring the
+                  desktop footer placement — an addition, not core nav. */}
+              <div className="px-2 py-2 border-t border-slate-100">
+                {renderNavItem(RESOURCES_ITEM, { mobile: true })}
+              </div>
             </div>
           </div>
         )}

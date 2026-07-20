@@ -37,10 +37,13 @@ body{margin:0;color:var(--ink);background:#fff;font-family:"Inter",-apple-system
 a{color:var(--forest)}
 .wrap{max-width:820px;margin:0 auto;padding:0 20px}
 header.site{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:2px solid var(--ink)}
-header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px}
+header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px}
 .brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .brand span{color:var(--forest)}
-.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px;font-size:15px}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0;white-space:nowrap}
+.nav{display:flex;align-items:center;gap:18px}
+.nav a:not(.cta){font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.nav a:not(.cta):hover{color:var(--forest)}
 .cta:hover{background:var(--forest-dark)}
 nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
 nav.crumbs a{color:var(--muted)}
@@ -67,15 +70,30 @@ ul.criteria span{color:#444;font-size:15px}
 .disclaimer{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);margin-top:3em;padding:18px 0}
 footer.site{border-top:2px solid var(--ink);margin-top:2em;padding:24px 0;font-size:13px;color:var(--muted)}
 footer.site a{color:var(--muted);margin-right:16px}
-@media(min-width:640px){.cards{grid-template-columns:1fr 1fr}}`;
+@media(min-width:640px){.cards{grid-template-columns:1fr 1fr}}
+/* Mobile header: at desktop sizes the 26px brand + nav link + CTA fit in
+   72px; on phones they collided (brand jammed against the nav link, CTA
+   wrapping to two lines). Shrink everything and keep the CTA one line. */
+@media(max-width:600px){
+header.site .wrap{height:60px}
+.brand{font-size:19px}
+.nav{gap:10px}
+.nav a:not(.cta){font-size:11px;letter-spacing:.12em}
+.cta{font-size:11px;letter-spacing:.06em;padding:10px 12px}
+}
+@media(max-width:344px){.nav a:not(.cta){display:none}}`;
 
 const siteHeader = `<header class="site"><div class="wrap">
   <a class="brand" href="${SITE.baseUrl}/">Ink<span>Tracker</span></a>
-  <a class="cta" href="${SITE.baseUrl}/#pricing">Start free trial</a>
+  <nav class="nav">
+    <a href="${SITE.baseUrl}/resources">Resources</a>
+    <a class="cta" href="${SITE.baseUrl}/#pricing">Start free trial</a>
+  </nav>
 </div></header>`;
 
 const siteFooter = `<footer class="site"><div class="wrap">
-  <a href="${SITE.baseUrl}/">InkTracker home</a><a href="${SITE.baseUrl}/#pricing">Pricing</a><a href="${SITE.baseUrl}/support">Support</a>
+  <a href="${SITE.baseUrl}/">InkTracker home</a><a href="${SITE.baseUrl}/tools">Free Tools</a><a href="${SITE.baseUrl}/#pricing">Pricing</a><a href="${SITE.baseUrl}/support">Support</a>
+  <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
 </div></footer>`;
 
 const DISCLAIMER = `<p class="disclaimer">This guide reflects publicly available information, last reviewed ${SITE.reviewed}. Product names and trademarks belong to their respective owners; details and pricing change — always confirm current specifics on each vendor's own website. InkTracker details reflect the live product.</p>`;
@@ -83,9 +101,12 @@ const DISCLAIMER = `<p class="disclaimer">This guide reflects publicly available
 const ldJson = (obj) => `<script type="application/ld+json">\n${JSON.stringify(obj, null, 2)}\n</script>`;
 
 function ctaBlock() {
+  // The Biota line is the "real shop runs on this" proof signal — soft
+  // trust, one sentence, never keyword-stuffed (SEO plan item 5).
   return `<div class="cta-block">
     <div class="price">${SITE.price}</div>
     <p>InkTracker: one plan, everything included. ${esc(SITE.trial)}.</p>
+    <p>Built and battle-tested in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
     <a class="cta" href="${SITE.baseUrl}/#pricing">Start your free trial</a>
   </div>`;
 }

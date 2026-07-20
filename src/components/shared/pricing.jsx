@@ -29,8 +29,13 @@ export {
   resolveExtraRatePerPiece,
   snapshotExtraForQuote,
   getLineExtras,
+  resolveExtraBasis,
 } from "@/lib/pricing/extras";
-import { resolveExtraRatePerPiece as _resolveExtraRatePerPiece, getLineExtras as _getLineExtras } from "@/lib/pricing/extras";
+import {
+  resolveExtraRatePerPiece as _resolveExtraRatePerPiece,
+  getLineExtras as _getLineExtras,
+  resolveExtraBasis as _resolveExtraBasis,
+} from "@/lib/pricing/extras";
 import { sumAdditionalCharges as _sumAdditionalCharges, normalizeAdditionalCharges as _normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 
 export const EXTRA_RATES = {
@@ -419,7 +424,14 @@ export function getTier(qty, tiersOverride) {
 }
 
 export function getQty(li) {
-  return Object.values(li?.sizes || {}).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
+  const sizes = li?.sizes || {};
+  // QB-imported lines (pullInvoices, Add to Production orders) carry a bare
+  // `qty` with an EMPTY sizes map — without this fallback a 2,675-piece
+  // imported job counted as 0 units everywhere (Units Sold, packing slips,
+  // per-line displays). Any sizes key at all — including zero or negative
+  // entries — keeps the original sizes-sum semantics untouched.
+  if (Object.keys(sizes).length === 0) return parseInt(li?.qty, 10) || 0;
+  return Object.values(sizes).reduce((sum, v) => sum + (parseInt(v, 10) || 0), 0);
 }
 
 // Shortfall tracking — the shop can record per-size misprints / losses
@@ -560,7 +572,10 @@ export function getOrderDisplayJobTitle(order, fallbackCustomer = null) {
     return order?.job_title || order?.broker_client_name || getDisplayName(fallbackCustomer || order?.broker_client_name || order?.customer_name);
   }
 
-  return "";
+  // Direct (non-broker) orders: show the shop's own job label when set.
+  // Every consumer guards on a truthy result, so an empty job title simply
+  // renders nothing (no bare "Job:" line).
+  return order?.job_title || "";
 }
 
 // Company-first END-CLIENT name for BROKER-FACING surfaces (a broker's own
@@ -613,7 +628,7 @@ const DEFAULT_EMB_PRICING = {
   "10K-15K":  { 12: 12.50, 24: 11.00, 48: 9.75, 72: 8.75, 144: 8.00 },
   "15K+":     { 12: 15.00, 24: 13.50, 48: 12.00, 72: 10.75, 144: 9.75 },
 };
-const DEFAULT_EMB_STITCH_TIERS = ["Under 5K", "5K-10K", "10K-15K", "15K+"];
+export const DEFAULT_EMB_STITCH_TIERS = ["Under 5K", "5K-10K", "10K-15K", "15K+"];
 const DEFAULT_EMB_QTY_TIERS = [12, 24, 48, 72, 144];
 
 function getEmbroideryPPP(stitchIdx, qty, configOverride) {
@@ -684,15 +699,26 @@ export function buildLinkedQtyMap(lineItems) {
 // Same artwork shared across multiple line items (same `getPrintKey`)
 // only counts ONCE — the shop only burns one set of screens for it.
 // Embroidery imprints aren't counted (no screens, separate digitizing).
+//
+// The dedupe key here adds `location` on top of getPrintKey. getPrintKey
+// is technique|title|width|height, and title/width/height are all blank
+// by default (editor addImprint + every wizard submission) — so an
+// untitled Front 4-color and Back 1-color would otherwise collapse to
+// one key and bill max(4,1)=4 screens instead of 5. Placement is the
+// one field that always distinguishes two prints on the same job.
+// Deliberately NOT changed in getPrintKey itself: the qty-linking maps
+// (findLinkedPrints/buildLinkedQtyMap) want same-art imprints combined
+// across line items regardless, and location is stable across lines in
+// the run-level wizard flow, so those semantics stay put.
 export function calcSetupScreenCount(lineItems) {
-  const seen = new Map();  // print-key → max color count seen for this print
+  const seen = new Map();  // print-key+location → max color count seen for this print
   (lineItems || []).forEach((li) => {
     (li.imprints || []).forEach((imp) => {
       const tech = imp?.technique || "Screen Print";
       if (tech !== "Screen Print") return;
       const colors = Math.max(0, Number(imp?.colors) || 0);
       if (colors === 0) return;
-      const key = getPrintKey(imp);
+      const key = `${getPrintKey(imp)}|${imp?.location || ""}`;
       // If the same print key shows up twice with different color counts
       // (shouldn't normally — colors are part of the imprint config not
       // the key — but be defensive), take the higher count so we don't
@@ -854,7 +880,21 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     } else {
       tier = getTier(tierQty, techTiers);
       const table = isFirstInGroup ? techFp : techAp;
-      rate = table[colors]?.[tier] ?? table[Math.min(colors, techMaxColors)]?.[tier] ?? 0;
+      // Per-cell fallback to the Screen Print rate for a missing custom cell.
+      // A custom technique table can be sparse (the Account editor writes it
+      // cell-by-cell, and it promises "fields with no value fall back to your
+      // Screen Print rates"). getTechniqueRates uses the whole sparse object,
+      // so a filled 1-color row but empty 3-color row left table[3] undefined
+      // and priced the decoration at $0. Fall back to the base Screen Print
+      // cell (keyed by the base tiers) before giving up to 0.
+      const baseTable = isFirstInGroup ? fp : ap;
+      const baseTier = getTier(tierQty, pc?.tiers || [25, 50, 100, 200]);
+      rate =
+        table[colors]?.[tier] ??
+        table[Math.min(colors, techMaxColors)]?.[tier] ??
+        baseTable[colors]?.[baseTier] ??
+        baseTable[Math.min(colors, maxColors)]?.[baseTier] ??
+        0;
     }
     const lineCost = Math.round(rate * qty * 100) / 100;
 
@@ -902,6 +942,7 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   // the DTF tab show up when the line has a DTF imprint, without
   // polluting screen-print-only lines with DTF-specific fees.
   const customExtras = {};
+  const customBasis = {};
   const customTechs = pc?.custom_techniques || {};
   for (const imp of sorted) {
     const tech = imp.technique || "Screen Print";
@@ -910,11 +951,23 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
     if (techExtras && typeof techExtras === "object") {
       Object.assign(customExtras, techExtras);
     }
+    const techBasis = customTechs[tech]?.extraBasis;
+    if (techBasis && typeof techBasis === "object") {
+      Object.assign(customBasis, techBasis);
+    }
   }
   const er = {
     ...(hasScreenPrint ? (pc?.extras || EXTRA_RATES) : {}),
     ...(hasEmbroidery ? (pc?.embroidery?.extras || {}) : {}),
     ...customExtras,
+  };
+  // Merged category (basis) map — same scope-union as `er`, so a fee's category
+  // resolves against the right technique's config when a snapshot doesn't carry
+  // its own basis (older snapshots / true-toggles).
+  const erBasis = {
+    ...(hasScreenPrint ? (pc?.extraBasis || {}) : {}),
+    ...(hasEmbroidery ? (pc?.embroidery?.extraBasis || {}) : {}),
+    ...customBasis,
   };
 
   // Garment cost per size — use actual per-size prices from API when available,
@@ -936,16 +989,36 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   //   - { mode:"percent", rate:N } (new)           → decorationPpp × N/100
   //   - { mode:"flat",    rate:N }                 → N $/pc
   //   - true (no snapshot, look up shop rate)      → use er[k]
+  const prints = printBreakdown.length;
   let extraPPP = 0;
+
+  // LINE-level fees (li.extras): per_garment applies once per piece. per_job is
+  // quote-level (skip). A per_print key here is LEGACY (fees were line-level with
+  // a ×locations multiplier before per-print moved onto individual imprints,
+  // 2026-07) — keep it working × prints so quotes saved in that window are exact.
   Object.entries(extras || {}).forEach(([k, on]) => {
     if (!on) return;
-    if (on === true) {
-      // True-toggle (no snapshot) — fall back to shop's current rate.
-      extraPPP += Number(er[k] || EXTRA_RATES[k] || 0);
-      return;
-    }
-    extraPPP += _resolveExtraRatePerPiece(on, decorationPpp);
+    const basis = _resolveExtraBasis(on, erBasis[k]);
+    if (basis === "per_job") return;
+    let ppp = on === true ? Number(er[k] || EXTRA_RATES[k] || 0) : _resolveExtraRatePerPiece(on, decorationPpp);
+    if (basis === "per_print") ppp *= prints; // legacy line-level per-print
+    extraPPP += ppp;
   });
+
+  // PER-IMPRINT fees (imprint.extras): a per_print fee attaches to ONE specific
+  // print, so it costs rate × qty for that print only — NOT × all locations.
+  // Toggle underbase on the back and not the front → charged for the back alone.
+  (li.imprints || []).forEach((imp) => {
+    const impExtras = imp?.extras;
+    if (!impExtras || typeof impExtras !== "object") return;
+    Object.entries(impExtras).forEach(([k, on]) => {
+      if (!on) return;
+      const basis = _resolveExtraBasis(on, erBasis[k]);
+      if (basis === "per_job") return; // never valid on an imprint; guard anyway
+      extraPPP += on === true ? Number(er[k] || EXTRA_RATES[k] || 0) : _resolveExtraRatePerPiece(on, decorationPpp);
+    });
+  });
+
   const extraCost = Math.round(extraPPP * qty * 100) / 100;
 
   // Per-piece print + extras cost (same for all sizes)
@@ -1068,6 +1141,9 @@ export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, configOv
   // depend on shop config and are layered + snapshotted by the editor.) When a
   // quote has no additional_charges this is a no-op: tax/total are identical to
   // the legacy afterDisc+tax result, so existing snapshots are unaffected.
+  // Per-job add-ons route through additional_charges (the JobFeesSection writes
+  // a "jobfee_*" entry there), so they're summed by _sumAdditionalCharges below
+  // — one pipeline, consistent everywhere (QB invoice, displays, PDF, payment).
   const addl = _sumAdditionalCharges(q.additional_charges);
   const taxBase = afterDisc + addl.taxable;
   const tax = taxBase * ((parseFloat(q.tax_rate) || 0) / 100);

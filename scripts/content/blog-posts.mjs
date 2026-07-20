@@ -6,6 +6,8 @@
 //   - Every InkTracker claim must be verifiable in the live product.
 //   - No negative claims about competitors. These posts teach pricing; they
 //     don't knock other tools.
+//   - The trial REQUIRES a card (since 2026-07-02) — never write "no card" /
+//     "no credit card". Enforced by scripts/__tests__/blogPosts.test.js.
 //
 // `body` is an ordered list of blocks the renderer understands:
 //   { type:'p', html }              — paragraph (html allowed; author-trusted)
@@ -74,6 +76,7 @@ export const POSTS = Object.freeze([
       { type: "p", html: "This is exactly what InkTracker does on every quote automatically: it pulls the live blank price, applies your per-quantity print rates and per-color screen fees, spreads the setup across the run, and shows you the margin before you send it. You set your rates once; every quote after that just runs the checklist for you." },
     ],
     related: [
+      { href: "/tools/screen-printing-price-calculator", text: "Free screen printing price calculator" },
       { href: "/blog/build-a-screen-printing-price-chart", text: "Build a price chart that covers your overhead" },
       { href: "/compare", text: "The honest software buyer's guide" },
     ],
@@ -136,6 +139,7 @@ export const POSTS = Object.freeze([
       { type: "p", html: "Set it up one time — a base you can defend, a couple of percentages to shape the rest, garment and fees kept separate — and stop guessing at the counter. That's the whole system." },
     ],
     related: [
+      { href: "/tools/screen-printing-price-calculator", text: "Free screen printing price calculator" },
       { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a single screen printing job" },
       { href: "/compare", text: "The honest software buyer's guide" },
     ],
@@ -242,6 +246,239 @@ export const POSTS = Object.freeze([
       {
         q: "Is the tax calculated on the garment, the printing, or both?",
         a: "In most states the taxable amount is the full sale — garment plus decoration — because you're selling a finished product, not a service on the customer's own goods. Customer-supplied garments can change that. Again, state-specific; check your Department of Revenue.",
+      },
+    ],
+  },
+
+  // ── Post 5 — The honest software comparison (narrative /compare) ──────────
+  // Same HONESTY RULES as comparisons.mjs: no negative competitor claims,
+  // alphabetical + same-format landscape, facts kept consistent with the
+  // `landscape` and `criteria` arrays in that file (REVIEWED June 2026).
+  {
+    slug: "screen-printing-software-honest-comparison",
+    title: "How to choose screen printing software (I'm not going to trash my competitors)",
+    description:
+      "An honest look at the leading screen printing software in 2026 — Printavo, YoPrint, InkSoft, DecoNetwork, and InkTracker — including where each one wins. No trash talk, from someone who sells one of them.",
+    category: "Software",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-07-02",
+    updated: "2026-07-02",
+    readMin: 7,
+    ogImage: SITE.logo,
+    cta: true,
+    body: [
+      { type: "p", html: "When I was a kid, I remember watching the fast food chains at war with each other on TV. Every other commercial was one of them taking shots at the other: their beef's frozen, their coffee tastes burnt, whatever it was that week. And I remember thinking that if the only way you can get me to eat your burger is by telling me the other guy's burger is garbage, then yours probably isn't very good. The quality of the burger should speak for itself." },
+      { type: "p", html: "That stuck with me." },
+      { type: "p", html: "Because here's what I love about this industry. Screen printers help each other. I've had competitors — real ones, shops a twenty-minute drive away that bid against me for the same jobs — walk me through a fix on the phone when I was cursing at a press at 9pm. People post their setups, trade ink recipes, warn each other about a bad box of blanks before it burns somebody else. For a trade where we're all technically fighting over the same work, printers are about the most generous group of people I've ever been around." },
+      { type: "p", html: "So I'm not going to sell you on InkTracker by telling you the other software is bad. It isn't. Most of it is good, built by people who actually care about this trade, and honestly better than mine at certain things. This started life as <a href=\"/compare\">our comparison page</a>, and a few people told me it was the most useful thing on the site precisely because it wasn't a hit piece. So here's the long version." },
+
+      { type: "h2", text: "There's no single best one" },
+      { type: "p", html: "I'll save you the suspense: there is no \"best screen printing software.\" There's the one that fits how your shop actually runs. A three-person shop cranking out contract work has completely different needs than a shop whose whole business is selling spirit wear online. Anybody who tells you there's one right answer is selling you something. Which, fair, so am I — but I'd rather you land on the thing that fits than sign up for mine and bounce in a month." },
+
+      { type: "h2", text: "What actually matters when you're choosing" },
+      { type: "p", html: "Before you look at any specific tool, get clear on what you're actually shopping for. These are the things that separate them:" },
+      { type: "ul", items: [
+        "<b>What you'll really pay.</b> Some tools post a flat price. Others are tiered, per-seat, or a quote-based bundle where the number depends on a sales call. Neither is wrong, but figure out what it costs at YOUR size with YOUR number of users before you fall in love with a demo.",
+        "<b>Whether it talks to your accounting.</b> If you run QuickBooks, a two-way sync that keeps invoices, payments, and customers matched saves you hours and keeps your books honest. Check whether a tool's sync is actually two-way or just pushes one direction.",
+        "<b>Live garment pricing.</b> Pulling current blank prices straight from your supplier while you quote means your margins reflect what the shirt costs today, not what it cost last spring. If you quote off stale numbers, you find out at the worst time.",
+        "<b>Production tracking your whole shop can see.</b> A visual board from art approval to shipping, and a floor view your crew can update from their phones, is the difference between a schedule and a group text.",
+        "<b>Online quoting.</b> An embeddable form or store lets a customer start an order on your site at midnight instead of every job beginning with an email you have to answer.",
+        "<b>Broker support, if you take reseller work.</b> Per-reseller pricing and a portal so their orders come in already priced right, without you doing the math by hand every time.",
+      ] },
+
+      { type: "h2", text: "The honest landscape" },
+      { type: "p", html: "Alphabetical, me included, same treatment for everyone. What each one is genuinely good at — not a list of what they can't do. Details and pricing change, so confirm the specifics on each company's own site before you commit. This was last reviewed June 2026." },
+      { type: "ul", items: [
+        "<b>DecoNetwork</b> — an all-in-one web-to-print suite. Online stores, an online design studio, and business-management tools bundled together on tiered plans. If you want one platform with the whole web-to-print side built in, this is squarely aimed at you.",
+        "<b>InkSoft</b> — part of the Inktavo family, and strongest at the front of the funnel. Customizable online stores, group and fundraising stores, sales tools for actually selling apparel online. If your priority is selling and group ordering, they're very good at it.",
+        "<b>InkTracker</b> — mine. One flat price, $99 a month, everything included and unlimited employees. Live garment pricing from S&amp;S and AS Colour right inside quoting, a two-way QuickBooks Online sync across invoices, payments, and customers, an embeddable customer quote wizard, a broker portal, and production and shop-floor tracking. I built it as a screen printer who was sick of paying per seat and doing double entry into QuickBooks. It's an operations tool, not a storefront platform.",
+        "<b>Printavo</b> — one of the best-known names in the space, now part of Inktavo. Established, widely used, with calendar-driven scheduling, online approvals, quoting, and invoicing. If you want a proven platform that a ton of shops already run, there's a real comfort in that.",
+        "<b>YoPrint</b> — modern, production-focused, with a QuickBooks integration and published tiered pricing that includes a free tier. If you want clean production management and a free way to kick the tires before you spend anything, start there.",
+      ] },
+
+      { type: "callout", title: "Where InkTracker probably isn't your answer", html: "If your whole business is selling online — spirit wear, fundraisers, custom stores for a hundred different groups — InkSoft or DecoNetwork are built for that and I'm not. If you want the biggest, most-adopted name with years of shops behind it, that's Printavo. If you want to spend zero dollars this week and just try something, YoPrint has a free tier and I don't. I'm the answer when you want transparent flat pricing with tight QuickBooks and live supplier pricing, and you care more about running the shop than running a storefront." },
+
+      { type: "p", html: "That's the real map. Pick the one that matches the shape of your business. If that's not mine, no hard feelings — genuinely. I'd rather you tell another printer \"the guy at InkTracker pointed me the right way\" than have you resent a tool that was never built for you." },
+      { type: "p", html: "If flat pricing and tight QuickBooks does sound like your shop, the full side-by-side with the criteria and current details lives on <a href=\"/compare\">our comparison page</a>, and you can try InkTracker free for 14 days. And if you land somewhere else, come back and tell me how it's going anyway. We're all in this together." },
+    ],
+    related: [
+      { href: "/compare", text: "The honest software buyer's guide" },
+      { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a screen printing job" },
+    ],
+    faqs: [
+      {
+        q: "What's the best screen printing software?",
+        a: "There isn't one best — it depends on your shop. Weigh what you'll actually pay at your size, whether it syncs two-way with your accounting, whether it pulls live supplier pricing, and whether your priority is production, online stores, or selling. Printavo, YoPrint, InkSoft, DecoNetwork, and InkTracker each fit different shops.",
+      },
+      {
+        q: "How much does screen printing software cost?",
+        a: "It ranges from free starter tiers to tiered or quote-based bundles, depending on features and seats. InkTracker is a flat $99/mo (or $999/yr) with everything and unlimited employees included, plus a 14-day free trial. Confirm current pricing on each vendor's own site.",
+      },
+      {
+        q: "Why would a software company recommend its competitors?",
+        a: "Because the right fit matters more than the sale. If a shop signs up for a tool that was never built for how they work, they leave unhappy and tell other printers. I'd rather point you to the tool that fits — even if it's not mine — and earn the ones InkTracker is genuinely right for.",
+      },
+    ],
+  },
+
+  // ── Post 6 — DTF vs screen printing (shop-owner economics angle) ─────────
+  // Target keyword: "dtf vs screen printing" (SEO plan priority #1). Written
+  // for shop OWNERS deciding per job — NOT the buyer-facing version (that
+  // angle is reserved for Biota Mfg per the plan's cannibalization note).
+  // VOICE CONSTRAINT: Joe runs screens only — no DTF equipment at Biota. The
+  // post's stance is "a screen printer giving you the honest math, including
+  // when the answer isn't my shop." Never claim first-person DTF experience.
+  {
+    slug: "dtf-vs-screen-printing",
+    title: "DTF vs. screen printing, from a shop that only runs screens",
+    description:
+      "I'm a screen printer — there's no DTF printer in my shop. But the question lands weekly, and the math is objective: setup cost vs. per-piece cost. Where the break-even lands, where each process wins, and why I still haven't bought the equipment.",
+    category: "Production",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-07-02",
+    readMin: 7,
+    ogImage: SITE.logo,
+    cta: true,
+    ctaHeading: "Quote it right, whichever process runs.",
+    ctaBody:
+      "InkTracker holds your setup fees, garment markup, and per-piece pricing and stacks them on every quote — screen print, embroidery, or DTF. We run it in our own shop every day.",
+    body: [
+      { type: "p", html: "Let me be straight before the first number: I'm a screen printer. There is no DTF printer in my shop, and this isn't a secret review from someone running both. But \"DTF or screen printing?\" lands in my inbox about once a week, usually from someone starting out — and the honest answer doesn't need me to own the equipment, because the economics are objective. Sometimes that answer is \"not my process.\" You should hear it anyway." },
+      { type: "p", html: "Quick level-set if DTF is new to you: it's direct-to-film. Full-color art gets printed on a film sheet, dusted with adhesive powder, and heat-pressed onto the garment. No screens, no emulsion, no reclaim tank. That \"no screens\" part is the whole story — everything else follows from it." },
+
+      { type: "h2", text: "It's setup cost vs. per-piece cost. That's the entire decision." },
+      { type: "p", html: "Screen printing is expensive to start and cheap to run. Every color is a screen — coat it, burn it, tape it, register it, reclaim it later. I charge $25 a screen in setup because that's real labor. But once the press is dialed, each print costs pennies in ink. The setup spreads thinner with every shirt in the run." },
+      { type: "p", html: "DTF is the mirror image: nothing to start, flat cost forever. No setup at all — but every single shirt carries the transfer cost plus press time, and shirt number 300 costs exactly what shirt number one did. It never gets cheaper." },
+      { type: "p", html: "Put numbers on it. Twelve shirts, two-color front. My screens are $50 of setup — that's $4.17 a shirt before ink touches anything. The gang-sheet vendors will sell that same art as a transfer for a couple-fifty a print, give or take. DTF wins and it isn't close. Now make it 100 shirts: setup is 50 cents each and shrinking, ink is pennies. The transfer is still a couple-fifty. Every. Single. Shirt. Screens win and it isn't close either." },
+      { type: "callout", title: "The crossover lands around two dozen", html: "For a one- or two-color design, run $25-a-screen setup against vendor transfer pricing and the lines cross somewhere around 20 to 30 pieces. More colors push the crossover higher — every color adds a screen, and DTF doesn't care if the art has four colors or forty. A six-color job might not beat film until 60+ pieces. Run your own setup fee and a real vendor quote through the math; your number will be near this one, not on it." },
+
+      { type: "h2", text: "Where DTF wins — yes, a screen printer is telling you this" },
+      { type: "ul", items: [
+        "<b>Short runs and one-offs.</b> Twelve hats for a bachelor party, one sample for a client meeting, a reprint for the single hoodie that got a hole. Burning screens for that job is how a shop loses money politely.",
+        "<b>Full-color and photo art.</b> A sunset photo with forty colors is one transfer. On press it's a sim-process separation and a day of registration — gorgeous when it's worth it, priced like it always.",
+        "<b>Mixed garments in one order.</b> Tees, hoodies, totes, a nylon jacket — the same transfer presses onto all of it. On press, every substrate change is another setup.",
+        "<b>Names and numbers.</b> Shops that run both will print 200 team fronts on press and heat-press the personalization from film. Nobody burns a screen per name.",
+      ] },
+
+      { type: "h2", text: "Where screens keep the crown" },
+      { type: "ul", items: [
+        "<b>Volume.</b> Past the crossover the gap widens on every shirt. At 500 pieces the difference between pennies of ink and a couple-fifty of film is your entire profit on the job.",
+        "<b>The hand.</b> Ink pushed into fabric feels like the shirt. A transfer sits on top of it. DTF has gotten a lot better, but on a big solid print you can still tell with your eyes closed — and so can a customer who wears the shirt fifty times.",
+        "<b>Simple spot-color work.</b> A one-color logo on 200 shirts is the job screen printing was born for. Nothing touches it on cost or speed.",
+        "<b>Reorders.</b> The art's proven, the seps exist, re-setup is cheap. A repeat customer's quarterly 300-piece run gets more profitable every time it comes back.",
+      ] },
+
+      { type: "h2", text: "If you do run DTF: \"no setup\" doesn't mean cheap" },
+      { type: "p", html: "The trap I see when new shops add transfers: no setup fee, so they quote it like free money — film cost times two, done. Then they press 40 shirts, most of a minute each, and wonder where the afternoon went." },
+      { type: "p", html: "Press time is production time. Overhead doesn't care whether the shirt went through a dryer or a heat press — every print that leaves a shop carries its share of rent, power, and payroll, <a href=\"/blog/build-a-screen-printing-price-chart\">same as the chart math</a>. Price transfers off film cost plus press labor plus that overhead share, at the same margin you'd protect on press. If DTF is the right process for the job, it deserves a real price, not a discount for being convenient." },
+
+      { type: "h2", text: "Why I still haven't bought the equipment" },
+      { type: "p", html: "Every trade show, somebody tries to sell me one. Here's the math that keeps my wallet closed: a DTF printer is a second business living inside your first one. White ink that wants to clog, humidity control, daily maintenance whether you sold film that day or not. Meanwhile the gang-sheet vendors will print anyone's art on a 22×60 sheet for twenty-something dollars and ship it in two days — ten or twelve front prints a sheet, no equipment, no babysitting." },
+      { type: "p", html: "So the short-run work I'm wrong for doesn't need me to own a printer to get served — and if I ever add DTF, it starts with vendor sheets and a heat press, not the equipment. The printer makes sense when transfer volume is steady enough that the vendor bill plus the two-day wait costs more than the equipment and its upkeep. That's a spreadsheet decision. Run your monthly transfer spend against the equipment's real cost — ink, film, powder, maintenance hours — before the sales rep runs it for you." },
+
+      { type: "h2", text: "The honest rule" },
+      { type: "p", html: "Small, colorful, mixed, or personalized: film is probably your answer, and a screen printer who tells you otherwise is quoting his equipment, not your job. Big, simple, repeating: bring it to a press, because nothing beats it and the reorders only get better. When a job sits in the middle, run the setup-versus-per-piece math above and let the number pick. That's how I'd want to be told, so that's how I'm telling you." },
+    ],
+    related: [
+      { href: "/blog/how-to-price-a-screen-printing-job", text: "How to price a screen printing job" },
+      { href: "/blog/build-a-screen-printing-price-chart", text: "How I build a screen printing price chart" },
+    ],
+    faqs: [
+      {
+        q: "Is DTF cheaper than screen printing?",
+        a: "Under roughly two dozen pieces, usually yes — DTF has no setup cost, so short runs win. Past that, screen printing gets cheaper with every shirt because setup spreads across the run while a transfer costs the same on shirt one and shirt three hundred. More colors push the crossover higher, since every screen adds setup that DTF doesn't have.",
+      },
+      {
+        q: "Does DTF last as long as screen printing?",
+        a: "Good DTF pressed correctly survives fifty-plus washes and modern film is far better than the transfers of a few years ago. But ink pushed into the fabric still outlives and outfeels a layer sitting on top of it, especially on large solid prints. For merch someone will wear weekly for years, screens still win; for event and short-life pieces the difference rarely matters.",
+      },
+      {
+        q: "Can I mix DTF and screen printing in one order?",
+        a: "Shops that run both do it all the time, and it's a profitable combination: screen print the 200 identical fronts on press, then heat-press DTF names and numbers on the backs. The volume work gets volume pricing and the personalization gets done without burning a screen per name.",
+      },
+      {
+        q: "Should a shop buy a DTF printer or order gang sheets?",
+        a: "Start with gang sheets from a transfer vendor — around twenty-something dollars for a 22×60 sheet holding ten or more front prints, shipped in days, zero maintenance. The printer only makes sense when monthly transfer volume and turnaround needs clearly outrun the vendor's bill plus the equipment's real ongoing cost in ink, film, powder, and daily upkeep.",
+      },
+    ],
+  },
+
+  // ── Post 7 — QuickBooks for screen printers ──────────────────────────────
+  // Target keyword: "quickbooks for screen printers" (SEO plan keyword bank —
+  // low volume, $2.50 CPC = buyer intent, near-zero difficulty). Every
+  // product claim below is verifiable in the live QB integration: customer
+  // dedup (_shared/qbInvoice.js), QB-AST-authoritative tax display
+  // (customerFacingTotals/isQbAuthoritative), expense sync + nightly
+  // reconcile (qbSync/qbReconcile). Biota's books genuinely run through
+  // this sync — the first-person claims are real.
+  {
+    slug: "quickbooks-for-screen-printers",
+    title: "QuickBooks for screen printers: stop typing every job in twice",
+    description:
+      "Your shop software and your books disagree because you're the sync — retyping every job into QuickBooks by hand. What a real two-way connection should do, the three places shop books quietly rot, and how we run ours.",
+    category: "Money",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-07-03",
+    readMin: 6,
+    ogImage: SITE.logo,
+    cta: true,
+    ctaHeading: "Your books, without the retyping.",
+    ctaBody:
+      "InkTracker's two-way QuickBooks sync creates the invoice from the quote, matches the customer instead of duplicating them, lets QuickBooks own the tax math, and reconciles every night. We run our own shop's books on it.",
+    body: [
+      { type: "p", html: "Every print shop I know runs the same accounting system: jobs live in one place — shop software, a spreadsheet, a clipboard — and the books live in QuickBooks. And the sync between them is you, at 9pm, retyping invoices. Every job gets entered twice, which means every job is two chances to fat-finger a number, and the month-end ritual is figuring out why the shop says you billed $14,200 and QuickBooks says $13,750." },
+      { type: "p", html: "I run my shop's books through QuickBooks Online, and I built the sync I'm going to describe — so read this knowing where I stand. But the first half is true whatever software you use, and if you take nothing else from it: stop being the sync." },
+
+      { type: "h2", text: "Why QuickBooks and not a spreadsheet" },
+      { type: "p", html: "Not because it's fun. Because it's the language your accountant already speaks, and because QuickBooks Online does two jobs a spreadsheet can't. First, <b>sales tax</b>: its Automated Sales Tax looks at where the order ships and applies that jurisdiction's actual rate — which matters more every year a shop sells outside its own county (<a href=\"/blog/sales-tax-for-print-shops\">the short version of that whole mess is here</a>). Second, <b>getting paid</b>: a QuickBooks invoice can carry a real payment link, so the customer pays the invoice directly and the payment is already recorded against it. No separate payment system to reconcile later." },
+      { type: "p", html: "One practical note: everything below is about QuickBooks <b>Online</b>. Desktop is a different animal with a different (much weaker) story for connecting shop software." },
+
+      { type: "h2", text: "The three places shop books quietly rot" },
+      { type: "ul", items: [
+        "<b>Drift.</b> The quote said $601. You typed $610 into QuickBooks at 9pm. Nobody notices until the customer pays the invoice and the shop record still shows a balance — or worse, the other way around.",
+        "<b>Duplicate customers.</b> Retype \"Mystery Machine Co\" one week and \"Mystery Machine Company\" the next and QuickBooks happily makes two customers. Now their history is split, their statements are wrong, and cleaning it up is an afternoon of merging you'll never schedule.",
+        "<b>Tax by vibes.</b> Your shop software charged the customer your home flat rate. QuickBooks calculated the real destination rate. The invoice and the quote now disagree by a few dollars, and multiplied across a year that's a filing headache you handed yourself.",
+      ] },
+
+      { type: "h2", text: "What a real two-way sync should do" },
+      { type: "p", html: "This is the checklist I'd hold ANY shop software against — mine included. If a vendor demos \"QuickBooks integration,\" make them show you each of these:" },
+      { type: "ul", items: [
+        "<b>The invoice comes from the quote.</b> One click, line items and amounts carried over exactly. If you can edit the quote after the invoice exists and nothing warns you, that's drift waiting to happen.",
+        "<b>Customers get matched, not duplicated.</b> The sync should find your existing QuickBooks customer even when the name isn't a character-for-character match — matching on email and normalized name, not exact spelling.",
+        "<b>QuickBooks owns the tax math.</b> Once connected, the destination-based number from Automated Sales Tax is the truth, and the shop side should display THAT — clearly labeled — instead of its own estimate. Two systems both computing tax is how you get two answers.",
+        "<b>Payments flow back.</b> When the customer pays the QuickBooks invoice, the job should show paid in the shop — without you copying it over.",
+        "<b>Expenses too.</b> Blank orders and supplier bills are half your ledger. If only invoices sync, you're still the sync for the spending side.",
+        "<b>A safety net for missed events.</b> Webhooks fail quietly. Something should re-check QuickBooks on a schedule and catch anything that slipped — a payment recorded directly in QB, an invoice edited on the QB side — instead of trusting that every message arrived.",
+      ] },
+      { type: "callout", title: "The tell in a demo", html: "Ask the vendor: \"What happens if my customer's name is spelled slightly differently in QuickBooks?\" and \"What happens if a payment gets recorded in QuickBooks directly?\" If the answer to either is a pause, you've found where the double entry comes back." },
+
+      { type: "h2", text: "How we run it" },
+      { type: "p", html: "InkTracker does the list above because I needed it to: my shop's books run through this exact sync every day. The quote becomes the QuickBooks invoice in one click. The customer gets matched against what's already in QuickBooks — email first, then normalized name — before the sync will ever create a new one. Once QuickBooks is connected, its Automated Sales Tax number is the one the customer sees, labeled as QuickBooks' number; before that, the shop's flat rate shows as an estimate and says so. Supplier expenses sync to the spending side. And every night a reconcile job re-checks QuickBooks and cleans up anything that slipped through — then emails me if it had to." },
+      { type: "p", html: "None of that is magic. It's just the position that the books are the source of truth about money, the shop system is the source of truth about work, and a human retyping between them is the worst sync protocol ever invented." },
+    ],
+    related: [
+      { href: "/blog/sales-tax-for-print-shops", text: "Sales tax for print shops: the short version" },
+      { href: "/blog/screen-printing-software-honest-comparison", text: "How to choose screen printing software" },
+    ],
+    faqs: [
+      {
+        q: "Does QuickBooks work for screen printing shops?",
+        a: "Yes — QuickBooks Online is the most common books system in small print shops, mostly because accountants already know it. What it doesn't do alone is understand jobs: quotes, garments, press schedules. That's shop software's half. The question that matters is whether the two halves sync, or whether you're retyping between them.",
+      },
+      {
+        q: "Do I need QuickBooks Online or Desktop?",
+        a: "Online, if you want shop software connected. Modern integrations are built on QuickBooks Online's API — and features like Automated Sales Tax and invoice payment links live there. Desktop integrations exist but are a different, weaker story.",
+      },
+      {
+        q: "Will connecting shop software create duplicate customers in QuickBooks?",
+        a: "It will if the integration matches customers by exact name only — one spelling variation and you get a second customer with split history. A good sync matches on email and normalized name before it ever creates anyone new. Make this question part of any demo.",
+      },
+      {
+        q: "Should my shop software or QuickBooks calculate sales tax?",
+        a: "QuickBooks, once it's connected. Its Automated Sales Tax uses the order's ship-to address and the actual jurisdiction rate, which beats any flat shop rate the moment you sell outside your home area. The shop side should display QuickBooks' number rather than compute a competing one — two systems doing tax math is how invoices and quotes end up disagreeing.",
       },
     ],
   },

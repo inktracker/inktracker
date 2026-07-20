@@ -117,6 +117,31 @@ export function reconcileFieldsFromSubscriptions(subs) {
   };
 }
 
+// ── Pending-cancellation display state ──────────────────────────────
+//
+// Stripe keeps a canceled subscription `active` until period end and sets
+// cancel_at_period_end=true. These map that flag (+ the period-end date) to the
+// two profile columns the app reads for its "plan ends on X" banner. Purely
+// additive display state — does NOT touch the access gate.
+
+// Maps a Stripe subscription to the pending-cancellation fields we persist.
+// current_period_end is unix seconds → ISO. When not canceling, fields clear.
+export function cancellationFieldsFromSubscription(sub) {
+  const pending = Boolean(sub?.cancel_at_period_end);
+  const endsAt = pending && sub?.current_period_end
+    ? new Date(sub.current_period_end * 1000).toISOString()
+    : null;
+  return { cancel_at_period_end: pending, subscription_ends_at: endsAt };
+}
+
+// Transition guard for the "cancellation scheduled" email. Stripe fires
+// customer.subscription.updated for many reasons, so we only email when the
+// pending flag TRANSITIONS false→true (a cancel was just scheduled). Un-cancel
+// (true→false) and no-op updates (true→true / false→false) don't email.
+export function isCancellationNewlyScheduled(prevPending, nextPending) {
+  return !prevPending && Boolean(nextPending);
+}
+
 // ── Stripe checkout payload builders ────────────────────────────────
 
 // trial_period_days field on subscription_data. Returns the number of

@@ -11,7 +11,7 @@ import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import HintTip from "../components/shared/HintTip";
-import { useBillingGate } from "@/lib/billing-gate";
+import { useBillingGate, useReadOnly } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
 import { todayInShopTz } from "@/lib/shopTimezone";
@@ -50,6 +50,7 @@ export default function Orders() {
   const [viewing, setViewing] = useState(null);
   const [user, setUser] = useState(null);
   const { gate: billingGate } = useBillingGate(user);
+  const { readOnly, reactivateHref } = useReadOnly(user);
   const [viewingInvoice, setViewingInvoice] = useState(null);
   const [advFilters, setAdvFilters] = useState(initialCustomer ? { customer: initialCustomer } : {});
   const [originFilter, setOriginFilter] = useState("All");
@@ -159,23 +160,23 @@ export default function Orders() {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
     const nextStatus = idx >= 0 && idx < O_STATUSES.length - 1 ? O_STATUSES[idx + 1] : null;
-    if (nextStatus) {
-      // Calendar/Production filter requires completed_date to show the
-      // green "Completed" chip. Mirror Production.jsx handleAdvance so
-      // the order doesn't fall off the calendar when marked complete
-      // from this list.
-      const payload = { status: nextStatus };
-      if (nextStatus === "Completed" && !order.completed_date) {
-        // Shop-tz, not UTC. After ~5pm Pacific the UTC date is
-        // already tomorrow — using toISOString() here stamped
-        // tomorrow's date and the Calendar's green chip landed on
-        // the wrong day. The Alder Creek "didn't show on today"
-        // regression (2026-05-30).
-        payload.completed_date = todayInShopTz();
-      }
+    if (!nextStatus) return;
+    // Calendar/Production filter requires completed_date to show the
+    // green "Completed" chip. Mirror Production.jsx handleAdvance so
+    // the order doesn't fall off the calendar when marked complete
+    // from this list.
+    const payload = { status: nextStatus };
+    if (nextStatus === "Completed" && !order.completed_date) {
+      // Shop-tz, not UTC. After ~5pm Pacific the UTC date is
+      // already tomorrow — using toISOString() here stamped
+      // tomorrow's date and the Calendar's green chip landed on
+      // the wrong day. The Alder Creek "didn't show on today"
+      // regression (2026-05-30).
+      payload.completed_date = todayInShopTz();
+    }
+    try {
       const updated = await base44.entities.Order.update(id, payload);
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-
       // Modal lifecycle: keep open through the pipeline stages so the
       // operator doesn't lose their place mid-job. Final transition
       // to Completed → close so they return to the order queue.
@@ -183,6 +184,8 @@ export default function Orders() {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
       }
+    } catch (err) {
+      notify.error("Couldn't update the order status", err);
     }
   }
 
@@ -190,25 +193,43 @@ export default function Orders() {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
     const prevStatus = idx > 0 ? O_STATUSES[idx - 1] : null;
-    if (prevStatus) {
+    if (!prevStatus) return;
+    try {
       const updated = await base44.entities.Order.update(id, { status: prevStatus });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       if (viewing?.id === id) setViewing(updated);
+    } catch (err) {
+      notify.error("Couldn't move the order back a step", err);
     }
   }
 
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
-    const updated = await runOrderCompletion({ order, userEmail: user.email, base44 });
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
-    // Keep the modal open on the just-completed order so its action bar can
-    // reveal Create Invoice → Send. Only updates if this order is the one
-    // being viewed; a completion triggered outside the modal leaves it closed.
-    setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+    try {
+      const updated = await runOrderCompletion({ order, user, base44 });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      // Keep the modal open on the just-completed order so its action bar can
+      // reveal Create Invoice → Send. Only updates if this order is the one
+      // being viewed; a completion triggered outside the modal leaves it closed.
+      setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+    } catch (err) {
+      notify.error("Couldn't complete the order", err);
+    }
   }
 
   async function handleDelete(id) {
     const order = orders.find((o) => o.id === id);
+    // Completed orders are preserved on purpose: a BEFORE DELETE trigger
+    // refuses the delete so their invoices never dangle. Explain the "why"
+    // and the way out instead of firing a doomed delete that throws a
+    // check-constraint error the user can't act on.
+    if (order?.status === "Completed") {
+      notify.info(
+        "Completed orders are kept on file",
+        "This order is marked Completed, so it stays as a historical record and its invoice remains linked. To remove it, move it back a step first (Revert), then delete.",
+      );
+      return;
+    }
     // Honest confirm copy: an order made from a quote isn't lost — the quote is
     // restored (to the broker for broker jobs, else to your Quotes list).
     const msg = !order?.quote_id
@@ -217,7 +238,12 @@ export default function Orders() {
         ? "Delete this order?\n\nIts quote goes back to the broker, so nothing is lost."
         : "Delete this order?\n\nIts originating quote returns to your Quotes list, so nothing is lost.";
     if (!window.confirm(msg)) return;
-    await base44.entities.Order.delete(id);
+    try {
+      await base44.entities.Order.delete(id);
+    } catch (err) {
+      notify.error("Couldn't delete the order", err);
+      return;
+    }
     setOrders((prev) => prev.filter((o) => o.id !== id));
     setViewing(null);
 
@@ -239,12 +265,16 @@ export default function Orders() {
 
   async function handleTogglePaid(order) {
     const newPaid = !order.paid;
-    const updated = await base44.entities.Order.update(order.id, {
-      paid: newPaid,
-      paid_date: newPaid ? new Date().toISOString().split("T")[0] : null,
-    });
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
-    setViewing(updated);
+    try {
+      const updated = await base44.entities.Order.update(order.id, {
+        paid: newPaid,
+        paid_date: newPaid ? todayInShopTz() : null,
+      });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      setViewing(updated);
+    } catch (err) {
+      notify.error(`Couldn't mark the order ${newPaid ? "paid" : "unpaid"}`, err);
+    }
   }
 
   return (
@@ -306,6 +336,13 @@ export default function Orders() {
                   </td>
                 </tr>
               )}
+              {!loading && orders.length > 0 && filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-sm text-slate-500">
+                    No orders match your current filters.
+                  </td>
+                </tr>
+              )}
               {filtered.map((o) => {
                 const artworkCount = getOrderArtworkCount(o);
                 return (
@@ -348,6 +385,9 @@ export default function Orders() {
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <ListCardsSkeleton />}
           {!loading && orders.length === 0 && <EmptyState type="orders" />}
+          {!loading && orders.length > 0 && filtered.length === 0 && (
+            <div className="py-8 text-center text-sm text-slate-500">No orders match your current filters.</div>
+          )}
           {filtered.map((o) => {
             const artworkCount = getOrderArtworkCount(o);
             return (
@@ -393,6 +433,8 @@ export default function Orders() {
           onTogglePaid={handleTogglePaid}
           onShowInvoice={(invoice) => setViewingInvoice(invoice)}
           onUpdated={(u) => setOrders((prev) => prev.map((o) => (o.id === u.id ? { ...o, ...u } : o)))}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
         />
       )}
 
@@ -401,8 +443,10 @@ export default function Orders() {
           invoice={viewingInvoice}
           customer={null}
           onClose={() => setViewingInvoice(null)}
-          onMarkPaid={() => {}}
-          onDelete={() => {}}
+          // No onMarkPaid/onDelete here on purpose: those are money actions
+          // with QB-sync semantics that live on the Invoices page. Passing
+          // stub handlers rendered buttons that silently did nothing — the
+          // modal hides both when the handlers are absent.
           // Successful Send returns operator to the orders queue.
           onSendSuccess={() => setViewing(null)}
         />

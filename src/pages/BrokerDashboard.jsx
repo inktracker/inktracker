@@ -658,6 +658,10 @@ export default function BrokerDashboard({ initialTab } = {}) {
   // extras seed.
   const [shopAddonsByScope, setShopAddonsByScope] = useState(null);
   const [shop, setShop] = useState(null);
+  // This broker's per-broker pricing overrides at the assigned shop
+  // (broker_pricing.overrides). null = none — the editor prices off the
+  // shop sheet exactly as before the overlay feature existed.
+  const [brokerOverrides, setBrokerOverrides] = useState(null);
   const [editorQuote, setEditorQuote] = useState(null);
   const [showEditor, setShowEditor] = useState(false);
   const [previewOrder, setPreviewOrder] = useState(null);
@@ -694,7 +698,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
         }
 
         const assignedShop = (u.assigned_shops || [])[0] || null;
-        const [allQuotes, myClients, myOrders, shopResults, shopProfileResults] = await Promise.all([
+        const [allQuotes, myClients, myOrders, shopResults, shopProfileResults, brokerPricingRows] = await Promise.all([
           base44.entities.Quote.filter({ broker_id: u.email }, "-created_date", 200),
           base44.entities.Customer.filter({ shop_owner: `broker:${u.email}` }),
           base44.entities.Order.filter({ broker_id: u.email }, "-created_date", 100),
@@ -703,7 +707,17 @@ export default function BrokerDashboard({ initialTab } = {}) {
           // the shops table). Fetch them so the broker's shop-form PDF can
           // show the host shop's branding.
           assignedShop ? base44.entities.User.filter({ email: assignedShop }) : Promise.resolve([]),
+          // Per-broker pricing overrides (RLS: broker reads only their own
+          // row). Best-effort with a catch — if the table isn't migrated
+          // yet, the dashboard must still load and just price off the
+          // shop sheet.
+          assignedShop
+            ? base44.entities.BrokerPricingOverride
+                .filter({ shop_owner: assignedShop, broker_email: (u.email || "").toLowerCase() })
+                .catch(() => [])
+            : Promise.resolve([]),
         ]);
+        setBrokerOverrides(brokerPricingRows?.[0]?.overrides || null);
         const shopRecord = (shopResults || [])[0] || null;
         const shopProfile = (shopProfileResults || [])[0] || null;
         // Merge profile fields onto the shop object so existing consumers
@@ -1457,7 +1471,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
             sibling that replaced them). */}
 
         {tab === "performance" && user && (
-          <BrokerPerformance orders={orders} />
+          <BrokerPerformance orders={orders} quotes={quotes} />
         )}
 
         {tab === "invoices" && user && (
@@ -1487,6 +1501,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
           shopAddonsByScope={shopAddonsByScope}
           shop={shop}
           broker={user}
+          brokerOverrides={brokerOverrides}
         />
       )}
 

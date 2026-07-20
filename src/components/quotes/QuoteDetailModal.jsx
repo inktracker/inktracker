@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { openSignedArtwork } from "@/lib/uploadFile";
+import { openSignedArtwork, uploadFile } from "@/lib/uploadFile";
 import {
   calcQuoteTotals,
   calcLinkedLinePrice,
@@ -15,21 +15,31 @@ import {
   getTier,
   BROKER_MARKUP,
   STANDARD_MARKUP,
+  getShopPricingConfig,
 } from "../shared/pricing";
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
-import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
+import { savedAfterDiscount, savedRushTotal } from "@/lib/quotes/effectiveTotals";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { quoteThreadId } from "@/lib/messageThreads";
+import { isConvertedToOrder } from "@/lib/quotes/approvalState";
+import { imprintColorLabel, imprintCountText } from "@/lib/quotes/imprintLabels";
 import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare, UserCheck, UserX, Paperclip } from "lucide-react";
 import { notify } from "@/lib/notify";
 import AttachmentGallery from "../shared/AttachmentGallery";
+import { DEPOSITS_ENABLED } from "@/lib/deposits";
+import ReactivateLink from "../shared/ReactivateLink";
+
+// Shown on every disabled write affordance when the shop is read-only
+// (subscription lapsed). Viewing stays fully intact — only DB-mutating
+// actions are gated, never hidden without explanation.
+const RO_TITLE = "Your subscription has ended — reactivate to create and edit";
 
 const STATUS_ACTIONABLE = ["Draft", "Sent", "Pending"];
 
@@ -286,6 +296,11 @@ export default function QuoteDetailModal({
   // re-linked from the possible-duplicate banner). Parent splices the
   // updated row into its quotes state so the modal re-renders.
   onUpdated,
+  // Subscription-lapsed read-only mode. When true, every DB-mutating
+  // action is disabled (not hidden) with a reactivate hint; all reads,
+  // the PDF preview, and Close stay fully functional.
+  readOnly = false,
+  reactivateHref,
 }) {
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -445,14 +460,12 @@ export default function QuoteDetailModal({
     try {
       const newArtwork = [...localArtwork];
       for (const file of files) {
-        const ext = file.name.split(".").pop();
-        const path = `quote_${quote.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("artwork").upload(path, file, { upsert: false });
-        if (upErr) throw upErr;
-        // url is the public-FORM path-carrier (artwork bucket is private — M-1);
-        // store `path` as the canonical reference so readers sign from it directly.
-        const { data: { publicUrl } } = supabase.storage.from("artwork").getPublicUrl(path);
-        newArtwork.push({ id: path, name: file.name, path, url: publicUrl, note: "", source: "upload" });
+        // Shared helper: validates (extension/size/scriptable-SVG — this
+        // inline path skipped all of it) and writes the artwork_objects
+        // ownership row the read policy resolves through. file_url is the
+        // /artwork/ path-carrier; `path` stays the canonical reference.
+        const { path, file_url } = await uploadFile(file);
+        newArtwork.push({ id: path, name: file.name, path, url: file_url, note: "", source: "upload" });
       }
       await base44.entities.Quote.update(quote.id, { selected_artwork: newArtwork });
       setLocalArtwork(newArtwork);
@@ -507,19 +520,11 @@ export default function QuoteDetailModal({
   }
 
   async function handleQBSync() {
-    // First-time invoice creation triggers QBO's POST /invoice/{id}/send,
-    // which emails the customer a copy + payment link from QuickBooks'
-    // own mail servers. Re-sync (when qb_invoice_id already exists) is
-    // an UPDATE — no new send. So gate the confirm on the create case
-    // only; re-syncs run silently.
-    if (!qbInvoiceId) {
-      const recipientEmail = customer?.email || quote.customer_email;
-      const proceed = window.confirm(
-        `Heads up: QuickBooks will email ${recipientEmail || "the customer"} a copy of this invoice with a pay-now link the moment you click OK.\n\n` +
-        `This happens on QuickBooks' side — InkTracker can't suppress it. Continue?`
-      );
-      if (!proceed) return;
-    }
+    // Sync-only: creates the invoice in QuickBooks and mints the pay-now
+    // link (used by the Send flow) WITHOUT QuickBooks emailing the customer
+    // — noEmail:true below suppresses the /send fallback. No confirm needed:
+    // this doesn't notify the customer, it just prepares the QB invoice.
+    // The shop emails the customer deliberately via Send Quote.
     setQbSyncing(true);
     setQbError(null);
     try {
@@ -551,6 +556,7 @@ export default function QuoteDetailModal({
       const { raw: data } = await provider.pushInvoice(quote, {
         customer: customerPayload,
         invoicePayload,
+        noEmail: true, // sync-only — QB must not email; Send delivers it
       });
 
       // UPDATE-on-existing-invoice failed in QB. Edge function refused
@@ -718,10 +724,15 @@ export default function QuoteDetailModal({
   // shop's view stays in lockstep with what the broker / shop quoted.
   const totals = useMemo(() => {
     if (quote?.total != null && quote?.subtotal != null) {
+      // Rush from the saved per-line _rushFee stamps — quote.rushTotal was
+      // never persisted, so the old read was always 0 and the rush row never
+      // rendered on a saved quote. subtotal is shown ex-rush with a separate
+      // rush row, footing to the saved total.
+      const rush = savedRushTotal(quote);
       return {
         sub: Number(quote.subtotal),
-        subtotal: Number(quote.subtotal) - (Number(quote.rushTotal) || 0),
-        rushTotal: Number(quote.rushTotal) || 0,
+        subtotal: Number(quote.subtotal) - rush,
+        rushTotal: rush,
         afterDisc: savedAfterDiscount(quote),
         tax: Number(quote.tax || 0),
         total: Number(quote.total),
@@ -755,6 +766,11 @@ export default function QuoteDetailModal({
               <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 truncate">
                 {getShopFacingCustomer(quote, customer)}
               </h2>
+              {quote.job_title && (
+                <div className="text-xs sm:text-sm text-slate-500 mt-0.5 truncate">
+                  Job: {quote.job_title}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 {quote.date && (
                   <div className="text-xs sm:text-sm text-slate-500">
@@ -771,7 +787,7 @@ export default function QuoteDetailModal({
 
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <Badge s={quote.status} />
-              {quote.deposit_paid ? (
+              {DEPOSITS_ENABLED && quote.deposit_paid ? (
                 <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
                   Paid
                 </span>
@@ -860,12 +876,14 @@ export default function QuoteDetailModal({
                     {Number(quote.rush_rate) > 0 ? "Yes" : "No"}
                   </span>
                 </div>
-                <div className="flex justify-between text-sm text-slate-500">
-                  <span>Deposit</span>
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {quote.deposit_pct || 50}%
-                  </span>
-                </div>
+                {DEPOSITS_ENABLED && (
+                  <div className="flex justify-between text-sm text-slate-500">
+                    <span>Deposit</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">
+                      {quote.deposit_pct || 50}%
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -900,11 +918,11 @@ export default function QuoteDetailModal({
                   return (
                     <div
                       key={li.id}
-                      className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden"
+                      className="border border-slate-200 dark:border-slate-700 border-l-4 border-l-teal-600 rounded-xl overflow-hidden shadow-sm"
                     >
-                      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div>
-                          <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                          <div className="text-base font-bold text-slate-900 dark:text-slate-100">
                             {getGarmentHeader(li)}
                           </div>
                           {getGarmentMeta(li) && (
@@ -972,10 +990,15 @@ export default function QuoteDetailModal({
 
                                           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
                                             {imp.method && <span>Method: {imp.method}</span>}
-                                            {imp.colors && <span>Colors: {imp.colors}</span>}
+                                            {/* Embroidery imp.colors is a stitch-tier index, not a
+                                                color count — imprintCountText renders "5K-10K stitches"
+                                                for embroidery, "N colors" otherwise. */}
+                                            {imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers) && (
+                                              <span>{imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)}</span>
+                                            )}
                                             {imp.pantones && (
                                               <span className="font-medium text-teal-600">
-                                                Ink Colors: {imp.pantones}
+                                                {imprintColorLabel(imp)}: {imp.pantones}
                                               </span>
                                             )}
                                             {imp.details && (
@@ -1076,7 +1099,10 @@ export default function QuoteDetailModal({
                     const flat = quote.discount_type === "flat" || (dv > 100 && quote.discount_type !== "percent");
                     return (
                       <div className="flex justify-between text-sm text-emerald-600">
-                        <span>Discount {flat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}</span>
+                        <span>
+                          Discount {flat ? `(${fmtMoney(dv)})` : `(${quote.discount}%)`}
+                          {quote.discount_description ? ` — ${quote.discount_description}` : ""}
+                        </span>
                         <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
                       </div>
                     );
@@ -1137,10 +1163,12 @@ export default function QuoteDetailModal({
                     );
                   })()}
 
-                  <div className="flex justify-between text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
-                    <span className="font-semibold">Deposit Due</span>
-                    <span className="font-bold">{fmtMoney(totals.deposit)}</span>
-                  </div>
+                  {DEPOSITS_ENABLED && (
+                    <div className="flex justify-between text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
+                      <span className="font-semibold">Deposit Due</span>
+                      <span className="font-bold">{fmtMoney(totals.deposit)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {quote.notes && (
@@ -1214,7 +1242,9 @@ export default function QuoteDetailModal({
           </CollapsibleSection>
 
           <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
-            {!quote?.broker_id && (
+            {/* Edit is hidden entirely when read-only — the user must not be
+                able to open the editor at all. ReactivateLink below explains. */}
+            {!quote?.broker_id && !readOnly && (
               <button
                 onClick={onEdit}
                 className="px-4 py-2 text-sm font-semibold text-slate-600 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 transition"
@@ -1225,7 +1255,9 @@ export default function QuoteDetailModal({
 
             <button
               onClick={() => setShowSendModal(true)}
-              className="px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-200 bg-teal-50 rounded-xl hover:bg-teal-100 transition"
+              disabled={readOnly}
+              title={readOnly ? RO_TITLE : undefined}
+              className="px-4 py-2 text-sm font-semibold text-teal-700 border border-teal-200 bg-teal-50 rounded-xl hover:bg-teal-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Send Quote
             </button>
@@ -1257,37 +1289,44 @@ export default function QuoteDetailModal({
               <>
                 <button
                   onClick={() => callAction(onApprove, quote.id)}
-                  disabled={saving}
-                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50"
+                  disabled={saving || readOnly}
+                  title={readOnly ? RO_TITLE : undefined}
+                  className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? "Saving…" : "Approve"}
                 </button>
 
                 <button
                   onClick={() => callAction(onDecline, quote.id)}
-                  disabled={saving}
-                  className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition disabled:opacity-50"
+                  disabled={saving || readOnly}
+                  title={readOnly ? RO_TITLE : undefined}
+                  className="px-4 py-2 text-sm font-semibold bg-red-600 hover:bg-red-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? "Saving…" : "Decline"}
                 </button>
               </>
             )}
 
-            {(quote.status === "Approved" || quote.status === "Approved and Paid" || quote.status === "Client Approved") && (
+            {/* isConvertedToOrder guard: a desynced row (converted_order_id
+                set, status regressed) must not offer a Convert button that
+                dead-ends in the "already converted" toast. */}
+            {(quote.status === "Approved" || quote.status === "Approved and Paid" || quote.status === "Client Approved") && !isConvertedToOrder(quote) && (
               <button
                 onClick={() => callAction(onConvert, quote)}
-                disabled={saving}
-                className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50"
+                disabled={saving || readOnly}
+                title={readOnly ? RO_TITLE : undefined}
+                className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? "Converting…" : "Convert to Order"}
               </button>
             )}
 
-            {onTogglePaid && (
+            {DEPOSITS_ENABLED && onTogglePaid && (
               <button
                 onClick={() => callAction(onTogglePaid, quote)}
-                disabled={saving}
-                className={`px-4 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 ${
+                disabled={saving || readOnly}
+                title={readOnly ? RO_TITLE : undefined}
+                className={`px-4 py-2 text-sm font-semibold rounded-xl border transition disabled:opacity-50 disabled:cursor-not-allowed ${
                   quote.deposit_paid
                     ? "text-slate-600 border-slate-200 dark:border-slate-700 hover:bg-slate-100"
                     : "text-emerald-700 border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
@@ -1300,7 +1339,9 @@ export default function QuoteDetailModal({
             {onDuplicate && (
               <button
                 onClick={() => onDuplicate(quote)}
-                className="px-4 py-2 text-sm font-semibold text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+                disabled={readOnly}
+                title={readOnly ? RO_TITLE : undefined}
+                className="px-4 py-2 text-sm font-semibold text-slate-500 border border-slate-200 rounded-xl hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Duplicate
               </button>
@@ -1309,12 +1350,17 @@ export default function QuoteDetailModal({
             {onDelete && (
               <button
                 onClick={() => callAction(onDelete, quote.id)}
-                disabled={saving}
-                className="px-4 py-2 text-sm font-semibold text-red-400 border border-red-200 rounded-xl hover:bg-red-50 transition disabled:opacity-50"
+                disabled={saving || readOnly}
+                title={readOnly ? RO_TITLE : undefined}
+                className="px-4 py-2 text-sm font-semibold text-red-400 border border-red-200 rounded-xl hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {saving ? "Deleting…" : "Delete Quote"}
               </button>
             )}
+
+            {/* Explains why the write actions above are disabled. Renders
+                nothing when the shop can still write. */}
+            <ReactivateLink show={readOnly} href={reactivateHref} className="self-center" />
 
             <button
               onClick={onClose}
@@ -1444,7 +1490,11 @@ export default function QuoteDetailModal({
               </div>
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
                 <div className="text-xs text-slate-500 mb-0.5">Amount</div>
-                <div className="font-bold text-teal-700">{fmtMoney(getQuoteTotalsForDisplay(quote).total)}</div>
+                {/* Saved total (what the QB invoice bills) — NOT a live recompute.
+                    getQuoteTotalsForDisplay excludes setup/screen fees and reprices
+                    under the viewer's config, so it showed e.g. $1,000 next to a
+                    saved "Total $1,060" and the actual QB invoice of $1,060. */}
+                <div className="font-bold text-teal-700">{fmtMoney(totals.total)}</div>
               </div>
             </div>
 

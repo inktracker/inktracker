@@ -5,6 +5,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import { escapeHtml, sanitizeEmailBody } from "../_shared/emailSanitize.js";
+import { sendResendEmail } from "../_shared/resendClient.js";
+import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import {
   renderEmailLayout,
   renderEmailButton,
@@ -17,7 +19,7 @@ const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 // Default to the verified InkTracker domain (SPF/DKIM/DMARC set up there).
 // biotamfg.co isn't an InkTracker sending domain; if FROM_EMAIL env var is
 // unset, fall back to inktracker.app so mail actually delivers.
-const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@inktracker.app";
+const SEND_FROM      = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -88,6 +90,12 @@ Deno.serve(async (req) => {
       return Response.json({ error: "No recipient emails provided" }, { status: 400, headers: CORS });
     }
 
+    // For notification_log: the quotes row UUID (quoteId is the human
+    // "Q-####" string) and the authoritative owner. Both branches below
+    // fill these from the DB rows they already fetch.
+    let quoteDbId: string | null = null;
+    let logShopOwner: string | null = null;
+
     // ── Anonymous-caller lockdown ─────────────────────────────────────
     if (!isAuthed) {
       if (!quoteId) {
@@ -96,12 +104,14 @@ Deno.serve(async (req) => {
       const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
       const { data: quote } = await admin
         .from("quotes")
-        .select("shop_owner, customer_email, sent_to")
+        .select("id, shop_owner, customer_email, sent_to")
         .eq("quote_id", quoteId)
         .maybeSingle();
       if (!quote) {
         return Response.json({ error: "Quote not found" }, { status: 404, headers: CORS });
       }
+      quoteDbId = quote.id ?? null;
+      logShopOwner = quote.shop_owner ?? null;
       // Recipients must be one of: the shop owner, the quote's customer email,
       // or sent_to (legacy field some quotes use for the customer address).
       const allowed = new Set(
@@ -178,13 +188,32 @@ Deno.serve(async (req) => {
         return Response.json({ error: "quoteId required" }, { status: 400, headers: CORS });
       }
       const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-      const { data: q } = await admin
+      let { data: q } = await admin
         .from("quotes")
-        .select("shop_owner, broker_id, broker_name, broker_company, broker_email")
+        .select("id, shop_owner, broker_id, broker_name, broker_company, broker_email")
         .eq("quote_id", quoteId)
         .maybeSingle();
       if (!q) {
-        return Response.json({ error: "Quote not found" }, { status: 404, headers: CORS });
+        // Invoice sends reuse this function with quoteId = invoice.invoice_id.
+        // Invoices born from a quote share the quote's id and resolve above,
+        // but order-completion invoices carry generated INV-YYYY-XXXXX ids
+        // that exist only on the invoices table — without this fallback the
+        // ownership gate 404'd every one of those sends ("Quote not found").
+        // Same authorization semantics: the caller's shop must own the row.
+        const { data: inv } = await admin
+          .from("invoices")
+          .select("shop_owner")
+          .eq("invoice_id", quoteId)
+          .maybeSingle();
+        if (inv) {
+          // Invoices carry no broker identity columns; the brand resolution
+          // below treats them as direct shop documents. No quotes-row UUID
+          // here — notification_log.quote_id stays null for invoice sends.
+          q = { id: null, shop_owner: inv.shop_owner, broker_id: null, broker_name: null, broker_company: null, broker_email: null };
+        }
+      }
+      if (!q) {
+        return Response.json({ error: "Quote or invoice not found" }, { status: 404, headers: CORS });
       }
       const qShopOwner = String(q.shop_owner || "").toLowerCase();
       const email = caller?.email || "";
@@ -198,6 +227,8 @@ Deno.serve(async (req) => {
       if (!ownsQuote) {
         return Response.json({ error: "You don't have access to this quote." }, { status: 403, headers: CORS });
       }
+      quoteDbId = q.id ?? null;
+      logShopOwner = q.shop_owner ?? null;
       // Force brand / merchant-of-record from the DB (never the payload). Mirrors
       // getCustomerFacingBrandName: broker quotes show the broker; otherwise the shop.
       if (q.broker_id) {
@@ -215,7 +246,9 @@ Deno.serve(async (req) => {
     }
 
     const emailSubject = subject || `Your Quote from ${shopName} - Quote #${quoteId}`;
-    const total = Number(quoteTotal || 0).toFixed(2);
+    const totalNum = Number(quoteTotal);
+    const hasRealTotal = Number.isFinite(totalNum) && totalNum > 0;
+    const total = (hasRealTotal ? totalNum : 0).toFixed(2);
 
     // Anything that flows from user-controlled fields (customer name from
     // the public wizard, broker-set display name + email, the custom body)
@@ -260,7 +293,10 @@ Deno.serve(async (req) => {
         `
       }
       ${proofHtml}
-      ${renderEmailHighlight("Quote Total", `$${total}`)}
+      ${/* Suppress the total on the public-wizard confirmation, which sends no
+           quoteTotal — otherwise every "we received your request" email showed
+           a prominent "Quote Total $0.00" contradicting the message. */ ""}
+      ${hasRealTotal ? renderEmailHighlight("Quote Total", `$${total}`) : ""}
       ${(paymentLink || approveLink) ? renderEmailButton(buttonLabel || "View Quote & Pay Online", paymentLink || approveLink) : ""}
       ${brokerName ? `<p style="color:${EMAIL_MUTED};font-size:13px;margin:8px 0 0;">Submitted by ${safeBrokerName}${brokerEmail ? ` &middot; ${safeBrokerEmail}` : ""}</p>` : ""}
     `;
@@ -292,35 +328,45 @@ Deno.serve(async (req) => {
       ? (brokerEmail || shopOwnerEmail)
       : (shopOwnerEmail || undefined);
 
-    const results = await Promise.all(
-      customerEmails.map(async (to: string) => {
-        const bccList = [shopOwnerEmail, brokerEmail].filter(Boolean);
-        const res = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            from: fromHeader,
-            to: [to],
-            subject: emailSubject,
-            html,
-            ...(replyTo ? { reply_to: replyTo } : {}),
-            ...(bccList.length > 0 ? { bcc: bccList } : {}),
-            ...(pdfBase64 ? {
-              attachments: [{
-                filename: pdfFilename || `Quote-${quoteId}.pdf`,
-                content: pdfBase64,
-              }],
-            } : {}),
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) console.error("[sendQuoteEmail] Resend error:", data);
-        return { to, ok: res.ok, data };
-      })
+    // Sequential, retried sends (resendClient). This was a Promise.all of
+    // bare fetches — parallel fan-out against Resend's ~2 req/s account
+    // limit, where any 429/5xx silently lost the quote email with no
+    // durable record. Each attempt now lands in notification_log too, so
+    // "customer never got the quote" is answerable from data.
+    const logClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    const results: Array<{ to: string; ok: boolean; reason?: string | null }> = [];
+    for (const to of customerEmails as string[]) {
+      const bccList = [shopOwnerEmail, brokerEmail].filter(Boolean);
+      const result = await sendResendEmail({
+        from: fromHeader,
+        to: [to],
+        subject: emailSubject,
+        html,
+        ...(replyTo ? { reply_to: replyTo } : {}),
+        ...(bccList.length > 0 ? { bcc: bccList } : {}),
+        ...(pdfBase64 ? {
+          attachments: [{
+            filename: pdfFilename || `Quote-${quoteId}.pdf`,
+            content: pdfBase64,
+          }],
+        } : {}),
+      }, { apiKey: RESEND_API_KEY });
+      await logNotificationAttempt(logClient, {
+        shop_owner: logShopOwner || shopOwnerEmail || "unknown",
+        event_type: "quote_send",
+        quote_id: quoteDbId,
+        recipient_email: to,
+        recipient_role: "customer",
+        subject: emailSubject,
+        status: result.ok ? "sent" : "failed",
+        failure_reason: result.ok ? null : result.reason,
+        resend_id: result.id ?? null,
+      });
+      results.push({ to, ok: result.ok, reason: result.reason });
+    }
 
     const allOk = results.every((r) => r.ok);
     return Response.json({ sent: allOk, results }, { headers: CORS });

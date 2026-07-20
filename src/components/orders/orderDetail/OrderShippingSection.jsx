@@ -1,4 +1,5 @@
 import { Truck, CheckCircle2, ExternalLink, Download, Loader2 } from "lucide-react";
+import ReactivateLink from "../../shared/ReactivateLink";
 
 // Shipping section for the Order Detail modal: collapsible FedEx panel
 // with ship-to address, package dims, rate lookup, label creation, and
@@ -40,7 +41,13 @@ export default function OrderShippingSection({
   handleSaveShipping,
   handleCreateLabel,
   handleTrackShipment,
+  // Read-only (lapsed subscription): disable shipping writes (rate lookup,
+  // save address, create label, refresh tracking). Address/dims inputs +
+  // existing tracking display stay readable.
+  readOnly = false,
+  reactivateHref,
 }) {
+  const roTitle = "Your subscription has ended — reactivate to make changes.";
   return (
     <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
       <button onClick={() => setShowShipping(!showShipping)}
@@ -90,10 +97,15 @@ export default function OrderShippingSection({
                   )}
                 </div>
               </div>
-              <button onClick={handleTrackShipment}
-                className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition">
-                Refresh tracking status
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={handleTrackShipment}
+                  disabled={readOnly}
+                  title={readOnly ? roTitle : undefined}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                  Refresh tracking status
+                </button>
+                <ReactivateLink show={readOnly} href={reactivateHref} />
+              </div>
             </div>
           ) : (
             <>
@@ -148,14 +160,17 @@ export default function OrderShippingSection({
 
               {/* Get Rates */}
               <div className="flex items-center gap-3">
-                <button onClick={handleGetRates} disabled={loadingRates || !shipStreet || !shipCity || !shipState || !shipZip || !shipWeight}
-                  className="text-xs font-bold text-white bg-slate-700 hover:bg-slate-800 px-4 py-2 rounded-lg transition disabled:opacity-40">
+                <button onClick={handleGetRates} disabled={readOnly || loadingRates || !shipStreet || !shipCity || !shipState || !shipZip || !shipWeight}
+                  title={readOnly ? roTitle : undefined}
+                  className="text-xs font-bold text-white bg-slate-700 hover:bg-slate-800 px-4 py-2 rounded-lg transition disabled:opacity-40 disabled:cursor-not-allowed">
                   {loadingRates ? <span className="flex items-center gap-1.5"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Getting rates...</span> : "Get Rates"}
                 </button>
-                <button onClick={handleSaveShipping} disabled={savingShipping}
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition">
+                <button onClick={handleSaveShipping} disabled={savingShipping || readOnly}
+                  title={readOnly ? roTitle : undefined}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition disabled:opacity-50 disabled:cursor-not-allowed">
                   {savingShipping ? "Saving..." : shippingSaved ? "Saved" : "Save address"}
                 </button>
+                <ReactivateLink show={readOnly} href={reactivateHref} />
               </div>
 
               {/* Rate Results */}
@@ -183,8 +198,9 @@ export default function OrderShippingSection({
 
               {/* Create Label */}
               {shipService && (
-                <button onClick={handleCreateLabel} disabled={creatingLabel}
-                  className="text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 px-5 py-2.5 rounded-xl transition disabled:opacity-50 w-full sm:w-auto">
+                <button onClick={handleCreateLabel} disabled={creatingLabel || readOnly}
+                  title={readOnly ? roTitle : undefined}
+                  className="text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 px-5 py-2.5 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto">
                   {creatingLabel
                     ? <span className="flex items-center justify-center gap-1.5"><Loader2 className="w-4 h-4 animate-spin" /> Creating label...</span>
                     : "Create Shipping Label"}

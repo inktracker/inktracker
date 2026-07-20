@@ -2,8 +2,11 @@ import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { captureError } from "../_shared/observability.ts";
 import Stripe from "npm:stripe@14.25.0";
 import { claimWebhookEvent, releaseWebhookEvent, extractBillingEventId } from "../_shared/webhookIdempotency.js";
-import { sendApprovalNotification } from "../_shared/approvalNotificationEmail.js";
+import { sendAndLogApprovalNotification } from "../_shared/approvalNotificationEmail.js";
 import { buildTrialWillEndEmail } from "../_shared/trialWillEndEmail.js";
+import { buildCancellationScheduledEmail } from "../_shared/cancellationScheduledEmail.js";
+import { buildWinBackEmail } from "../_shared/winBackEmail.js";
+import { cancellationFieldsFromSubscription, isCancellationNewlyScheduled } from "../_shared/billingLogic.js";
 import { partitionSecretUpdates } from "../_shared/connectionLogic.js";
 import { updateProfileSecrets } from "../_shared/profileSecrets.ts";
 
@@ -99,6 +102,53 @@ async function updateProfileByCustomer(customerId: string, updates: Record<strin
   }
 }
 
+// Persist the pending-cancellation display state, and — only on the false→true
+// TRANSITION — send the "plan is set to end" email. Read-then-update by
+// profileId mirrors markPastDue. Fully best-effort (mirrors trial_will_end): any
+// read/update/email failure logs and swallows so the webhook still returns 2xx,
+// otherwise Stripe retries forever and the run never advances. Purely additive
+// display state — never touches the access gate (tier/status/trial fields).
+async function captureCancellationState(customerId: string, sub: Stripe.Subscription) {
+  try {
+    const supabase = adminClient();
+    const profileId = await profileIdForCustomer(supabase, customerId);
+    if (!profileId) {
+      console.error(`[billingWebhook] no profile linked to ${customerId} — cannot capture cancellation state`);
+      return;
+    }
+    // Read the CURRENT flag first so we only email on the actual false→true
+    // transition (Stripe fires 'updated' for many unrelated reasons).
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("cancel_at_period_end, shop_owner, shop_name")
+      .eq("id", profileId)
+      .maybeSingle();
+    const wasPending = Boolean(prof?.cancel_at_period_end);
+
+    const fields = cancellationFieldsFromSubscription(sub);
+    const { error } = await supabase.from("profiles").update(fields).eq("id", profileId);
+    if (error) console.error("[billingWebhook] cancellation state update failed:", error.message);
+
+    if (isCancellationNewlyScheduled(wasPending, fields.cancel_at_period_end) && prof?.shop_owner) {
+      const endsAt = fields.subscription_ends_at ? new Date(fields.subscription_ends_at) : null;
+      const endsOn = endsAt && Number.isFinite(endsAt.getTime())
+        ? endsAt.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+        : null;
+      const { subject, html } = buildCancellationScheduledEmail({ shopName: prof.shop_name, endsOn } as any);
+      await sendAndLogApprovalNotification(supabase, {
+        shop_owner: prof.shop_owner,
+        event_type: "cancellation_scheduled",
+        recipient_role: "shop_owner",
+        to: prof.shop_owner,
+        subject,
+        html,
+      } as any);
+    }
+  } catch (err) {
+    console.error("[billingWebhook] captureCancellationState failed:", err);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
@@ -186,6 +236,11 @@ Deno.serve(async (req) => {
             ...(sub.status === "active" || sub.status === "trialing" ? { past_due_since: null } : {}),
           });
         }
+        // After the status logic: capture the pending-cancellation display state.
+        // Sets the fields when a cancel is scheduled, clears them if the shop
+        // un-cancels (Stripe fires 'updated' with cancel_at_period_end:false),
+        // and emails once on the false→true transition.
+        await captureCancellationState(customerId, sub);
         break;
       }
 
@@ -196,7 +251,36 @@ Deno.serve(async (req) => {
           subscription_tier: "expired",
           subscription_status: "canceled",
           stripe_subscription_id: null,
+          // The pending cancel is now REALIZED as expired — clear the display state.
+          cancel_at_period_end: false,
+          subscription_ends_at: null,
         });
+
+        // Win-back email (best-effort, logged). Access has ended; data is saved,
+        // one-click resubscribe. Mirrors trial_will_end's try/catch so a Resend
+        // failure never 5xxes the webhook. A delayed drip can come later.
+        try {
+          const supabase = adminClient();
+          const profileId = await profileIdForCustomer(supabase, customerId);
+          const { data: profile } = profileId
+            ? await supabase.from("profiles").select("shop_owner, shop_name").eq("id", profileId).maybeSingle()
+            : { data: null };
+          if (profile?.shop_owner) {
+            const { subject, html } = buildWinBackEmail({ shopName: profile.shop_name });
+            await sendAndLogApprovalNotification(supabase, {
+              shop_owner: profile.shop_owner,
+              event_type: "winback",
+              recipient_role: "shop_owner",
+              to: profile.shop_owner,
+              subject,
+              html,
+            } as any);
+          } else {
+            console.warn(`[billingWebhook] winback: no profile for customer ${customerId}`);
+          }
+        } catch (notifyErr) {
+          console.error("[billingWebhook] winback notification failed:", notifyErr);
+        }
         break;
       }
 
@@ -247,7 +331,16 @@ Deno.serve(async (req) => {
               shopName: profile.shop_name,
               trialEndsOn,
             } as any);
-            await sendApprovalNotification({ to: recipient, subject, html } as any);
+            // Logged variant — the raw send bypassed notification_log, so
+            // trial reminders were invisible to the ops audit trail.
+            await sendAndLogApprovalNotification(supabase, {
+              shop_owner: recipient,
+              event_type: "trial_reminder",
+              recipient_role: "shop_owner",
+              to: recipient,
+              subject,
+              html,
+            } as any);
           } else {
             console.warn(`[billingWebhook] trial_will_end: no profile for customer ${customerId}`);
           }

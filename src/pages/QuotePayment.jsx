@@ -25,8 +25,12 @@ import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
 import { toCustomerFacingQuote, customerFacingShopName, customerFacingTotals, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
+import { quoteAlreadyApproved, quoteAlreadyPaid } from "@/lib/quotes/approvalState";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
+import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
+import { DEPOSITS_ENABLED } from "@/lib/deposits";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -240,20 +244,23 @@ export default function QuotePayment() {
     load();
   }, [quoteDbId]);
 
-  const alreadyPaid =
-    quote?.status === "Approved and Paid" ||
-    quote?.status === "Paid" ||
-    (quote?.status === "Approved" && quote?.deposit_paid);
+  const alreadyPaid = quoteAlreadyPaid(quote);
 
-  const alreadyApproved =
-    quote?.status === "Approved" ||
-    quote?.status === "Approved and Paid" ||
-    quote?.status === "Paid";
+  // Includes "Converted to Order" / "Client Approved" / converted_order_id —
+  // a stale emailed link re-opened after conversion must render as already
+  // approved, never offer a live Approve action (the server would refuse the
+  // write anyway; see _shared/approveQuoteEffect.js).
+  const alreadyApproved = quoteAlreadyApproved(quote);
 
   const isExpired = (() => {
     if (!quote?.expires_date) return false;
     if (alreadyApproved || alreadyPaid) return false;
-    return new Date(quote.expires_date) < new Date();
+    // expires_date is a date-only string ("2026-08-11"). new Date(str) parses
+    // it as UTC midnight, so `< new Date()` flipped the quote to "expired" the
+    // evening BEFORE its date for any US (negative-offset) customer, costing
+    // them the whole final day. Compare date strings in the viewer's local
+    // date instead: valid through the end of expires_date.
+    return localDateStr(new Date()) > quote.expires_date;
   })();
 
   // ── Payment-provider availability ──────────────────────────────────
@@ -329,12 +336,9 @@ export default function QuotePayment() {
       }
     }
 
-    const isAlreadyApproved =
-      quote?.status === "Approved" ||
-      quote?.status === "Approved and Paid" ||
-      quote?.status === "Paid";
-
-    if (!isAlreadyApproved) {
+    // Same predicate as the render gate — converted / client-approved quotes
+    // must not auto-fire another approveQuote before checkout.
+    if (!quoteAlreadyApproved(quote)) {
       const approved = await handleApprove();
       if (!approved) return;
     }
@@ -667,10 +671,12 @@ export default function QuotePayment() {
                               ? `${imp.title} · ${imp.location || "Location"}`
                               : imp.location || "Location"}
                           </span>
-                          {imp.colors > 0 && (
-                            <span>
-                              {imp.colors} color{imp.colors !== 1 ? "s" : ""}
-                            </span>
+                          {/* Embroidery imp.colors is a stitch-tier index, not a
+                              color count — render "5K-10K stitches" for embroidery,
+                              "N colors" otherwise. Customer has no shop config, so
+                              default stitch tiers are used. */}
+                          {imprintCountText(imp) && (
+                            <span>{imprintCountText(imp)}</span>
                           )}
                           {imp.technique && <span>· {imp.technique}</span>}
                           {imp.pantones && (
@@ -840,6 +846,23 @@ export default function QuotePayment() {
             /* Shop has neither QB nor an active Stripe Connect account.
                Show Approve-only — the customer signals consent here and
                the shop handles payment out-of-band. */
+            alreadyApproved ? (
+              /* Already approved (or converted to an order) — a re-opened
+                 email link shows the settled state, not a live button.
+                 approveSuccess already renders its own banner above, so
+                 skip this one right after a fresh click. */
+              !approveSuccess && (
+                <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-5 py-4 text-center">
+                  <div className="font-bold text-base mb-1 flex items-center justify-center gap-2">
+                    <CheckCircle2 className="w-5 h-5" />
+                    Quote approved
+                  </div>
+                  <div className="text-sm text-emerald-700">
+                    {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment.
+                  </div>
+                </div>
+              )
+            ) : (
             <>
               {approveError && (
                 <div role="alert" className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2">
@@ -862,6 +885,7 @@ export default function QuotePayment() {
                 {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment after you approve.
               </p>
             </>
+            )
           ) : (() => {
             // Broker quotes charge the client total, never the shop-side qb_total.
             // Coerce to a finite number — a missing/NaN total would render
@@ -870,9 +894,12 @@ export default function QuotePayment() {
               qbStale: qbStaleFlag,
               fallbackTotal: totals.total,
             }).total) || 0;
-            const depositPct = customer?.default_deposit_pct != null
+            // Deposits aren't collectible online (QB bills full; Stripe path
+            // removed) — force 0 so the button says "Approve & Pay $full"
+            // instead of promising a deposit the QB link can't take.
+            const depositPct = !DEPOSITS_ENABLED ? 0 : (customer?.default_deposit_pct != null
               ? Number(customer.default_deposit_pct) || 0
-              : parseFloat(quote?.deposit_pct) || 0;
+              : parseFloat(quote?.deposit_pct) || 0);
             const depositAmount = Math.round(effectiveTotal * (depositPct / 100) * 100) / 100;
             const depositPaid = quote?.deposit_paid;
 

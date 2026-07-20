@@ -11,11 +11,13 @@ import {
   uid,
   getLineExtras,
 } from "../shared/pricing";
-import { getAddonsForTechnique, pruneExtrasForTechnique } from "@/lib/pricing/extrasScopes";
+import { getAddonsForTechnique, getAddonsForTechniques, pruneExtrasForTechniques, filterAddonsByBasis } from "@/lib/pricing/extrasScopes";
+import { snapshotExtraForQuote } from "@/lib/pricing/extras";
 import BrokerPricePanel from "./BrokerPricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
+import { notify } from "@/lib/notify";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results,
 // matching the shop-side LineItemEditor. Either supplier failing/returning
@@ -286,13 +288,17 @@ export function buildBrandOptions(matches, typedStyleNumber) {
 
   matches.forEach((match, index) => {
     const canonicalStyle = getCanonicalStyleNumber(typed, match);
-    const brand = cleanText(match.brandName) || "Unknown Brand";
+    // Brandless match → EMPTY brandName (never the literal "Unknown Brand" —
+    // it gets persisted onto the line and printed on customer-facing docs).
+    // See LineItemEditor.jsx buildBrandOptions for the full story.
+    const brand = cleanText(match.brandName);
+    const brandLabel = brand || "Unknown brand";
     const description = getBestDescription(match) || "Untitled";
     const supplier = cleanText(match._supplier) || "";
     // Supplier is part of the key: the same brand+style exists on both S&S
     // and SanMar with per-supplier pricing — collapsing them would take the
     // supplier choice away.
-    const key = `${canonicalStyle}|${brand}|${description}|${supplier}`;
+    const key = `${canonicalStyle}|${brandLabel}|${description}|${supplier}`;
 
     if (seen.has(key)) return;
     seen.add(key);
@@ -304,7 +310,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     // up with the same <option value> and the find-by-id resolution
     // always returns the first one in array order.
     unique.push({
-      id: `${supplier.toLowerCase() || "x"}::${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
+      id: `${supplier.toLowerCase() || "x"}::${brandLabel.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,
@@ -317,7 +323,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
       piecePrice: match.piecePrice,
       casePrice: match.casePrice,
       raw: match.raw || match,
-      label: `${brand} — ${canonicalStyle} — ${description}`,
+      label: `${brandLabel} — ${canonicalStyle} — ${description}`,
     });
   });
 
@@ -399,6 +405,8 @@ function applySelectedMatch(li, selectedMatch) {
     supplier: supplierFromMatch,
     supplierLastLookupAt: new Date().toISOString(),
     sizePrices: (selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {},
+    // Re-selecting a supplier style is opting back into supplier pricing.
+    garmentCostManual: false,
   };
 }
 
@@ -413,13 +421,27 @@ export default function BrokerLineItemEditor({
   allLineItems = [],
   savedImprints = [],
   shopPricingConfig,
+  // Effective wholesale config for this broker (shop sheet + per-broker
+  // overrides, merged in BrokerQuoteEditor). Feeds only the broker-side
+  // column of BrokerPricePanel; retail keeps shopPricingConfig.
+  brokerPricingConfig,
   onChange: _rawOnChange,
   onRemove,
   onDuplicate,
   canRemove,
 }) {
-  const lineTechnique = (li.imprints || [])[0]?.technique;
-  const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
+  // Union across ALL the line's imprint techniques — not just the first — so an
+  // add-on (e.g. Screen Print "underbase") is reachable even when the location
+  // that needs it isn't first. Mirrors the fix in LineItemEditor (Kato, 2026-07).
+  const lineTechniques = [
+    ...new Set((li.imprints || []).map((im) => im?.technique).filter(Boolean)),
+  ];
+  // Line-level block shows PER-GARMENT fees only. per_print attaches to a
+  // specific print (rendered inside each imprint); per_job is quote-level.
+  const addonsMeta = filterAddonsByBasis(
+    getAddonsForTechniques(addonsByScope, lineTechniques),
+    "per_garment",
+  );
   // Header label that follows the decoration type (see LineItemEditor).
   const locationsHeader = (() => {
     const techs = [
@@ -461,6 +483,10 @@ export default function BrokerLineItemEditor({
 
   // Persist sizePrices on the line item when color data is available
   useEffect(() => {
+    // Broker typed their own Garment Cost — don't resurrect supplier
+    // per-size prices (they outrank it in the calc). Cleared when the
+    // broker re-selects a style/color.
+    if (li.garmentCostManual) return;
     const colorPrices = (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices;
     if (colorPrices && Object.keys(colorPrices).length > 0) {
       sizePricesRef.current = colorPrices;
@@ -536,6 +562,8 @@ export default function BrokerLineItemEditor({
       casePrice:
         selectedPrice.casePrice != null ? Number(selectedPrice.casePrice) : li.casePrice,
       sizePrices: colorSizePrices,
+      // Picking a supplier color is opting back into supplier pricing.
+      garmentCostManual: false,
     });
   }
 
@@ -552,14 +580,16 @@ export default function BrokerLineItemEditor({
     const imprints = (li.imprints || []).map((im, i) =>
       i === idx ? { ...im, ...patch } : im
     );
-    // Mirror of LineItemEditor: prune extras when the active
-    // (imprint[0]) technique changes, so fees that don't exist on
-    // the new technique stop applying silently.
-    const oldTechnique = (li.imprints || [])[0]?.technique;
-    const newTechnique = imprints[0]?.technique;
-    if (idx === 0 && newTechnique !== oldTechnique) {
+    // Mirror of LineItemEditor: prune extras when the SET of the line's
+    // techniques changes, so fees no longer supported by ANY location stop
+    // applying silently — union-based, so switching one location's technique
+    // never wipes a fee another location still supports.
+    const techsOf = (arr) => [...new Set((arr || []).map((im) => im?.technique).filter(Boolean))].sort();
+    const oldTechs = techsOf(li.imprints);
+    const newTechs = techsOf(imprints);
+    if (oldTechs.join("|") !== newTechs.join("|")) {
       const lineExtras = getLineExtras(li, { extras });
-      const prunedExtras = pruneExtrasForTechnique(lineExtras, addonsByScope, newTechnique);
+      const prunedExtras = pruneExtrasForTechniques(lineExtras, addonsByScope, newTechs);
       onChange({ ...li, imprints, extras: prunedExtras });
       return;
     }
@@ -776,11 +806,35 @@ export default function BrokerLineItemEditor({
                 min="0"
                 step="0.01"
                 value={li.garmentCost}
-                onChange={(e) => onChange({ ...li, garmentCost: e.target.value })}
+                onChange={(e) => {
+                  // Mirror of LineItemEditor: a typed cost is an explicit
+                  // override. Supplier per-size prices outrank garmentCost
+                  // in calcLinkedLinePrice, so they must be dropped or the
+                  // field is inert on looked-up styles (tester 2026-07-18).
+                  // Toast once at the transition only — see LineItemEditor.
+                  const hadSupplierPrices = !li.garmentCostManual &&
+                    ((li.sizePrices && Object.keys(li.sizePrices).length > 0) || !!sizePricesRef.current);
+                  sizePricesRef.current = null;
+                  onChange({ ...li, garmentCost: e.target.value, garmentCostManual: true, sizePrices: {} });
+                  if (hadSupplierPrices) {
+                    notify.info(
+                      "Manual garment cost",
+                      "Supplier per-size pricing is off for this line — your typed cost now drives the price. Re-select the style or color to restore supplier pricing.",
+                      // Light yellow — matches LineItemEditor.
+                      { className: "bg-yellow-50 border-yellow-200" }
+                    );
+                  }
+                }}
                 placeholder="0.00"
                 className="w-full text-sm border border-slate-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
               />
             </div>
+            {li.garmentCostManual && (
+              <p className="text-[10px] text-slate-500 mt-1">
+                Manual cost — supplier per-size pricing is off for this line.
+                Re-select the style or color to restore it.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -978,36 +1032,68 @@ export default function BrokerLineItemEditor({
                         />
                       </div>
 
-                      <div className="w-20">
-                        <label className="block text-xs text-slate-500 mb-0.5">Colors</label>
-                        <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
-                          <button
-                            onClick={() => updateImprint(idx, { colors: Math.max(1, imp.colors - 1) })}
-                            className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
-                          >
-                            −
-                          </button>
-                          <div className="flex-1 text-center font-bold text-slate-800 text-sm">
-                            {imp.colors}
+                      {/* Embroidery prices by stitch tier, not color count —
+                          mirror the shop-side LineItemEditor so a broker who
+                          picks Embroidery gets stitch tiers + Thread Colors,
+                          not a 1-8 color counter labeled "Ink". */}
+                      {imp.technique === "Embroidery" ? (
+                        <>
+                          <div className="w-28">
+                            <label className="block text-xs text-slate-500 mb-0.5">Stitch Count</label>
+                            <select
+                              value={imp.colors || 1}
+                              onChange={(e) => updateImprint(idx, { colors: parseInt(e.target.value) || 1 })}
+                              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
+                            >
+                              {(getShopPricingConfig()?.embroidery?.stitchTiers || ["Under 5K", "5K-10K", "10K-15K", "15K+"]).map((st, i) => (
+                                <option key={st} value={i + 1}>{st}</option>
+                              ))}
+                            </select>
                           </div>
-                          <button
-                            onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
-                            className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
-                          >
-                            +
-                          </button>
-                        </div>
-                      </div>
+                          <div className="flex-1 min-w-28">
+                            <label className="block text-xs text-slate-500 mb-0.5">Thread Colors</label>
+                            <input
+                              value={imp.pantones || ""}
+                              onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
+                              placeholder="e.g. Navy, White, Gold"
+                              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-20">
+                            <label className="block text-xs text-slate-500 mb-0.5">Colors</label>
+                            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
+                              <button
+                                onClick={() => updateImprint(idx, { colors: Math.max(1, imp.colors - 1) })}
+                                className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
+                              >
+                                −
+                              </button>
+                              <div className="flex-1 text-center font-bold text-slate-800 text-sm">
+                                {imp.colors}
+                              </div>
+                              <button
+                                onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
+                                className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
 
-                      <div className="flex-1 min-w-28">
-                        <label className="block text-xs text-slate-500 mb-0.5">Ink Color(s)</label>
-                        <input
-                          value={imp.pantones || ""}
-                          onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
-                          placeholder="e.g. PMS 286 C, White"
-                          className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
-                        />
-                      </div>
+                          <div className="flex-1 min-w-28">
+                            <label className="block text-xs text-slate-500 mb-0.5">Ink Color(s)</label>
+                            <input
+                              value={imp.pantones || ""}
+                              onChange={(e) => updateImprint(idx, { pantones: e.target.value })}
+                              placeholder="e.g. PMS 286 C, White"
+                              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                            />
+                          </div>
+                        </>
+                      )}
 
                       <div className="w-28">
                         <label className="block text-xs text-slate-500 mb-0.5">Technique</label>
@@ -1041,6 +1127,49 @@ export default function BrokerLineItemEditor({
                         className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                       />
                     </div>
+
+                    {/* Per-print add-ons — attach to THIS print only. */}
+                    {(() => {
+                      const impPrintAddons = filterAddonsByBasis(
+                        getAddonsForTechnique(addonsByScope, imp.technique),
+                        "per_print",
+                      );
+                      if (!impPrintAddons.length) return null;
+                      const impExtras = imp.extras || {};
+                      return (
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">
+                            Add-ons for this print
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                            {impPrintAddons.map(({ key, label, rate, mode }) => {
+                              const isOn = !!impExtras[key];
+                              const isPercent = mode === "percent";
+                              const snapshot = snapshotExtraForQuote({ mode, rate: parseFloat(rate) || 0, basis: "per_print" });
+                              return (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => updateImprint(idx, { extras: { ...impExtras, [key]: isOn ? false : snapshot } })}
+                                  className={`rounded-lg border px-2 py-1.5 text-left transition ${
+                                    isOn ? "border-teal-600 bg-teal-50" : "border-slate-200 hover:border-slate-300 bg-white"
+                                  }`}
+                                >
+                                  <div className={`text-[11px] font-semibold leading-tight ${isOn ? "text-teal-700" : "text-slate-700"}`}>
+                                    {label}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 leading-tight">
+                                    {isPercent
+                                      ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
+                                      : `+$${(parseFloat(rate) || 0).toFixed(2)}/print`}
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -1068,13 +1197,12 @@ export default function BrokerLineItemEditor({
                     Add-ons (this line only)
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                    {addonsMeta.map(({ key, label, rate, mode }) => {
+                    {addonsMeta.map(({ key, label, rate, mode, basis }) => {
                       const lineExtras = getLineExtras(li, { extras });
                       const isOn = !!lineExtras[key];
                       const isPercent = mode === "percent";
-                      const snapshot = isPercent
-                        ? { mode: "percent", rate: parseFloat(rate) || 0 }
-                        : (parseFloat(rate) || 0);
+                      const perPrint = basis === "per_print";
+                      const snapshot = snapshotExtraForQuote({ mode, rate: parseFloat(rate) || 0, basis });
                       return (
                         <button
                           key={key}
@@ -1093,8 +1221,8 @@ export default function BrokerLineItemEditor({
                           </div>
                           <div className="text-[10px] text-slate-500 leading-tight">
                             {isPercent
-                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
-                              : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}
+                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration${perPrint ? " / print" : ""}`
+                              : `+$${(parseFloat(rate) || 0).toFixed(2)}/${perPrint ? "print" : "pc"}`}
                           </div>
                         </button>
                       );
@@ -1108,7 +1236,17 @@ export default function BrokerLineItemEditor({
                 extras={getLineExtras(li, { extras })}
                 allLineItems={previewLineItems}
                 onChange={onChange}
-                sizePrices={(ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices || undefined}
+                sizePrices={
+                  // Manual-cost lines: session lookup data must not
+                  // outrank the typed cost in the panel, or the preview
+                  // and the saved stamps diverge (save reads li.sizePrices,
+                  // which the override cleared).
+                  li.garmentCostManual
+                    ? undefined
+                    : ((ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices || undefined)
+                }
+                brokerConfig={brokerPricingConfig}
+                shopConfig={shopPricingConfig}
               />
             </div>
           </div>

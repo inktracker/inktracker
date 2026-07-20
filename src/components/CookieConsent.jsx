@@ -67,6 +67,12 @@ export default function CookieConsent() {
     try {
       window.localStorage.setItem(STORAGE_KEY, choice);
     } catch {}
+    // Boot analytics immediately on accept — hasNonEssentialConsent() now
+    // returns true, so no reload is needed to start tracking this session.
+    // Lazy import keeps posthog off the bundle for anyone who declines.
+    if (choice === "accepted") {
+      import("@/lib/analytics").then((m) => m.initAnalytics()).catch(() => {});
+    }
     setVisible(false);
   }
 

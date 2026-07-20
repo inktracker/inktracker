@@ -7,6 +7,7 @@ import { uploadFile } from "@/lib/uploadFile";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { syncCustomerToQB } from "@/lib/qbCustomerSync";
 import { addressOneLine } from "@/lib/tax/address";
+import { normalizeCustomerWrite } from "@/lib/customers/normalizeCustomerWrite";
 import { buildAdditiveMergePatch } from "@/lib/customers/mergeCustomerData";
 import { aggregateInvoiceStatsByCustomer } from "@/lib/customers/invoiceStats";
 import { findReconcileNeeded, partitionReconcilePairs, planReconcileActions } from "@/lib/customers/qbReconcileDetect";
@@ -16,7 +17,8 @@ import {
   countCustomerDependents,
   formatDependentsMessage,
 } from "@/lib/customers/countCustomerDependents";
-import { useBillingGate } from "@/lib/billing-gate";
+import { useBillingGate, useReadOnly } from "@/lib/billing-gate";
+import ReactivateLink from "@/components/shared/ReactivateLink";
 import { notify } from "@/lib/notify";
 import { isValidEmail } from "@/lib/email";
 import { shopScope } from "@/lib/shopScope";
@@ -79,6 +81,8 @@ export default function Customers() {
   const [editSaved, setEditSaved] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [user, setUser] = useState(null);
+  // Read-only affordance state — declared AFTER `user` so the hook can read it.
+  const { readOnly, reason: readOnlyReason, reactivateHref } = useReadOnly(user);
   const [filters, setFilters] = useState({});
   const [artworkNote, setArtworkNote] = useState("");
   const [artworkColorCount, setArtworkColorCount] = useState("");
@@ -221,14 +225,24 @@ export default function Customers() {
     const partiallyFailed = [];
 
     for (const dup of duplicates) {
-      const [quotesById, ordersByName, invoicesById, quotesByName, invoicesByName] = await Promise.all([
+      // Fetch children by BOTH customer_id and customer_name for all three
+      // entities. Orders used to be fetched by name only, so an order whose
+      // stored name drifted from the duplicate's current name survived the
+      // merge pointing at a deleted customer id. A null name matches
+      // nothing, so name lookups are skipped for unnamed records.
+      const byName = (entity) =>
+        dup.name ? base44.entities[entity].filter({ customer_name: dup.name }) : Promise.resolve([]);
+      const [quotesById, ordersById, invoicesById, quotesByName, ordersByName, invoicesByName, artworkDocsForDup] = await Promise.all([
         base44.entities.Quote.filter({ customer_id: dup.id }),
-        base44.entities.Order.filter({ customer_name: dup.name }),
+        base44.entities.Order.filter({ customer_id: dup.id }),
         base44.entities.Invoice.filter({ customer_id: dup.id }),
-        base44.entities.Quote.filter({ customer_name: dup.name }),
-        base44.entities.Invoice.filter({ customer_name: dup.name }),
+        byName("Quote"),
+        byName("Order"),
+        byName("Invoice"),
+        base44.entities.BrokerDocument.filter({ broker_id: getClientArtworkKey(dup.id), shop_owner: shopScope(user) }),
       ]);
       const allQuotes = [...new Map([...quotesById, ...quotesByName].map((q) => [q.id, q])).values()];
+      const allOrders = [...new Map([...ordersById, ...ordersByName].map((o) => [o.id, o])).values()];
       const allInvoices = [...new Map([...invoicesById, ...invoicesByName].map((i) => [i.id, i])).values()];
 
       let dupReassignsOk = true;
@@ -236,7 +250,7 @@ export default function Customers() {
         try { await base44.entities.Quote.update(q.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
         catch (e) { console.error("Quote reassign failed:", e); dupReassignsOk = false; }
       }
-      for (const o of ordersByName) {
+      for (const o of allOrders) {
         try { await base44.entities.Order.update(o.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
         catch (e) { console.error("Order reassign failed:", e); dupReassignsOk = false; }
       }
@@ -244,13 +258,37 @@ export default function Customers() {
         try { await base44.entities.Invoice.update(inv.id, { customer_id: primary.id, customer_name: primary.name }); totalMoved++; }
         catch (e) { console.error("Invoice reassign failed:", e); dupReassignsOk = false; }
       }
+      // The duplicate's artwork library rows are keyed client:<id>; without
+      // reassignment they dangle on the deleted id and vanish from every
+      // customer card ("nothing gets silently dropped" contract).
+      const movedArtworkIds = [];
+      for (const doc of artworkDocsForDup) {
+        try {
+          await base44.entities.BrokerDocument.update(doc.id, { broker_id: getClientArtworkKey(primary.id) });
+          movedArtworkIds.push(doc.id);
+          totalMoved++;
+        } catch (e) { console.error("Artwork reassign failed:", e); dupReassignsOk = false; }
+      }
+      if (movedArtworkIds.length > 0) {
+        const movedSet = new Set(movedArtworkIds);
+        setArtworkDocs((prev) =>
+          prev.map((doc) => (movedSet.has(doc.id) ? { ...doc, broker_id: getClientArtworkKey(primary.id) } : doc)),
+        );
+      }
 
       const mergeFields = buildAdditiveMergePatch(primary, dup);
       if (mergeFields) {
         try {
           const updated = await base44.entities.Customer.update(primary.id, mergeFields);
           primary = updated || { ...primary, ...mergeFields };
-        } catch {}
+        } catch (e) {
+          // If carrying the duplicate's fields onto the survivor fails, we must
+          // NOT delete the duplicate — doing so would lose the very data
+          // (exemption cert, ship-to, notes) the patch was meant to preserve.
+          // Keep the duplicate in place and report it as a partial merge.
+          console.error("Customer merge additive-patch failed:", e);
+          dupReassignsOk = false;
+        }
       }
 
       if (dupReassignsOk) {
@@ -366,14 +404,14 @@ export default function Customers() {
 
     let created;
     try {
-      created = await base44.entities.Customer.create({
+      created = await base44.entities.Customer.create(normalizeCustomerWrite({
         ...form,
         // Keep the legacy one-line `address` in sync with structured billing
         // (QB BillAddr + customer-list display read it).
         address: addressOneLine(form.bill_to_address) || form.address || "",
         shop_owner: shopScope(user),
         orders: 0,
-      });
+      }));
     } catch (err) {
       notify.error("Couldn't add customer", err);
       setAddingCustomer(false);
@@ -412,7 +450,9 @@ export default function Customers() {
       const { id, created_date, updated_date, shop_owner, ...patch } = editing;
       // Keep legacy one-line `address` in sync with structured billing.
       patch.address = addressOneLine(editing.bill_to_address) || editing.address || "";
-      const updated = await base44.entities.Customer.update(editing.id, patch);
+      // Toggling Tax Exempt off resets exemption_expires_at to "" — Postgres
+      // rejects "" for a date column, same failure as the add path.
+      const updated = await base44.entities.Customer.update(editing.id, normalizeCustomerWrite(patch));
       setCustomers((prev) => prev.map((c) => (c.id === editing.id ? updated : c)));
       setEditing(updated);
       setEditSaved(true);
@@ -474,7 +514,7 @@ export default function Customers() {
   };
 
   const filtered = customers.filter((c) => {
-    if (filters.name && !c.name.toLowerCase().includes(filters.name.toLowerCase())) {
+    if (filters.name && !c.name?.toLowerCase().includes(filters.name.toLowerCase())) {
       return false;
     }
     if (filters.company && !c.company?.toLowerCase().includes(filters.company.toLowerCase())) {
@@ -500,14 +540,19 @@ export default function Customers() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Customers</h2>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <ReactivateLink show={readOnly} href={reactivateHref} />
           <button onClick={() => setShowMerge(true)}
-            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-teal-300">
+            disabled={readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 text-sm font-semibold px-4 py-2.5 rounded-xl transition hover:border-teal-300 disabled:opacity-50 disabled:cursor-not-allowed">
             <GitMerge className="w-4 h-4" /> Merge Duplicates
           </button>
           <button
             onClick={() => setShowForm((v) => !v)}
-            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+            disabled={readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {showForm ? "✕ Cancel" : "+ Add Customer"}
           </button>
@@ -557,13 +602,15 @@ export default function Customers() {
           setForm={setForm}
           handleAdd={handleAdd}
           addingCustomer={addingCustomer}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
         />
       )}
 
       {loading ? (
         <CardGridSkeleton />
       ) : customers.length === 0 ? (
-        <EmptyState type="customers" onAction={() => { setForm(emptyCustomerForm); setShowForm(true); }} />
+        <EmptyState type="customers" onAction={() => { setForm(emptyCustomerForm); setShowForm(true); }} readOnly={readOnly} reactivateHref={reactivateHref} />
       ) : (
         <CustomerCardGrid
           filtered={filtered}
@@ -595,6 +642,8 @@ export default function Customers() {
           uploadingArtwork={uploadingArtwork}
           currentEditingArtwork={currentEditingArtwork}
           handleRemoveArtwork={handleRemoveArtwork}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
         />
       )}
 
@@ -605,6 +654,8 @@ export default function Customers() {
           onMerge={runCustomerMerge}
           onClose={() => setShowMerge(false)}
           supabaseFuncUrl={SUPABASE_FUNC_URL}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
         />
       )}
 

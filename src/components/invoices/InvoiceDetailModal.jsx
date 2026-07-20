@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
-import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload, getDisplayName } from "../shared/pricing";
+import ReactivateLink from "../shared/ReactivateLink";
+import { fmtDate, fmtMoney, calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty, SIZES, buildQBInvoicePayload, getDisplayName, getShopPricingConfig } from "../shared/pricing";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { exportInvoiceToPDF, previewPdf } from "../shared/pdfExport";
 import SendInvoiceModal from "./SendInvoiceModal";
 import OrderDetailModal from "../orders/OrderDetailModal";
@@ -12,8 +14,9 @@ import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
+import { qbModifiedState, buildAdoptPatches, stripSyncNotes } from "@/lib/invoices/qbModifiedSync";
 
-export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onSendSuccess }) {
+export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onInvoiceUpdated, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
   const [loading, setLoading] = useState(false);
   const [reordering, setReordering] = useState(false);
   const [reordered, setReordered] = useState(false);
@@ -35,7 +38,111 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   // source). The "View Order" button only renders when this is true.
   const [orderExists, setOrderExists] = useState(null);
 
+  // "Modified in QuickBooks — sync?" state. The qbWebhook keeps the
+  // qb_* mirror fresh in real time; when it disagrees with the as-sold
+  // total the notice below the line items offers a one-click adopt.
+  // syncedInvoice overlays the prop after a successful sync so the
+  // notice clears immediately even if the parent doesn't re-render.
+  const [syncedInvoice, setSyncedInvoice] = useState(null);
+  const [syncingQb, setSyncingQb] = useState(false);
+  const activeInvoice = syncedInvoice || invoice;
+  const qbModified = qbModifiedState(activeInvoice);
+
+  // Invoice-number rename (tester 2026-07-18: "Add a way to change the
+  // invoice name/number (throw a flag if its been used)"). QB-linked
+  // invoices are excluded: their DocNumber lives in QuickBooks and the
+  // next pull would revert a local rename — rename it in QB instead
+  // and the webhook/pull mirrors it here.
+  const [editingNumber, setEditingNumber] = useState(false);
+  const [numberDraft, setNumberDraft] = useState("");
+  const [numberFlag, setNumberFlag] = useState("");
+  const [savingNumber, setSavingNumber] = useState(false);
+
+  function startEditNumber() {
+    setNumberDraft(activeInvoice.invoice_id || "");
+    setNumberFlag("");
+    setEditingNumber(true);
+  }
+
+  async function handleSaveInvoiceNumber() {
+    const next = (numberDraft || "").trim();
+    if (!next) { setNumberFlag("Invoice number can't be empty."); return; }
+    if (next.length > 40) { setNumberFlag("Keep it under 40 characters."); return; }
+    if (next === activeInvoice.invoice_id) { setEditingNumber(false); return; }
+    setSavingNumber(true);
+    setNumberFlag("");
+    try {
+      // The in-use flag: another invoice with this number, or a quote —
+      // quote ids become invoice DocNumbers on the QB path, so reusing
+      // one would tangle the pull's DocNumber matching.
+      const [dupInvoices, dupQuotes] = await Promise.all([
+        base44.entities.Invoice.filter({ shop_owner: activeInvoice.shop_owner, invoice_id: next }),
+        base44.entities.Quote.filter({ shop_owner: activeInvoice.shop_owner, quote_id: next }).catch(() => []),
+      ]);
+      const clash = (dupInvoices || []).find((r) => r.id !== activeInvoice.id);
+      if (clash) {
+        setNumberFlag(`⚑ ${next} is already used by another invoice.`);
+        return;
+      }
+      if ((dupQuotes || []).length > 0) {
+        setNumberFlag(`⚑ ${next} is already used by a quote.`);
+        return;
+      }
+      const updated = await base44.entities.Invoice.update(activeInvoice.id, { invoice_id: next });
+      // Same overlay trick as the QB sync above: show the new number
+      // immediately even if the parent list hasn't re-rendered yet.
+      setSyncedInvoice({ ...activeInvoice, ...updated });
+      onInvoiceUpdated?.({ ...activeInvoice, ...updated });
+      setEditingNumber(false);
+    } catch (err) {
+      // DB backstop: the (shop_owner, invoice_id) unique index refuses
+      // a race we didn't catch above.
+      setNumberFlag(err?.message || "Couldn't rename the invoice.");
+    } finally {
+      setSavingNumber(false);
+    }
+  }
+
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
+
+  async function handleSyncFromQb() {
+    const ok = window.confirm(
+      `QuickBooks shows ${fmtMoney(qbModified.qbTotal)} for this invoice; InkTracker has ${fmtMoney(qbModified.localTotal)}.\n\n` +
+      `Update InkTracker (invoice, quote, and order totals) to match QuickBooks? ` +
+      `Line items and production details are not changed.`
+    );
+    if (!ok) return;
+    setSyncingQb(true);
+    try {
+      const patches = buildAdoptPatches(activeInvoice);
+      if (!patches) throw new Error("No QuickBooks totals on this invoice yet.");
+
+      // Quote and order first; the INVOICE row last. The "modified in
+      // QB" notice is keyed off the invoice row, so a partial failure
+      // leaves the notice up and re-clicking Sync retries everything
+      // (all three patches are idempotent).
+      let linkedQuote = null;
+      if (invoice.qb_invoice_id) {
+        const quotes = await base44.entities.Quote.filter({ qb_invoice_id: invoice.qb_invoice_id });
+        linkedQuote = quotes?.[0] || null;
+        if (linkedQuote) await base44.entities.Quote.update(linkedQuote.id, patches.quote);
+      }
+      const orderId = invoice.order_id || linkedQuote?.converted_order_id;
+      if (orderId) {
+        const orders = await base44.entities.Order.filter({ order_id: orderId });
+        if (orders?.[0]) await base44.entities.Order.update(orders[0].id, patches.order);
+      }
+      const updated = await base44.entities.Invoice.update(invoice.id, patches.invoice);
+
+      setSyncedInvoice(updated);
+      onInvoiceUpdated?.(updated);
+    } catch (err) {
+      console.error("[InvoiceDetailModal] QB sync failed:", err);
+      window.alert(`Sync from QuickBooks didn't complete: ${err?.message || "unknown error"}. Click Sync again to retry.`);
+    } finally {
+      setSyncingQb(false);
+    }
+  }
 
   // One-time check on mount: does the referenced order still exist?
   // Cheaper than discovering the orphan only when the user clicks
@@ -63,7 +170,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
     if (invoice.qb_invoice_id) {
       setQbStatus({
         type: "info",
-        message: `This invoice is already in QuickBooks (QB ID ${invoice.qb_invoice_id}). Use "View in QB" to open it.`,
+        // the banner renderer reads .text — a .message key rendered as an
+        // empty blue bar
+        text: `This invoice is already in QuickBooks (QB ID ${invoice.qb_invoice_id}). Use "View in QB" to open it.`,
       });
       return;
     }
@@ -77,11 +186,50 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error("Not signed in");
 
+      // Re-fetch the row before pushing: the `invoice` prop is a snapshot
+      // from the list fetch, which may predate another surface's QB push
+      // (order completion auto-pushes on the same screen flow). Pushing the
+      // stale snapshot is what minted the INV-2026-OW0M1 -r2 duplicate —
+      // its empty qb_invoice_id sent qbSync down the CREATE path. qbSync
+      // now re-reads the row server-side too; this keeps the modal honest.
+      let inv = invoice;
+      try {
+        const freshRows = await base44.entities.Invoice.filter({
+          shop_owner: invoice.shop_owner,
+          id: invoice.id,
+        });
+        if (freshRows?.length) inv = freshRows[0];
+      } catch { /* fall back to the prop */ }
+      if (inv.qb_invoice_id) {
+        setQbStatus({
+          type: "info",
+          text: `This invoice is already in QuickBooks (QB ID ${inv.qb_invoice_id}). Use "View in QB" to open it.`,
+        });
+        return;
+      }
+      // The customer prop can be null (list rendered without customers
+      // loaded). Pushing a customer payload with an empty email + company
+      // gives qbSync nothing to match on and mints a DUPLICATE QB customer —
+      // resolve the real record first.
+      let cust = customer;
+      if (!cust?.email && inv.customer_id) {
+        try {
+          const rows = await base44.entities.Customer.filter({
+            shop_owner: inv.shop_owner,
+            id: inv.customer_id,
+          });
+          if (rows?.length) cust = rows[0];
+        } catch { /* server-side merge is the backstop */ }
+      }
+
       // Treat invoice like a quote so buildQBInvoicePayload works
       const quoteShape = {
-        ...invoice,
-        quote_id: invoice.invoice_id,
-        customer_email: customer?.email || "",
+        ...inv,
+        quote_id: inv.invoice_id,
+        customer_email: cust?.email || "",
+        // notes become QB's CustomerMemo (customer-visible on the QB
+        // invoice) — internal sync-audit lines must not ride along.
+        notes: stripSyncNotes(inv.notes),
       };
       let invoicePayload = buildQBInvoicePayload(quoteShape);
 
@@ -89,11 +237,11 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       // order with no sizes object), build a simple single-line payload from the
       // invoice totals so the QB sync still works.
       if (!invoicePayload?.lines?.length) {
-        const lineItems = invoice.line_items || [];
+        const lineItems = inv.line_items || [];
         const lines = lineItems.length > 0
           ? lineItems.map(li => {
               const qty = getQty(li) || Number(li.qty) || 1;
-              const amount = Number(li.total) || Number(li.amount) || (invoice.subtotal || invoice.total || 0);
+              const amount = Number(li.total) || Number(li.amount) || (inv.subtotal || inv.total || 0);
               return {
                 description: [li.brand, li.style, li.garmentColor, li.description].filter(Boolean).join(" ") || "Service",
                 qty,
@@ -105,19 +253,19 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           : [{
               description: "Invoice",
               qty: 1,
-              unitPrice: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
-              amount: Number((invoice.subtotal || invoice.total || 0).toFixed(2)),
+              unitPrice: Number((inv.subtotal || inv.total || 0).toFixed(2)),
+              amount: Number((inv.subtotal || inv.total || 0).toFixed(2)),
               itemName: "Screen Print",
             }];
 
-        const discVal = parseFloat(invoice.discount) || 0;
-        const isFlat = invoice.discount_type === "flat";
+        const discVal = parseFloat(inv.discount) || 0;
+        const isFlat = inv.discount_type === "flat";
         invoicePayload = {
           lines,
           discountPercent: isFlat ? 0 : discVal,
           discountAmount: isFlat ? discVal : 0,
           discountType: isFlat ? "flat" : "percent",
-          taxPercent: parseFloat(invoice.tax_rate) || 0,
+          taxPercent: parseFloat(inv.tax_rate) || 0,
           depositAmount: 0,
         };
       }
@@ -135,20 +283,20 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         quote: quoteShape,
         invoicePayload,
         customer: {
-          id: invoice.customer_id,
-          name: invoice.customer_name,
-          email: customer?.email || "",
-          company: customer?.company || "",
-          phone: customer?.phone || "",
-          address: customer?.address || "",
-          qb_customer_id: customer?.qb_customer_id || "",
-          tax_exempt: customer?.tax_exempt || false,
-          tax_id: customer?.tax_id || "",
-          ship_to_address: customer?.ship_to_address || null,
-          exemption_expires_at: customer?.exemption_expires_at || null,
-          exemption_states: customer?.exemption_states || null,
-          exemption_type: customer?.exemption_type || null,
-          exemption_certificate_number: customer?.exemption_certificate_number || null,
+          id: inv.customer_id,
+          name: inv.customer_name,
+          email: cust?.email || "",
+          company: cust?.company || "",
+          phone: cust?.phone || "",
+          address: cust?.address || "",
+          qb_customer_id: cust?.qb_customer_id || "",
+          tax_exempt: cust?.tax_exempt || false,
+          tax_id: cust?.tax_id || "",
+          ship_to_address: cust?.ship_to_address || null,
+          exemption_expires_at: cust?.exemption_expires_at || null,
+          exemption_states: cust?.exemption_states || null,
+          exemption_type: cust?.exemption_type || null,
+          exemption_certificate_number: cust?.exemption_certificate_number || null,
         },
       });
       if (invErr) {
@@ -169,6 +317,14 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         throw new Error(invErr.message || "Failed to create");
       }
       if (data?.error) throw new Error(data.error);
+      if (data?.inFlight) {
+        // Row lock: another surface's sync for this invoice is mid-flight.
+        setQbStatus({
+          type: "info",
+          text: data.message || "Another sync for this invoice is still running — wait a moment, then refresh.",
+        });
+        return;
+      }
       if (data?.taxBlocked) {
         // QB computed a different sales tax than the invoice — on hold, no
         // payment link minted. Don't present this as a clean success.
@@ -181,7 +337,12 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             `No payment link was minted. Fix the customer's QB tax setup or this invoice's tax rate, then Refresh. See docs/qb-tax-sync.md.`,
         });
       } else {
-        setQbStatus({ type: "success", text: `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}` });
+        setQbStatus({
+          type: "success",
+          text: data.adoptionSource
+            ? `Linked to the existing QuickBooks invoice (#${data.qbDocNumber || data.qbInvoiceId}) — no duplicate was created.${data.paymentLink ? " Payment link ready." : ""}`
+            : `Invoice created in QuickBooks.${data.paymentLink ? " Payment link ready." : ""}`,
+        });
       }
     } catch (err) {
       setQbStatus({ type: "error", text: err.message });
@@ -206,7 +367,8 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         date: todayInShopTz(),
         due_date: null,
         status: "Draft",
-        notes: invoice.notes || "",
+        // Reorder starts a fresh job — drop internal sync-audit lines.
+        notes: stripSyncNotes(invoice.notes),
         rush_rate: invoice.rush_rate || 0,
         extras: invoice.extras || {},
         line_items: invoice.line_items || [],
@@ -275,7 +437,47 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         {/* Header */}
         <div className="px-4 sm:px-6 py-5 border-b border-slate-200 dark:border-slate-700 flex justify-between items-start">
           <div>
-            <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1">{invoice.invoice_id} · {fmtDate(invoice.date)}</div>
+            {editingNumber ? (
+              <div className="mb-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={numberDraft}
+                    onChange={(e) => { setNumberDraft(e.target.value); setNumberFlag(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleSaveInvoiceNumber(); if (e.key === "Escape") setEditingNumber(false); }}
+                    autoFocus
+                    className="text-xs font-semibold uppercase tracking-widest border border-slate-300 rounded px-2 py-1 w-44 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                  />
+                  <button
+                    onClick={handleSaveInvoiceNumber}
+                    disabled={savingNumber}
+                    className="text-xs font-semibold text-teal-600 hover:text-teal-700 disabled:opacity-50"
+                  >
+                    {savingNumber ? "Checking…" : "Save"}
+                  </button>
+                  <button onClick={() => setEditingNumber(false)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                </div>
+                {numberFlag && <div className="text-xs font-semibold text-red-600 mt-1">{numberFlag}</div>}
+              </div>
+            ) : (
+              <div className="text-xs font-semibold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-1.5">
+                {activeInvoice.invoice_id} · {fmtDate(invoice.date)}
+                {!readOnly && (
+                  activeInvoice.qb_invoice_id ? (
+                    <span
+                      className="text-slate-300 cursor-not-allowed"
+                      title={`Number is synced with QuickBooks (QB ID ${activeInvoice.qb_invoice_id}). Rename it in QuickBooks and it will mirror here.`}
+                    >✎</span>
+                  ) : (
+                    <button
+                      onClick={startEditNumber}
+                      title="Change invoice number"
+                      className="text-slate-400 hover:text-teal-600 transition"
+                    >✎</button>
+                  )
+                )}
+              </div>
+            )}
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{getDisplayName(customer || invoice.customer_name)}</h2>
             {invoice.due && <div className="text-sm text-slate-500 mt-0.5">Due: {fmtDate(invoice.due)}</div>}
           </div>
@@ -398,7 +600,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                         {imp.title && <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{imp.title}</div>}
                         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
                           <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
-                          <span className="text-slate-500">{imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}</span>
+                          <span className="text-slate-500">{imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · {imp.technique}</span>
                           {imp.pantones && <span className="text-teal-600 font-medium">{imp.pantones}</span>}
                           {imp.details && <span className="text-slate-500 italic">{imp.details}</span>}
                         </div>
@@ -435,19 +637,42 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             </div>
           )}
 
+          {/* Modified in QuickBooks — offer a consented one-click adopt.
+              Keyed off the fresh qb_* mirror (webhook keeps it current);
+              clears itself once the totals agree. */}
+          {qbModified.modified && (
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-slate-700 dark:text-slate-200">
+                <span className="font-semibold">This invoice was modified in QuickBooks.</span>{" "}
+                QuickBooks shows {fmtMoney(qbModified.qbTotal)}; InkTracker has {fmtMoney(qbModified.localTotal)}.
+              </div>
+              <button
+                onClick={handleSyncFromQb}
+                disabled={syncingQb || readOnly}
+                title={readOnly ? readOnlyReason : undefined}
+                className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {syncingQb ? "Syncing…" : "Sync from QuickBooks"}
+              </button>
+            </div>
+          )}
+
           {/* Totals */}
           <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
-            <div className="flex justify-between text-sm text-slate-500"><span>Subtotal</span><span>{fmtMoney(invoice.subtotal)}</span></div>
+            <div className="flex justify-between text-sm text-slate-500"><span>Subtotal</span><span>{fmtMoney(activeInvoice.subtotal)}</span></div>
             {invoice.discount > 0 && (
               <div className="flex justify-between text-sm text-emerald-600">
-                <span>Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${invoice.discount}%)`}</span>
+                <span>
+                  Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${invoice.discount}%)`}
+                  {invoice.discount_description ? ` — ${invoice.discount_description}` : ""}
+                </span>
                 <span>−{fmtMoney(sub - afterDisc)}</span>
               </div>
             )}
-            {invoice.tax > 0 && (
+            {activeInvoice.tax > 0 && (
               <div className="flex justify-between text-sm text-slate-500">
-                <span>Tax {invoice.tax_rate ? `(${invoice.tax_rate}%)` : ""}</span>
-                <span>{fmtMoney(invoice.tax)}</span>
+                <span>Tax {activeInvoice.tax_rate ? `(${activeInvoice.tax_rate}%)` : ""}</span>
+                <span>{fmtMoney(activeInvoice.tax)}</span>
               </div>
             )}
             {invoice.rush_rate > 0 && (
@@ -455,7 +680,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             )}
             <div className="flex justify-between font-bold text-slate-900 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 pt-2">
               <span className="text-base">Total</span>
-              <span className="text-2xl">{fmtMoney(invoice.total)}</span>
+              <span className="text-2xl">{fmtMoney(activeInvoice.total)}</span>
             </div>
           </div>
         </div>
@@ -484,22 +709,40 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
 
         {/* Footer */}
         <div className="flex flex-wrap items-center gap-2 px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
-          {!invoice.paid && (
+          {!invoice.paid && onMarkPaid && (
             <button onClick={() => { onMarkPaid(invoice.id); onClose(); }}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
               Mark as Paid
             </button>
           )}
           {invoice.status === "Draft" && onConvertToInvoice && (
             <button onClick={() => { onConvertToInvoice(invoice); onClose(); }}
-              className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed">
               Convert to Invoice
             </button>
           )}
           {!invoice.paid && (
             <button onClick={() => setShowSendModal(true)}
-              className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition">
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
               Send Invoice
+            </button>
+          )}
+          {/* Add to Production — bridges a QB-originated invoice (no
+              linked order) onto the schedule. Renders only when the
+              invoice has no order_id; the page-level handler re-checks
+              against fresh rows before creating anything. */}
+          {!invoice.order_id && onAddToProduction && (
+            <button onClick={() => onAddToProduction(invoice)}
+              disabled={readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="text-xs font-semibold text-teal-600 hover:text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
+              Add to Production
             </button>
           )}
           {orderExists && (
@@ -531,8 +774,9 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
               View in QB
             </a>
           ) : (
-            <button onClick={handleCreateInQB} disabled={qbCreating}
-              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50">
+            <button onClick={handleCreateInQB} disabled={qbCreating || readOnly}
+              title={readOnly ? readOnlyReason : undefined}
+              className="text-xs font-semibold text-[#2CA01C] hover:text-[#248A18] px-3 py-1.5 rounded-lg hover:bg-[#2CA01C]/5 transition disabled:opacity-50 disabled:cursor-not-allowed">
               {qbCreating ? "Creating…" : "Create in QB"}
             </button>
           )}
@@ -551,14 +795,18 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
             className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">
             Preview PDF
           </button>
-          <button onClick={handleReorder} disabled={reordering}
-            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition disabled:opacity-50">
+          <button onClick={handleReorder} disabled={reordering || readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="text-xs font-semibold text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition disabled:opacity-50 disabled:cursor-not-allowed">
             {reordered ? "✓ Reordered" : reordering ? "Creating…" : "Reorder"}
           </button>
           {onDelete && <button onClick={() => onDelete(invoice.id)}
-            className="text-xs font-semibold text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition">
+            disabled={readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="text-xs font-semibold text-red-400 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition disabled:opacity-50 disabled:cursor-not-allowed">
             Delete
           </button>}
+          <ReactivateLink show={readOnly} href={reactivateHref} />
           <button onClick={onClose} className="ml-auto text-xs font-semibold text-slate-500 hover:text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition">Close</button>
         </div>
         {qbStatus && (

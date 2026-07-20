@@ -89,8 +89,9 @@ describe("createQuickBooksTaxProvider.pushInvoice", () => {
       status: 200,
       json: async () => ({
         qbInvoiceId: "INV-42",
-        qb_tax: 8.88,
-        qb_total: 108.88,
+        // qbSync returns camelCase qbTaxAmount / qbTotal (NOT qb_tax/qb_total).
+        qbTaxAmount: 8.88,
+        qbTotal: 108.88,
         paymentLink: "https://pay.example.com/xyz",
       }),
     });
@@ -118,13 +119,28 @@ describe("createQuickBooksTaxProvider.pushInvoice", () => {
     const sentBody = JSON.parse(calledOpts.body);
     expect(sentBody.action).toBe("createInvoice");
     expect(sentBody.accessToken).toBe("token-abc");
+    // Idempotency key derived from the quote id — guards against double-click
+    // / retry minting a duplicate invoice.
+    expect(sentBody.idempotencyKey).toContain("createInvoice:");
     expect(sentBody.qboInvoice.Line[0].SalesItemLineDetail.TaxCodeRef.value).toBe("TAX");
     expect(sentBody.qboInvoice.BillAddr.PostalCode).toBe("78701");
     expect(sentBody.qboInvoice.TxnTaxDetail).toEqual({});
+    // noEmail defaults to false (existing callers unchanged)
+    expect(sentBody.noEmail).toBe(false);
 
     expect(result.externalId).toBe("INV-42");
     expect(result.taxFromProvider).toBe(8.88);
     expect(result.totalFromProvider).toBe(108.88);
+  });
+
+  it("forwards noEmail:true so QuickBooks suppresses its own /send email", async () => {
+    const httpClient = vi.fn().mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ qbInvoiceId: "INV-9" }),
+    });
+    const provider = createQuickBooksTaxProvider({ httpClient, qbSyncUrl: QB_URL, accessToken: "t" });
+    await provider.pushInvoice(quoteWith([]), { customer: {}, invoicePayload: { lines: [] }, noEmail: true });
+    const sentBody = JSON.parse(httpClient.mock.calls[0][1].body);
+    expect(sentBody.noEmail).toBe(true);
   });
 
   it("calculate() returns nulls before push and persisted values after", () => {

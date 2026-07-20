@@ -1,9 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
+import ReactivateLink from "../shared/ReactivateLink";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import ArtworkPreviewOverlay from "../shared/ArtworkPreviewOverlay";
 import SendInvoiceModal from "../invoices/SendInvoiceModal";
+import PackingSlipModal from "./PackingSlipModal";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
+import { uploadFile } from "@/lib/uploadFile";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { buildShortfallReorderPayloads, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { notify } from "@/lib/notify";
@@ -68,6 +71,13 @@ export default function OrderDetailModal({
   // add/remove) so reopening the modal doesn't re-seed from a stale order —
   // the "removed attachment comes back" bug.
   onUpdated,
+  // Read-only (lapsed subscription) gate. The modal opens for VIEW even when
+  // read-only; these disable the WRITE affordances (status flow, invoice,
+  // job cost, shipping, artwork, delete, shortfall). Defaults keep writable
+  // users 100% unchanged. Parent (Orders/Production/etc.) passes the freshest
+  // value via useReadOnly(user); the hook also has an AuthContext fallback.
+  readOnly = false,
+  reactivateHref,
 }) {
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -150,6 +160,8 @@ export default function OrderDetailModal({
   // when there's nothing to pick from.
   const [presses, setPresses] = useState([]);
   const [employees, setEmployees] = useState([]);
+  // Packing slip confirm-quantities modal (Completed orders only).
+  const [showPackingSlip, setShowPackingSlip] = useState(false);
 
   // Shipping — FedEx state + handlers extracted into a hook.
   const {
@@ -362,7 +374,7 @@ export default function OrderDetailModal({
       const lh = parseFloat(laborHours) || 0;
       const lc = parseFloat(laborCost) || 0;
       const eh = estimatedHours === "" ? null : parseFloat(estimatedHours);
-      await base44.entities.Order.update(order.id, {
+      const updated = await base44.entities.Order.update(order.id, {
         actual_cost: ac,
         actual_labor_hours: lh,
         actual_labor_cost: lc,
@@ -371,6 +383,10 @@ export default function OrderDetailModal({
         assigned_operator: assignedOperator,
         step_notes: stepNotes,
       });
+      // Propagate to the parent list — without this, /Orders (which has no
+      // realtime subscription) keeps the stale row and reopening the modal
+      // re-seeds the old cost/labor/press values, reading as a lost save.
+      onUpdated?.(updated || { ...order, actual_cost: ac, actual_labor_hours: lh, actual_labor_cost: lc, estimated_hours: Number.isFinite(eh) ? eh : null, assigned_press: assignedPress, assigned_operator: assignedOperator, step_notes: stepNotes });
       setCostSaved(true);
       setTimeout(() => setCostSaved(false), 2000);
     } catch (err) {
@@ -381,6 +397,7 @@ export default function OrderDetailModal({
   }
 
   async function handleArtworkUpload(e) {
+    if (readOnly) { e.target.value = ""; return; }
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
     setUploading(true);
@@ -390,19 +407,19 @@ export default function OrderDetailModal({
       const newArtwork = [...(order.selected_artwork || [])];
 
       for (const file of files) {
-        const ext = file.name.split(".").pop();
-        const path = `${order.id}_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-        const { error: upErr } = await supabase.storage
-          .from("artwork")
-          .upload(path, file, { upsert: false });
-        if (upErr) throw upErr;
-
-        // The artwork bucket is private (M-1) — a getPublicUrl() here would 400.
-        // `path` is the canonical reference; readers sign a URL from it directly.
+        // Shared helper, not an inline storage call: it validates the file
+        // (extension/size/scriptable-SVG — this path had NO validation), writes
+        // the artwork_objects ownership row the read policy resolves through,
+        // and returns the /artwork/ path-carrier `file_url`. The old inline
+        // upload stored a bare `${order.id}_...` path with no url — invisible
+        // to the reference-based read policy AND to the customer approval
+        // page's authorizedPaths, so every thumbnail it produced was broken.
+        const { path, file_url } = await uploadFile(file);
         newArtwork.push({
           id: path,
           name: file.name,
           path,
+          url: file_url,
           note: "",
           colors: "",
           source: "Uploaded to order",
@@ -421,6 +438,7 @@ export default function OrderDetailModal({
   }
 
   async function removeArtwork(art) {
+    if (readOnly) return;
     const key = art?.id || art?.url || art?.name;
     const next = (localArtwork || []).filter((a) => (a.id || a.url || a.name) !== key);
     try {
@@ -543,7 +561,7 @@ export default function OrderDetailModal({
     : getDisplayName(customer || order.customer_name);
   const displayJobTitle = isBrokerOrder
     ? (order?.job_title || order?.broker_client_name || "")
-    : "";
+    : (order?.job_title || "");
 
   const discVal = parseFloat(order.discount) || 0;
   const isFlat = order.discount_type === "flat" || (discVal > 100 && order.discount_type !== "percent");
@@ -592,6 +610,7 @@ export default function OrderDetailModal({
           onClose={onClose}
           onAdvance={onAdvance}
           onRevert={onRevert}
+          readOnly={readOnly}
         />
 
         <div className="p-4 sm:p-6 space-y-5">
@@ -604,16 +623,25 @@ export default function OrderDetailModal({
                 <div className="text-sm text-slate-500 -mt-1 mb-3">
                   Files uploaded here appear on the customer art approval page.
                 </div>
+                {/* Read-only (lapsed subscription): drop the upload/remove
+                    handlers so the gallery renders view-only — no "Add files"
+                    tile, no per-tile ×. Reads/thumbnails stay intact. */}
                 <AttachmentGallery
                   record={{ ...liveOrder, selected_artwork: localArtwork }}
                   title={null}
                   backLabel="Back to order"
                   accept=".png,.jpg,.jpeg,.pdf,.ai,.eps,.psd"
-                  onUpload={handleArtworkUpload}
-                  onRemove={removeArtwork}
+                  onUpload={readOnly ? undefined : handleArtworkUpload}
+                  onRemove={readOnly ? undefined : removeArtwork}
                   uploading={uploading}
                   uploadError={uploadError}
                 />
+                {readOnly && (
+                  <div className="text-xs text-slate-500 flex items-center gap-2">
+                    <span>Reactivate to upload or remove artwork.</span>
+                    <ReactivateLink show={readOnly} href={reactivateHref} />
+                  </div>
+                )}
               </CollapsibleSection>
             </div>
 
@@ -630,6 +658,8 @@ export default function OrderDetailModal({
                 setPreviewArt={setPreviewArt}
                 handleReorderShortfall={handleReorderShortfall}
                 reorderCreating={reorderCreating}
+                readOnly={readOnly}
+                reactivateHref={reactivateHref}
               />
 
               <FloorModePanel
@@ -641,6 +671,8 @@ export default function OrderDetailModal({
                 floorToggleGoods={floorToggleGoods}
                 bulkOrderGoodsStep={bulkOrderGoodsStep}
                 saveShortfall={saveShortfall}
+                readOnly={readOnly}
+                reactivateHref={reactivateHref}
               />
 
               <OrderShippingSection
@@ -679,6 +711,8 @@ export default function OrderDetailModal({
                 handleSaveShipping={handleSaveShipping}
                 handleCreateLabel={handleCreateLabel}
                 handleTrackShipment={handleTrackShipment}
+                readOnly={readOnly}
+                reactivateHref={reactivateHref}
               />
 
               <OrderJobCostSection
@@ -702,6 +736,8 @@ export default function OrderDetailModal({
                 handleSaveJobCost={handleSaveJobCost}
                 savingCost={savingCost}
                 costSaved={costSaved}
+                readOnly={readOnly}
+                reactivateHref={reactivateHref}
               />
             </>
           ) : (
@@ -732,6 +768,9 @@ export default function OrderDetailModal({
             advanceWithGoodsGuard={advanceWithGoodsGuard}
             handleCreateInvoice={handleCreateInvoice}
             handleOpenSend={handleOpenSend}
+            onCreateSlip={() => setShowPackingSlip(true)}
+            readOnly={readOnly}
+            reactivateHref={reactivateHref}
           />
 
           <OrderUtilityActions
@@ -747,6 +786,8 @@ export default function OrderDetailModal({
             saving={saving}
             onDelete={onDelete}
             callAction={callAction}
+            readOnly={readOnly}
+            reactivateHref={reactivateHref}
           />
         </div>
       </div>
@@ -765,6 +806,18 @@ export default function OrderDetailModal({
           customer={sendCustomer}
           onClose={() => setSendingInvoice(false)}
           onSuccess={() => { lookupRelatedInvoice(); }}
+        />
+      )}
+
+      {/* Conditional mount so quantities re-initialize from the order's
+          current sizes/_shortfall on every open (modal prop-state rule). */}
+      {showPackingSlip && (
+        <PackingSlipModal
+          order={liveOrder}
+          customer={customer}
+          shopName={shopName}
+          logoUrl={logoUrl}
+          onClose={() => setShowPackingSlip(false)}
         />
       )}
     </div>,

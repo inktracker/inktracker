@@ -18,6 +18,21 @@
 
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS past_due_since timestamptz;
 
+-- ── CANONICAL READ-ONLY PREDICATE (server ↔ client, ONE rule) ───────────────
+-- has_active_subscription() below is the authoritative WRITE gate (WITH CHECK
+-- only — reads stay open). Its exact client inverse is `computeReadOnly(user)`
+-- in src/lib/billing.js, which the UI uses to disable create/edit affordances
+-- so a user never clicks a button that then fails this gate. The rule, stated
+-- once for both sides:
+--   WRITABLE iff  role in (admin, broker)
+--              OR the governing subscription is NOT lapsed, where lapsed =
+--                 tier expired OR tier incomplete OR status canceled
+--                 OR (trial AND trial_ends_at < now)
+--                 OR (past_due AND past_due_since < now - 7 days).
+-- Team members inherit the shop owner's subscription on both sides. If you
+-- change either side, change the other and the agreement test
+-- (src/lib/__tests__/readOnlyAgreement.test.js).
+
 -- ── has_active_subscription(): add the past_due grace check ─────────────────
 CREATE OR REPLACE FUNCTION public.has_active_subscription()
 RETURNS boolean

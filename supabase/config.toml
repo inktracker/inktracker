@@ -96,3 +96,6 @@ verify_jwt = false
 
 [functions.sendMfaSignInCode]
 verify_jwt = false
+
+[functions.notifySignup]
+verify_jwt = false

@@ -13,10 +13,18 @@ import { CUSTOMER_PUBLIC_URL } from "@/lib/publicUrls";
 export default function EmbedSnippets() {
   const [copied, setCopied] = useState(null);
   const [userEmail, setUserEmail] = useState("");
+  // null = unknown (loading or read failed — don't warn on a failed read);
+  // 0 = confirmed empty → the embed shows customers an empty product picker.
+  const [styleCount, setStyleCount] = useState(null);
 
   useEffect(() => {
-    base44.auth.me().then(u => {
-      if (u?.email) setUserEmail(u.email);
+    base44.auth.me().then(async (u) => {
+      if (!u?.email) return;
+      setUserEmail(u.email);
+      try {
+        const shops = await base44.entities.Shop.filter({ owner_email: u.email });
+        setStyleCount(shops?.[0]?.wizard_styles?.length ?? 0);
+      } catch { /* leave null */ }
     }).catch(() => {});
   }, []);
 
@@ -47,6 +55,21 @@ export default function EmbedSnippets() {
 
   return (
     <div className="grid gap-5">
+      {/* New shops land here before adding any garments — without this
+          notice they paste the embed and customers see an empty product
+          picker (onboarding never touches wizard_styles). */}
+      {styleCount === 0 && (
+        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-start gap-3">
+          <span className="text-lg leading-none mt-0.5">🧵</span>
+          <p className="text-sm text-slate-600">
+            <span className="font-semibold text-slate-800">No garments in your wizard yet.</span>{" "}
+            Customers who open this link or embed will see an empty product picker.
+            Add styles on the{" "}
+            <a href="/Wizard" className="font-semibold text-teal-600 hover:text-teal-700">Wizard page</a>{" "}
+            first, then share it.
+          </p>
+        </div>
+      )}
       {/* Direct Link */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
         <div className="flex justify-between items-center mb-2">

@@ -6,6 +6,7 @@ import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJo
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
 import { addDaysISO, relativeDueLabel, getOrderActionHint, selectOverdueOrders } from "@/lib/calendar/agendaHints";
+import { buildPointEvents } from "@/lib/calendar/pointEvents";
 import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 import {
   dayIndex as schedulerDayIndex,
@@ -20,6 +21,7 @@ import AdvancedFilters from "../components/AdvancedFilters";
 import OrderScheduleRow from "../components/calendar/OrderScheduleRow";
 import { ChevronLeft, ChevronRight, CalendarDays, List, LayoutGrid } from "lucide-react";
 import { todayInShopTz, nowInShopTz } from "@/lib/shopTimezone";
+import { localDateStr } from "@/lib/dateRangeUtils";
 import { useBillingGate } from "@/lib/billing-gate";
 import { notify } from "@/lib/notify";
 import { revertQuoteOnOrderDelete } from "@/lib/orders/revertQuoteOnOrderDelete";
@@ -145,7 +147,9 @@ export default function Production() {
     // Monday-start weeks. JS Sunday=0, so a Sunday-on-load lands on
     // the prior Monday (dow=0 → -6, else 1-dow).
     d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-    return d.toISOString().split("T")[0];
+    // localDateStr, not toISOString — the UTC date is tomorrow after
+    // ~5pm Pacific, which started the week strip on Tuesday.
+    return localDateStr(d);
   });
   const [draggingOrderId, setDraggingOrderId] = useState(null);
   const [dragOverKey, setDragOverKey] = useState(null);
@@ -206,63 +210,20 @@ export default function Production() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const pointEvents = useMemo(() => {
-    const map = {};
-    orders.forEach((o) => {
-      const stepDates = o.step_dates || {};
-      O_STATUSES.forEach((step) => {
-        const val = stepDates[step];
-        if (!val) return;
-        
-        if (step === "Printing" && typeof val === "object" && val.start && val.end) {
-          // Printing as date range: add point events for start and end dates
-          [val.start, val.end].forEach((date) => {
-            if (!map[date]) map[date] = [];
-            map[date].push({ order: o, step, isDue: false });
-          });
-        } else if (typeof val === "string") {
-          // Single date for any step
-          if (!map[val]) map[val] = [];
-          map[val].push({ order: o, step, isDue: false });
-        }
-      });
-      if (o.date) {
-        if (!map[o.date]) map[o.date] = [];
-        map[o.date].push({ order: o, step: "Order Goods", isDue: false });
-      }
-      // Completed orders get a green chip on completed_date so the
-      // calendar serves as a historical "what shipped when" record even
-      // when an order had no scheduled steps.
-      if (o.status === "Completed" && o.completed_date) {
-        if (!map[o.completed_date]) map[o.completed_date] = [];
-        map[o.completed_date].push({ order: o, step: "Completed", isDue: false });
-      }
-      // Completed orders don't get a red "Due" chip — the job is done.
-      if (o.due_date && o.status !== "Completed") {
-        if (!map[o.due_date]) map[o.due_date] = [];
-        map[o.due_date].push({ order: o, step: "Due", isDue: true });
-      }
-
-    });
-
-    // Quote lifecycle chips — pushed directly from quote rows, not joined
-    // via order. A quote that's been sent but not converted still shows up.
-    // Date strings normalized to YYYY-MM-DD (client_approved_at is full ISO).
-    quotes.forEach((q) => {
-      if (q.sent_date) {
-        const d = String(q.sent_date).slice(0, 10);
-        if (!map[d]) map[d] = [];
-        map[d].push({ kind: "quote", quote: q, step: "Quote Sent", isDue: false });
-      }
-      if (q.client_approved_at) {
-        const d = String(q.client_approved_at).slice(0, 10);
-        if (!map[d]) map[d] = [];
-        map[d].push({ kind: "quote", quote: q, step: "Quote Approved", isDue: false });
-      }
-    });
-
-    return map;
-  }, [orders, quotes]);
+  // Extracted to lib/calendar/pointEvents.js (unit-tested there). Key rule:
+  // a Completed order renders ONE "Completed" chip, sourced from
+  // completed_date — step_dates["Completed"] used to add a second one.
+  // The "Hide Completed" toggle (shared with the table view) also clears
+  // finished work off the calendar — a Completed order drops all its chips
+  // (its green completed chip AND any historical step chips) so the grid
+  // shows only active work. Quote chips are unaffected.
+  const pointEvents = useMemo(
+    () => buildPointEvents(
+      hideCompleted ? orders.filter((o) => o.status !== "Completed") : orders,
+      quotes,
+    ),
+    [orders, quotes, hideCompleted],
+  );
 
   const allActiveOrders = useMemo(() => {
     const active = orders.filter((o) => o.status !== "Completed");
@@ -320,31 +281,48 @@ export default function Production() {
     if (!order) return;
     const stepDates = { ...(order.step_dates || {}), [step]: newDate || undefined };
     if (!newDate) delete stepDates[step];
-    const updated = await base44.entities.Order.update(orderId, { step_dates: stepDates });
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    const payload = { step_dates: stepDates };
+    // On a Completed order, the calendar's "Completed" chip is sourced from
+    // completed_date (buildPointEvents), not step_dates — so moving that chip
+    // must move completed_date too or the drag silently does nothing and the
+    // Dashboard/revenue windows keep the old date. Never CLEAR completed_date
+    // here: status stays "Completed" and stats require the stamp.
+    if (step === "Completed" && order.status === "Completed" && newDate) {
+      payload.completed_date = newDate;
+    }
+    try {
+      const updated = await base44.entities.Order.update(orderId, payload);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    } catch (err) {
+      notify.error("Couldn't save that schedule date", err);
+    }
   }
 
   async function handleUpdateDueDate(orderId, newDate) {
-    const updated = await base44.entities.Order.update(orderId, { due_date: newDate || null });
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    try {
+      const updated = await base44.entities.Order.update(orderId, { due_date: newDate || null });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+    } catch (err) {
+      notify.error("Couldn't update the due date", err);
+    }
   }
 
   async function handleAdvance(id) {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
-    if (idx >= 0 && idx < O_STATUSES.length - 1) {
-      const nextStatus = O_STATUSES[idx + 1];
-      // When advancing INTO Completed, also stamp completed_date.
-      // Calendar's green chip requires BOTH status==="Completed" AND
-      // completed_date — without the stamp the order silently
-      // disappears from the calendar.
-      const payload = { status: nextStatus };
-      if (nextStatus === "Completed" && !order.completed_date) {
-        payload.completed_date = todayInShopTz();
-      }
+    if (idx < 0 || idx >= O_STATUSES.length - 1) return;
+    const nextStatus = O_STATUSES[idx + 1];
+    // When advancing INTO Completed, also stamp completed_date.
+    // Calendar's green chip requires BOTH status==="Completed" AND
+    // completed_date — without the stamp the order silently
+    // disappears from the calendar.
+    const payload = { status: nextStatus };
+    if (nextStatus === "Completed" && !order.completed_date) {
+      payload.completed_date = todayInShopTz();
+    }
+    try {
       const updated = await base44.entities.Order.update(id, payload);
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
-
       // Modal lifecycle: keep the order modal open while the operator
       // walks through the production pipeline (Art Approval → Order
       // Goods → Pre-Press → Printing). Closing on every click made
@@ -355,30 +333,51 @@ export default function Production() {
         if (nextStatus === "Completed") setViewing(null);
         else setViewing(updated);
       }
+    } catch (err) {
+      notify.error("Couldn't update the order status", err);
     }
   }
 
   async function handleRevert(id) {
     const order = orders.find((o) => o.id === id);
     const idx = O_STATUSES.indexOf(order.status);
-    if (idx > 0) {
+    if (idx <= 0) return;
+    try {
       const updated = await base44.entities.Order.update(id, { status: O_STATUSES[idx - 1] });
       setOrders((prev) => prev.map((o) => (o.id === id ? updated : o)));
       if (viewing?.id === id) setViewing(updated);
+    } catch (err) {
+      notify.error("Couldn't move the order back a step", err);
     }
   }
 
   async function handleComplete(order) {
     if (billingGate("complete orders")) return;
-    const updated = await runOrderCompletion({ order, userEmail: user.email, base44 });
-    setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
-    // Keep the modal open on the just-completed order so its action bar can
-    // reveal Create Invoice → Send. Only updates if this order is being viewed.
-    setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+    try {
+      const updated = await runOrderCompletion({ order, user, base44 });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
+      // Keep the modal open on the just-completed order so its action bar can
+      // reveal Create Invoice → Send. Only updates if this order is being viewed.
+      setViewing((prev) => (prev && prev.id === order.id ? updated : prev));
+    } catch (err) {
+      notify.error("Couldn't complete the order", err);
+    }
   }
 
   async function handleDelete(id) {
     const order = orders.find((o) => o.id === id);
+    // Completed orders are preserved on purpose: a BEFORE DELETE trigger
+    // refuses the delete so their invoices never dangle (a bug that once
+    // orphaned every completed invoice). Firing the delete anyway just
+    // throws a check-constraint error the user can't act on — so explain
+    // the "why" and the way out up front instead.
+    if (order?.status === "Completed") {
+      notify.info(
+        "Completed orders are kept on file",
+        "This order is marked Completed, so it stays as a historical record and its invoice remains linked. To remove it, move it back a step first (Revert), then delete.",
+      );
+      return;
+    }
     // Honest confirm copy: an order made from a quote isn't lost — the quote is
     // restored (to the broker for broker jobs, else to your Quotes list).
     const msg = !order?.quote_id
@@ -387,7 +386,12 @@ export default function Production() {
         ? "Delete this order?\n\nIts quote goes back to the broker, so nothing is lost."
         : "Delete this order?\n\nIts originating quote returns to your Quotes list, so nothing is lost.";
     if (!window.confirm(msg)) return;
-    await base44.entities.Order.delete(id);
+    try {
+      await base44.entities.Order.delete(id);
+    } catch (err) {
+      notify.error("Couldn't delete the order", err);
+      return;
+    }
     setOrders((prev) => prev.filter((o) => o.id !== id));
     setViewing(null);
 
@@ -398,10 +402,16 @@ export default function Production() {
 
   async function handleTogglePaid(order) {
     const newPaid = !order.paid;
-    const updated = await base44.entities.Order.update(order.id, {
-      paid: newPaid,
-      paid_date: newPaid ? new Date().toISOString().split("T")[0] : null,
-    });
+    let updated;
+    try {
+      updated = await base44.entities.Order.update(order.id, {
+        paid: newPaid,
+        paid_date: newPaid ? todayInShopTz() : null,
+      });
+    } catch (err) {
+      notify.error(`Couldn't mark the order ${newPaid ? "paid" : "unpaid"}`, err);
+      return;
+    }
     setOrders((prev) => prev.map((o) => (o.id === order.id ? updated : o)));
     setViewing(updated);
   }
@@ -416,8 +426,12 @@ export default function Production() {
     } else if (step === "Order Goods") {
       // "Order Goods" maps to the order.date field
       if (orderId) {
-        const updated = await base44.entities.Order.update(orderId, { date: dateStr });
-        setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+        try {
+          const updated = await base44.entities.Order.update(orderId, { date: dateStr });
+          setOrders((prev) => prev.map((o) => (o.id === orderId ? updated : o)));
+        } catch (err) {
+          notify.error("Couldn't move that order on the calendar", err);
+        }
       }
     } else if (orderId && step) {
       if (orderId) handleUpdateStepDate(orderId, step, dateStr);
@@ -497,13 +511,39 @@ export default function Production() {
 
   async function handleBulkStatusUpdate() {
     if (!bulkStatus || selectedIds.size === 0) return;
+    // Bulk "Completed" must run the full completion flow, not a bare
+    // status write: a bare write skips completed_date (order vanishes
+    // from the calendar and revenue stats) and skips invoice /
+    // performance-row creation entirely.
+    if (bulkStatus === "Completed" && billingGate("complete orders")) return;
     const ids = [...selectedIds];
-    await Promise.all(ids.map((id) => base44.entities.Order.update(id, { status: bulkStatus })));
-    setOrders((prev) =>
-      prev.map((o) => (selectedIds.has(o.id) ? { ...o, status: bulkStatus } : o))
-    );
+    const updatedById = {};
+    const failed = [];
+    for (const id of ids) {
+      const order = orders.find((o) => o.id === id);
+      if (!order) continue;
+      try {
+        if (bulkStatus === "Completed") {
+          updatedById[id] = order.status === "Completed"
+            ? order
+            : await runOrderCompletion({ order, user, base44 });
+        } else {
+          updatedById[id] = await base44.entities.Order.update(id, { status: bulkStatus });
+        }
+      } catch (e) {
+        console.error("Bulk status update failed:", e);
+        failed.push(order.order_id || order.customer_name || id);
+      }
+    }
+    setOrders((prev) => prev.map((o) => updatedById[o.id] || o));
     setSelectedIds(new Set());
     setBulkStatus("");
+    if (failed.length > 0) {
+      notify.error(
+        `Updated ${ids.length - failed.length} of ${ids.length} orders`,
+        `These didn't update: ${failed.join(", ")}. They were left unchanged — try them individually.`,
+      );
+    }
   }
 
   function toggleSelectAll() {
@@ -758,6 +798,13 @@ export default function Production() {
               <ChevronRight className="w-4 h-4 text-slate-600" />
             </button>
             <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 ml-2">{MONTH_NAMES[month]} {year}</h3>
+            <button
+              onClick={() => setHideCompleted((v) => !v)}
+              className={`ml-auto text-xs font-semibold px-3 py-1.5 rounded-full border transition ${hideCompleted ? "bg-emerald-600 text-white border-emerald-600" : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-emerald-300"}`}
+              title="Hide orders marked Completed so the calendar shows only active work"
+            >
+              {hideCompleted ? "Show Completed" : "Hide Completed"}
+            </button>
           </div>
 
           {/* Chip legend — quick visual key so users can decode colors without
@@ -772,7 +819,7 @@ export default function Production() {
               { label: "Printing",       cls: STATUS_COLORS["Printing"] },
               { label: "Due",            cls: "bg-rose-50 border-rose-300 text-rose-700" },
               { label: "Completed",      cls: STATUS_COLORS["Completed"] },
-            ].map((item) => (
+            ].filter((item) => !(hideCompleted && item.label === "Completed")).map((item) => (
               <span key={item.label} className={`px-1.5 py-0.5 rounded border ${item.cls}`}>
                 {item.label}
               </span>
@@ -1084,7 +1131,7 @@ export default function Production() {
                   const d = new Date();
                   const dow = d.getDay();
                   d.setDate(d.getDate() + (dow === 0 ? -6 : 1 - dow));
-                  setScheduleWeekStart(d.toISOString().split("T")[0]);
+                  setScheduleWeekStart(localDateStr(d));
                 }}
                 className="text-sm font-semibold text-teal-600 hover:underline"
               >
@@ -1443,8 +1490,10 @@ export default function Production() {
           invoice={viewingInvoice}
           customer={null}
           onClose={() => setViewingInvoice(null)}
-          onMarkPaid={() => {}}
-          onDelete={() => {}}
+          // No onMarkPaid/onDelete on purpose — money actions with QB-sync
+          // semantics live on the Invoices page; stub handlers here rendered
+          // buttons that silently did nothing. The modal hides both when the
+          // handlers are absent.
           // After a successful Send: close the order modal too. The
           // operator just shipped the deliverable; they want to return
           // to the production queue, not get stranded on the order

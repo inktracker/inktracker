@@ -12,6 +12,8 @@ import {
   buildAddonsByScope,
   getAddonsForTechnique,
   pruneExtrasForTechnique,
+  getAddonsForTechniques,
+  pruneExtrasForTechniques,
   getActiveAddonLabels,
 } from "../extrasScopes";
 
@@ -58,8 +60,8 @@ describe("sliceToAddons", () => {
       extraModes: { tags: "flat", colorMatch: "percent" },
     });
     expect(out).toEqual([
-      { key: "colorMatch", label: "Color Match", rate: 10, mode: "percent" },
-      { key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat" },
+      { key: "colorMatch", label: "Color Match", rate: 10, mode: "percent", basis: "per_garment" },
+      { key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat", basis: "per_garment" },
     ]);
   });
 
@@ -126,7 +128,7 @@ describe("buildAddonsByScope", () => {
       extras: { tags: 1.5 },
       extraLabels: { tags: "Custom Tags" },
     });
-    expect(out.root).toEqual([{ key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat" }]);
+    expect(out.root).toEqual([{ key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat", basis: "per_garment" }]);
     expect(out.embroidery).toEqual([]);
     expect(out.custom).toEqual({});
   });
@@ -139,7 +141,7 @@ describe("buildAddonsByScope", () => {
         extraModes: { puff: "flat" },
       },
     });
-    expect(out.embroidery).toEqual([{ key: "puff", label: "Puff", rate: 2, mode: "flat" }]);
+    expect(out.embroidery).toEqual([{ key: "puff", label: "Puff", rate: 2, mode: "flat", basis: "per_garment" }]);
     expect(out.root).toEqual([]);
   });
 
@@ -151,7 +153,7 @@ describe("buildAddonsByScope", () => {
       },
     });
     expect(Object.keys(out.custom)).toEqual(["DTG", "DTF"]);
-    expect(out.custom.DTG).toEqual([{ key: "rush", label: "Rush Setup", rate: 1, mode: "flat" }]);
+    expect(out.custom.DTG).toEqual([{ key: "rush", label: "Rush Setup", rate: 1, mode: "flat", basis: "per_garment" }]);
     expect(out.custom.DTF[0].label).toBe("Color");
   });
 
@@ -324,5 +326,69 @@ describe("getActiveAddonLabels — edge cases", () => {
     const cfg = { extras: { colorMatch: 1 }, extraLabels: { colorMatch: "Pantone Match" } };
     const li = { extras: { colorMatch: 1 } };
     expect(getActiveAddonLabels(li, {}, cfg)).toEqual(["Pantone Match"]);
+  });
+});
+
+// ── Union across a line's techniques (Kato's report, 2026-07) ─────────
+describe("getAddonsForTechniques (union across a line's locations)", () => {
+  const byScope = {
+    root: [{ key: "underbase", label: "Underbase", rate: 1, mode: "flat" }],
+    embroidery: [{ key: "puff", label: "Puff", rate: 2, mode: "flat" }],
+    custom: { DTF: [{ key: "peel", label: "Cold Peel", rate: 3, mode: "flat" }] },
+  };
+
+  it("surfaces a Screen Print fee even when Screen Print isn't the FIRST location", () => {
+    // Kato: Embroidery front + Screen Print back → underbase must be reachable.
+    const keys = getAddonsForTechniques(byScope, ["Embroidery", "Screen Print"]).map((a) => a.key);
+    expect(keys).toContain("underbase");
+    expect(keys).toContain("puff");
+  });
+
+  it("does NOT surface underbase when no location supports it", () => {
+    const keys = getAddonsForTechniques(byScope, ["Embroidery"]).map((a) => a.key);
+    expect(keys).toEqual(["puff"]);
+  });
+
+  it("dedupes by key across locations of the same technique", () => {
+    const out = getAddonsForTechniques(byScope, ["Screen Print", "Screen Print"]);
+    expect(out.map((a) => a.key)).toEqual(["underbase"]);
+  });
+
+  it("falls back to the root scope when no techniques are given", () => {
+    expect(getAddonsForTechniques(byScope, []).map((a) => a.key)).toEqual(["underbase"]);
+    expect(getAddonsForTechniques(byScope, undefined).map((a) => a.key)).toEqual(["underbase"]);
+  });
+
+  it("sorts unioned add-ons alphabetically by label", () => {
+    const labels = getAddonsForTechniques(byScope, ["DTF", "Screen Print"]).map((a) => a.label);
+    expect(labels).toEqual(["Cold Peel", "Underbase"]);
+  });
+
+  it("returns [] with no byScope", () => {
+    expect(getAddonsForTechniques(null, ["Screen Print"])).toEqual([]);
+  });
+});
+
+describe("pruneExtrasForTechniques (union-based prune)", () => {
+  const byScope = {
+    root: [{ key: "underbase", label: "Underbase", rate: 1, mode: "flat" }],
+    embroidery: [{ key: "puff", label: "Puff", rate: 2, mode: "flat" }],
+    custom: {},
+  };
+
+  it("keeps a fee still supported by ANOTHER location after one location's technique changes", () => {
+    // Line had two Screen Print locations with underbase on; one flips to Embroidery.
+    // underbase must survive because a Screen Print location remains.
+    const out = pruneExtrasForTechniques({ underbase: 1 }, byScope, ["Embroidery", "Screen Print"]);
+    expect(out).toEqual({ underbase: 1 });
+  });
+
+  it("drops a fee once NO location supports it", () => {
+    const out = pruneExtrasForTechniques({ underbase: 1 }, byScope, ["Embroidery"]);
+    expect(out).toEqual({});
+  });
+
+  it("returns {} for non-object extras", () => {
+    expect(pruneExtrasForTechniques(null, byScope, ["Screen Print"])).toEqual({});
   });
 });

@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
 import { claimSupplierOrder, finishSupplierOrder } from "../_shared/supplierIdempotency.js";
+import { canPlaceOrder } from "../_shared/acOrderLogic.js";
 
 const SS_BASE = "https://api.ssactivewear.com/v2";
 const SS_ACCOUNT = Deno.env.get("SS_ACCOUNT_NUMBER")!;
@@ -38,7 +39,20 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Unauthorized" }, { status: 401, headers: CORS });
     }
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-    const { data: profile } = await admin.from("profiles").select("email, subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+    const { data: profile } = await admin.from("profiles").select("role, email, subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
+
+    // Role gate on the SIGNED-IN user's own profile — same guard acPlaceOrder
+    // uses. ssPlaceOrder posts real-money orders against the platform's master
+    // S&S account, so a broker/employee must never reach it. Subscription state
+    // is NOT an authorization boundary (a team member can inherit an active
+    // owner tier), so role is checked independently and first.
+    if (!canPlaceOrder(profile)) {
+      return Response.json(
+        { error: "Your account role can't place supplier orders. Ask your shop owner or manager." },
+        { status: 403, headers: CORS },
+      );
+    }
+
     const blocked = requireActiveSubscription(profile);
     if (blocked) return blocked;
 

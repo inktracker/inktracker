@@ -12,6 +12,7 @@ import { bucketQuotes } from "@/lib/broker/quoteStatus";
 import { Users, TrendingUp, ChevronDown, ChevronUp, Building2, Mail, Phone, MessageSquare, BarChart2, Package, DollarSign, FileText, Bell, RefreshCw } from "lucide-react";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
 import { resolveQuoteLink, QUOTE_LINK_KIND } from "@/lib/quotes/resolveQuoteLink";
+import { isConvertedToOrder } from "@/lib/quotes/approvalState";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
 import GettingStartedChecklist from "../components/GettingStartedChecklist";
@@ -281,6 +282,10 @@ export default function Dashboard() {
   const [quotes, setQuotes] = useState([]);
   const [orders, setOrders] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  // dashboard_stats RPC result — server-truth for the headline chips
+  // (the list fetches above are capped and exist for display only).
+  // Null when the RPC failed; chips fall back to capped client math.
+  const [serverStats, setServerStats] = useState(null);
   const [inventory, setInventory] = useState([]);
   const [brokers, setBrokers] = useState([]);
   const [shopOwners, setShopOwners] = useState([]);
@@ -402,7 +407,7 @@ export default function Dashboard() {
       // killing refetch-on-every-navigation. None of these lists are realtime
       // here (only Messages is, below), so caching is safe. Writes elsewhere
       // invalidate the table, so a freshly created quote/order/etc. still shows.
-      const [q, o, invItems, allUsers, custs, localInvoices] = await Promise.all([
+      const [q, o, invItems, allUsers, custs, localInvoices, statsRpc] = await Promise.all([
         cachedFilter("Quote", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 100 }).catch((e) => { console.error("[Dashboard] quotes fetch failed:", e); return []; }),
         cachedFilter("Order", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 50 }).catch((e) => { console.error("[Dashboard] orders fetch failed:", e); return []; }),
         cachedFilter("InventoryItem", { filters: { shop_owner: shopScope(currentUser) } }).catch((e) => { console.error("[Dashboard] inventory fetch failed:", e); return []; }),
@@ -413,12 +418,22 @@ export default function Dashboard() {
         // row (~180ms / ~600KB for one shop). id/date/total/paid is all the
         // Dashboard needs. See perf analysis fix #3.
         cachedFilter("Invoice", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 1000, columns: "id,date,total,paid" }).catch((e) => { console.error("[Dashboard] invoices fetch failed:", e); return []; }),
+        // Server-side aggregates for the headline chips. The capped list
+        // fetches above are for DISPLAY (recent rows); computing totals from
+        // them went quietly wrong once a shop crossed a cap (quotes 100 /
+        // orders 50 / invoices 1000). RLS scopes the RPC to the caller.
+        // Null on failure → chips fall back to the capped client math below.
+        supabase.rpc("dashboard_stats").then(({ data, error }) => {
+          if (error) { console.error("[Dashboard] dashboard_stats rpc failed:", error.message); return null; }
+          return data || null;
+        }).catch((e) => { console.error("[Dashboard] dashboard_stats rpc threw:", e); return null; }),
       ]);
 
+      setServerStats(statsRpc);
       setQuotes(q);
       setOrders(o);
       setInventory(invItems);
-      setCustomerCount(custs.length);
+      setCustomerCount(statsRpc?.customer_count ?? custs.length);
       const custMap = {};
       (custs || []).forEach((c) => { custMap[c.id] = c; });
       setCustomers(custMap);
@@ -558,10 +573,15 @@ export default function Dashboard() {
   // been converted to orders aren't "active quotes" anymore, they live
   // under Orders. Counting them on the dashboard made the chip claim
   // e.g. "4 Quotes" then take you to an empty list. Both surfaces now
-  // exclude "Converted to Order".
-  const activeQuotes = quotes.filter((q) => q.status !== "Converted to Order");
-  const totalQuotesCount = activeQuotes.length;
-  const totalQuotesValue = sumTotals(activeQuotes);
+  // exclude "Converted to Order" (and converted_order_id, in case the
+  // status desynced — see lib/quotes/approvalState.js).
+  const activeQuotes = quotes.filter((q) => !isConvertedToOrder(q));
+  // Chips prefer the dashboard_stats RPC (aggregates over EVERYTHING the
+  // caller can see); the capped-list math below is the fallback when the
+  // RPC failed. Past the fetch caps (quotes 100 / orders 50 / invoices
+  // 1000) the fallback undercounts — that's the bug the RPC fixes.
+  const totalQuotesCount = serverStats?.active_quotes_count ?? activeQuotes.length;
+  const totalQuotesValue = serverStats?.active_quotes_value ?? sumTotals(activeQuotes);
 
   // Open orders excludes Completed AND Cancelled/Voided — all three are
   // terminal states. Cancelled jobs used to inflate the count + dollar
@@ -569,12 +589,12 @@ export default function Dashboard() {
   const TERMINAL_STATUSES = new Set(["Completed", "Cancelled", "Voided"]);
   const activeOrders = orders.filter(o => !TERMINAL_STATUSES.has(o.status));
   const unpaidOpenOrders = activeOrders.filter(o => !o.paid);
-  const openOrdersCount = activeOrders.length;
-  const openOrdersValue = sumTotals(unpaidOpenOrders);
+  const openOrdersCount = serverStats?.open_orders_count ?? activeOrders.length;
+  const openOrdersValue = serverStats?.open_orders_unpaid_value ?? sumTotals(unpaidOpenOrders);
 
   const outstanding = computeOutstanding(invoices);
-  const openInvoicesCount = outstanding.count;
-  const openInvoicesValue = outstanding.total;
+  const openInvoicesCount = serverStats?.open_invoices_count ?? outstanding.count;
+  const openInvoicesValue = serverStats?.open_invoices_value ?? outstanding.total;
 
   // Last-30-day revenue + units. Scoped to orders whose status is
   // "Completed" AND whose completed_date falls inside the window. Matches
@@ -588,8 +608,10 @@ export default function Dashboard() {
     const t = o.completed_date ? new Date(o.completed_date).getTime() : 0;
     return t >= revenueWindowCutoff;
   });
-  const revenueLast30 = sumTotals(recentCompleted);
-  const unitsLast30 = recentCompleted.reduce((sum, o) => {
+  // The 50-order fetch is the cap MOST likely to lie here: 30 days of
+  // completed orders compete with every open one inside the same 50 rows.
+  const revenueLast30 = serverStats?.revenue_30d ?? sumTotals(recentCompleted);
+  const unitsLast30 = serverStats?.units_30d ?? recentCompleted.reduce((sum, o) => {
     return sum + (o.line_items || []).reduce((s, li) => {
       const sizes = li.sizes || {};
       return s + Object.values(sizes).reduce((a, v) => a + (parseInt(v, 10) || 0), 0);

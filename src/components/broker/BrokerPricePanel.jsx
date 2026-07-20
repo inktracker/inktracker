@@ -140,6 +140,12 @@ export default function BrokerPricePanel({
   allLineItems = [],
   onChange,
   sizePrices,
+  // Config threading (CACHE-01 + per-broker overlay): brokerConfig is
+  // the merged wholesale sheet for this broker, shopConfig the shop's
+  // standard sheet for the retail suggestion. Both fall back to the
+  // module global when absent (legacy callers).
+  brokerConfig,
+  shopConfig,
 }) {
   const qty = getQty(li);
 
@@ -151,7 +157,8 @@ export default function BrokerPricePanel({
     extras,
     BROKER_MARKUP,
     linkedQtyMap,
-    sizePrices
+    sizePrices,
+    brokerConfig
   );
 
   const shopRate = calcLinkedLinePrice(
@@ -160,7 +167,8 @@ export default function BrokerPricePanel({
     extras,
     STANDARD_MARKUP,
     linkedQtyMap,
-    sizePrices
+    sizePrices,
+    shopConfig
   );
 
   if (!brokerRate || !shopRate) {

@@ -31,7 +31,7 @@ function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
   );
 }
 
-export default function BrokerPerformance({ orders = [] }) {
+export default function BrokerPerformance({ orders = [], quotes = [] }) {
   const [dateRange, setDateRange] = useState("thisMonth");
   const { dateFrom, dateTo } = getDateRangeValues(dateRange);
 
@@ -40,20 +40,43 @@ export default function BrokerPerformance({ orders = [] }) {
     return orders.filter((o) => o.date && o.date >= dateFrom && o.date <= dateTo);
   }, [orders, dateFrom, dateTo]);
 
+  // Link each order to its originating quote so we can read the SAVED snapshot
+  // stamps rather than live-recomputing.
+  const quoteByOrderId = useMemo(() => {
+    const m = new Map();
+    for (const q of Array.isArray(quotes) ? quotes : []) {
+      if (q?.converted_order_id) m.set(q.converted_order_id, q);
+    }
+    return m;
+  }, [quotes]);
+
   const rows = useMemo(() => {
     return filtered.map((o) => {
-      // Broker's wholesale cost (what they paid the shop)
-      const brokerTotals = calcQuoteTotals(o, BROKER_MARKUP);
-      // Client-facing revenue: honors per-line clientPpp overrides,
-      // falls back to STANDARD_MARKUP when no override is set.
-      const clientTotals = calcQuoteTotals(o, STANDARD_MARKUP);
-      const cost = Number(brokerTotals.total) || 0;
-      const revenue = Number(clientTotals.total) || 0;
+      const linkedQuote = quoteByOrderId.get(o.order_id) || quoteByOrderId.get(o.id) || null;
+
+      // Cost = broker wholesale. The order's saved `total` is already the
+      // broker total (buildOrderFromQuote uses BROKER_MARKUP off the quote's
+      // saved snapshot). Read it — live recompute reprices history when the
+      // shop changes rates and runs under whatever shop's pricing config is
+      // loaded on this multi-shop surface (CACHE-01 bleed). Recompute only for
+      // a legacy order with no saved total.
+      const savedCost = Number(o.total);
+      const cost = Number.isFinite(savedCost) && savedCost > 0
+        ? savedCost
+        : Number(calcQuoteTotals(linkedQuote || o, BROKER_MARKUP)?.total) || 0;
+
+      // Revenue = client-facing. Prefer the linked quote's saved client_total
+      // stamp; recompute only for a legacy quote that predates it (or none).
+      const savedClient = Number(linkedQuote?.client_total);
+      const revenue = Number.isFinite(savedClient) && savedClient > 0
+        ? savedClient
+        : Number(calcQuoteTotals(linkedQuote || o, STANDARD_MARKUP)?.total) || 0;
+
       const profit = revenue - cost;
       const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
       return { order: o, cost, revenue, profit, margin };
     });
-  }, [filtered]);
+  }, [filtered, quoteByOrderId]);
 
   const totals = rows.reduce(
     (acc, r) => ({

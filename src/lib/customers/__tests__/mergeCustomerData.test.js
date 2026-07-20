@@ -161,6 +161,57 @@ describe("buildAdditiveMergePatch — saved_imprints (union, dedupe by id)", () 
   });
 });
 
+describe("buildAdditiveMergePatch — exemption + structured addresses (the 2026-07 data-loss fix)", () => {
+  it("carries the whole exemption certificate set when primary has none", () => {
+    const dup = {
+      exemption_type: "resale",
+      exemption_certificate_number: "CA-12345",
+      exemption_certificate_path: "certs/ca-12345.pdf",
+      exemption_expires_at: "2027-01-31",
+      exemption_states: ["CA", "NV"],
+    };
+    expect(buildAdditiveMergePatch({}, dup)).toEqual(dup);
+  });
+
+  it("never overwrites primary's existing certificate fields", () => {
+    const patch = buildAdditiveMergePatch(
+      { exemption_certificate_number: "CA-OLD", exemption_states: ["CA"] },
+      { exemption_certificate_number: "CA-NEW", exemption_states: ["CA", "NV"] },
+    );
+    expect(patch).toBeNull();
+  });
+
+  it("fills ship_to_address from dup when primary's is missing (feeds QB AST tax)", () => {
+    const shipTo = { line1: "123 Main St", city: "Truckee", state: "CA", zip: "96161" };
+    expect(buildAdditiveMergePatch({}, { ship_to_address: shipTo }))
+      .toEqual({ ship_to_address: shipTo });
+  });
+
+  it("treats an all-blank address object on primary as blank", () => {
+    const shipTo = { line1: "123 Main St", city: "Truckee" };
+    const patch = buildAdditiveMergePatch(
+      { ship_to_address: { line1: "", city: "  " } },
+      { ship_to_address: shipTo },
+    );
+    expect(patch).toEqual({ ship_to_address: shipTo });
+  });
+
+  it("does not overwrite a real primary address, and ignores empty dup objects/arrays", () => {
+    expect(buildAdditiveMergePatch(
+      { bill_to_address: { line1: "1 Shop Way" } },
+      { bill_to_address: { line1: "2 Dup Ave" } },
+    )).toBeNull();
+    expect(buildAdditiveMergePatch({}, { bill_to_address: {}, exemption_states: [] })).toBeNull();
+  });
+
+  it("describeMergeFor previews the certificate carry-over for the confirm dialog", () => {
+    const fields = describeMergeFor({}, { exemption_certificate_number: "CA-1", ship_to_address: { line1: "x" } })
+      .map((i) => i.field);
+    expect(fields).toContain("exemption_certificate_number");
+    expect(fields).toContain("ship_to_address");
+  });
+});
+
 describe("buildAdditiveMergePatch — full record (smoke)", () => {
   it("composes every applicable rule in one shot", () => {
     const primary = {

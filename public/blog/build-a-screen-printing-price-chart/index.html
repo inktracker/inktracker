@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>How I build a screen printing price chart — InkTracker</title>
   <meta name="description" content="Your print prices worked out ahead of time — every color count, every quantity — built on what your shop actually costs to run. Cost per print, real margin, two percentages to fill the grid, and the fees that decide small runs." />
-  <link rel="canonical" href="https://inktracker.app/blog/build-a-screen-printing-price-chart" />
+  <link rel="canonical" href="https://www.inktracker.app/blog/build-a-screen-printing-price-chart" />
   <link rel="icon" type="image/png" href="/icon-192.png" />
   <meta property="og:type" content="article" />
   <meta property="og:title" content="How I build a screen printing price chart" />
   <meta property="og:description" content="Your print prices worked out ahead of time — every color count, every quantity — built on what your shop actually costs to run. Cost per print, real margin, two percentages to fill the grid, and the fees that decide small runs." />
-  <meta property="og:url" content="https://inktracker.app/blog/build-a-screen-printing-price-chart" />
-  <meta property="og:image" content="https://inktracker.app/icon-512.png" />
+  <meta property="og:url" content="https://www.inktracker.app/blog/build-a-screen-printing-price-chart" />
+  <meta property="og:image" content="https://www.inktracker.app/icon-512.png" />
   <meta property="article:published_time" content="2026-07-01T08:00:00-07:00" />
   <meta property="article:modified_time" content="2026-07-02T08:00:00-07:00" />
   <meta property="article:author" content="Joe" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="How I build a screen printing price chart" />
   <meta name="twitter:description" content="Your print prices worked out ahead of time — every color count, every quantity — built on what your shop actually costs to run. Cost per print, real margin, two percentages to fill the grid, and the fees that decide small runs." />
-  <meta name="twitter:image" content="https://inktracker.app/icon-512.png" />
+  <meta name="twitter:image" content="https://www.inktracker.app/icon-512.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;700;800&display=swap" />
@@ -28,10 +28,13 @@ body{margin:0;color:var(--ink);background:#fff;font-family:"Inter",-apple-system
 a{color:var(--forest)}
 .wrap{max-width:820px;margin:0 auto;padding:0 20px}
 header.site{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);border-bottom:2px solid var(--ink)}
-header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px}
+header.site .wrap{display:flex;align-items:center;justify-content:space-between;height:72px;gap:16px}
 .brand{font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:26px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink);text-decoration:none}
 .brand span{color:var(--forest)}
-.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-weight:700;padding:11px 20px;border-radius:8px;font-size:15px}
+.cta{display:inline-block;background:var(--forest);color:#fff;text-decoration:none;font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;padding:14px 28px;border-radius:0;white-space:nowrap}
+.nav{display:flex;align-items:center;gap:18px}
+.nav a:not(.cta){font-family:"Anton","Oswald","Arial Narrow",sans-serif;font-size:12px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--ink);text-decoration:none}
+.nav a:not(.cta):hover{color:var(--forest)}
 .cta:hover{background:var(--forest-dark)}
 nav.crumbs{font-size:13px;color:var(--muted);padding:18px 0 0}
 nav.crumbs a{color:var(--muted)}
@@ -44,7 +47,12 @@ footer.site{border-top:2px solid var(--ink);margin-top:2em;padding:24px 0;font-s
 footer.site a{color:var(--muted);margin-right:16px}
 .disclaimer{font-size:12px;color:var(--muted);border-top:1px solid var(--hair);margin-top:3em;padding:18px 0}
 /* blog */
-.cat-tag{display:inline-block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--forest);background:#f0f5f1;border:1px solid #d6e4da;border-radius:999px;padding:3px 10px}
+.cat-tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:#fff;background:var(--forest);border-radius:8px;padding:4px 10px}
+.cat-filter{display:flex;flex-wrap:wrap;gap:8px;margin:1.4em 0 0}
+.cat-filter .chip{font:inherit;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);background:#f2f2f2;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;transition:background .15s,color .15s}
+.cat-filter .chip:hover{background:#e6e6e6}
+.cat-filter .chip.is-active{background:var(--forest);color:#fff}
+.cat-filter .chip:focus-visible{outline:2px solid var(--forest);outline-offset:2px}
 .post-meta{font-size:13px;color:var(--muted);margin-top:10px}
 .post-list{list-style:none;padding:0;margin:1.6em 0;display:grid;gap:16px}
 .post-list li{border:1px solid var(--hair);border-radius:12px;padding:20px 22px;transition:border-color .15s}
@@ -67,7 +75,7 @@ ul.body-list li{margin:.55em 0}
 .blog-cta p{color:#d8d8d8;margin:0 auto 1.3em;max-width:580px}
 .blog-cta .related{margin-top:1.1em;font-size:13px;color:#bdbdbd}
 .blog-cta .related a{color:#eaeaea}
-/* calculator */
+/* calculator — shared block imported from content/calc.mjs (CALC_CSS) */
 .calc{border:1px solid var(--hair);border-radius:14px;padding:20px;margin:1.6em 0;background:#fafafa}
 .calc-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--hair);flex-wrap:wrap}
 .calc-row:last-of-type{border-bottom:0}
@@ -91,41 +99,55 @@ ul.body-list li{margin:.55em 0}
 .proof{list-style:none;padding:0;margin:1.4em 0;display:grid;gap:12px}
 .proof li{padding:14px 18px 14px 42px;position:relative;border:1px solid var(--hair);border-radius:10px}
 .proof li:before{content:"\2713";position:absolute;left:16px;top:14px;color:var(--forest);font-weight:800}
-@media(min-width:640px){}</style>
+@media(min-width:640px){}
+/* Mobile header: at desktop sizes the 26px brand + nav link + CTA fit in
+   72px; on phones they collided (brand jammed against the nav link, CTA
+   wrapping to two lines). Shrink everything and keep the CTA one line. */
+@media(max-width:600px){
+header.site .wrap{height:60px}
+.brand{font-size:19px}
+.nav{gap:10px}
+.nav a:not(.cta){font-size:11px;letter-spacing:.12em}
+.cta{font-size:11px;letter-spacing:.06em;padding:10px 12px}
+}
+@media(max-width:344px){.nav a:not(.cta){display:none}}</style>
   <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "BlogPosting",
-  "@id": "https://inktracker.app/blog/build-a-screen-printing-price-chart#post",
+  "@id": "https://www.inktracker.app/blog/build-a-screen-printing-price-chart#post",
   "headline": "How I build a screen printing price chart",
   "description": "Your print prices worked out ahead of time — every color count, every quantity — built on what your shop actually costs to run. Cost per print, real margin, two percentages to fill the grid, and the fees that decide small runs.",
-  "image": "https://inktracker.app/icon-512.png",
-  "url": "https://inktracker.app/blog/build-a-screen-printing-price-chart",
+  "image": "https://www.inktracker.app/icon-512.png",
+  "url": "https://www.inktracker.app/blog/build-a-screen-printing-price-chart",
   "inLanguage": "en-US",
   "isPartOf": {
     "@type": "Blog",
-    "@id": "https://inktracker.app/blog#blog"
+    "@id": "https://www.inktracker.app/blog#blog"
   },
+  "articleSection": "Pricing",
+  "wordCount": 727,
+  "timeRequired": "PT8M",
   "datePublished": "2026-07-01T08:00:00-07:00",
   "dateModified": "2026-07-02T08:00:00-07:00",
   "author": {
     "@type": "Person",
     "name": "Joe",
     "jobTitle": "Founder, InkTracker",
-    "url": "https://inktracker.app"
+    "url": "https://www.inktracker.app"
   },
   "publisher": {
     "@type": "Organization",
     "name": "InkTracker",
-    "url": "https://inktracker.app",
+    "url": "https://www.inktracker.app",
     "logo": {
       "@type": "ImageObject",
-      "url": "https://inktracker.app/icon-512.png"
+      "url": "https://www.inktracker.app/icon-512.png"
     }
   },
   "mainEntityOfPage": {
     "@type": "WebPage",
-    "@id": "https://inktracker.app/blog/build-a-screen-printing-price-chart"
+    "@id": "https://www.inktracker.app/blog/build-a-screen-printing-price-chart"
   }
 }
 </script>
@@ -138,19 +160,19 @@ ul.body-list li{margin:.55em 0}
       "@type": "ListItem",
       "position": 1,
       "name": "InkTracker",
-      "item": "https://inktracker.app/"
+      "item": "https://www.inktracker.app/"
     },
     {
       "@type": "ListItem",
       "position": 2,
       "name": "Blog",
-      "item": "https://inktracker.app/blog"
+      "item": "https://www.inktracker.app/blog"
     },
     {
       "@type": "ListItem",
       "position": 3,
       "name": "How I build a screen printing price chart",
-      "item": "https://inktracker.app/blog/build-a-screen-printing-price-chart"
+      "item": "https://www.inktracker.app/blog/build-a-screen-printing-price-chart"
     }
   ]
 }
@@ -190,11 +212,14 @@ ul.body-list li{margin:.55em 0}
 </head>
 <body>
 <header class="site"><div class="wrap">
-  <a class="brand" href="https://inktracker.app/">Ink<span>Tracker</span></a>
-  <a class="cta" href="https://inktracker.app/#pricing">Start free trial</a>
+  <a class="brand" href="https://www.inktracker.app/">Ink<span>Tracker</span></a>
+  <nav class="nav">
+    <a href="https://www.inktracker.app/resources">Resources</a>
+    <a class="cta" href="https://www.inktracker.app/#pricing">Start free trial</a>
+  </nav>
 </div></header>
 <main class="wrap">
-  <nav class="crumbs"><a href="https://inktracker.app/">Home</a> › <a href="https://inktracker.app/blog">Blog</a> › Pricing</nav>
+  <nav class="crumbs"><a href="https://www.inktracker.app/">Home</a> › <a href="https://www.inktracker.app/blog">Blog</a> › Pricing</nav>
   <span class="cat-tag">Pricing</span>
   <h1>How I build a screen printing price chart</h1>
   <p class="post-meta">By Joe, Founder, InkTracker · July 1, 2026 · 8 min read</p>
@@ -227,7 +252,24 @@ ul.body-list li{margin:.55em 0}
   </div><div class="calc-out" style="grid-template-columns:repeat(2,1fr)">
     <div class="calc-stat"><div class="k">Cost per print</div><div class="v" data-out="cpp">$3.50</div></div>
     <div class="calc-stat"><div class="k">Base print price</div><div class="v" data-out="base">$6.36</div></div>
-  </div><table class="calc-table"><thead><tr><th>Colors \ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead><tbody data-grid><tr><td class="rl">1 color</td><td>$6.36</td><td>$5.73</td><td>$5.27</td><td>$4.93</td></tr><tr><td class="rl">2 colors</td><td>$7.00</td><td>$6.30</td><td>$5.80</td><td>$5.43</td></tr><tr><td class="rl">3 colors</td><td>$7.63</td><td>$6.87</td><td>$6.32</td><td>$5.91</td></tr><tr><td class="rl">4 colors</td><td>$8.25</td><td>$7.42</td><td>$6.83</td><td>$6.39</td></tr><tr><td class="rl">5 colors</td><td>$8.85</td><td>$7.96</td><td>$7.33</td><td>$6.86</td></tr><tr><td class="rl">6 colors</td><td>$9.43</td><td>$8.49</td><td>$7.81</td><td>$7.31</td></tr><tr><td class="rl">7 colors</td><td>$9.99</td><td>$8.99</td><td>$8.27</td><td>$7.74</td></tr><tr><td class="rl">8 colors</td><td>$10.52</td><td>$9.47</td><td>$8.71</td><td>$8.15</td></tr></tbody></table><p class="calc-note">Price per print. Garment and markup are added separately.</p></div><script>(function(){var root=document.getElementById("calc-chart");if(!root)return;function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}function ct(n){return Math.round(n).toLocaleString("en-US");}var S={costs:14000,shirts:4000,margin:45,vol:10,color:10};function model(){var cpp=S.costs/S.shirts;var base=cpp/(1-S.margin/100);var vd=S.vol/100,ac=S.color/100;var tm=[1];for(var i=1;i<4;i++)tm[i]=tm[i-1]*(1-vd*Math.pow(0.8,i-1));var cm=[1];for(var c=1;c<8;c++)cm[c]=cm[c-1]*(1+ac*Math.pow(0.9,c-1));return {cpp:cpp,base:base,tm:tm,cm:cm};}function build(){var M=model();var rows="";for(var ci=0;ci<8;ci++){var col=ci+1;rows+="<tr><td class=\"rl\">"+col+(col===1?" color":" colors")+"</td>";for(var qi=0;qi<4;qi++){rows+="<td>"+m2(M.base*M.cm[ci]*M.tm[qi])+"</td>";}rows+="</tr>";}root.querySelector("[data-grid]").innerHTML=rows;root.querySelector("[data-out=\"cpp\"]").textContent=m2(M.cpp);root.querySelector("[data-out=\"base\"]").textContent=m2(M.base);}function wire(k,t){var sl=root.querySelector("[data-in=\""+k+"\"]");var ov=root.querySelector("[data-val=\""+k+"\"]");function u(){S[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(S[k]):t==="ct"?ct(S[k]):t==="pct"?(Math.round(S[k])+"%"):S[k];build();}sl.addEventListener("input",u);u();}wire("costs","m0");wire("shirts","ct");wire("margin","pct");wire("vol","pct");wire("color","pct");})();</script>
+  </div><table class="calc-table"><thead><tr><th>Colors \ Qty</th><th>25</th><th>50</th><th>100</th><th>200</th></tr></thead><tbody data-grid><tr><td class="rl">1 color</td><td>$6.36</td><td>$5.73</td><td>$5.27</td><td>$4.93</td></tr><tr><td class="rl">2 colors</td><td>$7.00</td><td>$6.30</td><td>$5.80</td><td>$5.43</td></tr><tr><td class="rl">3 colors</td><td>$7.63</td><td>$6.87</td><td>$6.32</td><td>$5.91</td></tr><tr><td class="rl">4 colors</td><td>$8.25</td><td>$7.42</td><td>$6.83</td><td>$6.39</td></tr><tr><td class="rl">5 colors</td><td>$8.85</td><td>$7.96</td><td>$7.33</td><td>$6.86</td></tr><tr><td class="rl">6 colors</td><td>$9.43</td><td>$8.49</td><td>$7.81</td><td>$7.31</td></tr><tr><td class="rl">7 colors</td><td>$9.99</td><td>$8.99</td><td>$8.27</td><td>$7.74</td></tr><tr><td class="rl">8 colors</td><td>$10.52</td><td>$9.47</td><td>$8.71</td><td>$8.15</td></tr></tbody></table><p class="calc-note">Price per print. Garment and markup are added separately.</p></div><script>(function(){var root=document.getElementById("calc-chart");if(!root)return;function chartModel(S) {
+  var cpp = S.costs / S.shirts;
+  // Margin → base = cost ÷ (1 − margin). A true 100% margin divides by zero
+  // (price is infinite when cost is 0% of it), so floor the divisor at 0.01
+  // to return a large FINITE number instead of Infinity/NaN as margin nears
+  // 100%. Never fires below ~99%, so lower margins are unaffected.
+  var denom = 1 - S.margin / 100;
+  if (denom < 0.01) denom = 0.01;
+  var base = cpp / denom;
+  var vd = S.vol / 100, ac = S.color / 100;
+  var tm = [1];
+  for (var i = 1; i < 4; i++) tm[i] = tm[i - 1] * (1 - vd * Math.pow(0.8, i - 1));
+  var cm = [1];
+  for (var c = 1; c < 8; c++) cm[c] = cm[c - 1] * (1 + ac * Math.pow(0.9, c - 1));
+  return { cpp: cpp, base: base, tm: tm, cm: cm };
+}function chartCell(M, colorIdx, tierIdx) {
+  return M.base * M.cm[colorIdx] * M.tm[tierIdx];
+}function m2(n){return "$"+(Math.round(n*100)/100).toFixed(2);}function m0(n){return "$"+Math.round(n).toLocaleString("en-US");}function ct(n){return Math.round(n).toLocaleString("en-US");}var S={costs:14000,shirts:4000,margin:45,vol:10,color:10};function build(){var M=chartModel(S);var rows="";for(var ci=0;ci<8;ci++){var col=ci+1;rows+="<tr><td class=\"rl\">"+col+(col===1?" color":" colors")+"</td>";for(var qi=0;qi<4;qi++){rows+="<td>"+m2(chartCell(M,ci,qi))+"</td>";}rows+="</tr>";}root.querySelector("[data-grid]").innerHTML=rows;root.querySelector("[data-out=\"cpp\"]").textContent=m2(M.cpp);root.querySelector("[data-out=\"base\"]").textContent=m2(M.base);}function wire(k,t){var sl=root.querySelector("[data-in=\""+k+"\"]");var ov=root.querySelector("[data-val=\""+k+"\"]");function u(){S[k]=parseFloat(sl.value);ov.textContent=t==="m0"?m0(S[k]):t==="ct"?ct(S[k]):t==="pct"?(Math.round(S[k])+"%"):S[k];build();}sl.addEventListener("input",u);u();}wire("costs","m0");wire("shirts","ct");wire("margin","pct");wire("vol","pct");wire("color","pct");})();</script>
 <h2>Let percentages do the boring part</h2>
 <p>You don't type in 32 prices. You set two rules and the chart fills itself. Bigger runs cost less per shirt, because setup is the same whether you print 25 or 250 — so knock a chunk off at each size break, around 10% for the first jump and a little less each time after. More colors cost more, but not double. The first color's the expensive one; it carries the setup. Every color after is just another screen and another pass, so each one adds a slice — call it 10% — and that slice shrinks as the count climbs.</p>
 <p>Build it this way and the chart moves as one. Want to bump prices 5% next year? Change your base. Beats retyping a spreadsheet.</p>
@@ -250,12 +292,13 @@ ul.body-list li{margin:.55em 0}
   <div class="blog-cta">
     <h3>Build it once, stop guessing at the counter.</h3>
     <p>InkTracker holds your print chart, garment markup, and fees and stacks them on every quote — we run it in our own shop every day.</p>
-    <a class="cta" href="https://inktracker.app/?ref=blog&utm_source=blog&utm_medium=content">Start your 14-day free trial — no card</a>
+    <a class="cta" href="https://www.inktracker.app/?ref=blog&utm_source=blog&utm_medium=content">Start your 14-day free trial</a>
     <div class="related">Related: <a href="/compare">the honest software buyer's guide</a> · <a href="/for-printers">InkTracker for printers</a></div>
   </div>
 </main>
 <footer class="site"><div class="wrap">
-  <a href="https://inktracker.app/">InkTracker home</a><a href="https://inktracker.app/blog">Blog</a><a href="https://inktracker.app/compare">Software guide</a><a href="https://inktracker.app/support">Support</a>
+  <a href="https://www.inktracker.app/">InkTracker home</a><a href="https://www.inktracker.app/tools">Free Tools</a><a href="https://www.inktracker.app/blog">Blog</a><a href="https://www.inktracker.app/compare">Software guide</a><a href="https://www.inktracker.app/support">Support</a>
+  <p>InkTracker is built and used in daily production at <a href="https://biotamfg.com">Biota Mfg</a>, a working screen-print shop in Reno.</p>
 </div></footer>
 </body>
 </html>

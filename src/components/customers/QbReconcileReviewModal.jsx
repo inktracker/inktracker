@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
-import { describeMergeFor } from "@/lib/customers/mergeCustomerData";
+import { describeMergeFor, describeMergeLine } from "@/lib/customers/mergeCustomerData";
 import { partitionReconcilePairs } from "@/lib/customers/qbReconcileDetect";
 import { Loader2, GitMerge, Check, RefreshCw } from "lucide-react";
 
@@ -78,7 +78,7 @@ export default function QbReconcileReviewModal({ pairs, onMerge, onClose }) {
                     if (!items?.length) return null;
                     return (
                       <ul className="text-[10px] text-slate-500 mt-1 ml-3 list-disc">
-                        {items.slice(0, 4).map((line, i) => <li key={i}>{line}</li>)}
+                        {items.slice(0, 4).map((line, i) => <li key={i}>{describeMergeLine(line)}</li>)}
                         {items.length > 4 && <li>+ {items.length - 4} more</li>}
                       </ul>
                     );

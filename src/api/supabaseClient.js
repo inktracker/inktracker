@@ -1,10 +1,32 @@
 import { createClient } from "@supabase/supabase-js";
 import { queryClientInstance } from "@/lib/query-client";
+import { describeEdgeError } from "@/lib/edgeErrors";
+import { enrichEntityError } from "@/lib/entityErrors";
+import { resolveTeamSubscription } from "@/lib/billing";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Global edge-error translation. EVERY edge call — the ~37 direct
+// supabase.functions.invoke sites AND base44.functions.invoke — flows through
+// this one patch, so no call site (present or future) can surface supabase-js's
+// opaque "Edge Function returned a non-2xx status code". describeEdgeError
+// clones the Response before reading, and the returned error preserves
+// `.context`/`.status`/`.raw`, so the money-flow callers that unwrap `.context`
+// themselves (QB invoice create, quote/invoice send) keep working.
+const _rawFunctionsInvoke = supabase.functions.invoke.bind(supabase.functions);
+supabase.functions.invoke = async (name, options) => {
+  const res = await _rawFunctionsInvoke(name, options);
+  if (!res || !res.error) return res;
+  const friendly = new Error(await describeEdgeError(res.error));
+  friendly.name = res.error?.name || "FunctionsError";
+  friendly.status = res.error?.context?.status ?? res.error?.status ?? 0;
+  friendly.context = res.error?.context;
+  friendly.raw = res.error;
+  return { data: res.data, error: friendly };
+};
 
 // Bust any cached reads (cachedFilter/cachedList in lib/queries/cachedEntity)
 // for a table after a write, so a freshly created/updated/deleted row never
@@ -51,6 +73,10 @@ const TABLE_MAP = {
   // reference_broker_pricing.md.
   Commission: "commissions",
   BrokerPricing: "commissions",
+  // Per-broker pricing OVERRIDES (overlay on the shop sheet) — distinct
+  // from the legacy BrokerPricing→commissions alias above, which is a
+  // per-order commission ledger. See migration 20260911000000.
+  BrokerPricingOverride: "broker_pricing",
   BrokerNotification: "broker_notifications",
   BrokerPerformance: "broker_performance",
   ShopPerformance: "shop_performance",
@@ -86,7 +112,7 @@ function createEntityProxy(tableName) {
       if (s) q = q.order(s.column, { ascending: s.ascending });
       if (limit) q = q.limit(limit);
       const { data, error } = await q;
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       return data ?? [];
     },
 
@@ -105,7 +131,7 @@ function createEntityProxy(tableName) {
       if (s) q = q.order(s.column, { ascending: s.ascending });
       if (limit) q = q.limit(limit);
       const { data, error } = await q;
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       return data ?? [];
     },
 
@@ -116,7 +142,7 @@ function createEntityProxy(tableName) {
         .select("*")
         .eq("id", id)
         .single();
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       return data;
     },
 
@@ -127,7 +153,7 @@ function createEntityProxy(tableName) {
         .insert(payload)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       invalidateTable(tableName);
       return data;
     },
@@ -140,7 +166,7 @@ function createEntityProxy(tableName) {
         .eq("id", id)
         .select()
         .single();
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       invalidateTable(tableName);
       return data;
     },
@@ -148,7 +174,7 @@ function createEntityProxy(tableName) {
     /** Delete a row by id */
     async delete(id) {
       const { error } = await supabase.from(tableName).delete().eq("id", id);
-      if (error) throw error;
+      if (error) throw enrichEntityError(error);
       invalidateTable(tableName);
     },
 
@@ -193,7 +219,30 @@ const auth = {
           .maybeSingle();
 
         if (!profile) return null;
-        return { ...profile, email: user.email };
+        const merged = { ...profile, email: user.email };
+
+        // Resolve the OWNER's subscription for team members (manager/
+        // employee/broker), exactly as AuthContext.fetchUserWithProfile
+        // does. Without this, pages that gate off base44.auth.me() (Quotes,
+        // Production, Orders → useBillingGate) evaluate a manager against
+        // their OWN 'trial'/'expired' tier and block every save at a shop
+        // the owner is actively paying for. Never gate a team member by
+        // their own subscription_tier. Best-effort: a failed owner lookup
+        // leaves them on their own tier rather than breaking me().
+        const assignedShop = Array.isArray(profile.assigned_shops) ? profile.assigned_shops[0] : null;
+        const shopOwner = profile.shop_owner || assignedShop || merged.email;
+        const isTeamMember = !!shopOwner && shopOwner !== merged.email;
+        if (!isTeamMember) return merged;
+        try {
+          const { data: ownerSub } = await supabase
+            .from("profiles")
+            .select("subscription_tier, subscription_status, trial_ends_at, past_due_since, cancel_at_period_end, subscription_ends_at")
+            .eq("email", shopOwner)
+            .maybeSingle();
+          return resolveTeamSubscription(merged, ownerSub || null);
+        } catch {
+          return merged;
+        }
       },
     });
   },
@@ -212,7 +261,7 @@ const auth = {
       .eq("auth_id", user.id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw enrichEntityError(error);
     // This updates the caller's own profile row directly (bypassing the entity
     // proxy), so bust the deduped auth.me() cache explicitly.
     try { queryClientInstance.invalidateQueries({ queryKey: ["auth", "me"] }); } catch { /* best-effort */ }
@@ -255,10 +304,13 @@ const entities = new Proxy(
 );
 
 // ─── Functions compatibility layer ───────────────────────────────────────────
+// Thin passthrough — supabase.functions.invoke is globally patched above to
+// translate errors, so both this wrapper and the ~37 direct-invoke sites get a
+// friendly `error.message` (real reason, never the opaque generic) with
+// `.status`/`.context`/`.raw` preserved.
 const functions = {
   async invoke(name, params) {
-    const { data, error } = await supabase.functions.invoke(name, { body: params });
-    return { data, error };
+    return supabase.functions.invoke(name, { body: params });
   },
 };
 

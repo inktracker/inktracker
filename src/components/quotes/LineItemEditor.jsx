@@ -4,6 +4,7 @@ import {
   BIG_SIZES,
   LOCATIONS,
   getTechniqueOptions,
+  getTechniqueRates,
   getShopPricingConfig,
   GARMENT_CATEGORIES,
   mapSSCategoryToGarment,
@@ -12,11 +13,13 @@ import {
   STANDARD_MARKUP,
   getLineExtras,
 } from "../shared/pricing";
-import { getAddonsForTechnique, pruneExtrasForTechnique } from "@/lib/pricing/extrasScopes";
+import { getAddonsForTechnique, getAddonsForTechniques, pruneExtrasForTechniques, filterAddonsByBasis } from "@/lib/pricing/extrasScopes";
+import { snapshotExtraForQuote } from "@/lib/pricing/extras";
 import PricePanel from "./PricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
+import { notify } from "@/lib/notify";
 
 // Query S&S Activewear, AS Colour, and SanMar in parallel and merge results.
 // AS Colour uses `styleCode`, the others use `styleNumber` — same wire format
@@ -70,11 +73,16 @@ async function lookupStyle(styleNumber) {
   return { matches };
 }
 
-function normalizeImprint(imprint) {
+export function normalizeImprint(imprint) {
   return {
     id: imprint?.id || uid(),
     title: imprint?.title || "",
-    location: imprint?.location || "Front",
+    // `??` not `||`: PlacementSelect enters "custom location" mode by setting
+    // location to an empty string, then renders a free-text input. With `||`
+    // that empty string was coerced back to "Front" on the next normalize
+    // pass, so the "Custom…" option silently did nothing. Preserve an explicit
+    // "" (custom, not-yet-typed) while still defaulting a truly-absent location.
+    location: imprint?.location ?? "Front",
     width: imprint?.width || "",
     height: imprint?.height || "",
     colors: imprint?.colors === 0 || imprint?.colors ? imprint.colors : 1,
@@ -90,6 +98,8 @@ function normalizeImprint(imprint) {
       imprint?.artwork_colors === 0 || imprint?.artwork_colors
         ? imprint.artwork_colors
         : "",
+    // Per-print add-on fees attached to THIS specific print (per_print category).
+    extras: imprint?.extras && typeof imprint.extras === "object" ? imprint.extras : {},
   };
 }
 
@@ -337,14 +347,22 @@ export function buildBrandOptions(matches, typedStyleNumber) {
 
   matches.forEach((match, index) => {
     const canonicalStyle = getCanonicalStyleNumber(typed, match);
-    const brand = cleanText(match.brandName) || "Unknown Brand";
+    // A brandless match keeps brandName EMPTY. It used to fall back to the
+    // literal "Unknown Brand", which applySelectedMatch then persisted onto
+    // the line — and from there it printed on the quote email, the PDF, and
+    // the QB invoice ("Unknown Brand Customer Supplied Goods…"). The label
+    // below still says "Unknown brand" for the dropdown; the empty brandName
+    // means the line keeps whatever the user typed in the Brand field (or
+    // stays blank) instead of a placeholder masquerading as data.
+    const brand = cleanText(match.brandName);
+    const brandLabel = brand || "Unknown brand";
     const description = getBestDescription(match) || "Untitled";
     const supplier = cleanText(match._supplier) || "";
     // Key includes brand to prevent deduplication when different brands have
     // same style, AND the source supplier: Gildan 5000 exists on both S&S
     // and SanMar with near-identical listings, and each supplier has its own
     // pricing — collapsing them would silently take the supplier choice away.
-    const key = `${canonicalStyle}|${brand}|${description}|${supplier}`;
+    const key = `${canonicalStyle}|${brandLabel}|${description}|${supplier}`;
 
     if (seen.has(key)) return;
     seen.add(key);
@@ -362,7 +380,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
       // Supplier in the id for the same reason it's in the dedup key — two
       // suppliers' rows for the same brand+style must stay selectable
       // independently (the 2026-06-08 style-5071 bug class).
-      id: `${supplier.toLowerCase() || "x"}::${brand.toLowerCase()}::${match.id || `idx-${index}`}`,
+      id: `${supplier.toLowerCase() || "x"}::${brandLabel.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,
@@ -375,7 +393,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
       piecePrice: match.piecePrice,
       casePrice: match.casePrice,
       raw: match.raw || match,
-      label: `${brand} — ${canonicalStyle} — ${description}`,
+      label: `${brandLabel} — ${canonicalStyle} — ${description}`,
     });
   });
 
@@ -556,6 +574,8 @@ function applySelectedMatch(li, selectedMatch) {
     supplierLastLookupAt: new Date().toISOString(),
     // Per-size wholesale prices from the API (e.g. { S: 4.62, M: 4.62, "2XL": 5.62 })
     sizePrices: JSON.parse(JSON.stringify((selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {})),
+    // Re-selecting a supplier style is opting back into supplier pricing.
+    garmentCostManual: false,
   };
 }
 
@@ -576,10 +596,20 @@ export default function LineItemEditor({
   onDuplicate,
   canRemove,
 }) {
-  // Resolve the addons list for this specific line's technique. Falls
-  // back to the root (Screen Print) scope for unknown or empty techniques.
-  const lineTechnique = (li.imprints || [])[0]?.technique;
-  const addonsMeta = getAddonsForTechnique(addonsByScope, lineTechnique);
+  // Resolve the add-ons list from the UNION of ALL the line's imprint
+  // techniques — not just the first location. Gating to imprints[0] hid an
+  // add-on (e.g. Screen Print "underbase") whenever the location that needed it
+  // wasn't first, so it couldn't be toggled at all (Kato's report, 2026-07).
+  // Falls back to the root (Screen Print) scope when no technique is set.
+  const lineTechniques = [
+    ...new Set((li.imprints || []).map((im) => im?.technique).filter(Boolean)),
+  ];
+  // Line-level block shows PER-GARMENT fees only. per_print fees attach to a
+  // specific print (rendered inside each imprint below); per_job is quote-level.
+  const addonsMeta = filterAddonsByBasis(
+    getAddonsForTechniques(addonsByScope, lineTechniques),
+    "per_garment",
+  );
   // Header label that follows the decoration type. Techniques are per
   // imprint, so a line can mix them — show the shared technique's label
   // when they all match, else a neutral "Decoration Locations". "Screen
@@ -666,6 +696,10 @@ export default function LineItemEditor({
   // Ensure sizePrices is persisted on the line item whenever we have per-size data.
   // This runs after React state settles, so it won't get overwritten.
   useEffect(() => {
+    // The shop typed their own Garment Cost — don't resurrect the
+    // supplier per-size prices (they outrank it in the calc). The flag
+    // clears when the user re-selects a style/color.
+    if (li.garmentCostManual) return;
     const colorPrices = ssSizePriceMap[li.garmentColor]
       || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices;
     if (colorPrices && Object.keys(colorPrices).length > 0) {
@@ -800,6 +834,8 @@ export default function LineItemEditor({
           ? Number(selectedPrice.casePrice)
           : li.casePrice,
       sizePrices: colorSizePrices,
+      // Picking a supplier color is opting back into supplier pricing.
+      garmentCostManual: false,
     });
   }
 
@@ -831,16 +867,18 @@ export default function LineItemEditor({
     const imprints = (li.imprints || []).map((im, i) =>
       i === idx ? { ...normalizeImprint(im), ...patch } : normalizeImprint(im)
     );
-    // When the "active" technique (imprint[0]) changes, prune any
-    // toggled extras that aren't available in the new technique's
-    // addon list. Without this, a "Custom Tags" snapshot set while
-    // on Screen Print would keep charging $1.50/pc after the user
-    // switched to Embroidery — the user can't see the toggle to
-    // turn it off.
-    const oldTechnique = (li.imprints || [])[0]?.technique;
-    const newTechnique = imprints[0]?.technique;
-    if (idx === 0 && newTechnique !== oldTechnique) {
-      const prunedExtras = pruneExtrasForTechnique(lineExtras, addonsByScope, newTechnique);
+    // When the SET of techniques across the line's locations changes, prune any
+    // toggled extras no longer available under ANY current technique. Without
+    // this, a "Custom Tags" snapshot set while a location was Screen Print would
+    // keep charging $1.50/pc after that technique was dropped from the line, and
+    // the user can't see the toggle to turn it off. Union-based (not imprint[0])
+    // so switching one location's technique never wipes a fee another location
+    // still supports.
+    const techsOf = (arr) => [...new Set((arr || []).map((im) => im?.technique).filter(Boolean))].sort();
+    const oldTechs = techsOf(li.imprints);
+    const newTechs = techsOf(imprints);
+    if (oldTechs.join("|") !== newTechs.join("|")) {
+      const prunedExtras = pruneExtrasForTechniques(lineExtras, addonsByScope, newTechs);
       onChange({ ...li, imprints, extras: prunedExtras });
       return;
     }
@@ -1072,11 +1110,42 @@ export default function LineItemEditor({
                 min="0"
                 step="0.01"
                 value={li.garmentCost}
-                onChange={(e) => onChange({ ...li, garmentCost: e.target.value })}
+                onChange={(e) => {
+                  // A typed cost is an explicit override. Supplier
+                  // per-size prices (li.sizePrices) OUTRANK garmentCost
+                  // in calcLinkedLinePrice, so leaving them on the line
+                  // made this field inert on any looked-up style — the
+                  // tester's "changing the cost did not update price"
+                  // (2026-07-18). Drop them and flag the line so the
+                  // re-attach effect below doesn't resurrect them.
+                  // Toast ONCE at the transition (flag not yet set +
+                  // supplier prices actually present) — not per
+                  // keystroke, and never on manual lines where nothing
+                  // changes.
+                  const hadSupplierPrices = !li.garmentCostManual &&
+                    ((li.sizePrices && Object.keys(li.sizePrices).length > 0) || !!sizePricesRef.current);
+                  sizePricesRef.current = null;
+                  onChange({ ...li, garmentCost: e.target.value, garmentCostManual: true, sizePrices: {} });
+                  if (hadSupplierPrices) {
+                    notify.info(
+                      "Manual garment cost",
+                      "Supplier per-size pricing is off for this line — your typed cost now drives the price. Re-select the style or color to restore supplier pricing.",
+                      // Light yellow (Joe 2026-07-19): reads as a
+                      // heads-up, stands out from default toasts.
+                      { className: "bg-yellow-50 border-yellow-200" }
+                    );
+                  }
+                }}
                 placeholder="0.00"
                 className="w-full text-sm border border-slate-200 rounded-lg pl-7 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300"
               />
             </div>
+            {li.garmentCostManual && (
+              <p className="text-[10px] text-slate-500 mt-1">
+                Manual cost — supplier per-size pricing is off for this line.
+                Re-select the style or color to restore it.
+              </p>
+            )}
           </div>
         </div>
 
@@ -1350,7 +1419,13 @@ export default function LineItemEditor({
                                   {imp.colors}
                                 </div>
                                 <button
-                                  onClick={() => updateImprint(idx, { colors: Math.min(8, imp.colors + 1) })}
+                                  onClick={() => {
+                                    // Cap at the technique's CONFIGURED maxColors, not a
+                                    // hardcoded 8 — a shop with more color rows could never
+                                    // select them here.
+                                    const maxColors = getTechniqueRates(imp.technique)?.maxColors || 8;
+                                    updateImprint(idx, { colors: Math.min(maxColors, imp.colors + 1) });
+                                  }}
                                   className="w-7 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-sm transition flex-shrink-0"
                                 >
                                   +
@@ -1373,7 +1448,18 @@ export default function LineItemEditor({
                           <label className="block text-xs text-slate-500 mb-0.5">Technique</label>
                           <select
                             value={imp.technique}
-                            onChange={(e) => updateImprint(idx, { technique: e.target.value })}
+                            onChange={(e) => {
+                              const t = e.target.value;
+                              // imp.colors means an ink-color count for print
+                              // methods but a 1-based stitch-tier INDEX for
+                              // Embroidery. Crossing that boundary without a
+                              // reset leaves a stale value that selects the
+                              // wrong price tier and shows no valid option in
+                              // the stitch dropdown (same fix as the wizard's
+                              // ConfigureStep).
+                              const crossed = (t === "Embroidery") !== (imp.technique === "Embroidery");
+                              updateImprint(idx, { technique: t, ...(crossed ? { colors: 1 } : {}) });
+                            }}
                             className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
                           >
                             {/* getTechniqueOptions always includes the technique
@@ -1408,6 +1494,51 @@ export default function LineItemEditor({
                           className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
                         />
                       </div>
+
+                      {/* Per-print add-ons — attach to THIS print only. Toggle a
+                          fee here and it's charged just for this location, not
+                          every print on the line. */}
+                      {(() => {
+                        const impPrintAddons = filterAddonsByBasis(
+                          getAddonsForTechnique(addonsByScope, imp.technique),
+                          "per_print",
+                        );
+                        if (!impPrintAddons.length) return null;
+                        const impExtras = imp.extras || {};
+                        return (
+                          <div>
+                            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1.5">
+                              Add-ons for this print
+                            </div>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                              {impPrintAddons.map(({ key, label, rate, mode }) => {
+                                const isOn = !!impExtras[key];
+                                const isPercent = mode === "percent";
+                                const snapshot = snapshotExtraForQuote({ mode, rate: parseFloat(rate) || 0, basis: "per_print" });
+                                return (
+                                  <button
+                                    key={key}
+                                    type="button"
+                                    onClick={() => updateImprint(idx, { extras: { ...impExtras, [key]: isOn ? false : snapshot } })}
+                                    className={`rounded-lg border px-2 py-1.5 text-left transition ${
+                                      isOn ? "border-teal-600 bg-teal-50" : "border-slate-200 hover:border-slate-300 bg-white"
+                                    }`}
+                                  >
+                                    <div className={`text-[11px] font-semibold leading-tight ${isOn ? "text-teal-700" : "text-slate-700"}`}>
+                                      {label}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 leading-tight">
+                                      {isPercent
+                                        ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
+                                        : `+$${(parseFloat(rate) || 0).toFixed(2)}/print`}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -1424,12 +1555,13 @@ export default function LineItemEditor({
                     Add-ons (this line only)
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                    {addonsMeta.map(({ key, label, rate, mode }) => {
+                    {addonsMeta.map(({ key, label, rate, mode, basis }) => {
                       const isOn = !!lineExtras[key];
                       const isPercent = mode === "percent";
-                      const snapshot = isPercent
-                        ? { mode: "percent", rate: parseFloat(rate) || 0 }
-                        : (parseFloat(rate) || 0);
+                      const perPrint = basis === "per_print";
+                      // Snapshot carries mode + basis so the saved quote is
+                      // immutable and the engine applies the right multiplier.
+                      const snapshot = snapshotExtraForQuote({ mode, rate: parseFloat(rate) || 0, basis });
                       return (
                         <button
                           key={key}
@@ -1454,8 +1586,8 @@ export default function LineItemEditor({
                           </div>
                           <div className="text-[10px] text-slate-500 leading-tight">
                             {isPercent
-                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration`
-                              : `+$${(parseFloat(rate) || 0).toFixed(2)}/pc`}
+                              ? `+${(parseFloat(rate) || 0).toFixed(parseFloat(rate) % 1 === 0 ? 0 : 2)}% of decoration${perPrint ? " / print" : ""}`
+                              : `+$${(parseFloat(rate) || 0).toFixed(2)}/${perPrint ? "print" : "pc"}`}
                           </div>
                         </button>
                       );
@@ -1483,10 +1615,16 @@ export default function LineItemEditor({
               markup={STANDARD_MARKUP}
               onChange={onChange}
               sizePrices={
-                ssSizePriceMap[li.garmentColor]
-                || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices
-                || sizePricesRef.current
-                || undefined
+                // Manual-cost lines must not have session lookup data
+                // outrank the typed cost in the panel — the save path
+                // reads li.sizePrices (cleared), so the panel must
+                // match or the preview and the saved stamps diverge.
+                li.garmentCostManual
+                  ? undefined
+                  : (ssSizePriceMap[li.garmentColor]
+                    || (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices
+                    || sizePricesRef.current
+                    || undefined)
               }
             />
           </div>

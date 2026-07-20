@@ -20,6 +20,7 @@ import { BrowserRouter as Router, Route, Routes, useLocation } from "react-route
 import { managerCanAccess, firstAllowedPage } from "@/lib/managerPermissions";
 import PageNotFound from "./lib/PageNotFound";
 import CookieConsent from "@/components/CookieConsent";
+import { track, identify } from "@/lib/analytics";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
@@ -32,6 +33,7 @@ import {
   INITIAL_STATE as TYPEWRITER_INITIAL_STATE,
   advanceTypewriter,
 } from "@/lib/landing/typewriter";
+import { FAQ_ITEMS, VALUE_PROPS, PRICING_INCLUDES } from "@/lib/landing/landingCopy";
 import {
   interpretActivationResponse,
   activationRetryDelayMs,
@@ -338,9 +340,21 @@ function PublicLandingPage() {
   const [previewFeature, setPreviewFeature] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  function openSignup() { setLoginMode("signup"); setShowLogin(true); }
+  // `source` labels which CTA opened signup so the funnel shows which buttons
+  // convert. Callers wired as bare `onClick={openSignup}` pass the click event
+  // instead of a string — guard so we never log an event object as the source.
+  function openSignup(source) {
+    track("signup_opened", { source: typeof source === "string" ? source : "cta" });
+    setLoginMode("signup");
+    setShowLogin(true);
+  }
   function openLogin() { setLoginMode("signin"); setShowLogin(true); }
   function jumpToAnchor(hash) { setMobileMenuOpen(false); window.location.hash = hash; }
+
+  // Explicit funnel entry point. PostHog autocaptures $pageview too, but a
+  // named event keeps the landing→signup→trial funnel unambiguous regardless
+  // of how pageview capture is configured.
+  useEffect(() => { track("landing_viewed"); }, []);
 
   const INK = "#0e0e0e";
   const MUTED = "#6b6b6b";
@@ -356,49 +370,11 @@ function PublicLandingPage() {
   const btnPrimary = "inline-block text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 transition";
   const btnOutlineLight = "inline-block text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 border transition";
 
-  const FAQ_ITEMS = [
-    { q: "Can I import data from Printavo, Shopworks, or another shop tool?", a: "Not via a self-serve CSV upload yet — but email support@inktracker.app with an export from your old platform and we'll port your customers, quotes, or orders over manually. Self-serve import is on the roadmap." },
-    { q: "Does this work for embroidery shops, or only screen printing?", a: "Both. Quote-to-invoice, customer management, production tracking, and QuickBooks sync work the same for either method. We're focused on screen print and embroidery to start — other decoration methods aren't on the v1 roadmap." },
-    { q: "What happens to my data if I cancel?", a: "Yours, always. Export everything — customers, quotes, orders, invoices — as CSV at any time, including the moment of cancellation." },
-    { q: "Is there a long-term contract?", a: "No. Month-to-month, cancel anytime." },
-    { q: "How do I know InkTracker won't disappear in six months?", a: "Biota Mfg has been printing in the Reno/Tahoe area for ten years and we run the shop on InkTracker daily. If it stops being maintained, our own production stops. The financial structure also funds long-horizon land-conservation work — both keep this project on a multi-year commitment." },
-    { q: "How does the conservation contribution actually work?", a: "A piece of every subscription is allocated to a long-term land-conservation fund operated by Biota Mfg. The full five-year plan — how funds are set aside, deployed, and reported — lives at biotamfg.com/pages/wildways." },
-  ];
-
-  // Editorial three-up — numbered cards instead of icons so the section
-  // doesn't read as a port of the Biota home page's bolt/tag/sprout strip.
-  // Same palette + typography family, different visual spine.
-  const VALUE_PROPS = [
-    {
-      num: "01",
-      title: "Run your shop",
-      body: "Quote → production → invoice → paid. The whole job, one app — built around how a real shop runs.",
-      cta: "See features",
-      href: "#tour",
-    },
-    {
-      num: "02",
-      title: "Pricing that works",
-      body: "Live garment costs from S&S and AS Colour, per-imprint setups, shortfalls, broker margins — handled.",
-      cta: "How it works",
-      href: "#how-pricing",
-    },
-    {
-      num: "03",
-      title: "Built for a mission",
-      body: "Every subscription helps fund the land-conservation work we do through Biota's Wildways program.",
-      cta: "Learn more",
-      href: "#wildways",
-    },
-  ];
-
-  const PRICING_INCLUDES = [
-    "Quotes & orders", "Production tracking",
-    "Invoicing & payments", "QuickBooks Online sync",
-    "Live garment pricing", "Unlimited employees",
-    "Embeddable quote wizard", "Broker portal",
-    "Artwork proofs", "Performance reports",
-  ];
+  // FAQ_ITEMS / VALUE_PROPS / PRICING_INCLUDES live in
+  // lib/landing/landingCopy.js — shared with scripts/generate-landing-static.mjs
+  // so the crawlable snapshot baked into index.html can never drift from
+  // what this component renders. (The three-up keeps its editorial
+  // numbered-card treatment; only the copy is shared.)
 
   return (
     <>
@@ -460,12 +436,14 @@ function PublicLandingPage() {
               {/* Static marketing page (Vercel rewrite → /blog/index.html), so a
                   plain <a> for a full navigation — NOT react-router <Link>,
                   which would client-route into the SPA catch-all and 404. */}
+              {/* One "Resources" link → the /resources hub (Tools + Blog +
+                  guides). Keeps the nav uncluttered and the label honest. */}
               <a
-                href="/blog"
+                href="/resources"
                 className={`hidden sm:inline-block ${navLink}`}
                 style={{ color: INK, fontFamily: H_FONT }}
               >
-                Learn
+                Resources
               </a>
               <button
                 onClick={openLogin}
@@ -475,7 +453,7 @@ function PublicLandingPage() {
                 Sign in
               </button>
               <button
-                onClick={openSignup}
+                onClick={() => openSignup("nav")}
                 className="hidden sm:inline-block text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 transition whitespace-nowrap"
                 style={{ background: FOREST, color: '#fff' }}
               >
@@ -499,15 +477,15 @@ function PublicLandingPage() {
                     {label}
                   </button>
                 ))}
-                {/* Real route (static page) — plain <a>, not an anchor jump. */}
-                <a href="/blog" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE, fontFamily: H_FONT }}>
-                  Learn
+                {/* Real routes (static pages) — plain <a>, not anchor jumps. */}
+                <a href="/resources" onClick={() => setMobileMenuOpen(false)} className={`text-left py-4 border-b ${navLink}`} style={{ color: INK, borderColor: HAIRLINE, fontFamily: H_FONT }}>
+                  Resources
                 </a>
                 <button onClick={() => { setMobileMenuOpen(false); openLogin(); }} className={`text-left py-4 sm:hidden ${navLink}`} style={{ color: INK }}>
                   Sign in
                 </button>
                 <button
-                  onClick={() => { setMobileMenuOpen(false); openSignup(); }}
+                  onClick={() => { setMobileMenuOpen(false); openSignup("mobile_nav"); }}
                   className="mt-2 mb-3 text-center text-[12px] font-bold tracking-[0.22em] uppercase px-7 py-3.5 transition sm:hidden"
                   style={{ background: FOREST, color: '#fff' }}
                 >
@@ -581,7 +559,7 @@ function PublicLandingPage() {
                 software that never quite fit.
               </p>
               <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-                <button onClick={openSignup} className={btnPrimary} style={{ background: '#fff', color: INK }}>
+                <button onClick={() => openSignup("hero")} className={btnPrimary} style={{ background: '#fff', color: INK }}>
                   Start 14-day trial
                 </button>
                 <a href="#tour" className={btnOutlineLight} style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.55)' }}>
@@ -994,7 +972,7 @@ function PublicLandingPage() {
                 ))}
               </div>
 
-              <button onClick={openSignup} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
+              <button onClick={() => openSignup("pricing")} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
                 Start free trial
               </button>
 
@@ -1037,7 +1015,7 @@ function PublicLandingPage() {
               like you mean it.
             </h2>
             <div className="mt-10">
-              <button onClick={openSignup} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
+              <button onClick={() => openSignup("footer_cta")} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
                 Start 14-day trial
               </button>
             </div>
@@ -1140,7 +1118,7 @@ function PendingApprovalPage() {
           </div>
 
           <h1 className="text-3xl font-bold text-slate-900">
-            Account pending review
+            Setting up your account
           </h1>
 
           <p className="text-base text-slate-600 mt-4 leading-7">
@@ -1151,13 +1129,13 @@ function PendingApprovalPage() {
         <div className="px-8 pb-10">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-6 py-6">
             <p className="text-sm text-slate-700 leading-7">
-              We review new accounts within 1 business day. You'll automatically get access as soon as you're approved — no need to do anything else.
+              We're finishing your account setup — this usually takes a few seconds. If this page doesn't move on its own, sign out and back in.
             </p>
           </div>
 
           <div className="mt-6 text-center">
             <p className="text-sm text-slate-500 leading-6">
-              This page checks for approval automatically every 30 seconds.
+              This page checks automatically every 30 seconds.
             </p>
             {user?.email ? (
               <p className="text-sm text-slate-500 leading-6 mt-2">
@@ -1232,11 +1210,13 @@ function PostConfirmSpinner() {
 
       let rpcResult = null;
       let rpcError = null;
+      let authUserId = null;
       try {
         const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) {
           rpcError = { message: "No authenticated user found" };
         } else {
+          authUserId = authUser.id;
           const out = await supabase.rpc("activate_trial", { user_auth_id: authUser.id });
           rpcResult = out.data;
           rpcError = out.error;
@@ -1248,6 +1228,12 @@ function PostConfirmSpinner() {
 
       const decision = interpretActivationResponse({ rpcResult, rpcError });
       if (decision.state === ACTIVATION_STATES.SUCCESS) {
+        // Funnel conversion. This component only mounts right after email
+        // confirmation for a fresh signup, so SUCCESS here = trial started.
+        // identify() de-anonymizes the earlier landing/signup events by the
+        // opaque auth id only (no email/name — PII policy, see analytics.js).
+        if (authUserId) identify(authUserId);
+        track("trial_activated");
         setPhase("success");
         // Refetch profile so the parent unmounts this component.
         checkAppState({ silent: false });
@@ -1470,15 +1456,16 @@ const AuthenticatedApp = () => {
   return (
     <>
       <AppRoutes />
-      {isExpired && (
+      {/* neverSubscribed is handled by the teal TrialStatusBanner at the top
+          of Layout — showing this red strip too gave one user two
+          contradictory banners at once. This one is only for real expiries. */}
+      {isExpired && !neverSubscribed && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-red-600 text-white px-4 py-3 flex items-center justify-center gap-4 shadow-lg">
           <span className="text-sm font-semibold">
-            {neverSubscribed
-              ? "Add a payment method to start your 14-day free trial and unlock InkTracker."
-              : "Your trial has expired. Upgrade to keep creating quotes and orders."}
+            Your trial has expired. Upgrade to keep creating quotes and orders.
           </span>
           <a href="/Account?billing=1" className="bg-white text-red-700 font-bold text-sm px-4 py-1.5 rounded-lg hover:bg-red-50 transition">
-            {neverSubscribed ? "Start free trial" : "View Plans"}
+            View Plans
           </a>
         </div>
       )}

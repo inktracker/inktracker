@@ -16,9 +16,14 @@ import {
   getRushRateForDaysOut,
 } from "../shared/pricing";
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
+import { mergeBrokerPricing } from "@/lib/broker/brokerPricing";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import BrokerLineItemEditor from "./BrokerLineItemEditor";
+import JobFeesSection from "@/components/quotes/JobFeesSection";
+import { sumAdditionalCharges, normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
+import { isRushManuallyOverridden, nextRushRateForDueDateChange } from "@/lib/pricing/rushOverride";
 import { Eye } from "lucide-react";
+import { DEPOSITS_ENABLED } from "@/lib/deposits";
 
 const DEFAULT_EXTRAS_META = [
   { key: "colorMatch", label: "Ink Color Match", rate: 1.0 },
@@ -60,6 +65,7 @@ function blankQuote() {
     },
     line_items: [newLineItem()],
     discount: 0,
+    discount_description: "",
     tax_rate: 0,
     // Broker-set tax rate for the end client. Shop-to-broker is always
     // 0% (B2B); broker-to-client is whatever the broker enters here.
@@ -94,6 +100,9 @@ export default function BrokerQuoteEditor({
   shopAddonsByScope,
   shop,
   broker,
+  // Per-broker pricing overrides row (broker_pricing.overrides) for
+  // THIS broker at THIS shop. null/undefined = no overlay.
+  brokerOverrides,
 }) {
   const addonsMeta = shopAddons?.length ? shopAddons : DEFAULT_EXTRAS_META;
   const addonsByScope = shopAddonsByScope || {
@@ -110,6 +119,11 @@ export default function BrokerQuoteEditor({
     extrasKeys.forEach((k) => { extras[k] = false; });
     return { ...base, extras };
   });
+  // Mirror of QuoteEditorModal: once the broker explicitly picks a
+  // Turnaround option (or the saved rush_rate already disagrees with
+  // the tier table), a waive (rate 0) survives due-date edits instead
+  // of being re-enforced by the auto-apply. Tester 2026-07-18.
+  const [rushManuallySet, setRushManuallySet] = useState(() => isRushManuallyOverridden(quote));
   const [showNewClient, setShowNewClient] = useState(false);
   const [isAddingClient, setIsAddingClient] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -127,6 +141,25 @@ export default function BrokerQuoteEditor({
   const isTaxExempt = selectedCustomer?.tax_exempt || false;
   const clientArtwork = selectedCustomer?.artwork_files || [];
 
+  // CACHE-01: price EXPLICITLY against the target shop's config, not the module
+  // global `_pc`. The broker dashboard is multi-shop — `_pc` holds whichever
+  // shop was last viewed, so a live recompute here could bleed shop A's rates
+  // onto a shop-B quote. Threading `shop.pricing_config` makes the broker
+  // editor's money path config-explicit; falls back to the global (undefined)
+  // for early shops whose record has no pricing_config, matching prior behavior.
+  const shopConfig = shop?.pricing_config || undefined;
+
+  // Effective WHOLESALE config: the shop sheet with this broker's
+  // per-broker overrides layered on (per-broker markup share, garment
+  // brackets, contract print rates). Applies ONLY to the broker-side
+  // (BROKER_MARKUP) calc + stamps below. The client-side retail
+  // suggestion keeps pricing off the plain shopConfig — the overlay is
+  // the shop→broker deal, not the broker→client price.
+  const brokerConfig = useMemo(
+    () => mergeBrokerPricing(shopConfig, brokerOverrides),
+    [shopConfig, brokerOverrides]
+  );
+
   const brokerQuote = useMemo(
     () => ({
       ...q,
@@ -140,13 +173,14 @@ export default function BrokerQuoteEditor({
   // matching the regular shop quote behavior.
   const clientTaxRate = isTaxExempt ? 0 : (parseFloat(q.broker_tax_rate) || 0);
 
-  const totals = calcQuoteTotals(brokerQuote, BROKER_MARKUP);
+  const totals = calcQuoteTotals(brokerQuote, BROKER_MARKUP, brokerConfig);
   const retailTotals = calcQuoteTotals(
     {
       ...q,
       tax_rate: clientTaxRate,
     },
-    STANDARD_MARKUP
+    STANDARD_MARKUP,
+    shopConfig
   );
 
   const brokerProfit = Math.max(0, retailTotals.total - totals.total);
@@ -283,8 +317,8 @@ export default function BrokerQuoteEditor({
         const qty = getQty(li);
         if (!qty) return li;
         const lineExtras = getLineExtras(li, q);
-        const brokerR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, BROKER_MARKUP, linkedQtyMap);
-        const clientR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, STANDARD_MARKUP, linkedQtyMap);
+        const brokerR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, BROKER_MARKUP, linkedQtyMap, undefined, brokerConfig);
+        const clientR = calcLinkedLinePrice(li, q.rush_rate, lineExtras, STANDARD_MARKUP, linkedQtyMap, undefined, shopConfig);
         const clientOverride = Number(li?.clientPpp);
         const hasClientOverride = Number.isFinite(clientOverride) && clientOverride > 0;
 
@@ -315,7 +349,11 @@ export default function BrokerQuoteEditor({
       const brokerRushSum = stampedItems.reduce((s, li) => s + (li._rushFee || 0), 0);
       const brokerSub = Math.round((brokerLineSub + brokerRushSum) * 100) / 100;
       const brokerAfterDisc = isFlat ? Math.max(0, brokerSub - discVal) : brokerSub * (1 - discVal / 100);
-      const brokerTotal = Math.round(brokerAfterDisc * 100) / 100;
+      // Additional fees (incl. per_job "jobfee_*" toggles) pass through at face
+      // value — flat, post-discount, no markup. Broker side is untaxed, so all
+      // charges just add on. Mirrors the shop model + the live calcQuoteTotals.
+      const addl = sumAdditionalCharges(q.additional_charges);
+      const brokerTotal = Math.round((brokerAfterDisc + addl.total) * 100) / 100;
 
       // Client-side totals (what broker charges end client). Tax-exempt
       // customers always 0% regardless of broker_tax_rate.
@@ -324,8 +362,11 @@ export default function BrokerQuoteEditor({
       const clientSub = Math.round((clientLineSub + clientRushSum) * 100) / 100;
       const clientAfterDisc = isFlat ? Math.max(0, clientSub - discVal) : clientSub * (1 - discVal / 100);
       const clientTaxRateNum = isTaxExempt ? 0 : (parseFloat(q.broker_tax_rate) || 0);
-      const clientTaxAmt = Math.round(clientAfterDisc * (clientTaxRateNum / 100) * 100) / 100;
-      const clientTotalAmt = Math.round((clientAfterDisc + clientTaxAmt) * 100) / 100;
+      // Client side: taxable charges join the taxed base; non-taxable added
+      // after tax — same contract as calcQuoteTotals / the shop quote.
+      const clientTaxBase = clientAfterDisc + addl.taxable;
+      const clientTaxAmt = Math.round(clientTaxBase * (clientTaxRateNum / 100) * 100) / 100;
+      const clientTotalAmt = Math.round((clientTaxBase + clientTaxAmt + addl.nonTaxable) * 100) / 100;
 
       await onSave({
         ...q,
@@ -333,6 +374,7 @@ export default function BrokerQuoteEditor({
         status,
         tax_rate: 0,
         tax_exempt: isTaxExempt,
+        additional_charges: normalizeAdditionalCharges(q.additional_charges),
         // Broker side — what shop reads.
         subtotal: brokerSub,
         tax: 0,
@@ -458,13 +500,15 @@ export default function BrokerQuoteEditor({
                             (1000 * 60 * 60 * 24)
                         )
                       : null;
-                    // Variable rush: the rate comes from the shop's
-                    // rushTiers + the days-out. Sliding the due date
-                    // can move the rate to a different tier (or zero
-                    // when standard).
-                    const autoRate = diffDays !== null
-                      ? getRushRateForDaysOut(diffDays)
-                      : q.rush_rate;
+                    // Variable rush: the rate follows the due date via
+                    // the shop's rushTiers — EXCEPT when the broker has
+                    // explicitly waived rush (Standard picked, rate 0).
+                    // A manual waive sticks; see rushOverride.js.
+                    const autoRate = nextRushRateForDueDateChange({
+                      diffDays,
+                      currentRate: q.rush_rate,
+                      rushManuallySet,
+                    });
                     setQ({
                       ...q,
                       due_date: due,
@@ -478,9 +522,19 @@ export default function BrokerQuoteEditor({
                   const diff = Math.round((new Date(q.due_date) - new Date(q.date)) / (1000 * 60 * 60 * 24));
                   const rate = getRushRateForDaysOut(diff);
                   if (rate <= 0) return null;
+                  const actual = parseFloat(q.rush_rate) || 0;
+                  // Honest badge: show what's actually charged — a
+                  // waived rush must not display as an applied fee.
+                  if (actual <= 0) {
+                    return (
+                      <div className="text-xs text-slate-500 font-semibold mt-1">
+                        Rush waived — tier table suggests +{Math.round(rate * 100)}%
+                      </div>
+                    );
+                  }
                   return (
                     <div className="text-xs text-orange-500 font-semibold mt-1">
-                      ⚡ Rush +{Math.round(rate * 100)}% (auto from tier table)
+                      ⚡ Rush +{Math.round(actual * 100)}%{Math.abs(actual - rate) < 0.0001 ? " (auto from tier table)" : ""}
                     </div>
                   );
                 })()}
@@ -587,11 +641,16 @@ export default function BrokerQuoteEditor({
                 })().map((opt) => (
                   <button
                     key={opt.key}
-                    onClick={() => setQ({
-                      ...q,
-                      rush_rate: opt.rate,
-                      due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
-                    })}
+                    onClick={() => {
+                      // Explicit Turnaround pick — a waive now survives
+                      // due-date edits (see rushManuallySet above).
+                      setRushManuallySet(true);
+                      setQ({
+                        ...q,
+                        rush_rate: opt.rate,
+                        due_date: addBusinessDays(new Date(q.date || tod()), opt.daysOut),
+                      });
+                    }}
                     className={`flex-1 rounded-xl border-2 px-3 py-2.5 text-left transition ${
                       Math.abs((q.rush_rate || 0) - opt.rate) < 0.0001
                         ? "border-teal-600 bg-teal-50"
@@ -613,9 +672,17 @@ export default function BrokerQuoteEditor({
               </div>
             </div>
 
-            {/* Quote-level add-ons block removed 2026-06-04. Fees now
-                live on each line item — BrokerLineItemEditor renders
-                its own toggle group. */}
+            {/* Per-line fees (per_print/per_garment) live on each line via
+                BrokerLineItemEditor. Per_job fees are once-for-the-order and
+                toggle here — written to additional_charges (the field the shop
+                QB path + client payment page already itemize), so they carry
+                through to the client and the shop invoice. */}
+            <JobFeesSection
+              addonsByScope={addonsByScope}
+              additionalCharges={q.additional_charges}
+              subtotal={retailTotals.subtotal}
+              onChange={(next) => setQ({ ...q, additional_charges: next })}
+            />
           </div>
 
           <div className="space-y-4">
@@ -641,6 +708,7 @@ export default function BrokerQuoteEditor({
                 allLineItems={q.line_items}
                 savedImprints={selectedCustomer?.saved_imprints || []}
                 shopPricingConfig={shop?.pricing_config}
+                brokerPricingConfig={brokerConfig}
                 onChange={(updated) => updateLineItem(idx, updated)}
                 onRemove={() => removeLineItem(idx)}
                 onDuplicate={() => duplicateLineItem(idx)}
@@ -691,6 +759,17 @@ export default function BrokerQuoteEditor({
               </div>
 
               {parseFloat(q.discount) > 0 && (
+                <input
+                  type="text"
+                  value={q.discount_description || ""}
+                  onChange={(e) => setQ({ ...q, discount_description: e.target.value })}
+                  placeholder="Discount reason (optional) — e.g. loyal customer, bulk"
+                  maxLength={120}
+                  className="w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+              )}
+
+              {parseFloat(q.discount) > 0 && (
                 <>
                   <div className="flex justify-between text-sm text-emerald-600">
                     <span>Savings</span>
@@ -734,6 +813,7 @@ export default function BrokerQuoteEditor({
                 </span>
               </div>
 
+              {DEPOSITS_ENABLED && (
               <div className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
@@ -773,8 +853,9 @@ export default function BrokerQuoteEditor({
                   </span>
                 )}
               </div>
+              )}
 
-              {Number(q.deposit_pct) > 0 && (
+              {DEPOSITS_ENABLED && Number(q.deposit_pct) > 0 && (
                 <div className="flex justify-between text-xs text-slate-500">
                   <span>Remaining Balance</span>
                   <span className="font-semibold text-slate-700">

@@ -72,7 +72,15 @@ export default function OnboardingWizard({ user, onComplete }) {
   // who want to see the app populated can still opt in via the
   // checkbox in the onboarding wizard.
   const [seedDemo, setSeedDemo] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(null);
   const fileRef = useRef();
+
+  // Card-required signups land as subscription_tier 'incomplete' with zero
+  // write access until Stripe checkout completes. For them the wizard's last
+  // step is the trial checkout, not "go create a quote" — telling an
+  // 'incomplete' user they're all set was the top support generator in the
+  // 2026-07 pre-scale audit.
+  const needsCard = user?.subscription_tier === "incomplete" && user?.role !== "admin";
 
   const totalSteps = STEPS.length;
   const current = STEPS[step];
@@ -132,58 +140,67 @@ export default function OnboardingWizard({ user, onComplete }) {
     window.location.href = `https://appcenter.intuit.com/connect/oauth2?${params}`;
   }
 
+  // Persist everything the wizard collected. Shared by both exits (dashboard
+  // and Stripe checkout); throws on the primary profile save so callers can
+  // keep the user on the wizard to retry.
+  async function persistOnboarding() {
+    const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, website, taxRate, timezone, offersEmbroidery };
+    const profileData = buildOnboardingProfile(wizardInput);
+    await base44.auth.updateMe(profileData);
+
+    // Built before the upsert try-block so it's in scope for the
+    // loadShopPricingConfig call below — that fires regardless of
+    // whether the network upsert succeeded (in-memory _pc should
+    // reflect what we INTENDED to save, even if Supabase was
+    // unreachable; the hard reload will re-sync from DB anyway).
+    const shopPayload = buildShopUpsertPayload(wizardInput);
+    // Also upsert a Shop entity so quotes/orders can find it
+    try {
+      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+      if (shops?.length) {
+        await base44.entities.Shop.update(shops[0].id, shopPayload);
+      } else {
+        await base44.entities.Shop.create(shopPayload);
+      }
+    } catch (shopErr) {
+      console.warn("Shop upsert failed (non-blocking):", shopErr);
+    }
+
+    // Refresh the in-memory timezone singleton so calendar / date
+    // helpers pick up the user's choice without a hard reload. Mirrors
+    // the loadShopPricingConfig pattern called on Save in Account.
+    loadShopTimezone(timezone || null);
+
+    // Same refresh for pricing config. Account → Pricing → Save
+    // already does this; without it, the onboarding finish leaves
+    // _pc out of sync (the user "enabled embroidery" but the quote
+    // modal didn't show it). The hard reload at the end would
+    // eventually fix it via AuthContext, but anything between (a
+    // CTA, a router transition, a pre-reload render) saw stale _pc.
+    // The shopPayload.pricing_config we just persisted IS the
+    // authoritative new value — replay it in memory now too.
+    if (shopPayload?.pricing_config) {
+      loadShopPricingConfig(shopPayload.pricing_config);
+    }
+
+    // Seed demo data if the user opted in. Non-blocking on failure —
+    // we'd rather drop them into the app than fail the whole flow.
+    // Skipped for 'incomplete' users: quote/order writes are RLS-blocked
+    // until checkout completes, so the seed would silently no-op anyway
+    // (the opt-in checkbox is hidden for them too).
+    if (seedDemo && user?.email && !needsCard) {
+      try {
+        await seedDemoData(user.email);
+      } catch (seedErr) {
+        console.warn("Demo seed failed (non-blocking):", seedErr);
+      }
+    }
+  }
+
   async function saveAndFinish() {
     setSaving(true);
     try {
-      const wizardInput = { user, shopName, logoUrl, phone, address, city, stateVal, zip, website, taxRate, timezone, offersEmbroidery };
-      const profileData = buildOnboardingProfile(wizardInput);
-      await base44.auth.updateMe(profileData);
-
-      // Built before the upsert try-block so it's in scope for the
-      // loadShopPricingConfig call below — that fires regardless of
-      // whether the network upsert succeeded (in-memory _pc should
-      // reflect what we INTENDED to save, even if Supabase was
-      // unreachable; the hard reload will re-sync from DB anyway).
-      const shopPayload = buildShopUpsertPayload(wizardInput);
-      // Also upsert a Shop entity so quotes/orders can find it
-      try {
-        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
-        if (shops?.length) {
-          await base44.entities.Shop.update(shops[0].id, shopPayload);
-        } else {
-          await base44.entities.Shop.create(shopPayload);
-        }
-      } catch (shopErr) {
-        console.warn("Shop upsert failed (non-blocking):", shopErr);
-      }
-
-      // Refresh the in-memory timezone singleton so calendar / date
-      // helpers pick up the user's choice without a hard reload. Mirrors
-      // the loadShopPricingConfig pattern called on Save in Account.
-      loadShopTimezone(timezone || null);
-
-      // Same refresh for pricing config. Account → Pricing → Save
-      // already does this; without it, the onboarding finish leaves
-      // _pc out of sync (the user "enabled embroidery" but the quote
-      // modal didn't show it). The hard reload at the end would
-      // eventually fix it via AuthContext, but anything between (a
-      // CTA, a router transition, a pre-reload render) saw stale _pc.
-      // The shopPayload.pricing_config we just persisted IS the
-      // authoritative new value — replay it in memory now too.
-      if (shopPayload?.pricing_config) {
-        loadShopPricingConfig(shopPayload.pricing_config);
-      }
-
-      // Seed demo data if the user opted in. Non-blocking on failure —
-      // we'd rather drop them into the app than fail the whole flow.
-      if (seedDemo && user?.email) {
-        try {
-          await seedDemoData(user.email);
-        } catch (seedErr) {
-          console.warn("Demo seed failed (non-blocking):", seedErr);
-        }
-      }
-
+      await persistOnboarding();
       if (onComplete) {
         await onComplete();
       }
@@ -195,6 +212,31 @@ export default function OnboardingWizard({ user, onComplete }) {
       notify.error("Onboarding save failed", err);
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Card-required exit: save the wizard's work FIRST (so nothing is lost if
+  // they abandon Stripe), then hand off to checkout. Same billing edge
+  // function + params as Account → BillingSection.handleCheckout.
+  async function startTrialCheckout(billing) {
+    setCheckoutLoading(billing);
+    try {
+      await persistOnboarding();
+      const { data: { session } } = await supabase.auth.getSession();
+      const { data, error: invErr } = await base44.functions.invoke("billing", {
+        action: "checkout",
+        accessToken: session?.access_token,
+        billing,
+      });
+      if (invErr || !data?.url) {
+        notify.error("Couldn't start checkout", invErr || data?.error);
+        return;
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      notify.error("Couldn't start checkout", err);
+    } finally {
+      setCheckoutLoading(null);
     }
   }
 
@@ -241,7 +283,9 @@ export default function OnboardingWizard({ user, onComplete }) {
             <div className="flex items-center gap-3 mb-1">
               <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png"
                 alt="InkTracker" className="w-9 h-9 rounded-xl" />
-              <h2 className="text-xl font-bold text-slate-900">{current.title}</h2>
+              <h2 className="text-xl font-bold text-slate-900">
+                {current.id === "done" && needsCard ? "Start Your Free Trial" : current.title}
+              </h2>
             </div>
           </div>
 
@@ -258,20 +302,25 @@ export default function OnboardingWizard({ user, onComplete }) {
                   This quick setup takes about 2 minutes. You can change everything later in your Account settings.
                 </p>
 
-                <label className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition">
-                  <input
-                    type="checkbox"
-                    checked={seedDemo}
-                    onChange={(e) => setSeedDemo(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
-                  />
-                  <span className="text-sm text-slate-700">
-                    <span className="font-semibold">Add sample data so I can explore</span>
-                    <span className="block text-xs text-slate-500 mt-0.5">
-                      Creates 3 demo customers, 5 quotes, and 2 orders. Each is prefixed "Demo —" so they're easy to delete.
+                {/* Hidden for card-required signups: their writes are
+                    RLS-blocked until checkout, so the seed would silently
+                    fail and look like a bug. */}
+                {!needsCard && (
+                  <label className="flex items-start gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition">
+                    <input
+                      type="checkbox"
+                      checked={seedDemo}
+                      onChange={(e) => setSeedDemo(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 accent-teal-600 cursor-pointer"
+                    />
+                    <span className="text-sm text-slate-700">
+                      <span className="font-semibold">Add sample data so I can explore</span>
+                      <span className="block text-xs text-slate-500 mt-0.5">
+                        Creates 3 demo customers, 5 quotes, and 2 orders. Each is prefixed "Demo —" so they're easy to delete.
+                      </span>
                     </span>
-                  </span>
-                </label>
+                  </label>
+                )}
               </div>
             )}
 
@@ -600,7 +649,47 @@ export default function OnboardingWizard({ user, onComplete }) {
               </div>
             )}
 
-            {step === 5 && (
+            {step === 5 && needsCard && (
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center py-4">
+                <div className="w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center">
+                  <CheckCircle2 className="w-9 h-9 text-teal-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">
+                    {shopName || "Your shop"} is set up — start your free trial
+                  </h3>
+                  <p className="text-sm text-slate-500 leading-relaxed">
+                    Add a payment method to unlock quoting, production, and invoicing.
+                    You won't be charged for 14 days, and you can cancel anytime from{" "}
+                    <strong>Account → Billing</strong>.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full mt-2">
+                  <button
+                    onClick={() => startTrialCheckout("monthly")}
+                    disabled={!!checkoutLoading || saving}
+                    className="flex flex-col items-center gap-1 border-2 border-teal-600 bg-teal-600 text-white rounded-xl p-4 hover:bg-teal-700 hover:border-teal-700 transition disabled:opacity-50"
+                  >
+                    <span className="text-sm font-bold">
+                      {checkoutLoading === "monthly" ? "Loading…" : "Start free trial — Monthly"}
+                    </span>
+                    <span className="text-xs opacity-90">$99/mo after trial</span>
+                  </button>
+                  <button
+                    onClick={() => startTrialCheckout("annual")}
+                    disabled={!!checkoutLoading || saving}
+                    className="flex flex-col items-center gap-1 border-2 border-slate-200 rounded-xl p-4 text-slate-700 hover:border-teal-600 transition disabled:opacity-50"
+                  >
+                    <span className="text-sm font-bold">
+                      {checkoutLoading === "annual" ? "Loading…" : "Start free trial — Annual"}
+                    </span>
+                    <span className="text-xs text-slate-500">$999/yr after trial · save $189</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {step === 5 && !needsCard && (
               <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center py-4">
                 <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center">
                   <CheckCircle2 className="w-9 h-9 text-emerald-600" />
@@ -658,6 +747,26 @@ export default function OnboardingWizard({ user, onComplete }) {
                 >
                   {step === 0 ? "Get Started" : "Continue"}
                   <ChevronRight className="w-4 h-4" />
+                </button>
+              </>
+            ) : needsCard ? (
+              <>
+                <button
+                  onClick={back}
+                  className="px-4 py-2.5 text-sm font-semibold text-slate-500 border border-slate-200 rounded-xl hover:bg-white transition"
+                >
+                  Back
+                </button>
+                {/* Escape hatch — saves their setup and drops them into the
+                    (gated) app rather than trapping them on this step. The
+                    teal TrialStatusBanner keeps the checkout one click away. */}
+                <button
+                  onClick={saveAndFinish}
+                  disabled={saving || !!checkoutLoading}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-semibold text-slate-500 hover:text-slate-700 transition disabled:opacity-50"
+                >
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {saving ? "Saving…" : "I'll add a card later"}
                 </button>
               </>
             ) : (

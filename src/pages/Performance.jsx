@@ -10,6 +10,7 @@ import { ShoppingBag, DollarSign, Receipt, Layers, Activity, FileText, ExternalL
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { readMetricsCache, writeMetricsCache, clearMetricsCache } from "@/lib/qbMetricsCache";
 import { shopScope } from "@/lib/shopScope";
+import { computeTotalVolume } from "@/lib/reports/totalVolume";
 
 const COMPLETED_STATUSES = new Set(["Completed", "Shipped", "Delivered", "Picked Up"]);
 const CANCELLED_STATUSES = new Set(["Cancelled", "Canceled", "Voided"]);
@@ -38,15 +39,20 @@ function StatCard({ icon: Icon, label, value, sub, color = "indigo" }) {
 }
 
 export default function Performance() {
-  const [records, setRecords] = useState([]);   // ShopPerformance archive (completed orders)
   const [orders, setOrders] = useState([]);     // live orders (for active count)
   const [invoices, setInvoices] = useState([]); // local invoices (for outstanding)
+  const [quotes, setQuotes] = useState([]);     // for Total Volume dedup only
   const [loading, setLoading] = useState(true);
   const [qbConnected, setQbConnected] = useState(false);
   const [qbMetrics, setQbMetrics] = useState(null);
   const [qbRefreshing, setQbRefreshing] = useState(false);
   const [dateRange, setDateRange] = useState("thisMonth");
   const [loadError, setLoadError] = useState("");
+  // performance_stats RPC result — server-truth for the stat cards. The
+  // capped fetches below (1000 rows each) exist for the QB overlay + tax
+  // report and as the fallback when the RPC errors; computing card totals
+  // from them silently dropped a multi-year shop's oldest rows.
+  const [serverStats, setServerStats] = useState(null);
 
   const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -109,14 +115,16 @@ export default function Performance() {
       // the UI as a banner instead of silently rendering zeros. Each
       // bucket falls back to [] so the math below stays safe.
       let failures = 0;
-      const [perfData, allOrders, allInvoices] = await Promise.all([
-        base44.entities.ShopPerformance.filter({ shop_owner: shopScope(u) }, "-date", 1000).catch((e) => { console.error("[Performance] perf fetch failed:", e); failures++; return []; }),
+      const [allOrders, allInvoices, allQuotes] = await Promise.all([
         base44.entities.Order.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] orders fetch failed:", e); failures++; return []; }),
         base44.entities.Invoice.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] invoices fetch failed:", e); failures++; return []; }),
+        // Quotes feed ONLY the Total Volume dedup (quote-born invoices carry
+        // the order pointer on the quote, not the invoice row).
+        base44.entities.Quote.filter({ shop_owner: shopScope(u) }, "-created_date", 1000).catch((e) => { console.error("[Performance] quotes fetch failed:", e); failures++; return []; }),
       ]);
-      setRecords(perfData);
       setOrders(allOrders);
       setInvoices(allInvoices);
+      setQuotes(allQuotes);
       if (failures > 0) setLoadError(`Some performance data couldn't load (${failures} of 3 sources). Numbers below may be incomplete.`);
 
       setLoading(false);
@@ -131,27 +139,35 @@ export default function Performance() {
     return { from: r.dateFrom || null, to: r.dateTo || null };
   }, [dateRange]);
 
-  // shop_performance is denormalized — a row is written when an order
-  // completes (see buildOrderCompletionPlan.shopPerformanceCreate)
-  // and is NOT cascade-deleted when the underlying order is later
-  // removed. Without this filter, stats here would keep counting
-  // orders the operator already deleted (the "My Name" cleanup
-  // complaint on 2026-05-30). Cross-reference against the live
-  // orders list and drop any shop_performance row whose order_id
-  // no longer resolves.
-  //
-  // Edge: if a shop has more total orders than the 1000-row cap on
-  // the orders query (line ~111), some live order_ids won't be in
-  // the loaded set and would be incorrectly filtered as orphans.
-  // Guard with `orders.length < 1000` so big shops fall back to the
-  // pre-filter behavior (showing all stats, including the rare
-  // orphan) rather than silently zeroing legitimate history.
+  // Server-side aggregates for the selected range. Refetches on range
+  // change; null (RPC failed) drops the cards back to the capped client
+  // math below. Also exact where the client couldn't be: the orphan
+  // cross-reference had to disable itself past the 1000-order cap.
+  useEffect(() => {
+    let cancelled = false;
+    supabase.rpc("performance_stats", { p_from: from, p_to: to })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) { console.error("[Performance] performance_stats rpc failed:", error.message); setServerStats(null); return; }
+        setServerStats(data || null);
+      })
+      .catch((e) => { if (!cancelled) { console.error("[Performance] performance_stats rpc threw:", e); setServerStats(null); } });
+    return () => { cancelled = true; };
+  }, [from, to]);
+
+  // Completed-order records, derived from the ORDERS table — not the
+  // shop_performance archive. shop_performance rows are only written by
+  // runOrderCompletion, so orders completed via any other path (Production
+  // status advance, webhook paid cascade) never got one and the page
+  // undercounted (Biota showed 2 of 8 July completions, 2026-07-18).
+  // completed_date is set by every completion path, making orders the
+  // reliable source; deleted orders drop out by definition, so the old
+  // orphan cross-reference filter is gone too.
   const liveRecords = useMemo(() => {
-    if (!records?.length) return records || [];
-    if (!orders || orders.length >= 1000) return records;
-    const liveOrderIds = new Set(orders.map((o) => o?.order_id).filter(Boolean));
-    return records.filter((r) => !r.order_id || liveOrderIds.has(r.order_id));
-  }, [records, orders]);
+    return orders
+      .filter((o) => o?.status && COMPLETED_STATUSES.has(o.status) && o.completed_date)
+      .map((o) => ({ date: o.completed_date, total: o.total, order_id: o.order_id }));
+  }, [orders]);
 
   const filteredRecords = useMemo(() => {
     if (!from && !to) return liveRecords;
@@ -164,8 +180,10 @@ export default function Performance() {
   }, [liveRecords, from, to]);
 
   // ── Stats ────────────────────────────────────────────────────────────────
-  const totalOrders = filteredRecords.length;
-  const grossSales  = filteredRecords.reduce((s, r) => s + (Number(r.total) || 0), 0);
+  // Server RPC first (aggregates over ALL history the caller can see);
+  // capped client math as fallback.
+  const totalOrders = serverStats?.period_orders_count ?? filteredRecords.length;
+  const grossSales  = serverStats?.period_gross_sales ?? filteredRecords.reduce((s, r) => s + (Number(r.total) || 0), 0);
   const aov         = totalOrders > 0 ? grossSales / totalOrders : 0;
 
   // Units sold = total garment pieces across completed orders in the
@@ -180,12 +198,13 @@ export default function Performance() {
     }
     return m;
   }, [orders]);
-  const totalUnits = useMemo(() => {
+  const clientUnits = useMemo(() => {
     return filteredRecords.reduce((sum, r) => {
       const o = ordersByOrderId.get(r.order_id);
       return sum + getOrderUnits(o);
     }, 0);
   }, [filteredRecords, ordersByOrderId]);
+  const totalUnits = serverStats?.period_units ?? clientUnits;
 
   const activeOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -193,10 +212,23 @@ export default function Performance() {
       return s && !COMPLETED_STATUSES.has(s) && !CANCELLED_STATUSES.has(s);
     });
   }, [orders]);
-  const activeCount = activeOrders.length;
-  const activeValue = activeOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+  const activeCount = serverStats?.active_orders_count ?? activeOrders.length;
+  const activeValue = serverStats?.active_orders_value ?? activeOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
 
-  const outstandingTotals = useMemo(() => computeOutstanding(invoices), [invoices]);
+  // Total Volume — completed orders + QB-only invoices (imported history /
+  // QB-first jobs). RPC primary, client math as fallback; both implement
+  // docs/total-volume-scope.md and stay in lockstep via totalVolume.js tests.
+  const clientVolume = useMemo(
+    () => computeTotalVolume({ orders, invoices, quotes, from, to }),
+    [orders, invoices, quotes, from, to],
+  );
+  const totalVolume = serverStats?.period_total_volume ?? clientVolume.units;
+  const volumeInvoiceCount = serverStats?.period_qb_only_invoice_count ?? clientVolume.invoiceCount;
+
+  const clientOutstanding = useMemo(() => computeOutstanding(invoices), [invoices]);
+  const outstandingTotals = serverStats
+    ? { total: serverStats.outstanding_total, count: serverStats.outstanding_count }
+    : clientOutstanding;
 
   if (loading) {
     return (
@@ -298,8 +330,15 @@ export default function Performance() {
               />
             </div>
 
-            {/* Current state (not date-bound) */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Total Volume (period-bound) + current state */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <StatCard
+                icon={Layers}
+                label="Total Volume"
+                value={totalVolume.toLocaleString()}
+                sub={`${totalOrders} order${totalOrders === 1 ? "" : "s"} + ${volumeInvoiceCount} QB invoice${volumeInvoiceCount === 1 ? "" : "s"}`}
+                color="violet"
+              />
               <StatCard
                 icon={Activity}
                 label="Active Orders"

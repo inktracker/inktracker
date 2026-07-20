@@ -1,6 +1,14 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
+import { useReadOnly } from "@/lib/billing-gate";
 import { base44, supabase } from "@/api/supabaseClient";
+import { todayInShopTz } from "@/lib/shopTimezone";
+import {
+  ADD_TO_PRODUCTION,
+  decideAddToProduction,
+  buildOrderFromInvoice,
+} from "@/lib/orders/buildOrderFromInvoice";
+import { matchCustomerByName } from "@/lib/customers/matchCustomerByName";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, fmtMoney, tod, getDisplayName } from "../components/shared/pricing";
@@ -8,14 +16,18 @@ import { computeOutstanding } from "@/lib/reports/invoiceStats";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
+import AddToProductionModal from "../components/invoices/AddToProductionModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import EmptyState from "../components/shared/EmptyState";
 import { shopScope } from "@/lib/shopScope";
+import { localDateStr } from "@/lib/dateRangeUtils";
 
 function getThisMonth() {
+  // localDateStr, not toISOString — UTC conversion shifted the month
+  // boundaries a day for shops east of UTC (see dateRangeUtils.js).
   const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
-  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0];
+  const from = localDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
+  const to = localDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 0));
   return { from, to };
 }
 
@@ -44,6 +56,20 @@ export default function Invoices() {
   const [qbTruncated, setQbTruncated] = useState(false);
   const [sortKey, setSortKey] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
+  // "Add to Production" flow — the invoice being bridged, and a busy flag
+  // so the confirm button can't double-fire.
+  const [addingToProduction, setAddingToProduction] = useState(null);
+  const [atpBusy, setAtpBusy] = useState(false);
+  // Session-scoped duplicate net: invoice.id → order_id for orders we
+  // created whose invoice backlink write FAILED. A retry click reuses the
+  // already-created order instead of creating a sibling.
+  const atpCreatedRef = useRef({});
+
+  // Read-only gate: when the shop's subscription has lapsed, write
+  // affordances (mark paid, send, delete, push-to-QB, reorder…) are
+  // disabled with a reactivate hint. Viewing/printing stays allowed.
+  // Pass the page's loaded `user` so the gate reads the freshest state.
+  const { readOnly, reason: readOnlyReason, reactivateHref } = useReadOnly(user);
 
   useEffect(() => {
     async function loadData() {
@@ -237,6 +263,135 @@ export default function Invoices() {
     setSelected(updated);
   }
 
+  // Bridge a QB-originated invoice onto the production schedule.
+  // Guard sequence (all against FRESH rows, decided at click time — see
+  // decideAddToProduction for the dedupe contract):
+  //   already linked        → no-op, refresh UI
+  //   quote-born, converted → LINK invoice to the quote's existing order
+  //   quote-born, pending   → refuse; the quote flow owns order creation
+  //   otherwise             → create order, write order_id backlink
+  async function handleAddToProduction(invoice, { dueDate, status }) {
+    setAtpBusy(true);
+    try {
+      const fresh = await base44.entities.Invoice.get(invoice.id);
+      const scope = shopScope(user);
+      const [byQb, byDoc] = await Promise.all([
+        fresh.qb_invoice_id
+          ? base44.entities.Quote.filter({ shop_owner: scope, qb_invoice_id: fresh.qb_invoice_id })
+          : Promise.resolve([]),
+        fresh.invoice_id
+          ? base44.entities.Quote.filter({ shop_owner: scope, quote_id: fresh.invoice_id })
+          : Promise.resolve([]),
+      ]);
+      const decision = decideAddToProduction(fresh, [...(byQb || []), ...(byDoc || [])]);
+
+      if (decision.action === ADD_TO_PRODUCTION.ALREADY_LINKED) {
+        window.alert(`This invoice is already on production as ${decision.orderId}.`);
+        applyInvoicePatch(fresh);
+        setAddingToProduction(null);
+        return;
+      }
+      if (decision.action === ADD_TO_PRODUCTION.LINK_EXISTING) {
+        const updated = await base44.entities.Invoice.update(fresh.id, { order_id: decision.orderId });
+        window.alert(
+          `This invoice came from quote ${decision.quote.quote_id}, which is already on production as ` +
+          `${decision.orderId} — linked them instead of creating a duplicate order.`
+        );
+        applyInvoicePatch(updated);
+        setAddingToProduction(null);
+        return;
+      }
+      if (decision.action === ADD_TO_PRODUCTION.BLOCKED_QUOTE) {
+        window.alert(
+          `This invoice came from quote ${decision.quote.quote_id}. Convert that quote to an order ` +
+          `on the Quotes page instead — creating one here would duplicate the job.`
+        );
+        setAddingToProduction(null);
+        return;
+      }
+
+      // Resolve a customer BEFORE the order is created. QB-pulled invoices
+      // arrive with customer_id=null (QB connect imports invoices, not
+      // customers), and without this the job flows through production
+      // orphaned — invisible to customer history and the nightly
+      // data-integrity check fires. Reuse an exact-name match, else create
+      // a minimal record the shop can flesh out later. Never block the
+      // production add on this: a resolution failure just preserves
+      // today's (orphaned) behavior.
+      let customer = customers[fresh.customer_id] || null;
+      if (!customer) {
+        try {
+          customer = matchCustomerByName(Object.values(customers), fresh.customer_name);
+          if (!customer && (fresh.customer_name || "").trim()) {
+            customer = await base44.entities.Customer.create({
+              shop_owner: scope,
+              name: fresh.customer_name.trim(),
+            });
+          }
+          if (customer) setCustomers((prev) => ({ ...prev, [customer.id]: customer }));
+        } catch (err) {
+          console.error("[Invoices] customer resolve failed (continuing without):", err);
+          customer = null;
+        }
+      }
+
+      // CREATE. Reuse a this-session order whose backlink write failed
+      // rather than creating a sibling on retry.
+      let orderId = atpCreatedRef.current[fresh.id];
+      if (!orderId) {
+        const payload = buildOrderFromInvoice(fresh, {
+          userEmail: scope,
+          customer,
+          dueDate,
+          status,
+          today: todayInShopTz(),
+        });
+        await base44.entities.Order.create(payload);
+        orderId = payload.order_id;
+        atpCreatedRef.current[fresh.id] = orderId;
+      }
+
+      // Backlink write — this is what the paid cascade walks, so retry it.
+      // Piggyback the customer backfill so the invoice/order pair stays
+      // consistent (both point at the same customer, or neither does).
+      const linkPatch = { order_id: orderId };
+      if (!fresh.customer_id && customer) linkPatch.customer_id = customer.id;
+      let linked = null;
+      let linkErr = null;
+      for (let attempt = 0; attempt < 3 && !linked; attempt++) {
+        try {
+          linked = await base44.entities.Invoice.update(fresh.id, linkPatch);
+        } catch (err) {
+          linkErr = err;
+        }
+      }
+      if (!linked) throw Object.assign(new Error("backlink"), { cause: linkErr, orderId });
+
+      delete atpCreatedRef.current[fresh.id];
+      applyInvoicePatch(linked);
+      setAddingToProduction(null);
+      window.alert(`Added to production as ${orderId}. It's now on the Production schedule.`);
+    } catch (err) {
+      if (err?.message === "backlink") {
+        window.alert(
+          `Order ${err.orderId} was created, but linking it back to this invoice failed. ` +
+          `Click "Add to Production" again to retry the link — it will reuse the same order, not create a second one.`
+        );
+      } else {
+        console.error("[Invoices] add to production failed:", err);
+        window.alert(`Couldn't add to production: ${err?.message || "unknown error"}. Nothing was created.`);
+      }
+    } finally {
+      setAtpBusy(false);
+    }
+  }
+
+  // Keep both the list row and the open detail modal in sync after a write.
+  function applyInvoicePatch(row) {
+    setInvoices(prev => prev.map(i => (i.id === row.id ? { ...i, ...row } : i)));
+    setSelected(prev => (prev && prev.id === row.id ? { ...prev, ...row } : prev));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -319,6 +474,9 @@ export default function Invoices() {
             {!loading && invoices.length === 0 && (
               <tr><td colSpan={9}><EmptyState type="invoices" /></td></tr>
             )}
+            {!loading && invoices.length > 0 && sorted.length === 0 && (
+              <tr><td colSpan={9} className="py-8 text-center text-sm text-slate-500">No invoices match your current filters.</td></tr>
+            )}
             {sorted.map(inv=>(
               <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 transition cursor-pointer" onClick={() => setSelected(inv)}>
                 <td className="px-4 py-3.5 font-mono text-xs text-slate-500">{inv.invoice_id}</td>
@@ -336,7 +494,10 @@ export default function Invoices() {
                 </td>
                 <td className="px-4 py-3.5">
                   {!inv.paid && (
-                    <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }} className="text-xs font-semibold text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-lg hover:bg-emerald-50 transition whitespace-nowrap">Mark Paid</button>
+                    <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }}
+                      disabled={readOnly}
+                      title={readOnly ? readOnlyReason : undefined}
+                      className="text-xs font-semibold text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-lg hover:bg-emerald-50 transition whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">Mark Paid</button>
                   )}
                 </td>
               </tr>
@@ -348,6 +509,9 @@ export default function Invoices() {
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <ListCardsSkeleton />}
           {!loading && invoices.length === 0 && <EmptyState type="invoices" />}
+          {!loading && invoices.length > 0 && sorted.length === 0 && (
+            <div className="py-8 text-center text-sm text-slate-500">No invoices match your current filters.</div>
+          )}
           {sorted.map(inv => (
             <div key={inv.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setSelected(inv)}>
               <div className="flex justify-between items-start mb-2">
@@ -376,6 +540,19 @@ export default function Invoices() {
           onMarkPaid={(id) => { markPaid(id); setSelected(prev => ({ ...prev, paid: true })); }}
           onConvertToInvoice={handleConvertToInvoice}
           onDelete={handleDelete}
+          onAddToProduction={(invoice) => setAddingToProduction(invoice)}
+          onInvoiceUpdated={applyInvoicePatch}
+          readOnly={readOnly}
+          readOnlyReason={readOnlyReason}
+          reactivateHref={reactivateHref}
+        />
+      )}
+      {addingToProduction && (
+        <AddToProductionModal
+          invoice={addingToProduction}
+          busy={atpBusy}
+          onConfirm={(opts) => handleAddToProduction(addingToProduction, opts)}
+          onClose={() => setAddingToProduction(null)}
         />
       )}
     </div>

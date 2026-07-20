@@ -4,7 +4,12 @@ import { resolveArtworkPath } from "../artworkPath";
 // which transitively loads supabaseClient and fails in CI without
 // VITE_SUPABASE_URL set. uploadFile.js re-exports these for runtime
 // callers, but tests should always go to the pure source.
-import { validateUploadCandidate, ALLOWED_UPLOAD_EXTS, MAX_UPLOAD_BYTES } from "../uploadValidation";
+import {
+  validateUploadCandidate,
+  getLogoDownscaleDims,
+  ALLOWED_UPLOAD_EXTS,
+  MAX_UPLOAD_BYTES,
+} from "../uploadValidation";
 
 function fakeFile(name, size = 1000) {
   return { name, size };
@@ -93,5 +98,44 @@ describe("resolveArtworkPath", () => {
 
   it("returns null for unrelated URLs", () => {
     expect(resolveArtworkPath("https://example.com/file.pdf")).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// getLogoDownscaleDims — logo dimension cap (546 WORKER_LIMIT guard)
+// ─────────────────────────────────────────────────────────────────────
+
+describe("getLogoDownscaleDims", () => {
+  it("returns null for logos already within the cap", () => {
+    expect(getLogoDownscaleDims("png", 512, 512)).toBeNull();
+    expect(getLogoDownscaleDims("jpg", 100, 400)).toBeNull();
+  });
+
+  it("caps the long edge at MAX_LOGO_DIMENSION preserving aspect ratio", () => {
+    // The real-world case: Dragon Head's 4200×4200 logo → 70 MB PDF → 546.
+    expect(getLogoDownscaleDims("png", 4200, 4200)).toEqual({ width: 512, height: 512 });
+    expect(getLogoDownscaleDims("png", 4200, 2100)).toEqual({ width: 512, height: 256 });
+    expect(getLogoDownscaleDims("jpeg", 1000, 4000)).toEqual({ width: 128, height: 512 });
+  });
+
+  it("never rounds a dimension to zero on extreme aspect ratios", () => {
+    expect(getLogoDownscaleDims("png", 100000, 10)).toEqual({ width: 512, height: 1 });
+  });
+
+  it("passes non-raster formats through untouched (canvas can't re-encode them)", () => {
+    expect(getLogoDownscaleDims("pdf", 4200, 4200)).toBeNull();
+    expect(getLogoDownscaleDims("ai", 4200, 4200)).toBeNull();
+    expect(getLogoDownscaleDims("eps", 4200, 4200)).toBeNull();
+    expect(getLogoDownscaleDims("psd", 4200, 4200)).toBeNull();
+  });
+
+  it("is case-insensitive on extension", () => {
+    expect(getLogoDownscaleDims("PNG", 4200, 4200)).toEqual({ width: 512, height: 512 });
+  });
+
+  it("returns null on garbage dimensions rather than guessing", () => {
+    expect(getLogoDownscaleDims("png", NaN, 4200)).toBeNull();
+    expect(getLogoDownscaleDims("png", 0, 4200)).toBeNull();
+    expect(getLogoDownscaleDims("png", undefined, undefined)).toBeNull();
   });
 });

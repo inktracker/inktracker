@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
+  getOrderDisplayJobTitle,
   getBrokerClientDisplay,
   getQty,
   getShortfallQty,
@@ -100,6 +101,25 @@ describe("Helper Functions", () => {
 
     it("ignores non-numeric values", () => {
       expect(getQty({ sizes: { S: "abc", M: "10" } })).toBe(10);
+    });
+
+    it("falls back to bare qty when sizes are empty (QB-imported lines)", () => {
+      expect(getQty({ sizes: {}, qty: 2675 })).toBe(2675);
+      expect(getQty({ qty: "100" })).toBe(100);
+    });
+
+    it("sizes win over qty when both are present", () => {
+      expect(getQty({ sizes: { S: "10", M: "15" }, qty: 999 })).toBe(25);
+    });
+
+    it("any sizes key — even zero/negative — keeps sizes-sum semantics (no qty fallback)", () => {
+      expect(getQty({ sizes: { S: "-10", M: "5" }, qty: 999 })).toBe(-5);
+      expect(getQty({ sizes: { S: 0 }, qty: 999 })).toBe(0);
+    });
+
+    it("qty fallback tolerates junk", () => {
+      expect(getQty({ sizes: {}, qty: "abc" })).toBe(0);
+      expect(getQty({ sizes: {}, qty: null })).toBe(0);
     });
   });
 
@@ -434,6 +454,34 @@ describe("calcLinkedLinePrice", () => {
       expect(r.printCost).toBeCloseTo(FIRST_PRINT[3][25] * 45, 2);
     });
 
+    it("sparse custom technique falls back to Screen Print rate for an unfilled cell (not $0)", () => {
+      // Shop configured a DTF technique but only filled the 1-color row.
+      // A 3-color DTF imprint used to resolve table[3] → undefined → $0.
+      // It must now fall back to the Screen Print 3-color cell.
+      loadShopPricingConfig({
+        custom_techniques: {
+          DTF: { firstPrint: { 1: { 25: 9.0, 50: 8.0, 100: 7.0, 200: 6.0 } } },
+        },
+      });
+      const li = makeLineItem({ imprints: [makeImprint({ colors: 3, technique: "DTF" })] });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r.printCost).toBeGreaterThan(0);
+      expect(r.printCost).toBeCloseTo(FIRST_PRINT[3][25] * 45, 2);
+      loadShopPricingConfig(null);
+    });
+
+    it("filled custom technique cell wins over the Screen Print fallback", () => {
+      loadShopPricingConfig({
+        custom_techniques: {
+          DTF: { firstPrint: { 1: { 25: 9.0, 50: 8.0, 100: 7.0, 200: 6.0 } } },
+        },
+      });
+      const li = makeLineItem({ imprints: [makeImprint({ colors: 1, technique: "DTF" })] });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      expect(r.printCost).toBeCloseTo(9.0 * 45, 2); // the custom 1-color/25 rate
+      loadShopPricingConfig(null);
+    });
+
     it("uses ADDL_PRINT table for second location", () => {
       // First: 1 color front, Second: 1 color back
       const li = makeLineItem({
@@ -650,6 +698,32 @@ describe("calcLinkedLinePrice", () => {
       const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
       const ppp = Math.round(4.62 * getAdminMarkup(4.62) * 100) / 100;
       expect(r.gCost).toBeCloseTo(ppp * 45, 2);
+    });
+
+    // The manual-cost override contract (tester 2026-07-18: "changing
+    // the cost did not update price"). sizePrices OUTRANK garmentCost,
+    // so the editors implement a typed cost as clearing sizePrices
+    // (garmentCostManual flag guards re-attachment). These two pin the
+    // engine behavior both fixes rely on.
+    it("typed garmentCost is IGNORED while supplier sizePrices remain on the line", () => {
+      const li = makeLineItem({
+        garmentCost: "99.99",
+        sizePrices: { S: 4.0, M: 4.0, L: 4.0, XL: 4.0 },
+      });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      const perPc = Math.round(4.0 * getAdminMarkup(4.0) * 100) / 100;
+      expect(r.gCost).toBeCloseTo(perPc * 45, 2);
+    });
+
+    it("typed garmentCost drives the price once sizePrices are cleared (the editor override patch)", () => {
+      const li = makeLineItem({
+        garmentCost: "8.00",
+        garmentCostManual: true,
+        sizePrices: {},
+      });
+      const r = calcLinkedLinePrice(li, 0, {}, undefined, {});
+      const perPc = Math.round(8.0 * getAdminMarkup(8.0) * 100) / 100;
+      expect(r.gCost).toBeCloseTo(perPc * 45, 2);
     });
   });
 
@@ -1481,6 +1555,26 @@ describe("calcSetupScreenCount", () => {
     expect(calcSetupScreenCount([li1, li2])).toBe(4); // 3 (front) + 1 (back), front not double-counted
   });
 
+  it("does NOT collapse untitled prints at different locations (the $25 undercount)", () => {
+    // Title/width/height are all blank by default in both the editor and
+    // every wizard submission, so getPrintKey alone can't tell Front from
+    // Back — placement must. 4 + 1 = 5 screens, not max(4,1) = 4.
+    const li = {
+      imprints: [
+        { technique: "Screen Print", location: "Front", colors: 4 },
+        { technique: "Screen Print", location: "Back", colors: 1 },
+      ],
+    };
+    expect(calcSetupScreenCount([li])).toBe(5);
+  });
+
+  it("still dedupes the same untitled print shared across line items at one location", () => {
+    // Run-level wizard imprints repeat identically on every garment line —
+    // one set of screens regardless of how many garments share the run.
+    const front = { technique: "Screen Print", location: "Front", colors: 3 };
+    expect(calcSetupScreenCount([{ imprints: [front] }, { imprints: [front] }])).toBe(3);
+  });
+
   it("ignores embroidery imprints (no screens used)", () => {
     const li = {
       imprints: [
@@ -1664,5 +1758,56 @@ describe("getBrokerClientDisplay — broker-facing end-client, company-first", (
     expect(getBrokerClientDisplay({ company: "  Acme  " })).toBe("Acme");
     expect(getBrokerClientDisplay({})).toBe("—");
     expect(getBrokerClientDisplay(null)).toBe("—");
+  });
+});
+
+describe("getOrderDisplayJobTitle — surfaced for direct orders too", () => {
+  it("returns the job title on a DIRECT (non-broker) order", () => {
+    expect(getOrderDisplayJobTitle({ job_title: "Event Shirts" })).toBe("Event Shirts");
+  });
+
+  it("returns '' when a direct order has no job title (consumers hide the line)", () => {
+    expect(getOrderDisplayJobTitle({ job_title: "" })).toBe("");
+    expect(getOrderDisplayJobTitle({})).toBe("");
+  });
+
+  it("keeps broker behavior: job title, then broker_client_name fallback", () => {
+    expect(getOrderDisplayJobTitle({ broker_id: "b1", job_title: "Team Tees" })).toBe("Team Tees");
+    expect(getOrderDisplayJobTitle({ broker_id: "b1", broker_client_name: "Acme Co" })).toBe("Acme Co");
+  });
+});
+
+// ── CACHE-01 config-explicit guarantee ──────────────────────────────────────
+// The money-path entry points must price against an EXPLICITLY threaded config
+// (configOverride), NOT the module global `_pc`. This is the guard that a
+// multi-shop surface (broker dashboard) can't bleed the last-viewed shop's
+// rates onto another shop's quote. See docs/cache-01-pricing-config-scope.md.
+describe("calcQuoteTotals — threaded config wins over the global (CACHE-01)", () => {
+  const quote = {
+    line_items: [{
+      id: "L1", style: "1717", garmentCost: "5.00", garmentColor: "Black",
+      sizes: { M: "50" },
+      imprints: [{ id: "i1", location: "Front", colors: 1, technique: "Screen Print" }],
+    }],
+    rush_rate: 0, discount: 0, discount_type: "percent", tax_rate: 0,
+  };
+
+  // Two configs with clearly different first-print rate tables.
+  const configCheap = { firstPrint: { 1: { 25: 1.00, 50: 1.00, 100: 1.00, 200: 1.00 } }, tiers: [25, 50, 100, 200] };
+  const configPricey = { firstPrint: { 1: { 25: 9.00, 50: 9.00, 100: 9.00, 200: 9.00 } }, tiers: [25, 50, 100, 200] };
+
+  beforeEach(() => loadShopPricingConfig(null));
+
+  it("uses the threaded config, not the loaded global", () => {
+    // Global holds the CHEAP shop; we price with the PRICEY shop threaded in.
+    loadShopPricingConfig(configCheap, "cheap@shop.com");
+    const withThread = calcQuoteTotals(quote, STANDARD_MARKUP, configPricey);
+    const globalOnly = calcQuoteTotals(quote, STANDARD_MARKUP); // reads the cheap global
+    expect(withThread.total).toBeGreaterThan(globalOnly.total);
+    // And the threaded result must match pricing as if the pricey shop were loaded.
+    loadShopPricingConfig(configPricey, "pricey@shop.com");
+    const asLoaded = calcQuoteTotals(quote, STANDARD_MARKUP);
+    expect(withThread.total).toBeCloseTo(asLoaded.total, 2);
+    loadShopPricingConfig(null);
   });
 });

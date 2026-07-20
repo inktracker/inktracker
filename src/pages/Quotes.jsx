@@ -22,8 +22,10 @@ import QuoteDetailModal from "../components/quotes/QuoteDetailModal";
 import AdvancedFilters from "../components/AdvancedFilters";
 import { validateQuoteForSave } from "../lib/quotes/validation";
 import { detectPostSendEditRisk } from "../lib/quotes/editPolicy";
+import { isConvertedToOrder } from "../lib/quotes/approvalState";
 import { buildOrderFromQuote, buildQuoteConvertedPatch } from "../lib/orders/buildOrderFromQuote";
-import { useBillingGate } from "../lib/billing-gate";
+import { useBillingGate, useReadOnly } from "../lib/billing-gate";
+import ReactivateLink from "../components/shared/ReactivateLink";
 import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { notify } from "@/lib/notify";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
@@ -68,6 +70,9 @@ export default function Quotes() {
   // AuthContext, but we pass the locally-loaded user too so the gate
   // decides off the freshest copy.
   const { gate: billingGate, isReadOnly: billingReadOnly } = useBillingGate(user);
+  // Read-only affordance state (subscription lapsed) — the one hook every
+  // create/edit control on this page consults. billingReadOnly === readOnly.
+  const { readOnly, reason: readOnlyReason, reactivateHref } = useReadOnly(user);
   const [brokerMap, setBrokerMap] = useState({});
   const [converting, setConverting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
@@ -96,10 +101,11 @@ export default function Quotes() {
           cachedList("User"),
         ]);
 
-        // Exclude quotes already converted to orders — those live under Orders now.
-        const q = allQuotes.filter((quote) =>
-          quote.status !== "Converted to Order"
-        );
+        // Exclude quotes already converted to orders — those live under Orders
+        // now. Checks converted_order_id as well as status: a status-only
+        // filter let desynced rows (converted_order_id set, status regressed
+        // by the approve-replay bug) reappear here as unconvertible zombies.
+        const q = allQuotes.filter((quote) => !isConvertedToOrder(quote));
         setQuotes(q);
         // If the Dashboard linked us here with ?id=, auto-open that quote
         if (searchId) {
@@ -356,7 +362,10 @@ export default function Quotes() {
     setDuplicating(true);
     try {
       const newId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
-      const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, ...rest } = q;
+      // converted_order_id / converted_at must not survive duplication —
+      // a Draft born with them can never be converted (handleConvert's
+      // already-converted guard keys on converted_order_id).
+      const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, converted_order_id, converted_at, ...rest } = q;
       // Shop-tz, not UTC. toISOString() returns tomorrow's date after
       // ~5pm Pacific — the duplicated quote then sorted into tomorrow's
       // calendar slot.
@@ -381,7 +390,17 @@ export default function Quotes() {
     }
     setConverting(true);
     try {
-      const orderPayload = buildOrderFromQuote(q, { userEmail: user.email, today: todayInShopTz() });
+      // Refetch before building the order — the in-memory row can be stale
+      // (another window may have adopted QB's tax, recorded a payment, or
+      // already converted). Converting from the stale copy bakes outdated
+      // totals into the order (Dragon Head, 2026-07-17: order carried the
+      // pre-adopt tax while the QB invoice charged the adopted amount).
+      const fresh = await base44.entities.Quote.get(q.id);
+      if (fresh.converted_order_id) {
+        notify.info("This quote has already been converted to an order.");
+        return;
+      }
+      const orderPayload = buildOrderFromQuote(fresh, { userEmail: shopScope(user), today: todayInShopTz() });
       await base44.entities.Order.create(orderPayload);
 
       // Broker pricing reference rows (legacy "commissions" table) are
@@ -446,12 +465,30 @@ export default function Quotes() {
             <button onClick={async () => {
               if (!window.confirm(`Delete ${bulkSelect.size} selected quote(s)?`)) return;
               setBulkDeleting(true);
+              // Only drop from the UI the quotes that actually deleted. The old
+              // code swallowed per-item errors then removed ALL selected, so a
+              // failed delete made a quote vanish from the list while it still
+              // existed in the DB (it reappeared on reload).
+              const deletedIds = new Set();
+              const failed = [];
               for (const id of bulkSelect) {
-                try { await base44.entities.Quote.delete(id); } catch {}
+                try {
+                  await base44.entities.Quote.delete(id);
+                  deletedIds.add(id);
+                } catch (err) {
+                  console.error("[Quotes] bulk delete failed for", id, err);
+                  failed.push(id);
+                }
               }
-              setQuotes(prev => prev.filter(q => !bulkSelect.has(q.id)));
+              setQuotes(prev => prev.filter(q => !deletedIds.has(q.id)));
               setBulkSelect(new Set());
               setBulkDeleting(false);
+              if (failed.length > 0) {
+                notify.error(
+                  `Deleted ${deletedIds.size} of ${bulkSelect.size} quotes`,
+                  `${failed.length} couldn't be deleted and are still in your list. Try again or remove them individually.`,
+                );
+              }
             }} disabled={bulkDeleting}
               className="flex items-center gap-1.5 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition disabled:opacity-50">
               <Trash2 className="w-4 h-4" />
@@ -460,10 +497,13 @@ export default function Quotes() {
           )}
           <button
             onClick={() => setShowNew(true)}
-            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm"
+            disabled={readOnly}
+            title={readOnly ? readOnlyReason : undefined}
+            className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-teal-600"
           >
             + New Quote
           </button>
+          <ReactivateLink show={readOnly} href={reactivateHref} />
         </div>
       </div>
       {showEmailPaste && (
@@ -610,7 +650,7 @@ export default function Quotes() {
             {!loading && quotes.length === 0 && (
               <tr>
                 <td colSpan={9}>
-                  <EmptyState type="quotes" onAction={() => setShowNew(true)} />
+                  <EmptyState type="quotes" onAction={() => setShowNew(true)} readOnly={readOnly} reactivateHref={reactivateHref} />
                 </td>
               </tr>
             )}
@@ -694,6 +734,19 @@ export default function Quotes() {
                           Expired
                         </span>
                       )}
+                      {/* Tester 2026-07-18 "does it make a duplicate":
+                          a QB-sent quote also appears on Invoices once
+                          pullInvoices imports it. Labeling the quote
+                          explains the second artifact instead of
+                          letting it read as a dup. */}
+                      {q.qb_invoice_id && (
+                        <span
+                          title="This quote has an invoice in QuickBooks — it also appears on your Invoices page. Same job, not a duplicate."
+                          className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full w-fit whitespace-nowrap"
+                        >
+                          In QuickBooks
+                        </span>
+                      )}
                     </div>
                   </td>
 
@@ -709,7 +762,7 @@ export default function Quotes() {
 
         <div className="md:hidden divide-y divide-slate-100">
           {loading && <ListCardsSkeleton />}
-          {!loading && quotes.length === 0 && <EmptyState type="quotes" onAction={() => setShowNew(true)} />}
+          {!loading && quotes.length === 0 && <EmptyState type="quotes" onAction={() => setShowNew(true)} readOnly={readOnly} reactivateHref={reactivateHref} />}
           {pagedQuotes.map((q) => {
             const t = getQuoteTotalsForDisplay(q);
             return (
@@ -737,7 +790,14 @@ export default function Quotes() {
                       </div>
                     )}
                   </div>
-                  <Badge s={q.status} />
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge s={q.status} />
+                    {q.qb_invoice_id && (
+                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                        In QuickBooks
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                   <span>Due: {q.due_date ? fmtDate(q.due_date) : "—"}</span>
@@ -773,6 +833,8 @@ export default function Quotes() {
         <QuoteDetailModal
           quote={quotes.find((x) => x.id === viewing.id) || viewing}
           customer={customerMap[viewing.customer_id] || null}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
           onClose={() => setViewing(null)}
           onEdit={() => {
             setEditing(quotes.find((x) => x.id === viewing.id));
@@ -794,6 +856,8 @@ export default function Quotes() {
           quote={editing}
           prefillLineItem={showNew?.prefillLineItem ?? null}
           customers={customers}
+          readOnly={readOnly}
+          reactivateHref={reactivateHref}
           onSave={saveQuote}
           onClose={() => {
             setShowNew(false);

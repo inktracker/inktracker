@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
+import { useAuth } from "@/lib/AuthContext";
+import { shopScope } from "@/lib/shopScope";
+import { hasBrokerOverrides, brokerPricingMode } from "@/lib/broker/brokerPricing";
+import BrokerPricingEditor from "./BrokerPricingEditor";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import {
   Users,
@@ -131,10 +135,21 @@ function createEmptyBroker() {
 }
 
 export default function BrokerManager() {
+  const { user } = useAuth();
+  // The shop scope pricing rows are written under. RLS allows the
+  // owner (and managers) to write only their own shop's rows, so the
+  // pricing panel below is scoped to the CURRENT user's shop — other
+  // shops' broker pricing is managed by those shops.
+  const myShop = shopScope(user);
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [brokers, setBrokers] = useState([]);
   const [shopOwners, setShopOwners] = useState([]);
+  // Per-broker pricing (broker_pricing rows for MY shop) + the shop's
+  // pricing_config that seeds the custom-sheet editor.
+  const [myShopConfig, setMyShopConfig] = useState(null);
+  const [pricingRows, setPricingRows] = useState([]);
+  const [pricingOpenId, setPricingOpenId] = useState(null);
   const [savingBrokerId, setSavingBrokerId] = useState(null);
   const [message, setMessage] = useState("");
   const [query, setQuery] = useState("");
@@ -182,6 +197,18 @@ export default function BrokerManager() {
       const nameKey = (u) => u.full_name || u.company_name || u.email || "";
       setBrokers([...brokerUsers].sort((a, b) => nameKey(a).localeCompare(nameKey(b), undefined, { sensitivity: 'base' })));
       setShopOwners([...owners].sort((a, b) => nameKey(a).localeCompare(nameKey(b), undefined, { sensitivity: 'base' })));
+
+      // Per-broker pricing context for MY shop. Best-effort — a missing
+      // broker_pricing table (migration not applied yet) must not break
+      // Broker Management.
+      if (myShop) {
+        const [myShops, rows] = await Promise.all([
+          base44.entities.Shop.filter({ owner_email: myShop }).catch(() => []),
+          base44.entities.BrokerPricingOverride.filter({ shop_owner: myShop }).catch(() => []),
+        ]);
+        setMyShopConfig(myShops?.[0]?.pricing_config || {});
+        setPricingRows(rows || []);
+      }
     } catch (error) {
       console.error("Failed to load broker data:", error);
       setMessage("Error loading broker data");
@@ -594,6 +621,74 @@ export default function BrokerManager() {
                                 })}
                               </div>
                             )}
+                          </div>
+
+                          {/* Per-broker pricing for MY shop (tester item 1 +
+                              Joe 2026-07-19: editable from the admin tab too).
+                              Same shared editor as Account → Pricing. */}
+                          <div className="rounded-2xl border border-slate-200 p-4 bg-slate-50/40">
+                            {(() => {
+                              const assignedToMe = (broker.assigned_shops || []).includes(myShop);
+                              const savedRow = pricingRows.find(
+                                (r) => (r.broker_email || "").toLowerCase() === (broker.email || "").toLowerCase()
+                              ) || null;
+                              const custom = hasBrokerOverrides(savedRow?.overrides);
+                              const isPricingOpen = pricingOpenId === broker.id;
+                              const label = broker.company_name || broker.full_name || broker.email;
+                              return (
+                                <>
+                                  <div className="flex items-center justify-between gap-3 mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className="text-base font-semibold text-slate-900">
+                                        Broker Pricing
+                                      </div>
+                                      {custom && (
+                                        <span className="text-[10px] font-semibold text-teal-700 bg-teal-50 border border-teal-200 rounded px-1.5 py-0.5">
+                                          {brokerPricingMode(savedRow?.overrides) === "sheet" ? "Custom sheet" : "Custom markup"}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {assignedToMe && (
+                                      <button
+                                        onClick={() => setPricingOpenId(isPricingOpen ? null : broker.id)}
+                                        className="text-sm font-semibold px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition"
+                                      >
+                                        {isPricingOpen ? "Close" : custom ? "Edit Pricing" : "Set Pricing"}
+                                      </button>
+                                    )}
+                                  </div>
+                                  {!assignedToMe ? (
+                                    <div className="text-sm text-slate-500">
+                                      Assign this broker to your shop to set their pricing here.
+                                      Other shops manage their own broker pricing.
+                                    </div>
+                                  ) : !isPricingOpen ? (
+                                    <div className="text-sm text-slate-500">
+                                      {custom
+                                        ? brokerPricingMode(savedRow?.overrides) === "sheet"
+                                          ? "Prices off their own custom sheet."
+                                          : "Custom markup share for this broker."
+                                        : "Standard broker terms (your shop-wide markup share)."}
+                                    </div>
+                                  ) : (
+                                    <BrokerPricingEditor
+                                      key={`${broker.email}:${savedRow?.id || "new"}`}
+                                      broker={{ email: broker.email, label }}
+                                      shopOwner={myShop}
+                                      shopConfig={myShopConfig || {}}
+                                      existingRow={savedRow}
+                                      onSaved={(nextRow) => {
+                                        setPricingRows((prev) => {
+                                          const without = prev.filter((r) => r.id !== (savedRow?.id ?? nextRow?.id));
+                                          return nextRow ? [...without, nextRow] : without;
+                                        });
+                                        setPricingOpenId(null);
+                                      }}
+                                    />
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
 

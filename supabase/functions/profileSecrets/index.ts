@@ -87,6 +87,11 @@ Deno.serve(async (req) => {
         ac_email: profile.ac_email ?? null,
         // Same for the SanMar username — shown as "connected as ..." in Account.
         sanmar_username: profile.sanmar_username ?? null,
+        // Presence flag only (never the value) — the credentials form needs
+        // it to enforce completeness: AS Colour PRICING requires a Bearer
+        // token (email + password), so a key-only connection browses the
+        // catalog but silently gets no prices.
+        ac_password: Boolean(profile.ac_password),
       });
     }
 

@@ -18,6 +18,15 @@ describe("extractArtworkPaths", () => {
     expect(extractArtworkPaths(null)).toEqual([]);
     expect(extractArtworkPaths([null, 5, "x"])).toEqual([]);
   });
+  it("pulls bare { path } refs — the legacy order-modal shape with no /artwork/ url", () => {
+    const rows = [
+      { selected_artwork: [{ id: "2acc_1783_ycy.jpg", name: "47185_f_fl.jpg", path: "2acc_1783_ycy.jpg", source: "Uploaded to order" }] },
+    ];
+    const paths = extractArtworkPaths(rows);
+    expect(paths).toContain("2acc_1783_ycy.jpg");
+    // The display name is NOT a path field — must not be extracted.
+    expect(paths).not.toContain("47185_f_fl.jpg");
+  });
   it("ARTWORK_SOURCE_TABLES are shop_owner-keyed", () => {
     expect(ARTWORK_SOURCE_TABLES.every((t) => t.column === "shop_owner")).toBe(true);
   });

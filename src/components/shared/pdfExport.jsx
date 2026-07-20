@@ -12,10 +12,13 @@ import {
   BROKER_MARKUP,
   STANDARD_MARKUP,
   getLineExtras,
+  getShopPricingConfig,
 } from './pricing';
 import { effectiveQuoteTotals } from '../../lib/quotes/effectiveTotals';
+import { imprintColorLabel, imprintCountText } from '../../lib/quotes/imprintLabels';
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
+import { stripSyncNotes } from '../../lib/invoices/qbModifiedSync';
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -126,10 +129,14 @@ async function appendArtworkPages(doc, record) {
         const i = new Image();
         i.crossOrigin = 'anonymous';
         i.onload = () => {
+          // Cap the encoded pixels (same 546-OOM class as the header logo —
+          // a print-res attachment would otherwise dominate the PDF). Layout
+          // below only uses w/h for aspect ratio, so original dims are fine.
+          const capScale = Math.min(MAX_PDF_ARTWORK_PX / Math.max(i.width, i.height), 1);
           const c = document.createElement('canvas');
-          c.width = i.width;
-          c.height = i.height;
-          c.getContext('2d').drawImage(i, 0, 0);
+          c.width = Math.max(1, Math.round(i.width * capScale));
+          c.height = Math.max(1, Math.round(i.height * capScale));
+          c.getContext('2d').drawImage(i, 0, 0, c.width, c.height);
           resolve({ dataUrl: c.toDataURL('image/png'), w: i.width, h: i.height });
         };
         i.onerror = reject;
@@ -202,7 +209,9 @@ function getOrderPdfJobTitle(order) {
   if (isBrokerQuote(order)) {
     return order?.job_title || order?.broker_client_name || '';
   }
-  return '';
+  // Direct orders: include the job label on the PDF header when set. Callers
+  // guard on a truthy value, so an empty title prints nothing.
+  return order?.job_title || '';
 }
 
 function fmtDate(d) {
@@ -231,6 +240,33 @@ function loadImage(src) {
     img.onerror = reject;
     img.src = src;
   });
+}
+
+// jsPDF embeds images at NATIVE resolution no matter how small they're drawn,
+// so an oversized source inflates the whole PDF — a shop's 4200×4200 logo
+// (drawn at 14mm) produced a 70 MB quote PDF whose base64 payload OOM-killed
+// the sendQuoteEmail edge function (546 WORKER_LIMIT). Cap the pixels we hand
+// to addImage. Returns a canvas (jsPDF accepts one directly) or the original
+// image when it's already within bounds or the canvas is tainted/unusable.
+const MAX_PDF_LOGO_PX = 512;      // logos draw at 14mm — 512px is 3x-retina headroom
+const MAX_PDF_ARTWORK_PX = 2000;  // artwork pages are proofs — keep more detail
+
+function capImagePixels(img, maxDim) {
+  const w = img.naturalWidth || img.width;
+  const h = img.naturalHeight || img.height;
+  if (!w || !h || (w <= maxDim && h <= maxDim)) return img;
+  try {
+    const scale = maxDim / Math.max(w, h);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * scale));
+    c.height = Math.max(1, Math.round(h * scale));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    // Encode here so a tainted canvas throws HERE (caught → full-res
+    // fallback, the pre-cap behavior) instead of inside jsPDF.addImage.
+    return c.toDataURL('image/png');
+  } catch {
+    return img;
+  }
 }
 
 function extractTrailingGarmentNumber(title) {
@@ -386,7 +422,7 @@ async function addHeader(
   const logoSrc = logoUrl || INKTRACKER_LOGO;
   try {
     const img = await loadImage(logoSrc);
-    doc.addImage(img, 'PNG', margin, yPos - 2, 14, 14);
+    doc.addImage(capImagePixels(img, MAX_PDF_LOGO_PX), 'PNG', margin, yPos - 2, 14, 14);
   } catch (e) {
     // ignore logo errors
   }
@@ -636,7 +672,9 @@ function renderLineItems(
         const impTitle = imp.title ? ` (${imp.title})` : '';
 
         doc.text(
-          ` — ${imp.colors} color(s) · ${imp.technique}${dims}${impTitle}`,
+          // Embroidery: imp.colors is a stitch-tier index, so render the tier
+          // ("5K-10K stitches"), not "N color(s)". Customer-facing PDF.
+          ` — ${imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · ${imp.technique}${dims}${impTitle}`,
           margin + 3 + doc.getTextWidth(locText) + 1,
           yPos
         );
@@ -645,7 +683,7 @@ function renderLineItems(
         if (imp.pantones) {
           doc.setFontSize(7);
           doc.setTextColor(100, 60, 160);
-          doc.text(`  Ink Colors: ${imp.pantones}`, margin + 5, yPos);
+          doc.text(`  ${imprintColorLabel(imp)}: ${imp.pantones}`, margin + 5, yPos);
           yPos += 3;
         }
 
@@ -703,16 +741,20 @@ function renderLineItems(
   return { yPos, pdfLineTotals };
 }
 
-function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null, extraFeeLines = []) {
+function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null, extraFeeLines = [], discountDescription = '') {
   doc.setDrawColor(180, 180, 200);
   doc.setLineWidth(0.4);
   doc.line(margin, yPos, pageWidth - margin, yPos);
   yPos += 6;
 
   const rr = parseFloat(rushRate) || 0;
-  // Always use calcQuoteTotals values — one source of truth for all views
-  const subWithoutRush = totals.subtotal ?? totals.sub;
+  // totals.subtotal INCLUDES rush (saved snapshot), and totals.rushTotal is now
+  // the saved rush (effectiveTotals.savedRushTotal). Subtract so the printed
+  // "Subtotal" excludes rush and Subtotal + Rush + fees + tax foots to Total —
+  // previously the subtotal still included rush AND a rush line was printed
+  // below it, double-counting.
   const rushAmount = totals.rushTotal ?? 0;
+  const subWithoutRush = (totals.subtotal ?? totals.sub) - rushAmount;
 
   doc.setFont(undefined, 'normal');
   doc.setFontSize(9);
@@ -741,7 +783,8 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(16, 160, 100);
-    doc.text(isFlatDisc ? `Discount (${moneyNoWeirdMinus(discVal)}):` : `Discount (${discount}%):`, margin, yPos);
+    const discLabel = isFlatDisc ? `Discount (${moneyNoWeirdMinus(discVal)}):` : `Discount (${discount}%):`;
+    doc.text(discountDescription ? `${discLabel} ${discountDescription}` : discLabel, margin, yPos);
 
     doc.setFont(undefined, 'bold');
     doc.text(moneyNoWeirdMinus(-discountAmount), pageWidth - margin - 2, yPos, {
@@ -1057,7 +1100,8 @@ export async function exportQuoteToPDF(
         label: c.label || 'Additional fee',
         amount: c.amount,
       })),
-    ]
+    ],
+    quote.discount_description || ''
   );
 
   await appendArtworkPages(doc, quote);
@@ -1197,7 +1241,9 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output, custome
       false,
       orderDiscType,
       parseFloat(order.rush_rate) || 0,
-      orderPdfLineTotals.length > 0 ? orderPdfLineTotals.reduce((s, v) => s + v, 0) : null
+      orderPdfLineTotals.length > 0 ? orderPdfLineTotals.reduce((s, v) => s + v, 0) : null,
+      [],
+      order.discount_description || ''
     );
 
     yPos += 2;
@@ -1215,6 +1261,159 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output, custome
 
   await appendArtworkPages(doc, order);
   return finalizePdf(doc, order, output, `Order-${order.order_id}.pdf`);
+}
+
+// Packing slip — itemized shipment document with NO pricing anywhere.
+// `finalQuantities` is { [lineIndex]: { [size]: number } } — the confirmed
+// ship counts from PackingSlipModal (order qty minus misprints, operator-
+// edited). Falls back to the line's ordered sizes when a line/size is
+// absent so the export also works standalone.
+export async function exportPackingSlipToPDF(order, shopName, logoUrl, output, customerCompany, finalQuantities) {
+  const jsPDF = await loadJsPDF();
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const margin = 15;
+  const isBrokerOrder = isBrokerQuote(order);
+  const displayJobTitle = getOrderPdfJobTitle(order);
+
+  // Same audience rules as the order form header: broker orders lead with
+  // the broker's company and reference the end client; direct orders lead
+  // with the customer's company.
+  let headerPrimary;
+  let headerSecondary;
+  if (isBrokerOrder) {
+    headerPrimary = order.broker_company || order.broker_name || order.broker_email || order.broker_id || "—";
+    const clientName = order.broker_client_name || order.customer_name;
+    headerSecondary = clientName ? `Reference: ${clientName}` : "";
+  } else {
+    headerPrimary = customerCompany || getOrderPdfClientName(order);
+    headerSecondary = customerCompany && order.customer_name
+      ? order.customer_name
+      : (displayJobTitle ? `Job: ${displayJobTitle}` : "");
+  }
+
+  let yPos = await addHeader(
+    doc,
+    'PACKING SLIP',
+    `${order.order_id}${order.quote_id ? ' · ' + order.quote_id : ''}`,
+    headerPrimary,
+    headerSecondary,
+    displayJobTitle && headerSecondary !== `Job: ${displayJobTitle}` ? `Job: ${displayJobTitle}` : null,
+    [
+      `Date: ${fmtDate(order.completed_date || order.order_date || order.date || new Date())}`,
+      order.due_date ? `In-hands: ${fmtDate(order.due_date)}` : null,
+    ].filter(Boolean).join('   ·   '),
+    shopName,
+    logoUrl,
+    "",
+    ""
+  );
+
+  // Ship-to block — order-level shipping columns win; fall back to the
+  // customer record's structured ship-to, then their legacy one-line address.
+  const shipLines = [];
+  if (order.shipping_address_street) {
+    shipLines.push(order.shipping_address_street);
+    const cityLine = [order.shipping_address_city, order.shipping_address_state, order.shipping_address_zip]
+      .filter(Boolean).join(', ');
+    if (cityLine) shipLines.push(cityLine);
+    if (order.shipping_address_country) shipLines.push(order.shipping_address_country);
+  }
+  if (shipLines.length > 0) {
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(100, 100, 120);
+    doc.text('SHIP TO', margin, yPos);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(50, 50, 70);
+    doc.text(shipLines, margin, yPos + 4.5);
+    yPos += 4.5 + shipLines.length * 4 + 4;
+  }
+
+  // Column header
+  doc.setFontSize(8);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(100, 100, 120);
+  doc.text('☐', margin + 1, yPos);
+  doc.text('ITEM', margin + 8, yPos);
+  doc.text('QTY', pageWidth - margin, yPos, { align: 'right' });
+  yPos += 2;
+  doc.setDrawColor(200, 200, 215);
+  doc.setLineWidth(0.3);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 5;
+
+  let grandTotal = 0;
+  (order.line_items || []).forEach((li, idx) => {
+    const confirmed = finalQuantities?.[idx];
+    const orderedSizes = li.sizes || {};
+    // Union of ordered sizes + any size the operator added in the modal.
+    const sizeKeys = [...new Set([...Object.keys(orderedSizes), ...Object.keys(confirmed || {})])];
+    const rows = sizeKeys
+      .map((s) => ({ size: s, qty: confirmed ? (parseInt(confirmed[s], 10) || 0) : (parseInt(orderedSizes[s], 10) || 0) }))
+      .filter((r) => r.qty > 0);
+    if (rows.length === 0) return;
+    const lineTotal = rows.reduce((sum, r) => sum + r.qty, 0);
+    grandTotal += lineTotal;
+
+    if (yPos > pageHeight - 30) { doc.addPage(); yPos = margin; }
+
+    // Check-off box per line for the packer.
+    doc.setDrawColor(150, 150, 170);
+    doc.setLineWidth(0.3);
+    doc.rect(margin, yPos - 3, 3.5, 3.5);
+
+    const title = [li.style, li.garmentColor || li.color].filter(Boolean).join(' — ') || 'Item';
+    const name = li.productName || li.description || li.garmentName || '';
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(30, 30, 40);
+    doc.text(title, margin + 8, yPos);
+    doc.setFontSize(10);
+    doc.text(String(lineTotal), pageWidth - margin, yPos, { align: 'right' });
+    yPos += 4.5;
+    if (name && name !== title) {
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(90, 90, 110);
+      const nameLines = doc.splitTextToSize(name, pageWidth - 2 * margin - 30);
+      doc.text(nameLines[0], margin + 8, yPos);
+      yPos += 4;
+    }
+    doc.setFontSize(8.5);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(70, 70, 90);
+    doc.text(rows.map((r) => `${r.size}: ${r.qty}`).join('    '), margin + 8, yPos);
+    yPos += 6.5;
+  });
+
+  if (yPos > pageHeight - 25) { doc.addPage(); yPos = margin; }
+  doc.setDrawColor(180, 180, 200);
+  doc.setLineWidth(0.5);
+  doc.line(margin, yPos, pageWidth - margin, yPos);
+  yPos += 6;
+  doc.setFontSize(11);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(20, 20, 30);
+  doc.text('TOTAL UNITS', margin, yPos);
+  doc.text(String(grandTotal), pageWidth - margin, yPos, { align: 'right' });
+  yPos += 8;
+
+  if (order.notes) {
+    if (yPos > pageHeight - 30) { doc.addPage(); yPos = margin; }
+    doc.setFontSize(8);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(100, 100, 120);
+    doc.text('Notes:', margin, yPos);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(70, 70, 90);
+    doc.text(doc.splitTextToSize(order.notes, pageWidth - 2 * margin), margin, yPos + 4.5);
+  }
+
+  // Empty record → finalizePdf/appendArtwork skip artwork pages; a packing
+  // slip travels in the box, not with the customer's source files.
+  return finalizePdf(doc, {}, output, `PackingSlip-${order.order_id}.pdf`);
 }
 
 // QB-style invoice layout — clean tabular DESCRIPTION/QTY/RATE/AMOUNT rows
@@ -1364,9 +1563,10 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   doc.setFont(undefined, 'normal');
   const items = Array.isArray(invoice.line_items) ? invoice.line_items : [];
 
-  // Rate/amount come straight from what was stamped at quote-save time.
-  // No new math here — if a line wasn't stamped, we render "—" rather than
-  // fabricate a number that won't match what the customer was quoted.
+  // Rate/amount come straight from what was stamped at quote-save time, or —
+  // for QB-imported line items — from the amount QB reported (`lineTotal`,
+  // no underscore). No new math here; if a line carries no saved amount at
+  // all, we render "—" rather than fabricate a number.
   function lineRateAmount(li) {
     const qty = getQty(li) || Number(li?.qty) || 0;
     const override = Number(li?.clientPpp);
@@ -1381,6 +1581,12 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     }
     if (Number.isFinite(li?._ppp) && qty > 0) {
       return { qty, rate: li._ppp, amount: li._ppp * qty, hasPrice: true };
+    }
+    // QB-imported shape (qbSync handlePullInvoices): { qty, lineTotal }.
+    // These rendered as "—" across the board — the INV-2026-CQY1X PDF.
+    const imported = Number(li?.lineTotal);
+    if (Number.isFinite(imported) && (li?.lineTotal ?? null) !== null) {
+      return { qty, rate: qty > 0 ? imported / qty : imported, amount: imported, hasPrice: true };
     }
     return { qty, rate: 0, amount: 0, hasPrice: false };
   }
@@ -1398,8 +1604,13 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     if (yPos > pageHeight - 60) { doc.addPage(); yPos = margin; }
     lineSubtotal += amount;
 
-    const headerLine = getItemHeaderLine(li);
-    const metaLine   = getItemMetaLine(li);
+    // Strip the " (less $X discount)" note qbSync appended for QB's tax math —
+    // rows imported before the pull path stripped it carry it in every
+    // description. The discount belongs in the totals column, not on lines.
+    // Keep in lockstep with QB_DISCOUNT_NOTE_RE in _shared/qbInvoice.js.
+    const stripDiscountNote = (s) => String(s ?? "").replace(/ \(less (?:\$[\d,.]+|[\d.]+%) discount\)/g, "");
+    const headerLine = stripDiscountNote(getItemHeaderLine(li));
+    const metaLine   = stripDiscountNote(getItemMetaLine(li));
 
     // Description: bold first line + (optional) muted second line, wrapped to col width
     const descMaxWidth = colQtyX - margin - 6;
@@ -1458,6 +1669,19 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   };
 
   totalsRow('SUBTOTAL', fmtMoney(subtotal));
+
+  // Itemized discount — same semantics as InvoiceDetailModal: `subtotal` is
+  // pre-discount; flat vs percent from discount_type (with the legacy >100
+  // heuristic). Rendered as its own totals row, never baked into line items.
+  const discVal = Number(invoice.discount) || 0;
+  if (discVal > 0) {
+    const isFlatDisc = invoice.discount_type === 'flat' || (discVal > 100 && invoice.discount_type !== 'percent');
+    const discountAmt = isFlatDisc ? discVal : subtotal * (discVal / 100);
+    const baseLabel = isFlatDisc ? 'DISCOUNT' : `DISCOUNT (${discVal}%)`;
+    const discLabel = invoice.discount_description ? `${baseLabel} — ${invoice.discount_description}` : baseLabel;
+    totalsRow(discLabel, `-${fmtMoney(discountAmt)}`, { color: [22, 101, 52] });
+  }
+
   totalsRow(`TAX (${taxRate}%)`, fmtMoney(tax));
   totalsRow('TOTAL', fmtMoney(total));
 
@@ -1487,7 +1711,11 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   }
 
   // ── Notes ────────────────────────────────────────────────────────────────
-  if (invoice.notes) {
+  // Sync-audit lines ("[date] Synced from QuickBooks: …") are internal
+  // bookkeeping — stripped from this customer-facing PDF. Shop sees the
+  // full notes in the invoice modal.
+  const customerNotes = stripSyncNotes(invoice.notes);
+  if (customerNotes) {
     yPos += 4;
     if (yPos > pageHeight - 30) { doc.addPage(); yPos = margin; }
     doc.setFontSize(8);
@@ -1497,7 +1725,7 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
     yPos += 4;
     doc.setFont(undefined, 'normal');
     doc.setTextColor(60, 60, 80);
-    const noteLines = doc.splitTextToSize(invoice.notes, pageWidth - 2 * margin);
+    const noteLines = doc.splitTextToSize(customerNotes, pageWidth - 2 * margin);
     noteLines.forEach((l) => { doc.text(l, margin, yPos); yPos += 4 });
   }
 

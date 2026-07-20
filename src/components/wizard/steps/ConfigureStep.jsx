@@ -1,6 +1,6 @@
 import Icon from "@/components/shared/Icon";
 import ColorAnalysisResult from "@/components/shared/ColorAnalysisResult";
-import { BIG_SIZES, SIZES, getEnabledTechniques, getMinOrderQty, getStandardTurnaroundDays, getWizardRushDisplay } from "@/components/shared/pricing";
+import { BIG_SIZES, SIZES, DEFAULT_EMB_STITCH_TIERS, getEnabledTechniques, getMinOrderQty, getShopPricingConfig, getStandardTurnaroundDays, getWizardRushDisplay } from "@/components/shared/pricing";
 import { StepBadge, TintedImage, colorNameToHex, LOCATIONS, COLOR_COUNTS, CATEGORY_BLURBS } from "@/components/wizard/steps/wizardHelpers";
 
 // STEP 1: Configure — style + color + sizes + prints all on one page.
@@ -461,16 +461,40 @@ export default function ConfigureStep({
                   className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]">
                   {LOCATIONS.map(l=><option key={l} value={l}>{l}</option>)}</select></div>
               <div><label className="block text-[11px] text-slate-500 mb-1">Technique</label>
-                <select value={imp.technique} onChange={e=>updateImprint(idx,{technique:e.target.value})}
+                <select value={imp.technique}
+                  onChange={e=>{
+                    const t = e.target.value;
+                    // imp.colors means "ink color count" for print methods but
+                    // "stitch-tier index" for Embroidery (imprintLabels.js
+                    // contract) — crossing that boundary must reset it or the
+                    // old value silently selects the wrong price tier.
+                    const crossed = (t === "Embroidery") !== (imp.technique === "Embroidery");
+                    updateImprint(idx, { technique: t, ...(crossed ? { colors: 1 } : {}) });
+                  }}
                   className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]">
                   {getEnabledTechniques().map(t=><option key={t}>{t}</option>)}</select></div>
             </div>
+            {imp.technique === "Embroidery" ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-[11px] text-slate-500 mb-1">Stitch Count</label>
+                  <select value={imp.colors || 1} onChange={e=>updateImprint(idx,{colors:parseInt(e.target.value)||1})}
+                    className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]">
+                    {(getShopPricingConfig()?.embroidery?.stitchTiers || DEFAULT_EMB_STITCH_TIERS).map((st,i)=>(
+                      <option key={st} value={i+1}>{st}</option>
+                    ))}</select></div>
+                <div><label className="block text-[11px] text-slate-500 mb-1">Thread Colors <span className="text-slate-300">(optional)</span></label>
+                  <input value={imp.pantones || ""} onChange={e=>updateImprint(idx,{pantones:e.target.value})}
+                    placeholder="e.g. Navy, White, Gold"
+                    className="w-full text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]" /></div>
+              </div>
+            ) : (
             <div><label className="block text-[11px] text-slate-500 mb-1.5">Colors</label>
               <div className="flex gap-1.5">{COLOR_COUNTS.map(n=>(
                 <button key={n} onClick={()=>updateImprint(idx,{colors:n})}
                   style={imp.colors===n ? { backgroundColor: bc } : undefined}
                   className={`w-9 h-9 rounded-lg text-sm font-bold transition ${imp.colors===n?"text-white":"bg-white border border-slate-200 text-slate-600 hover:border-[var(--brand)]"}`}>{n}</button>
               ))}</div></div>
+            )}
             <div><label className="block text-[11px] text-slate-500 mb-1">Artwork <span className="text-slate-300">(optional)</span></label>
               {artFiles[idx] ? (
                 <div>
@@ -479,7 +503,12 @@ export default function ConfigureStep({
                     <button onClick={()=>{setArtFiles(prev=>{const n={...prev};delete n[idx];return n;}); setColorResults(prev=>{const n={...prev};delete n[idx];return n;});}} className="text-slate-500 hover:text-red-500 text-xs">Remove</button>
                   </div>
                   <ColorAnalysisResult result={colorResults[idx]} imageUrl={artFiles[idx]?.previewUrl || artFiles[idx]?.url}
-                    onApplyCount={(count, pantones) => updateImprint(idx, { colors: Math.min(8, Math.max(1, count)), ...(pantones ? { pantones } : {}) })} />
+                    onApplyCount={(count, pantones) => updateImprint(idx, {
+                      // Embroidery: imp.colors is the stitch-tier index, not a
+                      // color count — detected colors only fill the thread list.
+                      ...(imp.technique === "Embroidery" ? {} : { colors: Math.min(8, Math.max(1, count)) }),
+                      ...(pantones ? { pantones } : {}),
+                    })} />
                 </div>
               ) : (
                 <label className={`flex items-center gap-2 border-2 border-dashed rounded-lg px-3 py-2.5 cursor-pointer transition text-xs ${uploading[idx]?"border-[var(--brand)] bg-[var(--brand-tint)]":"border-slate-200 hover:border-[var(--brand)] hover:bg-slate-50"}`}>

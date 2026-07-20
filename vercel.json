@@ -25,6 +25,22 @@
       "destination": "/for-printers/index.html"
     },
     {
+      "source": "/made-with-inktracker",
+      "destination": "/made-with-inktracker/index.html"
+    },
+    {
+      "source": "/resources",
+      "destination": "/resources/index.html"
+    },
+    {
+      "source": "/tools",
+      "destination": "/tools/index.html"
+    },
+    {
+      "source": "/tools/(.*)",
+      "destination": "/tools/$1/index.html"
+    },
+    {
       "source": "/((?!.*\\..*).*)",
       "destination": "/index.html"
     }

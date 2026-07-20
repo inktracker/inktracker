@@ -51,7 +51,6 @@ export interface AcCreds {
 export function credsFromProfile(profile: { ac_subscription_key?: string | null; ac_email?: string | null; ac_password?: string | null } | null | undefined): AcCreds | null {
   const shopSub = profile?.ac_subscription_key || "";
   if (shopSub) {
-    console.error(`[ascolour:creds] using shop creds (profile.id=${(profile as any)?.id ?? "?"}, email=${profile?.ac_email ? "set" : "missing"})`);
     return {
       subKey: shopSub,
       email: profile?.ac_email || "",
@@ -60,10 +59,13 @@ export function credsFromProfile(profile: { ac_subscription_key?: string | null;
   }
   const envSub = Deno.env.get("ASCOLOUR_SUBSCRIPTION_KEY") || "";
   if (!envSub) {
+    // The one credential log worth keeping — no creds at all is an ops
+    // problem. The per-call "using shop creds / env defaults" success
+    // logs are gone: they fired on EVERY lookup (hot path, wizard-facing)
+    // and leaked profile ids into logs for no diagnostic value.
     console.error(`[ascolour:creds] no shop subKey and no env subKey — returning null`);
     return null;
   }
-  console.error(`[ascolour:creds] using env defaults (profile.id=${(profile as any)?.id ?? "anon"})`);
   return {
     subKey: envSub,
     email: Deno.env.get("ASCOLOUR_EMAIL") || "",
@@ -105,7 +107,8 @@ export async function acFetch(
     });
     status = res.status;
     const text = await res.text();
-    console.error(`[${ctx}] ${init.method ?? "GET"} ${url} → ${status} (${text.length} chars)`);
+    // Failure paths below log status + body; a success line for every call
+    // was pure noise on the wizard's hottest external path.
     let data: any;
     try { data = text ? JSON.parse(text) : null; } catch { data = text; }
     if (!res.ok) {

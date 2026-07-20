@@ -7,6 +7,7 @@ import {
   buildSendQuoteEmailRequest,
   buildPostSendQuotePatch,
   extractProofImageUrls,
+  MAX_PDF_ATTACHMENT_B64_CHARS,
 } from "../sendOrchestration.js";
 
 describe("extractProofImageUrls", () => {
@@ -58,6 +59,37 @@ describe("extractProofImageUrls", () => {
       shopName: "Shop",
     });
     expect(req.proofImages).toEqual([{ url: proxy("a.png"), name: "Front" }]);
+  });
+
+  it("E6 — passes a normal-size PDF attachment through", () => {
+    const req = buildSendQuoteEmailRequest({
+      quote: { ...Q, quote_id: "Q1" },
+      recipients: ["c@x.test"],
+      taggedSubject: "s",
+      body: "b",
+      paymentLink: "https://pay",
+      shopName: "Shop",
+      pdfBase64: "a".repeat(1000),
+    });
+    expect(req.pdfBase64).toHaveLength(1000);
+  });
+
+  it("E7 — drops an oversized PDF attachment instead of tanking the send (546 guard)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const req = buildSendQuoteEmailRequest({
+      quote: { ...Q, quote_id: "Q1" },
+      recipients: ["c@x.test"],
+      taggedSubject: "s",
+      body: "b",
+      paymentLink: "https://pay",
+      shopName: "Shop",
+      pdfBase64: "a".repeat(MAX_PDF_ATTACHMENT_B64_CHARS + 1),
+    });
+    expect(req.pdfBase64).toBeNull();
+    // The rest of the send is untouched — customer still gets the pay link.
+    expect(req.paymentLink).toBe("https://pay");
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

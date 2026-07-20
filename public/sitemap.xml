@@ -3,72 +3,109 @@
      client-rendered, so they're intentionally excluded. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://inktracker.app/</loc>
+    <loc>https://www.inktracker.app/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/security</loc>
+    <loc>https://www.inktracker.app/security</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/changelog</loc>
+    <loc>https://www.inktracker.app/changelog</loc>
     <changefreq>weekly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/support</loc>
+    <loc>https://www.inktracker.app/support</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/privacy</loc>
+    <loc>https://www.inktracker.app/privacy</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/terms</loc>
+    <loc>https://www.inktracker.app/terms</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <!-- compare-pages:start -->
   <url>
-    <loc>https://inktracker.app/compare</loc>
+    <loc>https://www.inktracker.app/compare</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
   <!-- compare-pages:end -->
   <!-- blog-pages:start -->
   <url>
-    <loc>https://inktracker.app/blog</loc>
+    <loc>https://www.inktracker.app/blog</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/blog/how-to-price-a-screen-printing-job</loc>
+    <loc>https://www.inktracker.app/blog/how-to-price-a-screen-printing-job</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/blog/build-a-screen-printing-price-chart</loc>
+    <loc>https://www.inktracker.app/blog/build-a-screen-printing-price-chart</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/blog/how-to-price-embroidery</loc>
+    <loc>https://www.inktracker.app/blog/how-to-price-embroidery</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/blog/sales-tax-for-print-shops</loc>
+    <loc>https://www.inktracker.app/blog/sales-tax-for-print-shops</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://inktracker.app/for-printers</loc>
+    <loc>https://www.inktracker.app/blog/screen-printing-software-honest-comparison</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.inktracker.app/blog/dtf-vs-screen-printing</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.inktracker.app/blog/quickbooks-for-screen-printers</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.inktracker.app/for-printers</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <!-- blog-pages:end -->
+  <!-- tools-pages:start -->
+  <url>
+    <loc>https://www.inktracker.app/resources</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.inktracker.app/tools</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.inktracker.app/tools/screen-printing-price-calculator</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://www.inktracker.app/tools/embroidery-pricing-calculator</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <!-- tools-pages:end -->
 </urlset>

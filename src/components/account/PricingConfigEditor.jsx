@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { clampRushTierMaxDays, defaultNewRushTierMaxDays } from "@/lib/pricing/rushTierClamp";
+import { createUndoHistory, recordChange, undoTo } from "@/lib/pricing/undoHistory";
 import { decidePricingSave } from "@/lib/pricing/inputValidation";
 import { loadShopPricingConfig } from "@/components/shared/pricing";
 import NumericInput from "@/components/shared/NumericInput";
@@ -8,6 +9,8 @@ import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { DEFAULT_TIERS, DEFAULT_COLORS, DEFAULTS } from "./pricingConfigDefaults";
 import { ExtrasEditor, PrintTableEditor, EmbroideryTab, CustomTechniqueTab, SetupFeesEditor } from "./PricingEditorParts";
+import BrokerPricingSection from "./BrokerPricingSection";
+import EventPackagesEditor from "./EventPackagesEditor";
 
 // Account → Pricing & Fees editor. Extracted verbatim from Account.jsx
 // as a pure decomposition — no behavior change. Receives the current
@@ -19,6 +22,24 @@ export default function PricingConfigEditor({ user }) {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pricingTab, setPricingTab] = useState("screen_print");
+  // In-session undo (tester 2026-07-18). Every config change lands in
+  // the history via the effect below; rapid keystrokes coalesce into
+  // one step. Undo also recovers from "Reset to Defaults". Cleared by
+  // nothing — the stack only exists until the component unmounts.
+  const undoHistoryRef = useRef(createUndoHistory());
+  const [undoDepth, setUndoDepth] = useState(0);
+
+  useEffect(() => {
+    if (!config) return;
+    setUndoDepth(recordChange(undoHistoryRef.current, config, Date.now()));
+  }, [config]);
+
+  function handleUndo() {
+    const prev = undoTo(undoHistoryRef.current);
+    if (!prev) return;
+    setConfig(prev);
+    setUndoDepth(undoHistoryRef.current.stack.length);
+  }
 
   useEffect(() => {
     async function load() {
@@ -55,8 +76,9 @@ export default function PricingConfigEditor({ user }) {
       // Refresh the engine's module-level _pc so the change is live
       // without a full reload. Without this, the shop owner saves a
       // toggle, hops to Quotes, and sees stale pricing math until they
-      // hard-refresh.
-      loadShopPricingConfig(config);
+      // hard-refresh. Scope to the OWNER's shop (shopScope) so a MANAGER
+      // saving the owner's config attributes it to the right shop (CACHE-01).
+      loadShopPricingConfig(config, shopScope(user));
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -143,6 +165,18 @@ export default function PricingConfigEditor({ user }) {
     });
   }
 
+  // Category: per_print | per_garment | per_job. Stored in a parallel map so
+  // existing fees (absent from it) default to per_garment = today's behavior.
+  function setExtraBasis(key, basis, scope) {
+    const clean = ["per_print", "per_garment", "per_job"].includes(basis) ? basis : "per_garment";
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      return setSlice(prev, scope, {
+        extraBasis: { ...(slice.extraBasis || {}), [key]: clean },
+      });
+    });
+  }
+
   function addExtra(scope) {
     const id = `custom_${Date.now()}`;
     setConfig(prev => {
@@ -151,6 +185,7 @@ export default function PricingConfigEditor({ user }) {
         extras:      { ...(slice.extras || {}),      [id]: 0 },
         extraLabels: { ...(slice.extraLabels || {}), [id]: "New Fee" },
         extraModes:  { ...(slice.extraModes || {}),  [id]: "flat" },
+        extraBasis:  { ...(slice.extraBasis || {}),  [id]: "per_garment" },
       });
     });
   }
@@ -162,10 +197,12 @@ export default function PricingConfigEditor({ user }) {
         extras:      { ...(slice.extras || {}) },
         extraLabels: { ...(slice.extraLabels || {}) },
         extraModes:  { ...(slice.extraModes || {}) },
+        extraBasis:  { ...(slice.extraBasis || {}) },
       };
       delete next.extras[key];
       delete next.extraLabels[key];
       delete next.extraModes[key];
+      delete next.extraBasis[key];
       return setSlice(prev, scope, next);
     });
   }
@@ -192,6 +229,7 @@ export default function PricingConfigEditor({ user }) {
         getSlice={getSlice}
         updateExtraLabel={updateExtraLabel}
         setExtraMode={setExtraMode}
+        setExtraBasis={setExtraBasis}
         updateExtra={updateExtra}
         removeExtra={removeExtra}
         addExtra={addExtra}
@@ -428,6 +466,12 @@ export default function PricingConfigEditor({ user }) {
           <span className="text-xs text-slate-500">off garment markup for brokers</span>
         </div>
       </div>
+
+      {/* Per-broker overrides — stored in the broker_pricing table (its
+          own storage on purpose: never rides into the public wizard's
+          pricing_config payload). Saves independently of the Save
+          Pricing button below. */}
+      <BrokerPricingSection user={user} config={config} />
 
       {/* Standard turnaround — shop-wide, lives above the decoration
           tabs because the default due date and rush surcharge are not
@@ -715,10 +759,23 @@ export default function PricingConfigEditor({ user }) {
         />
       )}
 
+      {/* Event / package pricing — flat-rate service packages (live
+          event printing) that don't fit the decoration matrices.
+          Sits below the decoration tabs: it's job-level pricing, not a
+          per-piece technique. Saved with the same Save button. */}
+      <EventPackagesEditor config={config} setConfig={setConfig} inputCls={inputCls} />
+
       <div className="flex items-center gap-3">
         <button onClick={handleSave} disabled={saving}
           className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition disabled:opacity-50">
           {saving ? "Saving..." : saved ? "Saved" : "Save Pricing"}
+        </button>
+        <button
+          onClick={handleUndo}
+          disabled={undoDepth === 0}
+          title="Undo the last pricing edit (also recovers a Reset). Doesn't touch what's already saved."
+          className="text-xs text-slate-500 hover:text-slate-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed">
+          ↩ Undo
         </button>
         <button
           onClick={() => {

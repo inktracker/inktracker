@@ -9,9 +9,12 @@ import {
   getCompletedQty,
   SIZES,
   BROKER_MARKUP,
+  getShopPricingConfig,
 } from "../../shared/pricing";
+import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { getImprintArtwork } from "./orderDetailHelpers";
+import ReactivateLink from "../../shared/ReactivateLink";
 
 // Line-items display for the Order Detail modal: per-line pricing table,
 // per-imprint design breakdown, order totals, notes, and the reorder-
@@ -29,6 +32,10 @@ export default function OrderLineItems({
   setPreviewArt,
   handleReorderShortfall,
   reorderCreating,
+  // Read-only (lapsed subscription): the only write here is Reorder Shortfall
+  // (creates a draft PO). Disable it; the pricing table / totals are reads.
+  readOnly = false,
+  reactivateHref,
 }) {
   return (
     <>
@@ -51,10 +58,10 @@ export default function OrderLineItems({
           (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
         );
         return (
-          <div key={li.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-            <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
+          <div key={li.id} className="border border-slate-200 dark:border-slate-700 border-l-4 border-l-teal-600 rounded-xl overflow-hidden shadow-sm">
+            <div className="bg-slate-100 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
               <div>
-                <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">
+                <span className="font-bold text-slate-900 dark:text-slate-100 text-base">
                   {li.style || "Garment"}
                 </span>
                 {li.garmentColor && (
@@ -163,7 +170,7 @@ export default function OrderLineItems({
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 border border-slate-100 dark:border-slate-700">
                       <span className="font-bold text-slate-800 dark:text-slate-200">{imp.location}</span>
                       <span className="text-slate-500">
-                        {imp.colors} color{imp.colors !== 1 ? "s" : ""} · {imp.technique}
+                        {imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · {imp.technique}
                       </span>
                       {imp.pantones && (
                         <span className="text-teal-600 font-medium">{imp.pantones}</span>
@@ -261,7 +268,10 @@ export default function OrderLineItems({
           </div>
           {parseFloat(order.discount) > 0 && (
             <div className="flex justify-between text-sm text-emerald-600">
-              <span>Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${order.discount}%)`}</span>
+              <span>
+                Discount {isFlat ? `(${fmtMoney(discVal)})` : `(${order.discount}%)`}
+                {order.discount_description ? ` — ${order.discount_description}` : ""}
+              </span>
               <span>−{fmtMoney(totals.sub - totals.afterDisc)}</span>
             </div>
           )}
@@ -300,14 +310,18 @@ export default function OrderLineItems({
                 Reorder to make the customer whole — creates a draft PO with these sizes.
               </div>
             </div>
-            <button
-              onClick={handleReorderShortfall}
-              disabled={reorderCreating}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl transition disabled:opacity-60"
-            >
-              <ShoppingCart className="w-4 h-4" />
-              {reorderCreating ? "Creating…" : `Reorder Shortfall (${totalShort} pcs)`}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleReorderShortfall}
+                disabled={reorderCreating || readOnly}
+                title={readOnly ? "Your subscription has ended — reactivate to reorder." : undefined}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <ShoppingCart className="w-4 h-4" />
+                {reorderCreating ? "Creating…" : `Reorder Shortfall (${totalShort} pcs)`}
+              </button>
+              <ReactivateLink show={readOnly} href={reactivateHref} />
+            </div>
           </div>
         );
       })()}
