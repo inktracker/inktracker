@@ -113,7 +113,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
         styleCategory: m.styleCategory || "",
         styleImage: m.styleImage || m.colors?.[0]?.imageUrl || "",
         piecePrice: m.piecePrice || 0,
-        source: "sm",
+        source: "sanmar",
       }));
       const matches = [...ssMatches, ...acMatches, ...smMatches];
       if (matches.length === 0) setSsError(`No results for "${q}"`);
@@ -313,13 +313,13 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                   className={`text-[10px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-full border ${
                     m.source === "ac"
                       ? "text-amber-700 bg-amber-50 border-amber-200"
-                      : m.source === "sm"
+                      : m.source === "sanmar"
                         ? "text-blue-700 bg-blue-50 border-blue-200"
                         : "text-sky-700 bg-sky-50 border-sky-200"
                   }`}
-                  title={m.source === "ac" ? "Match from AS Colour" : m.source === "sm" ? "Match from SanMar" : "Match from S&S Activewear"}
+                  title={m.source === "ac" ? "Match from AS Colour" : m.source === "sanmar" ? "Match from SanMar" : "Match from S&S Activewear"}
                 >
-                  {m.source === "ac" ? "AS Colour" : m.source === "sm" ? "SanMar" : "S&S"}
+                  {m.source === "ac" ? "AS Colour" : m.source === "sanmar" ? "SanMar" : "S&S"}
                 </span>
                 <Plus className="w-4 h-4 text-teal-500 flex-shrink-0" />
               </button>
@@ -354,7 +354,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                       anything missing, so the gray dot is just informational. */}
                   {s.styleNumber && (
                     isStyleEnriched(s) ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" title={`Synced from ${s.enrichedFrom === "ac" ? "AS Colour" : "S&S"} · ${Object.keys(s.colorImages || {}).length} colors`}>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" title={`Synced from ${s.enrichedFrom === "ac" ? "AS Colour" : s.enrichedFrom === "sanmar" ? "SanMar" : "S&S"} · ${Object.keys(s.colorImages || {}).length} colors`}>
                         <Check className="w-3 h-3" /> Synced
                       </span>
                     ) : (

@@ -343,7 +343,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
   return unique;
 }
 
-function applySelectedMatch(li, selectedMatch) {
+export function applySelectedMatch(li, selectedMatch) {
   const styleNumber = cleanText(selectedMatch.styleNumber).toUpperCase();
   // Long marketing copy — used for category keyword detection only.
   const longDescription = cleanText(
@@ -365,11 +365,9 @@ function applySelectedMatch(li, selectedMatch) {
     li.garmentColor;
 
   const selectedPrice = (selectedMatch.priceMap && selectedMatch.priceMap[firstColor]) || {};
-  const supplierFromMatch =
-    selectedMatch._supplier ||
-    (cleanText(selectedMatch.raw?.brandName).toLowerCase() === "as colour"
-      ? "AS Colour"
-      : "S&S Activewear");
+  // Fetch-time _supplier tag ONLY — never brand inference, never an S&S
+  // default. Untagged persists "" = unknown (mirrors LineItemEditor).
+  const supplierFromMatch = selectedMatch._supplier || "";
 
   return {
     ...li,

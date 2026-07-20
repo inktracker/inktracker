@@ -30,7 +30,7 @@
  * @param {object?} opts
  * @param {string?} opts.brandHint    Caller's known brand (preserves it
  *                                    when supplier returns ambiguous data).
- * @param {string}  opts.source       "ss" | "ac" | "sm" — which supplier matched.
+ * @param {string}  opts.source       "ss" | "ac" | "sanmar" — which supplier matched.
  * @param {string?} opts.styleNumber  Fallback style number if match lacks one.
  * @returns {object|null}
  */
@@ -105,7 +105,7 @@ export function normalizeSupplierMatch(match, { brandHint, source, styleNumber }
  * @param {object?} opts
  * @param {string?} opts.brandHint
  * @param {string?} opts.styleNumber
- * @param {string?} opts.supplierHint  "ss" | "ac" | "sm" — pins the pick to
+ * @param {string?} opts.supplierHint  "ss" | "ac" | "sanmar" — pins the pick to
  *   that supplier's response, strictly (no cross-supplier fallback). Brand
  *   hints alone can't disambiguate: the same brand+style often exists on
  *   BOTH S&S and SanMar (Gildan 5000, Bella 3001, Comfort Colors 1717...),
@@ -122,7 +122,7 @@ export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumbe
   // first-match fallback) can only ever pick from the pinned supplier.
   if (supplierHint === "ss") { acMatches = []; smMatches = []; }
   else if (supplierHint === "ac") { ssMatches = []; smMatches = []; }
-  else if (supplierHint === "sm") { ssMatches = []; acMatches = []; }
+  else if (supplierHint === "sanmar") { ssMatches = []; acMatches = []; }
   const brandLower = (brandHint || "").toLowerCase().trim();
   const isAsColourHint = /as ?colour/.test(brandLower);
 
@@ -153,7 +153,7 @@ export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumbe
     if (ssBrandMatch) { match = ssBrandMatch; source = "ss"; }
     else {
       const smBrandMatch = findBrandMatch(smMatches);
-      if (smBrandMatch) { match = smBrandMatch; source = "sm"; }
+      if (smBrandMatch) { match = smBrandMatch; source = "sanmar"; }
     }
   } else {
     // No brand hint — first match wins. S&S preferred when several
@@ -162,7 +162,7 @@ export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumbe
     // lookups where the caller has no opinion about the brand.
     if (ssMatches[0]) { match = ssMatches[0]; source = "ss"; }
     else if (acMatches[0]) { match = acMatches[0]; source = "ac"; }
-    else if (smMatches[0]) { match = smMatches[0]; source = "sm"; }
+    else if (smMatches[0]) { match = smMatches[0]; source = "sanmar"; }
   }
 
   if (!match) return null;

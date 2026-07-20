@@ -139,7 +139,10 @@ export default function QuoteEditorModal({
         productNumber: prefillLineItem.productNumber || prefillLineItem.id || "",
         resolvedTitle: prefillLineItem.resolvedTitle || prefillLineItem.title || "",
         productTitle: prefillLineItem.resolvedTitle || prefillLineItem.title || "",
-        supplier: "S&S Activewear",
+        // Only trust a supplier the prefill EXPLICITLY carries — never
+        // default to S&S (supplier identity is set at fetch time, and an
+        // unknown supplier must stay unknown).
+        supplier: prefillLineItem.supplier || prefillLineItem._supplier || "",
       }];
     }
     return base;

@@ -247,7 +247,7 @@ describe("pickAndNormalize — supplier disambiguation", () => {
       { brandHint: "Port & Company" }
     );
     expect(result.brand).toBe("Port & Company");
-    expect(result.enrichedFrom).toBe("sm");
+    expect(result.enrichedFrom).toBe("sanmar");
     expect(result.priceMap.White).toEqual({ piecePrice: 2.38 });
     expect(result.garmentCost).toBeGreaterThan(0);
   });
@@ -269,7 +269,7 @@ describe("pickAndNormalize — supplier disambiguation", () => {
 
   it("falls back to SanMar when neither S&S nor AS Colour has a match (no hint)", () => {
     const result = pickAndNormalize(null, null, { matches: [SM_MATCH_PC61] }, {});
-    expect(result.enrichedFrom).toBe("sm");
+    expect(result.enrichedFrom).toBe("sanmar");
     expect(result.brand).toBe("Port & Company");
   });
 });
@@ -337,9 +337,9 @@ describe("pickAndNormalize — supplierHint pinning", () => {
       { matches: [SS_GILDAN] },
       null,
       { matches: [SM_GILDAN] },
-      { brandHint: "Gildan", supplierHint: "sm" }
+      { brandHint: "Gildan", supplierHint: "sanmar" }
     );
-    expect(result.enrichedFrom).toBe("sm");
+    expect(result.enrichedFrom).toBe("sanmar");
     expect(result.priceMap.White).toEqual({ piecePrice: 2.38 });
   });
 
@@ -359,7 +359,7 @@ describe("pickAndNormalize — supplierHint pinning", () => {
       { matches: [SS_GILDAN] },
       null,
       { matches: [] },
-      { brandHint: "Gildan", supplierHint: "sm" }
+      { brandHint: "Gildan", supplierHint: "sanmar" }
     );
     expect(result).toBeNull();
   });

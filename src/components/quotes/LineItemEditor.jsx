@@ -507,7 +507,7 @@ function getGarmentHeader(li) {
   return description ? `${number} - ${description}` : number;
 }
 
-function applySelectedMatch(li, selectedMatch) {
+export function applySelectedMatch(li, selectedMatch) {
   const styleNumber = cleanText(selectedMatch.styleNumber).toUpperCase();
   const brand = cleanText(selectedMatch.brandName || li.brand || "");
 
@@ -570,7 +570,13 @@ function applySelectedMatch(li, selectedMatch) {
       selectedMatch.styleCategory,
       productName || selectedMatch.description
     ) || li.category || "",
-    supplier: selectedMatch._supplier || (selectedMatch.brandName === "AS Colour" ? "AS Colour" : "S&S Activewear"),
+    // Supplier identity comes ONLY from the fetch-time _supplier tag — never
+    // inferred from brand (Gildan/Bella/District live on multiple suppliers)
+    // and never defaulted: an untagged match persists "" = unknown, so
+    // reorders/restock/PO can refuse to guess rather than route to the
+    // wrong vendor. (The old brandName ternary silently stamped SanMar
+    // items as S&S Activewear.)
+    supplier: selectedMatch._supplier || "",
     supplierLastLookupAt: new Date().toISOString(),
     // Per-size wholesale prices from the API (e.g. { S: 4.62, M: 4.62, "2XL": 5.62 })
     sizePrices: JSON.parse(JSON.stringify((selectedMatch.sizePriceMap && selectedMatch.sizePriceMap[firstColor]) || {})),
