@@ -10,6 +10,7 @@ import { shopScope } from "@/lib/shopScope";
 import { DEFAULT_TIERS, DEFAULT_COLORS, DEFAULTS } from "./pricingConfigDefaults";
 import { ExtrasEditor, PrintTableEditor, EmbroideryTab, CustomTechniqueTab, SetupFeesEditor } from "./PricingEditorParts";
 import BrokerPricingSection from "./BrokerPricingSection";
+import EventPackagesEditor from "./EventPackagesEditor";
 
 // Account → Pricing & Fees editor. Extracted verbatim from Account.jsx
 // as a pure decomposition — no behavior change. Receives the current
@@ -757,6 +758,12 @@ export default function PricingConfigEditor({ user }) {
           renderExtrasEditor={renderExtrasEditor}
         />
       )}
+
+      {/* Event / package pricing — flat-rate service packages (live
+          event printing) that don't fit the decoration matrices.
+          Sits below the decoration tabs: it's job-level pricing, not a
+          per-piece technique. Saved with the same Save button. */}
+      <EventPackagesEditor config={config} setConfig={setConfig} inputCls={inputCls} />
 
       <div className="flex items-center gap-3">
         <button onClick={handleSave} disabled={saving}
