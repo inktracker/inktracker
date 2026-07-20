@@ -31,6 +31,8 @@ export const BROKER_OVERRIDABLE_KEYS = [
   "addlPrint",
   "tiers",
   "maxColors",
+  "embroidery",
+  "custom_techniques",
 ];
 
 // How the shop prices this broker (the editor's toggle, Joe 2026-07-19):
@@ -106,6 +108,55 @@ export function sanitizeBrokerOverrides(raw) {
       const mc = num(raw.maxColors);
       if (mc != null && mc >= 1) out.maxColors = Math.round(mc);
     }
+
+    // Embroidery — RATES ONLY (pricing matrix keyed by stitch-tier
+    // label, digitizing fee, and the tier snapshots the matrix was
+    // authored against). enabled/extras/labels are NOT overridable:
+    // mergeBrokerPricing layers this onto the shop's embroidery object,
+    // so those keep inheriting live.
+    if (raw.embroidery && typeof raw.embroidery === "object" && !Array.isArray(raw.embroidery)) {
+      const emb = {};
+      const pricing = cleanPrintTable(raw.embroidery.pricing);
+      if (pricing) emb.pricing = pricing;
+      const fee = num(raw.embroidery.digitizingFee);
+      if (fee != null && fee >= 0) emb.digitizingFee = fee;
+      if (pricing) {
+        if (Array.isArray(raw.embroidery.qtyTiers)) {
+          const qt = raw.embroidery.qtyTiers.map(num).filter((t) => t != null && t > 0);
+          if (qt.length) emb.qtyTiers = qt;
+        }
+        if (Array.isArray(raw.embroidery.stitchTiers)) {
+          const st = raw.embroidery.stitchTiers.map((s) => String(s)).filter(Boolean);
+          if (st.length) emb.stitchTiers = st;
+        }
+      }
+      if (Object.keys(emb).length) out.embroidery = emb;
+    }
+
+    // Custom techniques (DTG, DTF, …) — per technique, the rate
+    // matrices + tier snapshot. Merged one level deep per technique so
+    // anything else on the technique (extras) inherits from the shop.
+    if (raw.custom_techniques && typeof raw.custom_techniques === "object" && !Array.isArray(raw.custom_techniques)) {
+      const cleanTechs = {};
+      for (const [name, tech] of Object.entries(raw.custom_techniques)) {
+        if (!name || !tech || typeof tech !== "object") continue;
+        const t = {};
+        const tfp = cleanPrintTable(tech.firstPrint);
+        const tap = cleanPrintTable(tech.addlPrint);
+        if (tfp) t.firstPrint = tfp;
+        if (tap) t.addlPrint = tap;
+        if (tfp || tap) {
+          if (Array.isArray(tech.tiers)) {
+            const tt = tech.tiers.map(num).filter((x) => x != null && x > 0);
+            if (tt.length) t.tiers = tt;
+          }
+          const tmc = num(tech.maxColors);
+          if (tmc != null && tmc >= 1) t.maxColors = Math.round(tmc);
+        }
+        if (Object.keys(t).length) cleanTechs[name] = t;
+      }
+      if (Object.keys(cleanTechs).length) out.custom_techniques = cleanTechs;
+    }
   }
 
   // mode is metadata — carried only when there's substance under it.
@@ -122,7 +173,9 @@ export function hasBrokerOverrides(raw) {
 export function brokerPricingMode(raw) {
   const ov = sanitizeBrokerOverrides(raw);
   if (ov.mode) return ov.mode;
-  return ov.firstPrint || ov.addlPrint || ov.garmentMarkup ? "sheet" : "markup";
+  return ov.firstPrint || ov.addlPrint || ov.garmentMarkup || ov.embroidery || ov.custom_techniques
+    ? "sheet"
+    : "markup";
 }
 
 /**
@@ -138,8 +191,24 @@ export function brokerPricingMode(raw) {
  */
 export function mergeBrokerPricing(shopConfig, overrides) {
   // eslint-disable-next-line no-unused-vars
-  const { mode, ...sections } = sanitizeBrokerOverrides(overrides);
-  if (Object.keys(sections).length === 0) return shopConfig;
+  const { mode, embroidery, custom_techniques, ...flat } = sanitizeBrokerOverrides(overrides);
+  if (Object.keys(flat).length === 0 && !embroidery && !custom_techniques) return shopConfig;
   const base = shopConfig || getShopPricingConfig() || {};
-  return { ...base, ...sections };
+  const merged = { ...base, ...flat };
+
+  // Embroidery + custom techniques merge ONE LEVEL DEEP: the broker
+  // override carries only the rate tables + tier snapshots, while
+  // enabled flags, add-on fees, and labels keep inheriting live from
+  // the shop sheet (a whole-section replace would silently zero the
+  // broker's embroidery add-on rates).
+  if (embroidery) {
+    merged.embroidery = { ...(base.embroidery || {}), ...embroidery };
+  }
+  if (custom_techniques) {
+    merged.custom_techniques = { ...(base.custom_techniques || {}) };
+    for (const [name, tech] of Object.entries(custom_techniques)) {
+      merged.custom_techniques[name] = { ...(merged.custom_techniques[name] || {}), ...tech };
+    }
+  }
+  return merged;
 }

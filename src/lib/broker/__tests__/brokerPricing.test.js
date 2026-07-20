@@ -223,3 +223,100 @@ describe("pricing modes (the markup-% vs custom-sheet toggle)", () => {
     expect(r.gCost).toBeCloseTo(25 * 10 * 1.2, 2);
   });
 });
+
+describe("sheet covers ALL decoration methods (Joe 2026-07-19)", () => {
+  const SHOP_WITH_METHODS = {
+    ...SHOP_CONFIG,
+    embroidery: {
+      enabled: true,
+      digitizingFee: 50,
+      qtyTiers: [12, 24],
+      stitchTiers: ["Under 5K", "5K-10K"],
+      pricing: { "Under 5K": { 12: 8.5, 24: 7.5 }, "5K-10K": { 12: 10.5, 24: 9.0 } },
+      extras: { puffEmbroidery: 2.0 },
+    },
+    custom_techniques: {
+      DTG: { tiers: [25, 50], maxColors: 1, firstPrint: { 1: { 25: 9.0, 50: 8.0 } }, addlPrint: { 1: { 25: 4.0, 50: 3.5 } } },
+    },
+  };
+
+  it("sanitize keeps embroidery RATES but never enabled/extras", () => {
+    const out = sanitizeBrokerOverrides({
+      mode: "sheet",
+      embroidery: {
+        enabled: false,           // must not be overridable
+        extras: { puffEmbroidery: 99 }, // must not be overridable
+        digitizingFee: 25,
+        qtyTiers: [12, 24],
+        stitchTiers: ["Under 5K", "5K-10K"],
+        pricing: { "Under 5K": { 12: 6.0, 24: 5.0 } },
+      },
+    });
+    expect(out.embroidery.digitizingFee).toBe(25);
+    expect(out.embroidery.pricing["Under 5K"][12]).toBe(6.0);
+    expect(out.embroidery.enabled).toBeUndefined();
+    expect(out.embroidery.extras).toBeUndefined();
+  });
+
+  it("markup mode strips embroidery and custom_techniques", () => {
+    const out = sanitizeBrokerOverrides({
+      mode: "markup",
+      brokerMarkupShare: 0.6,
+      embroidery: { pricing: { "Under 5K": { 12: 1 } } },
+      custom_techniques: { DTG: { firstPrint: { 1: { 25: 1 } } } },
+    });
+    expect(out).toEqual({ mode: "markup", brokerMarkupShare: 0.6 });
+  });
+
+  it("merge is one-level-deep: broker embroidery rates apply, shop enabled/extras survive", () => {
+    const merged = mergeBrokerPricing(SHOP_WITH_METHODS, {
+      mode: "sheet",
+      embroidery: { pricing: { "Under 5K": { 12: 6.0, 24: 5.0 }, "5K-10K": { 12: 8.0, 24: 7.0 } }, digitizingFee: 25 },
+    });
+    expect(merged.embroidery.pricing["Under 5K"][12]).toBe(6.0);
+    expect(merged.embroidery.digitizingFee).toBe(25);
+    expect(merged.embroidery.enabled).toBe(true);
+    expect(merged.embroidery.extras).toEqual({ puffEmbroidery: 2.0 });
+    // untouched techniques inherit wholesale
+    expect(merged.custom_techniques.DTG.firstPrint[1][25]).toBe(9.0);
+  });
+
+  it("embroidery money path: broker wholesale uses the overridden stitch rates", () => {
+    const merged = mergeBrokerPricing(SHOP_WITH_METHODS, {
+      mode: "sheet",
+      embroidery: { pricing: { "Under 5K": { 12: 6.0, 24: 5.0 }, "5K-10K": { 12: 8.0, 24: 7.0 } }, qtyTiers: [12, 24], stitchTiers: ["Under 5K", "5K-10K"] },
+    });
+    // For embroidery, imp.colors carries the stitch tier (1-based in
+    // the field; the engine uses colors-1 as the stitchTiers index —
+    // see lib/quotes/imprintLabels.js). colors: 1 → "Under 5K".
+    const li = {
+      id: "li-emb",
+      sizes: { M: 12 },
+      garmentCost: 0,
+      imprints: [{ id: "im-e", technique: "Embroidery", location: "Left Chest", colors: 1 }],
+    };
+    const brokerR = calcLinkedLinePrice(li, 0, {}, BROKER_MARKUP, {}, undefined, merged);
+    const shopR = calcLinkedLinePrice(li, 0, {}, BROKER_MARKUP, {}, undefined, SHOP_WITH_METHODS);
+    expect(brokerR.lineTotal).toBeCloseTo(12 * 6.0, 2);
+    expect(shopR.lineTotal).toBeCloseTo(12 * 8.5, 2);
+  });
+
+  it("custom technique money path: broker wholesale uses the overridden DTG rates", () => {
+    const merged = mergeBrokerPricing(SHOP_WITH_METHODS, {
+      mode: "sheet",
+      custom_techniques: { DTG: { firstPrint: { 1: { 25: 6.0, 50: 5.0 } }, tiers: [25, 50], maxColors: 1 } },
+    });
+    const li = {
+      id: "li-dtg",
+      sizes: { M: 25 },
+      garmentCost: 0,
+      imprints: [{ id: "im-d", technique: "DTG", location: "Front", colors: 1 }],
+    };
+    const brokerR = calcLinkedLinePrice(li, 0, {}, BROKER_MARKUP, {}, undefined, merged);
+    const shopR = calcLinkedLinePrice(li, 0, {}, BROKER_MARKUP, {}, undefined, SHOP_WITH_METHODS);
+    expect(brokerR.lineTotal).toBeCloseTo(25 * 6.0, 2);
+    expect(shopR.lineTotal).toBeCloseTo(25 * 9.0, 2);
+    // addlPrint not overridden → inherits the shop's DTG table
+    expect(merged.custom_techniques.DTG.addlPrint[1][25]).toBe(4.0);
+  });
+});

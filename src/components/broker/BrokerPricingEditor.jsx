@@ -32,21 +32,53 @@ function deepClone(v) {
   return v == null ? v : JSON.parse(JSON.stringify(v));
 }
 
+// Build a complete color×tier grid from an override (preferred) or the
+// shop's table, filling absent cells with 0 so the grid renders fully.
+function seedGrid(ovTable, shopTable, rowKeys, colKeys) {
+  const src = deepClone(ovTable || shopTable) || {};
+  const out = {};
+  for (const r of rowKeys) {
+    out[r] = {};
+    for (const c of colKeys) out[r][c] = src[r]?.[c] ?? 0;
+  }
+  return out;
+}
+
 function buildDraft(savedOverrides, shopConfig) {
   const ov = sanitizeBrokerOverrides(savedOverrides);
   const mode = brokerPricingMode(savedOverrides);
   const tiers = ov.tiers || shopConfig.tiers || DEFAULT_TIERS;
   const maxColors = ov.maxColors || shopConfig.maxColors || DEFAULT_COLORS;
-  const seedTable = (key) => {
-    if (ov[key]) return deepClone(ov[key]);
-    const src = deepClone(shopConfig[key]) || {};
-    const out = {};
-    for (let c = 1; c <= maxColors; c++) {
-      out[c] = {};
-      for (const t of tiers) out[c][t] = src[c]?.[t] ?? 0;
-    }
-    return out;
-  };
+  const colorRows = Array.from({ length: maxColors }, (_, i) => i + 1);
+
+  // Embroidery (only when the shop offers it): rates + tier snapshot.
+  const shopEmb = shopConfig.embroidery || {};
+  const embQtyTiers = ov.embroidery?.qtyTiers || shopEmb.qtyTiers || [12, 24, 48, 72, 144];
+  const embStitchTiers = ov.embroidery?.stitchTiers || shopEmb.stitchTiers || [];
+  const embroidery = shopEmb.enabled
+    ? {
+        qtyTiers: embQtyTiers,
+        stitchTiers: embStitchTiers,
+        digitizingFee: ov.embroidery?.digitizingFee ?? (Number(shopEmb.digitizingFee) || 0),
+        pricing: seedGrid(ov.embroidery?.pricing, shopEmb.pricing, embStitchTiers, embQtyTiers),
+      }
+    : null;
+
+  // Custom techniques (DTG, DTF, …): one matrix pair per shop method.
+  const customTechniques = {};
+  for (const [name, shopTech] of Object.entries(shopConfig.custom_techniques || {})) {
+    const ovTech = ov.custom_techniques?.[name];
+    const tTiers = ovTech?.tiers || shopTech.tiers || tiers;
+    const tMax = ovTech?.maxColors || shopTech.maxColors || maxColors;
+    const tRows = Array.from({ length: tMax }, (_, i) => i + 1);
+    customTechniques[name] = {
+      tiers: tTiers,
+      maxColors: tMax,
+      firstPrint: seedGrid(ovTech?.firstPrint, shopTech.firstPrint, tRows, tTiers),
+      addlPrint: seedGrid(ovTech?.addlPrint, shopTech.addlPrint, tRows, tTiers),
+    };
+  }
+
   return {
     mode,
     // markup mode: whether this broker has their own share (vs shop default)
@@ -56,10 +88,12 @@ function buildDraft(savedOverrides, shopConfig) {
         ? ov.brokerMarkupShare
         : (shopConfig.brokerMarkupShare ?? BROKER_MARKUP_SHARE),
     garmentMarkup: deepClone(ov.garmentMarkup || shopConfig.garmentMarkup) || [],
-    firstPrint: seedTable("firstPrint"),
-    addlPrint: seedTable("addlPrint"),
+    firstPrint: seedGrid(ov.firstPrint, shopConfig.firstPrint, colorRows, tiers),
+    addlPrint: seedGrid(ov.addlPrint, shopConfig.addlPrint, colorRows, tiers),
     tiers,
     maxColors,
+    embroidery,
+    customTechniques,
   };
 }
 
@@ -77,6 +111,19 @@ function draftToOverrides(draft) {
       // the engine picks the qty tier from config.tiers.
       tiers: draft.tiers,
       maxColors: draft.maxColors,
+      // Every decoration method the shop offers rides on the sheet
+      // (Joe 2026-07-19: "only works for printing?" — not anymore).
+      embroidery: draft.embroidery
+        ? {
+            digitizingFee: draft.embroidery.digitizingFee,
+            qtyTiers: draft.embroidery.qtyTiers,
+            stitchTiers: draft.embroidery.stitchTiers,
+            pricing: draft.embroidery.pricing,
+          }
+        : undefined,
+      custom_techniques: Object.keys(draft.customTechniques || {}).length
+        ? draft.customTechniques
+        : undefined,
     });
   }
   if (!draft.customShare) return {};
@@ -98,8 +145,10 @@ function ModeButton({ active, onClick, title, sub }) {
   );
 }
 
-function OverrideMatrix({ title, table, tiers, maxColors, onCell, inputCls }) {
-  const rows = Array.from({ length: maxColors }, (_, i) => i + 1);
+// Generic rate-matrix grid. `rows` is [{ key, label }] so the same
+// component serves color-count rows (Screen Print / custom methods)
+// and stitch-tier rows (Embroidery).
+function OverrideMatrix({ title, table, tiers, rows, rowHeader, onCell, inputCls }) {
   return (
     <div>
       <h5 className="text-[11px] font-bold text-slate-600 uppercase tracking-widest mb-1.5">{title}</h5>
@@ -107,24 +156,24 @@ function OverrideMatrix({ title, table, tiers, maxColors, onCell, inputCls }) {
         <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-500">
-              <th className="text-left py-1 pr-2">Colors</th>
+              <th className="text-left py-1 pr-2">{rowHeader}</th>
               {tiers.map((t) => (
                 <th key={t} className="text-center py-1 font-semibold">{t}+</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((c) => (
-              <tr key={c}>
-                <td className="py-1 pr-2 font-semibold text-slate-600 whitespace-nowrap">{c} color{c > 1 ? "s" : ""}</td>
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <td className="py-1 pr-2 font-semibold text-slate-600 whitespace-nowrap">{r.label}</td>
                 {tiers.map((t) => (
                   <td key={t} className="py-1 px-0.5">
                     <NumericInput
-                      value={table[c]?.[t]}
-                      onChange={(n) => onCell(c, t, n)}
+                      value={table[r.key]?.[t]}
+                      onChange={(n) => onCell(r.key, t, n)}
                       min={0}
                       max={10000}
-                      label={`${title} ${c} color × ${t} pcs`}
+                      label={`${title} ${r.label} × ${t} pcs`}
                       className={inputCls}
                     />
                   </td>
@@ -137,6 +186,9 @@ function OverrideMatrix({ title, table, tiers, maxColors, onCell, inputCls }) {
     </div>
   );
 }
+
+const colorRowsFor = (maxColors) =>
+  Array.from({ length: maxColors }, (_, i) => ({ key: i + 1, label: `${i + 1} color${i > 0 ? "s" : ""}` }));
 
 /**
  * @param broker      { email, label } — label is display-only
@@ -274,10 +326,11 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
           </div>
 
           <OverrideMatrix
-            title="First Print Location (per piece)"
+            title="Screen Print — First Location (per piece)"
             table={draft.firstPrint}
             tiers={draft.tiers}
-            maxColors={draft.maxColors}
+            rows={colorRowsFor(draft.maxColors)}
+            rowHeader="Colors"
             inputCls={inputCls}
             onCell={(c, t, n) => setDraft((d) => ({
               ...d,
@@ -285,19 +338,105 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
             }))}
           />
           <OverrideMatrix
-            title="Additional Print Locations (per piece)"
+            title="Screen Print — Additional Locations (per piece)"
             table={draft.addlPrint}
             tiers={draft.tiers}
-            maxColors={draft.maxColors}
+            rows={colorRowsFor(draft.maxColors)}
+            rowHeader="Colors"
             inputCls={inputCls}
             onCell={(c, t, n) => setDraft((d) => ({
               ...d,
               addlPrint: { ...d.addlPrint, [c]: { ...(d.addlPrint[c] || {}), [t]: n } },
             }))}
           />
+
+          {/* Embroidery — shown when the shop offers it. Rates +
+              digitizing fee only; enable state and add-on fees keep
+              inheriting from the shop sheet. */}
+          {draft.embroidery && (
+            <div className="space-y-2 pt-1">
+              <OverrideMatrix
+                title="Embroidery (per piece)"
+                table={draft.embroidery.pricing}
+                tiers={draft.embroidery.qtyTiers}
+                rows={draft.embroidery.stitchTiers.map((s) => ({ key: s, label: s }))}
+                rowHeader="Stitches"
+                inputCls={inputCls}
+                onCell={(s, t, n) => setDraft((d) => ({
+                  ...d,
+                  embroidery: {
+                    ...d.embroidery,
+                    pricing: { ...d.embroidery.pricing, [s]: { ...(d.embroidery.pricing[s] || {}), [t]: n } },
+                  },
+                }))}
+              />
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Digitizing Fee</span>
+                <div className="relative w-24">
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">$</span>
+                  <NumericInput
+                    value={draft.embroidery.digitizingFee}
+                    onChange={(n) => setDraft((d) => ({
+                      ...d,
+                      embroidery: { ...d.embroidery, digitizingFee: Math.max(0, Number(n) || 0) },
+                    }))}
+                    min={0}
+                    max={10000}
+                    label={`${broker.label} digitizing fee`}
+                    className={`${inputCls} pl-5`}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Custom decoration methods (DTG, DTF, …) — one matrix pair
+              per method the shop has configured. */}
+          {Object.entries(draft.customTechniques || {}).map(([name, tech]) => (
+            <div key={name} className="space-y-3 pt-1">
+              <OverrideMatrix
+                title={`${name} — First Location (per piece)`}
+                table={tech.firstPrint}
+                tiers={tech.tiers}
+                rows={colorRowsFor(tech.maxColors)}
+                rowHeader="Colors"
+                inputCls={inputCls}
+                onCell={(c, t, n) => setDraft((d) => ({
+                  ...d,
+                  customTechniques: {
+                    ...d.customTechniques,
+                    [name]: {
+                      ...d.customTechniques[name],
+                      firstPrint: { ...tech.firstPrint, [c]: { ...(tech.firstPrint[c] || {}), [t]: n } },
+                    },
+                  },
+                }))}
+              />
+              <OverrideMatrix
+                title={`${name} — Additional Locations (per piece)`}
+                table={tech.addlPrint}
+                tiers={tech.tiers}
+                rows={colorRowsFor(tech.maxColors)}
+                rowHeader="Colors"
+                inputCls={inputCls}
+                onCell={(c, t, n) => setDraft((d) => ({
+                  ...d,
+                  customTechniques: {
+                    ...d.customTechniques,
+                    [name]: {
+                      ...d.customTechniques[name],
+                      addlPrint: { ...tech.addlPrint, [c]: { ...(tech.addlPrint[c] || {}), [t]: n } },
+                    },
+                  },
+                }))}
+              />
+            </div>
+          ))}
+
           <p className="text-[10px] text-slate-500">
-            Quantity tiers are copied from your sheet as of now; embroidery and custom
-            methods always follow your standard pricing.
+            The sheet covers every decoration method your shop offers, seeded from your
+            current rates. Quantity tiers are copied as of now; add-on fees and which
+            methods are offered always follow your standard sheet.
           </p>
         </div>
       )}
