@@ -98,7 +98,7 @@ export function buildOrderFromInvoice(
     broker_name: inv.broker_name || "",
     broker_company: "",
     broker_client_name: "",
-    customer_id: inv.customer_id ?? customer?.id ?? null,
+    customer_id: inv.customer_id || customer?.id || null,
     customer_name: inv.customer_name || customer?.name || "Unknown",
     company: customer?.company || "",
     customer_email: customer?.email || "",

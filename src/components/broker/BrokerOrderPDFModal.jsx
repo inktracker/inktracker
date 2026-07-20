@@ -56,7 +56,16 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
           {/* Line items */}
           {(order.line_items || []).map((li, i) => {
             const qty = getQty(li);
-            const r = calcLinkedLinePrice(
+            // Saved stamps win (Quote Snapshot Invariant): line items carry
+            // _lineTotal/_rushFee from the editor that priced them — for a
+            // broker order that includes any per-broker pricing overrides.
+            // A live recompute here runs against the module-global (shop)
+            // config and would drift from the header totals (order.total is
+            // itself a stamp). Live calc only for legacy unstamped rows.
+            const stamped = Number.isFinite(Number(li._lineTotal))
+              ? { lineTotal: (Number(li._lineTotal) || 0) + (Number(li._rushFee) || 0) }
+              : null;
+            const r = stamped || calcLinkedLinePrice(
               li,
               order.rush_rate,
               order.extras,

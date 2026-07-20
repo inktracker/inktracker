@@ -389,6 +389,10 @@ export default function BrokerLineItemEditor({
   allLineItems = [],
   savedImprints = [],
   shopPricingConfig,
+  // Effective wholesale config for this broker (shop sheet + per-broker
+  // overrides, merged in BrokerQuoteEditor). Feeds only the broker-side
+  // column of BrokerPricePanel; retail keeps shopPricingConfig.
+  brokerPricingConfig,
   onChange: _rawOnChange,
   onRemove,
   onDuplicate,
@@ -1171,6 +1175,8 @@ export default function BrokerLineItemEditor({
                 allLineItems={previewLineItems}
                 onChange={onChange}
                 sizePrices={(ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices || undefined}
+                brokerConfig={brokerPricingConfig}
+                shopConfig={shopPricingConfig}
               />
             </div>
           </div>
