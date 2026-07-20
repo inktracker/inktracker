@@ -202,12 +202,18 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
   const [draft, setDraft] = useState(() => buildDraft(existingRow?.overrides, shopConfig || {}));
   const [saving, setSaving] = useState(false);
   // "Quick price" (Joe 2026-07-20): one control that sets every cell of
-  // the sheet to a % of the shop's standard rates. Always derives from
-  // the STANDARD sheet (no compounding); cells stay editable after.
+  // the sheet to a % of the shop's standard rates, LIVE — every cell in
+  // the grids below rescales as the slider moves (no Apply step).
+  // Always derives from the STANDARD sheet (no compounding). Nothing
+  // rescales on mount — a saved sheet's numbers only change when the
+  // user actually moves this control; hand-edits made after settling on
+  // a % stick until the slider moves again.
   const [quickPct, setQuickPct] = useState(90);
 
-  function applyQuickScale() {
-    const scaled = buildScaledSheet(shopConfig || {}, quickPct);
+  function handleQuickPctChange(next) {
+    const pct = Math.min(200, Math.max(0, Math.round(Number(next) || 0)));
+    setQuickPct(pct);
+    const scaled = buildScaledSheet(shopConfig || {}, pct);
     setDraft((d) => ({
       ...d,
       garmentMarkup: scaled.garmentMarkup.length ? scaled.garmentMarkup : d.garmentMarkup,
@@ -319,19 +325,19 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
             <div className="flex items-center gap-3 flex-wrap">
               <input
                 type="range"
-                min={50}
-                max={110}
+                min={0}
+                max={100}
                 step={1}
-                value={Math.min(110, Math.max(50, quickPct))}
-                onChange={(e) => setQuickPct(Number(e.target.value))}
+                value={Math.min(100, Math.max(0, quickPct))}
+                onChange={(e) => handleQuickPctChange(e.target.value)}
                 aria-label="Quick price percent of standard rates"
                 className="flex-1 min-w-[140px] accent-teal-600"
               />
-              <div className="relative w-20">
+              <div className="relative w-24">
                 <NumericInput
                   value={quickPct}
-                  onChange={(n) => setQuickPct(Math.min(200, Math.max(1, Math.round(Number(n) || 0))))}
-                  min={1}
+                  onChange={handleQuickPctChange}
+                  min={0}
                   max={200}
                   integer
                   label="Quick price percent"
@@ -339,18 +345,13 @@ export default function BrokerPricingEditor({ broker, shopOwner, shopConfig, exi
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sm text-slate-500 pointer-events-none">%</span>
               </div>
-              <button
-                type="button"
-                onClick={applyQuickScale}
-                className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
-              >
-                Apply {quickPct}% of standard
-              </button>
+              <span className="text-xs font-semibold text-teal-700 whitespace-nowrap">of standard rates</span>
             </div>
             <p className="text-[10px] text-slate-500 mt-1.5">
-              Fills every rate below with {quickPct}% of your current standard sheet (garment markup
-              scales its margin: a 40% markup becomes {Math.round(40 * quickPct) / 100}%). Applying
-              replaces the rates below — always from your standard sheet, so re-applying never compounds.
+              Every rate below updates live as you drag — {quickPct}% of your current standard sheet
+              (garment markup scales its margin: a 40% markup becomes {Math.round(40 * quickPct) / 100}%).
+              Always derived from your standard sheet, never compounding. Moving the slider replaces any
+              hand-edited cells; fine-tune cells after you settle on a percentage.
             </p>
           </div>
 

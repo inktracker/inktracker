@@ -186,7 +186,8 @@ export function hasBrokerOverrides(raw) {
  */
 export function buildScaledSheet(shopConfig, percent) {
   const pc = shopConfig || {};
-  const pct = Math.min(2, Math.max(0.01, (Number(percent) || 0) / 100));
+  // [0, 200]%: 0 legitimately zeroes the sheet (slider spans 0–100).
+  const pct = Math.min(2, Math.max(0, (Number(percent) || 0) / 100));
   const money = (v) => Math.round((Number(v) || 0) * pct * 100) / 100;
 
   const scaleGrid = (table, rowKeys, colKeys) => {

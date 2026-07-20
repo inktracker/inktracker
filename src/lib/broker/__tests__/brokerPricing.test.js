@@ -376,8 +376,9 @@ describe("buildScaledSheet — the Quick Price scaler (Joe 2026-07-20)", () => {
     expect(s.embroidery).toBeNull();
   });
 
-  it("clamps absurd percents instead of zeroing or exploding the sheet", () => {
-    expect(buildScaledSheet(SHOP, 0).firstPrint[1][25]).toBeCloseTo(0.06, 2);   // floors at 1%
+  it("0% zeroes the sheet; negatives floor at 0; huge percents cap at 200%", () => {
+    expect(buildScaledSheet(SHOP, 0).firstPrint[1][25]).toBe(0);
+    expect(buildScaledSheet(SHOP, -50).firstPrint[1][25]).toBe(0);
     expect(buildScaledSheet(SHOP, 999).firstPrint[1][25]).toBeCloseTo(12.0, 2); // caps at 200%
   });
 });
