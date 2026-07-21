@@ -344,3 +344,33 @@ describe("buildMatchFromEntries — salePrice preview field", () => {
     expect(match.colors[0].salePrice).toBeUndefined();
   });
 });
+
+// Title dedup (Joe 2026-07-20): SanMar titles end with the style number
+// and the quote header prepends it — "1717 - ... Tee. 1717". Stripped
+// once at normalization so every consumer gets a clean title.
+describe("buildMatchFromEntries — trailing style stripped from titles", () => {
+  const entry = (productTitle, style = "1717") => [{
+    style, brandName: "Comfort Colors", productTitle,
+    productDescription: "tee", category: "T-Shirts", availableSizes: "S-3XL",
+    color: "Bay", catalogColor: "BAY", inventoryKey: "k1", size: "S", sizeIndex: "2",
+    piecePrice: 8.62, casePrice: 8.62, pieceSalePrice: 0, caseSalePrice: 0,
+    priceText: "", colorProductImage: "https://x/img.jpg", productImage: "", specSheet: "",
+    uniqueKey: "u1", pieceWeight: "0.42", caseSize: "60", productStatus: "Active",
+  }];
+
+  it("strips '. 1717' from the tail (separator punctuation included)", () => {
+    const m = buildMatchFromEntries(entry("COMFORT COLORS Heavyweight Ring Spun Tee. 1717"), []);
+    expect(m.title).toBe("COMFORT COLORS Heavyweight Ring Spun Tee");
+    expect(m.resolvedTitle).toBe("COMFORT COLORS Heavyweight Ring Spun Tee");
+  });
+
+  it("leaves titles without the trailing style untouched", () => {
+    const m = buildMatchFromEntries(entry("Heavyweight Ring Spun Tee"), []);
+    expect(m.title).toBe("Heavyweight Ring Spun Tee");
+  });
+
+  it("only strips at the END — a style number mid-title survives", () => {
+    const m = buildMatchFromEntries(entry("1717 Series Heavyweight Tee"), []);
+    expect(m.title).toBe("1717 Series Heavyweight Tee");
+  });
+});
