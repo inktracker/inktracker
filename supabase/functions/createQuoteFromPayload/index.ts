@@ -43,7 +43,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const body = await req.json();
+    // Malformed body = client error, not a server bug — reject without
+    // falling through to the top-level catch's captureError, so bot junk
+    // against this public endpoint can't page the operator.
+    let body: Record<string, any>;
+    try {
+      body = await req.json();
+    } catch {
+      return json({ error: "Invalid request." }, 400);
+    }
     const { accessToken, ...payload } = body;
 
     if (!accessToken) return json({ error: "Missing accessToken" }, 401);
