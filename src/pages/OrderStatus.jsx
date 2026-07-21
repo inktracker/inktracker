@@ -12,21 +12,32 @@ export default function OrderStatus() {
 
   const params = new URLSearchParams(window.location.search);
   const orderId = params.get("id");
+  // public_token gates anonymous access — handleGetOrder rejects any request
+  // without a matching one. This page previously never read it off the URL
+  // (orderStatusUrl has always PUT it there), so every real customer link
+  // rendered "Order Not Found". Mirrors QuotePayment's token handling.
+  const publicToken = params.get("token");
 
   useEffect(() => {
     if (!orderId) { setError("No order ID provided."); setLoading(false); return; }
+    if (!publicToken) {
+      setError("This link is missing its security code. Please use the full link from your email.");
+      setLoading(false);
+      return;
+    }
 
     base44.functions.invoke("createCheckoutSession", {
       action: "getOrder",
       orderId,
+      token: publicToken,
     }).then((res) => {
       if (res?.data?.error) { setError(res.data.error); return; }
       if (!res?.data?.order) { setError("Order not found."); return; }
       setOrder(res.data.order);
       setShop(res.data.shop || null);
-    }).catch(() => setError("Failed to load order."))
+    }).catch(() => setError("Couldn't load this order right now. Please refresh and try again."))
       .finally(() => setLoading(false));
-  }, [orderId]);
+  }, [orderId, publicToken]);
 
   if (loading) {
     return <CenteredCardSkeleton />;

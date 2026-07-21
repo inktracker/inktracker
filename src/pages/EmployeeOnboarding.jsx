@@ -1,3 +1,4 @@
+import SignInRequired from "@/components/shared/SignInRequired";
 // Employee onboarding — fires when a freshly invited employee clicks
 // the magic link in their welcome email. Mirrors BrokerOnboarding but
 // trimmed: employees just need a name + password before being dropped
@@ -131,7 +132,7 @@ export default function EmployeeOnboarding() {
   }
 
   if (loading) return <div className="max-w-md mx-auto px-4 py-16"><FormSkeleton /></div>;
-  if (!user) return null;
+  if (!user) return <SignInRequired />;
 
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4">
