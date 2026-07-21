@@ -146,10 +146,12 @@ describe.each([
     expect(options.map((o) => o._supplier).sort()).toEqual(["S&S Activewear", "SanMar"]);
   });
 
-  it("appends the supplier to duplicate labels so the user can tell them apart", () => {
+  it("appends supplier AND the sale-aware from-price to duplicate labels", () => {
     const options = buildBrandOptions(GILDAN_5000_BOTH_SUPPLIERS, "5000");
-    expect(options.find((o) => o._supplier === "SanMar").label).toContain("(SanMar)");
-    expect(options.find((o) => o._supplier === "S&S Activewear").label).toContain("(S&S Activewear)");
+    // The dropdown IS the supplier comparison — price included so the
+    // shop sees which is cheaper without selecting each one.
+    expect(options.find((o) => o._supplier === "SanMar").label).toContain("(SanMar · from $2.38)");
+    expect(options.find((o) => o._supplier === "S&S Activewear").label).toContain("(S&S Activewear · from $2.42)");
   });
 
   it("each option keeps its own supplier's pricing", () => {

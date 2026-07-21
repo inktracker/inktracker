@@ -4,6 +4,7 @@ import {
   preferredSourceToken,
   pickDefaultOption,
   orderBySupplierPreference,
+  effectiveOptionCost,
 } from "../preference";
 import { pickAndNormalize } from "@/lib/wizard/enrichStyle";
 
@@ -99,6 +100,53 @@ describe("enrichStyle honors preferredSource", () => {
 
   it("no-hint free-form path also prefers the chosen source", () => {
     const picked = pickAndNormalize(ssData, null, smData, { styleNumber: "5000", preferredSource: "sanmar" });
+    expect(picked.enrichedFrom).toBe("sanmar");
+  });
+});
+
+// "Cheapest" mode (Joe 2026-07-20): selection is by the sale-aware BUY
+// price (sale when running, else standard); the quote still costs at the
+// selected supplier's STANDARD price — sales never feed the formula.
+describe("cheapest mode", () => {
+  const SS_STD = { id: "ss1", _supplier: "S&S Activewear", brandName: "Comfort Colors",
+    styleNumber: "1717", priceMap: { Bay: { piecePrice: 6.71 } } };
+  const SM_SALE = { id: "sm1", _supplier: "SanMar", brandName: "Comfort Colors",
+    styleNumber: "1717", priceMap: { Bay: { piecePrice: 8.62, salePrice: 6.34 } } };
+
+  it("preferredSupplier accepts 'cheapest'; token passes it through", () => {
+    expect(preferredSupplier({ defaultSupplier: "cheapest" })).toBe("cheapest");
+    expect(preferredSourceToken({ defaultSupplier: "cheapest" })).toBe("cheapest");
+  });
+
+  it("effectiveOptionCost is sale-aware and color-aware", () => {
+    expect(effectiveOptionCost(SM_SALE, "Bay")).toBe(6.34);
+    expect(effectiveOptionCost(SS_STD, "Bay")).toBe(6.71);
+    expect(effectiveOptionCost({ priceMap: {} , piecePrice: 0 })).toBe(Infinity);
+  });
+
+  it("auto-selects the supplier with the lower buy-today price", () => {
+    // SanMar's SALE (6.34) beats S&S standard (6.71) even though
+    // SanMar's own standard (8.62) is higher.
+    expect(pickDefaultOption([SS_STD, SM_SALE], { brand: "Comfort Colors", preferred: "cheapest", color: "Bay" })).toBe(SM_SALE);
+  });
+
+  it("without the sale, standard-vs-standard picks S&S here", () => {
+    const SM_STD = { ...SM_SALE, priceMap: { Bay: { piecePrice: 8.62 } } };
+    expect(pickDefaultOption([SS_STD, SM_STD], { brand: "Comfort Colors", preferred: "cheapest", color: "Bay" })).toBe(SS_STD);
+  });
+
+  it("a saved line's supplier still beats cheapest", () => {
+    expect(pickDefaultOption([SS_STD, SM_SALE], { brand: "Comfort Colors", supplier: "S&S Activewear", preferred: "cheapest", color: "Bay" })).toBe(SS_STD);
+  });
+
+  it("orderBySupplierPreference('cheapest') sorts ascending by effective price", () => {
+    expect(orderBySupplierPreference([SS_STD, SM_SALE], "cheapest").map((o) => o.id)).toEqual(["sm1", "ss1"]);
+  });
+
+  it("enrichStyle cheapest picks the cheaper source's brand match", () => {
+    const ssData = { matches: [{ brandName: "Comfort Colors", priceMap: { Bay: { piecePrice: 6.71 } } }] };
+    const smData = { matches: [{ brandName: "Comfort Colors", priceMap: { Bay: { piecePrice: 8.62, salePrice: 6.34 } } }] };
+    const picked = pickAndNormalize(ssData, null, smData, { brandHint: "Comfort Colors", styleNumber: "1717", preferredSource: "cheapest" });
     expect(picked.enrichedFrom).toBe("sanmar");
   });
 });

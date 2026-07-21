@@ -19,7 +19,7 @@ import PricePanel from "./PricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
-import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
+import { preferredSupplier, pickDefaultOption, orderBySupplierPreference, effectiveOptionCost } from "@/lib/suppliers/preference";
 import { notify } from "@/lib/notify";
 
 // Query S&S Activewear, AS Colour, and SanMar in parallel and merge results.
@@ -412,7 +412,12 @@ export function buildBrandOptions(matches, typedStyleNumber) {
   }
   for (const o of unique) {
     if (o._supplier && brandStyleCounts.get(`${o.brandName}|${o.styleNumber}`) > 1) {
-      o.label = `${o.label} (${o._supplier})`;
+      // Include the effective (sale-aware) from-price so the dropdown IS
+      // the supplier comparison — the whole point of the duplicate rows.
+      const eff = effectiveOptionCost(o);
+      o.label = Number.isFinite(eff) && eff > 0
+        ? `${o.label} (${o._supplier} · from $${eff.toFixed(2)})`
+        : `${o.label} (${o._supplier})`;
     }
   }
 
@@ -770,6 +775,7 @@ export default function LineItemEditor({
         brand: freshLi.brand,
         supplier: freshLi.supplier,
         preferred,
+        color: freshLi.garmentColor,
       });
 
       if (selected) {

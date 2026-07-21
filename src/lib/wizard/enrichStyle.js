@@ -1,3 +1,6 @@
+// Relative import + .js extension on purpose: node scripts (audit-wizard-styles,
+// resync-*) import this module directly and cannot resolve Vite's @/ alias.
+import { effectiveOptionCost } from "../suppliers/preference.js";
 // Shared style-enrichment helpers used by:
 //   1. WizardConfigEditor — at shop-config save time, persists supplier
 //      data into the saved `wizard_styles[]` so the public wizard renders
@@ -150,13 +153,26 @@ export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumbe
     // SanMar — both carry overlapping brands (Port Authority, District,
     // Sport-Tek live in both catalogs).
     // Shop's default supplier takes priority when both carry the brand
-    // (Joe 2026-07-20); otherwise legacy S&S-then-SanMar order.
+    // (Joe 2026-07-20); "cheapest" compares the sale-aware effective
+    // price across the suppliers' brand matches; otherwise legacy
+    // S&S-then-SanMar order.
     const brandPools = preferredSource === "sanmar"
       ? [["sanmar", smMatches], ["ss", ssMatches]]
       : [["ss", ssMatches], ["sanmar", smMatches]];
-    for (const [src, pool] of brandPools) {
-      const m = findBrandMatch(pool);
-      if (m) { match = m; source = src; break; }
+    if (preferredSource === "cheapest") {
+      let bestCost = Infinity;
+      for (const [src, pool] of brandPools) {
+        const m = findBrandMatch(pool);
+        if (!m) continue;
+        const c = effectiveOptionCost(m);
+        if (c < bestCost) { match = m; source = src; bestCost = c; }
+      }
+    }
+    if (!match) {
+      for (const [src, pool] of brandPools) {
+        const m = findBrandMatch(pool);
+        if (m) { match = m; source = src; break; }
+      }
     }
   } else {
     // No brand hint — first match wins. S&S preferred when several
@@ -164,9 +180,20 @@ export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumbe
     // brand field), then AS Colour, then SanMar. Used by free-form
     // lookups where the caller has no opinion about the brand.
     const pools = [["ss", ssMatches], ["ac", acMatches], ["sanmar", smMatches]];
-    if (preferredSource) pools.sort((a, b) => (a[0] === preferredSource ? -1 : b[0] === preferredSource ? 1 : 0));
-    for (const [src, pool] of pools) {
-      if (pool[0]) { match = pool[0]; source = src; break; }
+    if (preferredSource === "cheapest") {
+      let bestCost = Infinity;
+      for (const [src, pool] of pools) {
+        if (!pool[0]) continue;
+        const c = effectiveOptionCost(pool[0]);
+        if (c < bestCost) { match = pool[0]; source = src; bestCost = c; }
+      }
+    } else if (preferredSource) {
+      pools.sort((a, b) => (a[0] === preferredSource ? -1 : b[0] === preferredSource ? 1 : 0));
+    }
+    if (!match) {
+      for (const [src, pool] of pools) {
+        if (pool[0]) { match = pool[0]; source = src; break; }
+      }
     }
   }
 

@@ -447,6 +447,7 @@ export default function SupplierKeysSection({ user }) {
         <div className="flex gap-2 flex-wrap">
           {[
             { value: "", label: "No preference", sub: "S&S listed first (legacy order)" },
+            { value: "cheapest", label: "Cheapest", sub: "auto-select whichever is cheaper today (sale-aware)" },
             { value: "S&S Activewear", label: "S&S Activewear", sub: "auto-select S&S when both carry it" },
             { value: "SanMar", label: "SanMar", sub: "auto-select SanMar when both carry it" },
           ].map((opt) => (
