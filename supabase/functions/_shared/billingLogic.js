@@ -147,10 +147,14 @@ export function pickLiveSubscription(subs, excludeId) {
 
 // Maps a Stripe subscription to the pending-cancellation fields we persist.
 // current_period_end is unix seconds → ISO. When not canceling, fields clear.
+// Stripe API versions ≥2025-03 (basil/dahlia) moved current_period_end off
+// the subscription onto its items; the live webhook destination pins
+// 2026-04-22.dahlia while SDK reads pin 2023-10-16 — accept both shapes.
 export function cancellationFieldsFromSubscription(sub) {
   const pending = Boolean(sub?.cancel_at_period_end);
-  const endsAt = pending && sub?.current_period_end
-    ? new Date(sub.current_period_end * 1000).toISOString()
+  const periodEnd = sub?.current_period_end ?? sub?.items?.data?.[0]?.current_period_end;
+  const endsAt = pending && periodEnd
+    ? new Date(periodEnd * 1000).toISOString()
     : null;
   return { cancel_at_period_end: pending, subscription_ends_at: endsAt };
 }

@@ -576,6 +576,23 @@ describe("cancellationFieldsFromSubscription", () => {
       .toEqual({ cancel_at_period_end: true, subscription_ends_at: null });
   });
 
+  it("reads current_period_end from subscription items (API ≥2025-03 basil/dahlia shape)", () => {
+    // The live webhook destination pins 2026-04-22.dahlia, where
+    // current_period_end lives on the subscription ITEM, not the sub.
+    const out = cancellationFieldsFromSubscription({
+      cancel_at_period_end: true,
+      items: { data: [{ current_period_end: 1783555200 }] },
+    });
+    expect(out.subscription_ends_at).toBe("2026-07-09T00:00:00.000Z");
+    // Old shape still wins when both are present (SDK reads pin 2023-10-16).
+    const both = cancellationFieldsFromSubscription({
+      cancel_at_period_end: true,
+      current_period_end: 1783555200,
+      items: { data: [{ current_period_end: 9999999999 }] },
+    });
+    expect(both.subscription_ends_at).toBe("2026-07-09T00:00:00.000Z");
+  });
+
   it("coerces missing/undefined subscription to a clean cleared shape", () => {
     expect(cancellationFieldsFromSubscription(undefined))
       .toEqual({ cancel_at_period_end: false, subscription_ends_at: null });
