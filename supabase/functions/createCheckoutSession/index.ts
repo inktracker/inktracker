@@ -549,6 +549,13 @@ Deno.serve(async (req) => {
     } catch {
       return Response.json({ error: "Invalid request." }, { status: 400, headers: CORS });
     }
+    // A non-object body (null, a number, a bare string, an array) is still
+    // valid JSON but destructuring it throws — which would fall through to the
+    // alerting catch and page us for what is plainly client junk. Reject with
+    // the same silent 400 as unparseable input.
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Response.json({ error: "Invalid request." }, { status: 400, headers: CORS });
+    }
     const { action, quoteId, token, ...rest } = body as Record<string, any>;
 
     // RL-04: rate-limit the customer-facing read + session actions by client IP
