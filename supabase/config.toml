@@ -22,6 +22,9 @@ verify_jwt = false
 [functions.ssPlaceOrder]
 verify_jwt = false
 
+[functions.smLookupStyle]
+verify_jwt = false
+
 [functions.acLookupStyle]
 verify_jwt = false
 

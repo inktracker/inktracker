@@ -6,6 +6,8 @@ import {
   fetchEnrichedStyle as enrichStyleData,
   isStyleEnriched,
 } from "@/lib/wizard/enrichStyle";
+import { preferredSourceToken } from "@/lib/suppliers/preference";
+import { getShopPricingConfig } from "@/components/shared/pricing";
 
 const CATEGORIES = ["T-Shirts", "Long Sleeve", "Hoodies", "Crewnecks", "Tank Tops", "Polos", "Hats", "Other"];
 
@@ -77,12 +79,14 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
       // (e.g. "5080" = Red Kap on S&S, Heavy Tee on AS Colour) so we
       // show both so the shop picks the right one. allSettled — if one
       // supplier errors we still surface results from the other.
-      const [ssRes, acRes] = await Promise.allSettled([
+      const [ssRes, acRes, smRes] = await Promise.allSettled([
         supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: q } }),
         supabase.functions.invoke("acLookupStyle", { body: { styleCode: q } }),
+        supabase.functions.invoke("smLookupStyle", { body: { styleNumber: q } }),
       ]);
       const ssData = ssRes.status === "fulfilled" ? ssRes.value?.data : null;
       const acData = acRes.status === "fulfilled" ? acRes.value?.data : null;
+      const smData = smRes.status === "fulfilled" ? smRes.value?.data : null;
       const ssMatches = (ssData?.matches || []).map(m => ({
         id: m.id || `ss-${m.styleNumber || m.styleName}`,
         brandName: m.brandName || "",
@@ -103,7 +107,17 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
         piecePrice: m.piecePrice || 0,
         source: "ac",
       }));
-      const matches = [...ssMatches, ...acMatches];
+      const smMatches = (smData?.matches || []).map(m => ({
+        id: m.id ? `sm-${m.id}` : `sm-${m.styleNumber || q}`,
+        brandName: m.brandName || "",
+        styleNumber: m.styleNumber || q.toUpperCase(),
+        description: m.description || m.title || "",
+        styleCategory: m.styleCategory || "",
+        styleImage: m.styleImage || m.colors?.[0]?.imageUrl || "",
+        piecePrice: m.piecePrice || 0,
+        source: "sanmar",
+      }));
+      const matches = [...ssMatches, ...acMatches, ...smMatches];
       if (matches.length === 0) setSsError(`No results for "${q}"`);
       else setSsResults(matches);
     } catch (err) {
@@ -132,7 +146,10 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
     // we don't accidentally pull a different supplier's same-numbered
     // style on the next sync.
     setEnriching(true);
-    const enriched = await enrichStyleData(match.styleNumber, match.brandName, supabase);
+    // match.source pins enrichment to the supplier the shop just picked —
+    // the same brand+style can exist on both S&S and SanMar, and the pick
+    // IS the supplier decision.
+    const enriched = await enrichStyleData(match.styleNumber, match.brandName, supabase, match.source, preferredSourceToken(getShopPricingConfig()));
     setEnriching(false);
 
     setStyles(prev => [
@@ -167,7 +184,11 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
     for (let i = 0; i < targets.length; i += BATCH) {
       const batch = targets.slice(i, i + BATCH);
       const results = await Promise.all(
-        batch.map(async s => ({ id: s.id, data: await enrichStyleData(s.styleNumber, s.brand, supabase) }))
+        // s.enrichedFrom keeps each style on the supplier it was originally
+        // enriched from — without it a re-sync flips overlapping-brand
+        // styles (Gildan, Bella...) to whichever supplier wins the default
+        // preference order, silently changing the shop's garment costs.
+        batch.map(async s => ({ id: s.id, data: await enrichStyleData(s.styleNumber, s.brand, supabase, s.enrichedFrom, preferredSourceToken(getShopPricingConfig())) }))
       );
       for (const { id, data } of results) {
         if (!data) continue;
@@ -201,7 +222,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
       let finalStyles = styles;
       if (missing.length > 0) {
         const fetched = await Promise.all(
-          missing.map(async s => ({ id: s.id, data: await enrichStyleData(s.styleNumber, s.brand, supabase) }))
+          missing.map(async s => ({ id: s.id, data: await enrichStyleData(s.styleNumber, s.brand, supabase, s.enrichedFrom, preferredSourceToken(getShopPricingConfig())) }))
         );
         finalStyles = styles.map(s => {
           const hit = fetched.find(h => h.id === s.id);
@@ -294,11 +315,13 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                   className={`text-[10px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded-full border ${
                     m.source === "ac"
                       ? "text-amber-700 bg-amber-50 border-amber-200"
-                      : "text-sky-700 bg-sky-50 border-sky-200"
+                      : m.source === "sanmar"
+                        ? "text-blue-700 bg-blue-50 border-blue-200"
+                        : "text-sky-700 bg-sky-50 border-sky-200"
                   }`}
-                  title={m.source === "ac" ? "Match from AS Colour" : "Match from S&S Activewear"}
+                  title={m.source === "ac" ? "Match from AS Colour" : m.source === "sanmar" ? "Match from SanMar" : "Match from S&S Activewear"}
                 >
-                  {m.source === "ac" ? "AS Colour" : "S&S"}
+                  {m.source === "ac" ? "AS Colour" : m.source === "sanmar" ? "SanMar" : "S&S"}
                 </span>
                 <Plus className="w-4 h-4 text-teal-500 flex-shrink-0" />
               </button>
@@ -333,7 +356,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
                       anything missing, so the gray dot is just informational. */}
                   {s.styleNumber && (
                     isStyleEnriched(s) ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" title={`Synced from ${s.enrichedFrom === "ac" ? "AS Colour" : "S&S"} · ${Object.keys(s.colorImages || {}).length} colors`}>
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full" title={`Synced from ${s.enrichedFrom === "ac" ? "AS Colour" : s.enrichedFrom === "sanmar" ? "SanMar" : "S&S"} · ${Object.keys(s.colorImages || {}).length} colors`}>
                         <Check className="w-3 h-3" /> Synced
                       </span>
                     ) : (

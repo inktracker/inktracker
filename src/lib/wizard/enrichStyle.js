@@ -1,3 +1,6 @@
+// Relative import + .js extension on purpose: node scripts (audit-wizard-styles,
+// resync-*) import this module directly and cannot resolve Vite's @/ alias.
+import { effectiveOptionCost } from "../suppliers/preference.js";
 // Shared style-enrichment helpers used by:
 //   1. WizardConfigEditor — at shop-config save time, persists supplier
 //      data into the saved `wizard_styles[]` so the public wizard renders
@@ -30,7 +33,7 @@
  * @param {object?} opts
  * @param {string?} opts.brandHint    Caller's known brand (preserves it
  *                                    when supplier returns ambiguous data).
- * @param {string}  opts.source       "ss" | "ac" — which supplier matched.
+ * @param {string}  opts.source       "ss" | "ac" | "sanmar" — which supplier matched.
  * @param {string?} opts.styleNumber  Fallback style number if match lacks one.
  * @returns {object|null}
  */
@@ -91,8 +94,8 @@ export function normalizeSupplierMatch(match, { brandHint, source, styleNumber }
 }
 
 /**
- * Given parallel S&S + AS Colour responses, pick the best match using
- * the brand hint (if any) and normalize. Returns null when neither
+ * Given parallel S&S + AS Colour + SanMar responses, pick the best match
+ * using the brand hint (if any) and normalize. Returns null when no
  * supplier knows the style number.
  *
  * Centralizes the brand-disambiguation logic so collisions like
@@ -101,18 +104,38 @@ export function normalizeSupplierMatch(match, { brandHint, source, styleNumber }
  *
  * @param {object?} ssData    Resolved data from `ssLookupStyle` (or null).
  * @param {object?} acData    Resolved data from `acLookupStyle` (or null).
+ * @param {object?} smData    Resolved data from `smLookupStyle` (or null).
  * @param {object?} opts
  * @param {string?} opts.brandHint
  * @param {string?} opts.styleNumber
+ * @param {string?} opts.supplierHint  "ss" | "ac" | "sanmar" — pins the pick to
+ *   that supplier's response, strictly (no cross-supplier fallback). Brand
+ *   hints alone can't disambiguate: the same brand+style often exists on
+ *   BOTH S&S and SanMar (Gildan 5000, Bella 3001, Comfort Colors 1717...),
+ *   and without the pin a re-sync would silently flip a SanMar style to
+ *   S&S pricing. Callers pass the row's saved `enrichedFrom` (or the
+ *   search result's source) here.
  */
-export function pickAndNormalize(ssData, acData, { brandHint, styleNumber } = {}) {
-  const ssMatches = (ssData && Array.isArray(ssData.matches)) ? ssData.matches : [];
-  const acMatches = (acData && Array.isArray(acData.matches)) ? acData.matches : [];
+export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber, supplierHint, preferredSource } = {}) {
+  let ssMatches = (ssData && Array.isArray(ssData.matches)) ? ssData.matches : [];
+  let acMatches = (acData && Array.isArray(acData.matches)) ? acData.matches : [];
+  let smMatches = (smData && Array.isArray(smData.matches)) ? smData.matches : [];
+
+  // Supplier pin: empty the other pools so every rule below (brand hints,
+  // first-match fallback) can only ever pick from the pinned supplier.
+  if (supplierHint === "ss") { acMatches = []; smMatches = []; }
+  else if (supplierHint === "ac") { ssMatches = []; smMatches = []; }
+  else if (supplierHint === "sanmar") { ssMatches = []; acMatches = []; }
   const brandLower = (brandHint || "").toLowerCase().trim();
   const isAsColourHint = /as ?colour/.test(brandLower);
 
   let match = null;
   let source = null;
+
+  const findBrandMatch = (matches) => matches.find(m => {
+    const b = (m.brandName || "").toLowerCase();
+    return b && (b.includes(brandLower) || brandLower.includes(b));
+  });
 
   if (isAsColourHint) {
     // Brand hint pins us to AS Colour. If AC has no match for this
@@ -123,22 +146,55 @@ export function pickAndNormalize(ssData, acData, { brandHint, styleNumber } = {}
     // the audit gate flags it.
     if (acMatches[0]) { match = acMatches[0]; source = "ac"; }
   } else if (brandLower) {
-    // Brand hint specifies a brand carried by S&S. Same strict
-    // semantics: if no S&S row matches that brand, don't fall back
-    // to "any S&S product with that style number" — the collision
-    // risk is exactly the bug we're guarding against.
-    const brandMatch = ssMatches.find(m => {
-      const b = (m.brandName || "").toLowerCase();
-      return b && (b.includes(brandLower) || brandLower.includes(b));
-    });
-    if (brandMatch) { match = brandMatch; source = "ss"; }
+    // Brand hint specifies a brand. Same strict semantics: only a row
+    // whose brand actually matches wins — never "any product with that
+    // style number"; the collision risk is exactly the bug we're
+    // guarding against. S&S checked first (legacy preference), then
+    // SanMar — both carry overlapping brands (Port Authority, District,
+    // Sport-Tek live in both catalogs).
+    // Shop's default supplier takes priority when both carry the brand
+    // (Joe 2026-07-20); "cheapest" compares the sale-aware effective
+    // price across the suppliers' brand matches; otherwise legacy
+    // S&S-then-SanMar order.
+    const brandPools = preferredSource === "sanmar"
+      ? [["sanmar", smMatches], ["ss", ssMatches]]
+      : [["ss", ssMatches], ["sanmar", smMatches]];
+    if (preferredSource === "cheapest") {
+      let bestCost = Infinity;
+      for (const [src, pool] of brandPools) {
+        const m = findBrandMatch(pool);
+        if (!m) continue;
+        const c = effectiveOptionCost(m);
+        if (c < bestCost) { match = m; source = src; bestCost = c; }
+      }
+    }
+    if (!match) {
+      for (const [src, pool] of brandPools) {
+        const m = findBrandMatch(pool);
+        if (m) { match = m; source = src; break; }
+      }
+    }
   } else {
-    // No brand hint — first match wins. S&S preferred when both
+    // No brand hint — first match wins. S&S preferred when several
     // suppliers have a match (legacy compat; predates the wizard
-    // brand field). Used by free-form lookups where the caller has
-    // no opinion about the brand.
-    if (ssMatches[0]) { match = ssMatches[0]; source = "ss"; }
-    else if (acMatches[0]) { match = acMatches[0]; source = "ac"; }
+    // brand field), then AS Colour, then SanMar. Used by free-form
+    // lookups where the caller has no opinion about the brand.
+    const pools = [["ss", ssMatches], ["ac", acMatches], ["sanmar", smMatches]];
+    if (preferredSource === "cheapest") {
+      let bestCost = Infinity;
+      for (const [src, pool] of pools) {
+        if (!pool[0]) continue;
+        const c = effectiveOptionCost(pool[0]);
+        if (c < bestCost) { match = pool[0]; source = src; bestCost = c; }
+      }
+    } else if (preferredSource) {
+      pools.sort((a, b) => (a[0] === preferredSource ? -1 : b[0] === preferredSource ? 1 : 0));
+    }
+    if (!match) {
+      for (const [src, pool] of pools) {
+        if (pool[0]) { match = pool[0]; source = src; break; }
+      }
+    }
   }
 
   if (!match) return null;
@@ -154,7 +210,7 @@ export function pickAndNormalize(ssData, acData, { brandHint, styleNumber } = {}
  * Supabase is injected so this function is independently testable —
  * pass a stub `{ functions: { invoke: jest.fn() } }`.
  */
-export async function fetchEnrichedStyle(styleNumber, brandHint, supabase) {
+export async function fetchEnrichedStyle(styleNumber, brandHint, supabase, supplierHint, preferredSource) {
   if (!styleNumber || typeof styleNumber !== "string") return null;
   const styleNum = styleNumber.trim().toUpperCase();
   if (!styleNum) return null;
@@ -167,13 +223,15 @@ export async function fetchEnrichedStyle(styleNumber, brandHint, supabase) {
     return null;
   }
   try {
-    const [ssRes, acRes] = await Promise.allSettled([
+    const [ssRes, acRes, smRes] = await Promise.allSettled([
       supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: styleNum } }),
       supabase.functions.invoke("acLookupStyle", { body: { styleCode: styleNum } }),
+      supabase.functions.invoke("smLookupStyle", { body: { styleNumber: styleNum } }),
     ]);
     const ssData = ssRes.status === "fulfilled" ? ssRes.value?.data : null;
     const acData = acRes.status === "fulfilled" ? acRes.value?.data : null;
-    return pickAndNormalize(ssData, acData, { brandHint, styleNumber: styleNum });
+    const smData = smRes.status === "fulfilled" ? smRes.value?.data : null;
+    return pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber: styleNum, supplierHint, preferredSource });
   } catch (err) {
     // Surface what actually failed instead of pretending success.
     // Callers still treat null as "couldn't enrich" but at least the

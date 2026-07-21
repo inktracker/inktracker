@@ -128,9 +128,31 @@ function groupRowsByBrand(rows: any[]): any[] {
     const title      = styleDesc || [brandName, partNumber].filter(Boolean).join(" — ");
     const styleCategory = firstRow._styleCategory || "";
 
+    // Sale window check: S&S rows carry salePrice + saleExpiration per
+    // SKU. The expiration DAY is inclusive (the site shows "Sale Exp.
+    // 7/20" with the sale still active on 7/20). Missing/unparseable
+    // dates don't block — the below-standard-price guard is the real
+    // gate for "is this a genuine sale".
+    const saleActive = (row: Record<string, unknown>): boolean => {
+      const exp = (row.saleExpiration ?? row.sale_expiration) as string | undefined;
+      if (!exp) return true;
+      const m = String(exp).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return true;
+      // The expiration DAY is inclusive through end of day US Pacific —
+      // S&S is a US supplier and their site honors the sale all day on
+      // the Exp date. The edge runtime clocks UTC, so a naive
+      // end-of-day check expired sales 4-8 hours early (live-caught:
+      // "Sale Exp. 7/20" showed on ssactivewear.com at 5pm PT on 7/20
+      // while this function called it expired). Deadline = 08:00 UTC
+      // the following day (= midnight PST).
+      const deadline = Date.UTC(+m[1], +m[2] - 1, +m[3] + 1, 8, 0, 0);
+      return Date.now() < deadline;
+    };
+
     const colorMap: Record<string, {
       colorName: string; colorCode: string; sku: string;
       piecePrice: number; casePrice: number;
+      salePrice: number;
       imageUrl: string; backImageUrl: string;
       sizeQuantities: Record<string, number>;
       sizePrices: Record<string, number>;
@@ -149,11 +171,20 @@ function groupRowsByBrand(rows: any[]): any[] {
           sku: String(row.sku ?? "").replace(/-[^-]+$/, ""),
           piecePrice: sanitizeSupplierPrice(row.piecePrice ?? row.piece_price),
           casePrice:  sanitizeSupplierPrice(row.casePrice  ?? row.case_price, MAX_SANE_CASE_PRICE),
+          salePrice: 0,
           imageUrl: frontRaw ? (frontRaw.startsWith("http") ? frontRaw : `https://www.ssactivewear.com/${frontRaw}`) : "",
           backImageUrl: backRaw ? (backRaw.startsWith("http") ? backRaw : `https://www.ssactivewear.com/${backRaw}`) : "",
           sizeQuantities: {},
           sizePrices: {} as Record<string, number>,
         };
+      }
+
+      // Cheapest active sale across the color's sizes — display-only
+      // (mirrors the SanMar salePrice contract: never feeds the cost).
+      const rowSale = sanitizeSupplierPrice(row.salePrice ?? row.sale_price);
+      if (rowSale > 0 && saleActive(row)) {
+        const cur = colorMap[colorName].salePrice;
+        if (cur === 0 || rowSale < cur) colorMap[colorName].salePrice = rowSale;
       }
 
       const sizeName = row.sizeName ?? row.size ?? "";
@@ -170,8 +201,17 @@ function groupRowsByBrand(rows: any[]): any[] {
     const priceMap: Record<string, { piecePrice: number; casePrice: number }> = {};
     const sizePriceMap: Record<string, Record<string, number>> = {};
     for (const c of colors) {
+      // A "sale" at or above the standard price isn't a sale — drop it so
+      // the UI badge can't mislead.
+      if (!(c.salePrice > 0 && c.piecePrice > 0 && c.salePrice < c.piecePrice)) {
+        (c as { salePrice?: number }).salePrice = undefined;
+      }
       inventoryMap[c.colorName] = c.sizeQuantities;
-      priceMap[c.colorName]     = { piecePrice: c.piecePrice, casePrice: c.casePrice };
+      priceMap[c.colorName]     = {
+        piecePrice: c.piecePrice,
+        casePrice: c.casePrice,
+        ...(c.salePrice ? { salePrice: c.salePrice } : {}),
+      };
       if (c.sizePrices && Object.keys(c.sizePrices).length > 0) {
         sizePriceMap[c.colorName] = c.sizePrices;
       }
@@ -364,6 +404,12 @@ Deno.serve(async (req) => {
     let lastFailStatus = 0;
 
     function mergeRows(newRows: any[]) {
+      // Debug aid: expose the raw S&S row schema once per response, so
+      // field-name questions (salePrice? saleExpiration? casing?) are
+      // answered by a debug call instead of guesswork.
+      if (debug && newRows[0] && !logs.some((l: any) => l.rawRowFields)) {
+        logs.push({ rawRowFields: Object.keys(newRows[0]).sort() });
+      }
       for (const row of newRows) {
         const key = String(row.sku ?? row.partNumber ?? Math.random());
         if (!rowsBySku.has(key)) rowsBySku.set(key, row);

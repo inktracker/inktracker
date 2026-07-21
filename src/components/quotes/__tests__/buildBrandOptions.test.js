@@ -105,6 +105,73 @@ describe.each([
   });
 });
 
+// Bug story (2026-07-02, SanMar integration): the same brand+style exists on
+// BOTH S&S and SanMar (Gildan 5000, Bella 3001, Comfort Colors 1717...) with
+// per-supplier pricing. The old dedup key (style|brand|description) collapsed
+// the two listings into whichever supplier came first — silently taking the
+// supplier choice (and its pricing) away from the user. Matches are now
+// tagged `_supplier` by lookupStyle, the key includes it, and duplicate
+// labels get the supplier appended so the dropdown IS the supplier picker.
+const GILDAN_5000_BOTH_SUPPLIERS = [
+  {
+    id: 9001,
+    _supplier: "S&S Activewear",
+    brandName: "Gildan",
+    styleNumber: "5000",
+    description: "Heavy Cotton T-Shirt",
+    styleCategory: "T-Shirts",
+    colors: [],
+    priceMap: { White: { piecePrice: 2.42 } },
+  },
+  {
+    id: 9001,
+    _supplier: "SanMar",
+    brandName: "Gildan",
+    styleNumber: "5000",
+    description: "Heavy Cotton T-Shirt",
+    styleCategory: "T-Shirts",
+    colors: [],
+    priceMap: { White: { piecePrice: 2.38 } },
+  },
+];
+
+describe.each([
+  ["LineItemEditor",       buildBrandOptionsShop],
+  ["BrokerLineItemEditor", buildBrandOptionsBroker],
+])("%s buildBrandOptions — cross-supplier same brand+style", (_label, buildBrandOptions) => {
+  it("keeps one option per supplier instead of collapsing identical listings", () => {
+    const options = buildBrandOptions(GILDAN_5000_BOTH_SUPPLIERS, "5000");
+    expect(options).toHaveLength(2);
+    expect(new Set(options.map((o) => o.id)).size).toBe(2);
+    expect(options.map((o) => o._supplier).sort()).toEqual(["S&S Activewear", "SanMar"]);
+  });
+
+  it("appends ONLY the supplier to duplicate labels — prices live in the sale lines under Garment Cost", () => {
+    const options = buildBrandOptions(GILDAN_5000_BOTH_SUPPLIERS, "5000");
+    expect(options.find((o) => o._supplier === "SanMar").label).toContain("(SanMar)");
+    expect(options.find((o) => o._supplier === "S&S Activewear").label).toContain("(S&S Activewear)");
+    expect(options.find((o) => o._supplier === "SanMar").label).not.toContain("$");
+  });
+
+  it("each option keeps its own supplier's pricing", () => {
+    const options = buildBrandOptions(GILDAN_5000_BOTH_SUPPLIERS, "5000");
+    expect(options.find((o) => o._supplier === "SanMar").priceMap.White.piecePrice).toBe(2.38);
+    expect(options.find((o) => o._supplier === "S&S Activewear").priceMap.White.piecePrice).toBe(2.42);
+  });
+
+  it("does NOT decorate labels when a brand+style is only offered by one supplier", () => {
+    const options = buildBrandOptions([GILDAN_5000_BOTH_SUPPLIERS[1]], "5000");
+    expect(options).toHaveLength(1);
+    expect(options[0].label).not.toContain("(SanMar)");
+  });
+
+  it("untagged matches (no _supplier) keep the legacy dedup behavior", () => {
+    const legacy = GILDAN_5000_BOTH_SUPPLIERS.map(({ _supplier, ...m }) => m);
+    const options = buildBrandOptions(legacy, "5000");
+    expect(options).toHaveLength(1);
+  });
+});
+
 // Bug story (2026-07-17, Lisa Gotts): a brandless match ("customer supplied
 // goods" typed into the style field) fell back to the literal string
 // "Unknown Brand", which applySelectedMatch persisted onto the line and every

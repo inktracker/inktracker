@@ -10,6 +10,7 @@ import { supabase } from "@/api/supabaseClient";
 export const SUPPLIERS = {
   SS: "S&S Activewear",
   AC: "AS Colour",
+  SANMAR: "SanMar",
 };
 
 const FN = {
@@ -25,6 +26,13 @@ const FN = {
     pricelist: "acGetPriceList",
     placeOrder: "acPlaceOrder",
     shippingMethods: "acGetShippingMethods",
+  },
+  // SanMar has no keyword-search or (yet) order-placement API — exact
+  // style-number lookup only. PO integration is a separate SanMar
+  // onboarding phase; placeOrder stays absent so placeOrder() throws
+  // the standard "place directly with the supplier" message.
+  [SUPPLIERS.SANMAR]: {
+    lookup: "smLookupStyle",
   },
 };
 

@@ -17,6 +17,7 @@ import BrokerPricePanel from "./BrokerPricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
+import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
 import { notify } from "@/lib/notify";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results,
@@ -27,19 +28,29 @@ async function lookupStyle(styleNumber) {
   const code = String(styleNumber || "").trim().toUpperCase();
   if (!code) return { matches: [] };
 
-  const [ssRes, acRes] = await Promise.allSettled([
+  const [ssRes, acRes, smRes] = await Promise.allSettled([
     supabase.functions.invoke("ssLookupStyle", { body: { styleNumber: code } }),
     supabase.functions.invoke("acLookupStyle", { body: { styleCode: code } }),
+    supabase.functions.invoke("smLookupStyle", { body: { styleNumber: code } }),
   ]);
 
-  const grab = (r) => {
+  // Tag each match with the supplier whose lookup returned it — brand names
+  // can't identify the supplier (Gildan/Bella live on both S&S and SanMar).
+  const grab = (r, supplierName) => {
     if (r.status !== "fulfilled") return [];
     const data = r.value?.data;
     if (!data || data.error) return [];
-    return data.matches || data.results || data.items || data.products || [];
+    const arr = data.matches || data.results || data.items || data.products || [];
+    return arr.map((m) => ({ ...m, _supplier: supplierName }));
   };
 
-  return { matches: [...grab(ssRes), ...grab(acRes)] };
+  return {
+    matches: [
+      ...grab(ssRes, "S&S Activewear"),
+      ...grab(acRes, "AS Colour"),
+      ...grab(smRes, "SanMar"),
+    ],
+  };
 }
 
 function cleanText(value) {
@@ -75,7 +86,7 @@ function stripTrailingCode(title) {
   return txt.replace(/\s*-\s*[A-Z0-9-]{2,30}\s*$/i, "").trim();
 }
 
-function getResultCandidates(result) {
+export function getResultCandidates(result) {
   const rawMatches = Array.isArray(result?.matches)
     ? result.matches
     : Array.isArray(result?.results)
@@ -137,6 +148,9 @@ function getResultCandidates(result) {
       piecePrice: item?.piecePrice,
       casePrice: item?.casePrice,
       raw: item,
+      // Fetch-time supplier tag — must survive normalization or the
+      // supplier-aware dedup/labels downstream see every match as untagged.
+      _supplier: item?._supplier || "",
     }));
   }
 
@@ -184,6 +198,7 @@ function getResultCandidates(result) {
       piecePrice: result?.piecePrice,
       casePrice: result?.casePrice,
       raw: result,
+      _supplier: result?._supplier || "",
     },
   ];
 }
@@ -284,7 +299,11 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     const brand = cleanText(match.brandName);
     const brandLabel = brand || "Unknown brand";
     const description = getBestDescription(match) || "Untitled";
-    const key = `${canonicalStyle}|${brandLabel}|${description}`;
+    const supplier = cleanText(match._supplier) || "";
+    // Supplier is part of the key: the same brand+style exists on both S&S
+    // and SanMar with per-supplier pricing — collapsing them would take the
+    // supplier choice away.
+    const key = `${canonicalStyle}|${brandLabel}|${description}|${supplier}`;
 
     if (seen.has(key)) return;
     seen.add(key);
@@ -296,10 +315,11 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     // up with the same <option value> and the find-by-id resolution
     // always returns the first one in array order.
     unique.push({
-      id: `${brandLabel.toLowerCase()}::${match.id || `idx-${index}`}`,
+      id: `${supplier.toLowerCase() || "x"}::${brandLabel.toLowerCase()}::${match.id || `idx-${index}`}`,
       styleNumber: canonicalStyle,
       brandName: brand,
       description,
+      _supplier: supplier,
       styleCategory: match.styleCategory || "",
       colors: match.colors || [],
       inventoryMap: match.inventoryMap || {},
@@ -312,10 +332,25 @@ export function buildBrandOptions(matches, typedStyleNumber) {
     });
   });
 
+  // Disambiguate labels when the same brand+style came back from more than
+  // one supplier — the dropdown pick IS the supplier choice.
+  const brandStyleCounts = new Map();
+  for (const o of unique) {
+    const k = `${o.brandName}|${o.styleNumber}`;
+    brandStyleCounts.set(k, (brandStyleCounts.get(k) || 0) + 1);
+  }
+  for (const o of unique) {
+    if (o._supplier && brandStyleCounts.get(`${o.brandName}|${o.styleNumber}`) > 1) {
+      // Plain supplier suffix only (Joe 2026-07-20): price comparison
+      // lives in the sale lines under Garment Cost, not in the labels.
+      o.label = `${o.label} (${o._supplier})`;
+    }
+  }
+
   return unique;
 }
 
-function applySelectedMatch(li, selectedMatch) {
+export function applySelectedMatch(li, selectedMatch) {
   const styleNumber = cleanText(selectedMatch.styleNumber).toUpperCase();
   // Long marketing copy — used for category keyword detection only.
   const longDescription = cleanText(
@@ -337,10 +372,9 @@ function applySelectedMatch(li, selectedMatch) {
     li.garmentColor;
 
   const selectedPrice = (selectedMatch.priceMap && selectedMatch.priceMap[firstColor]) || {};
-  const supplierFromMatch =
-    cleanText(selectedMatch.raw?.brandName).toLowerCase() === "as colour"
-      ? "AS Colour"
-      : "S&S Activewear";
+  // Fetch-time _supplier tag ONLY — never brand inference, never an S&S
+  // default. Untagged persists "" = unknown (mirrors LineItemEditor).
+  const supplierFromMatch = selectedMatch._supplier || "";
 
   return {
     ...li,
@@ -483,15 +517,20 @@ export default function BrokerLineItemEditor({
     try {
       const result = await lookupStyle(typedStyleNumber);
       const matches = getResultCandidates(result);
-      const options = buildBrandOptions(matches, typedStyleNumber);
+      const preferred = preferredSupplier(getShopPricingConfig());
+      const options = orderBySupplierPreference(buildBrandOptions(matches, typedStyleNumber), preferred);
 
       setBrandOptions(options);
 
-      const selected =
-        options.find(
-          (option) =>
-            cleanText(option.brandName).toLowerCase() === cleanText(li.brand).toLowerCase()
-        ) || options[0];
+      // Saved supplier → shop preference → first option (the broker
+      // editor always auto-applies something; keep that, just make the
+      // pick supplier-aware).
+      const selected = pickDefaultOption(options, {
+        brand: li.brand,
+        supplier: li.supplier,
+        preferred,
+        color: li.garmentColor,
+      }) || options[0];
 
       if (!selected) {
         throw new Error("No supplier results found");
@@ -806,6 +845,32 @@ export default function BrokerLineItemEditor({
                 Re-select the style or color to restore it.
               </p>
             )}
+            {(() => {
+              // Sale comparison (Joe 2026-07-20): one line PER SUPPLIER
+              // carrying the current color, so the compare is instant with
+              // no dropdown clicking. Informational only — the cost formula
+              // stays on the selected supplier's standard price.
+              const color = li.garmentColor;
+              if (!color) return null;
+              const brandLc = cleanText(li.brand).toLowerCase();
+              const rows = (brandOptions || [])
+                .filter((o) => o._supplier && (!brandLc || cleanText(o.brandName).toLowerCase() === brandLc))
+                .map((o) => ({ supplier: o._supplier, sale: Number(o.priceMap?.[color]?.salePrice) }))
+                .filter((r) => r.sale > 0);
+              if (rows.length === 0) return null;
+              return (
+                <div
+                  className="mt-1 space-y-0.5"
+                  title="Current sale prices for this color — display only; quote costs use the standard price (sales end; jobs print later)."
+                >
+                  {rows.map((r) => (
+                    <p key={r.supplier} className="text-[10px] text-emerald-600 font-semibold whitespace-nowrap">
+                      💲 {r.supplier === "S&S Activewear" ? "S&S" : r.supplier} sale — ${r.sale.toFixed(2)}/pc
+                    </p>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

@@ -36,6 +36,9 @@ export const SECRET_KEYS = [
   // table also has a column under the old name, it's now orphaned.
   "ss_account_number",
   "ss_api_key",
+  "sanmar_customer_number",
+  "sanmar_username",
+  "sanmar_password",
   "stripe_customer_id",
   "stripe_subscription_id",
 ];
