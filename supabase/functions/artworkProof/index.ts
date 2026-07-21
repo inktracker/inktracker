@@ -13,6 +13,7 @@
 // keeps working indefinitely without ever exposing a public or long-lived URL.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
+import { publicErrorPage, isBrowserNavigation } from "../_shared/publicErrors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -67,9 +68,16 @@ function authorizedPaths(row: unknown): Set<string> {
   return out;
 }
 
-function fail(status: number) {
+function fail(status: number, req?: Request) {
   // Same opaque 404 for not-found / bad-token / unauthorized-path so we never
   // leak which one it was (mirrors the quote/order token gate).
+  //
+  // A customer can NAVIGATE here — proof links are emailed, and people click
+  // and open images directly. Those get a styled, plain-English page instead
+  // of unstyled "Not found" black-on-white, which reads as broken. Subresource
+  // fetches (<img src>) keep the terse body: no human reads it, and the
+  // browser renders its own broken-image state regardless.
+  if (req && isBrowserNavigation(req)) return publicErrorPage(status);
   return new Response("Not found", { status, headers: CORS });
 }
 
@@ -83,7 +91,7 @@ Deno.serve(async (req) => {
     const pathParam = url.searchParams.get("path") || "";
 
     const reqPath = resolveArtworkPath(pathParam);
-    if (!reqPath || (type !== "quote" && type !== "order") || !id || !token) return fail(404);
+    if (!reqPath || (type !== "quote" && type !== "order") || !id || !token) return fail(404, req);
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
     const table = type === "quote" ? "quotes" : "orders";
@@ -100,13 +108,13 @@ Deno.serve(async (req) => {
       const { data } = await admin.from(table).select("*").eq(idCol, id).maybeSingle();
       row = data;
     }
-    if (!row || !row.public_token || !safeEquals(token, row.public_token)) return fail(404);
+    if (!row || !row.public_token || !safeEquals(token, row.public_token)) return fail(404, req);
 
-    if (!authorizedPaths(row).has(reqPath)) return fail(404);
+    if (!authorizedPaths(row).has(reqPath)) return fail(404, req);
 
     const { data: signed, error } = await admin.storage
       .from("artwork").createSignedUrl(reqPath, SIGNED_TTL);
-    if (error || !signed?.signedUrl) return fail(404);
+    if (error || !signed?.signedUrl) return fail(404, req);
 
     // 302 to the freshly-signed URL. no-store so the redirect itself isn't cached
     // (the signed URL it points to is short-lived).
@@ -116,6 +124,6 @@ Deno.serve(async (req) => {
     });
   } catch (err) {
     console.error("[artworkProof] error:", (err as Error).message);
-    return fail(404);
+    return fail(404, req);
   }
 });

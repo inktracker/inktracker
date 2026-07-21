@@ -18,6 +18,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { captureError } from "../_shared/observability.ts";
+import { toPublicMessage } from "../_shared/publicErrors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -74,14 +75,18 @@ Deno.serve(async (req) => {
     const { data, error } = await admin.rpc("submit_wizard_quote", { payload });
     if (error) {
       console.error("[wizardSubmit] submit_wizard_quote failed:", error.message);
-      // Surface the RPC's own user-facing messages (rate limit / bot / size).
-      return json({ error: error.message || "Submission failed." }, 400);
+      // The RPC's own messages are terse and engineer-shaped ("unknown shop",
+      // "request rejected"), and an UNEXPECTED Postgres error (constraint
+      // violation, missing column) would reach the customer verbatim.
+      // toPublicMessage rewrites the intentional ones into customer copy and
+      // replaces anything unrecognized with the friendly generic.
+      return json({ error: toPublicMessage(error) }, 400);
     }
 
     return json({ id: data });
   } catch (err) {
     await captureError(err, { fn: "wizardSubmit" });
     console.error("[wizardSubmit] error:", err);
-    return json({ error: String((err as Error)?.message ?? err) }, 500);
+    return json({ error: toPublicMessage(err) }, 500);
   }
 });

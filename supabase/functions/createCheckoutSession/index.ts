@@ -14,6 +14,7 @@ import {
 import { toCustomerFacingQuote } from "../_shared/customerFacingQuote.js";
 import { insertShopNotification } from "../_shared/notifications.js";
 import { resolveApproveQuoteUpdate, APPROVE_GUARD_OR } from "../_shared/approveQuoteEffect.js";
+import { toPublicMessage } from "../_shared/publicErrors.ts";
 
 // The quote/customer rows returned to the UNauthenticated payment page must
 // not leak broker wholesale pricing or shop-internal customer PII. We:
@@ -586,7 +587,11 @@ Deno.serve(async (req) => {
     return Response.json(result, { headers: CORS });
   } catch (err) {
     await captureError(err, { fn: "createCheckoutSession" });
+    // The real text goes to the logs; the CUSTOMER gets copy we wrote. This
+    // endpoint backs the anonymous quote-payment page, so an unexpected throw
+    // (Stripe SDK, Postgres, JSON parse) used to render verbatim in her
+    // browser. toPublicMessage never passes through unapproved text.
     console.error("[createCheckoutSession] error:", err);
-    return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500, headers: CORS });
+    return Response.json({ error: toPublicMessage(err) }, { status: 500, headers: CORS });
   }
 });

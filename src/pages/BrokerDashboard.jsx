@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import SignInRequired from "@/components/shared/SignInRequired";
 import AttachmentGallery from "@/components/shared/AttachmentGallery";
 import { useNavigate, useLocation } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -1099,7 +1100,7 @@ export default function BrokerDashboard({ initialTab } = {}) {
     );
   }
 
-  if (!user) return null;
+  if (!user) return <SignInRequired />;
 
   return (
     <BrokerLayout

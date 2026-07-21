@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import SignInRequired from "@/components/shared/SignInRequired";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { base44, supabase } from "@/api/supabaseClient";
@@ -158,7 +159,7 @@ export default function BrokerOnboarding() {
   }
 
   if (loading) return <div className="max-w-md mx-auto px-4 py-16"><FormSkeleton /></div>;
-  if (!user) return null;
+  if (!user) return <SignInRequired />;
 
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4">

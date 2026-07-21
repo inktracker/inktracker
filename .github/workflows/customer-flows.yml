@@ -1,0 +1,57 @@
+name: Customer-flow monitor
+
+# Deep synthetic check of the CUSTOMER-facing journeys — the monitor that
+# would have caught the "Bucket not found" art-proof outage.
+#
+# The existing uptime probe (uptime.yml) checks that the site returns 200. It
+# was green for the entire three weeks that every customer's art proof was
+# broken, because the page loads fine and the failure is one layer deeper.
+# This probe walks the real customer path end-to-end and asserts the things a
+# status code can't tell you: that the proof actually serves a FILE (not a JSON
+# error), that the deployed bundles had their env vars replaced at build time,
+# and that no customer-visible response contains raw error text.
+#
+# A failure fails the job → GitHub emails the repo admins.
+#
+# Optional repo secret:
+#   SUPABASE_SERVICE_ROLE_KEY — lets the probe pick a recent real quote with a
+#   proof (read-only) so it always tests live data. Without it, the deep
+#   journey checks are SKIPPED (the job still runs the page + bundle checks),
+#   unless PROBE_QUOTE_ID / PROBE_QUOTE_TOKEN repo variables are set to pin a
+#   specific quote instead.
+
+on:
+  schedule:
+    - cron: "42 * * * *" # hourly, offset from uptime.yml's :17
+  workflow_dispatch: {}
+  # Also run after a production deploy lands, so a bad deploy is caught in
+  # minutes rather than at the top of the next hour.
+  push:
+    branches: [main]
+
+concurrency:
+  group: customer-flows
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Probe customer flows
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PROBE_QUOTE_ID: ${{ vars.PROBE_QUOTE_ID }}
+          PROBE_QUOTE_TOKEN: ${{ secrets.PROBE_QUOTE_TOKEN }}
+        run: node scripts/probe-customer-flows.mjs
+
+      - name: Explain failure
+        if: failure()
+        run: |
+          echo "::error::A customer-facing flow is broken in production."
+          echo "::error::Run locally: node scripts/probe-customer-flows.mjs"
