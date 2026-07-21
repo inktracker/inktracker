@@ -794,11 +794,11 @@ export default function QuoteEditorModal({
       style={{ top: 0, left: 0, right: 0, bottom: 0, width: "100vw", height: "100vh" }}
     >
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-5xl my-4">
-        <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-t-2xl">
-          <div>
+        <div className="flex justify-between items-center gap-2 px-4 sm:px-6 py-4 border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-t-2xl">
+          <div className="min-w-0 flex-1">
             {quoteIdLocked ? (
               <div
-                className="text-xs font-semibold text-slate-500 uppercase tracking-widest"
+                className="text-xs font-semibold text-slate-500 uppercase tracking-widest truncate"
                 title={quote?.qb_invoice_id
                   ? "Number locked — this quote is in QuickBooks (its DocNumber). Rename in QB if needed."
                   : "Number locked — approved quotes keep their number."}
@@ -813,17 +813,17 @@ export default function QuoteEditorModal({
                 maxLength={40}
                 title="Customize the quote number (editable until the quote is approved)"
                 aria-label="Quote number"
-                className="text-xs font-semibold text-slate-500 uppercase tracking-widest bg-transparent border border-transparent hover:border-slate-300 focus:border-slate-300 rounded px-1 py-0.5 -ml-1 w-44 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                className="text-xs font-semibold text-slate-500 uppercase tracking-widest bg-transparent border border-transparent hover:border-slate-300 focus:border-slate-300 rounded px-1 py-0.5 -ml-1 w-full sm:w-44 focus:outline-none focus:ring-1 focus:ring-teal-300"
               />
             )}
-            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Quote Builder</h2>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 truncate">Quote Builder</h2>
           </div>
 
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center shrink-0">
             <select
               value={q.status}
               onChange={(e) => setQ({ ...q, status: e.target.value })}
-              className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 bg-white dark:bg-slate-900 focus:outline-none"
+              className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-2 sm:px-3 py-1.5 bg-white dark:bg-slate-900 focus:outline-none max-w-[8.5rem] sm:max-w-none"
             >
               {Q_STATUSES.map((s) => (
                 <option key={s}>{s}</option>
