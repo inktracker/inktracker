@@ -6,6 +6,8 @@ import {
   fetchEnrichedStyle as enrichStyleData,
   isStyleEnriched,
 } from "@/lib/wizard/enrichStyle";
+import { preferredSourceToken } from "@/lib/suppliers/preference";
+import { getShopPricingConfig } from "@/components/shared/pricing";
 
 const CATEGORIES = ["T-Shirts", "Long Sleeve", "Hoodies", "Crewnecks", "Tank Tops", "Polos", "Hats", "Other"];
 
@@ -147,7 +149,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
     // match.source pins enrichment to the supplier the shop just picked —
     // the same brand+style can exist on both S&S and SanMar, and the pick
     // IS the supplier decision.
-    const enriched = await enrichStyleData(match.styleNumber, match.brandName, supabase, match.source);
+    const enriched = await enrichStyleData(match.styleNumber, match.brandName, supabase, match.source, preferredSourceToken(getShopPricingConfig()));
     setEnriching(false);
 
     setStyles(prev => [
@@ -186,7 +188,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
         // enriched from — without it a re-sync flips overlapping-brand
         // styles (Gildan, Bella...) to whichever supplier wins the default
         // preference order, silently changing the shop's garment costs.
-        batch.map(async s => ({ id: s.id, data: await enrichStyleData(s.styleNumber, s.brand, supabase, s.enrichedFrom) }))
+        batch.map(async s => ({ id: s.id, data: await enrichStyleData(s.styleNumber, s.brand, supabase, s.enrichedFrom, preferredSourceToken(getShopPricingConfig())) }))
       );
       for (const { id, data } of results) {
         if (!data) continue;
@@ -220,7 +222,7 @@ export default function WizardConfigEditor({ user, shop, onSaved }) {
       let finalStyles = styles;
       if (missing.length > 0) {
         const fetched = await Promise.all(
-          missing.map(async s => ({ id: s.id, data: await enrichStyleData(s.styleNumber, s.brand, supabase, s.enrichedFrom) }))
+          missing.map(async s => ({ id: s.id, data: await enrichStyleData(s.styleNumber, s.brand, supabase, s.enrichedFrom, preferredSourceToken(getShopPricingConfig())) }))
         );
         finalStyles = styles.map(s => {
           const hit = fetched.find(h => h.id === s.id);

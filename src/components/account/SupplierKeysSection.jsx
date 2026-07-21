@@ -2,6 +2,9 @@ import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 import { validateAcCredsSave, acConnectionWarning } from "@/lib/account/acCredsValidation";
+import { shopScope } from "@/lib/shopScope";
+import { loadShopPricingConfig } from "@/components/shared/pricing";
+import { preferredSupplier } from "@/lib/suppliers/preference";
 
 // Supplier API keys editor. Extracted verbatim from Account.jsx as a pure
 // decomposition — no behavior change. Receives the current `user`.
@@ -70,6 +73,21 @@ export default function SupplierKeysSection({ user }) {
   // a SKU is in stock at this warehouse, items ship from here;
   // otherwise they auto-route to the other US warehouse.
   const [defaultAcWarehouse, setDefaultAcWarehouse] = useState(user?.default_ac_warehouse || "CA");
+  // Default garment supplier (Joe 2026-07-20): which supplier's listing
+  // auto-selects when a garment is carried by both S&S and SanMar.
+  // Lives in shops.pricing_config.defaultSupplier so every pricing
+  // surface (both quote editors, wizard enrichment) reads it for free.
+  const [defaultSupplierPref, setDefaultSupplierPref] = useState("");
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+        if (alive) setDefaultSupplierPref(preferredSupplier(shops?.[0]?.pricing_config));
+      } catch { /* stays "no preference" */ }
+    })();
+    return () => { alive = false; };
+  }, [user]);
 
   async function handleSave() {
     setSaving(true);
@@ -175,6 +193,24 @@ export default function SupplierKeysSection({ user }) {
         }
         if (supplierSecrets.sanmar_username) setSmUsernameFromServer(supplierSecrets.sanmar_username);
         if (supplierSecrets.ac_password) setAcHasPassword(true);
+      }
+
+      // Default supplier → shops.pricing_config (see state comment).
+      try {
+        const shops = await base44.entities.Shop.filter({ owner_email: shopScope(user) });
+        if (shops?.[0]) {
+          const pc = { ...(shops[0].pricing_config || {}) };
+          if (defaultSupplierPref) pc.defaultSupplier = defaultSupplierPref;
+          else delete pc.defaultSupplier;
+          await base44.entities.Shop.update(shops[0].id, { pricing_config: pc });
+          // Refresh the engine's module-level config so the preference is
+          // live in the quote editor without a reload (same pattern as
+          // PricingConfigEditor's save).
+          loadShopPricingConfig(pc, shopScope(user));
+        }
+      } catch (err) {
+        console.error("[SupplierKeys] default supplier save failed:", err);
+        throw err;
       }
 
       await base44.auth.updateMe(profileUpdates);
@@ -397,6 +433,35 @@ export default function SupplierKeysSection({ user }) {
           your customer number, e-sign their free Integration Agreement, and access is granted in 1–2 business days.
           After that, your regular sanmar.com login above connects InkTracker to live SanMar style data and your contracted pricing.
           Style lookups use exact style numbers (PC61, K420, DT6000). Ordering through InkTracker requires SanMar's separate PO-integration approval — coming later.
+        </div>
+      </div>
+
+      {/* Default garment supplier */}
+      <div className="border border-slate-200 rounded-2xl p-4 space-y-2">
+        <div className="text-sm font-bold text-slate-700">Default garment supplier</div>
+        <p className="text-xs text-slate-500">
+          Many brands (Gildan, Bella+Canvas, District…) are carried by both S&amp;S and SanMar.
+          When a style exists at both, this supplier&apos;s listing is selected automatically —
+          the brand dropdown still offers the other, so you can always switch per line.
+        </p>
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { value: "", label: "No preference", sub: "S&S listed first (legacy order)" },
+            { value: "S&S Activewear", label: "S&S Activewear", sub: "auto-select S&S when both carry it" },
+            { value: "SanMar", label: "SanMar", sub: "auto-select SanMar when both carry it" },
+          ].map((opt) => (
+            <button
+              key={opt.value || "none"}
+              type="button"
+              onClick={() => setDefaultSupplierPref(opt.value)}
+              className={`text-left border-2 rounded-xl px-3 py-2 transition flex-1 min-w-[150px] ${
+                defaultSupplierPref === opt.value ? "border-teal-600 bg-teal-50" : "border-slate-200 hover:border-slate-300"
+              }`}
+            >
+              <div className={`text-xs font-bold ${defaultSupplierPref === opt.value ? "text-teal-700" : "text-slate-700"}`}>{opt.label}</div>
+              <div className="text-[10px] text-slate-500 mt-0.5">{opt.sub}</div>
+            </button>
+          ))}
         </div>
       </div>
 

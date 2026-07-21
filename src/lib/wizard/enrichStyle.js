@@ -113,7 +113,7 @@ export function normalizeSupplierMatch(match, { brandHint, source, styleNumber }
  *   S&S pricing. Callers pass the row's saved `enrichedFrom` (or the
  *   search result's source) here.
  */
-export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber, supplierHint } = {}) {
+export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber, supplierHint, preferredSource } = {}) {
   let ssMatches = (ssData && Array.isArray(ssData.matches)) ? ssData.matches : [];
   let acMatches = (acData && Array.isArray(acData.matches)) ? acData.matches : [];
   let smMatches = (smData && Array.isArray(smData.matches)) ? smData.matches : [];
@@ -149,20 +149,25 @@ export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumbe
     // guarding against. S&S checked first (legacy preference), then
     // SanMar — both carry overlapping brands (Port Authority, District,
     // Sport-Tek live in both catalogs).
-    const ssBrandMatch = findBrandMatch(ssMatches);
-    if (ssBrandMatch) { match = ssBrandMatch; source = "ss"; }
-    else {
-      const smBrandMatch = findBrandMatch(smMatches);
-      if (smBrandMatch) { match = smBrandMatch; source = "sanmar"; }
+    // Shop's default supplier takes priority when both carry the brand
+    // (Joe 2026-07-20); otherwise legacy S&S-then-SanMar order.
+    const brandPools = preferredSource === "sanmar"
+      ? [["sanmar", smMatches], ["ss", ssMatches]]
+      : [["ss", ssMatches], ["sanmar", smMatches]];
+    for (const [src, pool] of brandPools) {
+      const m = findBrandMatch(pool);
+      if (m) { match = m; source = src; break; }
     }
   } else {
     // No brand hint — first match wins. S&S preferred when several
     // suppliers have a match (legacy compat; predates the wizard
     // brand field), then AS Colour, then SanMar. Used by free-form
     // lookups where the caller has no opinion about the brand.
-    if (ssMatches[0]) { match = ssMatches[0]; source = "ss"; }
-    else if (acMatches[0]) { match = acMatches[0]; source = "ac"; }
-    else if (smMatches[0]) { match = smMatches[0]; source = "sanmar"; }
+    const pools = [["ss", ssMatches], ["ac", acMatches], ["sanmar", smMatches]];
+    if (preferredSource) pools.sort((a, b) => (a[0] === preferredSource ? -1 : b[0] === preferredSource ? 1 : 0));
+    for (const [src, pool] of pools) {
+      if (pool[0]) { match = pool[0]; source = src; break; }
+    }
   }
 
   if (!match) return null;
@@ -178,7 +183,7 @@ export function pickAndNormalize(ssData, acData, smData, { brandHint, styleNumbe
  * Supabase is injected so this function is independently testable —
  * pass a stub `{ functions: { invoke: jest.fn() } }`.
  */
-export async function fetchEnrichedStyle(styleNumber, brandHint, supabase, supplierHint) {
+export async function fetchEnrichedStyle(styleNumber, brandHint, supabase, supplierHint, preferredSource) {
   if (!styleNumber || typeof styleNumber !== "string") return null;
   const styleNum = styleNumber.trim().toUpperCase();
   if (!styleNum) return null;
@@ -199,7 +204,7 @@ export async function fetchEnrichedStyle(styleNumber, brandHint, supabase, suppl
     const ssData = ssRes.status === "fulfilled" ? ssRes.value?.data : null;
     const acData = acRes.status === "fulfilled" ? acRes.value?.data : null;
     const smData = smRes.status === "fulfilled" ? smRes.value?.data : null;
-    return pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber: styleNum, supplierHint });
+    return pickAndNormalize(ssData, acData, smData, { brandHint, styleNumber: styleNum, supplierHint, preferredSource });
   } catch (err) {
     // Surface what actually failed instead of pretending success.
     // Callers still treat null as "couldn't enrich" but at least the

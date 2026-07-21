@@ -17,6 +17,7 @@ import BrokerPricePanel from "./BrokerPricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
+import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
 import { notify } from "@/lib/notify";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results,
@@ -514,15 +515,19 @@ export default function BrokerLineItemEditor({
     try {
       const result = await lookupStyle(typedStyleNumber);
       const matches = getResultCandidates(result);
-      const options = buildBrandOptions(matches, typedStyleNumber);
+      const preferred = preferredSupplier(getShopPricingConfig());
+      const options = orderBySupplierPreference(buildBrandOptions(matches, typedStyleNumber), preferred);
 
       setBrandOptions(options);
 
-      const selected =
-        options.find(
-          (option) =>
-            cleanText(option.brandName).toLowerCase() === cleanText(li.brand).toLowerCase()
-        ) || options[0];
+      // Saved supplier → shop preference → first option (the broker
+      // editor always auto-applies something; keep that, just make the
+      // pick supplier-aware).
+      const selected = pickDefaultOption(options, {
+        brand: li.brand,
+        supplier: li.supplier,
+        preferred,
+      }) || options[0];
 
       if (!selected) {
         throw new Error("No supplier results found");

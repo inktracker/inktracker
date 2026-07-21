@@ -19,6 +19,7 @@ import PricePanel from "./PricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
+import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
 import { notify } from "@/lib/notify";
 
 // Query S&S Activewear, AS Colour, and SanMar in parallel and merge results.
@@ -733,7 +734,10 @@ export default function LineItemEditor({
     try {
       const result = await lookupStyle(typedStyleNumber);
       const matches = getResultCandidates(result);
-      const options = buildBrandOptions(matches, typedStyleNumber);
+      // Shop's default supplier leads the dropdown and wins auto-select
+      // when the same garment is carried by multiple suppliers.
+      const preferred = preferredSupplier(getShopPricingConfig());
+      const options = orderBySupplierPreference(buildBrandOptions(matches, typedStyleNumber), preferred);
 
       setBrandOptions(options);
 
@@ -758,11 +762,15 @@ export default function LineItemEditor({
       // Flexfit's colors. Same staleness class as the garmentColor
       // guard already inside this branch.
       const freshLi = liRef.current;
-      const brandMatch = options.find(
-        (option) =>
-          cleanText(option.brandName).toLowerCase() === cleanText(freshLi.brand).toLowerCase()
-      );
-      const selected = brandMatch || (options.length === 1 ? options[0] : null);
+      // Auto-select precedence: the line's SAVED supplier (a reopened
+      // SanMar line must reload SanMar's data — the old first-name-match
+      // always hit S&S), then the shop's preferred supplier, then the
+      // unambiguous cases. See pickDefaultOption for the full contract.
+      const selected = pickDefaultOption(options, {
+        brand: freshLi.brand,
+        supplier: freshLi.supplier,
+        preferred,
+      });
 
       if (selected) {
         setSsColors(selected.colors || []);
