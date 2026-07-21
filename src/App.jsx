@@ -1012,7 +1012,7 @@ function PublicLandingPage() {
             <h2 className="uppercase tracking-[0.02em] leading-[0.95]" style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 5vw, 4.25rem)', color: INK }}>
               Run your shop
               <br />
-              like you mean it.
+              without the chaos.
             </h2>
             <div className="mt-10">
               <button onClick={() => openSignup("footer_cta")} className={btnPrimary} style={{ background: FOREST, color: '#fff' }}>
