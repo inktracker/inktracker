@@ -1,11 +1,110 @@
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import { CenteredCardSkeleton } from "@/components/shared/Skeletons";
-import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2 } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, ImageIcon, MapPin, Maximize2, FileText } from "lucide-react";
+import { probeUrl } from "@/lib/artwork/urlReachable";
 import { fmtDate, getOrderDisplayClient } from "../components/shared/pricing";
 import { imprintCountText, imprintColorLabel } from "@/lib/quotes/imprintLabels";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { artworkProxyUrl } from "@/lib/artwork/proxyUrl";
+
+// Full-width proof preview for one artwork item. Never embeds an unverified
+// URL: images flip to a friendly placeholder on load failure, and PDFs are
+// probed BEFORE the <object> mounts — a dead URL fed to <object> renders the
+// storage API's raw JSON error body to the customer (#681). Every state stays
+// clickable so the overlay (which runs the same probe) can show its own
+// friendly message.
+function ProofPreviewBlock({ art, onEnlarge }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  // null = probing, true = reachable, false = dead
+  const [pdfOk, setPdfOk] = useState(null);
+  const isImage = /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(art.url || "");
+  const isPdf = !isImage && /\.pdf(\?|$)/i.test(art.url || "");
+
+  useEffect(() => {
+    if (!isPdf) return undefined;
+    let cancelled = false;
+    setPdfOk(null);
+    probeUrl(art._src).then((ok) => { if (!cancelled) setPdfOk(ok); });
+    return () => { cancelled = true; };
+  }, [art._src, isPdf]);
+
+  const unavailable = (
+    <div className="flex flex-col items-center justify-center gap-2 h-48 text-slate-500">
+      <FileText className="w-8 h-8" />
+      <span className="text-sm font-semibold">Preview unavailable</span>
+      <span className="text-xs">Click to try opening the file</span>
+    </div>
+  );
+
+  if (isImage) {
+    return (
+      <button
+        type="button"
+        onClick={onEnlarge}
+        className="group relative block w-full bg-slate-50"
+        title="Click to enlarge"
+      >
+        {imgFailed ? unavailable : (
+          <img
+            src={art._src}
+            onError={() => setImgFailed(true)}
+            alt={art.name}
+            className="w-full max-h-96 object-contain"
+          />
+        )}
+        <span className="absolute top-2 right-2 inline-flex items-center gap-1 bg-slate-900/70 text-white text-[11px] font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition">
+          <Maximize2 className="w-3.5 h-3.5" /> Enlarge
+        </span>
+      </button>
+    );
+  }
+
+  if (isPdf) {
+    return (
+      <button
+        type="button"
+        onClick={onEnlarge}
+        className="group relative block w-full bg-slate-100"
+        title="Click to enlarge"
+      >
+        {pdfOk === true ? (
+          <object
+            data={`${art._src}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
+            type="application/pdf"
+            className="w-full h-96 pointer-events-none bg-white"
+            aria-label={art.name}
+          >
+            <div className="flex items-center justify-center h-96 text-slate-500 text-sm">Proof preview unavailable — click to open</div>
+          </object>
+        ) : pdfOk === false ? (
+          unavailable
+        ) : (
+          <div className="flex items-center justify-center h-96 bg-white">
+            <Loader2 className="w-6 h-6 text-slate-400 animate-spin" />
+          </div>
+        )}
+        <span className="absolute top-2 right-2 inline-flex items-center gap-1 bg-slate-900/80 text-white text-[11px] font-semibold px-2 py-1 rounded-lg">
+          <Maximize2 className="w-3.5 h-3.5" /> Enlarge proof
+        </span>
+        <span className="absolute bottom-2 right-2 text-[10px] font-bold uppercase tracking-wider bg-slate-900/70 text-white px-1.5 py-0.5 rounded">PDF</span>
+      </button>
+    );
+  }
+
+  // Other file types: open in the overlay (it probes + falls back kindly)
+  // instead of a raw <a href> that would show the storage error in a new tab.
+  return (
+    <button
+      type="button"
+      onClick={onEnlarge}
+      className="flex w-full items-center gap-3 bg-slate-50 px-5 py-5 text-teal-600 font-semibold text-sm hover:bg-teal-50 transition"
+    >
+      <ImageIcon className="w-5 h-5 opacity-60" />
+      {art.name || "View File"}
+    </button>
+  );
+}
 
 function getOrderArtwork(order) {
   const map = new Map();
@@ -150,14 +249,14 @@ export default function ArtApproval() {
     );
   }
 
-  // M-1: render each proof through the token-gated artworkProof proxy (so the
-  // soon-private bucket stays sealed for anon viewers). `_src` is the proxy
-  // link; `_fallback` is the original url used via <img onError> while the
-  // bucket is still public, so nothing breaks during the transition.
+  // M-1: render each proof through the token-gated artworkProof proxy — the
+  // artwork bucket is PRIVATE, so `_src` is the only live form. No raw-URL
+  // fallback: a proxy we can't build renders ProofPreviewBlock's friendly
+  // placeholder instead of the storage API's raw error body (#681).
   const artwork = getOrderArtwork(order).map((art) => {
     const fallback = art.url;
     const src = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback }) || fallback;
-    return { ...art, _src: src, _fallback: fallback };
+    return { ...art, _src: src };
   });
   const alreadyApproved = order?.art_approved;
 
@@ -221,57 +320,13 @@ export default function ArtApproval() {
 
                   {/* Visual preview — images AND PDFs both render so the
                       customer can actually see what they're approving.
-                      Click to enlarge full-screen. Non-previewable files
-                      fall back to a link. */}
+                      Click to enlarge full-screen. ProofPreviewBlock never
+                      embeds an unverified URL (#681). */}
                   {art.url ? (
-                    art.url.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i) ? (
-                      <button
-                        type="button"
-                        onClick={() => setPreview({ ...art, url: art._src, file_url: art._src, path: null })}
-                        className="group relative block w-full bg-slate-50"
-                        title="Click to enlarge"
-                      >
-                        <img
-                          src={art._src}
-                          onError={(e) => { if (art._fallback && e.currentTarget.src !== art._fallback) e.currentTarget.src = art._fallback; }}
-                          alt={art.name}
-                          className="w-full max-h-96 object-contain"
-                        />
-                        <span className="absolute top-2 right-2 inline-flex items-center gap-1 bg-slate-900/70 text-white text-[11px] font-semibold px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition">
-                          <Maximize2 className="w-3.5 h-3.5" /> Enlarge
-                        </span>
-                      </button>
-                    ) : art.url.match(/\.pdf(\?|$)/i) ? (
-                      <button
-                        type="button"
-                        onClick={() => setPreview({ ...art, url: art._src, file_url: art._src, path: null })}
-                        className="group relative block w-full bg-slate-100"
-                        title="Click to enlarge"
-                      >
-                        <object
-                          data={`${art._src}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
-                          type="application/pdf"
-                          className="w-full h-96 pointer-events-none bg-white"
-                          aria-label={art.name}
-                        >
-                          <div className="flex items-center justify-center h-96 text-slate-500 text-sm">Proof preview unavailable — click to open</div>
-                        </object>
-                        <span className="absolute top-2 right-2 inline-flex items-center gap-1 bg-slate-900/80 text-white text-[11px] font-semibold px-2 py-1 rounded-lg">
-                          <Maximize2 className="w-3.5 h-3.5" /> Enlarge proof
-                        </span>
-                        <span className="absolute bottom-2 right-2 text-[10px] font-bold uppercase tracking-wider bg-slate-900/70 text-white px-1.5 py-0.5 rounded">PDF</span>
-                      </button>
-                    ) : (
-                      <a
-                        href={art._src}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 bg-slate-50 px-5 py-5 text-teal-600 font-semibold text-sm hover:bg-teal-50 transition"
-                      >
-                        <ImageIcon className="w-5 h-5 opacity-60" />
-                        {art.name || "View File"}
-                      </a>
-                    )
+                    <ProofPreviewBlock
+                      art={art}
+                      onEnlarge={() => setPreview({ ...art, url: art._src, file_url: art._src, path: null })}
+                    />
                   ) : null}
 
                   <div className="px-4 py-4 space-y-3">
