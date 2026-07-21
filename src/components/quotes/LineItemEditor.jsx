@@ -345,6 +345,21 @@ function getBestDescription(selectedMatch) {
   return "";
 }
 
+// SanMar product titles lead with the brand name ("COMFORT COLORS
+// Heavyweight Ring Spun Tee"), so a label that already starts with the
+// brand would print it twice. Whole-word so "Bella" never eats into
+// "Bellawear". Display-only — the stored `description` keeps the full title.
+export function stripLeadingBrand(description, brand) {
+  const d = cleanText(description);
+  const b = cleanText(brand);
+  if (!d || !b) return d;
+  if (!d.toLowerCase().startsWith(b.toLowerCase())) return d;
+  const next = d.charAt(b.length);
+  if (next && /[a-z0-9]/i.test(next)) return d;
+  const rest = d.slice(b.length).replace(/^[\s—–:.,-]+/, "").trim();
+  return rest || d;
+}
+
 export function buildBrandOptions(matches, typedStyleNumber) {
   const typed = normalizeTypedStyleNumber(typedStyleNumber);
   const unique = [];
@@ -398,7 +413,7 @@ export function buildBrandOptions(matches, typedStyleNumber) {
       piecePrice: match.piecePrice,
       casePrice: match.casePrice,
       raw: match.raw || match,
-      label: `${brandLabel} — ${canonicalStyle} — ${description}`,
+      label: `${brandLabel} — ${canonicalStyle} — ${stripLeadingBrand(description, brand)}`,
     });
   });
 
@@ -955,7 +970,7 @@ export default function LineItemEditor({
 
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,0.9fr)] gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1 whitespace-nowrap overflow-hidden text-ellipsis">
               Style #
               {ssLoading && (
                 <span className="ml-1 text-teal-400 normal-case font-normal">
@@ -1183,12 +1198,33 @@ export default function LineItemEditor({
               return (
                 <div
                   className="mt-1 space-y-0.5"
-                  title="Current sale prices for this color — display only; quote costs use the standard price (sales end; jobs print later)."
+                  title="Current sale prices for this color. Click one to use it as this line's garment cost (manual override). Otherwise quote costs use the standard price (sales end; jobs print later)."
                 >
                   {rows.map((r) => (
-                    <p key={r.supplier} className="text-[10px] text-emerald-600 font-semibold whitespace-nowrap">
+                    <button
+                      type="button"
+                      key={r.supplier}
+                      onClick={() => {
+                        // Same path as typing the cost into the field:
+                        // supplier per-size prices outrank garmentCost, so
+                        // they must be dropped and the line flagged manual
+                        // or the click would be inert on looked-up styles.
+                        const hadSupplierPrices = !li.garmentCostManual &&
+                          ((li.sizePrices && Object.keys(li.sizePrices).length > 0) || !!sizePricesRef.current);
+                        sizePricesRef.current = null;
+                        onChange({ ...li, garmentCost: r.sale.toFixed(2), garmentCostManual: true, sizePrices: {} });
+                        if (hadSupplierPrices) {
+                          notify.info(
+                            "Manual garment cost",
+                            "Supplier per-size pricing is off for this line — the sale price now drives the price. Re-select the style or color to restore supplier pricing.",
+                            { className: "bg-yellow-50 border-yellow-200" }
+                          );
+                        }
+                      }}
+                      className="block text-[10px] text-emerald-600 font-semibold whitespace-nowrap hover:text-emerald-800 hover:underline"
+                    >
                       💲 {r.supplier === "S&S Activewear" ? "S&S" : r.supplier} sale — ${r.sale.toFixed(2)}/pc
-                    </p>
+                    </button>
                   ))}
                 </div>
               );
