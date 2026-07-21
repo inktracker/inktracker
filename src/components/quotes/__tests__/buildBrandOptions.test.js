@@ -210,3 +210,57 @@ describe.each([
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+// Bug story (2026-07-20): SanMar product titles lead with the brand name
+// ("COMFORT COLORS Heavyweight Ring Spun Tee"), and the label already starts
+// with the brand — so the dropdown read "Comfort Colors — 1717 — COMFORT
+// COLORS Heavyweight Ring Spun Tee (SanMar)". stripLeadingBrand removes the
+// repeat from the LABEL only; the stored description keeps the full title.
+const CC_1717_SANMAR = [{
+  id: 7001,
+  _supplier: "SanMar",
+  brandName: "Comfort Colors",
+  styleNumber: "1717",
+  resolvedTitle: "COMFORT COLORS Heavyweight Ring Spun Tee",
+  styleCategory: "T-Shirts",
+  colors: [],
+}];
+
+describe.each([
+  ["LineItemEditor",       buildBrandOptionsShop],
+  ["BrokerLineItemEditor", buildBrandOptionsBroker],
+])("%s buildBrandOptions — leading-brand repeat stripped from labels", (_label, buildBrandOptions) => {
+  it("drops a case-insensitive leading brand repeat from the label", () => {
+    const [option] = buildBrandOptions(CC_1717_SANMAR, "1717");
+    expect(option.label).toBe("Comfort Colors — 1717 — Heavyweight Ring Spun Tee");
+  });
+
+  it("keeps the FULL title in the stored description", () => {
+    const [option] = buildBrandOptions(CC_1717_SANMAR, "1717");
+    expect(option.description).toBe("COMFORT COLORS Heavyweight Ring Spun Tee");
+  });
+
+  it("leaves descriptions alone when the brand only appears mid-title", () => {
+    const [option] = buildBrandOptions(
+      [{ ...CC_1717_SANMAR[0], resolvedTitle: "Heavyweight Comfort Colors Tee" }],
+      "1717",
+    );
+    expect(option.label).toBe("Comfort Colors — 1717 — Heavyweight Comfort Colors Tee");
+  });
+
+  it("never eats into a longer word sharing the brand prefix (Bella vs Bellawear)", () => {
+    const [option] = buildBrandOptions(
+      [{ ...CC_1717_SANMAR[0], brandName: "Bella", resolvedTitle: "Bellawear Heavy Tee" }],
+      "1717",
+    );
+    expect(option.label).toBe("Bella — 1717 — Bellawear Heavy Tee");
+  });
+
+  it("keeps the full title when the description IS just the brand", () => {
+    const [option] = buildBrandOptions(
+      [{ ...CC_1717_SANMAR[0], resolvedTitle: "Comfort Colors" }],
+      "1717",
+    );
+    expect(option.label).toBe("Comfort Colors — 1717 — Comfort Colors");
+  });
+});
