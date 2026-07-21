@@ -23,6 +23,8 @@ import {
   buildProductInfoEnvelope,
   credsFromProfile,
   parsePricingResponse,
+  parseInventoryResponse,
+  buildInventoryEnvelope,
   parseProductInfoResponse,
   smBase,
   smSoapCall,
@@ -139,13 +141,18 @@ Deno.serve(async (req) => {
 
     const logs: object[] = [];
     const base = smBase();
-    const [infoRes, priceRes] = await Promise.all([
+    const [infoRes, priceRes, invRes] = await Promise.all([
       smSoapCall(`${base}/SanMarProductInfoServicePort`, buildProductInfoEnvelope(creds, style, color), "smLookupStyle:info"),
       smSoapCall(`${base}/SanMarPricingServicePort`, buildPricingEnvelope(creds, style, color), "smLookupStyle:pricing"),
+      // Inventory rides the same round-trip. Note: the inventory service
+      // filters by CATALOG color, so we deliberately pass no color filter
+      // and let the by-style response cover everything.
+      smSoapCall(`${base}/SanMarWebServicePort`, buildInventoryEnvelope(creds, style), "smLookupStyle:inventory"),
     ]);
     logs.push(
       { call: "productInfo", status: infoRes.status, ok: infoRes.ok, error: infoRes.error },
       { call: "pricing", status: priceRes.status, ok: priceRes.ok, error: priceRes.error },
+      { call: "inventory", status: invRes.status, ok: invRes.ok, error: invRes.error },
     );
 
     if (!infoRes.ok) {
@@ -163,9 +170,11 @@ Deno.serve(async (req) => {
     }
     // Pricing is best-effort — a failure falls back to catalog prices.
     const pricing = priceRes.ok ? parsePricingResponse(priceRes.xml) : [];
-    logs.push({ call: "parsed", entries: entries.length, pricingRows: pricing.length });
+    // Inventory is best-effort too — a failure just means empty quantities.
+    const inventory = invRes.ok ? parseInventoryResponse(invRes.xml) : [];
+    logs.push({ call: "parsed", entries: entries.length, pricingRows: pricing.length, inventoryRows: inventory.length });
 
-    const match = buildMatchFromEntries(entries, pricing);
+    const match = buildMatchFromEntries(entries, pricing, inventory);
     if (!match) {
       return Response.json({ error: "Style not found" }, { status: 404, headers: CORS });
     }

@@ -183,6 +183,58 @@ export function buildProductInfoEnvelope(creds: SmCreds, style: string, color = 
 </soapenv:Envelope>`;
 }
 
+/**
+ * Product Inventory Service — getInventoryQtyForStyleColorSize.
+ * DIFFERENT contract from info/pricing (guide v24.4 pp.50–54): flat
+ * positional args under the `web:` namespace — arg0..2 = creds,
+ * arg3 = style, arg4 = CATALOG color (not color name), arg5 = size —
+ * and its own endpoint, `${base}/SanMarWebServicePort`. Per-warehouse
+ * quantities are capped at 3000 by SanMar.
+ */
+export function buildInventoryEnvelope(creds: SmCreds, style: string, color = "", size = ""): string {
+  return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:web="http://webservice.integration.sanmar.com/">
+  <soapenv:Header />
+  <soapenv:Body>
+    <web:getInventoryQtyForStyleColorSize>
+      <arg0>${xmlEscape(creds.customerNumber)}</arg0>
+      <arg1>${xmlEscape(creds.username)}</arg1>
+      <arg2>${xmlEscape(creds.password)}</arg2>
+      <arg3>${xmlEscape(style)}</arg3>${color ? `\n      <arg4>${xmlEscape(color)}</arg4>` : ""}${size ? `\n      <arg5>${xmlEscape(size)}</arg5>` : ""}
+    </web:getInventoryQtyForStyleColorSize>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+}
+
+export interface SmInventoryRow {
+  catalogColor: string;
+  size: string;
+  qty: number; // summed across all warehouses (each capped at 3000 by SanMar)
+}
+
+/**
+ * Parse the by-style inventory response: skus/sku blocks, each carrying
+ * the CATALOG color + size + a per-warehouse qty list. Returns the total
+ * across warehouses per (catalogColor, size). Error responses → [].
+ */
+export function parseInventoryResponse(xml: string): SmInventoryRow[] {
+  if (!xml) return [];
+  const errFlag = xmlText(xml, "errorOccured") || xmlText(xml, "errorOccurred");
+  if (errFlag === "true") return [];
+  const rows: SmInventoryRow[] = [];
+  for (const sku of xmlBlocks(xml, "sku")) {
+    const catalogColor = xmlText(sku, "color");
+    const size = xmlText(sku, "size");
+    if (!catalogColor || !size) continue;
+    let qty = 0;
+    for (const whse of xmlBlocks(sku, "whse")) {
+      const q = Number(xmlText(whse, "qty"));
+      if (Number.isFinite(q) && q > 0) qty += q;
+    }
+    rows.push({ catalogColor, size, qty });
+  }
+  return rows;
+}
+
 /** Pricing Service — getPricing. Same arg shape as product info. */
 export function buildPricingEnvelope(creds: SmCreds, style: string, color = "", size = ""): string {
   return `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:impl="http://impl.webservice.integration.sanmar.com/">
@@ -308,7 +360,7 @@ export function parsePricingResponse(xml: string): SmPricingEntry[] {
 // style-level fields. myPrice (when the pricing call succeeded) wins over the
 // catalog piecePrice — it's the shop's actual cost.
 
-export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPricingEntry[]) {
+export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPricingEntry[], inventory: SmInventoryRow[] = []) {
   if (entries.length === 0) return null;
   const first = entries[0];
 
@@ -345,16 +397,28 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     if (!rec.entry.colorProductImage && e.colorProductImage) rec.entry = e;
   }
 
+  // Inventory rows are keyed by CATALOG color; the UI keys everything by
+  // color NAME. Translate via the product entries' own catalogColor.
+  const catalogToName: Record<string, string> = {};
+  for (const e of entries) {
+    if (e.catalogColor && e.color && !(e.catalogColor in catalogToName)) catalogToName[e.catalogColor] = e.color;
+  }
+  const invByColorName: Record<string, Record<string, number>> = {};
+  for (const r of inventory) {
+    const name = catalogToName[r.catalogColor] || r.catalogColor;
+    (invByColorName[name] ??= {})[r.size] = r.qty;
+  }
+
   const priceMap: Record<string, { piecePrice: number; casePrice: number }> = {};
   const colors = Array.from(byColor.entries()).map(([colorName, rec]) => {
-    // Cost resolution: myPrice (the shop's contracted cost, from the
-    // Pricing service) → catalog SALE piece price → catalog piece price.
-    // The parser always captured pieceSalePrice but the old chain skipped
-    // it — an account without myPrice was quoted the full original price
-    // even while SanMar had the style on sale (Joe's 1717 check,
-    // 2026-07-20: site said $6.34 sale, fallback said $8.62).
-    const piece = myPriceByColor[colorName] || rec.pieceSale || rec.piece;
-    const casePx = rec.caseSale || rec.casePrice;
+    // Cost resolution (Joe 2026-07-20, reversed from the earlier order):
+    // the STANDARD catalog piece price is the default garment cost. Sale
+    // prices — and myPrice, which tracks the sale for standard accounts —
+    // are transient: a quote printed after the sale ends would under-cost
+    // the garment. Sale/myPrice remain only as fallbacks for entries
+    // missing a catalog price.
+    const piece = rec.piece || rec.pieceSale || myPriceByColor[colorName];
+    const casePx = rec.casePrice || rec.caseSale;
     if (piece > 0) priceMap[colorName] = { piecePrice: piece, casePrice: casePx || piece };
     return {
       colorName,
@@ -363,7 +427,7 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
       piecePrice: piece,
       casePrice: casePx || piece,
       imageUrl: rec.entry.colorProductImage || rec.entry.productImage || "",
-      sizeQuantities: {}, // live inventory is a later phase (SanMar Product Inventory Service)
+      sizeQuantities: invByColorName[colorName] || {},
     };
   });
 
@@ -382,6 +446,7 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     styleCategory: first.category,
     styleImage: first.productImage || colors.find((c) => c.imageUrl)?.imageUrl || "",
     colors,
+    inventoryMap: invByColorName,
     sizes: sizeOrder,
     availableSizes: first.availableSizes,
     specSheet: first.specSheet,

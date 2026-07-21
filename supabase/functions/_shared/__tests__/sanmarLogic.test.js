@@ -9,6 +9,8 @@ import {
   parseProductInfoResponse,
   parsePricingResponse,
   buildMatchFromEntries,
+  buildInventoryEnvelope,
+  parseInventoryResponse,
 } from "../sanmar.ts";
 
 // Fixture XML lifted from the SanMar Web Services Integration Guide v24.3
@@ -178,12 +180,13 @@ describe("buildMatchFromEntries", () => {
     expect(white.imageUrl).toContain("PC61_white.jpg");
   });
 
-  it("prefers myPrice over catalog piecePrice for the color's cost", () => {
+  it("uses the STANDARD catalog piecePrice as the default cost (Joe 2026-07-20; myPrice is fallback-only)", () => {
     const match = buildMatchFromEntries(entries, pricing);
-    // Catalog piecePrice for White is 3.84; the shop's myPrice is 2.41.
-    expect(match.priceMap.White.piecePrice).toBe(2.41);
-    expect(match.priceMap.Black.piecePrice).toBe(2.58);
-    expect(match.piecePrice).toBe(2.41); // style-level = cheapest color
+    // Catalog piecePrice for White is 3.84 (myPrice 2.41 exists but is
+    // transient — it tracks sales on standard accounts).
+    expect(match.priceMap.White.piecePrice).toBe(3.84);
+    expect(match.priceMap.Black.piecePrice).toBe(4.12);
+    expect(match.piecePrice).toBe(3.84); // style-level = cheapest color
   });
 
   it("falls back to catalog piecePrice when the pricing call returned nothing", () => {
@@ -210,12 +213,12 @@ describe("buildMatchFromEntries", () => {
   });
 });
 
-// Fallback pricing chain (Joe's 1717 accuracy check, 2026-07-20):
-// myPrice → catalog SALE piece price → catalog piece price. The parser
-// always captured pieceSalePrice, but the old normalizer skipped it —
-// an account without contract pricing was quoted the full original
-// price ($8.62) while sanmar.com showed the style on sale ($6.34).
-describe("buildMatchFromEntries — sale-price fallback", () => {
+// Pricing default (Joe 2026-07-20, final direction after the live 1717
+// check): the STANDARD catalog piece price is the default garment cost.
+// Sale prices — and myPrice, which tracks the sale on standard accounts —
+// are transient: a quote printed after the sale ends would under-cost
+// the garment. Sale/myPrice are only fallbacks for missing catalog rows.
+describe("buildMatchFromEntries — standard price is the default", () => {
   const saleEntries = [
     {
       style: "1717", brandName: "Comfort Colors", productTitle: "CC 1717",
@@ -227,22 +230,85 @@ describe("buildMatchFromEntries — sale-price fallback", () => {
     },
   ];
 
-  it("no myPrice → the SALE piece price wins over the original", () => {
+  it("standard catalog price wins even during a sale", () => {
     const match = buildMatchFromEntries(saleEntries, []);
-    expect(match.colors[0].piecePrice).toBe(6.34);
-    expect(match.priceMap.Bay.piecePrice).toBe(6.34);
-    expect(match.colors[0].casePrice).toBe(6.34);
-  });
-
-  it("myPrice still outranks the sale price when present", () => {
-    const pricing = [{ style: "1717", color: "Bay", size: "S", sizeIndex: "2", inventoryKey: "k1", piecePrice: 8.62, casePrice: 8.62, myPrice: 5.87 }];
-    const match = buildMatchFromEntries(saleEntries, pricing);
-    expect(match.colors[0].piecePrice).toBe(5.87);
-  });
-
-  it("no sale, no myPrice → original catalog price (unchanged legacy behavior)", () => {
-    const noSale = [{ ...saleEntries[0], pieceSalePrice: 0, caseSalePrice: 0 }];
-    const match = buildMatchFromEntries(noSale, []);
     expect(match.colors[0].piecePrice).toBe(8.62);
+    expect(match.priceMap.Bay.piecePrice).toBe(8.62);
+    expect(match.colors[0].casePrice).toBe(8.62);
+  });
+
+  it("standard price wins over myPrice too (myPrice tracks the sale)", () => {
+    const pricing = [{ style: "1717", color: "Bay", size: "S", sizeIndex: "2", inventoryKey: "k1", piecePrice: 8.62, casePrice: 8.62, myPrice: 6.34 }];
+    const match = buildMatchFromEntries(saleEntries, pricing);
+    expect(match.colors[0].piecePrice).toBe(8.62);
+  });
+
+  it("sale price is only a fallback when the catalog row is missing a price", () => {
+    const noCatalog = [{ ...saleEntries[0], piecePrice: 0, casePrice: 0 }];
+    const match = buildMatchFromEntries(noCatalog, []);
+    expect(match.colors[0].piecePrice).toBe(6.34);
+  });
+});
+
+// Inventory service (guide v24.4 pp.50–54) — flat positional args under
+// the web: namespace, catalog-color keyed response, per-warehouse qty.
+describe("inventory: envelope + parse + mapping", () => {
+  const creds = { customerNumber: "12345", username: "shop", password: "pw" };
+
+  it("builds the positional-arg envelope; color/size args only when given", () => {
+    const env = buildInventoryEnvelope(creds, "1717");
+    expect(env).toContain("<web:getInventoryQtyForStyleColorSize>");
+    expect(env).toContain("<arg0>12345</arg0>");
+    expect(env).toContain("<arg3>1717</arg3>");
+    expect(env).not.toContain("<arg4>");
+    expect(buildInventoryEnvelope(creds, "1717", "Bay", "L")).toContain("<arg4>Bay</arg4>");
+  });
+
+  const INVENTORY_XML = `<S:Envelope xmlns:S="http://schemas.xmlsoap.org/soap/envelope/">
+  <S:Body>
+    <ns2:getInventoryQtyForStyleColorSizeResponse xmlns:ns2="http://webservice.integration.sanmar.com/">
+      <return>
+        <errorOccured>false</errorOccured>
+        <message>Inventory returned successfully</message>
+        <response><style>1717</style><skus>
+          <sku><color>BAY</color><size>S</size>
+            <whse><whseID>4</whseID><whseName>Reno</whseName><qty>974</qty></whse>
+            <whse><whseID>12</whseID><whseName>Phoenix</whseName><qty>1369</qty></whse>
+          </sku>
+          <sku><color>BAY</color><size>2XL</size>
+            <whse><whseID>4</whseID><whseName>Reno</whseName><qty>362</qty></whse>
+          </sku>
+        </skus></response>
+      </return>
+    </ns2:getInventoryQtyForStyleColorSizeResponse>
+  </S:Body>
+</S:Envelope>`;
+
+  it("parses sku rows and sums quantities across warehouses", () => {
+    const rows = parseInventoryResponse(INVENTORY_XML);
+    expect(rows).toEqual([
+      { catalogColor: "BAY", size: "S", qty: 2343 },
+      { catalogColor: "BAY", size: "2XL", qty: 362 },
+    ]);
+  });
+
+  it("error responses parse to an empty list", () => {
+    const err = INVENTORY_XML.replace("<errorOccured>false</errorOccured>", "<errorOccured>true</errorOccured>");
+    expect(parseInventoryResponse(err)).toEqual([]);
+  });
+
+  it("buildMatchFromEntries maps catalog-color inventory onto color NAMES", () => {
+    const entries = [{
+      style: "1717", brandName: "Comfort Colors", productTitle: "CC 1717",
+      productDescription: "tee", category: "T-Shirts", availableSizes: "S-3XL",
+      color: "Bay", catalogColor: "BAY", inventoryKey: "k1", size: "S", sizeIndex: "2",
+      piecePrice: 8.62, casePrice: 8.62, pieceSalePrice: 0, caseSalePrice: 0,
+      priceText: "", colorProductImage: "https://x/img.jpg", productImage: "", specSheet: "",
+      uniqueKey: "u1", pieceWeight: "0.42", caseSize: "60", productStatus: "Active",
+    }];
+    const inventory = parseInventoryResponse(INVENTORY_XML);
+    const match = buildMatchFromEntries(entries, [], inventory);
+    expect(match.colors[0].sizeQuantities).toEqual({ S: 2343, "2XL": 362 });
+    expect(match.inventoryMap.Bay).toEqual({ S: 2343, "2XL": 362 });
   });
 });
