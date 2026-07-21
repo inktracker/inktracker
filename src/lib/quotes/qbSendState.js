@@ -54,3 +54,23 @@ export function deriveQbSendState({ qbInvoiceId, qbPaymentLink } = {}) {
 
   return { status: "ready", sendDisabledByQb: false, warning: null };
 }
+
+/**
+ * Stale-invoice check (Joe 2026-07-21): a quote can be edited AFTER its QB
+ * invoice was created — the pay-now link then charges the OLD amount. The
+ * quote row mirrors the QB invoice's total (`qb_total`, kept fresh by qbSync
+ * and the QB webhook), so "amounts disagree" is the money-correct staleness
+ * signal — edits that don't move the total (renames, notes) don't warn.
+ *
+ * @param {object} args
+ * @param {number|string|null|undefined} args.qbTotal — mirrored QB invoice total
+ * @param {number|string|null|undefined} args.currentTotal — quote's current customer-facing total
+ * @returns {boolean} true when both totals are known and differ by ≥ 1 cent
+ */
+export function qbInvoiceOutOfSync({ qbTotal, currentTotal } = {}) {
+  const qb = Number(qbTotal);
+  const cur = Number(currentTotal);
+  if (qbTotal == null || qbTotal === "" || !Number.isFinite(qb)) return false;
+  if (currentTotal == null || currentTotal === "" || !Number.isFinite(cur)) return false;
+  return Math.abs(qb - cur) >= 0.005;
+}
