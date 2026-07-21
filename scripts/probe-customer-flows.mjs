@@ -163,12 +163,25 @@ async function pickQuoteWithArtwork() {
     };
   }
   if (!SERVICE_KEY) return null;
+  // NOTE: quotes orders by `created_at` — there is no `created_date` column.
+  // The first version of this query used the wrong name, 400'd, and the error
+  // was swallowed into a silent skip: the monitor reported GREEN while never
+  // running its most important checks. Hence the loud handling below.
   const res = await fetchWithTimeout(
     `${SUPABASE_URL}/rest/v1/quotes?select=id,quote_id,public_token,selected_artwork` +
-      `&selected_artwork=not.is.null&public_token=not.is.null&order=created_date.desc&limit=25`,
+      // Wide window on purpose: `selected_artwork is not null` also matches
+      // empty arrays (today 58 quotes pass the filter but only 9 carry real
+      // artwork), so a tight limit would start finding nothing as the table
+      // grows. If this ever runs dry it fails loudly — pin a specific quote
+      // with PROBE_QUOTE_ID/PROBE_QUOTE_TOKEN for a deterministic canary.
+      `&selected_artwork=not.is.null&public_token=not.is.null&order=created_at.desc&limit=500`,
     { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } },
   );
-  if (!res.ok) return null;
+  if (!res.ok) {
+    // A broken lookup is a BROKEN MONITOR, not a reason to pass.
+    fail("quote lookup", `HTTP ${res.status} — ${(await res.text()).slice(0, 200)}`);
+    return null;
+  }
   const rows = await res.json();
   return rows.find((r) => Array.isArray(r.selected_artwork) && r.selected_artwork.some((a) => a?.path || a?.url)) || null;
 }
@@ -241,9 +254,19 @@ if (pageHtml) await checkBundlesEnvReplaced(pageHtml);
 
 const quote = await pickQuoteWithArtwork();
 if (!quote) {
-  skip("customer journey", SERVICE_KEY
-    ? "no recent quote with artwork found"
-    : "SUPABASE_SERVICE_ROLE_KEY not set");
+  // A monitor that silently skips its core checks is WORSE than no monitor —
+  // it reports green while the thing it exists to watch goes unwatched. When
+  // we're configured to run the journey (a key or a pinned quote), not being
+  // able to is a failure. Only a genuinely unconfigured run may skip.
+  const configured = Boolean(SERVICE_KEY || (process.env.PROBE_QUOTE_ID && process.env.PROBE_QUOTE_TOKEN));
+  if (configured) {
+    fail(
+      "customer journey",
+      "configured to run but found no usable quote — the deep checks (proof proxy, getQuote, failure page) did NOT run",
+    );
+  } else {
+    skip("customer journey", "no SUPABASE_SERVICE_ROLE_KEY and no PROBE_QUOTE_ID/TOKEN — deep checks not run");
+  }
 } else {
   console.log(`  · using quote ${quote.quote_id} (read-only)`);
   await checkCustomerJourney(quote);
