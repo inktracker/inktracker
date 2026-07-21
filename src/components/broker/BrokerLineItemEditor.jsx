@@ -864,8 +864,8 @@ export default function BrokerLineItemEditor({
                   title="Current sale prices for this color — display only; quote costs use the standard price (sales end; jobs print later)."
                 >
                   {rows.map((r) => (
-                    <p key={r.supplier} className="text-[10px] text-emerald-600 font-semibold">
-                      💲 {r.supplier} sale price — ${r.sale.toFixed(2)}/pc
+                    <p key={r.supplier} className="text-[10px] text-emerald-600 font-semibold whitespace-nowrap">
+                      💲 {r.supplier === "S&S Activewear" ? "S&S" : r.supplier} sale — ${r.sale.toFixed(2)}/pc
                     </p>
                   ))}
                 </div>
