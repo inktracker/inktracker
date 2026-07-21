@@ -20,6 +20,7 @@ import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
 import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
+import { buildSaleSizePrices } from "@/lib/suppliers/salePricing";
 import { notify } from "@/lib/notify";
 
 // Query S&S Activewear, AS Colour, and SanMar in parallel and merge results.
@@ -1178,8 +1179,9 @@ export default function LineItemEditor({
             </div>
             {li.garmentCostManual && (
               <p className="text-[10px] text-slate-500 mt-1">
-                Manual cost — supplier per-size pricing is off for this line.
-                Re-select the style or color to restore it.
+                {li.sizePrices && Object.keys(li.sizePrices).length > 0
+                  ? "Sale cost applied per size — 2XL+ upcharges included. Re-select the style or color to restore standard pricing."
+                  : "Manual cost — supplier per-size pricing is off for this line. Re-select the style or color to restore it."}
               </p>
             )}
             {(() => {
@@ -1192,7 +1194,7 @@ export default function LineItemEditor({
               const brandLc = cleanText(li.brand).toLowerCase();
               const rows = (brandOptions || [])
                 .filter((o) => o._supplier && (!brandLc || cleanText(o.brandName).toLowerCase() === brandLc))
-                .map((o) => ({ supplier: o._supplier, sale: Number(o.priceMap?.[color]?.salePrice) }))
+                .map((o) => ({ supplier: o._supplier, option: o, sale: Number(o.priceMap?.[color]?.salePrice) }))
                 .filter((r) => r.sale > 0);
               if (rows.length === 0) return null;
               return (
@@ -1205,21 +1207,22 @@ export default function LineItemEditor({
                       type="button"
                       key={r.supplier}
                       onClick={() => {
-                        // Same path as typing the cost into the field:
-                        // supplier per-size prices outrank garmentCost, so
-                        // they must be dropped and the line flagged manual
-                        // or the click would be inert on looked-up styles.
-                        const hadSupplierPrices = !li.garmentCostManual &&
-                          ((li.sizePrices && Object.keys(li.sizePrices).length > 0) || !!sizePricesRef.current);
-                        sizePricesRef.current = null;
-                        onChange({ ...li, garmentCost: r.sale.toFixed(2), garmentCostManual: true, sizePrices: {} });
-                        if (hadSupplierPrices) {
-                          notify.info(
-                            "Manual garment cost",
-                            "Supplier per-size pricing is off for this line — the sale price now drives the price. Re-select the style or color to restore supplier pricing.",
-                            { className: "bg-yellow-50 border-yellow-200" }
-                          );
-                        }
+                        // Apply the sale PER SIZE so 2XL+ upcharges
+                        // survive the click (Joe 2026-07-20 — the flat fill
+                        // priced a 2XL like a Small); {} falls back to the
+                        // flat sale price. The manual flag stops the attach
+                        // effect from resurrecting the standard prices.
+                        const saleSizePrices = buildSaleSizePrices(r.option, color, r.sale);
+                        const hasPerSize = Object.keys(saleSizePrices).length > 0;
+                        sizePricesRef.current = hasPerSize ? saleSizePrices : null;
+                        onChange({ ...li, garmentCost: r.sale.toFixed(2), garmentCostManual: true, sizePrices: saleSizePrices });
+                        notify.info(
+                          "Sale cost applied",
+                          hasPerSize
+                            ? `${r.supplier} sale pricing now drives this line's cost, with per-size upcharges preserved. Re-select the style or color to restore standard pricing.`
+                            : `${r.supplier}'s sale price now drives this line's cost. Re-select the style or color to restore standard pricing.`,
+                          { className: "bg-yellow-50 border-yellow-200" }
+                        );
                       }}
                       className="block text-[10px] text-emerald-600 font-semibold whitespace-nowrap hover:text-emerald-800 hover:underline"
                     >

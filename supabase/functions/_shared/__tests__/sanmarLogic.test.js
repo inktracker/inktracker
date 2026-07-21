@@ -374,3 +374,47 @@ describe("buildMatchFromEntries — trailing style stripped from titles", () => 
     expect(m.title).toBe("1717 Series Heavyweight Tee");
   });
 });
+
+// Per-size prices (Joe 2026-07-20): the per-color record collapses to the
+// cheapest size, which lost 2XL+ upcharges — clicking a sale price (or even
+// standard SanMar pricing) charged a 2XL like a Small. Entries arrive one
+// per color×size, so per-size standard and sale prices are now emitted on
+// colors[].sizePrices / colors[].sizeSalePrices plus a style-level
+// sizePriceMap in the same shape ssLookupStyle uses.
+describe("buildMatchFromEntries — per-size prices (2XL+ upcharges)", () => {
+  const mk = (size, piece, sale) => ({
+    style: "1717", brandName: "Comfort Colors", productTitle: "CC 1717",
+    productDescription: "tee", category: "T-Shirts", availableSizes: "S-3XL",
+    color: "Bay", catalogColor: "Bay", inventoryKey: "k1", size, sizeIndex: "2",
+    piecePrice: piece, casePrice: piece, pieceSalePrice: sale, caseSalePrice: sale,
+    priceText: "", colorProductImage: "https://x/img.jpg", productImage: "", specSheet: "",
+    uniqueKey: "u1", pieceWeight: "0.42", caseSize: "60", productStatus: "Active",
+  });
+  const entries = [mk("S", 8.62, 6.34), mk("2XL", 10.62, 8.10), mk("3XL", 11.62, 0)];
+
+  it("emits per-size standard prices on the color", () => {
+    const match = buildMatchFromEntries(entries, []);
+    expect(match.colors[0].sizePrices).toEqual({ S: 8.62, "2XL": 10.62, "3XL": 11.62 });
+  });
+
+  it("emits per-size sale prices only where a genuine sale exists", () => {
+    const match = buildMatchFromEntries(entries, []);
+    expect(match.colors[0].sizeSalePrices).toEqual({ S: 6.34, "2XL": 8.10 });
+  });
+
+  it("drops a per-size 'sale' at or above that size's standard price", () => {
+    const match = buildMatchFromEntries([mk("S", 8.62, 8.62)], []);
+    expect(match.colors[0].sizeSalePrices).toBeUndefined();
+  });
+
+  it("emits the style-level sizePriceMap in the ssLookupStyle shape", () => {
+    const match = buildMatchFromEntries(entries, []);
+    expect(match.sizePriceMap.Bay).toEqual({ S: 8.62, "2XL": 10.62, "3XL": 11.62 });
+  });
+
+  it("keeps the per-color piecePrice as the cheapest (base) size", () => {
+    const match = buildMatchFromEntries(entries, []);
+    expect(match.colors[0].piecePrice).toBe(8.62);
+    expect(match.colors[0].salePrice).toBe(6.34);
+  });
+});
