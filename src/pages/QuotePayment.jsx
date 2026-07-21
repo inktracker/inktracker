@@ -8,6 +8,7 @@ import {
   Lock,
   CreditCard,
   MapPin,
+  FileText,
 } from "lucide-react";
 import {
   calcQuoteTotals,
@@ -31,6 +32,46 @@ import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
+
+// Proof-grid tile. PDFs get a static tile instead of a live <object> embed —
+// an embedded PDF thumbnail downloads the whole file per tile AND renders the
+// storage API's raw JSON error body if the URL is dead (a customer saw
+// exactly that; #681). Images that fail to load flip to a friendly
+// placeholder instead of swapping in the retired public-bucket URL. The
+// full-screen overlay probes the URL itself, so a dead link ends at its
+// "couldn't load" message, never raw JSON.
+function ProofThumb({ art, onOpen }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const isPdf = /\.pdf(\?|$)/i.test(art.url || art.file_url || art.name || "");
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group relative aspect-square rounded-xl border border-slate-200 bg-slate-50 overflow-hidden hover:border-teal-400 hover:shadow-md transition"
+      title={`${art.name || "Artwork"} — click to enlarge`}
+    >
+      {isPdf || imgFailed ? (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 text-slate-500">
+          <FileText className="w-8 h-8" />
+          <span className="text-[10px] font-bold uppercase tracking-wide">
+            {isPdf ? "PDF proof" : "Preview unavailable"}
+          </span>
+          <span className="text-[10px]">Click to view</span>
+        </div>
+      ) : (
+        <img
+          src={art._src}
+          onError={() => setImgFailed(true)}
+          alt={art.name || "Art proof"}
+          className="w-full h-full object-contain"
+        />
+      )}
+      <span className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[10px] px-1.5 py-1 truncate opacity-0 group-hover:opacity-100 transition">
+        {art.name || "Artwork"}
+      </span>
+    </button>
+  );
+}
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -501,23 +542,20 @@ export default function QuotePayment() {
         </div>
 
         {/* Art proof / mockups — so the customer can review the proof before
-            approving. Reads selected_artwork (the shop's attached proofs). The
-            bucket is public, so public URLs render; the overlay's signed-URL
-            sign falls back to the public URL for anon viewers. */}
+            approving. Reads selected_artwork (the shop's attached proofs).
+            The artwork bucket is PRIVATE (M-1): every render goes through the
+            token-gated artworkProof proxy. There is deliberately no raw-URL
+            fallback — the public form is dead, so a proxy we can't build
+            renders the friendly placeholder path instead (#681). */}
         {(() => {
           const proofs = (displayQuote.selected_artwork || [])
             .filter((a) => a && (a.url || a.file_url))
             .map((a) => {
               const fallback = a.url || a.file_url;
-              // M-1: render via the token-gated proxy so the (soon-private)
-              // bucket stays sealed. Falls back to the existing url if we can't
-              // build a proxy link, and via <img onError> while the bucket is
-              // still public — so nothing breaks during the transition.
               const src = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback }) || fallback;
-              return { ...a, _src: src, _fallback: fallback };
+              return { ...a, _src: src };
             });
           if (proofs.length === 0) return null;
-          const isPdf = (a) => /\.pdf(\?|$)/i.test(a.url || a.file_url || a.name || "");
           return (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm px-4 sm:px-8 py-6">
               <h3 className="text-base font-bold text-slate-900 border-b border-slate-100 pb-3 mb-4">
@@ -525,32 +563,11 @@ export default function QuotePayment() {
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {proofs.map((a, i) => (
-                  <button
+                  <ProofThumb
                     key={a.id || a.url || i}
-                    type="button"
-                    onClick={() => setPreviewArt({ ...a, url: a._src, file_url: a._src, path: null })}
-                    className="group relative aspect-square rounded-xl border border-slate-200 bg-slate-50 overflow-hidden hover:border-teal-400 hover:shadow-md transition"
-                    title={`${a.name || "Artwork"} — click to enlarge`}
-                  >
-                    {isPdf(a) ? (
-                      <object
-                        data={`${a._src}#toolbar=0&navpanes=0&view=FitH`}
-                        type="application/pdf"
-                        className="w-full h-full pointer-events-none"
-                        aria-label={a.name || "PDF proof"}
-                      />
-                    ) : (
-                      <img
-                        src={a._src}
-                        onError={(e) => { if (a._fallback && e.currentTarget.src !== a._fallback) e.currentTarget.src = a._fallback; }}
-                        alt={a.name || "Art proof"}
-                        className="w-full h-full object-contain"
-                      />
-                    )}
-                    <span className="absolute inset-x-0 bottom-0 bg-black/55 text-white text-[10px] px-1.5 py-1 truncate opacity-0 group-hover:opacity-100 transition">
-                      {a.name || "Artwork"}
-                    </span>
-                  </button>
+                    art={a}
+                    onOpen={() => setPreviewArt({ ...a, url: a._src, file_url: a._src, path: null })}
+                  />
                 ))}
               </div>
               <p className="text-[11px] text-slate-500 mt-3">

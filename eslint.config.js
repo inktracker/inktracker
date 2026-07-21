@@ -57,4 +57,42 @@ export default [
       "react-hooks/rules-of-hooks": "error",
     },
   },
+  {
+    // Guards EVERY src file — including src/lib, which the block above
+    // deliberately ignores. That gap is how `import.meta?.env` shipped
+    // unlinted and broke customer proof viewing (#680/#681): Vite only
+    // statically replaces the bare `import.meta.env.X` form, so any optional
+    // chaining on import.meta reaches the browser, where import.meta.env is
+    // undefined at runtime. scripts/check-dist-env.mjs is the build-time
+    // backstop for the same class.
+    files: ["src/**/*.{js,mjs,cjs,jsx}"],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: "module",
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+    // Registered (not enabled) so inline `eslint-disable react-hooks/*`
+    // comments in src/lib files resolve now that this block lints them.
+    plugins: { "react-hooks": pluginReactHooks },
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          // import.meta?.env — the ?. sits BEFORE the env key, so Vite can't
+          // statically replace it and the browser sees undefined.
+          selector: "MemberExpression[optional=true][object.type='MetaProperty']",
+          message:
+            "`import.meta?.env` defeats Vite's static env replacement — use the bare import.meta.env.X form (customer-facing regression #680).",
+        },
+        {
+          // import.meta.env?.X — same failure, ?. on the env object itself.
+          // (import.meta.env.X?.method() is FINE: the env key is replaced
+          // first, the optional call operates on the literal.)
+          selector: "MemberExpression[optional=true][object.object.type='MetaProperty']",
+          message:
+            "`import.meta.env?.X` defeats Vite's static env replacement — use the bare import.meta.env.X form (customer-facing regression #680).",
+        },
+      ],
+    },
+  },
 ];
