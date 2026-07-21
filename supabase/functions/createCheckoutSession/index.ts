@@ -537,8 +537,19 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const body = await req.json();
-    const { action, quoteId, token, ...rest } = body;
+    // Malformed input is a CLIENT error, not a server bug. This endpoint is
+    // public and unauthenticated, so scanners send junk at it constantly; if
+    // each one fell through to the top-level catch it would file a Sentry
+    // issue and email the operator about a "SyntaxError" that needs no
+    // action. Alerting that cries wolf gets muted, and then the real outage
+    // is the one that gets missed. Reject cleanly, don't alert.
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return Response.json({ error: "Invalid request." }, { status: 400, headers: CORS });
+    }
+    const { action, quoteId, token, ...rest } = body as Record<string, any>;
 
     // RL-04: rate-limit the customer-facing read + session actions by client IP
     // (server-derived — never a client-supplied key). These take a quoteId/

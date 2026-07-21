@@ -38,7 +38,16 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const { payload, recaptchaToken } = await req.json();
+    // Malformed body = client error, not a server bug. This is the highest-
+    // volume anonymous endpoint we expose, so bot junk would otherwise page
+    // the operator via the top-level catch's captureError. Reject, don't alert.
+    let parsed: Record<string, any>;
+    try {
+      parsed = await req.json();
+    } catch {
+      return json({ error: "Invalid request." }, 400);
+    }
+    const { payload, recaptchaToken } = parsed;
 
     if (!payload || typeof payload !== "object") {
       return json({ error: "Missing payload" }, 400);
