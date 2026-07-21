@@ -42,7 +42,13 @@ export async function captureError(
   context: Record<string, unknown> = {},
 ): Promise<void> {
   try {
-    const dsn = Deno.env.get("SENTRY_DSN");
+    // Prefer a DEDICATED edge DSN so backend failures land in their own
+    // Sentry project instead of being mixed into the frontend's issue
+    // stream (where a server fault looks like just another browser error).
+    // Falls back to SENTRY_DSN so this keeps working unchanged until that
+    // project exists — setting SENTRY_EDGE_DSN is the only step needed to
+    // switch over, no redeploy of this file required.
+    const dsn = Deno.env.get("SENTRY_EDGE_DSN") || Deno.env.get("SENTRY_DSN");
     if (!dsn) return; // not configured → silent no-op (the common case)
     const parsed = parseDsn(dsn);
     if (!parsed) return;
@@ -53,6 +59,11 @@ export async function captureError(
       level: "error",
       timestamp: Date.now() / 1000,
       logger: "edge",
+      // Distinct from the frontend's environment (which is Vite's MODE, i.e.
+      // "production"), so backend faults are separable at a glance —
+      // filterable as `environment:edge` and targetable by their own alert
+      // rules — even while both still share the inktracker-web project.
+      environment: Deno.env.get("SENTRY_ENVIRONMENT") || "edge",
       server_name: (context.fn as string) || "edge-function",
       message: e.value,
       exception: { values: [{ type: e.type, value: e.value, stacktrace: e.stacktrace ? { frames: [], raw: e.stacktrace } : undefined }] },
