@@ -52,6 +52,11 @@ Deno.serve(async (req) => {
     } catch {
       return json({ error: "Invalid request." }, 400);
     }
+    // Non-object body (null / primitive / array) is client junk — destructuring
+    // it would throw into the alerting catch. Reject silently.
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return json({ error: "Invalid request." }, 400);
+    }
     const { accessToken, ...payload } = body;
 
     if (!accessToken) return json({ error: "Missing accessToken" }, 401);
