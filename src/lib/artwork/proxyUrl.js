@@ -10,7 +10,12 @@ import { resolveArtworkPath } from "@/lib/artworkPath";
 // fall back to whatever URL they already have (M-1; safe while the bucket is
 // still public).
 export function artworkProxyUrl({ type, id, token, pathOrUrl }) {
-  const base = (import.meta?.env?.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  // MUST be the bare `import.meta.env.X` form — optional chaining
+  // (`import.meta?.env?.X`) defeats Vite's build-time replacement, so the
+  // production bundle reads import.meta.env at runtime, gets undefined, and
+  // this returns null for EVERY caller (customers then fall back to the dead
+  // public-bucket URL → "Bucket not found").
+  const base = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
   const path = resolveArtworkPath(pathOrUrl);
   if (!base || !id || !token || !path) return null;
   return `${base}/functions/v1/artworkProof?type=${encodeURIComponent(type)}` +
