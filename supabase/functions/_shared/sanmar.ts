@@ -364,6 +364,17 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
   if (entries.length === 0) return null;
   const first = entries[0];
 
+  // SanMar's productTitle conventionally ENDS with the style number
+  // ("COMFORT COLORS Heavyweight Ring Spun Tee. 1717"), and the quote
+  // editors' display header PREPENDS the style number — showing it
+  // twice ("1717 - ... Tee. 1717", Joe 2026-07-20). Strip the trailing
+  // style token (and the separator punctuation before it) once, here,
+  // so every consumer gets a clean title.
+  const escapedStyle = String(first.style || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const displayTitle = escapedStyle
+    ? first.productTitle.replace(new RegExp(`[\\s.,-]*${escapedStyle}\\s*$`, "i"), "").trim()
+    : first.productTitle;
+
   // Shop cost per color: cheapest myPrice across sizes (base sizes are the
   // cheapest; oversize upcharges are handled by the pricing engine, matching
   // how the S&S/AC integrations report a color's base piece price).
@@ -447,8 +458,8 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     productNumber: first.style,
     brandName: first.brandName || "SanMar",
     styleName: first.style,
-    resolvedTitle: first.productTitle,
-    title: first.productTitle,
+    resolvedTitle: displayTitle,
+    title: displayTitle,
     description: first.productDescription,
     categories: first.category ? [first.category] : [],
     styleCategory: first.category,
