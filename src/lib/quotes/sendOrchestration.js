@@ -182,7 +182,10 @@ export function extractProofImageUrls(quote) {
   const art = Array.isArray(quote?.selected_artwork) ? quote.selected_artwork : [];
   const id = quote?.id || quote?.quote_id || "";
   const token = (quote?.public_token ?? "").toString().trim();
-  const base = (import.meta?.env?.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+  // Bare `import.meta.env.X` form only — optional chaining defeats Vite's
+  // build-time replacement and this silently returns [] in production
+  // (see artworkProxyUrl for the full story).
+  const base = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
   if (!id || !token || !base) return [];
   const out = [];
   for (const a of art) {
