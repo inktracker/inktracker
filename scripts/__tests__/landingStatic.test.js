@@ -38,14 +38,14 @@ describe("static landing snapshot — plumbing", () => {
     expect(indexHtml()).toContain('"@type": "SoftwareApplication"');
   });
 
-  // The snapshot is landing marketing — app routes (/QuoteRequest embedded on
-  // shop storefronts, /QuotePayment, …) must never show it, even for the
-  // pre-boot blink. The head script tags <html data-app-route> off-root and a
-  // head style hides the [data-landing-static] subtree before first paint.
-  it("is hidden on app routes before first paint", () => {
+  // The snapshot exists only for crawlers / no-JS fetches. JS-enabled
+  // browsers boot React, so the head script tags <html data-js> and a head
+  // style hides the [data-landing-static] subtree before first paint —
+  // no marketing flash on "/" or on app routes (/QuoteRequest embeds).
+  it("is hidden for JS-enabled browsers before first paint", () => {
     const html = indexHtml();
-    expect(html).toContain('if (location.pathname !== "/") document.documentElement.setAttribute("data-app-route", "");');
-    expect(html).toContain("html[data-app-route] [data-landing-static] { display: none }");
+    expect(html).toContain('document.documentElement.setAttribute("data-js", "");');
+    expect(html).toContain("html[data-js] [data-landing-static] { display: none }");
     // The generated snapshot's top-level div must carry the hide hook.
     const snapshot = html.slice(html.indexOf("landing-static:start"), html.indexOf("landing-static:end"));
     expect(snapshot).toContain("<div data-landing-static ");

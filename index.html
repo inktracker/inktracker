@@ -89,12 +89,13 @@
     }
     </script>
 
-    <!-- The static landing snapshot in #root below is landing-page marketing
-         meant only for crawlers and the pre-boot blink on "/". App routes
-         (/QuoteRequest embedded on shop sites, /QuotePayment, …) must never
-         show it — hide it here in the head so it applies before first paint. -->
+    <!-- The static landing snapshot in #root below exists ONLY for crawlers
+         and no-JS fetches. Any JS-enabled browser is about to boot React, so
+         hide it before first paint everywhere — no marketing flash on "/",
+         and none on app routes (/QuoteRequest embedded on shop sites, …).
+         With JS disabled this script never runs and crawlers see content. -->
     <script>
-      if (location.pathname !== "/") document.documentElement.setAttribute("data-app-route", "");
+      document.documentElement.setAttribute("data-js", "");
       // Self-heal for stale HTML: after a redeploy, previously-hashed /assets/
       // files 404 and React can never boot, stranding visitors on the snapshot
       // (or a blank app route). Reload once — index.html is must-revalidate,
@@ -112,7 +113,7 @@
         if (firstFailure) location.reload();
       }, true);
     </script>
-    <style>html[data-app-route] [data-landing-static] { display: none }</style>
+    <style>html[data-js] [data-landing-static] { display: none }</style>
   </head>
   <body>
     <!-- Static landing snapshot between the markers is GENERATED — edit
