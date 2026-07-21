@@ -286,7 +286,7 @@ function getBestDescription(selectedMatch) {
   return "";
 }
 
-export function buildBrandOptions(matches, typedStyleNumber) {
+export function buildBrandOptions(matches, typedStyleNumber, colorName = "") {
   const typed = normalizeTypedStyleNumber(typedStyleNumber);
   const unique = [];
   const seen = new Set();
@@ -341,12 +341,22 @@ export function buildBrandOptions(matches, typedStyleNumber) {
   }
   for (const o of unique) {
     if (o._supplier && brandStyleCounts.get(`${o.brandName}|${o.styleNumber}`) > 1) {
-      // Include the effective (sale-aware) from-price so the dropdown IS
-      // the supplier comparison — the whole point of the duplicate rows.
-      const eff = effectiveOptionCost(o);
-      o.label = Number.isFinite(eff) && eff > 0
-        ? `${o.label} (${o._supplier} · from $${eff.toFixed(2)})`
-        : `${o.label} (${o._supplier})`;
+      // The dropdown IS the supplier comparison. Color-aware: once the
+      // line has a color, show THAT color's buy-today price at each
+      // supplier — "from $X" (the cheapest color) only before a color
+      // is chosen. Live-caught: SanMar's "from $5.06" was Banana's deep
+      // sale while the user was comparing Bay at $6.34.
+      const colorAware = colorName && o.priceMap?.[colorName]
+        ? effectiveOptionCost(o, colorName)
+        : 0;
+      if (colorAware > 0 && Number.isFinite(colorAware)) {
+        o.label = `${o.label} (${o._supplier} · ${colorName} $${colorAware.toFixed(2)})`;
+      } else {
+        const eff = effectiveOptionCost(o);
+        o.label = Number.isFinite(eff) && eff > 0
+          ? `${o.label} (${o._supplier} · from $${eff.toFixed(2)})`
+          : `${o.label} (${o._supplier})`;
+      }
     }
   }
 
@@ -521,7 +531,7 @@ export default function BrokerLineItemEditor({
       const result = await lookupStyle(typedStyleNumber);
       const matches = getResultCandidates(result);
       const preferred = preferredSupplier(getShopPricingConfig());
-      const options = orderBySupplierPreference(buildBrandOptions(matches, typedStyleNumber), preferred);
+      const options = orderBySupplierPreference(buildBrandOptions(matches, typedStyleNumber, li.garmentColor), preferred);
 
       setBrandOptions(options);
 
