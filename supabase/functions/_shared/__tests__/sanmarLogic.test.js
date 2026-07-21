@@ -312,3 +312,35 @@ describe("inventory: envelope + parse + mapping", () => {
     expect(match.inventoryMap.Bay).toEqual({ S: 2343, "2XL": 362 });
   });
 });
+
+// Sale-price PREVIEW (Joe 2026-07-20): salePrice is exposed for display
+// only — the cost fields (piecePrice) stay on the standard price. Only a
+// genuine sale (below standard) is emitted, so the UI badge can't show
+// "sales" that equal or exceed the normal price.
+describe("buildMatchFromEntries — salePrice preview field", () => {
+  const base = {
+    style: "1717", brandName: "Comfort Colors", productTitle: "CC 1717",
+    productDescription: "tee", category: "T-Shirts", availableSizes: "S-3XL",
+    color: "Bay", catalogColor: "BAY", inventoryKey: "k1", size: "S", sizeIndex: "2",
+    priceText: "", colorProductImage: "https://x/img.jpg", productImage: "", specSheet: "",
+    uniqueKey: "u1", pieceWeight: "0.42", caseSize: "60", productStatus: "Active",
+  };
+
+  it("on sale: salePrice exposed, cost stays standard", () => {
+    const match = buildMatchFromEntries([{ ...base, piecePrice: 8.62, casePrice: 8.62, pieceSalePrice: 6.34, caseSalePrice: 6.34 }], []);
+    expect(match.colors[0].piecePrice).toBe(8.62);
+    expect(match.colors[0].salePrice).toBe(6.34);
+    expect(match.priceMap.Bay.salePrice).toBe(6.34);
+  });
+
+  it("no sale: salePrice absent entirely", () => {
+    const match = buildMatchFromEntries([{ ...base, piecePrice: 8.62, casePrice: 8.62, pieceSalePrice: 0, caseSalePrice: 0 }], []);
+    expect(match.colors[0].salePrice).toBeUndefined();
+    expect(match.priceMap.Bay.salePrice).toBeUndefined();
+  });
+
+  it("'sale' at or above standard is not a sale — absent", () => {
+    const match = buildMatchFromEntries([{ ...base, piecePrice: 8.62, casePrice: 8.62, pieceSalePrice: 8.62, caseSalePrice: 8.62 }], []);
+    expect(match.colors[0].salePrice).toBeUndefined();
+  });
+});

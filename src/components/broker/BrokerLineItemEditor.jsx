@@ -842,6 +842,19 @@ export default function BrokerLineItemEditor({
                 Re-select the style or color to restore it.
               </p>
             )}
+            {(() => {
+              // Sale-price preview — mirrors LineItemEditor: display only.
+              const sale = ssPriceMap[li.garmentColor]?.salePrice;
+              if (!(Number(sale) > 0)) return null;
+              return (
+                <p
+                  className="text-[10px] text-emerald-600 font-semibold mt-1"
+                  title="This supplier's current sale price. Shown for comparison only — quote costs use the standard price."
+                >
+                  💲 On sale now: ${Number(sale).toFixed(2)}/pc — display only, cost stays standard
+                </p>
+              );
+            })()}
           </div>
         </div>
       </div>

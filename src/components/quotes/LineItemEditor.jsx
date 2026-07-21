@@ -1164,6 +1164,21 @@ export default function LineItemEditor({
                 Re-select the style or color to restore it.
               </p>
             )}
+            {(() => {
+              // Sale-price PREVIEW (Joe 2026-07-20): informational only —
+              // shows the supplier's current sale so the shop can compare
+              // suppliers, while the cost formula stays on standard pricing.
+              const sale = ssPriceMap[li.garmentColor]?.salePrice;
+              if (!(Number(sale) > 0)) return null;
+              return (
+                <p
+                  className="text-[10px] text-emerald-600 font-semibold mt-1"
+                  title="This supplier's current sale price. Shown for comparison only — quote costs use the standard price (sales end; jobs print later)."
+                >
+                  💲 On sale now: ${Number(sale).toFixed(2)}/pc — display only, cost stays standard
+                </p>
+              );
+            })()}
           </div>
         </div>
 

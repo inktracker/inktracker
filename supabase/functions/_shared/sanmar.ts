@@ -419,13 +419,21 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     // missing a catalog price.
     const piece = rec.piece || rec.pieceSale || myPriceByColor[colorName];
     const casePx = rec.casePrice || rec.caseSale;
-    if (piece > 0) priceMap[colorName] = { piecePrice: piece, casePrice: casePx || piece };
+    // Display-only sale preview (Joe 2026-07-20): expose the current sale
+    // price ONLY when a genuine sale exists (below the standard price the
+    // cost formula uses). The UI shows it as a hint next to Garment Cost;
+    // it never feeds the cost calculation.
+    const sale = rec.pieceSale > 0 && rec.pieceSale < piece ? rec.pieceSale : 0;
+    if (piece > 0) {
+      priceMap[colorName] = { piecePrice: piece, casePrice: casePx || piece, ...(sale ? { salePrice: sale } : {}) };
+    }
     return {
       colorName,
       colorCode: rec.entry.catalogColor,
       sku: rec.entry.inventoryKey,
       piecePrice: piece,
       casePrice: casePx || piece,
+      ...(sale ? { salePrice: sale } : {}),
       imageUrl: rec.entry.colorProductImage || rec.entry.productImage || "",
       sizeQuantities: invByColorName[colorName] || {},
     };
