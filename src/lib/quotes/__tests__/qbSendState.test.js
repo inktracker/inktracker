@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveQbSendState } from "../qbSendState.js";
+import { deriveQbSendState, qbInvoiceOutOfSync } from "../qbSendState.js";
 
 describe("deriveQbSendState", () => {
   describe("needs_create — no QB invoice yet", () => {
@@ -97,5 +97,29 @@ describe("deriveQbSendState", () => {
         else expect(warning).toBeNull();
       }
     });
+  });
+});
+
+// Stale-invoice warning (Joe 2026-07-21): quote edited after the QB invoice
+// was created → the pay-now link charges the OLD amount. Warn on ≥1¢ delta;
+// stay quiet when either side is unknown (no false alarms on legacy rows
+// that predate qb_total mirroring).
+describe("qbInvoiceOutOfSync", () => {
+  it("flags a total that moved since the invoice was cut", () => {
+    expect(qbInvoiceOutOfSync({ qbTotal: 2427.30, currentTotal: 2593.10 })).toBe(true);
+    expect(qbInvoiceOutOfSync({ qbTotal: "2427.30", currentTotal: 2427.31 })).toBe(true);
+  });
+
+  it("stays quiet when the totals agree (incl. float noise under a cent)", () => {
+    expect(qbInvoiceOutOfSync({ qbTotal: 2427.30, currentTotal: 2427.30 })).toBe(false);
+    expect(qbInvoiceOutOfSync({ qbTotal: 2427.3000001, currentTotal: 2427.30 })).toBe(false);
+  });
+
+  it("stays quiet when either side is unknown", () => {
+    expect(qbInvoiceOutOfSync({ qbTotal: null, currentTotal: 100 })).toBe(false);
+    expect(qbInvoiceOutOfSync({ qbTotal: "", currentTotal: 100 })).toBe(false);
+    expect(qbInvoiceOutOfSync({ qbTotal: 100, currentTotal: undefined })).toBe(false);
+    expect(qbInvoiceOutOfSync({ qbTotal: "not-a-number", currentTotal: 100 })).toBe(false);
+    expect(qbInvoiceOutOfSync({})).toBe(false);
   });
 });

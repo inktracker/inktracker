@@ -7,7 +7,7 @@ import { exportQuoteToPDF } from "../shared/pdfExport";
 import { quoteThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThreads";
 import { quotePaymentUrl } from "@/lib/publicUrls";
 import { validateQuoteForSend } from "@/lib/quotes/validation";
-import { deriveQbSendState } from "@/lib/quotes/qbSendState";
+import { deriveQbSendState, qbInvoiceOutOfSync } from "@/lib/quotes/qbSendState";
 import {
   parseRecipients,
   decidePublicToken,
@@ -102,6 +102,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const [qbInvoiceId, setQbInvoiceId] = useState(quote.qb_invoice_id ?? null);
   const [qbDocNumber, setQbDocNumber] = useState(quote.qb_doc_number ?? null);
   const [qbPaymentLink, setQbPaymentLink] = useState(quote.qb_payment_link ?? null);
+  const [qbTotal, setQbTotal] = useState(quote.qb_total ?? null);
   const [creatingQbInvoice, setCreatingQbInvoice] = useState(false);
   const [qbError, setQbError] = useState("");
 
@@ -128,6 +129,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         if (fresh.qb_invoice_id   != null) setQbInvoiceId(fresh.qb_invoice_id);
         if (fresh.qb_doc_number   != null) setQbDocNumber(fresh.qb_doc_number);
         if (fresh.qb_payment_link != null) setQbPaymentLink(fresh.qb_payment_link);
+        if (fresh.qb_total        != null) setQbTotal(fresh.qb_total);
       } catch (err) {
         // Non-fatal — modal will operate on the parent prop's snapshot.
         console.warn("[SendQuoteModal] quote refresh failed:", err?.message);
@@ -140,6 +142,12 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // success bar, or the warning bar, and whether QB state currently
   // blocks Send.
   const qbState = deriveQbSendState({ qbInvoiceId, qbPaymentLink });
+  // Quote edited AFTER the QB invoice was cut → the pay-now link charges the
+  // OLD amount. qb_total mirrors the QB invoice (qbSync + QB webhook), so a
+  // total mismatch is the money-correct staleness signal (predicate tested
+  // in qbSendState.test.js).
+  const qbStale = qbState.status !== "needs_create" &&
+    qbInvoiceOutOfSync({ qbTotal, currentTotal: customerTotals.total });
 
   // ── Confirmation gate ───────────────────────────────────────────────
   // Click "Send" → show "Send to {email}? Yes/No" → on Yes, actually fire.
@@ -829,6 +837,21 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                     <span className="text-xs text-emerald-700 leading-relaxed">
                       QB invoice {qbDocNumber || `#${qbInvoiceId}`} ready — its pay-now link is included in the quote email InkTracker sends. QuickBooks doesn't send a separate email.
                     </span>
+                  </div>
+                )}
+
+                {/* Stale-invoice warning: the quote changed after the QB
+                    invoice was created — the pay-now link still charges the
+                    invoice's amount, not what this email shows. */}
+                {paymentProvider === "qb" && qbStale && (
+                  <div className="bg-amber-50 border border-amber-300 rounded-xl px-3 py-2 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-800 leading-relaxed">
+                      <div className="font-semibold mb-0.5">
+                        This quote changed after QB invoice {qbDocNumber || `#${qbInvoiceId}`} was created.
+                      </div>
+                      The invoice — and its pay-now link — totals {fmtMoney(qbTotal)}, but this quote now totals {fmtMoney(customerTotals.total)}. If you send now, the customer will be asked to pay {fmtMoney(qbTotal)}. Update the invoice in QuickBooks to match before sending, or send knowing the link carries the old amount.
+                    </div>
                   </div>
                 )}
 
