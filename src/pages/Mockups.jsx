@@ -238,9 +238,13 @@ export default function Mockups() {
       const sizes = li.sizes || {};
       return sum + Object.values(sizes).reduce((s, v) => s + (parseInt(v, 10) || 0), 0);
     }, 0);
+    // Company-first, like getDisplayName: the proof header says "Customer:"
+    // and shops bill companies — the contact person is a fallback, not the
+    // identity (Joe 2026-07-21, Q-2026-GXTE showed the contact's name).
+    const displayCustomer = (r.company && String(r.company).trim()) || r.customer_name || "";
     setProofDetails(prev => ({
       ...prev,
-      customerName: r.customer_name || prev.customerName,
+      customerName: displayCustomer || prev.customerName,
       quoteNumber:  r.quote_id || r.order_id || prev.quoteNumber,
       dueDate:      r.due_date || prev.dueDate,
       dateOrdered:  r.date || prev.dateOrdered,
