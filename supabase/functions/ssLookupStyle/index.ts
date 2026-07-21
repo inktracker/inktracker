@@ -156,6 +156,7 @@ function groupRowsByBrand(rows: any[]): any[] {
       imageUrl: string; backImageUrl: string;
       sizeQuantities: Record<string, number>;
       sizePrices: Record<string, number>;
+      sizeSalePrices: Record<string, number>;
     }> = {};
 
     for (const row of brandRows) {
@@ -176,6 +177,7 @@ function groupRowsByBrand(rows: any[]): any[] {
           backImageUrl: backRaw ? (backRaw.startsWith("http") ? backRaw : `https://www.ssactivewear.com/${backRaw}`) : "",
           sizeQuantities: {},
           sizePrices: {} as Record<string, number>,
+          sizeSalePrices: {} as Record<string, number>,
         };
       }
 
@@ -192,6 +194,9 @@ function groupRowsByBrand(rows: any[]): any[] {
         colorMap[colorName].sizeQuantities[sizeName] = Number(row.qty ?? 0);
         const rowPrice = sanitizeSupplierPrice(row.piecePrice ?? row.piece_price);
         if (rowPrice > 0) colorMap[colorName].sizePrices[sizeName] = rowPrice;
+        // Per-size active sale — lets "click the sale price" keep the real
+        // 2XL+ upcharges instead of flattening every size to one number.
+        if (rowSale > 0 && saleActive(row)) colorMap[colorName].sizeSalePrices[sizeName] = rowSale;
       }
     }
 
@@ -205,6 +210,12 @@ function groupRowsByBrand(rows: any[]): any[] {
       // the UI badge can't mislead.
       if (!(c.salePrice > 0 && c.piecePrice > 0 && c.salePrice < c.piecePrice)) {
         (c as { salePrice?: number }).salePrice = undefined;
+      }
+      // Same guard per size: a "sale" at or above that size's standard
+      // price is dropped so click-to-apply can never raise a size's cost.
+      for (const [sz, sp] of Object.entries(c.sizeSalePrices)) {
+        const std = c.sizePrices[sz] || 0;
+        if (!(sp > 0 && std > 0 && sp < std)) delete c.sizeSalePrices[sz];
       }
       inventoryMap[c.colorName] = c.sizeQuantities;
       priceMap[c.colorName]     = {

@@ -386,18 +386,22 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     }
   }
 
-  const byColor = new Map<string, { entry: SmProductEntry; sizes: Set<string>; piece: number; pieceSale: number; casePrice: number; caseSale: number }>();
+  const byColor = new Map<string, { entry: SmProductEntry; sizes: Set<string>; piece: number; pieceSale: number; casePrice: number; caseSale: number; sizePrices: Record<string, number>; sizeSalePrices: Record<string, number> }>();
   const sizeOrder: string[] = [];
   for (const e of entries) {
     if (!e.color) continue;
     let rec = byColor.get(e.color);
     if (!rec) {
-      rec = { entry: e, sizes: new Set(), piece: 0, pieceSale: 0, casePrice: 0, caseSale: 0 };
+      rec = { entry: e, sizes: new Set(), piece: 0, pieceSale: 0, casePrice: 0, caseSale: 0, sizePrices: {} as Record<string, number>, sizeSalePrices: {} as Record<string, number> };
       byColor.set(e.color, rec);
     }
     if (e.size) {
       rec.sizes.add(e.size);
       if (!sizeOrder.includes(e.size)) sizeOrder.push(e.size);
+      // Per-size prices: entries arrive one per color×size, so this keeps
+      // the 2XL+ upcharges the per-color cheapest below collapses away.
+      if (e.piecePrice > 0) rec.sizePrices[e.size] = e.piecePrice;
+      if (e.pieceSalePrice > 0) rec.sizeSalePrices[e.size] = e.pieceSalePrice;
     }
     // Cheapest catalog piece/case (and sale) price across the color's sizes.
     if (e.piecePrice > 0 && (rec.piece === 0 || e.piecePrice < rec.piece)) rec.piece = e.piecePrice;
@@ -438,6 +442,12 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     if (piece > 0) {
       priceMap[colorName] = { piecePrice: piece, casePrice: casePx || piece, ...(sale ? { salePrice: sale } : {}) };
     }
+    // A per-size "sale" at or above that size's standard price isn't a sale.
+    const sizeSalePrices: Record<string, number> = {};
+    for (const [sz, sp] of Object.entries(rec.sizeSalePrices)) {
+      const std = rec.sizePrices[sz] || 0;
+      if (sp > 0 && std > 0 && sp < std) sizeSalePrices[sz] = sp;
+    }
     return {
       colorName,
       colorCode: rec.entry.catalogColor,
@@ -447,10 +457,20 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
       ...(sale ? { salePrice: sale } : {}),
       imageUrl: rec.entry.colorProductImage || rec.entry.productImage || "",
       sizeQuantities: invByColorName[colorName] || {},
+      // Per-size standard prices — same channel S&S uses; the editors'
+      // attach effect reads colors[].sizePrices so SanMar lines charge the
+      // real 2XL+ upcharges instead of the flat cheapest piece price.
+      ...(Object.keys(rec.sizePrices).length > 0 ? { sizePrices: rec.sizePrices } : {}),
+      ...(Object.keys(sizeSalePrices).length > 0 ? { sizeSalePrices } : {}),
     };
   });
 
   const pieces = Object.values(priceMap).map((p) => p.piecePrice).filter(Boolean);
+  // Style-level per-size map, same shape S&S emits (sizePriceMap[color][size]).
+  const sizePriceMap: Record<string, Record<string, number>> = {};
+  for (const c of colors) {
+    if (c.sizePrices && Object.keys(c.sizePrices).length > 0) sizePriceMap[c.colorName] = c.sizePrices;
+  }
   return {
     id: first.style,
     styleNumber: first.style,
@@ -470,6 +490,7 @@ export function buildMatchFromEntries(entries: SmProductEntry[], pricing: SmPric
     availableSizes: first.availableSizes,
     specSheet: first.specSheet,
     priceMap,
+    sizePriceMap,
     piecePrice: pieces.length ? Math.min(...pieces) : 0,
   };
 }
