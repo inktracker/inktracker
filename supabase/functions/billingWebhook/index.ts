@@ -6,7 +6,7 @@ import { sendAndLogApprovalNotification } from "../_shared/approvalNotificationE
 import { buildTrialWillEndEmail } from "../_shared/trialWillEndEmail.js";
 import { buildCancellationScheduledEmail } from "../_shared/cancellationScheduledEmail.js";
 import { buildWinBackEmail } from "../_shared/winBackEmail.js";
-import { cancellationFieldsFromSubscription, isCancellationNewlyScheduled } from "../_shared/billingLogic.js";
+import { cancellationFieldsFromSubscription, isCancellationNewlyScheduled, pickLiveSubscription } from "../_shared/billingLogic.js";
 import { partitionSecretUpdates } from "../_shared/connectionLogic.js";
 import { updateProfileSecrets } from "../_shared/profileSecrets.ts";
 
@@ -247,6 +247,34 @@ Deno.serve(async (req) => {
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         const customerId = sub.customer as string;
+
+        // Duplicate-subscription guard (Kato, 2026-07-21): a double checkout
+        // can leave a customer with TWO live subscriptions. Canceling the
+        // duplicate fires this event — expiring the shop and sending the
+        // win-back email to a still-paying customer. If any OTHER live sub
+        // remains, repoint our record at it and stop. If the check itself
+        // fails, fall through to the expiry path (old behavior).
+        try {
+          const remaining = await stripe.subscriptions.list({
+            customer: customerId,
+            status: "all",
+            limit: 10,
+          });
+          const live = pickLiveSubscription(remaining.data, sub.id);
+          if (live) {
+            const livePriceId = live.items?.data?.[0]?.price?.id || "";
+            await updateProfileByCustomer(customerId, {
+              subscription_tier: PRICE_TO_TIER[livePriceId] || "shop",
+              subscription_status: live.status,
+              stripe_subscription_id: live.id,
+            });
+            console.log(`[billingWebhook] ${sub.id} deleted but ${live.id} still live (${live.status}) — repointed, no expiry/win-back`);
+            break;
+          }
+        } catch (e) {
+          console.error("[billingWebhook] live-sub check failed — proceeding with expiry:", e);
+        }
+
         await updateProfileByCustomer(customerId, {
           subscription_tier: "expired",
           subscription_status: "canceled",
