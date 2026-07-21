@@ -219,7 +219,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // customer can pay with. Only fires when the user picks "QB" as the
   // payment provider and clicks the explicit "Create QB Invoice" button.
   // Send remains disabled until this succeeds.
-  async function handleCreateQbInvoice({ acceptQbTax = false } = {}) {
+  async function handleCreateQbInvoice({ acceptQbTax = false, resyncOnly = false } = {}) {
     // Last-mile confirm — this button both creates the QB invoice AND sends
     // the customer the quote email, so it's a real outbound-email gate.
     // NOTE: QuickBooks does NOT email a separate copy (noEmail:true suppresses
@@ -348,6 +348,10 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // block. Any of the four guards below will flip this off if we
       // hit a state where the operator should review before sending.
       autoSendAfter = Boolean(data.qbInvoiceId);
+      // Resync (stale-invoice warning button): update the existing QB
+      // invoice to the quote's current numbers but do NOT auto-send —
+      // the operator reviews the refreshed state, then clicks Send.
+      if (resyncOnly) autoSendAfter = false;
 
       // Shop accepted QB's tax on a held send. QB's authoritative tax is now
       // adopted on the quote; refresh the modal to QB's numbers (totals, email
@@ -444,6 +448,22 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
             "Add an email to the customer record (or this quote) and try again.",
           );
         }
+      }
+      // Clean resync: pull the row the edge function just wrote so the
+      // mirrored qb_total (and any re-minted link) land in state — the
+      // stale banner clears itself because the totals now agree.
+      if (resyncOnly && data.qbInvoiceId && !data.taxBlocked && !data.updateFailed && !data.alreadyPaid) {
+        try {
+          const fresh = await base44.entities.Quote.get(quote.id);
+          if (fresh) {
+            if (fresh.qb_total        != null) setQbTotal(fresh.qb_total);
+            if (fresh.qb_doc_number   != null) setQbDocNumber(fresh.qb_doc_number);
+            if (fresh.qb_payment_link != null) setQbPaymentLink(fresh.qb_payment_link);
+          }
+        } catch { /* non-fatal — reopening the modal re-hydrates */ }
+        setQbNotice(
+          "QuickBooks invoice updated — it now matches this quote, and the pay-now link charges the current total. Review, then Send.",
+        );
       }
     } catch (err) {
       // Non-200 / network failure. The attempt key STAYS so an
@@ -850,7 +870,17 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                       <div className="font-semibold mb-0.5">
                         This quote changed after QB invoice {qbDocNumber || `#${qbInvoiceId}`} was created.
                       </div>
-                      The invoice — and its pay-now link — totals {fmtMoney(qbTotal)}, but this quote now totals {fmtMoney(customerTotals.total)}. If you send now, the customer will be asked to pay {fmtMoney(qbTotal)}. Update the invoice in QuickBooks to match before sending, or send knowing the link carries the old amount.
+                      The invoice — and its pay-now link — totals {fmtMoney(qbTotal)}, but this quote now totals {fmtMoney(customerTotals.total)}. If you send now, the customer will be asked to pay {fmtMoney(qbTotal)}.
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => handleCreateQbInvoice({ resyncOnly: true })}
+                          disabled={creatingQbInvoice}
+                          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-900 bg-amber-100 border border-amber-400 hover:bg-amber-200 rounded-lg px-3 py-1.5 transition disabled:opacity-50"
+                        >
+                          {creatingQbInvoice ? "Updating QB invoice…" : "Update QB invoice to match this quote"}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
