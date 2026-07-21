@@ -146,23 +146,11 @@ describe.each([
     expect(options.map((o) => o._supplier).sort()).toEqual(["S&S Activewear", "SanMar"]);
   });
 
-  it("color-aware labels: with a selected color, each supplier shows THAT color's price", () => {
-    const withColorPrices = GILDAN_5000_BOTH_SUPPLIERS.map((m, i) => ({
-      ...m,
-      priceMap: { White: { piecePrice: 2.42 }, Banana: { piecePrice: 9.99, salePrice: i === 1 ? 1.05 : undefined } },
-    }));
-    const options = buildBrandOptions(withColorPrices, "5000", "White");
-    // Banana's deep sale must NOT leak into a White comparison.
-    expect(options.find((o) => o._supplier === "SanMar").label).toContain("· White $2.42");
-    expect(options.find((o) => o._supplier === "SanMar").label).not.toContain("1.05");
-  });
-
-  it("appends supplier AND the sale-aware from-price to duplicate labels", () => {
+  it("appends ONLY the supplier to duplicate labels — prices live in the sale lines under Garment Cost", () => {
     const options = buildBrandOptions(GILDAN_5000_BOTH_SUPPLIERS, "5000");
-    // The dropdown IS the supplier comparison — price included so the
-    // shop sees which is cheaper without selecting each one.
-    expect(options.find((o) => o._supplier === "SanMar").label).toContain("(SanMar · from $2.38)");
-    expect(options.find((o) => o._supplier === "S&S Activewear").label).toContain("(S&S Activewear · from $2.42)");
+    expect(options.find((o) => o._supplier === "SanMar").label).toContain("(SanMar)");
+    expect(options.find((o) => o._supplier === "S&S Activewear").label).toContain("(S&S Activewear)");
+    expect(options.find((o) => o._supplier === "SanMar").label).not.toContain("$");
   });
 
   it("each option keeps its own supplier's pricing", () => {

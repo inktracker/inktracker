@@ -17,7 +17,7 @@ import BrokerPricePanel from "./BrokerPricePanel";
 import PlacementSelect from "../shared/PlacementSelect";
 import Icon from "../shared/Icon";
 import { supabase } from "@/api/supabaseClient";
-import { preferredSupplier, pickDefaultOption, orderBySupplierPreference, effectiveOptionCost } from "@/lib/suppliers/preference";
+import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
 import { notify } from "@/lib/notify";
 
 // Query both S&S Activewear and AS Colour in parallel and merge results,
@@ -286,7 +286,7 @@ function getBestDescription(selectedMatch) {
   return "";
 }
 
-export function buildBrandOptions(matches, typedStyleNumber, colorName = "") {
+export function buildBrandOptions(matches, typedStyleNumber) {
   const typed = normalizeTypedStyleNumber(typedStyleNumber);
   const unique = [];
   const seen = new Set();
@@ -341,22 +341,9 @@ export function buildBrandOptions(matches, typedStyleNumber, colorName = "") {
   }
   for (const o of unique) {
     if (o._supplier && brandStyleCounts.get(`${o.brandName}|${o.styleNumber}`) > 1) {
-      // The dropdown IS the supplier comparison. Color-aware: once the
-      // line has a color, show THAT color's buy-today price at each
-      // supplier — "from $X" (the cheapest color) only before a color
-      // is chosen. Live-caught: SanMar's "from $5.06" was Banana's deep
-      // sale while the user was comparing Bay at $6.34.
-      const colorAware = colorName && o.priceMap?.[colorName]
-        ? effectiveOptionCost(o, colorName)
-        : 0;
-      if (colorAware > 0 && Number.isFinite(colorAware)) {
-        o.label = `${o.label} (${o._supplier} · ${colorName} $${colorAware.toFixed(2)})`;
-      } else {
-        const eff = effectiveOptionCost(o);
-        o.label = Number.isFinite(eff) && eff > 0
-          ? `${o.label} (${o._supplier} · from $${eff.toFixed(2)})`
-          : `${o.label} (${o._supplier})`;
-      }
+      // Plain supplier suffix only (Joe 2026-07-20): price comparison
+      // lives in the sale lines under Garment Cost, not in the labels.
+      o.label = `${o.label} (${o._supplier})`;
     }
   }
 
@@ -531,7 +518,7 @@ export default function BrokerLineItemEditor({
       const result = await lookupStyle(typedStyleNumber);
       const matches = getResultCandidates(result);
       const preferred = preferredSupplier(getShopPricingConfig());
-      const options = orderBySupplierPreference(buildBrandOptions(matches, typedStyleNumber, li.garmentColor), preferred);
+      const options = orderBySupplierPreference(buildBrandOptions(matches, typedStyleNumber), preferred);
 
       setBrandOptions(options);
 
@@ -859,16 +846,29 @@ export default function BrokerLineItemEditor({
               </p>
             )}
             {(() => {
-              // Sale-price preview — mirrors LineItemEditor: display only.
-              const sale = ssPriceMap[li.garmentColor]?.salePrice;
-              if (!(Number(sale) > 0)) return null;
+              // Sale comparison (Joe 2026-07-20): one line PER SUPPLIER
+              // carrying the current color, so the compare is instant with
+              // no dropdown clicking. Informational only — the cost formula
+              // stays on the selected supplier's standard price.
+              const color = li.garmentColor;
+              if (!color) return null;
+              const brandLc = cleanText(li.brand).toLowerCase();
+              const rows = (brandOptions || [])
+                .filter((o) => o._supplier && (!brandLc || cleanText(o.brandName).toLowerCase() === brandLc))
+                .map((o) => ({ supplier: o._supplier, sale: Number(o.priceMap?.[color]?.salePrice) }))
+                .filter((r) => r.sale > 0);
+              if (rows.length === 0) return null;
               return (
-                <p
-                  className="text-[10px] text-emerald-600 font-semibold mt-1"
-                  title="This supplier's current sale price. Shown for comparison only — quote costs use the standard price."
+                <div
+                  className="mt-1 space-y-0.5"
+                  title="Current sale prices for this color — display only; quote costs use the standard price (sales end; jobs print later)."
                 >
-                  💲 On sale now: ${Number(sale).toFixed(2)}/pc — display only, cost stays standard
-                </p>
+                  {rows.map((r) => (
+                    <p key={r.supplier} className="text-[10px] text-emerald-600 font-semibold">
+                      💲 {r.supplier} sale price — ${r.sale.toFixed(2)}/pc
+                    </p>
+                  ))}
+                </div>
               );
             })()}
           </div>
