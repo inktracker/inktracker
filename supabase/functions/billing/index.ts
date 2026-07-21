@@ -15,6 +15,7 @@ import {
   isCustomerStaleError,
   isCustomerDeleted,
   reconcileFieldsFromSubscriptions,
+  pickLiveSubscription,
 } from "../_shared/billingLogic.js";
 
 // Prefer the prod key when both are configured. The previous order
@@ -203,6 +204,44 @@ Deno.serve(async (req) => {
           }
         }
       }
+      // Duplicate-subscription guard (Kato / cus_UjJ0O6Vo64gX68, 2026-07-21):
+      // he completed checkout twice on Jun 19, each session creating its own
+      // trialing subscription — both billed $99 on Jul 19. If this customer
+      // already holds a live subscription, refuse to create another checkout
+      // and self-heal our record instead (the double-pay always starts with
+      // the app not reflecting the sub the customer already paid for).
+      if (customerId) {
+        const existingSubs = await stripe.subscriptions.list({
+          customer: customerId,
+          status: "all",
+          limit: 10,
+        });
+        const live = pickLiveSubscription(existingSubs.data);
+        if (live) {
+          const fields = reconcileFieldsFromSubscriptions(existingSubs.data);
+          if (fields) {
+            const admin = adminClient();
+            const { error: healErr } = await admin
+              .from("profiles")
+              .update({
+                subscription_tier: fields.subscription_tier,
+                subscription_status: fields.subscription_status,
+              })
+              .eq("id", profile.id);
+            if (healErr) console.error("[billing] checkout-guard profile heal failed:", healErr.message);
+            try {
+              await updateProfileSecrets(admin, profile.id, {
+                stripe_subscription_id: fields.stripe_subscription_id,
+              });
+            } catch (e) {
+              console.error("[billing] checkout-guard secrets heal failed:", e);
+            }
+          }
+          console.log(`[billing] checkout refused — ${profile.id} already has live sub ${live.id} (${live.status})`);
+          return json({ alreadySubscribed: true, status: live.status });
+        }
+      }
+
       if (!customerId || shouldCreateStripeCustomer({ stripe_customer_id: customerId })) {
         const customer = await stripe.customers.create(
           stripeCustomerCreationFields(user, profile),

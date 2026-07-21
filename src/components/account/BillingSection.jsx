@@ -56,6 +56,18 @@ export default function BillingSection({ user }) {
         billing,
       });
       if (invErr) { notify.error("Couldn't start checkout", invErr); return; }
+      if (data?.alreadySubscribed) {
+        // The billing function found a live subscription for this customer
+        // and refused to create a duplicate (it also self-healed our record).
+        // Reload so the panel reflects the active plan instead of the
+        // subscribe buttons that led here.
+        notify.info(
+          "You're already subscribed",
+          "Your subscription is already active — no new checkout needed.",
+        );
+        setTimeout(() => window.location.reload(), 1800);
+        return;
+      }
       if (data?.url) window.location.href = data.url;
       else notify.error("Couldn't start checkout", data?.error);
     } catch (err) {

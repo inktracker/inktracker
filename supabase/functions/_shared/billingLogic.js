@@ -117,6 +117,27 @@ export function reconcileFieldsFromSubscriptions(subs) {
   };
 }
 
+/**
+ * Duplicate-subscription guard (Kato / cus_UjJ0O6Vo64gX68, 2026-07-21):
+ * completing checkout twice created TWO live subscriptions that each billed
+ * $99 when their trials ended. Returns the customer's live (access-granting)
+ * subscription — active > trialing > past_due — or null. `excludeId` lets the
+ * subscription.deleted webhook ask "does any OTHER live sub remain?" so
+ * canceling the duplicate never expires the shop or fires the win-back email.
+ */
+export function pickLiveSubscription(subs, excludeId) {
+  const list = Array.isArray(subs) ? subs : [];
+  const granting = list.filter(
+    (s) => s && s.id !== excludeId && ACCESS_GRANTING_SUB_STATUSES.includes(s.status),
+  );
+  if (granting.length === 0) return null;
+  return (
+    granting.find((s) => s.status === "active") ||
+    granting.find((s) => s.status === "trialing") ||
+    granting[0]
+  );
+}
+
 // ── Pending-cancellation display state ──────────────────────────────
 //
 // Stripe keeps a canceled subscription `active` until period end and sets

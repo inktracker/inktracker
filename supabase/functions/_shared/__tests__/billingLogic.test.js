@@ -21,6 +21,7 @@ import {
   isCustomerDeleted,
   cancellationFieldsFromSubscription,
   isCancellationNewlyScheduled,
+  pickLiveSubscription,
 } from "../billingLogic.js";
 
 // ── Role gate ─────────────────────────────────────────────────────────
@@ -594,5 +595,46 @@ describe("isCancellationNewlyScheduled (email transition guard)", () => {
     expect(isCancellationNewlyScheduled(undefined, true)).toBe(true);
     expect(isCancellationNewlyScheduled(null, true)).toBe(true);
     expect(isCancellationNewlyScheduled(undefined, false)).toBe(false);
+  });
+});
+
+// Duplicate-subscription guard (Kato / cus_UjJ0O6Vo64gX68, 2026-07-21): two
+// completed checkouts → two live subs → double $99 charge at trial end. The
+// checkout action refuses when pickLiveSubscription finds a live sub; the
+// subscription.deleted webhook uses excludeId to ask "does any OTHER live sub
+// remain?" before expiring the shop and emailing win-back.
+describe("pickLiveSubscription", () => {
+  const subs = [
+    { id: "sub_canceled", status: "canceled" },
+    { id: "sub_trial", status: "trialing" },
+    { id: "sub_active", status: "active" },
+    { id: "sub_pastdue", status: "past_due" },
+  ];
+
+  it("prefers active > trialing > past_due", () => {
+    expect(pickLiveSubscription(subs).id).toBe("sub_active");
+    expect(pickLiveSubscription(subs.filter((s) => s.id !== "sub_active")).id).toBe("sub_trial");
+    expect(pickLiveSubscription([subs[0], subs[3]]).id).toBe("sub_pastdue");
+  });
+
+  it("returns null when nothing grants access", () => {
+    expect(pickLiveSubscription([{ id: "a", status: "canceled" }, { id: "b", status: "incomplete" }])).toBeNull();
+    expect(pickLiveSubscription([])).toBeNull();
+    expect(pickLiveSubscription(null)).toBeNull();
+  });
+
+  it("excludeId skips the deleted sub — the webhook's 'any OTHER live sub?' question", () => {
+    // Kato's exact shape: two active subs; deleting one must still find the other.
+    const twoActive = [
+      { id: "sub_1TjqR3", status: "active" },
+      { id: "sub_1Tk3Ut", status: "active" },
+    ];
+    expect(pickLiveSubscription(twoActive, "sub_1TjqR3").id).toBe("sub_1Tk3Ut");
+    // Deleting the ONLY live sub → null → expiry path proceeds normally.
+    expect(pickLiveSubscription([{ id: "only", status: "active" }], "only")).toBeNull();
+  });
+
+  it("tolerates malformed rows", () => {
+    expect(pickLiveSubscription([null, undefined, {}, { id: "ok", status: "active" }]).id).toBe("ok");
   });
 });
