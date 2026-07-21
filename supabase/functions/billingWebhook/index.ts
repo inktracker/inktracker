@@ -172,7 +172,13 @@ Deno.serve(async (req) => {
 
     let event: Stripe.Event;
     try {
-      event = stripe.webhooks.constructEvent(body, sig, STRIPE_WEBHOOK_SECRET);
+      // constructEventAsync, NOT constructEvent: Deno's SubtleCrypto is
+      // async-only, so the sync variant throws inside the signature check
+      // and every real delivery 401s as "Invalid signature". Latent since
+      // this function was written — no signed event ever reached it until
+      // the live webhook destination was created (2026-07-21). The older
+      // stripeWebhook already used the async variant.
+      event = await stripe.webhooks.constructEventAsync(body, sig, STRIPE_WEBHOOK_SECRET);
     } catch (err: any) {
       console.error("[billingWebhook] signature verification failed:", err?.message);
       return new Response("Invalid signature", { status: 401, headers: CORS });
