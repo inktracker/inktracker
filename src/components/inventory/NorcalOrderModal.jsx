@@ -20,7 +20,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ShoppingCart, Trash2, Plus, Minus, ArrowRight, AlertTriangle, ExternalLink } from "lucide-react";
+import { X, ShoppingCart, Trash2, Plus, Minus, ArrowRight, AlertTriangle, ExternalLink, Check } from "lucide-react";
 import { supplierCartPermalink } from "@/lib/suppliers";
 
 const fmtPrice = (n) => `$${(Number(n) || 0).toFixed(2)}`;
@@ -31,6 +31,10 @@ export default function NorcalOrderModal({
   // Two-step submit: first press surfaces the low-stock reminder (if any),
   // second press (or "continue") opens the pre-filled vendor cart(s).
   const [remindered, setRemindered] = useState(false);
+  // Multi-vendor orders reveal one open-button per vendor: a browser blocks a
+  // second popup fired from the same click, so each cart must open from its own.
+  const [opening, setOpening] = useState(false);
+  const [opened, setOpened] = useState(() => new Set());
 
   const totalQty = order.reduce((s, i) => s + (Number(i.qty) || 0), 0);
   const totalCost = order.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.price) || 0), 0);
@@ -39,20 +43,33 @@ export default function NorcalOrderModal({
     (r) => !order.some((o) => String(o.variantId) === String(r.variantId)),
   );
 
-  function openCarts() {
-    // Group by store, then open one pre-filled cart per vendor.
-    const byStore = new Map();
+  // One pre-filled cart per vendor store, preserving order sequence.
+  const storeGroups = [];
+  {
+    const gm = new Map();
     for (const i of order) {
       const store = i.storeUrl || "";
       if (!store) continue;
-      if (!byStore.has(store)) byStore.set(store, []);
-      byStore.get(store).push({ variantId: i.variantId, qty: i.qty });
+      if (!gm.has(store)) {
+        const g = { storeUrl: store, label: i.supplierLabel || "vendor", lines: [] };
+        gm.set(store, g);
+        storeGroups.push(g);
+      }
+      gm.get(store).lines.push({ variantId: i.variantId, qty: i.qty });
     }
-    for (const [storeUrl, lines] of byStore) {
-      const url = supplierCartPermalink(storeUrl, lines, { utm_source: "inktracker", utm_medium: "reorder" });
-      if (url) window.open(url, "_blank", "noopener,noreferrer");
-    }
-    onOrdered?.();
+  }
+
+  function openStore(group) {
+    // Fired from a real click, so this single window.open is never blocked.
+    const url = supplierCartPermalink(group.storeUrl, group.lines, {
+      utm_source: "inktracker", utm_medium: "reorder",
+    });
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    const next = new Set(opened);
+    next.add(group.storeUrl);
+    setOpened(next);
+    // Clear the list only once every vendor's cart has been opened.
+    if (next.size >= storeGroups.length) onOrdered?.();
   }
 
   function handleSubmit() {
@@ -60,7 +77,14 @@ export default function NorcalOrderModal({
       setRemindered(true);
       return;
     }
-    openCarts();
+    if (storeGroups.length <= 1) {
+      // Single vendor: this click opens its cart directly.
+      if (storeGroups[0]) openStore(storeGroups[0]);
+      else onOrdered?.();
+      return;
+    }
+    // Multiple vendors: reveal a button per vendor (see `opening` above).
+    setOpening(true);
   }
 
   const submitLabel = remindered && pendingReminders.length > 0
@@ -181,28 +205,66 @@ export default function NorcalOrderModal({
             )}
 
             {/* Footer / submit */}
-            <div className="px-5 py-4 border-t border-slate-100 flex items-center gap-3">
-              <button onClick={onClear} className="text-xs font-semibold text-slate-500 hover:text-red-500">
-                Clear
-              </button>
-              <div className="ml-auto text-right">
-                <div className="text-[11px] text-slate-500">{totalQty} pcs · total</div>
-                <div className="text-lg font-bold text-slate-900 leading-tight">{fmtPrice(totalCost)}</div>
+            {opening ? (
+              // Multi-vendor: one open-button per vendor. Each opens from its own
+              // click so no vendor's cart gets swallowed by the popup blocker.
+              <div className="px-5 py-4 border-t border-slate-100">
+                <div className="text-xs font-semibold text-slate-600 mb-2.5">
+                  Your order spans {storeGroups.length} vendors — open each cart to place it:
+                </div>
+                <div className="space-y-2">
+                  {storeGroups.map((g) => {
+                    const done = opened.has(g.storeUrl);
+                    const pcs = g.lines.reduce((s, l) => s + (Number(l.qty) || 0), 0);
+                    return (
+                      <button
+                        key={g.storeUrl}
+                        onClick={() => openStore(g)}
+                        className={`w-full flex items-center justify-between gap-2 text-sm font-bold px-4 py-2.5 rounded-xl transition ${
+                          done
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : "bg-rose-600 hover:bg-rose-700 text-white"
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {done ? <Check className="w-4 h-4" /> : <ExternalLink className="w-4 h-4" />}
+                          {done ? `${g.label} cart opened` : `Open ${g.label} cart`}
+                        </span>
+                        <span className={`text-xs ${done ? "text-emerald-600" : "text-rose-100"}`}>{pcs} pcs</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-2.5 text-[11px] text-slate-400">
+                  Each opens in a new tab. This list clears once every vendor's cart is open.
+                </div>
               </div>
-              <button
-                onClick={handleSubmit}
-                className="inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition"
-              >
-                {submitLabel}
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="px-5 pb-4 -mt-1 text-[11px] text-slate-400 flex items-center gap-1">
-              <ExternalLink className="w-3 h-3" />
-              {vendors.length > 1
-                ? "Opens a pre-filled cart at each vendor to place your order — and clears this list here."
-                : "Opens a pre-filled cart on the vendor's site to place your order — and clears this list here."}
-            </div>
+            ) : (
+              <>
+                <div className="px-5 py-4 border-t border-slate-100 flex items-center gap-3">
+                  <button onClick={onClear} className="text-xs font-semibold text-slate-500 hover:text-red-500">
+                    Clear
+                  </button>
+                  <div className="ml-auto text-right">
+                    <div className="text-[11px] text-slate-500">{totalQty} pcs · total</div>
+                    <div className="text-lg font-bold text-slate-900 leading-tight">{fmtPrice(totalCost)}</div>
+                  </div>
+                  <button
+                    onClick={handleSubmit}
+                    className="inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold px-4 py-2.5 rounded-xl transition"
+                  >
+                    {submitLabel}
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="px-5 pb-4 -mt-1 text-[11px] text-slate-400 flex items-center gap-1">
+                  <ExternalLink className="w-3 h-3" />
+                  {vendors.length > 1
+                    ? "Opens a pre-filled cart at each vendor to place your order — and clears this list here."
+                    : "Opens a pre-filled cart on the vendor's site to place your order — and clears this list here."}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
