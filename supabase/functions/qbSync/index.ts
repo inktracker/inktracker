@@ -23,6 +23,8 @@ import {
   extractPaymentLink as sharedExtractPaymentLink,
   buildQbSendInvoiceUrl,
   stripDocNumberRevision,
+  shouldCollapseRevisionToBase,
+  isInkTrackerOriginatedInvoice,
   isQbInvoicePaid,
   qbInvoiceHasPayment,
   buildUpdateFailureResponse,
@@ -1882,6 +1884,17 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     if (row.qb_invoice_id) existingByQbId.set(String(row.qb_invoice_id), row);
   }
 
+  // Which QB invoice (by Id) currently owns each DocNumber in THIS pull. Lets
+  // the base-DocNumber revision collapse below tell a true -rN re-issue (base
+  // gone from QB) from a -rN that co-exists with its base as a separate live
+  // QB invoice (California 89: INV-2026-OW0M1 + INV-2026-OW0M1-r3, both open,
+  // 2026-07-22). First writer wins so the base's own record owns the base doc.
+  const qbDocToId = new Map<string, string>();
+  for (const q of all) {
+    const d = q.DocNumber || `QB-${q.Id}`;
+    if (!qbDocToId.has(d)) qbDocToId.set(d, String(q.Id));
+  }
+
   let imported = 0;
   let skipped = 0;
   let updated = 0;
@@ -1910,7 +1923,12 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     let existingRow = existingByQbId.get(qbId) || existingByDoc.get(docNumber);
     if (!existingRow) {
       const base = stripDocNumberRevision(docNumber);
-      if (base && base !== docNumber) {
+      // Only collapse a -rN onto the base's local row when the base is NOT a
+      // separate live QB invoice. If QB still owns the base DocNumber under a
+      // DIFFERENT Id, this -rN is a distinct invoice and must get its own row,
+      // or one of the two vanishes from InkTracker while QB shows both.
+      if (base && base !== docNumber &&
+          shouldCollapseRevisionToBase(qbDocToId.get(base), qbId)) {
         existingRow = existingByDoc.get(base);
       }
     }
@@ -2022,7 +2040,13 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
         }
       }
     } else {
-      const { error } = await supabase.from("invoices").insert(payload);
+      // First sighting of this QB invoice. If it carries no InkTracker origin
+      // stamp, it was created directly in QuickBooks (UI / bulk import), not by
+      // our createInvoice path — flag it so the Invoices page can surface it
+      // subtly. Written ONLY here on insert; never touched on update, so
+      // InkTracker-originated and already-known rows keep their value.
+      const external_origin = !isInkTrackerOriginatedInvoice(qbInv.PrivateNote);
+      const { error } = await supabase.from("invoices").insert({ ...payload, external_origin });
       if (error) { console.error("[pullInvoices] insert failed:", error.message, docNumber); skipped++; }
       else { imported++; }
     }
