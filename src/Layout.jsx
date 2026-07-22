@@ -37,13 +37,7 @@ const NAV = [
   { label: "Quotes", page: "Quotes" },
   { label: "Production", page: "Production" },
   { label: "Customers", page: "Customers" },
-  {
-    label: "Inventory",
-    page: "Inventory",
-    children: [
-      { label: "Purchase Orders", page: "PurchaseOrders" },
-    ],
-  },
+  { label: "Inventory", page: "Inventory" },
   { label: "Invoices", page: "Invoices" },
   // Performance is a READ surface — reports on the shop's own data, nothing to
   // write. Intentionally NOT feature-gated, so a read-only/expired shop can
