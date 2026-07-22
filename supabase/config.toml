@@ -31,6 +31,9 @@ verify_jwt = false
 [functions.acSearchCatalog]
 verify_jwt = false
 
+[functions.norcalCatalog]
+verify_jwt = false
+
 [functions.acGetInventory]
 verify_jwt = false
 

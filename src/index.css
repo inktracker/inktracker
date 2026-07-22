@@ -144,6 +144,17 @@
   border-radius: 0 !important;
 }
 
+/* Pills → classic rectangles. The rule above squares every rounded-* EXCEPT
+   rounded-full, so pills and circles kept their round shape. Joe wants pill-
+   shaped badges/chips/tags to be hard rectangles like the rest of the app,
+   while true circles (avatars, status dots, count badges) stay round. Pills
+   are the rounded-full elements that carry horizontal padding (px-*) around
+   text; circles never do. So square exactly those. Everything keeps its
+   className (rounded-full), so the pill/chip font rules below still match. */
+[class*="rounded-full"][class*="px-"] {
+  border-radius: 0 !important;
+}
+
 /* Heading typography theme — every heading across the app picks up the
    landing page's Anton-uppercase treatment in one place. Inline styles
    on the landing (style={{ fontFamily: ... }}) still win specificity-

@@ -115,7 +115,12 @@ function dispatch(action) {
   });
 }
 
-function toast({ ...props }) {
+// Auto-dismiss delay. Toasts fire-and-forget confirmations, so they shouldn't
+// pile up on screen — they clear themselves after this. Pass `duration` to
+// override per-toast; `duration: 0` keeps a toast sticky (manual close only).
+const TOAST_AUTO_DISMISS_MS = 5000;
+
+function toast({ duration = TOAST_AUTO_DISMISS_MS, ...props }) {
   const id = genId();
 
   const update = (props) =>
@@ -138,6 +143,11 @@ function toast({ ...props }) {
       },
     },
   });
+
+  // Fade the toast on its own after `duration` (Joe: should disappear after 5s).
+  if (duration > 0) {
+    setTimeout(dismiss, duration);
+  }
 
   return {
     id,

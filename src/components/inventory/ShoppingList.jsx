@@ -13,7 +13,7 @@
 // The checked-state lives only in this component (it's intent, not data).
 
 import { useMemo, useState } from "react";
-import { ShoppingCart, CheckCircle2, Truck, Package } from "lucide-react";
+import { CheckCircle2, Truck, Package, ChevronDown, ChevronRight, PackageX } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 import ReactivateLink from "@/components/shared/ReactivateLink";
@@ -50,6 +50,17 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh, readOnly
   const [supplierFilter, setSupplierFilter] = useState(ALL);
   const [checkedIds, setCheckedIds] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
+  // Collapsed state persists so the shop's preference sticks across visits.
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem("lowStockCollapsed") === "1"; } catch { return false; }
+  });
+  function toggleCollapsed() {
+    setCollapsed((c) => {
+      const next = !c;
+      try { localStorage.setItem("lowStockCollapsed", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }
 
   const visiblePending = supplierFilter === ALL
     ? pending
@@ -160,18 +171,19 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh, readOnly
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 mb-6 overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ShoppingCart className="w-5 h-5 text-orange-500" />
-          <div>
-            <div className="text-sm font-bold text-slate-900">Shopping List</div>
+      <div className={`px-5 py-4 flex items-center justify-between ${collapsed ? "" : "border-b border-slate-100"}`}>
+        <button onClick={toggleCollapsed} className="flex items-center gap-2 text-left flex-1 min-w-0" aria-expanded={!collapsed}>
+          {collapsed ? <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-400 flex-shrink-0" />}
+          <PackageX className="w-5 h-5 text-orange-500 flex-shrink-0" />
+          <div className="min-w-0">
+            <div className="text-sm font-bold text-slate-900">Low Stock</div>
             <div className="text-xs text-slate-500">
               {pending.length} to order
               {ordered.length > 0 && <span className="text-blue-600"> · {ordered.length} pending delivery</span>}
             </div>
           </div>
-        </div>
-        {checkedCount > 0 && (
+        </button>
+        {checkedCount > 0 && !collapsed && (
           <div className="flex items-center gap-3">
             <ReactivateLink show={readOnly} href={reactivateHref} />
             <button
@@ -187,6 +199,8 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh, readOnly
         )}
       </div>
 
+      {!collapsed && (
+      <>
       {/* Supplier pills */}
       {suppliers.length > 2 && (
         <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-2">
@@ -270,6 +284,8 @@ export default function ShoppingList({ items, onItemUpdated, onRefresh, readOnly
         <div className="px-5 py-6 text-center text-xs text-slate-500">
           No items to order from {supplierFilter}.
         </div>
+      )}
+      </>
       )}
     </div>
   );
