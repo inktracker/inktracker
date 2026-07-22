@@ -17,7 +17,9 @@ import { Search, Loader2, Check, Plus, ExternalLink, PackageSearch } from "lucid
 import { base44 } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 
-const CATEGORIES = ["All", "Inks", "Chemicals", "Screens", "Equipment", "Supplies", "Other"];
+// Mirrors NorCal's own store navigation (kept in sync with NORCAL_CATEGORIES
+// in supabase/functions/_shared/norcal.ts).
+const CATEGORIES = ["All", "Inks", "Screens", "Chemicals", "Equipment", "Squeegees", "Tape", "Supplies"];
 
 const fmtPrice = (n) => (Number.isFinite(Number(n)) ? `$${Number(n).toFixed(2)}` : "");
 

@@ -11,7 +11,7 @@ import NorcalCatalog from "../components/inventory/NorcalCatalog";
 
 // NorCal bucket (from the catalog) → the shop's own inventory category, so an
 // added NorCal product lands under a sensible local category.
-const NORCAL_CAT_TO_SHOP = { Inks: "Ink", Chemicals: "Chemicals", Screens: "Screens", Equipment: "Tools", Supplies: "Other", Other: "Other" };
+const NORCAL_CAT_TO_SHOP = { Inks: "Ink", Screens: "Screens", Chemicals: "Chemicals", Equipment: "Tools", Squeegees: "Tools", Tape: "Other", Supplies: "Other" };
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";

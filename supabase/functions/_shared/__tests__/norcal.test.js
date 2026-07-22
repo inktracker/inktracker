@@ -88,7 +88,7 @@ describe("normalizeNorcalProducts", () => {
 });
 
 describe("norcalCategory", () => {
-  it("maps NorCal's granular product_type into browsable buckets", () => {
+  it("maps NorCal's product_type to categories mirroring their store nav", () => {
     expect(norcalCategory("Plastisol Inks")).toBe("Inks");
     expect(norcalCategory("Waterbase Inks")).toBe("Inks");
     expect(norcalCategory("Discharge Inks")).toBe("Inks");
@@ -98,16 +98,22 @@ describe("norcalCategory", () => {
     expect(norcalCategory("Adhesives")).toBe("Chemicals");
     expect(norcalCategory("Equipment")).toBe("Equipment");
     expect(norcalCategory("Heat Press")).toBe("Equipment");
-    expect(norcalCategory("Squeegee")).toBe("Equipment");
+    expect(norcalCategory("Flash Dryer")).toBe("Equipment");
+    // NorCal surfaces Squeegees and Tape as their own categories — so do we.
+    expect(norcalCategory("Squeegee")).toBe("Squeegees");
+    expect(norcalCategory("Tape")).toBe("Tape");
     expect(norcalCategory("Supplies")).toBe("Supplies");
-    expect(norcalCategory("Tape")).toBe("Supplies");
   });
 
-  it("falls back to Other for empty/unknown types", () => {
-    expect(norcalCategory("")).toBe("Other");
-    expect(norcalCategory(null)).toBe("Other");
-    expect(norcalCategory("Service")).toBe("Other");
-    expect(NORCAL_CATEGORIES).toContain("Other");
+  it("does NOT mis-bucket 'Screen Printing Kit' as Screens", () => {
+    expect(norcalCategory("Screen Printing Kit")).toBe("Equipment");
+  });
+
+  it("falls back to Supplies (their misc catch-all) for empty/unknown types", () => {
+    expect(norcalCategory("")).toBe("Supplies");
+    expect(norcalCategory(null)).toBe("Supplies");
+    expect(norcalCategory("Service")).toBe("Supplies");
+    expect(NORCAL_CATEGORIES).not.toContain("Other");
   });
 });
 

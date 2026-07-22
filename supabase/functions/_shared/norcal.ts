@@ -8,25 +8,58 @@
 
 export const NORCAL_STORE_URL_DEFAULT = "https://norcalsps.com";
 
-// Browsable category buckets, derived from NorCal's Shopify product_type
-// (which is well-populated but granular: "Plastisol Inks", "Waterbase Inks",
-// "Aluminum Screens", "Squeegee", …). These are the tabs the catalog browser
-// shows. "Other" catches blanks/service/uncategorized.
-export const NORCAL_CATEGORIES = ["Inks", "Chemicals", "Screens", "Equipment", "Supplies", "Other"] as const;
+// Top-level catalog categories, mirroring NorCal's own store navigation
+// (norcalsps.com) rather than an invented grouping — Inks, Screens, Chemicals,
+// Equipment, plus Squeegees and Tape surfaced on their own as their site does.
+// The sub-tabs under each are NorCal's exact product_type strings. "Supplies"
+// is their "Miscellaneous Supplies" catch-all.
+export const NORCAL_CATEGORIES = ["Inks", "Screens", "Chemicals", "Equipment", "Squeegees", "Tape", "Supplies"] as const;
 
-const CATEGORY_RULES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/ink/i, "Inks"],
-  [/screen/i, "Screens"],
-  [/chemical|emulsion|adhesive/i, "Chemicals"],
-  [/equipment|press|squeegee/i, "Equipment"],
-  [/suppl|tape/i, "Supplies"],
+// Explicit product_type → category. NorCal's product_type is a small, stable
+// set, so an explicit map matches their taxonomy exactly and avoids the
+// mis-bucketing a loose regex causes (e.g. "Screen Printing Kit" is Equipment,
+// not Screens). Keyed lower-cased.
+const TYPE_TO_CATEGORY: Record<string, string> = {
+  "plastisol inks": "Inks",
+  "waterbase inks": "Inks",
+  "waterbased inks": "Inks",
+  "discharge inks": "Inks",
+  "aluminum screens": "Screens",
+  "chemicals": "Chemicals",
+  "emulsion": "Chemicals",
+  "adhesives": "Chemicals",
+  "equipment": "Equipment",
+  "heat press": "Equipment",
+  "flash dryer": "Equipment",
+  "conveyor dryer": "Equipment",
+  "washout booth": "Equipment",
+  "platens": "Equipment",
+  "screen printing kit": "Equipment",
+  "racks & press carts": "Equipment",
+  "squeegee": "Squeegees",
+  "tape": "Tape",
+  "supplies": "Supplies",
+};
+
+// Fallback for any product_type NorCal adds later that isn't in the map above,
+// so a new type still lands somewhere sensible instead of disappearing.
+const CATEGORY_FALLBACK: ReadonlyArray<readonly [RegExp, string]> = [
+  [/ink|film/i, "Inks"],
+  [/screen|mesh/i, "Screens"],
+  [/chemical|emulsion|adhesive|wash|degreas/i, "Chemicals"],
+  [/press|dryer|heat|exposure|platen|rack|cart|equipment|kit/i, "Equipment"],
+  [/squeegee/i, "Squeegees"],
+  [/tape/i, "Tape"],
 ];
 
-// Map a raw Shopify product_type to one of NORCAL_CATEGORIES.
+// Map a raw Shopify product_type to a top-level NorCal category. Unknown /
+// empty types fall through to "Supplies" (their misc catch-all).
 export function norcalCategory(productType: unknown): string {
-  const t = String(productType ?? "");
-  for (const [re, bucket] of CATEGORY_RULES) if (re.test(t)) return bucket;
-  return "Other";
+  const t = String(productType ?? "").trim().toLowerCase();
+  if (!t) return "Supplies";
+  if (TYPE_TO_CATEGORY[t]) return TYPE_TO_CATEGORY[t];
+  for (const [re, cat] of CATEGORY_FALLBACK) if (re.test(t)) return cat;
+  return "Supplies";
 }
 
 // The distinct raw product_types present in a set of normalized variants, with
