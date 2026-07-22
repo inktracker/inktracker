@@ -8,6 +8,31 @@
 
 export const NORCAL_STORE_URL_DEFAULT = "https://norcalsps.com";
 
+// Browsable category buckets, derived from NorCal's Shopify product_type
+// (which is well-populated but granular: "Plastisol Inks", "Waterbase Inks",
+// "Aluminum Screens", "Squeegee", …). These are the tabs the catalog browser
+// shows. "Other" catches blanks/service/uncategorized.
+export const NORCAL_CATEGORIES = ["Inks", "Chemicals", "Screens", "Equipment", "Supplies", "Other"] as const;
+
+const CATEGORY_RULES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/ink/i, "Inks"],
+  [/screen/i, "Screens"],
+  [/chemical|emulsion|adhesive/i, "Chemicals"],
+  [/equipment|press|squeegee/i, "Equipment"],
+  [/suppl|tape/i, "Supplies"],
+];
+
+// Map a raw Shopify product_type to one of NORCAL_CATEGORIES.
+export function norcalCategory(productType: unknown): string {
+  const t = String(productType ?? "");
+  for (const [re, bucket] of CATEGORY_RULES) if (re.test(t)) return bucket;
+  return "Other";
+}
+
+// Shopify "infinite options" apps publish hidden helper products with this
+// product_type — never a real orderable item, so we drop them from the catalog.
+const HIDDEN_PRODUCT_TYPE = "OPTIONS_HIDDEN_PRODUCT";
+
 export interface NorcalVariant {
   variantId: string;
   productId: string;
@@ -18,6 +43,7 @@ export interface NorcalVariant {
   available: boolean;
   image: string;
   productType: string;
+  category: string;
   vendor: string;
   url: string;
 }
@@ -35,6 +61,8 @@ export function normalizeNorcalProducts(products: any, storeUrl: string = NORCAL
   const out: NorcalVariant[] = [];
   const list = Array.isArray(products) ? products : [];
   for (const p of list) {
+    const productType = String(p?.product_type ?? "").trim();
+    if (productType === HIDDEN_PRODUCT_TYPE) continue; // Shopify options-app helper product
     const productImage =
       Array.isArray(p?.images) && p.images[0]?.src ? String(p.images[0].src) : "";
     const variants = Array.isArray(p?.variants) ? p.variants : [];
@@ -50,7 +78,8 @@ export function normalizeNorcalProducts(products: any, storeUrl: string = NORCAL
         price: Number(v?.price) || 0,
         available: Boolean(v?.available),
         image: variantImage || productImage,
-        productType: String(p?.product_type ?? "").trim(),
+        productType,
+        category: norcalCategory(productType),
         vendor: String(p?.vendor ?? "").trim(),
         url: p?.handle ? `${store}/products/${p.handle}?variant=${v.id}` : store,
       });

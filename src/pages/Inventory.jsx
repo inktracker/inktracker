@@ -7,6 +7,11 @@ import { Loader2, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Tras
 import EmptyState from "../components/shared/EmptyState";
 import ShoppingList from "../components/inventory/ShoppingList";
 import NorcalLinkPicker from "../components/inventory/NorcalLinkPicker";
+import NorcalCatalog from "../components/inventory/NorcalCatalog";
+
+// NorCal bucket (from the catalog) → the shop's own inventory category, so an
+// added NorCal product lands under a sensible local category.
+const NORCAL_CAT_TO_SHOP = { Inks: "Ink", Chemicals: "Chemicals", Screens: "Screens", Equipment: "Tools", Supplies: "Other", Other: "Other" };
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";
@@ -21,6 +26,7 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
+  const [view, setView] = useState("inventory"); // "inventory" | "catalog" (Browse NorCal)
   const [form, setForm] = useState({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null });
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -116,6 +122,37 @@ export default function Inventory() {
     setForm({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null });
     setShowForm(false);
     setAdding(false);
+  }
+
+  // "Add to my inventory" from the Browse NorCal catalog: create a stocked item
+  // pre-linked to the NorCal variant (price/image/url) so it immediately shows
+  // NorCal pricing and feeds the reorder/cart flows. Starts at qty 0 — the shop
+  // sets its on-hand count and reorder threshold after.
+  async function handleAddFromCatalog(product) {
+    const payload = {
+      item: [product.title, product.size].filter(Boolean).join(" — "),
+      sku: product.sku || String(product.variantId),
+      category: NORCAL_CAT_TO_SHOP[product.category] || "Other",
+      supplier: "NorCal",
+      qty: 0,
+      unit: "",
+      reorder: 0,
+      cost: Number(product.price) || 0,
+      norcal_variant_id: String(product.variantId),
+      norcal_product_url: product.url || null,
+      norcal_image_url: product.image || null,
+      norcal_title: product.title || null,
+      norcal_size: product.size || null,
+      norcal_price: Number(product.price) || 0,
+      shop_owner: shopScope(user),
+    };
+    try {
+      const created = await base44.entities.InventoryItem.create(payload);
+      setItems(prev => [...prev, created].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
+      notify.success(`Added ${product.title} to your inventory.`);
+    } catch (err) {
+      notify.error("Couldn't add to inventory", err);
+    }
   }
 
   async function handleEdit() {
@@ -245,6 +282,31 @@ export default function Inventory() {
         ))}
       </datalist>
 
+      {/* View toggle: the shop's own stock vs. browsing NorCal's catalog. */}
+      <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
+        <button
+          onClick={() => setView("inventory")}
+          className={`text-sm font-semibold px-4 py-1.5 rounded-lg transition ${view === "inventory" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+        >
+          My Inventory
+        </button>
+        <button
+          onClick={() => setView("catalog")}
+          className={`text-sm font-semibold px-4 py-1.5 rounded-lg transition ${view === "catalog" ? "bg-white text-rose-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+        >
+          Browse NorCal
+        </button>
+      </div>
+
+      {view === "catalog" ? (
+        <NorcalCatalog
+          onAdd={handleAddFromCatalog}
+          addedVariantIds={new Set(items.map(i => i.norcal_variant_id).filter(Boolean).map(String))}
+          readOnly={readOnly}
+          reason={reason}
+        />
+      ) : (
+      <>
       {/* Shopping list — auto-populated from low-stock items, filterable
           by supplier, with bulk "Mark as Ordered" + per-item Receive. */}
       <ShoppingList
@@ -321,20 +383,6 @@ export default function Inventory() {
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
             ))}
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">NorCal product</label>
-            <NorcalLinkPicker
-              value={form}
-              onLink={(link) => setForm(f => ({
-                ...f,
-                ...link,
-                supplier: "NorCal",
-                item: f.item.trim() ? f.item : [link.norcal_title, link.norcal_size].filter(Boolean).join(" — "),
-                cost: (!f.cost || Number(f.cost) === 0) ? link.norcal_price : f.cost,
-              }))}
-              onUnlink={() => setForm(f => ({ ...f, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null }))}
-            />
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -527,6 +575,9 @@ export default function Inventory() {
           reason={reason}
           reactivateHref={reactivateHref}
         />
+      )}
+
+      </>
       )}
 
       {/* Edit modal */}

@@ -88,10 +88,12 @@ Deno.serve(async (req) => {
     // deno-lint-ignore no-explicit-any
     const filtered = (normalized as any[]).filter((p) => {
       if (q) {
-        const hay = `${p.title} ${p.sku} ${p.size}`.toLowerCase();
+        const hay = `${p.title} ${p.sku} ${p.size} ${p.vendor}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (cat && String(p.productType).toLowerCase() !== cat) return false;
+      // Filter on the browsable category bucket ("Inks", "Screens", …).
+      // "all" / empty = no category filter.
+      if (cat && cat !== "all" && String(p.category).toLowerCase() !== cat) return false;
       return true;
     });
 

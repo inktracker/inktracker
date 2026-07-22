@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeNorcalProducts,
   norcalCartPermalink,
+  norcalCategory,
+  NORCAL_CATEGORIES,
   NORCAL_STORE_URL_DEFAULT,
 } from "../norcal.ts";
 
@@ -68,6 +70,43 @@ describe("normalizeNorcalProducts", () => {
     expect(normalizeNorcalProducts(null)).toEqual([]);
     expect(normalizeNorcalProducts(undefined)).toEqual([]);
     expect(normalizeNorcalProducts([{ variants: [{ id: null }] }])).toEqual([]); // variant with no id skipped
+  });
+
+  it("tags each variant with a browsable category bucket", () => {
+    const [white300] = normalizeNorcalProducts(SAMPLE);
+    expect(white300.category).toBe("Inks"); // product_type "Ink" → Inks bucket
+  });
+
+  it("drops Shopify options-app hidden helper products", () => {
+    const rows = normalizeNorcalProducts([
+      { id: 1, title: "Hidden", handle: "h", product_type: "OPTIONS_HIDDEN_PRODUCT", variants: [{ id: 9, price: "1" }] },
+      ...SAMPLE,
+    ]);
+    expect(rows.every((r) => r.variantId !== "9")).toBe(true);
+  });
+});
+
+describe("norcalCategory", () => {
+  it("maps NorCal's granular product_type into browsable buckets", () => {
+    expect(norcalCategory("Plastisol Inks")).toBe("Inks");
+    expect(norcalCategory("Waterbase Inks")).toBe("Inks");
+    expect(norcalCategory("Discharge Inks")).toBe("Inks");
+    expect(norcalCategory("Aluminum Screens")).toBe("Screens");
+    expect(norcalCategory("Chemicals")).toBe("Chemicals");
+    expect(norcalCategory("Emulsion")).toBe("Chemicals");
+    expect(norcalCategory("Adhesives")).toBe("Chemicals");
+    expect(norcalCategory("Equipment")).toBe("Equipment");
+    expect(norcalCategory("Heat Press")).toBe("Equipment");
+    expect(norcalCategory("Squeegee")).toBe("Equipment");
+    expect(norcalCategory("Supplies")).toBe("Supplies");
+    expect(norcalCategory("Tape")).toBe("Supplies");
+  });
+
+  it("falls back to Other for empty/unknown types", () => {
+    expect(norcalCategory("")).toBe("Other");
+    expect(norcalCategory(null)).toBe("Other");
+    expect(norcalCategory("Service")).toBe("Other");
+    expect(NORCAL_CATEGORIES).toContain("Other");
   });
 });
 
