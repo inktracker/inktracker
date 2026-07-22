@@ -14,7 +14,6 @@ import {
   extractConnectionStatus,
 } from "../_shared/connectionLogic.js";
 import {
-  nextAvailableDocNumber as sharedNextAvailableDocNumber,
   buildQBDisplayName,
   buildQBCustomerBody as sharedBuildQBCustomerBody,
   escapeQbStringLiteral,
@@ -23,6 +22,8 @@ import {
   extractPaymentLink as sharedExtractPaymentLink,
   buildQbSendInvoiceUrl,
   stripDocNumberRevision,
+  shouldCollapseRevisionToBase,
+  isInkTrackerOriginatedInvoice,
   isQbInvoicePaid,
   qbInvoiceHasPayment,
   buildUpdateFailureResponse,
@@ -328,12 +329,6 @@ async function qbCreate(token: string, realmId: string, entity: string, body: ob
   if (!res.ok) throw new Error(`QB create ${entity} failed: ${res.status} ${JSON.stringify(data)}`);
   return data;
 }
-
-// Pick the next free DocNumber for a quote. If `base` is unused, returns base.
-// Otherwise tries base-r2, base-r3, ... up to base-r99. Falls back to a
-// timestamp suffix if (somehow) all 99 revisions are taken.
-// Pure logic + tests live in ../_shared/qbInvoice.js + __tests__.
-const nextAvailableDocNumber = sharedNextAvailableDocNumber;
 
 async function qbUpdate(token: string, realmId: string, entity: string, body: object) {
   const url = `${QB_BASE}/${realmId}/${entity}?minorversion=65`;
@@ -948,7 +943,6 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // adopt and UPDATE it. Only when the family is empty do we CREATE.
   // The old behavior — query DocNumbers only to pick "the next free -rN" —
   // is what turned every one of these races into a duplicate.
-  let familyDocNumbers: string[] | null = null;
   if (!qbInvoiceId) {
     const escapedBaseForFamily = escapeQbStringLiteral(String(quote.quote_id || ""));
     try {
@@ -958,7 +952,6 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         `SELECT * FROM Invoice WHERE DocNumber = '${escapedBaseForFamily}' OR DocNumber LIKE '${escapedBaseForFamily}-r%'`,
       );
       const family = familyResp?.QueryResponse?.Invoice || [];
-      familyDocNumbers = family.map((i: any) => String(i.DocNumber || "")).filter(Boolean);
       const picked = pickQbInvoiceForAdoption(family);
       if (picked.paid) {
         console.error(
@@ -1009,11 +1002,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         }
       }
     } catch (e) {
-      // Family lookup failed (QB hiccup). Don't guess: the create path
-      // retries its own DocNumber query, and its Duplicate-DocNumber retry
-      // loop is the last-resort backstop.
+      // Family lookup failed (QB hiccup). Don't guess: the create path below
+      // attempts the clean base DocNumber and, on a Duplicate-DocNumber
+      // collision, adopts the existing invoice or fails loudly — never -rN.
       console.error("[createInvoice] DocNumber family lookup failed:", (e as Error)?.message);
-      familyDocNumbers = null;
     }
   }
 
@@ -1154,42 +1146,22 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // quote's invoice, and an empty (or unreadable) DocNumber family in QB.
   if (!qbInvoiceId) {
     const escapedBase = escapeQbStringLiteral(baseDocNumber);
-    // Reuse the family query from adoption guard 2 when it succeeded; only
-    // re-query when that lookup failed (familyDocNumbers === null) or was
-    // skipped because a stale qb_invoice_id got cleared by the resync path.
-    let existingDocs: string[] = familyDocNumbers ?? [];
-    if (familyDocNumbers === null) {
-      try {
-        const existingResp = await qbQuery(
-          token,
-          realmId,
-          `SELECT DocNumber FROM Invoice WHERE DocNumber = '${escapedBase}' OR DocNumber LIKE '${escapedBase}-r%'`,
-        );
-        existingDocs = (existingResp?.QueryResponse?.Invoice || [])
-          .map((i: any) => String(i.DocNumber || ""))
-          .filter(Boolean);
-      } catch (e) {
-        console.error("[createInvoice] DocNumber lookup failed (will try base only):", e);
-      }
-    }
-    const docNumber = nextAvailableDocNumber(baseDocNumber, existingDocs);
-    const isRevision = docNumber !== baseDocNumber;
 
-    // DueDate = TxnDate. The QB invoice should be due on receipt —
-    // the customer's already approved the quote and the pay-now link
-    // is on the email. Previously we mapped `quote.due_date` here,
-    // but that's the PRODUCTION due date (when the job ships to the
-    // customer), not the PAYMENT due date — different semantics. QB
-    // would then display "Due in 15 days" (or whatever the production
-    // turnaround was), discouraging immediate payment.
+    // Always create with the CLEAN base DocNumber — NEVER a -rN revision.
+    // QuickBooks folds a -rN into its own invoice-number sequence and then
+    // auto-suggests the next -rN onto later invoices — even ones a human
+    // hand-creates in the QB UI (California 89 INV-2026-OW0M1-r3, $5,000,
+    // 2026-07-22, which nobody typed). So a DocNumber collision must ADOPT
+    // the existing invoice or fail loudly for the operator; it must never
+    // spawn a revision. The base DocNumber is derived from the unique
+    // quote_id, so any QB invoice already carrying it IS this quote's invoice.
     //
-    // Setting DueDate explicitly to the invoice date overrides the
-    // QB customer's default terms ("Net 15", etc.) so every shop's
-    // invoices land as "Due on receipt" regardless of their QB
-    // company settings.
+    // DueDate = TxnDate so QB shows "Due on receipt" (the customer already
+    // approved the quote and the pay-now link is on the email), overriding
+    // the QB customer's default terms.
     const invoiceBody: any = {
       CustomerRef: { value: qbCustomerId },
-      DocNumber: docNumber,
+      DocNumber: baseDocNumber,
       TxnDate: quote.date,
       DueDate: quote.date || undefined,
       AllowOnlineCreditCardPayment: true,
@@ -1197,11 +1169,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       Line: lines,
       CustomerMemo: { value: quote.notes || "" },
       // PrivateNote is QB's internal memo (visible to the shop in QB, not on
-      // the customer's invoice). Append the InkTracker job title so it flows
-      // to accounting for reference.
-      PrivateNote: (isRevision
-        ? `InkTracker Quote ${baseDocNumber} — revision (${docNumber})`
-        : `InkTracker Quote ${baseDocNumber}`)
+      // the customer's invoice) — the InkTracker origin stamp + job title.
+      PrivateNote: `InkTracker Quote ${baseDocNumber}`
         + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
     };
 
@@ -1217,37 +1186,67 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       invoiceBody.ShipAddr = shipAddr;
     }
 
-    let attempt = 0;
-    let activeBody = invoiceBody;
-    while (attempt < 5) {
-      try {
-        created = await qbCreate(token, realmId, "invoice", activeBody);
-        qbInvoiceId = created?.Invoice?.Id;
-        if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
-        qbInvoiceFinal = created?.Invoice ?? created;
-        break;
-      } catch (createErr: any) {
-        const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
-        if (!isDuplicate) throw createErr;
+    try {
+      created = await qbCreate(token, realmId, "invoice", invoiceBody);
+      qbInvoiceId = created?.Invoice?.Id;
+      if (!qbInvoiceId) throw new Error("QB did not return an invoice ID");
+      qbInvoiceFinal = created?.Invoice ?? created;
+    } catch (createErr: any) {
+      const isDuplicate = createErr?.message?.includes("Duplicate Document Number");
+      if (!isDuplicate) throw createErr;
 
-        existingDocs.push(activeBody.DocNumber);
-        const nextDoc = nextAvailableDocNumber(baseDocNumber, existingDocs);
-        console.error(
-          `[createInvoice] DocNumber ${activeBody.DocNumber} taken — retrying as ${nextDoc}`
+      // The base DocNumber already lives in QB. Do NOT mint a -rN. Re-query the
+      // family and ADOPT the existing invoice (same adoption logic the guards
+      // above use). If it's already paid, report already-paid. If nothing is
+      // adoptable, surface a hard failure so the operator resolves it in QB —
+      // InkTracker will not create a duplicate or a revision.
+      let dupFamily: any[] = [];
+      try {
+        const dupResp = await qbQuery(
+          token,
+          realmId,
+          `SELECT * FROM Invoice WHERE DocNumber = '${escapedBase}' OR DocNumber LIKE '${escapedBase}-r%'`,
         );
-        activeBody = {
-          ...activeBody,
-          DocNumber: nextDoc,
-          PrivateNote: `InkTracker Quote ${baseDocNumber} — revision (${nextDoc})`,
-        };
-        attempt++;
+        dupFamily = dupResp?.QueryResponse?.Invoice || [];
+      } catch (lookupErr) {
+        console.error("[createInvoice] duplicate-collision lookup failed:", (lookupErr as Error)?.message);
       }
-    }
-    if (!qbInvoiceId) {
-      throw new Error(
-        `Could not create QB invoice for ${baseDocNumber} after retries. ` +
-        `Existing revisions: ${existingDocs.join(", ")}`
-      );
+      const picked = pickQbInvoiceForAdoption(dupFamily);
+      if (picked.paid) {
+        return {
+          qbInvoiceId: String(picked.paid.Id),
+          paymentLink: sharedExtractPaymentLink(picked.paid) ?? null,
+          linkFailureReason: null,
+          alreadyPaid: true,
+          alreadyPaidMessage:
+            `This quote already has a paid QuickBooks invoice (#${picked.paid.DocNumber ?? picked.paid.Id}). ` +
+            `No new invoice was created.`,
+        };
+      }
+      if (picked.adopt) {
+        qbInvoiceId = String(picked.adopt.Id);
+        qbInvoiceFinal = picked.adopt;
+        adoptionSource = "doc_collision";
+        console.error(
+          `[createInvoice] DocNumber ${baseDocNumber} already in QB — adopting invoice ` +
+          `${qbInvoiceId} (${picked.adopt.DocNumber}) instead of creating a -rN duplicate.`,
+        );
+      } else {
+        console.error(
+          `[createInvoice] DocNumber ${baseDocNumber} collided but nothing adoptable — ` +
+          `refusing to create a revision.`,
+        );
+        const head = dupFamily[0];
+        return buildUpdateFailureResponse({
+          qbInvoiceId:         head ? String(head.Id) : "",
+          qbDocNumber:         String(head?.DocNumber || baseDocNumber),
+          existingPaymentLink: head ? (sharedExtractPaymentLink(head) ?? null) : null,
+          updateErrMessage:
+            `An invoice numbered ${baseDocNumber} already exists in QuickBooks. ` +
+            `InkTracker will not create a duplicate or a -rN revision — resolve it in ` +
+            `QuickBooks (or Refresh) and try again.`,
+        });
+      }
     }
   }
 
@@ -1882,6 +1881,17 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     if (row.qb_invoice_id) existingByQbId.set(String(row.qb_invoice_id), row);
   }
 
+  // Which QB invoice (by Id) currently owns each DocNumber in THIS pull. Lets
+  // the base-DocNumber revision collapse below tell a true -rN re-issue (base
+  // gone from QB) from a -rN that co-exists with its base as a separate live
+  // QB invoice (California 89: INV-2026-OW0M1 + INV-2026-OW0M1-r3, both open,
+  // 2026-07-22). First writer wins so the base's own record owns the base doc.
+  const qbDocToId = new Map<string, string>();
+  for (const q of all) {
+    const d = q.DocNumber || `QB-${q.Id}`;
+    if (!qbDocToId.has(d)) qbDocToId.set(d, String(q.Id));
+  }
+
   let imported = 0;
   let skipped = 0;
   let updated = 0;
@@ -1910,7 +1920,12 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     let existingRow = existingByQbId.get(qbId) || existingByDoc.get(docNumber);
     if (!existingRow) {
       const base = stripDocNumberRevision(docNumber);
-      if (base && base !== docNumber) {
+      // Only collapse a -rN onto the base's local row when the base is NOT a
+      // separate live QB invoice. If QB still owns the base DocNumber under a
+      // DIFFERENT Id, this -rN is a distinct invoice and must get its own row,
+      // or one of the two vanishes from InkTracker while QB shows both.
+      if (base && base !== docNumber &&
+          shouldCollapseRevisionToBase(qbDocToId.get(base), qbId)) {
         existingRow = existingByDoc.get(base);
       }
     }
@@ -2022,7 +2037,13 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
         }
       }
     } else {
-      const { error } = await supabase.from("invoices").insert(payload);
+      // First sighting of this QB invoice. If it carries no InkTracker origin
+      // stamp, it was created directly in QuickBooks (UI / bulk import), not by
+      // our createInvoice path — flag it so the Invoices page can surface it
+      // subtly. Written ONLY here on insert; never touched on update, so
+      // InkTracker-originated and already-known rows keep their value.
+      const external_origin = !isInkTrackerOriginatedInvoice(qbInv.PrivateNote);
+      const { error } = await supabase.from("invoices").insert({ ...payload, external_origin });
       if (error) { console.error("[pullInvoices] insert failed:", error.message, docNumber); skipped++; }
       else { imported++; }
     }

@@ -503,6 +503,49 @@ export function isRevisionDocNumber(docNumber) {
   return /-r\d+$/i.test(String(docNumber ?? ""));
 }
 
+/**
+ * Decide whether a -rN revision invoice pulled from QB should COLLAPSE onto
+ * its base DocNumber's existing local row, or stand as its own separate row.
+ *
+ * The base-strip collapse (see stripDocNumberRevision) exists so a -rN
+ * RE-ISSUE — QB rejected the original DocNumber, our push retried with -rN —
+ * lands on the same local row as the base instead of spawning a sibling.
+ * That assumption only holds when the -rN truly REPLACED the base.
+ *
+ * When QuickBooks still holds the base DocNumber as its OWN separate Invoice
+ * record, the -rN is a DISTINCT invoice and must get its own local row.
+ * Collapsing it would make one of the two invoices silently vanish from
+ * InkTracker while QB (the source of truth) shows both — exactly the
+ * California 89 gap: INV-2026-OW0M1 ($1,626) and INV-2026-OW0M1-r3 ($5,000)
+ * were both open in QB, but the -r3 collapsed onto the base row and its
+ * $5,000 never appeared in AR (2026-07-22).
+ *
+ * @param baseOwnerQbId  QB Invoice Id that currently carries the base
+ *                       DocNumber in this pull (null/undefined if none does)
+ * @param revisionQbId   QB Invoice Id of the -rN invoice being placed
+ * @returns true  → base is gone / is this same record → safe to collapse
+ *          false → base is a different live QB invoice → keep them separate
+ */
+export function shouldCollapseRevisionToBase(baseOwnerQbId, revisionQbId) {
+  if (baseOwnerQbId == null) return true;
+  return String(baseOwnerQbId) === String(revisionQbId);
+}
+
+/**
+ * True when a QB invoice was ORIGINATED by InkTracker.
+ *
+ * createInvoice stamps every invoice it pushes with a PrivateNote that
+ * begins "InkTracker Quote …" (plain or "… — revision (…)"). An invoice
+ * pulled from QB whose PrivateNote lacks that stamp was created OUTSIDE
+ * InkTracker — directly in the QuickBooks UI or by a bulk-import tool.
+ * pullInvoices uses this (insert-only) to set invoices.external_origin so
+ * the Invoices page can show a subtle marker instead of the invoice
+ * slipping into AR unexplained (California 89 INV-2026-OW0M1-r3, 2026-07-22).
+ */
+export function isInkTrackerOriginatedInvoice(privateNote) {
+  return String(privateNote ?? "").includes("InkTracker Quote");
+}
+
 // ── Invoice paid-state predicate ───────────────────────────────────────────
 // "Paid" in QBO = TotalAmt > 0 AND Balance === 0. Centralized so the
 // createInvoice resync path, pullInvoices, and any future caller use the

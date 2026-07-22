@@ -479,7 +479,16 @@ export default function Invoices() {
             )}
             {sorted.map(inv=>(
               <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 transition cursor-pointer" onClick={() => setSelected(inv)}>
-                <td className="px-4 py-3.5 font-mono text-xs text-slate-500">{inv.invoice_id}</td>
+                <td className="px-4 py-3.5 font-mono text-xs text-slate-500">
+                  {inv.invoice_id}
+                  {inv.external_origin && (
+                    <span
+                      title="Created directly in QuickBooks — not through InkTracker"
+                      aria-label="Created directly in QuickBooks"
+                      className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 align-middle"
+                    />
+                  )}
+                </td>
                 <td className="px-4 py-3.5 font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</td>
                 <td className="px-4 py-3.5 text-slate-500">{fmtDate(inv.date)}</td>
                 <td className="px-4 py-3.5 text-slate-500">{fmtDate(inv.due)}</td>
@@ -516,7 +525,16 @@ export default function Invoices() {
             <div key={inv.id} className="p-4 border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition" onClick={() => setSelected(inv)}>
               <div className="flex justify-between items-start mb-2">
                 <div>
-                  <div className="font-mono text-xs text-slate-500">{inv.invoice_id}</div>
+                  <div className="font-mono text-xs text-slate-500">
+                    {inv.invoice_id}
+                    {inv.external_origin && (
+                      <span
+                        title="Created directly in QuickBooks — not through InkTracker"
+                        aria-label="Created directly in QuickBooks"
+                        className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 align-middle"
+                      />
+                    )}
+                  </div>
                   <div className="font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</div>
                 </div>
                 {inv.paid
