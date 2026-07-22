@@ -60,16 +60,18 @@ export default function NorcalOrderModal({
   }
 
   function openStore(group) {
+    if (opened.has(group.storeUrl)) return; // guard double-clicks — one tab per vendor
     // Fired from a real click, so this single window.open is never blocked.
     const url = supplierCartPermalink(group.storeUrl, group.lines, {
       utm_source: "inktracker", utm_medium: "reorder",
     });
-    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    if (!url) return; // nothing orderable — don't mark opened or clear the list
+    window.open(url, "_blank", "noopener,noreferrer");
     const next = new Set(opened);
     next.add(group.storeUrl);
     setOpened(next);
-    // Clear the list only once every vendor's cart has been opened.
-    if (next.size >= storeGroups.length) onOrdered?.();
+    // Clear the list only once EVERY vendor's cart has actually been opened.
+    if (storeGroups.every((g) => next.has(g.storeUrl))) onOrdered?.();
   }
 
   function handleSubmit() {
@@ -220,9 +222,10 @@ export default function NorcalOrderModal({
                       <button
                         key={g.storeUrl}
                         onClick={() => openStore(g)}
+                        disabled={done}
                         className={`w-full flex items-center justify-between gap-2 text-sm font-bold px-4 py-2.5 rounded-xl transition ${
                           done
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
                             : "bg-rose-600 hover:bg-rose-700 text-white"
                         }`}
                       >

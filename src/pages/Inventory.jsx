@@ -228,6 +228,12 @@ export default function Inventory() {
   async function handleRemoveFromInventory(product) {
     const toRemove = items.filter(i => String(i.supplier_variant_id) === String(product.variantId));
     if (toRemove.length === 0) return;
+    // Deleting is destructive — if the shop has entered an on-hand count or a
+    // reorder threshold, confirm before throwing that away.
+    const hasData = toRemove.some(i => Number(i.qty) > 0 || Number(i.reorder) > 0);
+    if (hasData && !window.confirm(
+      `Remove "${product.title}" from your inventory? This deletes your on-hand count and reorder settings for it.`,
+    )) return;
     try {
       await Promise.all(toRemove.map(i => base44.entities.InventoryItem.delete(i.id)));
       setItems(prev => prev.filter(i => String(i.supplier_variant_id) !== String(product.variantId)));
@@ -306,7 +312,10 @@ export default function Inventory() {
     });
   };
 
-  const low = items.filter(i => i.qty <= i.reorder);
+  // Low = at/below a real reorder point. A reorder threshold of 0 means "not
+  // tracked" (freshly-stocked catalog items start at qty 0 / reorder 0), so it
+  // must NOT count as low — otherwise every new item floods this list.
+  const low = items.filter(i => Number(i.reorder) > 0 && Number(i.qty) <= Number(i.reorder));
   const totalItems = items.length;
   const totalValue = items.reduce((s, i) => s + (i.qty || 0) * (i.cost || 0), 0);
 
@@ -314,7 +323,7 @@ export default function Inventory() {
   // checkout (NOT auto-added to the order). Each carries its own vendor so the
   // reminder's "Add" queues it to the right store.
   const norcalLowReminders = items
-    .filter(i => i.supplier_variant_id && Number(i.qty) <= Number(i.reorder))
+    .filter(i => i.supplier_variant_id && Number(i.reorder) > 0 && Number(i.qty) <= Number(i.reorder))
     .map(i => {
       const s = supplierOfItem(i) || {};
       return {
