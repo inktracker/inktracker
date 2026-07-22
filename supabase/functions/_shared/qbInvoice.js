@@ -531,6 +531,21 @@ export function shouldCollapseRevisionToBase(baseOwnerQbId, revisionQbId) {
   return String(baseOwnerQbId) === String(revisionQbId);
 }
 
+/**
+ * True when a QB invoice was ORIGINATED by InkTracker.
+ *
+ * createInvoice stamps every invoice it pushes with a PrivateNote that
+ * begins "InkTracker Quote …" (plain or "… — revision (…)"). An invoice
+ * pulled from QB whose PrivateNote lacks that stamp was created OUTSIDE
+ * InkTracker — directly in the QuickBooks UI or by a bulk-import tool.
+ * pullInvoices uses this (insert-only) to set invoices.external_origin so
+ * the Invoices page can show a subtle marker instead of the invoice
+ * slipping into AR unexplained (California 89 INV-2026-OW0M1-r3, 2026-07-22).
+ */
+export function isInkTrackerOriginatedInvoice(privateNote) {
+  return String(privateNote ?? "").includes("InkTracker Quote");
+}
+
 // ── Invoice paid-state predicate ───────────────────────────────────────────
 // "Paid" in QBO = TotalAmt > 0 AND Balance === 0. Centralized so the
 // createInvoice resync path, pullInvoices, and any future caller use the

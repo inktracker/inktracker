@@ -24,6 +24,7 @@ import {
   buildQbSendInvoiceUrl,
   stripDocNumberRevision,
   shouldCollapseRevisionToBase,
+  isInkTrackerOriginatedInvoice,
   isQbInvoicePaid,
   qbInvoiceHasPayment,
   buildUpdateFailureResponse,
@@ -2039,7 +2040,13 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
         }
       }
     } else {
-      const { error } = await supabase.from("invoices").insert(payload);
+      // First sighting of this QB invoice. If it carries no InkTracker origin
+      // stamp, it was created directly in QuickBooks (UI / bulk import), not by
+      // our createInvoice path — flag it so the Invoices page can surface it
+      // subtly. Written ONLY here on insert; never touched on update, so
+      // InkTracker-originated and already-known rows keep their value.
+      const external_origin = !isInkTrackerOriginatedInvoice(qbInv.PrivateNote);
+      const { error } = await supabase.from("invoices").insert({ ...payload, external_origin });
       if (error) { console.error("[pullInvoices] insert failed:", error.message, docNumber); skipped++; }
       else { imported++; }
     }

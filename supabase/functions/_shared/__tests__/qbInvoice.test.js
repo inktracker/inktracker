@@ -18,6 +18,7 @@ import {
   stripDocNumberRevision,
   isRevisionDocNumber,
   shouldCollapseRevisionToBase,
+  isInkTrackerOriginatedInvoice,
   isQbInvoicePaid,
   qbInvoiceHasPayment,
   buildUpdateFailureResponse,
@@ -923,6 +924,27 @@ describe("shouldCollapseRevisionToBase", () => {
   it("compares as strings — numeric vs string Ids still match", () => {
     expect(shouldCollapseRevisionToBase(3746, "3746")).toBe(true);
     expect(shouldCollapseRevisionToBase("3744", 3746)).toBe(false);
+  });
+});
+
+// ── isInkTrackerOriginatedInvoice ───────────────────────────────────────────
+// Distinguishes invoices InkTracker pushed (PrivateNote carries the
+// "InkTracker Quote …" stamp) from ones created directly in QuickBooks
+// (no stamp). Drives invoices.external_origin so the Invoices page can flag
+// QB-native invoices (California 89 INV-2026-OW0M1-r3 had a null PrivateNote).
+
+describe("isInkTrackerOriginatedInvoice", () => {
+  it("true for InkTracker's stamp — plain and revision forms", () => {
+    expect(isInkTrackerOriginatedInvoice("InkTracker Quote INV-2026-OW0M1")).toBe(true);
+    expect(isInkTrackerOriginatedInvoice("InkTracker Quote Q-2026-115 — revision (Q-2026-115-r2)")).toBe(true);
+    expect(isInkTrackerOriginatedInvoice("InkTracker Quote Q-2026-115 · Job: Tees")).toBe(true);
+  });
+
+  it("false when the QB invoice has no InkTracker stamp (created in QB)", () => {
+    expect(isInkTrackerOriginatedInvoice(null)).toBe(false);
+    expect(isInkTrackerOriginatedInvoice(undefined)).toBe(false);
+    expect(isInkTrackerOriginatedInvoice("")).toBe(false);
+    expect(isInkTrackerOriginatedInvoice("Deposit for California 89")).toBe(false);
   });
 });
 
