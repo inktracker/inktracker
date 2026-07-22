@@ -13,7 +13,7 @@
 //   readOnly, reason — billing read-only gate.
 
 import { useEffect, useRef, useState } from "react";
-import { Search, Loader2, Check, Plus, ExternalLink, PackageSearch } from "lucide-react";
+import { Search, Loader2, Check, ExternalLink, PackageSearch, ShoppingCart, Archive } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 
@@ -23,7 +23,11 @@ const CATEGORIES = ["All", "Inks", "Screens", "Chemicals", "Equipment", "Squeege
 
 const fmtPrice = (n) => (Number.isFinite(Number(n)) ? `$${Number(n).toFixed(2)}` : "");
 
-export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false, reason = "" }) {
+export default function NorcalCatalog({
+  onAddToOrder, orderVariantIds,
+  onAddToInventory, addedVariantIds,
+  readOnly = false, reason = "",
+}) {
   const [category, setCategory] = useState("All");
   const [subcategory, setSubcategory] = useState("All");
   const [subcats, setSubcats] = useState([]);
@@ -72,11 +76,11 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
     return () => clearTimeout(t);
   }, [category, subcategory, query]);
 
-  async function add(product) {
+  async function addToStock(product) {
     if (readOnly || addingId) return;
     setAddingId(product.variantId);
     try {
-      await onAdd?.(product);
+      await onAddToInventory?.(product);
     } finally {
       setAddingId(null);
     }
@@ -161,6 +165,7 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {results.map((p) => {
             const added = addedVariantIds?.has(String(p.variantId));
+            const inOrder = orderVariantIds?.has(String(p.variantId));
             const isAdding = addingId === p.variantId;
             return (
               <div key={p.variantId} className="border border-slate-200 rounded-2xl bg-white p-3 flex gap-3">
@@ -180,19 +185,35 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
                     {!p.available ? <span className="text-amber-600 font-semibold">out of stock</span> : null}
                   </div>
                   <div className="mt-auto pt-2 flex items-center gap-2">
-                    {added ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
-                        <Check className="w-3.5 h-3.5" /> In your stock
+                    {/* Primary: add to the NorCal order list (the "shopping list"). */}
+                    {inOrder ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600">
+                        <Check className="w-3.5 h-3.5" /> In order
                       </span>
                     ) : (
                       <button
-                        onClick={() => add(p)}
-                        disabled={readOnly || isAdding}
+                        onClick={() => onAddToOrder?.(p)}
+                        disabled={readOnly}
                         title={readOnly ? reason : undefined}
                         className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-2.5 py-1.5 transition"
                       >
-                        {isAdding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                        Add to inventory
+                        <ShoppingCart className="w-3.5 h-3.5" /> Add to order
+                      </button>
+                    )}
+                    {/* Secondary: also track it in your own inventory. */}
+                    {added ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600" title="In your inventory">
+                        <Check className="w-3.5 h-3.5" /> Stocked
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => addToStock(p)}
+                        disabled={readOnly || isAdding}
+                        title="Track in my inventory"
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 hover:border-slate-300 rounded-lg px-2 py-1.5 transition disabled:opacity-50"
+                      >
+                        {isAdding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
+                        Stock
                       </button>
                     )}
                     {p.url ? (
@@ -200,7 +221,7 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
                         href={p.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-0.5 text-xs font-semibold text-slate-400 hover:text-rose-600"
+                        className="ml-auto inline-flex items-center gap-0.5 text-xs font-semibold text-slate-400 hover:text-rose-600"
                         title="View on NorCal"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />

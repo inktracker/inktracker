@@ -8,6 +8,7 @@ import EmptyState from "../components/shared/EmptyState";
 import ShoppingList from "../components/inventory/ShoppingList";
 import NorcalLinkPicker from "../components/inventory/NorcalLinkPicker";
 import NorcalCatalog from "../components/inventory/NorcalCatalog";
+import NorcalOrderModal from "../components/inventory/NorcalOrderModal";
 
 // NorCal bucket (from the catalog) → the shop's own inventory category, so an
 // added NorCal product lands under a sensible local category.
@@ -48,6 +49,40 @@ export default function Inventory() {
     try { return JSON.parse(localStorage.getItem("ssCart")) || []; } catch { return []; }
   });
   const [showCart, setShowCart] = useState(false);
+
+  // NorCal order list ("shopping list") — built by adding products from Browse
+  // NorCal, persisted so it survives navigation, submitted to NorCal in one
+  // click. Each entry: { variantId, title, size, price, image, url, sku, qty }.
+  const [norcalOrder, setNorcalOrder] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("norcalOrder")) || []; } catch { return []; }
+  });
+  const [showOrder, setShowOrder] = useState(false);
+  function persistOrder(next) {
+    localStorage.setItem("norcalOrder", JSON.stringify(next));
+    return next;
+  }
+  function addToNorcalOrder(product) {
+    setNorcalOrder(prev => {
+      const key = String(product.variantId);
+      if (prev.some(i => String(i.variantId) === key)) return prev; // already queued
+      return persistOrder([...prev, {
+        variantId: key, title: product.title, size: product.size || "",
+        price: Number(product.price) || 0, image: product.image || "",
+        url: product.url || "", sku: product.sku || "", qty: 1,
+      }]);
+    });
+    setShowOrder(true);
+  }
+  function setNorcalOrderQty(variantId, qty) {
+    setNorcalOrder(prev => persistOrder(prev.map(i => String(i.variantId) === String(variantId) ? { ...i, qty } : i)));
+  }
+  function removeFromNorcalOrder(variantId) {
+    setNorcalOrder(prev => persistOrder(prev.filter(i => String(i.variantId) !== String(variantId))));
+  }
+  function clearNorcalOrder() {
+    setNorcalOrder(persistOrder([]));
+    setShowOrder(false);
+  }
 
   function addToSsCart(items) {
     setSsCart(prev => {
@@ -228,6 +263,20 @@ export default function Inventory() {
   const totalItems = items.length;
   const totalValue = items.reduce((s, i) => s + (i.qty || 0) * (i.cost || 0), 0);
 
+  // NorCal-linked supplies running low — surfaced as a gentle reminder at
+  // checkout (NOT auto-added to the order).
+  const norcalLowReminders = items
+    .filter(i => i.norcal_variant_id && Number(i.qty) <= Number(i.reorder))
+    .map(i => ({
+      variantId: String(i.norcal_variant_id),
+      title: i.norcal_title || i.item,
+      size: i.norcal_size || "",
+      price: Number(i.norcal_price) || Number(i.cost) || 0,
+      image: i.norcal_image_url || "",
+      url: i.norcal_product_url || "",
+      sku: i.sku || "",
+    }));
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -245,6 +294,13 @@ export default function Inventory() {
             {showForm ? <X className="w-4 h-4" /> : <><Plus className="w-4 h-4" /> Add Item</>}
           </button>
           <ReactivateLink show={readOnly} href={reactivateHref} className="self-center" />
+          {norcalOrder.length > 0 && (
+            <button onClick={() => setShowOrder(true)}
+              className="relative flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition">
+              <ShoppingCart className="w-4 h-4" /> NorCal Order
+              <span className="absolute -top-1.5 -right-1.5 bg-slate-900 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{norcalOrder.length}</span>
+            </button>
+          )}
           {ssCart.length > 0 && (
             <button onClick={() => setShowCart(true)}
               className="relative flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold px-3 py-2 rounded-xl transition">
@@ -300,7 +356,9 @@ export default function Inventory() {
 
       {view === "catalog" ? (
         <NorcalCatalog
-          onAdd={handleAddFromCatalog}
+          onAddToOrder={addToNorcalOrder}
+          orderVariantIds={new Set(norcalOrder.map(i => String(i.variantId)))}
+          onAddToInventory={handleAddFromCatalog}
           addedVariantIds={new Set(items.map(i => i.norcal_variant_id).filter(Boolean).map(String))}
           readOnly={readOnly}
           reason={reason}
@@ -578,6 +636,20 @@ export default function Inventory() {
       )}
 
       </>
+      )}
+
+      {/* NorCal order list — available from both views via the header button. */}
+      {showOrder && (
+        <NorcalOrderModal
+          order={norcalOrder}
+          onSetQty={setNorcalOrderQty}
+          onRemove={removeFromNorcalOrder}
+          onClear={clearNorcalOrder}
+          onClose={() => setShowOrder(false)}
+          onAddLowItem={addToNorcalOrder}
+          lowReminders={norcalLowReminders}
+          onOrdered={() => setShowOrder(false)}
+        />
       )}
 
       {/* Edit modal */}
