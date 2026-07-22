@@ -29,6 +29,22 @@ export function norcalCategory(productType: unknown): string {
   return "Other";
 }
 
+// The distinct raw product_types present in a set of normalized variants, with
+// counts, most-common first. These are the sub-tabs shown under a selected
+// category (e.g. Inks → Plastisol Inks / Waterbase Inks / Discharge Inks).
+// deno-lint-ignore no-explicit-any
+export function norcalSubcategories(variants: any[]): Array<{ type: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const v of Array.isArray(variants) ? variants : []) {
+    const t = String(v?.productType ?? "").trim();
+    if (!t) continue;
+    counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
+}
+
 // Shopify "infinite options" apps publish hidden helper products with this
 // product_type — never a real orderable item, so we drop them from the catalog.
 const HIDDEN_PRODUCT_TYPE = "OPTIONS_HIDDEN_PRODUCT";

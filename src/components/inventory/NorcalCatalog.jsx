@@ -23,6 +23,8 @@ const fmtPrice = (n) => (Number.isFinite(Number(n)) ? `$${Number(n).toFixed(2)}`
 
 export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false, reason = "" }) {
   const [category, setCategory] = useState("All");
+  const [subcategory, setSubcategory] = useState("All");
+  const [subcats, setSubcats] = useState([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,8 +32,14 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
   const [addingId, setAddingId] = useState(null);
   const reqSeq = useRef(0);
 
-  // Fetch on category / query change. Query is debounced; category switches
-  // fetch immediately. A sequence guard drops out-of-order responses.
+  // Selecting a top category resets the sub-tab back to "All".
+  function selectCategory(c) {
+    setCategory(c);
+    setSubcategory("All");
+  }
+
+  // Fetch on category / subcategory / query change. Query is debounced; the
+  // rest fetch immediately. A sequence guard drops out-of-order responses.
   useEffect(() => {
     const q = query.trim();
     setLoading(true);
@@ -40,6 +48,7 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
       try {
         const { data, error } = await base44.functions.invoke("norcalCatalog", {
           category: category === "All" ? "" : category,
+          subcategory: subcategory === "All" ? "" : subcategory,
           query: q,
           limit: 60,
         });
@@ -47,6 +56,7 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
         if (error) throw error;
         setResults(Array.isArray(data?.products) ? data.products : []);
         setTotal(Number(data?.total) || 0);
+        setSubcats(Array.isArray(data?.subcategories) ? data.subcategories : []);
       } catch (err) {
         if (seq === reqSeq.current) {
           setResults([]);
@@ -58,7 +68,7 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
       }
     }, q ? 350 : 0);
     return () => clearTimeout(t);
-  }, [category, query]);
+  }, [category, subcategory, query]);
 
   async function add(product) {
     if (readOnly || addingId) return;
@@ -102,7 +112,7 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
         {CATEGORIES.map((c) => (
           <button
             key={c}
-            onClick={() => setCategory(c)}
+            onClick={() => selectCategory(c)}
             className={`text-xs font-semibold px-3 py-2 rounded-xl border transition ${
               category === c
                 ? "bg-rose-600 text-white border-rose-600"
@@ -113,6 +123,28 @@ export default function NorcalCatalog({ onAdd, addedVariantIds, readOnly = false
           </button>
         ))}
       </div>
+
+      {/* Sub-tabs — the real NorCal product_types within the selected category
+          (e.g. Inks → Plastisol / Waterbase / Discharge). Only shown when the
+          bucket actually splits into more than one type. */}
+      {category !== "All" && subcats.length > 1 && (
+        <div className="flex gap-2 flex-wrap pl-1 border-l-2 border-rose-100">
+          {[{ type: "All", count: total }, ...subcats].map((s) => (
+            <button
+              key={s.type}
+              onClick={() => setSubcategory(s.type)}
+              className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition ${
+                subcategory === s.type
+                  ? "bg-rose-100 text-rose-700 border-rose-300"
+                  : "bg-white border-slate-200 text-slate-500 hover:border-rose-300"
+              }`}
+            >
+              {s.type}
+              {s.type !== "All" ? <span className="ml-1 text-slate-400">{s.count}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Product grid */}
       {loading ? (

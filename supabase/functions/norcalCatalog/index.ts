@@ -14,7 +14,7 @@
 // Returns: { products: NorcalVariant[], total, page, limit }
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
-import { normalizeNorcalProducts, NORCAL_STORE_URL_DEFAULT } from "../_shared/norcal.ts";
+import { normalizeNorcalProducts, norcalSubcategories, NORCAL_STORE_URL_DEFAULT } from "../_shared/norcal.ts";
 import { readSupplierCache, writeSupplierCache, buildSupplierCacheKey } from "../_shared/supplierCache.ts";
 
 const CORS = {
@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { query = "", category = "", limit = 24, page = 1 } = body ?? {};
+    const { query = "", category = "", subcategory = "", limit = 24, page = 1 } = body ?? {};
 
     // Normalized full catalog, cached ~1h globally (public data). Fail-open:
     // any cache miss/error falls through to a live fetch.
@@ -85,15 +85,24 @@ Deno.serve(async (req) => {
 
     const q = String(query).trim().toLowerCase();
     const cat = String(category).trim().toLowerCase();
+    const sub = String(subcategory).trim().toLowerCase();
+
+    // Everything in the selected top-level bucket ("Inks", "Screens", …).
+    // "all" / empty = no category filter. Subcategory tabs are derived from
+    // THIS set (the whole bucket) so they're complete regardless of paging.
     // deno-lint-ignore no-explicit-any
-    const filtered = (normalized as any[]).filter((p) => {
+    const inBucket = (normalized as any[]).filter(
+      (p) => !cat || cat === "all" || String(p.category).toLowerCase() === cat,
+    );
+    const subcategories = norcalSubcategories(inBucket);
+
+    const filtered = inBucket.filter((p) => {
       if (q) {
-        const hay = `${p.title} ${p.sku} ${p.size} ${p.vendor}`.toLowerCase();
+        const hay = `${p.title} ${p.sku} ${p.size} ${p.vendor} ${p.productType}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      // Filter on the browsable category bucket ("Inks", "Screens", …).
-      // "all" / empty = no category filter.
-      if (cat && cat !== "all" && String(p.category).toLowerCase() !== cat) return false;
+      // Exact product_type match for the sub-tab ("Plastisol Inks", …).
+      if (sub && sub !== "all" && String(p.productType).toLowerCase() !== sub) return false;
       return true;
     });
 
@@ -102,7 +111,10 @@ Deno.serve(async (req) => {
     const start = (pg - 1) * lim;
     const products = filtered.slice(start, start + lim);
 
-    return Response.json({ products, total: filtered.length, page: pg, limit: lim }, { headers: CORS });
+    return Response.json(
+      { products, total: filtered.length, page: pg, limit: lim, subcategories },
+      { headers: CORS },
+    );
   } catch (err) {
     console.error("norcalCatalog error:", err);
     return Response.json({ error: (err as Error).message }, { status: 500, headers: CORS });

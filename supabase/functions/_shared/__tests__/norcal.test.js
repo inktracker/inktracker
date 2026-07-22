@@ -3,6 +3,7 @@ import {
   normalizeNorcalProducts,
   norcalCartPermalink,
   norcalCategory,
+  norcalSubcategories,
   NORCAL_CATEGORIES,
   NORCAL_STORE_URL_DEFAULT,
 } from "../norcal.ts";
@@ -107,6 +108,28 @@ describe("norcalCategory", () => {
     expect(norcalCategory(null)).toBe("Other");
     expect(norcalCategory("Service")).toBe("Other");
     expect(NORCAL_CATEGORIES).toContain("Other");
+  });
+});
+
+describe("norcalSubcategories", () => {
+  it("returns distinct product_types with counts, most-common first", () => {
+    const variants = [
+      { productType: "Plastisol Inks" },
+      { productType: "Plastisol Inks" },
+      { productType: "Waterbase Inks" },
+      { productType: "Discharge Inks" },
+      { productType: "Plastisol Inks" },
+    ];
+    expect(norcalSubcategories(variants)).toEqual([
+      { type: "Plastisol Inks", count: 3 },
+      { type: "Discharge Inks", count: 1 },
+      { type: "Waterbase Inks", count: 1 },
+    ]);
+  });
+
+  it("skips empty types and tolerates junk", () => {
+    expect(norcalSubcategories([{ productType: "" }, { productType: "  " }, {}])).toEqual([]);
+    expect(norcalSubcategories(null)).toEqual([]);
   });
 });
 
