@@ -84,6 +84,27 @@ export default function Inventory() {
     setShowOrder(false);
   }
 
+  // Per-item restock routes to the item's ACTUAL vendor: a NorCal-linked supply
+  // goes straight to the NorCal order; a garment/blank stays on the S&S restock
+  // flow (which is really for blanks). Prevents a NorCal ink opening an "S&S
+  // restock" by mistake.
+  function handleItemRestock(group) {
+    const first = group.items?.[0] || {};
+    if (first.norcal_variant_id) {
+      addToNorcalOrder({
+        variantId: first.norcal_variant_id,
+        title: first.norcal_title || first.item,
+        size: first.norcal_size || "",
+        price: Number(first.norcal_price) || Number(first.cost) || 0,
+        image: first.norcal_image_url || "",
+        url: first.norcal_product_url || "",
+        sku: first.sku || "",
+      });
+      return;
+    }
+    setRestockSetup(group); // S&S garment/blank restock setup
+  }
+
   function addToSsCart(items) {
     setSsCart(prev => {
       const next = [...prev, ...items];
@@ -534,9 +555,10 @@ export default function Inventory() {
 
                 {/* Actions */}
                 <div className="flex-shrink-0 flex items-center gap-1">
-                  <button onClick={(e) => { e.stopPropagation(); setRestockSetup(group); }}
+                  <button onClick={(e) => { e.stopPropagation(); handleItemRestock(group); }}
                     disabled={readOnly}
-                    className="p-1.5 text-slate-300 hover:text-orange-500 transition disabled:opacity-50 disabled:cursor-not-allowed" title={readOnly ? reason : "Setup Restock"}>
+                    className={`p-1.5 text-slate-300 transition disabled:opacity-50 disabled:cursor-not-allowed ${firstItem.norcal_variant_id ? "hover:text-rose-600" : "hover:text-orange-500"}`}
+                    title={readOnly ? reason : (firstItem.norcal_variant_id ? "Add to NorCal order" : "Setup restock")}>
                     <ShoppingCart className="w-4 h-4" />
                   </button>
                   {!hasVariants && (
