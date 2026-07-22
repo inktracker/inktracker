@@ -17,6 +17,7 @@ import {
   isLikelyEmail,
   stripDocNumberRevision,
   isRevisionDocNumber,
+  shouldCollapseRevisionToBase,
   isQbInvoicePaid,
   qbInvoiceHasPayment,
   buildUpdateFailureResponse,
@@ -891,6 +892,37 @@ describe("isRevisionDocNumber", () => {
   it("false on near-misses (no digits, wrong separator)", () => {
     expect(isRevisionDocNumber("Q-2026-115-rA")).toBe(false);
     expect(isRevisionDocNumber("Q-2026-115r2")).toBe(false);
+  });
+});
+
+// ── shouldCollapseRevisionToBase ────────────────────────────────────────────
+// Guards the pullInvoices base-DocNumber collapse. A -rN re-issue (base gone
+// from QB) SHOULD collapse onto the base row; a -rN that co-exists with its
+// base as a separate live QB invoice must NOT collapse, or one invoice
+// vanishes from InkTracker's AR while QB shows both (California 89:
+// INV-2026-OW0M1 $1,626 + INV-2026-OW0M1-r3 $5,000, both open, 2026-07-22).
+
+describe("shouldCollapseRevisionToBase", () => {
+  it("collapses when the base DocNumber no longer owns any live QB invoice", () => {
+    // True re-issue: QB rejected the base doc, only the -rN survives.
+    expect(shouldCollapseRevisionToBase(undefined, "3746")).toBe(true);
+    expect(shouldCollapseRevisionToBase(null, "3746")).toBe(true);
+  });
+
+  it("does NOT collapse when the base is a DIFFERENT live QB invoice", () => {
+    // California 89 regression: base INV-2026-OW0M1 = QB Id 3744 is still
+    // open; the -r3 = QB Id 3746 must stand on its own row.
+    expect(shouldCollapseRevisionToBase("3744", "3746")).toBe(false);
+  });
+
+  it("collapses when the base doc is owned by this very same QB record", () => {
+    // Degenerate self-match — never lose the row to itself.
+    expect(shouldCollapseRevisionToBase("3746", "3746")).toBe(true);
+  });
+
+  it("compares as strings — numeric vs string Ids still match", () => {
+    expect(shouldCollapseRevisionToBase(3746, "3746")).toBe(true);
+    expect(shouldCollapseRevisionToBase("3744", 3746)).toBe(false);
   });
 });
 

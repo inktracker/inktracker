@@ -503,6 +503,34 @@ export function isRevisionDocNumber(docNumber) {
   return /-r\d+$/i.test(String(docNumber ?? ""));
 }
 
+/**
+ * Decide whether a -rN revision invoice pulled from QB should COLLAPSE onto
+ * its base DocNumber's existing local row, or stand as its own separate row.
+ *
+ * The base-strip collapse (see stripDocNumberRevision) exists so a -rN
+ * RE-ISSUE — QB rejected the original DocNumber, our push retried with -rN —
+ * lands on the same local row as the base instead of spawning a sibling.
+ * That assumption only holds when the -rN truly REPLACED the base.
+ *
+ * When QuickBooks still holds the base DocNumber as its OWN separate Invoice
+ * record, the -rN is a DISTINCT invoice and must get its own local row.
+ * Collapsing it would make one of the two invoices silently vanish from
+ * InkTracker while QB (the source of truth) shows both — exactly the
+ * California 89 gap: INV-2026-OW0M1 ($1,626) and INV-2026-OW0M1-r3 ($5,000)
+ * were both open in QB, but the -r3 collapsed onto the base row and its
+ * $5,000 never appeared in AR (2026-07-22).
+ *
+ * @param baseOwnerQbId  QB Invoice Id that currently carries the base
+ *                       DocNumber in this pull (null/undefined if none does)
+ * @param revisionQbId   QB Invoice Id of the -rN invoice being placed
+ * @returns true  → base is gone / is this same record → safe to collapse
+ *          false → base is a different live QB invoice → keep them separate
+ */
+export function shouldCollapseRevisionToBase(baseOwnerQbId, revisionQbId) {
+  if (baseOwnerQbId == null) return true;
+  return String(baseOwnerQbId) === String(revisionQbId);
+}
+
 // ── Invoice paid-state predicate ───────────────────────────────────────────
 // "Paid" in QBO = TotalAmt > 0 AND Balance === 0. Centralized so the
 // createInvoice resync path, pullInvoices, and any future caller use the
