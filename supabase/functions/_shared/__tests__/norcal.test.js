@@ -109,6 +109,14 @@ describe("norcalCategory", () => {
     expect(norcalCategory("Screen Printing Kit")).toBe("Equipment");
   });
 
+  it("displays NorCal's nav spelling 'Waterbased Inks' for their 'Waterbase Inks' type", () => {
+    const rows = normalizeNorcalProducts([
+      { id: 1, title: "Some Waterbased Ink", handle: "w", product_type: "Waterbase Inks", variants: [{ id: 5, price: "20" }] },
+    ]);
+    expect(rows[0].productType).toBe("Waterbased Inks");
+    expect(rows[0].category).toBe("Inks");
+  });
+
   it("falls back to Supplies (their misc catch-all) for empty/unknown types", () => {
     expect(norcalCategory("")).toBe("Supplies");
     expect(norcalCategory(null)).toBe("Supplies");

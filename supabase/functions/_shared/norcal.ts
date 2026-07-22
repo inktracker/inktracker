@@ -52,6 +52,18 @@ const CATEGORY_FALLBACK: ReadonlyArray<readonly [RegExp, string]> = [
   [/tape/i, "Tape"],
 ];
 
+// Canonicalize a raw product_type to NorCal's preferred nav spelling for
+// display. NorCal's product_type field says "Waterbase Inks" but their store
+// navigation says "Waterbased Inks" — we show their nav wording. Keyed
+// lower-cased; unmatched types pass through unchanged.
+const TYPE_LABEL_OVERRIDES: Record<string, string> = {
+  "waterbase inks": "Waterbased Inks",
+};
+export function norcalProductTypeLabel(rawType: unknown): string {
+  const t = String(rawType ?? "").trim();
+  return TYPE_LABEL_OVERRIDES[t.toLowerCase()] || t;
+}
+
 // Map a raw Shopify product_type to a top-level NorCal category. Unknown /
 // empty types fall through to "Supplies" (their misc catch-all).
 export function norcalCategory(productType: unknown): string {
@@ -110,8 +122,9 @@ export function normalizeNorcalProducts(products: any, storeUrl: string = NORCAL
   const out: NorcalVariant[] = [];
   const list = Array.isArray(products) ? products : [];
   for (const p of list) {
-    const productType = String(p?.product_type ?? "").trim();
-    if (productType === HIDDEN_PRODUCT_TYPE) continue; // Shopify options-app helper product
+    const rawType = String(p?.product_type ?? "").trim();
+    if (rawType === HIDDEN_PRODUCT_TYPE) continue; // Shopify options-app helper product
+    const productType = norcalProductTypeLabel(rawType); // display NorCal's nav spelling
     const productImage =
       Array.isArray(p?.images) && p.images[0]?.src ? String(p.images[0].src) : "";
     const variants = Array.isArray(p?.variants) ? p.variants : [];

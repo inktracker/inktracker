@@ -29,7 +29,7 @@ const PAGE_SIZE = 250;
 // global key (not per-shop) — one upstream fetch per TTL window serves everyone.
 // Bump CACHE_VERSION whenever the normalized shape or category mapping changes,
 // so a fresh normalize runs instead of serving a stale cached catalog.
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 const CACHE_REF = {
   supplier: "nc",
   shopOwner: "__norcal_global__",
