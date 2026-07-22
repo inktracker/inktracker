@@ -182,7 +182,7 @@ export default function NorcalOrderModal({
               </button>
             </div>
             <div className="px-5 pb-4 -mt-1 text-[11px] text-slate-400 flex items-center gap-1">
-              <ExternalLink className="w-3 h-3" /> Opens a pre-filled cart on norcalsps.com to place your order.
+              <ExternalLink className="w-3 h-3" /> Opens a pre-filled cart on norcalsps.com to place your order — and clears this list here.
             </div>
           </>
         )}
