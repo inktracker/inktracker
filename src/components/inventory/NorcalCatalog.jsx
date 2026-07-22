@@ -18,8 +18,9 @@ import { base44 } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 
 // Mirrors NorCal's own store navigation (kept in sync with NORCAL_CATEGORIES
-// in supabase/functions/_shared/norcal.ts).
-const CATEGORIES = ["All", "Inks", "Screens", "Chemicals", "Equipment", "Squeegees", "Tape", "Supplies"];
+// in supabase/functions/_shared/norcal.ts). No "All" — browsing every product
+// at once is too much; you pick a category to start.
+const CATEGORIES = ["Inks", "Screens", "Chemicals", "Equipment", "Squeegees", "Tape", "Supplies"];
 
 const fmtPrice = (n) => (Number.isFinite(Number(n)) ? `$${Number(n).toFixed(2)}` : "");
 
@@ -33,7 +34,7 @@ export default function NorcalCatalog({
   onAddToInventory, onRemoveFromInventory, addedVariantIds,
   readOnly = false, reason = "",
 }) {
-  const [category, setCategory] = useState("All");
+  const [category, setCategory] = useState(CATEGORIES[0]);
   const [subcategory, setSubcategory] = useState("All");
   const [subcats, setSubcats] = useState([]);
   const [query, setQuery] = useState("");
