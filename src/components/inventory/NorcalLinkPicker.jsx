@@ -8,8 +8,8 @@
 //
 // Props:
 //   value    — the current link, or null. Shape: the same fields we persist
-//              ({ norcal_variant_id, norcal_title, norcal_size, norcal_price,
-//                 norcal_image_url, norcal_product_url }).
+//              ({ supplier_variant_id, supplier_title, supplier_size, supplier_price,
+//                 supplier_image_url, supplier_product_url }).
 //   onLink   — (linkFields) => void. Called with the persist-shaped object when
 //              the user picks a variant.
 //   onUnlink — () => void. Clears the link.
@@ -22,12 +22,12 @@ import { notify } from "@/lib/notify";
 // Map a norcalCatalog result row to the fields we persist on the inventory item.
 function toLinkFields(v) {
   return {
-    norcal_variant_id: String(v.variantId),
-    norcal_title: v.title || "",
-    norcal_size: v.size || "",
-    norcal_price: Number(v.price) || 0,
-    norcal_image_url: v.image || "",
-    norcal_product_url: v.url || "",
+    supplier_variant_id: String(v.variantId),
+    supplier_title: v.title || "",
+    supplier_size: v.size || "",
+    supplier_price: Number(v.price) || 0,
+    supplier_image_url: v.image || "",
+    supplier_product_url: v.url || "",
   };
 }
 
@@ -35,7 +35,7 @@ const fmtPrice = (n) =>
   Number.isFinite(Number(n)) ? `$${Number(n).toFixed(2)}` : "";
 
 export default function NorcalLinkPicker({ value, onLink, onUnlink }) {
-  const linked = value && value.norcal_variant_id;
+  const linked = value && value.supplier_variant_id;
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -86,9 +86,9 @@ export default function NorcalLinkPicker({ value, onLink, onUnlink }) {
   if (linked) {
     return (
       <div className="flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50/60 px-3 py-2">
-        {value.norcal_image_url ? (
+        {value.supplier_image_url ? (
           <img
-            src={value.norcal_image_url}
+            src={value.supplier_image_url}
             alt=""
             className="w-10 h-10 rounded object-contain bg-white border border-rose-100 flex-shrink-0"
           />
@@ -102,14 +102,14 @@ export default function NorcalLinkPicker({ value, onLink, onUnlink }) {
             <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Linked to NorCal
           </div>
           <div className="text-sm font-semibold text-slate-800 truncate">
-            {value.norcal_title}
-            {value.norcal_size ? <span className="text-slate-500 font-normal"> · {value.norcal_size}</span> : null}
+            {value.supplier_title}
+            {value.supplier_size ? <span className="text-slate-500 font-normal"> · {value.supplier_size}</span> : null}
           </div>
           <div className="text-xs text-slate-500">
-            {fmtPrice(value.norcal_price)}
-            {value.norcal_product_url ? (
+            {fmtPrice(value.supplier_price)}
+            {value.supplier_product_url ? (
               <a
-                href={value.norcal_product_url}
+                href={value.supplier_product_url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="ml-2 inline-flex items-center gap-0.5 text-rose-600 hover:text-rose-700 font-semibold"

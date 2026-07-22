@@ -1,15 +1,16 @@
-// Browse NorCal's catalog inside InkTracker and pull products into your stock.
+// Browse a public-Shopify supply vendor's catalog and pull products into stock.
 //
-// NorCal Screen Print Supply (norcalsps.com) is a Shopify supplier whose public
-// catalog we serve through the norcalCatalog edge function. This is the "Browse
-// NorCal" view: category tabs + search over their real catalog, product cards
-// with photo / price / stock, and an "Add to my inventory" action per product
-// that creates a stocked item already linked to that NorCal variant.
+// `supplier` selects the vendor ({ key, label, storeUrl, theme }); the parent
+// remounts this via key={key} on switch, so all state resets cleanly. Works for
+// NorCal, Ryonet, and any future public-Shopify supplier. Accent color follows
+// supplier.theme (NorCal rose, Ryonet green).
 //
 // Props:
-//   onAdd            — async (product) => void. Creates the inventory item.
-//   addedVariantIds  — Set<string> of norcal_variant_id already in the shop's
-//                      inventory, so already-added products show as stocked.
+//   supplier         — { key, label, storeUrl, theme }
+//   onAddToOrder     — (product) => void
+//   orderVariantIds  — Set<string> already in the reorder cart
+//   onAddToInventory / onRemoveFromInventory — stock toggle
+//   addedVariantIds  — Set<string> of supplier_variant_id already stocked
 //   readOnly, reason — billing read-only gate.
 
 import { useEffect, useRef, useState } from "react";
@@ -22,18 +23,49 @@ import { notify } from "@/lib/notify";
 // at once is too much; you pick a category to start.
 const CATEGORIES = ["Inks", "Screens", "Chemicals", "Equipment", "Squeegees", "Tape", "Supplies"];
 
+// Per-supplier accent themes. Full literal class strings so Tailwind's content
+// scanner keeps them (never build class names by interpolation).
+const THEMES = {
+  rose: {
+    icon: "text-rose-500",
+    pill: "text-rose-600 bg-rose-50 border-rose-200",
+    dot: "bg-rose-500",
+    ring: "focus:ring-rose-300",
+    tabActive: "bg-rose-600 text-white border-rose-600",
+    tabIdle: "bg-white border-slate-200 text-slate-500 hover:border-rose-300",
+    subBorder: "border-rose-100",
+    subActive: "bg-rose-100 text-rose-700 border-rose-300",
+    subIdle: "bg-white border-slate-200 text-slate-500 hover:border-rose-300",
+    text: "text-rose-600",
+    btn: "bg-rose-600 hover:bg-rose-700",
+    linkHover: "hover:text-rose-600",
+  },
+  green: {
+    icon: "text-green-500",
+    pill: "text-green-700 bg-green-50 border-green-200",
+    dot: "bg-green-500",
+    ring: "focus:ring-green-300",
+    tabActive: "bg-green-600 text-white border-green-600",
+    tabIdle: "bg-white border-slate-200 text-slate-500 hover:border-green-300",
+    subBorder: "border-green-100",
+    subActive: "bg-green-100 text-green-800 border-green-300",
+    subIdle: "bg-white border-slate-200 text-slate-500 hover:border-green-300",
+    text: "text-green-700",
+    btn: "bg-green-600 hover:bg-green-700",
+    linkHover: "hover:text-green-600",
+  },
+};
+
 const fmtPrice = (n) => (Number.isFinite(Number(n)) ? `$${Number(n).toFixed(2)}` : "");
 
-// Browse a public-Shopify supply vendor's catalog. `supplier` selects the
-// vendor ({ key, label, storeUrl }); the parent remounts this via key={key} on
-// switch, so all state resets cleanly. Works for NorCal, Ryonet, and any future
-// public-Shopify supplier.
 export default function NorcalCatalog({
-  supplier = { key: "norcal", label: "NorCal" },
+  supplier = { key: "norcal", label: "NorCal", theme: "rose" },
   onAddToOrder, orderVariantIds,
   onAddToInventory, onRemoveFromInventory, addedVariantIds,
   readOnly = false, reason = "",
 }) {
+  const th = THEMES[supplier.theme] || THEMES.rose;
+
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [subcategory, setSubcategory] = useState("All");
   const [subcats, setSubcats] = useState([]);
@@ -74,14 +106,14 @@ export default function NorcalCatalog({
         if (seq === reqSeq.current) {
           setResults([]);
           setTotal(0);
-          notify.error("Couldn't load NorCal catalog", err);
+          notify.error(`Couldn't load ${supplier.label} catalog`, err);
         }
       } finally {
         if (seq === reqSeq.current) setLoading(false);
       }
     }, q ? 350 : 0);
     return () => clearTimeout(t);
-  }, [supplier.key, category, subcategory, query]);
+  }, [supplier.key, supplier.label, category, subcategory, query]);
 
   async function addToStock(product) {
     if (readOnly || addingId) return;
@@ -108,14 +140,14 @@ export default function NorcalCatalog({
       {/* Header + connected state */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <PackageSearch className="w-5 h-5 text-rose-500" />
+          <PackageSearch className={`w-5 h-5 ${th.icon}`} />
           <div>
             <div className="text-sm font-bold text-slate-900">Browse {supplier.label} Catalog</div>
             <div className="text-xs text-slate-500">{total} products · add any to your stock</div>
           </div>
         </div>
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-full px-3 py-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> {supplier.label} connected
+        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold border rounded-full px-3 py-1.5 ${th.pill}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${th.dot}`} /> {supplier.label} connected
         </span>
       </div>
 
@@ -126,8 +158,8 @@ export default function NorcalCatalog({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search NorCal products, SKUs, brands…"
-            className="w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-rose-300"
+            placeholder={`Search ${supplier.label} products, SKUs, brands…`}
+            className={`w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 ${th.ring}`}
           />
         </div>
       </div>
@@ -136,31 +168,23 @@ export default function NorcalCatalog({
           <button
             key={c}
             onClick={() => selectCategory(c)}
-            className={`text-xs font-semibold px-3 py-2 rounded-xl border transition ${
-              category === c
-                ? "bg-rose-600 text-white border-rose-600"
-                : "bg-white border-slate-200 text-slate-500 hover:border-rose-300"
-            }`}
+            className={`text-xs font-semibold px-3 py-2 rounded-xl border transition ${category === c ? th.tabActive : th.tabIdle}`}
           >
             {c}
           </button>
         ))}
       </div>
 
-      {/* Sub-tabs — the real NorCal product_types within the selected category
-          (e.g. Inks → Plastisol / Waterbase / Discharge). Only shown when the
+      {/* Sub-tabs — the vendor's real product_types within the selected category
+          (e.g. Inks → Plastisol / Waterbased / Discharge). Only shown when the
           bucket actually splits into more than one type. */}
       {category !== "All" && subcats.length > 1 && (
-        <div className="flex gap-2 flex-wrap pl-1 border-l-2 border-rose-100">
+        <div className={`flex gap-2 flex-wrap pl-1 border-l-2 ${th.subBorder}`}>
           {[{ type: "All", count: total }, ...subcats].map((s) => (
             <button
               key={s.type}
               onClick={() => setSubcategory(s.type)}
-              className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition ${
-                subcategory === s.type
-                  ? "bg-rose-100 text-rose-700 border-rose-300"
-                  : "bg-white border-slate-200 text-slate-500 hover:border-rose-300"
-              }`}
+              className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition ${subcategory === s.type ? th.subActive : th.subIdle}`}
             >
               {s.type}
               {s.type !== "All" ? <span className="ml-1 text-slate-400">{s.count}</span> : null}
@@ -176,7 +200,7 @@ export default function NorcalCatalog({
         </div>
       ) : results.length === 0 ? (
         <div className="py-16 text-center text-sm text-slate-500">
-          No NorCal products match your search.
+          No {supplier.label} products match your search.
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -202,9 +226,9 @@ export default function NorcalCatalog({
                     {!p.available ? <span className="text-amber-600 font-semibold">out of stock</span> : null}
                   </div>
                   <div className="mt-auto pt-2 flex items-center gap-2">
-                    {/* Primary: add to the NorCal order list (the "shopping list"). */}
+                    {/* Primary: add to the reorder cart. */}
                     {inOrder ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600">
+                      <span className={`inline-flex items-center gap-1 text-xs font-semibold ${th.text}`}>
                         <Check className="w-3.5 h-3.5" /> In order
                       </span>
                     ) : (
@@ -212,7 +236,7 @@ export default function NorcalCatalog({
                         onClick={() => onAddToOrder?.(p)}
                         disabled={readOnly}
                         title={readOnly ? reason : undefined}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-2.5 py-1.5 transition"
+                        className={`inline-flex items-center gap-1 text-xs font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-2.5 py-1.5 transition ${th.btn}`}
                       >
                         <ShoppingCart className="w-3.5 h-3.5" /> Add to order
                       </button>
@@ -253,8 +277,8 @@ export default function NorcalCatalog({
                         href={p.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="ml-auto inline-flex items-center gap-0.5 text-xs font-semibold text-slate-400 hover:text-rose-600"
-                        title="View on NorCal"
+                        className={`ml-auto inline-flex items-center gap-0.5 text-xs font-semibold text-slate-400 ${th.linkHover}`}
+                        title={`View on ${supplier.label}`}
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>

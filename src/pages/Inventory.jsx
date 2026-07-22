@@ -18,7 +18,7 @@ const NORCAL_CAT_TO_SHOP = { Inks: "Ink", Screens: "Screens", Chemicals: "Chemic
 // Resolve which supplier an inventory item is linked to (from the stored
 // product URL's store host, falling back to the free-text supplier label).
 function supplierOfItem(item) {
-  return supplierForStoreUrl(item?.norcal_product_url)
+  return supplierForStoreUrl(item?.supplier_product_url)
     || SUPPLIER_LIST.find((s) => s.label === item?.supplier)
     || null;
 }
@@ -37,7 +37,7 @@ export default function Inventory() {
   const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
   const [view, setView] = useState("inventory"); // "inventory" | "catalog" (Browse NorCal)
-  const [form, setForm] = useState({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null });
+  const [form, setForm] = useState({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0, supplier_variant_id:null, supplier_product_url:null, supplier_image_url:null, supplier_title:null, supplier_size:null, supplier_price:null });
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
   const [categories, setCategories] = useState(() => {
@@ -100,15 +100,15 @@ export default function Inventory() {
   // a garment/blank stays on the S&S restock flow (which is really for blanks).
   function handleItemRestock(group) {
     const first = group.items?.[0] || {};
-    const linked = first.norcal_variant_id ? supplierOfItem(first) : null;
+    const linked = first.supplier_variant_id ? supplierOfItem(first) : null;
     if (linked) {
       addToSupplierOrder({
-        variantId: first.norcal_variant_id,
-        title: first.norcal_title || first.item,
-        size: first.norcal_size || "",
-        price: Number(first.norcal_price) || Number(first.cost) || 0,
-        image: first.norcal_image_url || "",
-        url: first.norcal_product_url || "",
+        variantId: first.supplier_variant_id,
+        title: first.supplier_title || first.item,
+        size: first.supplier_size || "",
+        price: Number(first.supplier_price) || Number(first.cost) || 0,
+        image: first.supplier_image_url || "",
+        url: first.supplier_product_url || "",
         sku: first.sku || "",
       }, linked);
       return;
@@ -186,7 +186,7 @@ export default function Inventory() {
       return;
     }
     setItems(prev => [...prev, created].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
-    setForm({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null });
+    setForm({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0, supplier_variant_id:null, supplier_product_url:null, supplier_image_url:null, supplier_title:null, supplier_size:null, supplier_price:null });
     setShowForm(false);
     setAdding(false);
   }
@@ -194,7 +194,7 @@ export default function Inventory() {
   // "Add to my inventory" from a Browse-vendor catalog: create a stocked item
   // pre-linked to that vendor's variant (price/image/url) so it immediately
   // shows the vendor's pricing and feeds the reorder/cart flows. The linked
-  // store is carried in norcal_product_url, so reorder routes to the right
+  // store is carried in supplier_product_url, so reorder routes to the right
   // vendor. Starts at qty 0 — the shop sets on-hand + reorder threshold after.
   async function handleAddFromCatalog(product, supplier) {
     const payload = {
@@ -206,12 +206,12 @@ export default function Inventory() {
       unit: "",
       reorder: 0,
       cost: Number(product.price) || 0,
-      norcal_variant_id: String(product.variantId),
-      norcal_product_url: product.url || null,
-      norcal_image_url: product.image || null,
-      norcal_title: product.title || null,
-      norcal_size: product.size || null,
-      norcal_price: Number(product.price) || 0,
+      supplier_variant_id: String(product.variantId),
+      supplier_product_url: product.url || null,
+      supplier_image_url: product.image || null,
+      supplier_title: product.title || null,
+      supplier_size: product.size || null,
+      supplier_price: Number(product.price) || 0,
       shop_owner: shopScope(user),
     };
     try {
@@ -226,11 +226,11 @@ export default function Inventory() {
   // Toggle a NorCal catalog product OUT of inventory (the "Stocked" button in
   // Browse NorCal). Deletes the inventory row(s) linked to that variant.
   async function handleRemoveFromInventory(product) {
-    const toRemove = items.filter(i => String(i.norcal_variant_id) === String(product.variantId));
+    const toRemove = items.filter(i => String(i.supplier_variant_id) === String(product.variantId));
     if (toRemove.length === 0) return;
     try {
       await Promise.all(toRemove.map(i => base44.entities.InventoryItem.delete(i.id)));
-      setItems(prev => prev.filter(i => String(i.norcal_variant_id) !== String(product.variantId)));
+      setItems(prev => prev.filter(i => String(i.supplier_variant_id) !== String(product.variantId)));
       notify.success(`Removed ${product.title} from your inventory.`);
     } catch (err) {
       notify.error("Couldn't remove from inventory", err);
@@ -314,16 +314,16 @@ export default function Inventory() {
   // checkout (NOT auto-added to the order). Each carries its own vendor so the
   // reminder's "Add" queues it to the right store.
   const norcalLowReminders = items
-    .filter(i => i.norcal_variant_id && Number(i.qty) <= Number(i.reorder))
+    .filter(i => i.supplier_variant_id && Number(i.qty) <= Number(i.reorder))
     .map(i => {
       const s = supplierOfItem(i) || {};
       return {
-        variantId: String(i.norcal_variant_id),
-        title: i.norcal_title || i.item,
-        size: i.norcal_size || "",
-        price: Number(i.norcal_price) || Number(i.cost) || 0,
-        image: i.norcal_image_url || "",
-        url: i.norcal_product_url || "",
+        variantId: String(i.supplier_variant_id),
+        title: i.supplier_title || i.item,
+        size: i.supplier_size || "",
+        price: Number(i.supplier_price) || Number(i.cost) || 0,
+        image: i.supplier_image_url || "",
+        url: i.supplier_product_url || "",
         sku: i.sku || "",
         supplierKey: s.key || "",
         supplierLabel: s.label || i.supplier || "",
@@ -404,7 +404,11 @@ export default function Inventory() {
           <button
             key={s.key}
             onClick={() => setView(s.key)}
-            className={`text-sm font-semibold px-4 py-1.5 rounded-lg transition ${view === s.key ? "bg-white text-rose-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            className={`text-sm font-semibold px-4 py-1.5 rounded-lg transition ${
+              view === s.key
+                ? `bg-white shadow-sm ${s.theme === "green" ? "text-green-600" : "text-rose-600"}`
+                : "text-slate-500 hover:text-slate-700"
+            }`}
           >
             Browse {s.label}
           </button>
@@ -419,7 +423,7 @@ export default function Inventory() {
           orderVariantIds={new Set(norcalOrder.map(i => String(i.variantId)))}
           onAddToInventory={(p) => handleAddFromCatalog(p, SUPPLIERS[view])}
           onRemoveFromInventory={handleRemoveFromInventory}
-          addedVariantIds={new Set(items.map(i => i.norcal_variant_id).filter(Boolean).map(String))}
+          addedVariantIds={new Set(items.map(i => i.supplier_variant_id).filter(Boolean).map(String))}
           readOnly={readOnly}
           reason={reason}
         />
@@ -764,7 +768,7 @@ export default function Inventory() {
                 <NorcalLinkPicker
                   value={editing}
                   onLink={(link) => setEditing(e => ({ ...e, ...link, supplier: e.supplier?.trim() ? e.supplier : "NorCal" }))}
-                  onUnlink={() => setEditing(e => ({ ...e, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null }))}
+                  onUnlink={() => setEditing(e => ({ ...e, supplier_variant_id:null, supplier_product_url:null, supplier_image_url:null, supplier_title:null, supplier_size:null, supplier_price:null }))}
                 />
               </div>
             </div>

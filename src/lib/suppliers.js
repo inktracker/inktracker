@@ -7,8 +7,8 @@
 // Keep the keys in sync with SUPPLIER_STORES in supabase/functions/norcalCatalog.
 
 export const SUPPLIERS = {
-  norcal: { key: "norcal", label: "NorCal", storeUrl: "https://norcalsps.com" },
-  ryonet: { key: "ryonet", label: "Ryonet", storeUrl: "https://www.screenprinting.com" },
+  norcal: { key: "norcal", label: "NorCal", storeUrl: "https://norcalsps.com", theme: "rose" },
+  ryonet: { key: "ryonet", label: "Ryonet", storeUrl: "https://www.screenprinting.com", theme: "green" },
 };
 
 export const SUPPLIER_LIST = Object.values(SUPPLIERS);
