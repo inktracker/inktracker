@@ -9,10 +9,19 @@ import ShoppingList from "../components/inventory/ShoppingList";
 import NorcalLinkPicker from "../components/inventory/NorcalLinkPicker";
 import NorcalCatalog from "../components/inventory/NorcalCatalog";
 import NorcalOrderModal from "../components/inventory/NorcalOrderModal";
+import { SUPPLIERS, SUPPLIER_LIST, supplierForStoreUrl } from "@/lib/suppliers";
 
-// NorCal bucket (from the catalog) → the shop's own inventory category, so an
-// added NorCal product lands under a sensible local category.
+// Catalog bucket → the shop's own inventory category, so an added supplier
+// product lands under a sensible local category.
 const NORCAL_CAT_TO_SHOP = { Inks: "Ink", Screens: "Screens", Chemicals: "Chemicals", Equipment: "Tools", Squeegees: "Tools", Tape: "Other", Supplies: "Other" };
+
+// Resolve which supplier an inventory item is linked to (from the stored
+// product URL's store host, falling back to the free-text supplier label).
+function supplierOfItem(item) {
+  return supplierForStoreUrl(item?.norcal_product_url)
+    || SUPPLIER_LIST.find((s) => s.label === item?.supplier)
+    || null;
+}
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";
@@ -61,7 +70,7 @@ export default function Inventory() {
     localStorage.setItem("norcalOrder", JSON.stringify(next));
     return next;
   }
-  function addToNorcalOrder(product) {
+  function addToSupplierOrder(product, supplier) {
     setNorcalOrder(prev => {
       const key = String(product.variantId);
       if (prev.some(i => String(i.variantId) === key)) return prev; // already queued
@@ -69,6 +78,8 @@ export default function Inventory() {
         variantId: key, title: product.title, size: product.size || "",
         price: Number(product.price) || 0, image: product.image || "",
         url: product.url || "", sku: product.sku || "", qty: 1,
+        supplierKey: supplier?.key || "", supplierLabel: supplier?.label || "",
+        storeUrl: supplier?.storeUrl || "",
       }]);
     });
     setShowOrder(true);
@@ -84,14 +95,14 @@ export default function Inventory() {
     setShowOrder(false);
   }
 
-  // Per-item restock routes to the item's ACTUAL vendor: a NorCal-linked supply
-  // goes straight to the NorCal order; a garment/blank stays on the S&S restock
-  // flow (which is really for blanks). Prevents a NorCal ink opening an "S&S
-  // restock" by mistake.
+  // Per-item restock routes to the item's ACTUAL vendor: a supply linked to a
+  // Browse vendor (NorCal / Ryonet) goes straight to that vendor's reorder cart;
+  // a garment/blank stays on the S&S restock flow (which is really for blanks).
   function handleItemRestock(group) {
     const first = group.items?.[0] || {};
-    if (first.norcal_variant_id) {
-      addToNorcalOrder({
+    const linked = first.norcal_variant_id ? supplierOfItem(first) : null;
+    if (linked) {
+      addToSupplierOrder({
         variantId: first.norcal_variant_id,
         title: first.norcal_title || first.item,
         size: first.norcal_size || "",
@@ -99,7 +110,7 @@ export default function Inventory() {
         image: first.norcal_image_url || "",
         url: first.norcal_product_url || "",
         sku: first.sku || "",
-      });
+      }, linked);
       return;
     }
     setRestockSetup(group); // S&S garment/blank restock setup
@@ -180,16 +191,17 @@ export default function Inventory() {
     setAdding(false);
   }
 
-  // "Add to my inventory" from the Browse NorCal catalog: create a stocked item
-  // pre-linked to the NorCal variant (price/image/url) so it immediately shows
-  // NorCal pricing and feeds the reorder/cart flows. Starts at qty 0 — the shop
-  // sets its on-hand count and reorder threshold after.
-  async function handleAddFromCatalog(product) {
+  // "Add to my inventory" from a Browse-vendor catalog: create a stocked item
+  // pre-linked to that vendor's variant (price/image/url) so it immediately
+  // shows the vendor's pricing and feeds the reorder/cart flows. The linked
+  // store is carried in norcal_product_url, so reorder routes to the right
+  // vendor. Starts at qty 0 — the shop sets on-hand + reorder threshold after.
+  async function handleAddFromCatalog(product, supplier) {
     const payload = {
       item: [product.title, product.size].filter(Boolean).join(" — "),
       sku: product.sku || String(product.variantId),
       category: NORCAL_CAT_TO_SHOP[product.category] || "Other",
-      supplier: "NorCal",
+      supplier: supplier?.label || "NorCal",
       qty: 0,
       unit: "",
       reorder: 0,
@@ -298,19 +310,26 @@ export default function Inventory() {
   const totalItems = items.length;
   const totalValue = items.reduce((s, i) => s + (i.qty || 0) * (i.cost || 0), 0);
 
-  // NorCal-linked supplies running low — surfaced as a gentle reminder at
-  // checkout (NOT auto-added to the order).
+  // Vendor-linked supplies running low — surfaced as a gentle reminder at
+  // checkout (NOT auto-added to the order). Each carries its own vendor so the
+  // reminder's "Add" queues it to the right store.
   const norcalLowReminders = items
     .filter(i => i.norcal_variant_id && Number(i.qty) <= Number(i.reorder))
-    .map(i => ({
-      variantId: String(i.norcal_variant_id),
-      title: i.norcal_title || i.item,
-      size: i.norcal_size || "",
-      price: Number(i.norcal_price) || Number(i.cost) || 0,
-      image: i.norcal_image_url || "",
-      url: i.norcal_product_url || "",
-      sku: i.sku || "",
-    }));
+    .map(i => {
+      const s = supplierOfItem(i) || {};
+      return {
+        variantId: String(i.norcal_variant_id),
+        title: i.norcal_title || i.item,
+        size: i.norcal_size || "",
+        price: Number(i.norcal_price) || Number(i.cost) || 0,
+        image: i.norcal_image_url || "",
+        url: i.norcal_product_url || "",
+        sku: i.sku || "",
+        supplierKey: s.key || "",
+        supplierLabel: s.label || i.supplier || "",
+        storeUrl: s.storeUrl || "",
+      };
+    });
 
   return (
     <div className="space-y-6">
@@ -332,7 +351,7 @@ export default function Inventory() {
           {norcalOrder.length > 0 && (
             <button onClick={() => setShowOrder(true)}
               className="relative flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold px-3 py-2 rounded-xl transition">
-              <ShoppingCart className="w-4 h-4" /> NorCal Order
+              <ShoppingCart className="w-4 h-4" /> Reorder Cart
               <span className="absolute -top-1.5 -right-1.5 bg-slate-900 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">{norcalOrder.length}</span>
             </button>
           )}
@@ -373,27 +392,32 @@ export default function Inventory() {
         ))}
       </datalist>
 
-      {/* View toggle: the shop's own stock vs. browsing NorCal's catalog. */}
-      <div className="inline-flex rounded-xl border border-slate-200 bg-slate-100 p-1">
+      {/* View toggle: the shop's own stock vs. browsing a supplier's catalog. */}
+      <div className="inline-flex flex-wrap rounded-xl border border-slate-200 bg-slate-100 p-1">
         <button
           onClick={() => setView("inventory")}
           className={`text-sm font-semibold px-4 py-1.5 rounded-lg transition ${view === "inventory" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
         >
           My Inventory
         </button>
-        <button
-          onClick={() => setView("catalog")}
-          className={`text-sm font-semibold px-4 py-1.5 rounded-lg transition ${view === "catalog" ? "bg-white text-rose-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-        >
-          Browse NorCal
-        </button>
+        {SUPPLIER_LIST.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setView(s.key)}
+            className={`text-sm font-semibold px-4 py-1.5 rounded-lg transition ${view === s.key ? "bg-white text-rose-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            Browse {s.label}
+          </button>
+        ))}
       </div>
 
-      {view === "catalog" ? (
+      {view !== "inventory" ? (
         <NorcalCatalog
-          onAddToOrder={addToNorcalOrder}
+          key={view}
+          supplier={SUPPLIERS[view]}
+          onAddToOrder={(p) => addToSupplierOrder(p, SUPPLIERS[view])}
           orderVariantIds={new Set(norcalOrder.map(i => String(i.variantId)))}
-          onAddToInventory={handleAddFromCatalog}
+          onAddToInventory={(p) => handleAddFromCatalog(p, SUPPLIERS[view])}
           onRemoveFromInventory={handleRemoveFromInventory}
           addedVariantIds={new Set(items.map(i => i.norcal_variant_id).filter(Boolean).map(String))}
           readOnly={readOnly}
@@ -572,8 +596,8 @@ export default function Inventory() {
                 <div className="flex-shrink-0 flex items-center gap-1">
                   <button onClick={(e) => { e.stopPropagation(); handleItemRestock(group); }}
                     disabled={readOnly}
-                    className={`p-1.5 text-slate-300 transition disabled:opacity-50 disabled:cursor-not-allowed ${firstItem.norcal_variant_id ? "hover:text-rose-600" : "hover:text-orange-500"}`}
-                    title={readOnly ? reason : (firstItem.norcal_variant_id ? "Add to NorCal order" : "Setup restock")}>
+                    className={`p-1.5 text-slate-300 transition disabled:opacity-50 disabled:cursor-not-allowed ${supplierOfItem(firstItem) ? "hover:text-rose-600" : "hover:text-orange-500"}`}
+                    title={readOnly ? reason : (supplierOfItem(firstItem) ? `Add to ${supplierOfItem(firstItem).label} order` : "Setup restock")}>
                     <ShoppingCart className="w-4 h-4" />
                   </button>
                   {!hasVariants && (
@@ -675,7 +699,7 @@ export default function Inventory() {
       </>
       )}
 
-      {/* NorCal order list — available from both views via the header button. */}
+      {/* Reorder cart — available from every view via the header button. */}
       {showOrder && (
         <NorcalOrderModal
           order={norcalOrder}
@@ -683,7 +707,7 @@ export default function Inventory() {
           onRemove={removeFromNorcalOrder}
           onClear={clearNorcalOrder}
           onClose={() => setShowOrder(false)}
-          onAddLowItem={addToNorcalOrder}
+          onAddLowItem={(r) => addToSupplierOrder(r, SUPPLIERS[r.supplierKey] || { key: r.supplierKey, label: r.supplierLabel, storeUrl: r.storeUrl })}
           lowReminders={norcalLowReminders}
           onOrdered={clearNorcalOrder}
         />

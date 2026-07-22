@@ -43,11 +43,13 @@ const TYPE_TO_CATEGORY: Record<string, string> = {
 
 // Fallback for any product_type NorCal adds later that isn't in the map above,
 // so a new type still lands somewhere sensible instead of disappearing.
+// Order matters: Equipment is checked before Screens so "Screen Printing Press"
+// buckets as Equipment (not Screens on the word "screen").
 const CATEGORY_FALLBACK: ReadonlyArray<readonly [RegExp, string]> = [
-  [/ink|film/i, "Inks"],
-  [/screen|mesh/i, "Screens"],
-  [/chemical|emulsion|adhesive|wash|degreas/i, "Chemicals"],
-  [/press|dryer|heat|exposure|platen|rack|cart|equipment|kit/i, "Equipment"],
+  [/ink/i, "Inks"],
+  [/press|dryer|heat|platen|rack|cart|equipment|kit|dip ?tank|washout/i, "Equipment"],
+  [/screen|mesh|film|exposure|dark ?room/i, "Screens"], // film/exposure/darkroom = screen-making
+  [/chemical|emulsion|adhesive|wash|degreas|cleaner/i, "Chemicals"],
   [/squeegee/i, "Squeegees"],
   [/tape/i, "Tape"],
 ];
@@ -90,9 +92,11 @@ export function norcalSubcategories(variants: any[]): Array<{ type: string; coun
     .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
 }
 
-// Shopify "infinite options" apps publish hidden helper products with this
-// product_type — never a real orderable item, so we drop them from the catalog.
-const HIDDEN_PRODUCT_TYPE = "OPTIONS_HIDDEN_PRODUCT";
+// product_types dropped from the browsable catalog (lower-cased match):
+//  - OPTIONS_HIDDEN_PRODUCT: Shopify options-app helper products, never orderable
+//  - class / software: real listings, but not restockable supplies (Ryonet sells
+//    in-person classes and software alongside supplies)
+const EXCLUDED_PRODUCT_TYPES = new Set(["options_hidden_product", "class", "software"]);
 
 export interface NorcalVariant {
   variantId: string;
@@ -123,7 +127,7 @@ export function normalizeNorcalProducts(products: any, storeUrl: string = NORCAL
   const list = Array.isArray(products) ? products : [];
   for (const p of list) {
     const rawType = String(p?.product_type ?? "").trim();
-    if (rawType === HIDDEN_PRODUCT_TYPE) continue; // Shopify options-app helper product
+    if (EXCLUDED_PRODUCT_TYPES.has(rawType.toLowerCase())) continue;
     const productType = norcalProductTypeLabel(rawType); // display NorCal's nav spelling
     const productImage =
       Array.isArray(p?.images) && p.images[0]?.src ? String(p.images[0].src) : "";

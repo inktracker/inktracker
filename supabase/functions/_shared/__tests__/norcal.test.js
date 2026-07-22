@@ -78,12 +78,16 @@ describe("normalizeNorcalProducts", () => {
     expect(white300.category).toBe("Inks"); // product_type "Ink" → Inks bucket
   });
 
-  it("drops Shopify options-app hidden helper products", () => {
+  it("drops non-restockable listings (hidden helpers, classes, software)", () => {
     const rows = normalizeNorcalProducts([
       { id: 1, title: "Hidden", handle: "h", product_type: "OPTIONS_HIDDEN_PRODUCT", variants: [{ id: 9, price: "1" }] },
+      { id: 2, title: "Class", handle: "c", product_type: "Class", variants: [{ id: 8, price: "99" }] },
+      { id: 3, title: "RIP Software", handle: "s", product_type: "Software", variants: [{ id: 7, price: "199" }] },
       ...SAMPLE,
     ]);
-    expect(rows.every((r) => r.variantId !== "9")).toBe(true);
+    for (const dropped of ["9", "8", "7"]) {
+      expect(rows.every((r) => r.variantId !== dropped)).toBe(true);
+    }
   });
 });
 
@@ -107,6 +111,14 @@ describe("norcalCategory", () => {
 
   it("does NOT mis-bucket 'Screen Printing Kit' as Screens", () => {
     expect(norcalCategory("Screen Printing Kit")).toBe("Equipment");
+  });
+
+  it("buckets Ryonet's screen-making types (film / darkroom / cleaner)", () => {
+    expect(norcalCategory("Film Output")).toBe("Screens");   // NOT Inks
+    expect(norcalCategory("Dark Room")).toBe("Screens");
+    expect(norcalCategory("Cleaner")).toBe("Chemicals");
+    expect(norcalCategory("Screen Printing Press")).toBe("Equipment");
+    expect(norcalCategory("Water Based Ink")).toBe("Inks");
   });
 
   it("displays NorCal's nav spelling 'Waterbased Inks' for their 'Waterbase Inks' type", () => {

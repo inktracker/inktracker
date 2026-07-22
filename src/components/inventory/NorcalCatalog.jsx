@@ -23,7 +23,12 @@ const CATEGORIES = ["All", "Inks", "Screens", "Chemicals", "Equipment", "Squeege
 
 const fmtPrice = (n) => (Number.isFinite(Number(n)) ? `$${Number(n).toFixed(2)}` : "");
 
+// Browse a public-Shopify supply vendor's catalog. `supplier` selects the
+// vendor ({ key, label, storeUrl }); the parent remounts this via key={key} on
+// switch, so all state resets cleanly. Works for NorCal, Ryonet, and any future
+// public-Shopify supplier.
 export default function NorcalCatalog({
+  supplier = { key: "norcal", label: "NorCal" },
   onAddToOrder, orderVariantIds,
   onAddToInventory, onRemoveFromInventory, addedVariantIds,
   readOnly = false, reason = "",
@@ -53,6 +58,7 @@ export default function NorcalCatalog({
     const t = setTimeout(async () => {
       try {
         const { data, error } = await base44.functions.invoke("norcalCatalog", {
+          supplier: supplier.key,
           category: category === "All" ? "" : category,
           subcategory: subcategory === "All" ? "" : subcategory,
           query: q,
@@ -74,7 +80,7 @@ export default function NorcalCatalog({
       }
     }, q ? 350 : 0);
     return () => clearTimeout(t);
-  }, [category, subcategory, query]);
+  }, [supplier.key, category, subcategory, query]);
 
   async function addToStock(product) {
     if (readOnly || addingId) return;
@@ -103,12 +109,12 @@ export default function NorcalCatalog({
         <div className="flex items-center gap-2">
           <PackageSearch className="w-5 h-5 text-rose-500" />
           <div>
-            <div className="text-sm font-bold text-slate-900">Browse NorCal Catalog</div>
+            <div className="text-sm font-bold text-slate-900">Browse {supplier.label} Catalog</div>
             <div className="text-xs text-slate-500">{total} products · add any to your stock</div>
           </div>
         </div>
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 bg-rose-50 border border-rose-200 rounded-full px-3 py-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> NorCal connected
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> {supplier.label} connected
         </span>
       </div>
 

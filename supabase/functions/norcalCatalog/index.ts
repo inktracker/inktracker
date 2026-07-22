@@ -22,26 +22,34 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const STORE_URL = (Deno.env.get("NORCAL_STORE_URL") || NORCAL_STORE_URL_DEFAULT).replace(/\/+$/, "");
 const PAGE_SIZE = 250;
 
-// The catalog is PUBLIC and identical for every shop, so it's cached under one
-// global key (not per-shop) — one upstream fetch per TTL window serves everyone.
-// Bump CACHE_VERSION whenever the normalized shape or category mapping changes,
-// so a fresh normalize runs instead of serving a stale cached catalog.
-const CACHE_VERSION = 3;
-const CACHE_REF = {
-  supplier: "nc",
-  shopOwner: "__norcal_global__",
-  cacheKey: buildSupplierCacheKey({ catalog: "all", v: CACHE_VERSION }),
+// Public-Shopify supply vendors we can browse + build carts for. Keep keys in
+// sync with src/lib/suppliers.js on the frontend. Each is a public Shopify store
+// (public /products.json + working cart permalinks) — one code path serves all.
+const SUPPLIER_STORES: Record<string, string> = {
+  norcal: Deno.env.get("NORCAL_STORE_URL") || NORCAL_STORE_URL_DEFAULT,
+  ryonet: Deno.env.get("RYONET_STORE_URL") || "https://www.screenprinting.com",
 };
 
+// The catalog is PUBLIC and identical for every shop, so it's cached under one
+// global key PER SUPPLIER (not per-shop). Bump CACHE_VERSION whenever the
+// normalized shape or category mapping changes so a fresh normalize runs.
+const CACHE_VERSION = 4;
+function cacheRefFor(supplierKey: string) {
+  return {
+    supplier: `catalog:${supplierKey}`,
+    shopOwner: "__global__",
+    cacheKey: buildSupplierCacheKey({ catalog: supplierKey, v: CACHE_VERSION }),
+  };
+}
+
 // deno-lint-ignore no-explicit-any
-async function fetchWholeCatalog(): Promise<any[]> {
+async function fetchWholeCatalog(storeUrl: string): Promise<any[]> {
   // deno-lint-ignore no-explicit-any
   const all: any[] = [];
   for (let pg = 1; pg <= 6; pg++) {
-    const res = await fetch(`${STORE_URL}/products.json?limit=${PAGE_SIZE}&page=${pg}`, {
+    const res = await fetch(`${storeUrl}/products.json?limit=${PAGE_SIZE}&page=${pg}`, {
       headers: { "User-Agent": "InkTracker/1.0 (+https://inktracker.app)" },
     });
     if (!res.ok) {
@@ -77,13 +85,19 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { query = "", category = "", subcategory = "", limit = 24, page = 1 } = body ?? {};
 
-    // Normalized full catalog, cached ~1h globally (public data). Fail-open:
-    // any cache miss/error falls through to a live fetch.
-    let normalized = await readSupplierCache(admin, CACHE_REF);
+    // Which vendor's catalog. Defaults to norcal for back-compat with the
+    // original single-supplier callers.
+    const supplierKey = String(body?.supplier || "norcal").toLowerCase();
+    const storeUrl = (SUPPLIER_STORES[supplierKey] || SUPPLIER_STORES.norcal).replace(/\/+$/, "");
+    const cacheRef = cacheRefFor(supplierKey);
+
+    // Normalized full catalog, cached ~1h globally per supplier (public data).
+    // Fail-open: any cache miss/error falls through to a live fetch.
+    let normalized = await readSupplierCache(admin, cacheRef);
     if (!Array.isArray(normalized)) {
-      const raw = await fetchWholeCatalog();
-      normalized = normalizeNorcalProducts(raw, STORE_URL);
-      await writeSupplierCache(admin, CACHE_REF, normalized);
+      const raw = await fetchWholeCatalog(storeUrl);
+      normalized = normalizeNorcalProducts(raw, storeUrl);
+      await writeSupplierCache(admin, cacheRef, normalized);
     }
 
     const q = String(query).trim().toLowerCase();
