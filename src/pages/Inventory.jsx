@@ -685,7 +685,7 @@ export default function Inventory() {
           onClose={() => setShowOrder(false)}
           onAddLowItem={addToNorcalOrder}
           lowReminders={norcalLowReminders}
-          onOrdered={() => setShowOrder(false)}
+          onOrdered={clearNorcalOrder}
         />
       )}
 
