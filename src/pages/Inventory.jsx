@@ -211,6 +211,20 @@ export default function Inventory() {
     }
   }
 
+  // Toggle a NorCal catalog product OUT of inventory (the "Stocked" button in
+  // Browse NorCal). Deletes the inventory row(s) linked to that variant.
+  async function handleRemoveFromInventory(product) {
+    const toRemove = items.filter(i => String(i.norcal_variant_id) === String(product.variantId));
+    if (toRemove.length === 0) return;
+    try {
+      await Promise.all(toRemove.map(i => base44.entities.InventoryItem.delete(i.id)));
+      setItems(prev => prev.filter(i => String(i.norcal_variant_id) !== String(product.variantId)));
+      notify.success(`Removed ${product.title} from your inventory.`);
+    } catch (err) {
+      notify.error("Couldn't remove from inventory", err);
+    }
+  }
+
   async function handleEdit() {
     if (!editing.item.trim() || !editing.sku.trim()) return;
     setSaveStatus("saving");
@@ -380,6 +394,7 @@ export default function Inventory() {
           onAddToOrder={addToNorcalOrder}
           orderVariantIds={new Set(norcalOrder.map(i => String(i.variantId)))}
           onAddToInventory={handleAddFromCatalog}
+          onRemoveFromInventory={handleRemoveFromInventory}
           addedVariantIds={new Set(items.map(i => i.norcal_variant_id).filter(Boolean).map(String))}
           readOnly={readOnly}
           reason={reason}

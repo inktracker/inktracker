@@ -13,7 +13,7 @@
 //   readOnly, reason — billing read-only gate.
 
 import { useEffect, useRef, useState } from "react";
-import { Search, Loader2, Check, ExternalLink, PackageSearch, ShoppingCart, Archive } from "lucide-react";
+import { Search, Loader2, Check, X, ExternalLink, PackageSearch, ShoppingCart, Archive } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 
@@ -25,7 +25,7 @@ const fmtPrice = (n) => (Number.isFinite(Number(n)) ? `$${Number(n).toFixed(2)}`
 
 export default function NorcalCatalog({
   onAddToOrder, orderVariantIds,
-  onAddToInventory, addedVariantIds,
+  onAddToInventory, onRemoveFromInventory, addedVariantIds,
   readOnly = false, reason = "",
 }) {
   const [category, setCategory] = useState("All");
@@ -81,6 +81,16 @@ export default function NorcalCatalog({
     setAddingId(product.variantId);
     try {
       await onAddToInventory?.(product);
+    } finally {
+      setAddingId(null);
+    }
+  }
+
+  async function removeFromStock(product) {
+    if (readOnly || addingId) return;
+    setAddingId(product.variantId);
+    try {
+      await onRemoveFromInventory?.(product);
     } finally {
       setAddingId(null);
     }
@@ -200,11 +210,26 @@ export default function NorcalCatalog({
                         <ShoppingCart className="w-3.5 h-3.5" /> Add to order
                       </button>
                     )}
-                    {/* Secondary: also track it in your own inventory. */}
+                    {/* Secondary: track it in your own inventory. When stocked,
+                        this toggles — click again to remove from inventory. */}
                     {added ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600" title="In your inventory">
-                        <Check className="w-3.5 h-3.5" /> Stocked
-                      </span>
+                      <button
+                        onClick={() => removeFromStock(p)}
+                        disabled={readOnly || isAdding}
+                        title="In your inventory — click to remove"
+                        className="group/stk inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-red-500 border border-transparent hover:border-red-200 rounded-lg px-2 py-1.5 transition disabled:opacity-50"
+                      >
+                        {isAdding ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <>
+                            <Check className="w-3.5 h-3.5 group-hover/stk:hidden" />
+                            <X className="w-3.5 h-3.5 hidden group-hover/stk:inline" />
+                          </>
+                        )}
+                        <span className="group-hover/stk:hidden">Stocked</span>
+                        <span className="hidden group-hover/stk:inline">Remove</span>
+                      </button>
                     ) : (
                       <button
                         onClick={() => addToStock(p)}
