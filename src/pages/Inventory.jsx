@@ -6,6 +6,7 @@ import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { Loader2, Check, ChevronDown, ChevronRight, Search, Plus, X, Edit3, Trash2, ShoppingCart } from "lucide-react";
 import EmptyState from "../components/shared/EmptyState";
 import ShoppingList from "../components/inventory/ShoppingList";
+import NorcalLinkPicker from "../components/inventory/NorcalLinkPicker";
 import { notify } from "@/lib/notify";
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";
@@ -20,7 +21,7 @@ export default function Inventory() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("All");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0 });
+  const [form, setForm] = useState({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null });
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
   const [categories, setCategories] = useState(() => {
@@ -112,7 +113,7 @@ export default function Inventory() {
       return;
     }
     setItems(prev => [...prev, created].sort((a, b) => (a.item || "").localeCompare(b.item || "", undefined, { sensitivity: 'base' })));
-    setForm({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0 });
+    setForm({ item:"", sku:"", category:"Blanks", supplier:"", qty:0, unit:"pcs", reorder:0, cost:0, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null });
     setShowForm(false);
     setAdding(false);
   }
@@ -320,6 +321,20 @@ export default function Inventory() {
                   className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300" />
               </div>
             ))}
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">NorCal product</label>
+            <NorcalLinkPicker
+              value={form}
+              onLink={(link) => setForm(f => ({
+                ...f,
+                ...link,
+                supplier: "NorCal",
+                item: f.item.trim() ? f.item : [link.norcal_title, link.norcal_size].filter(Boolean).join(" — "),
+                cost: (!f.cost || Number(f.cost) === 0) ? link.norcal_price : f.cost,
+              }))}
+              onUnlink={() => setForm(f => ({ ...f, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null }))}
+            />
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -560,6 +575,14 @@ export default function Inventory() {
                     className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-300" />
                 </div>
               ))}
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">NorCal product</label>
+                <NorcalLinkPicker
+                  value={editing}
+                  onLink={(link) => setEditing(e => ({ ...e, ...link, supplier: e.supplier?.trim() ? e.supplier : "NorCal" }))}
+                  onUnlink={() => setEditing(e => ({ ...e, norcal_variant_id:null, norcal_product_url:null, norcal_image_url:null, norcal_title:null, norcal_size:null, norcal_price:null }))}
+                />
+              </div>
             </div>
             <div className="flex gap-2 pt-2 items-center">
               <button onClick={handleEdit} disabled={readOnly || saveStatus === "saving" || saveStatus === "saved"}
