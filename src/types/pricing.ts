@@ -117,6 +117,59 @@ export interface LinePriceResult {
   sub: number;
 }
 
+// ---- Quote totals ---------------------------------------------------------
+
+export interface AdditionalChargesSummary {
+  taxable: number;
+  nonTaxable: number;
+  total: number;
+}
+
+// The slice of a quote the totals engine reads. Line items carry the pricing
+// shape above; the rest are quote-level fields (discount, tax, deposit, fees).
+export interface Quote {
+  line_items?: LineItem[];
+  shop_owner?: string;
+  rush_rate?: number;
+  discount?: RawMoney;
+  discount_type?: string;
+  tax_rate?: RawMoney;
+  deposit_pct?: RawMoney;
+  additional_charges?: unknown; // shape owned by @/lib/pricing/additionalCharges
+}
+
+export interface QuoteTotals {
+  subtotal: number;
+  rushTotal: number;
+  sub: number;
+  subBeforeRush: number; // deprecated alias for subtotal
+  afterDisc: number;
+  additionalTaxable: number;
+  additionalNonTaxable: number;
+  additionalTotal: number;
+  tax: number;
+  total: number;
+  deposit: number;
+}
+
+export interface QuoteTotalsDeps {
+  detectPricingConfigBleed: (shopOwner?: string) => void;
+  buildLinkedQtyMap: (lineItems: LineItem[]) => LinkedQtyMap;
+  getQty: (li: LineItem) => number;
+  calcLinkedLinePrice: (
+    li: LineItem,
+    rushRate: number | undefined,
+    extras: ExtrasMap,
+    markup: number,
+    linkedQtyMap: LinkedQtyMap,
+    sizePricesOverride: Record<string, number | undefined> | undefined,
+    configOverride: LinePricingConfig | null | undefined,
+  ) => LinePriceResult | null;
+  getLineExtras: (li: LineItem, quote: Quote) => ExtrasMap;
+  sumAdditionalCharges: (charges: unknown) => AdditionalChargesSummary;
+  STANDARD_MARKUP: number;
+}
+
 // Helpers the engine needs that still live in pricing.jsx (or extras.js).
 // Injected rather than imported to keep the money type-gate pure-TS and to
 // avoid a circular import back into pricing.jsx.
