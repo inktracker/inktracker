@@ -1,0 +1,53 @@
+name: Security
+
+# Supply-chain + secret hygiene gate. Runs on every PR and push to main, plus
+# a weekly sweep to catch newly-disclosed advisories in unchanged code.
+#   - dependencies: fails on a HIGH/CRITICAL vuln in a PRODUCTION dependency
+#     (dev-only + low/moderate are surfaced by Dependabot PRs, not blocking).
+#   - secrets: gitleaks scans the full git history; fails if a real secret is
+#     committed. Reviewed false positives are allowlisted in .gitleaks.toml.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 16 * * 1" # Mondays 16:00 UTC (~09:00 PT)
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependencies:
+    name: npm audit (prod, high+)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        run: npm ci
+      - name: npm audit (production deps, fail on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+
+  secrets:
+    name: gitleaks secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0 # full history so the scan sees every commit
+      - name: Run gitleaks
+        run: |
+          VER=8.30.1
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks version
+          ./gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --exit-code 1
