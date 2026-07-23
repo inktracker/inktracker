@@ -1,23 +1,40 @@
-# Go-live: customer payment-confirmation webhook (`stripeWebhook`)
+# Stripe quote-payment webhook (`stripeWebhook`) — **intentionally dormant in v1**
 
-The customer-payment webhook is **built, deployed, and dormant** — it fails closed
-because `STRIPE_WEBHOOK_SECRET` isn't set and no Stripe destination points at it.
-Until it's wired, **customers who pay receive no confirmation email** (the shop
-owner still learns of payment via the QuickBooks path). This is pure config — no
-code change.
+> **Read this first.** In v1, **customer quote payments are handled through
+> QuickBooks** (QB invoice + QB's payment link), and **QuickBooks sends the
+> customer's payment receipt.** The InkTracker Stripe-checkout path
+> (`createCheckoutSession` → `stripeWebhook`) is **NOT the active payment channel**
+> — it is deliberately dormant. A `stripeWebhook` with zero `payment_confirmation`
+> events is **expected and correct**, not a gap. The shop owner still learns of
+> every payment via the QuickBooks path (the `quote_payment` notification, emitted
+> by `qbWebhook` / `qbReconcile` / `qbSync`). See `project_qb_critical_path`:
+> "QB is the sole customer-payment integration in v1."
+>
+> **Do not re-derive a "customers get no confirmation email" gap from the empty
+> Stripe log** — they get it from QuickBooks. This doc exists so nobody trips on
+> that again.
 
-_Prepared 2026-07-23. Audited: code is production-grade — async signature verify,
-at-least-once idempotency, Connect account-mismatch rejection, deposit/final logic,
-QB payment mirroring, both emails retried + logged._
+This runbook is retained for the **v2** scenario only — if/when a real Stripe
+quote-checkout collection path is activated (e.g. shops without QuickBooks). The
+webhook code is already production-grade — async signature verify, at-least-once
+idempotency, Connect account-mismatch rejection, deposit/final logic, QB payment
+mirroring, both emails retried + logged — so the v2 flip is pure config.
 
-## Current state (verified)
+## Current state (verified 2026-07-23)
 - Function: `stripeWebhook`, **deployed** (ACTIVE, `verify_jwt = false`).
 - URL: `https://skmltfbibaqcjddmeqvi.supabase.co/functions/v1/stripeWebhook`
-- Missing: `STRIPE_WEBHOOK_SECRET` (the *billing* one — `STRIPE_BILLING_WEBHOOK_SECRET`
-  — is set; this is a different webhook).
-- Charge model: **Stripe Connect direct charges** — checkout sessions are created
-  with `stripeAccount: <shop>` (createCheckoutSession:523), so completion events
-  fire **on the connected accounts**.
+- `STRIPE_WEBHOOK_SECRET`: **set** — the webhook is **armed but idle**. It
+  **fails closed** (rejects unsigned/invalid events) and is **idempotent**, so
+  arming it is harmless: on the v1 QB payment flow it simply never fires. It only
+  does anything if a Stripe Connect checkout is ever actually completed (v2).
+  (`STRIPE_BILLING_WEBHOOK_SECRET` is the separate, active *subscription* webhook.)
+- Charge model (for v2): **Stripe Connect direct charges** — checkout sessions are
+  created with `stripeAccount: <shop>` (createCheckoutSession:523), so completion
+  events fire **on the connected accounts**.
+
+---
+
+## v2 activation steps (only when the Stripe checkout path goes live)
 
 ## ⚠️ The one gotcha
 Because charges are on connected accounts, the endpoint **must listen to events on
