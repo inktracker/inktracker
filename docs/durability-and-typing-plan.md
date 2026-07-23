@@ -107,9 +107,17 @@ imports).
   `brokerMarkupShare`, `markup`). `pricing.jsx` keeps `getAdminMarkup` etc. as thin
   wrappers that resolve `configOverride ?? _pc` and defer to the typed core.
   Behavior identical — all 180 pricing tests pass. In the money gate.
+- ✅ **Line-price engine** → `src/lib/pricing/linePrice.ts` (`computeLinkedLinePrice`)
+  + `src/types/pricing.ts` (LineItem/LineImprint/RateTable/LinePricingConfig/…).
+  The 290-line per-line quote math — the app's most-consumed money function
+  (15 consumers) — is a faithful, behavior-identical port: same tiers, technique
+  grouping, sparse-table fallbacks, extras resolution, size breakdown, rush, and
+  cents-rounding. `pricing.jsx`'s `calcLinkedLinePrice` is now a wrapper that
+  resolves the config and injects the still-`.jsx` helpers via a typed
+  `LinePriceDeps`. Verified by 329 tests across 9 files. In the money gate.
 - **Remaining B2 slices** (same pattern, each its own low-risk PR): tier lookup
-  (`getTier`/`getMinOrderQty`), line-price calc (`calcLinkedLinePrice`), setup
-  fees (`calcSetupFees`/`calcSetupScreenCount`), totals (`calcQuoteTotals*`).
+  (`getTier`/`getMinOrderQty`), setup fees (`calcSetupFees`/`calcSetupScreenCount`),
+  totals (`calcQuoteTotals*`), embroidery PPP + technique rates.
 | **B4** | Opt-in `checkJs` on consumers via JSDoc at import boundaries | ongoing |
 
 **Highest-leverage next step:** B2. Strongly consider modeling `Money` as

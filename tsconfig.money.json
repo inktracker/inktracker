@@ -20,7 +20,9 @@
   },
   "include": [
     "src/types/money.ts",
+    "src/types/pricing.ts",
     "src/lib/wizard/getEffectiveCost.ts",
-    "src/lib/pricing/markup.ts"
+    "src/lib/pricing/markup.ts",
+    "src/lib/pricing/linePrice.ts"
   ]
 }

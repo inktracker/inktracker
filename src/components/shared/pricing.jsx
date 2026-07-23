@@ -6,6 +6,7 @@ import {
   markup as markupCore,
   DEFAULT_BROKER_MARKUP_SHARE,
 } from "@/lib/pricing/markup";
+import { computeLinkedLinePrice } from "@/lib/pricing/linePrice";
 
 export const FIRST_PRINT = {
   1: { 25: 6.3, 50: 5.67, 100: 5.22, 200: 4.9 },
@@ -786,297 +787,36 @@ export function calcSetupFees({ lineItems, override, isReorder, skippedFeeIds, c
   return { enabled: true, screens, items: active, total: Math.round(total * 100) / 100 };
 }
 
+// Helpers/constants the line-price engine needs that still live here (or in
+// extras.js). Injected into the typed core so it stays circular-import-free and
+// inside the strict money type-gate. See @/lib/pricing/linePrice.
+const LINE_PRICE_DEPS = {
+  getQty,
+  getTier,
+  getPrintKey,
+  getEmbroideryPPP,
+  getTechniqueRates,
+  resolveExtraBasis: _resolveExtraBasis,
+  resolveExtraRatePerPiece: _resolveExtraRatePerPiece,
+  FIRST_PRINT,
+  ADDL_PRINT,
+  EXTRA_RATES,
+  BIG_SIZES,
+  BROKER_MARKUP,
+};
+
 export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, sizePricesOverride, configOverride) {
   // configOverride threads the shop's pricing_config explicitly through the
   // whole line-price math so a multi-shop surface can price under the quote's
   // OWNER config regardless of what's loaded in the module global — CACHE-01
   // bleed becomes structurally impossible on this path. Defaults to `_pc` for
   // every existing caller, so behavior is identical when nothing is threaded.
-  const pc = configOverride ?? _pc;
-  const qty = getQty(li);
-  if (!qty || qty < 1 || !li.imprints || li.imprints.length === 0) return null;
-
-  const active = li.imprints.filter((i) => (i.colors || 0) > 0);
-  if (active.length === 0) return null;
-
-  // firstPrintOrdering controls which imprint absorbs the first-print
-  // rate (setup is typically baked in). "fewest" (default, kept for
-  // backward compat with shops set up before this toggle existed)
-  // puts the smallest-color imprint first; "most" matches industry
-  // convention where the heaviest imprint carries the setup. Per-shop
-  // toggle in Account → Pricing.
-  const ordering = pc?.firstPrintOrdering || "fewest";
-  const sorted = ordering === "most"
-    ? [...active].sort((a, b) => b.colors - a.colors)
-    : [...active].sort((a, b) => a.colors - b.colors);
-  const printBreakdown = [];
-
-  let printCost = 0;
-  let firstPPP = 0;
-  let displayTier = getTier(qty, pc?.tiers);
-
-  const fp = pc?.firstPrint || FIRST_PRINT;
-  const ap = pc?.addlPrint || ADDL_PRINT;
-  const maxColors = pc?.maxColors || 8;
-
-  // Per-imprint technique pricing: each imprint uses its OWN technique's
-  // rate table. Group-local "first" counter so a mix of embroidery +
-  // screen print on the same line prices each correctly — embroidery
-  // gets embroidery rates with its 30% additional-decoration discount;
-  // screen prints get the screen-print first/additional tables. Was a
-  // real bug where the whole line was priced under the FIRST imprint's
-  // technique (e.g. setting imprint 2 to "Screen Print" silently still
-  // charged embroidery × 0.7).
-  //
-  // For single-technique lines (the 99% case) this collapses to the
-  // pre-fix behavior identically: all imprints share a technique →
-  // share a group → group-local isFirst == overall isFirst.
-  const groupCount = {}; // technique → count seen so far (used as next index)
-
-  sorted.forEach((imp, overallIndex) => {
-    const tech = imp.technique || "Screen Print";
-    const isEmb = tech === "Embroidery";
-    const gIdx = groupCount[tech] = (groupCount[tech] ?? -1) + 1;
-    const isFirstInGroup = gIdx === 0;
-
-    // Per-technique rate table: custom techniques (DTG, DTF, etc.)
-    // get their own firstPrint/addlPrint/tiers/maxColors when
-    // configured on Account → Pricing. Falls back to screen print's
-    // tables for unknown techniques so newly-added techs without a
-    // custom rate sheet still price something.
-    const techCfg = isEmb ? null : getTechniqueRates(tech, pc);
-    const techFp        = techCfg ? techCfg.firstPrint : fp;
-    const techAp        = techCfg ? techCfg.addlPrint  : ap;
-    const techTiers     = techCfg ? techCfg.tiers      : (pc?.tiers || [25, 50, 100, 200]);
-    const techMaxColors = techCfg ? techCfg.maxColors  : maxColors;
-
-    const colors = Math.min(techMaxColors, Math.max(1, imp.colors || 1));
-    const linkedKey = imp.linked ? getPrintKey(imp) : null;
-    const tierQty = linkedKey && linkedQtyMap[linkedKey] ? linkedQtyMap[linkedKey] : qty;
-    let tier, rate;
-    if (isEmb) {
-      const stitchIdx = Math.max(0, colors - 1);
-      rate = getEmbroideryPPP(stitchIdx, tierQty, pc);
-      if (!isFirstInGroup) rate *= 0.7;
-      const embTiers = pc?.embroidery?.qtyTiers || [12, 24, 48, 72, 144];
-      const stiers = [...embTiers].sort((a, b) => b - a);
-      tier = stiers[stiers.length - 1];
-      for (const t of stiers) { if (tierQty >= t) { tier = t; break; } }
-    } else {
-      tier = getTier(tierQty, techTiers);
-      const table = isFirstInGroup ? techFp : techAp;
-      // Per-cell fallback to the Screen Print rate for a missing custom cell.
-      // A custom technique table can be sparse (the Account editor writes it
-      // cell-by-cell, and it promises "fields with no value fall back to your
-      // Screen Print rates"). getTechniqueRates uses the whole sparse object,
-      // so a filled 1-color row but empty 3-color row left table[3] undefined
-      // and priced the decoration at $0. Fall back to the base Screen Print
-      // cell (keyed by the base tiers) before giving up to 0.
-      const baseTable = isFirstInGroup ? fp : ap;
-      const baseTier = getTier(tierQty, pc?.tiers || [25, 50, 100, 200]);
-      rate =
-        table[colors]?.[tier] ??
-        table[Math.min(colors, techMaxColors)]?.[tier] ??
-        baseTable[colors]?.[baseTier] ??
-        baseTable[Math.min(colors, maxColors)]?.[baseTier] ??
-        0;
-    }
-    const lineCost = Math.round(rate * qty * 100) / 100;
-
-    if (overallIndex === 0) {
-      firstPPP = rate;
-      displayTier = tier;
-    }
-
-    printCost += lineCost;
-
-    printBreakdown.push({
-      id: imp.id,
-      title: imp.title || "",
-      location: imp.location || "",
-      colors,
-      technique: tech,         // NEW: lets renderers show accurate per-imprint labels
-      groupIndex: gIdx,        // NEW: position within technique group (0 = first)
-      linked: !!imp.linked,
-      tierQty,
-      tier,
-      rate,
-      lineCost,
-      isFirst: isFirstInGroup, // SEMANTIC: first within technique group, not overall
-    });
-  });
-
-  const isBroker = markup === BROKER_MARKUP;
-  const roundedPrintCost = Math.round(printCost * 100) / 100;
-
-  // Extras lookup is line-level. For single-technique lines this
-  // matches the pre-fix behavior exactly; for mixed lines we merge
-  // both tables (their key sets are disjoint — e.g. puffEmbroidery vs
-  // flashCure) so whichever extra the user toggles on resolves
-  // against the right rate.
-  //
-  // NOTE: per-piece resolution moved AFTER `flatCost` is known so
-  // percent-mode fees can apply against the line's garment cost.
-  // The merged config table is still built here so flat fees that
-  // need the shop-side rate (when quote.extras[k] === true rather
-  // than a snapshotted number) keep working.
-  const hasEmbroidery = sorted.some((i) => (i.technique || "Screen Print") === "Embroidery");
-  const hasScreenPrint = sorted.some((i) => (i.technique || "Screen Print") === "Screen Print");
-  // Custom-technique extras: merge in the extras for every custom
-  // tech that appears on this line. Lets a "Specialty Foil" fee on
-  // the DTF tab show up when the line has a DTF imprint, without
-  // polluting screen-print-only lines with DTF-specific fees.
-  const customExtras = {};
-  const customBasis = {};
-  const customTechs = pc?.custom_techniques || {};
-  for (const imp of sorted) {
-    const tech = imp.technique || "Screen Print";
-    if (tech === "Screen Print" || tech === "Embroidery") continue;
-    const techExtras = customTechs[tech]?.extras;
-    if (techExtras && typeof techExtras === "object") {
-      Object.assign(customExtras, techExtras);
-    }
-    const techBasis = customTechs[tech]?.extraBasis;
-    if (techBasis && typeof techBasis === "object") {
-      Object.assign(customBasis, techBasis);
-    }
-  }
-  const er = {
-    ...(hasScreenPrint ? (pc?.extras || EXTRA_RATES) : {}),
-    ...(hasEmbroidery ? (pc?.embroidery?.extras || {}) : {}),
-    ...customExtras,
-  };
-  // Merged category (basis) map — same scope-union as `er`, so a fee's category
-  // resolves against the right technique's config when a snapshot doesn't carry
-  // its own basis (older snapshots / true-toggles).
-  const erBasis = {
-    ...(hasScreenPrint ? (pc?.extraBasis || {}) : {}),
-    ...(hasEmbroidery ? (pc?.embroidery?.extraBasis || {}) : {}),
-    ...customBasis,
-  };
-
-  // Garment cost per size — use actual per-size prices from API when available,
-  // fall back to flat garmentCost × markup for all sizes.
-  const sizePrices = sizePricesOverride || li.sizePrices || {};
-  const hasSizePrices = Object.keys(sizePrices).length > 0;
-  const flatCost = parseFloat(li.garmentCost) || 0;
-  const flatMarkup = getMarkup(flatCost, isBroker, pc);
-
-  // Per-piece decoration cost — printCost is the total imprint cost
-  // (first + additional locations × qty). Percent-mode extras apply
-  // against THIS (not the garment), per the user's spec: a 10%
-  // specialty-ink fee scales with the cost of decorating the
-  // garment, not with the blank.
-  const decorationPpp = qty > 0 ? printCost / qty : 0;
-
-  // Resolve per-piece extras dollars. resolveExtraRatePerPiece handles:
-  //   - number (legacy / flat snapshot)            → that many $/pc
-  //   - { mode:"percent", rate:N } (new)           → decorationPpp × N/100
-  //   - { mode:"flat",    rate:N }                 → N $/pc
-  //   - true (no snapshot, look up shop rate)      → use er[k]
-  const prints = printBreakdown.length;
-  let extraPPP = 0;
-
-  // LINE-level fees (li.extras): per_garment applies once per piece. per_job is
-  // quote-level (skip). A per_print key here is LEGACY (fees were line-level with
-  // a ×locations multiplier before per-print moved onto individual imprints,
-  // 2026-07) — keep it working × prints so quotes saved in that window are exact.
-  Object.entries(extras || {}).forEach(([k, on]) => {
-    if (!on) return;
-    const basis = _resolveExtraBasis(on, erBasis[k]);
-    if (basis === "per_job") return;
-    let ppp = on === true ? Number(er[k] || EXTRA_RATES[k] || 0) : _resolveExtraRatePerPiece(on, decorationPpp);
-    if (basis === "per_print") ppp *= prints; // legacy line-level per-print
-    extraPPP += ppp;
-  });
-
-  // PER-IMPRINT fees (imprint.extras): a per_print fee attaches to ONE specific
-  // print, so it costs rate × qty for that print only — NOT × all locations.
-  // Toggle underbase on the back and not the front → charged for the back alone.
-  (li.imprints || []).forEach((imp) => {
-    const impExtras = imp?.extras;
-    if (!impExtras || typeof impExtras !== "object") return;
-    Object.entries(impExtras).forEach(([k, on]) => {
-      if (!on) return;
-      const basis = _resolveExtraBasis(on, erBasis[k]);
-      if (basis === "per_job") return; // never valid on an imprint; guard anyway
-      extraPPP += on === true ? Number(er[k] || EXTRA_RATES[k] || 0) : _resolveExtraRatePerPiece(on, decorationPpp);
-    });
-  });
-
-  const extraCost = Math.round(extraPPP * qty * 100) / 100;
-
-  // Per-piece print + extras cost (same for all sizes)
-  const printExtraPpp = qty > 0 ? Math.round((roundedPrintCost + extraCost) / qty * 100) / 100 : 0;
-
-  // Build per-piece price for each size and compute garment cost total
-  const sizeBreakdown = {}; // { size: { qty, garmentPpp, totalPpp } }
-  let gCost = 0;
-  // Count of pieces in big sizes (2XL+) — used as a denominator for the
-  // size-averaged display prices below. NOT a surcharge anymore — the
-  // 2XL upcharge was removed; per-size cost comes straight from the
-  // supplier API.
-  const twoXL = BIG_SIZES.reduce((sum, sz) => sum + (parseInt((li.sizes || {})[sz], 10) || 0), 0);
-
-  Object.entries(li.sizes || {}).forEach(([sz, count]) => {
-    const n = parseInt(count, 10) || 0;
-    if (n <= 0) return;
-    // Get the wholesale cost for this size
-    const wholesaleCost = hasSizePrices && sizePrices[sz] > 0
-      ? sizePrices[sz]
-      : flatCost;
-    const sizeMarkup = getMarkup(wholesaleCost, isBroker, pc);
-    const garmentPpp = Math.round(wholesaleCost * sizeMarkup * 100) / 100;
-    const totalPpp = Math.round((printExtraPpp + garmentPpp) * 100) / 100;
-    sizeBreakdown[sz] = { qty: n, garmentPpp, totalPpp };
-    gCost += Math.round(garmentPpp * n * 100) / 100;
-  });
-
-  // Base subtotal = sum of (totalPpp × qty) for each size — everything before rush
-  let baseSubtotal = 0;
-  Object.values(sizeBreakdown).forEach(({ qty: n, totalPpp }) => {
-    baseSubtotal += Math.round(totalPpp * n * 100) / 100;
-  });
-
-  // Rush = percentage of base, rounded to cents
-  const rushFee = rushRate > 0 ? Math.round(baseSubtotal * rushRate * 100) / 100 : 0;
-
-  // Line total = what this line costs in full
-  const lineTotal = baseSubtotal + rushFee;
-
-  // Per-piece prices for size grid display (actual per-size, no rush)
-  // regularPpp / oversizePpp are simplified averages for views that don't show per-size
-  const regularQty = qty - twoXL;
-  const regularPpp = regularQty > 0
-    ? Math.round(Object.entries(sizeBreakdown)
-        .filter(([sz]) => !BIG_SIZES.includes(sz))
-        .reduce((s, [, v]) => s + v.totalPpp * v.qty, 0) / regularQty * 100) / 100
-    : (qty > 0 ? Math.round(baseSubtotal / qty * 100) / 100 : 0);
-  const oversizePpp = twoXL > 0
-    ? Math.round(Object.entries(sizeBreakdown)
-        .filter(([sz]) => BIG_SIZES.includes(sz))
-        .reduce((s, [, v]) => s + v.totalPpp * v.qty, 0) / twoXL * 100) / 100
-    : regularPpp;
-  const ppp = qty > 0 ? Math.round(baseSubtotal / qty * 100) / 100 : 0;
-
-  return {
-    tier: displayTier,
-    qty,
-    twoXL,
-    printCost: roundedPrintCost,
-    gCost: Math.round(gCost * 100) / 100,
-    extraCost,
-    baseSubtotal: Math.round(baseSubtotal * 100) / 100,
-    rushFee,
-    lineTotal,
-    regularPpp,
-    oversizePpp,
-    ppp,
-    firstPPP,
-    printBreakdown,
-    sizeBreakdown, // { size: { qty, garmentPpp, totalPpp } } for detailed display
-    sub: lineTotal,
-  };
+  // The math lives in the typed, unit-tested engine; this wrapper only resolves
+  // the active config and supplies the injected deps.
+  return computeLinkedLinePrice(
+    li, rushRate, extras, markup, linkedQtyMap, sizePricesOverride,
+    configOverride ?? _pc, LINE_PRICE_DEPS,
+  );
 }
 
 export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, configOverride) {
