@@ -115,9 +115,15 @@ imports).
   cents-rounding. `pricing.jsx`'s `calcLinkedLinePrice` is now a wrapper that
   resolves the config and injects the still-`.jsx` helpers via a typed
   `LinePriceDeps`. Verified by 329 tests across 9 files. In the money gate.
+- ✅ **Quote-totals engine** → `src/lib/pricing/quoteTotals.ts` (`computeQuoteTotals`)
+  + `Quote`/`QuoteTotals`/`QuoteTotalsDeps` in `src/types/pricing.ts`. Sums the
+  per-line prices, then the both-ways discount clamp (percent bounded 0..100 so
+  `discount:150` can't go negative into tax/total/QB), additional-charges split,
+  tax, and deposit. `calcQuoteTotalsWithLinking` is now a wrapper injecting deps.
+  Behavior identical — full suite green. In the money gate.
 - **Remaining B2 slices** (same pattern, each its own low-risk PR): tier lookup
   (`getTier`/`getMinOrderQty`), setup fees (`calcSetupFees`/`calcSetupScreenCount`),
-  totals (`calcQuoteTotals*`), embroidery PPP + technique rates.
+  embroidery PPP + technique rates, and the QB invoice payload (`buildQBInvoicePayload`).
 | **B4** | Opt-in `checkJs` on consumers via JSDoc at import boundaries | ongoing |
 
 **Highest-leverage next step:** B2. Strongly consider modeling `Money` as

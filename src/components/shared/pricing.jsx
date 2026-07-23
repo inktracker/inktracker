@@ -7,6 +7,7 @@ import {
   DEFAULT_BROKER_MARKUP_SHARE,
 } from "@/lib/pricing/markup";
 import { computeLinkedLinePrice } from "@/lib/pricing/linePrice";
+import { computeQuoteTotals } from "@/lib/pricing/quoteTotals";
 
 export const FIRST_PRINT = {
   1: { 25: 6.3, 50: 5.67, 100: 5.22, 200: 4.9 },
@@ -819,74 +820,22 @@ export function calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, 
   );
 }
 
+// Deps for the quote-totals engine: the helpers/constants it needs that live
+// here (or in extras.js / additionalCharges.js), injected into the typed core.
+const QUOTE_TOTALS_DEPS = {
+  detectPricingConfigBleed,
+  buildLinkedQtyMap,
+  getQty,
+  calcLinkedLinePrice,
+  getLineExtras: _getLineExtras,
+  sumAdditionalCharges: _sumAdditionalCharges,
+  STANDARD_MARKUP,
+};
+
 export function calcQuoteTotalsWithLinking(q, markup = STANDARD_MARKUP, configOverride) {
-  // Defensive null/undefined: callers like effectiveQuoteTotals pre-
-  // wrap with `q || {}`, but the bare function is also called from
-  // analytics rollups where a missing row shouldn't crash. Test IT5
-  // pins this contract.
-  q = q || {};
-  // CACHE-01: when the caller threads the quote-owner's config explicitly there
-  // is no global to bleed from — pricing is config-explicit end to end. Only run
-  // the telemetry detector on the legacy global path (no override supplied).
-  if (!configOverride) detectPricingConfigBleed(q.shop_owner);
-  const linkedQtyMap = buildLinkedQtyMap(q.line_items || []);
-  let subtotal = 0;   // sum of baseSubtotals (before rush)
-  let rushTotal = 0;   // sum of rushFees
-
-  const respectOverride = markup === STANDARD_MARKUP;
-
-  (q.line_items || []).forEach((li) => {
-    const qty = getQty(li);
-    const override = Number(li?.clientPpp);
-    if (respectOverride && Number.isFinite(override) && override > 0 && qty > 0) {
-      subtotal += override * qty;
-      return;
-    }
-    const r = calcLinkedLinePrice(li, q.rush_rate, _getLineExtras(li, q), markup, linkedQtyMap, undefined, configOverride);
-    if (r) {
-      // Use ppp × qty so totals match the displayed average per-piece price
-      subtotal += r.ppp * r.qty;
-      rushTotal += r.rushFee;
-    }
-  });
-
-  const sub = subtotal + rushTotal;
-  const discVal = parseFloat(q.discount) || 0;
-  const isFlat = q.discount_type === "flat" || (discVal > 100 && q.discount_type !== "percent");
-  // Clamp the discount both ways: a flat discount can't push below $0, and a
-  // PERCENT discount is bounded to 0..100 — without this, discount:150 yields a
-  // NEGATIVE subtotal that flows into tax/total (and into the QB invoice). The
-  // save-time helper (roundedQuoteTotals) already clamps; this matches it so the
-  // displayed/emailed/QB numbers can't diverge or go negative.
-  const pct = Math.min(Math.max(discVal, 0), 100);
-  const afterDisc = isFlat ? Math.max(0, sub - discVal) : sub * (1 - pct / 100);
-
-  // One-off additional fees: taxable charges join the taxed base; non-taxable
-  // are added to the total after tax. (Setup fees are NOT folded in here — they
-  // depend on shop config and are layered + snapshotted by the editor.) When a
-  // quote has no additional_charges this is a no-op: tax/total are identical to
-  // the legacy afterDisc+tax result, so existing snapshots are unaffected.
-  // Per-job add-ons route through additional_charges (the JobFeesSection writes
-  // a "jobfee_*" entry there), so they're summed by _sumAdditionalCharges below
-  // — one pipeline, consistent everywhere (QB invoice, displays, PDF, payment).
-  const addl = _sumAdditionalCharges(q.additional_charges);
-  const taxBase = afterDisc + addl.taxable;
-  const tax = taxBase * ((parseFloat(q.tax_rate) || 0) / 100);
-  const total = taxBase + tax + addl.nonTaxable;
-
-  return {
-    subtotal,
-    rushTotal,
-    sub,
-    subBeforeRush: subtotal, // deprecated alias
-    afterDisc,
-    additionalTaxable: addl.taxable,
-    additionalNonTaxable: addl.nonTaxable,
-    additionalTotal: addl.total,
-    tax,
-    total,
-    deposit: total * ((parseFloat(q.deposit_pct) || 0) / 100),
-  };
+  // The math lives in the typed, unit-tested engine (@/lib/pricing/quoteTotals);
+  // this wrapper only supplies the injected deps. Behavior is unchanged.
+  return computeQuoteTotals(q, markup, configOverride, QUOTE_TOTALS_DEPS);
 }
 
 export function calcQuoteTotals(q, markup = STANDARD_MARKUP, configOverride) {
