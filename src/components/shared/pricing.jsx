@@ -8,6 +8,7 @@ import {
 } from "@/lib/pricing/markup";
 import { computeLinkedLinePrice } from "@/lib/pricing/linePrice";
 import { computeQuoteTotals } from "@/lib/pricing/quoteTotals";
+import { tier as tierCore, embroideryPPP as embroideryPPPCore } from "@/lib/pricing/tiers";
 
 export const FIRST_PRINT = {
   1: { 25: 6.3, 50: 5.67, 100: 5.22, 200: 4.9 },
@@ -421,15 +422,12 @@ export function getMinOrderQty() {
 
 
 export function getTier(qty, tiersOverride) {
+  // Resolve the active tiers (override → shop config → default), then defer to
+  // the typed core in @/lib/pricing/tiers. Behavior unchanged.
   const tiers = (Array.isArray(tiersOverride) && tiersOverride.length > 0)
     ? tiersOverride
     : (_pc?.tiers || [25, 50, 100, 200]);
-  // Find the highest tier the qty meets or exceeds
-  const sorted = [...tiers].sort((a, b) => b - a);
-  for (const t of sorted) {
-    if (qty >= t) return t;
-  }
-  return sorted[sorted.length - 1] || 25;
+  return tierCore(qty, tiers);
 }
 
 export function getQty(li) {
@@ -619,21 +617,16 @@ export const DEFAULT_EMB_STITCH_TIERS = ["Under 5K", "5K-10K", "10K-15K", "15K+"
 const DEFAULT_EMB_QTY_TIERS = [12, 24, 48, 72, 144];
 
 function getEmbroideryPPP(stitchIdx, qty, configOverride) {
+  // Resolve the embroidery config (with defaults), then defer to the typed
+  // core in @/lib/pricing/tiers. Behavior unchanged.
   const emb = (configOverride ?? _pc)?.embroidery;
-  const pricing = emb?.pricing || DEFAULT_EMB_PRICING;
-  const stitchTiers = emb?.stitchTiers || DEFAULT_EMB_STITCH_TIERS;
-  const qtyTiers = emb?.qtyTiers || DEFAULT_EMB_QTY_TIERS;
-
-  if (!stitchTiers.length) return 0;
-  const stitchTier = stitchTiers[Math.min(stitchIdx, stitchTiers.length - 1)];
-  // Find the best matching qty tier
-  const sorted = [...qtyTiers].sort((a, b) => b - a);
-  let tier = sorted[sorted.length - 1];
-  for (const t of sorted) { if (qty >= t) { tier = t; break; } }
-  // Try both number and string key (JSONB keys are strings)
-  const tierPricing = pricing[stitchTier];
-  if (!tierPricing) return 0;
-  return tierPricing[tier] ?? tierPricing[String(tier)] ?? 0;
+  return embroideryPPPCore(
+    stitchIdx,
+    qty,
+    emb?.pricing || DEFAULT_EMB_PRICING,
+    emb?.stitchTiers || DEFAULT_EMB_STITCH_TIERS,
+    emb?.qtyTiers || DEFAULT_EMB_QTY_TIERS,
+  );
 }
 
 // calcGroupPrice has been deleted — use calcLinkedLinePrice for all pricing.

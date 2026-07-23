@@ -47,7 +47,13 @@ export interface TechniqueRates {
   maxColors: number;
 }
 
+// Embroidery rate for one stitch tier: qty tier -> per-piece rate. JSONB keys
+// arrive as strings, so lookups try both the number and String(number) key.
+export type EmbTierPricing = Record<string | number, number | undefined>;
+
 export interface EmbroideryConfig {
+  pricing?: Record<string, EmbTierPricing | undefined>;
+  stitchTiers?: string[];
   qtyTiers?: number[];
   extras?: RateMap;
   extraBasis?: ExtraBasisMap;
