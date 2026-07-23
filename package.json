@@ -25,6 +25,7 @@
     "loadtest:smoke": "k6 run loadtest/smoke.js",
     "loadtest:frontend": "k6 run loadtest/frontend.js",
     "loadtest:wizard": "k6 run loadtest/quote-wizard.js",
+    "loadtest:scale": "k6 run loadtest/scale-1000.js",
     "smoke:functions": "node scripts/smoke-public-wizard-functions.mjs",
     "smoke:qbwebhook": "node scripts/smoke-qb-webhook.mjs",
     "deploy:functions": "npx supabase functions deploy ssLookupStyle --no-verify-jwt && npx supabase functions deploy acLookupStyle --no-verify-jwt && npx supabase functions deploy smLookupStyle --no-verify-jwt && npx supabase functions deploy createQuoteFromPayload --no-verify-jwt",
