@@ -94,6 +94,21 @@ Deno.serve(async (req) => {
     if (!reqPath || (type !== "quote" && type !== "order") || !id || !token) return fail(404, req);
 
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+
+    // Rate-limit by client IP (a server-derived key, never client-supplied) so
+    // this signing proxy can't be flooded — every hit does 2 DB reads + mints a
+    // signed URL. The ceiling is deliberately high: a proof page embeds several
+    // artwork <img>s and customers refresh, and an office NAT can share one IP,
+    // so only abusive/scraping volume trips it, never real proof viewing.
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "unknown";
+    const { data: underLimit } = await admin.rpc("check_request_rate", {
+      p_key: `artwork_proof:${ip}`,
+      p_limit_per_hr: 1000,
+    });
+    if (underLimit === false) {
+      return new Response("Too many requests", { status: 429, headers: CORS });
+    }
+
     const table = type === "quote" ? "quotes" : "orders";
 
     // Look up by uuid id, then by the human id column (quote_id / order_id).
