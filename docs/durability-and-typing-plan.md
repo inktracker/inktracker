@@ -121,9 +121,14 @@ imports).
   `discount:150` can't go negative into tax/total/QB), additional-charges split,
   tax, and deposit. `calcQuoteTotalsWithLinking` is now a wrapper injecting deps.
   Behavior identical — full suite green. In the money gate.
-- **Remaining B2 slices** (same pattern, each its own low-risk PR): tier lookup
-  (`getTier`/`getMinOrderQty`), setup fees (`calcSetupFees`/`calcSetupScreenCount`),
-  embroidery PPP + technique rates, and the QB invoice payload (`buildQBInvoicePayload`).
+- ✅ **Tier lookups** → `src/lib/pricing/tiers.ts` (`tier`, `embroideryPPP`).
+  Quantity price tier + embroidery per-piece rate. `getTier` / `getEmbroideryPPP`
+  are now wrappers that resolve the active tiers / embroidery config (+ defaults)
+  and defer to the typed core. Behavior identical — full suite (incl. 42
+  embroidery tests) green. In the money gate.
+- **Remaining B2 slices** (same pattern, each its own low-risk PR): setup fees
+  (`calcSetupFees`/`calcSetupScreenCount`), technique rates (`getTechniqueRates`),
+  and the QB invoice payload (`buildQBInvoicePayload`).
 | **B4** | Opt-in `checkJs` on consumers via JSDoc at import boundaries | ongoing |
 
 **Highest-leverage next step:** B2. Strongly consider modeling `Money` as
