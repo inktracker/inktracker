@@ -1,0 +1,30 @@
+# gitleaks config for InkTracker secret scanning (CI: .github/workflows/security.yml).
+# Extends gitleaks' default ruleset and allowlists a small set of REVIEWED
+# false positives (2026-07-23 full-history audit). The intent: fail CI the
+# moment a genuine secret is committed, without crying wolf on public keys.
+#
+# Full history was scanned and confirmed free of real secrets — the only hits
+# were public/browser-visible keys and a deleted Supabase example template.
+
+title = "InkTracker gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Reviewed false positives — public keys and boilerplate only"
+
+paths = [
+  # Supabase's default example function (deleted; its demo JWT + curl auth
+  # header are boilerplate from the `hello-world` template, never real).
+  '''supabase/functions/hello-world/.*''',
+  # Lockfiles: integrity hashes look like secrets but aren't.
+  '''package-lock\.json''',
+]
+
+regexes = [
+  # Public reCAPTCHA v3 SITE key — used in browser-side JS, visible to every
+  # visitor by design. The confidential reCAPTCHA SECRET key lives only in a
+  # Supabase function secret and is never in source.
+  '''6LdFgbIsAAAAAKlrO8Sv9y-3HUJv4f-1hjHEjsi9''',
+]
