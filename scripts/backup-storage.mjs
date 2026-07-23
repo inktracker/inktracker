@@ -60,6 +60,11 @@ for (const bucket of BUCKETS) {
   }
   let n = 0;
   for (const path of paths) {
+    // Supabase marks empty folders with a zero-byte placeholder row that isn't
+    // a real, downloadable object (download() returns "not found"). Skip these
+    // so they don't register as a backup failure.
+    const base = path.split("/").pop();
+    if (base === ".emptyFolderPlaceholder" || base === ".keep") continue;
     const { data, error } = await sb.storage.from(bucket).download(path);
     if (error) {
       console.error(`[backup] download failed ${bucket}/${path}: ${error.message}`);
