@@ -20,10 +20,12 @@
 // as strings ("3.18"); the prior `||` chain treated them as truthy
 // without parsing, and the math downstream silently degraded.
 
-export function getEffectiveCost(gg) {
+import type { GarmentSelection, Money } from "@/types/money";
+
+export function getEffectiveCost(gg: GarmentSelection | null | undefined): Money {
   if (!gg?.style) return 0;
   const pm = gg.style.priceMap || {};
-  const direct = Number(pm[gg.color]?.piecePrice);
+  const direct = Number(pm[gg.color ?? ""]?.piecePrice);
   if (Number.isFinite(direct) && direct > 0) return direct;
   const flat = Number(gg.style.garmentCost);
   if (Number.isFinite(flat) && flat > 0) return flat;

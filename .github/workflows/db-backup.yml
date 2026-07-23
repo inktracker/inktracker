@@ -15,6 +15,17 @@ name: DB backup
 # NOTE: artifact retention is capped (30d) — this is a recovery point, not
 # a substitute for real Supabase backups. Delete this workflow after the
 # Pro upgrade if you'd rather not keep both.
+#
+# DEAD-MAN'S-SWITCH: a failed run shows a red ❌ + emails admins, but nothing
+# fires if the schedule silently STOPS running (GitHub disables schedules
+# after 60d of repo inactivity, scheduler outages, a manual disable) — i.e.
+# you could go days with NO backup and no signal. On a successful backup we
+# ping an external monitor; configure a free healthchecks.io check (period
+# 1 day, grace 2h) and add its ping URL as a repo secret so it pages if no
+# ping arrives in ~26h:
+#   gh secret set HEALTHCHECK_DB_BACKUP_URL   # https://hc-ping.com/<uuid>
+# (Optional — the heartbeat step no-ops if the secret is unset. The `/fail`
+# suffix on a failure also pings immediately so you hear about it that night.)
 
 on:
   schedule:
@@ -53,3 +64,25 @@ jobs:
           path: db-backup/
           retention-days: 30
           if-no-files-found: error
+      - name: Heartbeat (dead-man's-switch)
+        # Only reached when the export + upload BOTH succeeded (prior steps
+        # exit non-zero on any failure). Pings the external monitor so it
+        # pages if the backup ever stops running entirely.
+        env:
+          HEALTHCHECK_DB_BACKUP_URL: ${{ secrets.HEALTHCHECK_DB_BACKUP_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_DB_BACKUP_URL" ]; then
+            curl -fsS -m 10 --retry 3 "$HEALTHCHECK_DB_BACKUP_URL" >/dev/null && echo "heartbeat sent"
+          else
+            echo "HEALTHCHECK_DB_BACKUP_URL not set — skipping heartbeat (see workflow header to enable the dead-man's-switch)."
+          fi
+      - name: Alert on failure
+        # Immediate page the same night if the backup failed, via the monitor's
+        # /fail endpoint — complements GitHub's email-on-failure. No-ops if unset.
+        if: failure()
+        env:
+          HEALTHCHECK_DB_BACKUP_URL: ${{ secrets.HEALTHCHECK_DB_BACKUP_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_DB_BACKUP_URL" ]; then
+            curl -fsS -m 10 --retry 3 "${HEALTHCHECK_DB_BACKUP_URL%/}/fail" >/dev/null && echo "failure signal sent"
+          fi
