@@ -1,4 +1,11 @@
 import { todayInShopTz } from "@/lib/shopTimezone";
+import {
+  adminMarkup as adminMarkupCore,
+  brokerMarkupShare as brokerMarkupShareCore,
+  brokerMarkup as brokerMarkupCore,
+  markup as markupCore,
+  DEFAULT_BROKER_MARKUP_SHARE,
+} from "@/lib/pricing/markup";
 
 export const FIRST_PRINT = {
   1: { 25: 6.3, 50: 5.67, 100: 5.22, 200: 4.9 },
@@ -162,7 +169,7 @@ export const BROKER_MARKUP = 1.2;
 // the math did the opposite. Joe set 80% expecting a big broker
 // discount and got the smallest possible spread (8% of cost). After
 // the fix his 0.8 setting correctly applies an 80% discount.
-export const BROKER_MARKUP_SHARE = 0.5;
+export const BROKER_MARKUP_SHARE = DEFAULT_BROKER_MARKUP_SHARE;
 
 // Per-shop pricing config — set via loadShopPricingConfig() on app startup.
 // When null, all functions use the hardcoded defaults above.
@@ -461,47 +468,25 @@ export function getOrderUnits(order) {
   return (order.line_items || []).reduce((sum, li) => sum + getQty(li), 0);
 }
 
+// Thin wrappers over the typed, unit-tested markup engine in
+// @/lib/pricing/markup. They resolve the active pricing config
+// (`configOverride ?? _pc`) — the only module-state dependency — then defer
+// all math to the pure core, so behavior is unchanged and consumers/tests
+// keep importing these same names. See docs/durability-and-typing-plan.md (B2).
 export function getAdminMarkup(garmentCost, configOverride) {
-  const cost = parseFloat(garmentCost) || 0;
-  const tiers = (configOverride ?? _pc)?.garmentMarkup;
-  if (tiers && Array.isArray(tiers)) {
-    // Config tiers: [{ above: 25, markup: 1.15 }, ...] sorted desc by "above"
-    const sorted = [...tiers].sort((a, b) => b.above - a.above);
-    for (const t of sorted) {
-      if (cost > t.above) return t.markup;
-    }
-    return sorted[sorted.length - 1]?.markup || 1.4;
-  }
-  // Defaults
-  if (cost > 25) return 1.15;
-  if (cost > 15) return 1.22;
-  if (cost > 8) return 1.3;
-  return 1.4;
+  return adminMarkupCore(garmentCost, configOverride ?? _pc);
 }
 
 export function getBrokerMarkupShare(configOverride) {
-  return (configOverride ?? _pc)?.brokerMarkupShare ?? BROKER_MARKUP_SHARE;
+  return brokerMarkupShareCore(configOverride ?? _pc);
 }
 
 export function getBrokerMarkup(garmentCost, share, configOverride) {
-  // `share` is the broker's % DISCOUNT off the shop's standard markup.
-  // The broker pays (1 - share) of the standard markup spread above
-  // raw cost:
-  //   share = 0   → broker pays full markup (no discount, no spread)
-  //   share = 1   → broker pays raw cost (full discount, keeps all markup)
-  //   share = 0.8 → broker pays 20% of the markup spread, keeps 80%
-  // Pre-2026-06-03 the formula used `share` directly, which inverted
-  // the UX — higher input gave smaller broker discount. See the
-  // BROKER_MARKUP_SHARE constant header for the bug story.
-  const s = share ?? getBrokerMarkupShare(configOverride);
-  const adminMarkup = getAdminMarkup(garmentCost, configOverride);
-  return 1 + ((adminMarkup - 1) * (1 - s));
+  return brokerMarkupCore(garmentCost, share, configOverride ?? _pc);
 }
 
 export function getMarkup(garmentCost, isBroker = false, configOverride) {
-  return isBroker
-    ? getBrokerMarkup(garmentCost, undefined, configOverride)
-    : getAdminMarkup(garmentCost, configOverride);
+  return markupCore(garmentCost, isBroker, configOverride ?? _pc);
 }
 
 export function fmtDate(d) {

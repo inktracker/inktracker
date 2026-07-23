@@ -99,8 +99,17 @@ imports).
 |-------|-------|--------|
 | **B0** | Types file + gate + first money module (`getEffectiveCost`) | ✅ **done** |
 | **B1** | `src/types/money.ts` domain vocabulary (Money as ¢ later) | ✅ **started** |
-| **B2** | Extract pure calc from `pricing.jsx` into typed `.ts`, leave `.jsx` as a re-export shell so 68 consumers don't churn | next |
+| **B2** | Extract pure calc from `pricing.jsx` into typed `.ts`, keep `_pc`-reading wrappers so 68 consumers don't churn | 🟡 **in progress** |
 | **B3** | `billing.js` → `.ts`; tax module | after B2 |
+
+**B2 progress**
+- ✅ **Markup engine** → `src/lib/pricing/markup.ts` (`adminMarkup`, `brokerMarkup`,
+  `brokerMarkupShare`, `markup`). `pricing.jsx` keeps `getAdminMarkup` etc. as thin
+  wrappers that resolve `configOverride ?? _pc` and defer to the typed core.
+  Behavior identical — all 180 pricing tests pass. In the money gate.
+- **Remaining B2 slices** (same pattern, each its own low-risk PR): tier lookup
+  (`getTier`/`getMinOrderQty`), line-price calc (`calcLinkedLinePrice`), setup
+  fees (`calcSetupFees`/`calcSetupScreenCount`), totals (`calcQuoteTotals*`).
 | **B4** | Opt-in `checkJs` on consumers via JSDoc at import boundaries | ongoing |
 
 **Highest-leverage next step:** B2. Strongly consider modeling `Money` as
