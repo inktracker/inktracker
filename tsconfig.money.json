@@ -1,0 +1,25 @@
+{
+  "//": "STRICT type gate for the money-critical paths only. Enforced green in CI and by `npm test` (typecheck:money). This is the growing safety net from docs/durability-and-typing-plan.md: add a module to `include` the moment it is typed, and it can never regress. Separate from the broad, aspirational `jsconfig.json` typecheck (which is not yet green and not enforced).",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "esnext",
+    "lib": ["esnext", "dom"],
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "types": []
+  },
+  "include": [
+    "src/types/money.ts",
+    "src/lib/wizard/getEffectiveCost.ts"
+  ]
+}

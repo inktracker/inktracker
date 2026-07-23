@@ -48,18 +48,29 @@ async function listAll(bucket, prefix = "") {
 }
 
 let grandTotal = 0;
+let failed = 0; // any skipped bucket or failed download — a partial backup MUST NOT look green
 for (const bucket of BUCKETS) {
   let paths;
   try {
     paths = await listAll(bucket);
   } catch (e) {
     console.error(`[backup] bucket "${bucket}" skipped: ${e.message}`);
+    failed++;
     continue;
   }
   let n = 0;
   for (const path of paths) {
+    // Supabase marks empty folders with a zero-byte placeholder row that isn't
+    // a real, downloadable object (download() returns "not found"). Skip these
+    // so they don't register as a backup failure.
+    const base = path.split("/").pop();
+    if (base === ".emptyFolderPlaceholder" || base === ".keep") continue;
     const { data, error } = await sb.storage.from(bucket).download(path);
-    if (error) { console.error(`[backup] download failed ${bucket}/${path}: ${error.message}`); continue; }
+    if (error) {
+      console.error(`[backup] download failed ${bucket}/${path}: ${error.message}`);
+      failed++;
+      continue;
+    }
     const dest = join(OUT, bucket, path);
     await mkdir(dirname(dest), { recursive: true });
     await writeFile(dest, Buffer.from(await data.arrayBuffer()));
@@ -69,3 +80,10 @@ for (const bucket of BUCKETS) {
   grandTotal += n;
 }
 console.log(`[backup] done — ${grandTotal} object(s) under ./${OUT}/`);
+if (failed > 0) {
+  // Same guarantee as backup-database.mjs: a partial backup that reports
+  // success is how you discover at restore time that the artwork / tax cert
+  // you needed was never captured. Fail loudly so the dead-man's-switch fires.
+  console.error(`[backup] ${failed} object(s)/bucket(s) FAILED — failing the job.`);
+  process.exit(1);
+}

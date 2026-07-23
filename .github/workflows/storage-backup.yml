@@ -12,6 +12,13 @@ name: Storage backup
 # NOTE: artifact retention is capped (30d here) and large buckets count toward
 # storage limits — this is a recovery point, not a substitute for the
 # Supabase-side backups. Restore steps: docs/disaster-recovery.md.
+#
+# DEAD-MAN'S-SWITCH: a failed run emails admins, but nothing fires if the
+# schedule silently STOPS running. On success we ping an external monitor;
+# configure a free healthchecks.io check (period 1 day, grace 2h) and add its
+# ping URL as a repo secret so it pages if no ping arrives in ~26h:
+#   gh secret set HEALTHCHECK_STORAGE_BACKUP_URL   # https://hc-ping.com/<uuid>
+# (Optional — the heartbeat no-ops if unset. `/fail` pings on failure too.)
 
 on:
   schedule:
@@ -49,4 +56,25 @@ jobs:
           name: storage-backup-${{ github.run_id }}
           path: storage-backup/
           retention-days: 30
-          if-no-files-found: warn
+          # error, not warn: an EMPTY storage backup (both buckets skipped) must
+          # fail — a live shop always has artwork/certs, so zero files = broken.
+          if-no-files-found: error
+      - name: Heartbeat (dead-man's-switch)
+        # Only reached when the export + upload BOTH succeeded (the script now
+        # exits non-zero on any skipped bucket / failed download).
+        env:
+          HEALTHCHECK_STORAGE_BACKUP_URL: ${{ secrets.HEALTHCHECK_STORAGE_BACKUP_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_STORAGE_BACKUP_URL" ]; then
+            curl -fsS -m 10 --retry 3 "$HEALTHCHECK_STORAGE_BACKUP_URL" >/dev/null && echo "heartbeat sent"
+          else
+            echo "HEALTHCHECK_STORAGE_BACKUP_URL not set — skipping heartbeat (see workflow header to enable the dead-man's-switch)."
+          fi
+      - name: Alert on failure
+        if: failure()
+        env:
+          HEALTHCHECK_STORAGE_BACKUP_URL: ${{ secrets.HEALTHCHECK_STORAGE_BACKUP_URL }}
+        run: |
+          if [ -n "$HEALTHCHECK_STORAGE_BACKUP_URL" ]; then
+            curl -fsS -m 10 --retry 3 "${HEALTHCHECK_STORAGE_BACKUP_URL%/}/fail" >/dev/null && echo "failure signal sent"
+          fi
