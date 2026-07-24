@@ -49,12 +49,25 @@ All native-only, guarded to **no-op on web** (browser build unchanged):
 - **First external site wired** — supplier reorder carts (`NorcalOrderModal`)
   now open via `openExternal`.
 
-### Phase 3b — needs the device/simulator (do during Phase 2 testing)
-- **Deep-link auth config.** Point Supabase `redirectTo` and the Intuit QB OAuth
-  redirect URI at the app's URL scheme/universal link, register the scheme in the
-  iOS project (Info.plist / Associated Domains), and verify login + QB-connect
-  round-trip back into the app via `routeDeepLink`. The listener is scaffolded;
-  the redirect URLs + on-device test are the remaining work.
+### App icon + splash ✅ (sources staged, this branch)
+- `assets/icon.png` (1024², opaque — the drop logo), `assets/splash.png` +
+  `assets/splash-dark.png` (2732², logo centered on white). `@capacitor/assets`
+  installed (dev).
+- After `cap add ios`, generate every required size in one command:
+  `npx capacitor-assets generate --ios` → writes into `ios/App/App/Assets.xcassets`.
+
+### Deep-link auth — code done ✅, config is Phase 3b
+- `authRedirectUrl(path)` in `native.js` is wired into the LoginModal auth calls
+  (sign-up confirm, magic link, password reset). **Web is byte-identical**
+  (`${origin}${path}`); native returns `https://www.inktracker.app${path}`, a
+  **universal link** iOS routes back into the app.
+- **Phase 3b (needs device):** to make those universal links open the app instead
+  of Safari, add the **Associated Domains** entitlement (`applinks:www.inktracker.app`)
+  in the iOS project + host an **`apple-app-site-association`** file at
+  `https://www.inktracker.app/.well-known/apple-app-site-association` listing the
+  app ID `7545WWK837.app.inktracker.mobile`. Until then the link opens in Safari
+  and still completes login (graceful fallback). Also add the app's redirect to
+  the Intuit QB OAuth redirect URIs for the QB-connect return.
 - **Convert the remaining in-app external navigations** (`window.location.href =
   <QB OAuth URL>` in OnboardingWizard/BrokerProfile; Stripe billing portal in
   BillingSection) to `openExternal` — deferred until the deep-link return is

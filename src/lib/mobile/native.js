@@ -37,6 +37,22 @@ export async function openExternal(url) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+/**
+ * Redirect URL for Supabase email/OAuth flows (magic link, sign-up confirm,
+ * password reset).
+ *   - web: the current origin (localhost in dev, prod in prod) — IDENTICAL to
+ *     the previous `${window.location.origin}${path}`, so web is unchanged.
+ *   - native: the production https URL, so iOS can route the email link back
+ *     INTO the app via a universal link (Associated Domains — wired in Phase 3b).
+ *     Until that's configured the link opens in Safari, which still completes
+ *     login — a graceful fallback, never a dead end.
+ */
+export function authRedirectUrl(path = "/") {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  if (isNative()) return `https://www.inktracker.app${p}`;
+  return `${window.location.origin}${p}`;
+}
+
 // The custom URL scheme / universal-link host the native app is reached at.
 // Auth (Supabase magic-link / OAuth) and QB OAuth must redirect back to a URL
 // the app owns; appUrlOpen then delivers it here. The Supabase `redirectTo` and

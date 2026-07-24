@@ -3,6 +3,7 @@ import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { useModalA11y } from "@/lib/useModalA11y";
 import { track } from "@/lib/analytics";
+import { authRedirectUrl } from "@/lib/mobile/native";
 
 // MFA is enforced by <MfaGate> in AuthenticatedApp, not here. This
 // modal's only job is to establish a Supabase session — the gate kicks
@@ -159,7 +160,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: `${window.location.origin}/` },
+          options: { emailRedirectTo: authRedirectUrl("/") },
         });
         if (signUpError) throw signUpError;
         // Funnel step 3: the account was created (distinct from opening the
@@ -199,7 +200,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
     setResetLoading(true);
     try {
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/ResetPassword`,
+        redirectTo: authRedirectUrl("/ResetPassword"),
       });
       if (resetErr) throw resetErr;
       // Intentionally neutral wording — don't confirm whether the email
@@ -227,7 +228,7 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
       const { error: otpErr } = await supabase.auth.signInWithOtp({
         email: email.trim(),
         options: {
-          emailRedirectTo: `${window.location.origin}/`,
+          emailRedirectTo: authRedirectUrl("/"),
           // Magic-link is for sign-IN only. Without shouldCreateUser:false,
           // Supabase silently creates a new auth row for any email that
           // isn't already confirmed — including ones that were partially
