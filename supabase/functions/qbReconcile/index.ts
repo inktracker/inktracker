@@ -56,7 +56,7 @@ import {
   cascadeMarkLinkedPaid,
   cascadeMarkInvoicePaid,
 } from "../_shared/qbWebhookLogic.js";
-import { recordShopNotification } from "../_shared/shopNotifications.js";
+import { recordShopNotification, buildBooksDriftNotification } from "../_shared/shopNotifications.js";
 import {
   chooseQuotePaymentRecipient,
   buildQuotePaymentEmail,
@@ -610,6 +610,57 @@ async function pushNotification(adminClient: any, shopOwner: string, quote: any,
   });
 }
 
+// ── Shop-facing books-drift notifications ───────────────────────────
+// For each nightly-verified drift row, tell the SHOP directly (their bell)
+// so InkTracker is the one looking out for them — instead of the operator
+// being the only one who ever learns their books diverged. Reuses the calm
+// buildBooksDriftNotification copy (post-creation drift is usually a QB edit,
+// not a bug). Per-quote dedup: skip if that shop already has an UNREAD
+// qb_books_drift notice for the same row, so an unresolved drift doesn't
+// re-notify every single night. Swallows errors — a failed notification must
+// never break reconciliation.
+async function notifyShopsOfDrift(adminClient: any, driftRows: any[]): Promise<{ created: number }> {
+  let created = 0;
+  for (const r of driftRows ?? []) {
+    try {
+      const shopOwner = r.shop_owner;
+      const rowId = r.id;
+      if (!shopOwner || !rowId) continue;
+
+      // Dedup: an existing UNREAD drift notice for this exact row means the
+      // shop already knows and hasn't acted — don't stack another one.
+      const { data: existing } = await adminClient
+        .from("notifications")
+        .select("id")
+        .eq("shop_owner", shopOwner)
+        .eq("event_type", "qb_books_drift")
+        .eq("related_id", String(rowId))
+        .is("read_at", null)
+        .limit(1)
+        .maybeSingle();
+      if (existing) continue;
+
+      const res = await recordShopNotification(
+        adminClient,
+        buildBooksDriftNotification({
+          shopOwner,
+          ref: r.ref ?? r.quote_id ?? r.invoice_id,
+          rowId,
+          qbInvoiceId: r.qb_invoice_id,
+          total: r.total,
+          qbTotal: r.qb_total,
+          drift: r.drift,
+          source: r.source ?? "quotes",
+        }),
+      );
+      if (res.ok) created++;
+    } catch (err) {
+      console.warn("[qbReconcile] shop drift-notify failed:", (err as Error)?.message);
+    }
+  }
+  return { created };
+}
+
 // ── Operator alert digest ───────────────────────────────────────────
 // Runs once at the start of every cron tick. Queries the last 24h of
 // qb_event_log rows with status='error', summarizes by shop + action,
@@ -1059,8 +1110,11 @@ Deno.serve(async (req) => {
     // (runs after the shop loop because verification needs each shop's
     // QB token inside reconcileShop).
     const verifiedDrift = shopResults.flatMap((s: any) => s.driftRows ?? []);
+    // Tell each affected SHOP directly (in-app bell) — InkTracker looking out
+    // for them. Runs before the operator digest; both channels fire.
+    const shopNotified = await notifyShopsOfDrift(adminClient, verifiedDrift);
     const booksDrift = await scanAndAlertBooksDrift(adminClient, verifiedDrift);
-    console.error(`[qbReconcile] books-drift: ${booksDrift.findings} finding(s), alerted=${booksDrift.alerted}`);
+    console.error(`[qbReconcile] books-drift: ${booksDrift.findings} finding(s), operator-alerted=${booksDrift.alerted}, shops-notified=${shopNotified.created}`);
 
     // Log one rollup row per cron run so operators can see "did
     // reconciliation actually run last night?" without scrolling
@@ -1089,6 +1143,7 @@ Deno.serve(async (req) => {
       alert:    alertResult,
       webhook_health: webhookHealth,
       books_drift: booksDrift,
+      shops_notified: shopNotified.created,
     });
   } catch (err) {
     await captureError(err, { fn: "qbReconcile" });
