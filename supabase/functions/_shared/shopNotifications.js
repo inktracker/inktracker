@@ -199,9 +199,8 @@ export function buildBooksDriftNotification({ shopOwner, ref, rowId, qbInvoiceId
   const title = "Heads up — your QuickBooks total changed";
   const body =
     `${ref}: QuickBooks shows ${fmt(quickbooksTotal)}, ${fmt(absDrift)} ${qbHigher ? "higher" : "lower"} ` +
-    `than your ${docLabel} (${fmt(localTotal)}) — usually a QuickBooks edit like an added shipping line. ` +
-    `Your customer is billed the QuickBooks amount. To match them up, update this ${docLabel} or ` +
-    `fix it in QuickBooks. Nothing's broken — payment still goes through.`;
+    `than your ${docLabel} (${fmt(localTotal)}). Your customer is billed the QuickBooks amount. ` +
+    `To match them up, update this ${docLabel} or fix it in QuickBooks. Nothing's broken — payment still goes through.`;
 
   return buildNotificationRow({
     shopOwner,
