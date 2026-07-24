@@ -357,7 +357,7 @@ describe("buildBooksDriftNotification — nightly post-creation drift (shop-faci
   it("does NOT use alarming 'should never happen' language (that's the sync-time copy)", () => {
     const row = buildBooksDriftNotification(base);
     expect(row.body).not.toMatch(/should never happen/i);
-    expect(row.body).toMatch(/no action is\s+required|nothing is broken/i);
+    expect(row.body).toMatch(/nothing's broken/i);
   });
 
   it("reads 'lower' when QuickBooks is below the quote (positive drift)", () => {

@@ -198,14 +198,10 @@ export function buildBooksDriftNotification({ shopOwner, ref, rowId, qbInvoiceId
 
   const title = "Heads up — your QuickBooks total changed";
   const body =
-    `${ref}: QuickBooks now shows ${fmt(quickbooksTotal)}, which is ${fmt(absDrift)} ` +
-    `${qbHigher ? "higher" : "lower"} than your InkTracker ${docLabel} of ${fmt(localTotal)}. ` +
-    `This usually means the invoice was edited in QuickBooks after it was created — ` +
-    `for example a shipping charge or a line was added or changed. QuickBooks is the ` +
-    `source of truth for what's collected, so your customer is billed the QuickBooks amount. ` +
-    `To line the two up: open this ${docLabel} and update it to match QuickBooks, or — if the ` +
-    `QuickBooks change was a mistake — correct it there. Nothing is broken and no action is ` +
-    `required for payment to go through; this is just so your records agree.`;
+    `${ref}: QuickBooks shows ${fmt(quickbooksTotal)}, ${fmt(absDrift)} ${qbHigher ? "higher" : "lower"} ` +
+    `than your ${docLabel} (${fmt(localTotal)}) — usually a QuickBooks edit like an added shipping line. ` +
+    `Your customer is billed the QuickBooks amount. To match them up, update this ${docLabel} or ` +
+    `fix it in QuickBooks. Nothing's broken — payment still goes through.`;
 
   return buildNotificationRow({
     shopOwner,
