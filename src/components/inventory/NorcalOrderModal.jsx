@@ -22,6 +22,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { X, ShoppingCart, Trash2, Plus, Minus, ArrowRight, AlertTriangle, ExternalLink, Check } from "lucide-react";
 import { supplierCartPermalink } from "@/lib/suppliers";
+import { openExternal } from "@/lib/mobile/native";
 
 const fmtPrice = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
@@ -66,7 +67,8 @@ export default function NorcalOrderModal({
       utm_source: "inktracker", utm_medium: "reorder",
     });
     if (!url) return; // nothing orderable — don't mark opened or clear the list
-    window.open(url, "_blank", "noopener,noreferrer");
+    // openExternal = new tab on web, system browser inside the native iOS app.
+    openExternal(url);
     const next = new Set(opened);
     next.add(group.storeUrl);
     setOpened(next);

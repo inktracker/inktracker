@@ -33,22 +33,36 @@ npm run mobile:ios         # build web → sync → open in Xcode
 In Xcode: select the App target → Signing & Capabilities → your Apple Team →
 enable **Automatic signing**. Run on a simulator or a connected device.
 
-## Phase 3 — mobile gotchas to handle (before shipping)
-Wrapping a web app natively has three known sharp edges in THIS app. Each is
-already scoped; none is a blocker:
+## Phase 3 — mobile gotchas
 
-1. **Auth redirect / deep links.** Login uses `window.location` for magic-link /
-   OAuth round-trips (`src/lib/AuthContext.jsx`). In a native shell that must
-   come back via a **custom URL scheme / universal link**, wired through
-   `@capacitor/app`'s `appUrlOpen`. Supabase `redirectTo` needs a native URL.
-2. **Stripe / QuickBooks checkout.** Payment flows use `window.open`
-   (`src/pages/QuotePayment.jsx`). On iOS these MUST open in the **system
-   browser** (`@capacitor/browser`), not the in-app webview — Apple rejects
-   in-webview payment, and Stripe/QB need a real browser. Route external/payment
-   URLs through `Browser.open`.
-3. **Safe areas + status bar.** Notch/home-indicator insets (`contentInset:
-   always` is set) and `@capacitor/status-bar` styling so the app doesn't draw
-   under the clock/battery.
+### Phase 3a — infrastructure ✅ (done, this branch)
+All native-only, guarded to **no-op on web** (browser build unchanged):
+- **`src/lib/mobile/native.js`** — the glue:
+  - `isNative()` — true only in the Capacitor shell.
+  - `openExternal(url)` — system browser on native (`@capacitor/browser`), new
+    tab on web. Use for ALL external links (payments, OAuth, vendor carts, files).
+  - `initNativeApp()` — status-bar style, `cap-native` root class (CSS safe-area
+    hook), and the `appUrlOpen` deep-link listener that routes OAuth / magic-link
+    returns back into the app. Booted from `main.jsx`.
+- **Safe areas** — `html.cap-native body` insets via `env(safe-area-inset-*)` in
+  `index.css` (web never matches the selector).
+- **First external site wired** — supplier reorder carts (`NorcalOrderModal`)
+  now open via `openExternal`.
+
+### Phase 3b — needs the device/simulator (do during Phase 2 testing)
+- **Deep-link auth config.** Point Supabase `redirectTo` and the Intuit QB OAuth
+  redirect URI at the app's URL scheme/universal link, register the scheme in the
+  iOS project (Info.plist / Associated Domains), and verify login + QB-connect
+  round-trip back into the app via `routeDeepLink`. The listener is scaffolded;
+  the redirect URLs + on-device test are the remaining work.
+- **Convert the remaining in-app external navigations** (`window.location.href =
+  <QB OAuth URL>` in OnboardingWizard/BrokerProfile; Stripe billing portal in
+  BillingSection) to `openExternal` — deferred until the deep-link return is
+  wired, so the browser hand-off has somewhere to come back to. (The customer
+  QuotePayment flow is NOT in scope — customers pay from their own phone browser,
+  not inside the shop's app.)
+- **Safe-area visual tuning** on real hardware (notch, Dynamic Island, home
+  indicator across screens).
 
 ## Phase 4 — App Store Connect
 Create the app record in App Store Connect (name, bundle ID `app.inktracker.mobile`,

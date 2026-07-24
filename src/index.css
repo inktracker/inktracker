@@ -332,3 +332,15 @@ a[class*="font-bold"][class*="px-"]:not([class*="text-[10px]"]):not([class*="tex
 .hero-ring-ripple {
   animation: hero-ring-ripple 2.4s ease-out infinite;
 }
+/* ── Native (Capacitor iOS) safe areas ──────────────────────────────────────
+   Only applied inside the native shell (html.cap-native, set by
+   src/lib/mobile/native.js). On web these rules never match, so the browser
+   layout is unchanged. Insets keep the app clear of the notch / status bar /
+   home indicator. Visual tuning happens on-device in Phase 3b. */
+html.cap-native body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  box-sizing: border-box;
+}
