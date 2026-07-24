@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   buildNotificationRow,
   buildQbDriftNotification,
+  buildBooksDriftNotification,
   recordShopNotification,
 } from "../shopNotifications.js";
 
@@ -321,5 +322,70 @@ describe("recordShopNotification — never throws even when DB fails", () => {
     });
     expect(r.ok).toBe(false);
     expect(r.error).toBe("connection lost");
+  });
+});
+
+describe("buildBooksDriftNotification — nightly post-creation drift (shop-facing)", () => {
+  const base = {
+    shopOwner: "kato@thunder-house.com",
+    ref: "Q-2026-9Q31",
+    rowId: "row-uuid-1",
+    qbInvoiceId: "1950",
+    total: 3491.14,
+    qbTotal: 3576.10,
+    drift: -84.96, // local - qb → QB is higher
+    source: "quotes",
+  };
+
+  it("builds a calm warning notice linked to the quote", () => {
+    const row = buildBooksDriftNotification(base);
+    expect(row.event_type).toBe("qb_books_drift");
+    expect(row.severity).toBe("warning");
+    expect(row.related_entity).toBe("quote");
+    expect(row.related_id).toBe("row-uuid-1");
+    expect(row.title).toMatch(/Heads up/i);
+  });
+
+  it("states the QB total, the signed gap direction, and the local total", () => {
+    const row = buildBooksDriftNotification(base);
+    expect(row.body).toContain("$3576.10"); // QB total
+    expect(row.body).toContain("$84.96");   // absolute drift
+    expect(row.body).toContain("higher");   // QB > quote
+    expect(row.body).toContain("$3491.14"); // local total
+  });
+
+  it("does NOT use alarming 'should never happen' language (that's the sync-time copy)", () => {
+    const row = buildBooksDriftNotification(base);
+    expect(row.body).not.toMatch(/should never happen/i);
+    expect(row.body).toMatch(/no action is\s+required|nothing is broken/i);
+  });
+
+  it("reads 'lower' when QuickBooks is below the quote (positive drift)", () => {
+    const row = buildBooksDriftNotification({ ...base, total: 3576.10, qbTotal: 3491.14, drift: 84.96 });
+    expect(row.body).toContain("lower");
+  });
+
+  it("routes invoice-source rows to the invoice deep-link", () => {
+    const row = buildBooksDriftNotification({ ...base, source: "invoices" });
+    expect(row.related_entity).toBe("invoice");
+    expect(row.body).toContain("invoice");
+  });
+
+  it("derives drift from totals when the signed drift is absent", () => {
+    const { drift: _omit, ...noDrift } = base;
+    const row = buildBooksDriftNotification(noDrift);
+    expect(row.metadata.drift).toBeCloseTo(-84.96, 2);
+    expect(row.body).toContain("higher");
+  });
+
+  it("carries the numbers + refs in metadata for the frontend", () => {
+    const row = buildBooksDriftNotification(base);
+    expect(row.metadata).toMatchObject({
+      ref: "Q-2026-9Q31",
+      qb_invoice_id: "1950",
+      local_total: 3491.14,
+      qb_total: 3576.10,
+      source: "quotes",
+    });
   });
 });

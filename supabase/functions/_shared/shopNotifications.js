@@ -164,6 +164,69 @@ export function buildQbDriftNotification({ shopOwner, quoteId, quoteRowId, qbInv
 }
 
 /**
+ * Shop-facing notification for POST-CREATION books drift caught by the nightly
+ * reconcile scan (NOT the sync-time integrity check). This is a DIFFERENT
+ * situation from buildQbDriftNotification's "this should never happen" copy: by
+ * the time the nightly scan runs, the invoice has usually been edited in
+ * QuickBooks AFTER it was created (a shipping charge added, a line changed, QB's
+ * tax engine) — which is normal, not a bug. So the tone is a calm heads-up with
+ * the reconciliation options, never an alarm. Goes to the SHOP (their bell), so
+ * they hear it directly instead of the operator being the only one who knows.
+ *
+ * @param {object} args
+ * @param {string} args.shopOwner
+ * @param {string} args.ref        Human id (quote_id "Q-2026-9Q31" or invoice_id)
+ * @param {string} args.rowId      quotes.id / invoices.id — used as related_id
+ * @param {string} [args.qbInvoiceId]
+ * @param {number} args.total      Local (as-sold) total
+ * @param {number} args.qbTotal    QuickBooks' current total
+ * @param {number} args.drift      Signed local - qb (negative = QB is higher)
+ * @param {string} args.source     "quotes" | "invoices"
+ */
+export function buildBooksDriftNotification({ shopOwner, ref, rowId, qbInvoiceId, total, qbTotal, drift, source }) {
+  const fmt = (n) => `$${Number(n || 0).toFixed(2)}`;
+  const localTotal = Number(total) || 0;
+  const quickbooksTotal = Number(qbTotal) || 0;
+  const signedDrift = Number.isFinite(drift)
+    ? Number(drift)
+    : Number((localTotal - quickbooksTotal).toFixed(2));
+  const absDrift = Math.abs(signedDrift);
+  // drift = local - qb, so drift < 0 means QuickBooks is HIGHER than the quote.
+  const qbHigher = signedDrift < 0;
+  const relatedEntity = source === "invoices" ? "invoice" : "quote";
+  const docLabel = relatedEntity === "invoice" ? "invoice" : "quote";
+
+  const title = "Heads up — your QuickBooks total changed";
+  const body =
+    `${ref}: QuickBooks now shows ${fmt(quickbooksTotal)}, which is ${fmt(absDrift)} ` +
+    `${qbHigher ? "higher" : "lower"} than your InkTracker ${docLabel} of ${fmt(localTotal)}. ` +
+    `This usually means the invoice was edited in QuickBooks after it was created — ` +
+    `for example a shipping charge or a line was added or changed. QuickBooks is the ` +
+    `source of truth for what's collected, so your customer is billed the QuickBooks amount. ` +
+    `To line the two up: open this ${docLabel} and update it to match QuickBooks, or — if the ` +
+    `QuickBooks change was a mistake — correct it there. Nothing is broken and no action is ` +
+    `required for payment to go through; this is just so your records agree.`;
+
+  return buildNotificationRow({
+    shopOwner,
+    eventType: "qb_books_drift",
+    severity: "warning",
+    title,
+    body,
+    relatedEntity,
+    relatedId: rowId,
+    metadata: {
+      ref,
+      qb_invoice_id: qbInvoiceId ?? null,
+      local_total: localTotal,
+      qb_total: quickbooksTotal,
+      drift: signedDrift,
+      source: source || "quotes",
+    },
+  });
+}
+
+/**
  * Insert a notification row using the service-role Supabase client.
  * Swallows errors with a console.error — a failed notification must
  * NEVER cause the originating sync/webhook to fail.
