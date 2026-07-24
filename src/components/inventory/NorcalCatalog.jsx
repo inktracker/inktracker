@@ -14,7 +14,7 @@
 //   readOnly, reason — billing read-only gate.
 
 import { useEffect, useRef, useState } from "react";
-import { Search, Loader2, Check, X, ExternalLink, PackageSearch, ShoppingCart, Archive } from "lucide-react";
+import { Search, Loader2, Check, X, ExternalLink, PackageSearch, ShoppingCart, Archive, ChevronLeft, ChevronRight } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
 
@@ -22,6 +22,10 @@ import { notify } from "@/lib/notify";
 // in supabase/functions/_shared/norcal.ts). No "All" — browsing every product
 // at once is too much; you pick a category to start.
 const CATEGORIES = ["Inks", "Screens", "Chemicals", "Equipment", "Squeegees", "Tape", "Supplies"];
+
+// Products per page in the browse grid. The edge function paginates server-side
+// (returns `total` for the whole filtered set); we flip through 30 at a time.
+const PAGE_SIZE = 30;
 
 // Per-supplier accent themes. Full literal class strings so Tailwind's content
 // scanner keeps them (never build class names by interpolation).
@@ -73,13 +77,34 @@ export default function NorcalCatalog({
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [addingId, setAddingId] = useState(null);
   const reqSeq = useRef(0);
+  const gridTopRef = useRef(null);
 
-  // Selecting a top category resets the sub-tab back to "All".
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  // Any filter change starts over at page 1 — landing on "page 5" of a smaller
+  // result set would show an empty grid.
   function selectCategory(c) {
     setCategory(c);
     setSubcategory("All");
+    setPage(1);
+  }
+  function selectSubcategory(t) {
+    setSubcategory(t);
+    setPage(1);
+  }
+  function onSearchChange(v) {
+    setQuery(v);
+    setPage(1);
+  }
+  // Flip pages, clamped to the valid range, and scroll the grid back into view.
+  function goToPage(p) {
+    const next = Math.min(Math.max(1, p), totalPages);
+    if (next === page) return;
+    setPage(next);
+    gridTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   // Fetch on category / subcategory / query change. Query is debounced; the
@@ -95,7 +120,8 @@ export default function NorcalCatalog({
           category: category === "All" ? "" : category,
           subcategory: subcategory === "All" ? "" : subcategory,
           query: q,
-          limit: 60,
+          limit: PAGE_SIZE,
+          page,
         });
         if (seq !== reqSeq.current) return;
         if (error) throw error;
@@ -113,7 +139,7 @@ export default function NorcalCatalog({
       }
     }, q ? 350 : 0);
     return () => clearTimeout(t);
-  }, [supplier.key, supplier.label, category, subcategory, query]);
+  }, [supplier.key, supplier.label, category, subcategory, query, page]);
 
   async function addToStock(product) {
     if (readOnly || addingId) return;
@@ -157,7 +183,7 @@ export default function NorcalCatalog({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             placeholder={`Search ${supplier.label} products, SKUs, brands…`}
             className={`w-full pl-10 pr-4 py-2.5 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 ${th.ring}`}
           />
@@ -183,13 +209,24 @@ export default function NorcalCatalog({
           {[{ type: "All", count: total }, ...subcats].map((s) => (
             <button
               key={s.type}
-              onClick={() => setSubcategory(s.type)}
+              onClick={() => selectSubcategory(s.type)}
               className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition ${subcategory === s.type ? th.subActive : th.subIdle}`}
             >
               {s.type}
               {s.type !== "All" ? <span className="ml-1 text-slate-400">{s.count}</span> : null}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Scroll anchor — page flips bring the top of the grid back into view. */}
+      <div ref={gridTopRef} className="scroll-mt-4" />
+
+      {/* Result count / page position */}
+      {!loading && total > 0 && (
+        <div className="text-xs text-slate-500">
+          Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+          {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ""}
         </div>
       )}
 
@@ -288,6 +325,27 @@ export default function NorcalCatalog({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Pagination — only when the filtered set spans more than one page. */}
+      {!loading && totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-1">
+          <button
+            onClick={() => goToPage(page - 1)}
+            disabled={page <= 1}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" /> Prev
+          </button>
+          <span className="text-xs text-slate-500 px-1 tabular-nums">Page {page} of {totalPages}</span>
+          <button
+            onClick={() => goToPage(page + 1)}
+            disabled={page >= totalPages}
+            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>
