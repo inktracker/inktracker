@@ -59,3 +59,10 @@ test-results/
 
 # Local output of scripts/backup-storage.mjs (OPS-02)
 storage-backup/
+
+# Capacitor / iOS native build artifacts
+/ios/App/Pods/
+/ios/App/App/public/
+/ios/App/build/
+/ios/App/DerivedData/
+*.xcuserstate

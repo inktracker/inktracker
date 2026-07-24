@@ -1,0 +1,15 @@
+{
+  "appId": "app.inktracker.mobile",
+  "appName": "InkTracker",
+  "webDir": "dist",
+  "ios": {
+    "contentInset": "always",
+    "backgroundColor": "#ffffff"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "backgroundColor": "#ffffff"
+    }
+  }
+}
