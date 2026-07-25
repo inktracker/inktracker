@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Shield, X, ArrowRight } from "lucide-react";
 import { isMfaEmailEnabled } from "@/lib/mfa";
+import { isNative } from "@/lib/mobile/native";
 
 const DISMISS_STORAGE_KEY = "inktracker_mfa_nudge_dismissed_at";
 const DISMISS_REPROMPT_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -51,6 +52,11 @@ export default function MfaNudgeBanner() {
   useEffect(() => {
     let cancelled = false;
     async function check() {
+      // Suppress the persistent security-warning nag inside the native app —
+      // it's poor mobile UX and TOTP enrollment is awkward on the same device.
+      // MFA setup stays available in Account → Security. (Reversible product
+      // call — remove this line to restore the nudge on native.)
+      if (isNative()) return;
       if (isWithinDismissWindow()) return;
       try {
         const result = await isMfaEmailEnabled();
