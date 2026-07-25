@@ -56,26 +56,67 @@ All native-only, guarded to **no-op on web** (browser build unchanged):
 - After `cap add ios`, generate every required size in one command:
   `npx capacitor-assets generate --ios` → writes into `ios/App/App/Assets.xcassets`.
 
-### Deep-link auth — code done ✅, config is Phase 3b
-- `authRedirectUrl(path)` in `native.js` is wired into the LoginModal auth calls
-  (sign-up confirm, magic link, password reset). **Web is byte-identical**
-  (`${origin}${path}`); native returns `https://www.inktracker.app${path}`, a
-  **universal link** iOS routes back into the app.
-- **Phase 3b (needs device):** to make those universal links open the app instead
-  of Safari, add the **Associated Domains** entitlement (`applinks:www.inktracker.app`)
-  in the iOS project + host an **`apple-app-site-association`** file at
-  `https://www.inktracker.app/.well-known/apple-app-site-association` listing the
-  app ID `7545WWK837.app.inktracker.mobile`. Until then the link opens in Safari
-  and still completes login (graceful fallback). Also add the app's redirect to
-  the Intuit QB OAuth redirect URIs for the QB-connect return.
-- **Convert the remaining in-app external navigations** (`window.location.href =
-  <QB OAuth URL>` in OnboardingWizard/BrokerProfile; Stripe billing portal in
-  BillingSection) to `openExternal` — deferred until the deep-link return is
-  wired, so the browser hand-off has somewhere to come back to. (The customer
-  QuotePayment flow is NOT in scope — customers pay from their own phone browser,
-  not inside the shop's app.)
-- **Safe-area visual tuning** on real hardware (notch, Dynamic Island, home
-  indicator across screens).
+### Deep-link auth — code done ✅, artifacts staged ✅, activation is Phase 3b
+`authRedirectUrl(path)` in `native.js` is wired into the LoginModal auth calls
+(sign-up confirm, magic link, password reset). **Web is byte-identical**
+(`${origin}${path}`); native returns `https://www.inktracker.app${path}`.
+
+**Two return mechanisms — we need both, because the two providers differ:**
+
+| Provider | Constraint | Reliable mechanism |
+|----------|-----------|--------------------|
+| **Supabase** (magic link, signup confirm, password reset) | The tapped email link hits `*.supabase.co` first, which then **302-redirects** to the app URL. Universal Links do **not** fire on a 302 chain, but a 302 whose `Location` is a **custom URL scheme** *does* hand off to the app. | **Custom URL scheme** `app.inktracker.mobile://…` |
+| **QuickBooks / Intuit** | Intuit only accepts **https** redirect URIs (no custom schemes), returning to `https://inktracker.app/api/qb-callback`. | **Universal Link** on that path (or an https callback page that conditionally bounces to the custom scheme) |
+
+**Staged in this branch (all inert until activated — the first Simulator run is untouched):**
+- **Custom URL scheme** `app.inktracker.mobile` registered in `Info.plist`
+  (`CFBundleURLTypes`). Captured by the existing `appUrlOpen` → `routeDeepLink`
+  listener in `native.js`. Scheme = the bundle ID, for guaranteed uniqueness.
+- **`apple-app-site-association`** at `public/.well-known/apple-app-site-association`
+  (deploys with the web app; served as `application/json` via a `vercel.json`
+  header rule). App ID `7545WWK837.app.inktracker.mobile`, scoped to
+  `/api/qb-callback`, `/ResetPassword`, and a reserved `/mobile-auth` path — **not**
+  a `*` wildcard, so it never hijacks the marketing domain for a signed-in owner.
+- **`ios/App/App/App.entitlements`** with `applinks:inktracker.app` +
+  `applinks:www.inktracker.app`. **Created but NOT referenced by the build** —
+  see activation step 1.
+
+**Phase 3b activation (needs the Simulator/device + Joe's account access):**
+1. **Wire the entitlement:** set `CODE_SIGN_ENTITLEMENTS = App/App.entitlements`
+   on the App target (Xcode → Signing & Capabilities → **+ Associated Domains**,
+   or the pbxproj build setting). Do this *after* the first clean Simulator run.
+2. **Apple Developer portal:** enable the **Associated Domains** capability on
+   App ID `app.inktracker.mobile`, then let automatic signing regenerate the
+   profile.
+3. **Supabase → Auth → URL Configuration → Redirect URLs allow-list:** add
+   `app.inktracker.mobile://*` (and the reserved `https://www.inktracker.app/mobile-auth`).
+   Then, if device testing confirms the 302→scheme hand-off, switch
+   `authRedirectUrl()` on native from the https URL to
+   `app.inktracker.mobile://mobile-auth` and route it in `routeDeepLink`. Leave
+   the https value until tested — Safari fallback still completes login.
+4. **Intuit developer portal → app → Redirect URIs:** confirm
+   `https://inktracker.app/api/qb-callback` is registered. To bounce the https
+   return into the native app, `/api/qb-callback` must detect a native round-trip
+   (e.g. a `state`/`?native=1` marker carried through the OAuth request) and
+   redirect to `app.inktracker.mobile://qb-callback?<params>`; otherwise it stays
+   in the in-app browser (still completes the connect, just no auto-return).
+5. **Reconcile hosts:** confirm whether the canonical domain is apex
+   `inktracker.app` or `www.` (QB uses apex, `authRedirectUrl` uses www). The AASA
+   is served on both since it's the same deployment; the entitlement lists both.
+6. **Verify the AASA is live + correct** once deployed:
+   `curl -sI https://inktracker.app/.well-known/apple-app-site-association`
+   (expect `200` + `content-type: application/json`), and check Apple's CDN cache
+   picks it up (`https://app-site-association.cdn-apple.com/a/v1/inktracker.app`).
+
+**Then — convert the remaining in-app external navigations** (`window.location.href =
+<QB OAuth URL>` in OnboardingWizard/BrokerProfile; Stripe billing portal in
+BillingSection) to `openExternal` — deferred until the deep-link return is wired,
+so the browser hand-off has somewhere to come back to. (The customer QuotePayment
+flow is NOT in scope — customers pay from their own phone browser, not inside the
+shop's app.)
+
+**Safe-area visual tuning** on real hardware (notch, Dynamic Island, home
+indicator across screens).
 
 ## Phase 4 — App Store Connect
 Create the app record in App Store Connect (name, bundle ID `app.inktracker.mobile`,

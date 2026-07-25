@@ -3,7 +3,7 @@ import { X, ArrowRight, UserPlus, Eye, EyeOff, Mail } from "lucide-react";
 import { supabase } from "@/api/supabaseClient";
 import { useModalA11y } from "@/lib/useModalA11y";
 import { track } from "@/lib/analytics";
-import { authRedirectUrl } from "@/lib/mobile/native";
+import { authRedirectUrl, isNative } from "@/lib/mobile/native";
 
 // MFA is enforced by <MfaGate> in AuthenticatedApp, not here. This
 // modal's only job is to establish a Supabase session — the gate kicks
@@ -529,15 +529,24 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
 
           <div className="text-center">
             {mode === "signin" ? (
-              <p className="text-sm text-slate-500">
-                Don&apos;t have an account?{" "}
-                <button
-                  onClick={() => switchMode("signup")}
-                  className="font-semibold text-teal-600 hover:text-teal-700"
-                >
-                  Create one
-                </button>
-              </p>
+              // App Store guideline 3.1.1 + "companion app" stance: the native
+              // app is sign-in only. No in-app account creation (which leads to
+              // the trial/purchase funnel) — accounts are created on the web.
+              isNative() ? (
+                <p className="text-sm text-slate-500">
+                  New to InkTracker? Create your account at inktracker.app.
+                </p>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  Don&apos;t have an account?{" "}
+                  <button
+                    onClick={() => switchMode("signup")}
+                    className="font-semibold text-teal-600 hover:text-teal-700"
+                  >
+                    Create one
+                  </button>
+                </p>
+              )
             ) : mode === "forgot" ? (
               <p className="text-sm text-slate-500">
                 Remembered it?{" "}

@@ -84,8 +84,27 @@ To stay on the safe side of review:
   — a 30% cut on a $99/mo B2B tool is steep.
 
 This is a real, common rejection point — decide the "no purchasing in the app"
-stance before submitting. Tracked as a native task: gate billing/upgrade UI
-behind `!isNative()`.
+stance before submitting.
+
+**Native gating — DONE (read-only status, no purchase).** Every purchase/pricing
+surface is now suppressed when `isNative()` is true (web byte-identical):
+- **`BillingSection`** → read-only status card ("Plan / Status / Manage your plan
+  at inktracker.app"). No plan cards, no `$` prices, no checkout/portal buttons.
+- **`TrialStatusBanner`** (app-wide) → keeps the informational status but drops
+  every "Start free trial / View plans / Subscribe / Reactivate" CTA and softens
+  the purchase-instruction copy to point at the web.
+- **`CancellationBanner`** → "Resume subscription" (Stripe portal) button replaced
+  with plain text pointing to inktracker.app.
+- **`ReactivateLink`** → renders nothing on native (the write stays disabled; no
+  in-app purchase path).
+- **`LoginModal`** → sign-in only; the "Create one" signup→trial toggle is hidden
+  (plain text: "Create your account at inktracker.app").
+- **App entry** → unauthenticated native users get a sign-in screen
+  (`NativeSignIn`), never the marketing/pricing landing.
+
+Remaining lower-risk follow-up: marketing content routes (`/compare`, `/tools`,
+`/blog`) are technically reachable if deep-linked and may mention pricing — not
+linked from anywhere in the native UI, but worth a pass before submission.
 
 ---
 

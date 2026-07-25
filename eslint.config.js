@@ -5,6 +5,11 @@ import pluginReactHooks from "eslint-plugin-react-hooks";
 import pluginUnusedImports from "eslint-plugin-unused-imports";
 
 export default [
+  // Global ignores (a flat-config object with only `ignores` applies repo-wide).
+  // The native iOS project (Capacitor) vendors framework JS and generates
+  // DerivedData build artifacts that aren't ours to lint — and their inline
+  // eslint-disable directives reference rules this config doesn't load.
+  { ignores: ["ios/**", "dist/**", "**/DerivedData/**"] },
   {
     files: [
       "src/components/**/*.{js,mjs,cjs,jsx}",

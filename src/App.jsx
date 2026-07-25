@@ -24,6 +24,7 @@ import { track, identify } from "@/lib/analytics";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { BROKER_ALLOWED_PAGES } from "@/lib/broker/roleRedirect";
 import LoginModal from "@/components/LoginModal";
+import { isNative } from "@/lib/mobile/native";
 import MfaGate from "@/components/MfaGate";
 // Lazy — the onboarding wizard is large and only rendered for brand-new users,
 // so it should never sit in the eager bundle every page downloads.
@@ -1336,6 +1337,20 @@ function AppRoutes() {
   );
 }
 
+// Native (iOS) sign-in surface. The app is a companion to the web service, so an
+// unauthenticated native user gets a sign-in screen — NEVER the marketing/pricing
+// landing (App Store guideline 3.1.1: no prices, no "start free trial", no
+// purchase funnel in-app). Account creation + subscription happen on the web;
+// LoginModal is already native-gated to sign-in only. The modal is self-contained
+// (its own header + form), rendered over a clean surface.
+function NativeSignIn() {
+  return (
+    <div className="min-h-screen bg-white">
+      <LoginModal isOpen onClose={() => {}} defaultMode="signin" />
+    </div>
+  );
+}
+
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isAuthenticated, user, needsMfaChallenge, markMfaChallengePassed } = useAuth();
   const location = useLocation();
@@ -1362,7 +1377,9 @@ const AuthenticatedApp = () => {
   }
 
   if (!isAuthenticated) {
-    return <PublicLandingPage />;
+    // On native, skip the marketing/pricing landing entirely (guideline 3.1.1) —
+    // open straight to sign-in. Web is unchanged.
+    return isNative() ? <NativeSignIn /> : <PublicLandingPage />;
   }
 
   // MFA gate sits BEFORE every other authenticated branch — onboarding,
