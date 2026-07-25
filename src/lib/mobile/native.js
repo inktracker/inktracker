@@ -130,9 +130,17 @@ export async function initNativeApp() {
 
   try {
     const { StatusBar, Style } = await import("@capacitor/status-bar");
-    // App chrome is light, so status-bar content should be dark.
+    // App chrome is light, so status-bar content should be dark (Style.Light in
+    // Capacitor's naming = dark text on a light background).
     await StatusBar.setStyle({ style: Style.Light });
-    await StatusBar.setOverlaysWebView({ overlay: false });
+    // Overlay the web view (edge-to-edge) rather than reserving a separate
+    // native status-bar strip. That strip was opaque white and sat ABOVE the
+    // web view, so a modal's dimmed backdrop (which lives inside the web view)
+    // couldn't cover it — leaving a bright white bar across the top on every
+    // modal. Overlaying lets `position: fixed; inset: 0` backdrops dim the whole
+    // screen; the `html.cap-native body` safe-area padding keeps content clear
+    // of the notch / status bar (those insets are only non-zero when overlaying).
+    await StatusBar.setOverlaysWebView({ overlay: true });
   } catch {
     /* status-bar plugin unavailable — non-fatal */
   }
