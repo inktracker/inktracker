@@ -47,9 +47,20 @@ export async function openExternal(url) {
  *     Until that's configured the link opens in Safari, which still completes
  *     login — a graceful fallback, never a dead end.
  */
+// The single custom-scheme URL every native auth flow returns to. Must be in
+// Supabase's Auth → URL Configuration → Redirect URLs allow-list (added
+// 2026-07-24). Supabase email links 302 through supabase.co, and iOS hands a
+// 302 whose target is a custom scheme straight to the app (universal links
+// don't fire on a 302 chain) — so the custom scheme is the reliable primitive.
+export const NATIVE_AUTH_REDIRECT = "app.inktracker.mobile://mobile-auth";
+
 export function authRedirectUrl(path = "/") {
   const p = path.startsWith("/") ? path : `/${path}`;
-  if (isNative()) return `https://www.inktracker.app${p}`;
+  // Native: every flow (magic link, signup confirm, password reset) returns to
+  // the SAME allow-listed URL — no per-path variants to allow-list. The intended
+  // in-app destination is recovered by routeDeepLink from the token fragment
+  // (e.g. type=recovery -> /ResetPassword). Web is byte-identical to before.
+  if (isNative()) return NATIVE_AUTH_REDIRECT;
   return `${window.location.origin}${p}`;
 }
 
@@ -61,17 +72,27 @@ export function authRedirectUrl(path = "/") {
 function routeDeepLink(url) {
   try {
     const u = new URL(url);
-    const carriesAuth =
-      (u.hash && u.hash.includes("access_token")) ||
-      (u.search && u.search.includes("code="));
-    // Preserve the path + query + hash so AuthContext's existing
-    // window.location token-detection logic runs unchanged.
-    const target = `${u.pathname || "/"}${u.search || ""}${u.hash || ""}`;
+    const hash = u.hash || "";
+    const search = u.search || "";
+    const carriesAuth = hash.includes("access_token") || search.includes("code=");
     if (carriesAuth) {
-      window.location.replace(target.startsWith("/") ? target : `/${target}`);
-    } else if (u.pathname) {
-      window.location.assign(u.pathname);
+      // Send the auth return to the right screen, preserving the token fragment
+      // so supabase-js's detectSessionInUrl processes it EXACTLY as on web
+      // (same code path — magic link / signup -> "/", recovery -> reset form).
+      const base = hash.includes("type=recovery") ? "/ResetPassword" : "/";
+      if (window.location.pathname === base && !search) {
+        // Same path, only the fragment differs — assigning location won't reload
+        // and detectSessionInUrl runs on load, so force a fresh document load.
+        window.location.hash = hash.replace(/^#/, "");
+        window.location.reload();
+      } else {
+        // Path change triggers a fresh SPA load, which runs detectSessionInUrl.
+        window.location.href = `${base}${search}${hash}`;
+      }
+      return;
     }
+    // Non-auth deep link: navigate to an in-app route if one is present.
+    if (u.pathname && u.pathname !== "/") window.location.assign(u.pathname);
   } catch {
     /* malformed deep link — ignore */
   }
