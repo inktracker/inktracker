@@ -1,3 +1,4 @@
+import { openAuthRedirect } from "@/lib/mobile/native";
 import { useState, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { User, Save, CheckCircle2, AlertCircle, Link2, Unlink, Upload, X } from "lucide-react";
@@ -287,7 +288,7 @@ function BrokerQBSection({ user }) {
       });
       if (invErr) throw invErr;
       if (!data?.state) throw new Error("Failed to generate OAuth state");
-      window.location.href = buildQBAuthUrl(data.state);
+      openAuthRedirect(buildQBAuthUrl(data.state));
     } catch (err) {
       setQbMessage({ type: "error", text: "Could not start QuickBooks connection." });
       setQbConnecting(false);

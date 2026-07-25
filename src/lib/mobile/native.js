@@ -38,6 +38,26 @@ export async function openExternal(url) {
 }
 
 /**
+ * Send the user into an external OAuth / payment flow the platform-correct way:
+ *   - native: the system browser (SFSafariViewController). Apple rejects apps
+ *     that run third-party OAuth / payment inside their own webview. The flow
+ *     still completes end-to-end because the redirect_uri callback writes its
+ *     result server-side (keyed by `state`); a universal-link return (Phase 3b,
+ *     QuickBooks leg) will later bring the user back automatically.
+ *   - web: a normal full-page redirect — byte-identical to the previous
+ *     `window.location.href = url`, so web is unchanged.
+ * Use for QB Connect, Stripe billing portal, and any hosted auth/payment page.
+ */
+export async function openAuthRedirect(url) {
+  if (!url) return;
+  if (isNative()) {
+    await openExternal(url);
+    return;
+  }
+  window.location.href = url;
+}
+
+/**
  * Redirect URL for Supabase email/OAuth flows (magic link, sign-up confirm,
  * password reset).
  *   - web: the current origin (localhost in dev, prod in prod) — IDENTICAL to
