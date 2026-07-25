@@ -1344,11 +1344,7 @@ function AppRoutes() {
 // LoginModal is already native-gated to sign-in only. The modal is self-contained
 // (its own header + form), rendered over a clean surface.
 function NativeSignIn() {
-  return (
-    <div className="min-h-screen bg-white">
-      <LoginModal isOpen onClose={() => {}} defaultMode="signin" />
-    </div>
-  );
+  return <LoginModal isOpen embedded onClose={() => {}} defaultMode="signin" />;
 }
 
 const AuthenticatedApp = () => {

@@ -10,7 +10,7 @@ import { authRedirectUrl, isNative } from "@/lib/mobile/native";
 // in immediately after via AuthContext (which reads profiles.mfa_email_enabled
 // and renders the gate before any app surface becomes reachable).
 
-export default function LoginModal({ isOpen, onClose, defaultMode }) {
+export default function LoginModal({ isOpen, onClose, defaultMode, embedded = false }) {
   const [mode, setMode] = useState(defaultMode || "signin");
 
   useEffect(() => {
@@ -248,14 +248,33 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
   };
 
   return (
-    <div onKeyDown={onKeyDown} className="fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto">
+    <div
+      onKeyDown={onKeyDown}
+      className={
+        embedded
+          ? "min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4 py-10 overflow-y-auto"
+          : "fixed inset-0 bg-black/50 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto"
+      }
+    >
+      {/* Embedded (native full-screen) brand mark — the app is a sign-in-only
+          companion, so this replaces the marketing landing. */}
+      {embedded && (
+        <div className="mb-6 text-center">
+          <div className="text-3xl font-black tracking-tight text-slate-900">InkTracker</div>
+          <p className="mt-1 text-sm text-slate-500">Print shop management</p>
+        </div>
+      )}
       <div
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={embedded ? undefined : "true"}
         aria-label={mode === "signup" ? "Create account" : "Sign in"}
         tabIndex={-1}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto focus:outline-none"
+        className={
+          embedded
+            ? "bg-white rounded-2xl shadow-sm border border-slate-200 w-full max-w-md overflow-y-auto focus:outline-none"
+            : "bg-white rounded-2xl shadow-2xl w-full max-w-md my-auto max-h-[calc(100vh-2rem)] overflow-y-auto focus:outline-none"
+        }
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
@@ -266,9 +285,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode }) {
               ? "Reset Password"
               : "Sign In"}
           </h2>
-          <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-600 transition">
-            <X className="w-5 h-5" />
-          </button>
+          {!embedded && (
+            <button onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-slate-600 transition">
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         <div className="p-6 space-y-5">
