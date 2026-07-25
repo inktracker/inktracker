@@ -2,6 +2,9 @@
   "appId": "app.inktracker.mobile",
   "appName": "InkTracker",
   "webDir": "dist",
+  "server": {
+    "url": "https://inktracker.app"
+  },
   "ios": {
     "contentInset": "always",
     "backgroundColor": "#ffffff"
