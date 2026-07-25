@@ -65,4 +65,9 @@ storage-backup/
 /ios/App/App/public/
 /ios/App/build/
 /ios/App/DerivedData/
+# Release archive/IPA output from the App Store build step (huge, regenerated).
+# exportOptions.plist lives alongside and IS safe to track — only ignore artifacts.
+/build/*.xcarchive/
+/build/*.ipa
+/ios/DerivedData/
 *.xcuserstate

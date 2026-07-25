@@ -321,7 +321,7 @@ export default function Orders() {
                   { label: "", key: null },
                 ].map((h) => (
                   <th key={h.label || "action"} onClick={h.key ? () => toggleSort(h.key) : undefined}
-                    className={`text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                    className={`text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
                     {h.label}{h.key ? sortArrow(h.key) : ""}
                   </th>
                 ))}
@@ -351,8 +351,8 @@ export default function Orders() {
                     className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 cursor-pointer transition"
                     onClick={() => setViewing(o)}
                   >
-                    <td className="px-5 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-3 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
+                    <td className="px-3 py-3.5">
                       <div className="font-semibold text-slate-800 dark:text-slate-200">
                         {getOrderDisplayClient(o, customers[o.customer_id])}
                       </div>
@@ -362,7 +362,7 @@ export default function Orders() {
                         </div>
                       )}
                     </td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-3 py-3.5">
                       {artworkCount > 0 ? (
                         <span className="text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-100 px-2.5 py-1 rounded-full whitespace-nowrap">
                           {artworkCount} file{artworkCount === 1 ? "" : "s"}
@@ -371,10 +371,10 @@ export default function Orders() {
                         <span className="text-xs text-slate-300">—</span>
                       )}
                     </td>
-                    <td className="px-5 py-3.5 text-slate-500">{o.due_date ? fmtDate(o.due_date) : "—"}</td>
-                    <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</td>
-                    <td className="px-5 py-3.5"><Badge s={o.status} /></td>
-                    <td className="px-5 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
+                    <td className="px-3 py-3.5 text-slate-500">{o.due_date ? fmtDate(o.due_date) : "—"}</td>
+                    <td className="px-3 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</td>
+                    <td className="px-3 py-3.5"><Badge s={o.status} /></td>
+                    <td className="px-3 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
                   </tr>
                 );
               })}
