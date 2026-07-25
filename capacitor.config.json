@@ -3,7 +3,7 @@
   "appName": "InkTracker",
   "webDir": "dist",
   "server": {
-    "url": "https://inktracker.app"
+    "url": "https://www.inktracker.app"
   },
   "ios": {
     "contentInset": "always",

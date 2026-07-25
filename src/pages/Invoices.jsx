@@ -464,7 +464,7 @@ export default function Invoices() {
               { label: "", key: null },
             ].map(h=>(
               <th key={h.label || "action"} onClick={h.key ? () => toggleSort(h.key) : undefined}
-                className={`text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                className={`text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
                 {h.label}{h.key ? sortArrow(h.key) : ""}
               </th>
             ))}
@@ -479,20 +479,20 @@ export default function Invoices() {
             )}
             {sorted.map(inv=>(
               <tr key={inv.id} className="border-b border-slate-50 hover:bg-slate-50 dark:bg-slate-800 transition cursor-pointer" onClick={() => setSelected(inv)}>
-                <td className="px-4 py-3.5 font-mono text-xs text-slate-500">{inv.invoice_id}</td>
-                <td className="px-4 py-3.5 font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</td>
-                <td className="px-4 py-3.5 text-slate-500">{fmtDate(inv.date)}</td>
-                <td className="px-4 py-3.5 text-slate-500">{fmtDate(inv.due)}</td>
-                <td className="px-4 py-3.5 text-slate-600">{fmtMoney(inv.subtotal)}</td>
-                <td className="px-4 py-3.5 text-slate-500">{fmtMoney(inv.tax)}</td>
-                <td className="px-4 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(inv.total)}</td>
-                <td className="px-4 py-3.5">
+                <td className="px-3 py-3.5 font-mono text-xs text-slate-500">{inv.invoice_id}</td>
+                <td className="px-3 py-3.5 font-semibold text-slate-800 dark:text-slate-200">{getDisplayName(customers[inv.customer_id] || inv.customer_name)}</td>
+                <td className="px-3 py-3.5 text-slate-500">{fmtDate(inv.date)}</td>
+                <td className="px-3 py-3.5 text-slate-500">{fmtDate(inv.due)}</td>
+                <td className="px-3 py-3.5 text-slate-600">{fmtMoney(inv.subtotal)}</td>
+                <td className="px-3 py-3.5 text-slate-500">{fmtMoney(inv.tax)}</td>
+                <td className="px-3 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(inv.total)}</td>
+                <td className="px-3 py-3.5">
                   {inv.paid
                     ?<span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full whitespace-nowrap">Paid</span>
                     :<span className="text-xs font-semibold text-red-500 bg-red-50 border border-red-100 px-2.5 py-1 rounded-full whitespace-nowrap">Unpaid</span>
                   }
                 </td>
-                <td className="px-4 py-3.5">
+                <td className="px-3 py-3.5">
                   {!inv.paid && (
                     <button onClick={e => { e.stopPropagation(); markPaid(inv.id); }}
                       disabled={readOnly}
