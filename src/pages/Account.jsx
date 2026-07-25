@@ -1,3 +1,4 @@
+import { openAuthRedirect } from "@/lib/mobile/native";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
@@ -436,7 +437,7 @@ export default function Account() {
       });
       if (invErr) throw invErr;
       if (!data?.state) throw new Error("Failed to generate OAuth state");
-      window.location.href = buildQBAuthUrl(data.state);
+      openAuthRedirect(buildQBAuthUrl(data.state));
     } catch (err) {
       console.error("QB connect error:", err);
       setQbMessage({ type: "error", text: "Could not start QuickBooks connection. Please try again." });

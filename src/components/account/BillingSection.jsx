@@ -5,6 +5,7 @@ import { CheckCircle2 } from "lucide-react";
 import { PLANS, getTierLabel, getTierColor } from "@/lib/billing";
 import { notify } from "@/lib/notify";
 import { useAuth } from "@/lib/AuthContext";
+import { isNative } from "@/lib/mobile/native";
 
 // Account → Billing & Plan section. Extracted verbatim from Account.jsx
 // as a pure decomposition — no behavior change. Owns its own subscription
@@ -119,6 +120,32 @@ export default function BillingSection({ user }) {
   // "Manage Billing" button that opened an empty portal.
   const hasPaidPlan = tier === "shop";
   const neverSubscribed = tier === "incomplete";
+
+  // App Store guideline 3.1.1: the iOS app must not show prices or any purchase
+  // affordance. On native we render a read-only status card only — no plans, no
+  // checkout/portal buttons, no tappable "manage" link (plain text pointing to
+  // the web, where the subscription is actually purchased). See
+  // docs/app-store-listing.md and docs/mobile-app.md (Phase 3b).
+  if (isNative()) {
+    return (
+      <div className="bg-slate-50 rounded-xl p-4 max-w-2xl">
+        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Plan</div>
+        <div className="flex items-center gap-2 mb-3">
+          <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${getTierColor(tier)}`}>
+            {getTierLabel(tier)}
+          </span>
+          {sub?.status && (
+            <span className={`text-xs ${sub.status === "active" || sub.status === "trialing" ? "text-emerald-600" : "text-red-500"}`}>
+              {sub.status === "trialing" ? `${sub.trialDaysLeft} days left` : sub.status}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500">
+          Manage your plan at inktracker.app
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

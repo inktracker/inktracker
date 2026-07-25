@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { notify } from "@/lib/notify";
+import { isNative } from "@/lib/mobile/native";
 
 // Surfaces a SCHEDULED (pending) cancellation so a canceling shop isn't
 // surprised when access ends. Shows only while the subscription is set to cancel
@@ -32,7 +33,11 @@ export default function CancellationBanner({ user }) {
   if (!ends || ends.getTime() <= Date.now()) return null; // only while the end date is still ahead
 
   const endsOn = ends.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  const canManageBilling = user.role === "shop" || user.role === "admin";
+  // App Store guideline 3.1.1: no billing-portal (purchase) affordance on native.
+  // The scheduled-cancel notice still shows; the "Resume subscription" action is
+  // replaced with a plain-text pointer to the web.
+  const native = isNative();
+  const canManageBilling = (user.role === "shop" || user.role === "admin") && !native;
 
   async function handleResume() {
     setResuming(true);
@@ -75,7 +80,11 @@ export default function CancellationBanner({ user }) {
             {resuming ? "Opening…" : "Resume subscription"}
           </button>
         ) : (
-          <span className="shrink-0 text-xs text-blue-700">Your shop owner can resume anytime.</span>
+          <span className="shrink-0 text-xs text-blue-700">
+            {native
+              ? "Manage your plan at inktracker.app."
+              : "Your shop owner can resume anytime."}
+          </span>
         )}
       </div>
     </div>

@@ -314,7 +314,13 @@ export default function Layout({ children, currentPageName }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 md:ml-56 min-h-screen max-w-full">
+      {/* min-w-0: <main> is a flex child; without it a flex item won't shrink
+          below its content's intrinsic width, so a wide table (Quotes, Orders,
+          Invoices…) forces <main> past the viewport and the root's
+          overflow-x-hidden clips the spill — the right table columns AND the
+          page's action buttons vanish off the edge. min-w-0 lets <main> stay in
+          its slot so each table's own overflow-x-auto scrolls internally. */}
+      <main className="flex-1 min-w-0 md:ml-56 min-h-screen max-w-full">
         {/* Trial / expired status banner. Rendered above the page so
             the operator can't miss it. Self-hides for paid subs and
             non-shop roles. */}

@@ -538,9 +538,9 @@ export default function Customers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Customers</h2>
-        <div className="flex gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center">
           <ReactivateLink show={readOnly} href={reactivateHref} />
           <button onClick={() => setShowMerge(true)}
             disabled={readOnly}

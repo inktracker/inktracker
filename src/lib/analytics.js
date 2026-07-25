@@ -18,6 +18,7 @@
 // there's no key or no consent).
 
 import { hasNonEssentialConsent } from "@/components/CookieConsent";
+import { isNative } from "@/lib/mobile/native";
 
 const KEY = import.meta.env.VITE_POSTHOG_KEY;
 const HOST = import.meta.env.VITE_POSTHOG_HOST || "https://us.i.posthog.com";
@@ -27,6 +28,11 @@ let loading = false;
 const queue = []; // [event, props] captured before load resolves
 
 function eligible() {
+  // Never load analytics in the native app. Consent is already impossible there
+  // (the cookie-consent banner is gated off native, so it can't be accepted),
+  // but this explicit guard makes it definitive — the App Store privacy label
+  // can accurately state NO usage data is collected on iOS.
+  if (isNative()) return false;
   return Boolean(KEY) && hasNonEssentialConsent();
 }
 

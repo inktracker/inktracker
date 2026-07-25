@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  STAGED, NOT YET ACTIVE. This file is not referenced by the build until
+	  CODE_SIGN_ENTITLEMENTS = App/App.entitlements is set on the App target
+	  (see docs/mobile-app.md, Phase 3b). Activating it also requires enabling
+	  the "Associated Domains" capability on App ID app.inktracker.mobile in the
+	  Apple Developer portal. Both hosts are listed because QuickBooks OAuth
+	  returns to the apex (inktracker.app/api/qb-callback) while Supabase auth
+	  currently returns to www.inktracker.app.
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:inktracker.app</string>
+		<string>applinks:www.inktracker.app</string>
+	</array>
+</dict>
+</plist>

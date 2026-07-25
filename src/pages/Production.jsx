@@ -688,7 +688,7 @@ export default function Production() {
                       />
                     </th>
                     {["Order ID", "Customer", "Due", "Press", "Status", ""].map((h) => (
-                      <th key={h} className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest">
+                      <th key={h} className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest">
                         {h}
                       </th>
                     ))}
@@ -717,8 +717,8 @@ export default function Production() {
                             className="w-4 h-4 rounded border-slate-300 text-teal-600 cursor-pointer"
                           />
                         </td>
-                        <td className="px-5 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
-                        <td className="px-5 py-3.5">
+                        <td className="px-3 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
+                        <td className="px-3 py-3.5">
                           <div className="font-semibold text-slate-800 dark:text-slate-200">
                             {getOrderDisplayClient(o, customers[o.customer_id])}
                           </div>
@@ -728,7 +728,7 @@ export default function Production() {
                             </div>
                           )}
                         </td>
-                        <td className="px-5 py-3.5">
+                        <td className="px-3 py-3.5">
                           {o.due_date ? (
                             <span className={`text-sm ${isOverdue ? "text-red-600 font-bold" : "text-slate-500"}`}>
                               {fmtDate(o.due_date)}
@@ -736,13 +736,13 @@ export default function Production() {
                             </span>
                           ) : <span className="text-xs text-slate-300">—</span>}
                         </td>
-                        <td className="px-5 py-3.5">
+                        <td className="px-3 py-3.5">
                           {normalizeAssignedPress(o.assigned_press) ? (
                             <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">{normalizeAssignedPress(o.assigned_press)}</span>
                           ) : <span className="text-xs text-slate-300">—</span>}
                         </td>
-                        <td className="px-5 py-3.5"><Badge s={o.status} /></td>
-                        <td className="px-5 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
+                        <td className="px-3 py-3.5"><Badge s={o.status} /></td>
+                        <td className="px-3 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
                       </tr>
                     );
                   })}

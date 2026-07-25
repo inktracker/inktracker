@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { getEffectiveTier, computeReadOnly } from "@/lib/billing";
+import { isNative } from "@/lib/mobile/native";
 
 // Banner that surfaces the user's billing state at the top of every
 // page so they can't be surprised by a silent trial expiry.
@@ -31,6 +32,11 @@ export default function TrialStatusBanner({ user }) {
   if (!user) return null;
   if (user.role !== "shop" && user.role !== "admin") return null;
   const plansUrl = createPageUrl("Account") + "?billing=1";
+  // App Store guideline 3.1.1: no purchase affordances on native. Keep the
+  // informational status (so a native user still understands their trial /
+  // view-only state) but drop every "subscribe / pick a plan / reactivate"
+  // CTA and soften purchase-instruction copy to point at the web instead.
+  const native = isNative();
 
   // 'incomplete' = card-required signup with no payment method yet.
   // computeReadOnly treats it as read-only (correct for the gates), but
@@ -42,14 +48,18 @@ export default function TrialStatusBanner({ user }) {
       <div className="bg-teal-50 border-b border-teal-200 px-4 sm:px-6 py-2.5">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
           <p className="flex-1 text-sm text-teal-900 font-semibold">
-            Add a payment method to start your 14-day free trial.
+            {native
+              ? "Finish setting up your account at inktracker.app to start your free trial."
+              : "Add a payment method to start your 14-day free trial."}
           </p>
-          <Link
-            to={plansUrl}
-            className="shrink-0 inline-flex items-center justify-center text-xs sm:text-sm font-semibold bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-xl transition whitespace-nowrap"
-          >
-            Start free trial →
-          </Link>
+          {!native && (
+            <Link
+              to={plansUrl}
+              className="shrink-0 inline-flex items-center justify-center text-xs sm:text-sm font-semibold bg-teal-600 hover:bg-teal-500 text-white px-4 py-2 rounded-xl transition whitespace-nowrap"
+            >
+              Start free trial →
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -65,14 +75,18 @@ export default function TrialStatusBanner({ user }) {
       <div className="bg-red-50 border-b border-red-200 px-4 sm:px-6 py-2.5">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
           <p className="flex-1 text-sm text-red-800 font-semibold">
-            View-only — your subscription has ended. Reactivate to create and edit.
+            {native
+              ? "View-only — your subscription has ended. Manage your plan at inktracker.app to create and edit."
+              : "View-only — your subscription has ended. Reactivate to create and edit."}
           </p>
-          <Link
-            to={plansUrl}
-            className="shrink-0 inline-flex items-center justify-center text-xs sm:text-sm font-semibold bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl transition whitespace-nowrap"
-          >
-            Reactivate →
-          </Link>
+          {!native && (
+            <Link
+              to={plansUrl}
+              className="shrink-0 inline-flex items-center justify-center text-xs sm:text-sm font-semibold bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-xl transition whitespace-nowrap"
+            >
+              Reactivate →
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -97,15 +111,19 @@ export default function TrialStatusBanner({ user }) {
                 : `Your free trial ends in ${left} days.`}
             {" "}
             <span className="font-normal text-amber-800">
-              Pick a plan to keep your shop active.
+              {native
+                ? "Manage your plan at inktracker.app to keep your shop active."
+                : "Pick a plan to keep your shop active."}
             </span>
           </p>
-          <Link
-            to={plansUrl}
-            className="shrink-0 inline-flex items-center justify-center text-xs sm:text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl transition whitespace-nowrap"
-          >
-            View plans →
-          </Link>
+          {!native && (
+            <Link
+              to={plansUrl}
+              className="shrink-0 inline-flex items-center justify-center text-xs sm:text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl transition whitespace-nowrap"
+            >
+              View plans →
+            </Link>
+          )}
         </div>
       </div>
     );
@@ -123,12 +141,14 @@ export default function TrialStatusBanner({ user }) {
               : "active"}
           </span>
         </p>
-        <Link
-          to={plansUrl}
-          className="text-xs font-semibold text-teal-600 hover:text-teal-700"
-        >
-          View plans →
-        </Link>
+        {!native && (
+          <Link
+            to={plansUrl}
+            className="text-xs font-semibold text-teal-600 hover:text-teal-700"
+          >
+            View plans →
+          </Link>
+        )}
       </div>
     </div>
   );

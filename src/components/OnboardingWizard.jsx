@@ -1,3 +1,4 @@
+import { openAuthRedirect } from "@/lib/mobile/native";
 import { useState, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadLogo } from "@/lib/uploadFile";
@@ -137,7 +138,7 @@ export default function OnboardingWizard({ user, onComplete }) {
       state,
       prompt: "login",
     });
-    window.location.href = `https://appcenter.intuit.com/connect/oauth2?${params}`;
+    openAuthRedirect(`https://appcenter.intuit.com/connect/oauth2?${params}`);
   }
 
   // Persist everything the wizard collected. Shared by both exits (dashboard

@@ -458,9 +458,9 @@ export default function Quotes() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-center">
         <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">Quotes</h2>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           {bulkSelect.size > 0 && (
             <button onClick={async () => {
               if (!window.confirm(`Delete ${bulkSelect.size} selected quote(s)?`)) return;
@@ -637,7 +637,7 @@ export default function Quotes() {
                 { label: "", key: null },
               ].map((h, idx) => (
                 <th key={h.label || `col-${idx}`} onClick={h.key ? () => toggleSort(h.key) : undefined}
-                  className={`text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
+                  className={`text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-widest ${h.key ? "cursor-pointer hover:text-slate-600 select-none" : ""}`}>
                   {h.label}{h.key ? sortArrow(h.key) : ""}
                 </th>
               ))}
@@ -676,7 +676,7 @@ export default function Quotes() {
                       }}
                       className="rounded border-slate-300 accent-teal-600" />
                   </td>
-                  <td className="px-5 py-3.5 font-mono text-xs text-slate-500">
+                  <td className="px-3 py-3.5 font-mono text-xs text-slate-500">
                     {q.quote_id}
                     {q.source === "email" && <span className="ml-1 text-teal-600" title="From email">✉</span>}
                   </td>
@@ -686,7 +686,7 @@ export default function Quotes() {
                       the broker's name + company here. The end client is
                       surfaced as a "Reference: …" in the row's secondary
                       line. For non-broker quotes, the linked customer wins. */}
-                  <td className="px-5 py-3.5 text-slate-800 dark:text-slate-200">
+                  <td className="px-3 py-3.5 text-slate-800 dark:text-slate-200">
                     {q.broker_id ? (
                       <div className="min-w-0">
                         <div className="font-semibold truncate">
@@ -708,25 +708,25 @@ export default function Quotes() {
                     )}
                   </td>
 
-                  <td className="px-5 py-3.5 text-slate-500">{fmtDate(q.date)}</td>
+                  <td className="px-3 py-3.5 text-slate-500">{fmtDate(q.date)}</td>
 
-                  <td className="px-5 py-3.5 text-slate-500">
+                  <td className="px-3 py-3.5 text-slate-500">
                     {q.due_date ? fmtDate(q.due_date) : "—"}
                   </td>
 
-                  <td className="px-5 py-3.5 text-slate-600">{qty} pcs</td>
+                  <td className="px-3 py-3.5 text-slate-600">{qty} pcs</td>
 
-                  <td className="px-5 py-3.5 font-bold text-slate-800 dark:text-slate-200">
+                  <td className="px-3 py-3.5 font-bold text-slate-800 dark:text-slate-200">
                     {fmtMoney(t.total)}
                   </td>
 
-                  <td className="px-5 py-3.5">
+                  <td className="px-3 py-3.5">
                     <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full whitespace-nowrap">
                       {qty > 0 ? getTier(qty) : "—"}+
                     </span>
                   </td>
 
-                  <td className="px-5 py-3.5">
+                  <td className="px-3 py-3.5">
                     <div className="flex flex-col gap-1">
                       <Badge s={q.status} />
                       {q.expires_date && new Date(q.expires_date) < new Date() && q.status === "Pending" && (
@@ -750,7 +750,7 @@ export default function Quotes() {
                     </div>
                   </td>
 
-                  <td className="px-5 py-3.5 text-right text-teal-400 text-xs font-semibold">
+                  <td className="px-3 py-3.5 text-right text-teal-400 text-xs font-semibold">
                     View →
                   </td>
                 </tr>

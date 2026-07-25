@@ -61,6 +61,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </RootErrorBoundary>
 )
 
+// Native (Capacitor iOS) setup — status bar, safe-area hook, deep-link auth
+// return. No-op on web, so nothing changes in the browser build.
+import('@/lib/mobile/native').then((m) => m.initNativeApp()).catch(() => {})
+
 // Initialize Sentry + analytics AFTER first paint, on idle — keeps both chunks
 // out of the initial load. Errors before Sentry fires are still captured (the
 // boundaries lazy-init Sentry on demand). Both no-op without their env key;

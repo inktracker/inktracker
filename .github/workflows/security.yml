@@ -47,7 +47,13 @@ jobs:
       - name: Run gitleaks
         run: |
           VER=8.30.1
-          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
+          # Download to a file with retries + fail-on-HTTP-error, then verify it's
+          # a real gzip before extracting. A transient GitHub CDN hiccup used to
+          # pipe an error page straight into tar and fail the whole security gate.
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
+            -o gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz"
+          file gitleaks.tgz | grep -qi gzip || { echo "::error::gitleaks download is not a gzip (CDN/transient failure)"; exit 1; }
+          tar -xzf gitleaks.tgz gitleaks
           ./gitleaks version
           ./gitleaks detect --source . --config .gitleaks.toml --redact --no-banner --exit-code 1

@@ -59,3 +59,15 @@ test-results/
 
 # Local output of scripts/backup-storage.mjs (OPS-02)
 storage-backup/
+
+# Capacitor / iOS native build artifacts
+/ios/App/Pods/
+/ios/App/App/public/
+/ios/App/build/
+/ios/App/DerivedData/
+# Release archive/IPA output from the App Store build step (huge, regenerated).
+# exportOptions.plist lives alongside and IS safe to track — only ignore artifacts.
+/build/*.xcarchive/
+/build/*.ipa
+/ios/DerivedData/
+*.xcuserstate

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { isNative } from "@/lib/mobile/native";
 
 // Bottom-of-screen consent strip with Accept / Decline.
 //
@@ -50,6 +51,10 @@ export default function CookieConsent() {
   // failures (private browsing / consent extensions) so the app
   // doesn't crash.
   useEffect(() => {
+    // Native (App Store) apps declare data use via the App Privacy nutrition
+    // labels, not a web cookie-consent banner — and there's no third-party
+    // web-cookie tracking to consent to. Never show this strip in the app.
+    if (isNative()) return;
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       // Re-prompt anyone who isn't in the new explicit "accepted"/"rejected"
