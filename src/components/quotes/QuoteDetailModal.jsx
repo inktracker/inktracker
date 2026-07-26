@@ -20,6 +20,7 @@ import {
 import { exportQuoteToPDF, previewPdf } from "../shared/pdfExport";
 import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { isQbStale } from "@/lib/quotes/qbStale";
+import { qbModifiedState, buildQuoteAdoptPatch } from "@/lib/quotes/qbAdopt";
 import { savedAfterDiscount, savedRushTotal } from "@/lib/quotes/effectiveTotals";
 import Badge from "../shared/Badge";
 import SendQuoteModal from "./SendQuoteModal";
@@ -315,6 +316,32 @@ export default function QuoteDetailModal({
   const [qbConnected, setQbConnected] = useState(null); // null=unknown, true, false
   const [qbCheckingConn, setQbCheckingConn] = useState(false);
   const [qbCopied, setQbCopied] = useState(false);
+  const [matchingQb, setMatchingQb] = useState(false);
+
+  // "Modified in QuickBooks — Match?" — a QB-side edit left this quote's saved
+  // total disagreeing with QB's mirror (and the quote itself wasn't edited, so
+  // it's not the stale-regenerate case). Let the shop pull QB's authoritative
+  // total/tax onto the quote. Explicit click only — the quote-snapshot invariant
+  // never rewrites as-sold automatically. Mirrors the invoice adopt.
+  async function handleMatchQb() {
+    const patch = buildQuoteAdoptPatch(quote);
+    if (!patch) return;
+    if (!window.confirm(
+      `Match this quote to QuickBooks (${fmtMoney(patch.total)})?\n\n` +
+      `QuickBooks is the billing authority and your customer is already billed this ` +
+      `amount — this updates the quote so it agrees. Line items aren't changed.`,
+    )) return;
+    setMatchingQb(true);
+    try {
+      const updated = await base44.entities.Quote.update(quote.id, patch);
+      onUpdated?.(updated);
+      notify.success("Matched to QuickBooks", "This quote now agrees with QuickBooks.");
+    } catch (err) {
+      notify.error("Couldn't match to QuickBooks", err?.message || "Please try again.");
+    } finally {
+      setMatchingQb(false);
+    }
+  }
 
   // ── QB Panel tabs (Status | Events | Link) ─────────────────────────
   // The Status tab is the historical view (connection + invoice +
@@ -1159,6 +1186,34 @@ export default function QuoteDetailModal({
                             invoice so the customer is charged the correct amount.
                           </div>
                         )}
+                        {!stale && (() => {
+                          // QB was edited after this quote was sent (the quote
+                          // itself is unchanged, so it's not the stale case).
+                          // Offer the shop a one-click reconcile toward QB.
+                          const mod = qbModifiedState(quote);
+                          if (!mod.modified) return null;
+                          const higher = mod.delta > 0; // delta = qb − local
+                          return (
+                            <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 mt-1 space-y-2">
+                              <div>
+                                <span className="font-semibold">Modified in QuickBooks.</span>{" "}
+                                QuickBooks recorded {fmtMoney(mod.qbTotal)} for this quote —{" "}
+                                {fmtMoney(Math.abs(mod.delta))} {higher ? "more" : "less"} than the{" "}
+                                {fmtMoney(mod.localTotal)} it was sent at. Your customer is billed the
+                                QuickBooks amount.
+                              </div>
+                              {!readOnly && (
+                                <button
+                                  onClick={handleMatchQb}
+                                  disabled={matchingQb}
+                                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-teal-600 hover:bg-teal-700 px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  {matchingQb ? "Matching…" : "Match to QuickBooks"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </>
                     );
                   })()}
