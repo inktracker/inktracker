@@ -107,9 +107,10 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
 
   async function handleSyncFromQb() {
     const ok = window.confirm(
-      `QuickBooks shows ${fmtMoney(qbModified.qbTotal)} for this invoice; InkTracker has ${fmtMoney(qbModified.localTotal)}.\n\n` +
-      `Update InkTracker (invoice, quote, and order totals) to match QuickBooks? ` +
-      `Line items and production details are not changed.`
+      `Match this invoice to QuickBooks (${fmtMoney(qbModified.qbTotal)})?\n\n` +
+      `QuickBooks is the billing authority and your customer is already billed this ` +
+      `amount — this updates the invoice, quote, and order totals to agree. Line items ` +
+      `and production details aren't changed.`
     );
     if (!ok) return;
     setSyncingQb(true);
@@ -138,7 +139,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       onInvoiceUpdated?.(updated);
     } catch (err) {
       console.error("[InvoiceDetailModal] QB sync failed:", err);
-      window.alert(`Sync from QuickBooks didn't complete: ${err?.message || "unknown error"}. Click Sync again to retry.`);
+      window.alert(`Match to QuickBooks didn't complete: ${err?.message || "unknown error"}. Click Match again to retry.`);
     } finally {
       setSyncingQb(false);
     }
@@ -643,8 +644,10 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           {qbModified.modified && (
             <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-700 dark:text-slate-200">
-                <span className="font-semibold">This invoice was modified in QuickBooks.</span>{" "}
-                QuickBooks shows {fmtMoney(qbModified.qbTotal)}; InkTracker has {fmtMoney(qbModified.localTotal)}.
+                <span className="font-semibold">Modified in QuickBooks.</span>{" "}
+                QuickBooks recorded {fmtMoney(qbModified.qbTotal)} for this invoice —{" "}
+                {fmtMoney(Math.abs(qbModified.delta))} {qbModified.delta > 0 ? "more" : "less"} than
+                InkTracker&rsquo;s {fmtMoney(qbModified.localTotal)}. Your customer is billed the QuickBooks amount.
               </div>
               <button
                 onClick={handleSyncFromQb}
@@ -652,7 +655,7 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
                 title={readOnly ? readOnlyReason : undefined}
                 className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {syncingQb ? "Syncing…" : "Sync from QuickBooks"}
+                {syncingQb ? "Matching…" : "Match to QuickBooks"}
               </button>
             </div>
           )}
