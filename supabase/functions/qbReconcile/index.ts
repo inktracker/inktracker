@@ -83,6 +83,9 @@ import {
   summarizeBooksDrift,
   shouldSendBooksDriftAlert,
   buildBooksDriftAlertText,
+  buildPriorAlertMap,
+  selectUnalertedDrift,
+  alertedSignatures,
 } from "../_shared/booksDriftAlert.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
@@ -809,8 +812,8 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
     // firing (2026-07-17) alerted on two Kato invoices that QBO had
     // already corrected; never again.
     const rows = Array.isArray(verifiedDrift) ? verifiedDrift : [];
-    const quoteDrift = rows.filter((r: any) => r.source === "quotes");
-    const invoiceDrift = rows.filter((r: any) => r.source === "invoices");
+    const quoteDriftAll = rows.filter((r: any) => r.source === "quotes");
+    const invoiceDriftAll = rows.filter((r: any) => r.source === "invoices");
 
     // Paid invoice → unpaid order. No FK between invoices.order_id and
     // orders.order_id, so match in two passes.
@@ -820,7 +823,7 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
       .eq("paid", true)
       .not("order_id", "is", null)
       .limit(5000);
-    let stuckOrders: any[] = [];
+    let stuckOrdersAll: any[] = [];
     const linkedIds = (paidLinked ?? []).map((r: any) => r.order_id);
     if (linkedIds.length) {
       const { data: unpaidOrders } = await adminClient
@@ -829,7 +832,7 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
         .eq("paid", false)
         .in("order_id", linkedIds);
       const unpaidKey = new Set((unpaidOrders ?? []).map((o: any) => `${o.shop_owner}|${o.order_id}`));
-      stuckOrders = (paidLinked ?? []).filter((r: any) => unpaidKey.has(`${r.shop_owner}|${r.order_id}`));
+      stuckOrdersAll = (paidLinked ?? []).filter((r: any) => unpaidKey.has(`${r.shop_owner}|${r.order_id}`));
     }
 
     const { count: taxHoldCount } = await adminClient
@@ -839,20 +842,37 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
       .eq("response_body->>taxBlocked", "true")
       .gte("created_at", since24h);
 
+    // Per-drift dedup (replaces the old once-per-day GLOBAL gate that
+    // re-emailed nightly for as long as any drift existed). Only email
+    // about a row the operator hasn't already been told about at this exact
+    // amount. The ledger is prior books_drift_alert events, replayed
+    // oldest-first so the newest cents per row win; a drift whose amount
+    // changes re-alerts. Stuck orders share the ledger, keyed by order.
+    const since90d = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: priorEvents } = await adminClient
+      .from("qb_event_log")
+      .select("response_body")
+      .eq("action", "books_drift_alert")
+      .gte("created_at", since90d)
+      .order("created_at", { ascending: true })
+      .limit(1000);
+    const priorAlerted = buildPriorAlertMap((priorEvents ?? []).map((e: any) => e.response_body));
+
+    const stuckTagged = stuckOrdersAll.map((r: any) => ({
+      shop_owner: r.shop_owner, ref: r.order_id, source: "stuck_order", drift: 0,
+      invoice_id: r.invoice_id, order_id: r.order_id,
+    }));
+    const freshAll = selectUnalertedDrift([...quoteDriftAll, ...invoiceDriftAll, ...stuckTagged], priorAlerted);
+    const quoteDrift = freshAll.filter((r: any) => r.source === "quotes");
+    const invoiceDrift = freshAll.filter((r: any) => r.source === "invoices");
+    const stuckOrders = freshAll
+      .filter((r: any) => r.source === "stuck_order")
+      .map((r: any) => ({ shop_owner: r.shop_owner, invoice_id: r.invoice_id, order_id: r.order_id }));
+
     const summary = summarizeBooksDrift({ quoteDrift, invoiceDrift, stuckOrders, taxHoldCount: taxHoldCount ?? 0 });
     if (!shouldSendBooksDriftAlert(summary)) {
       return { findings: 0, alerted: false };
     }
-
-    // Once-per-day dedup, same pattern as the integrity alert.
-    const { data: recentAlert } = await adminClient
-      .from("qb_event_log")
-      .select("id")
-      .eq("action", "books_drift_alert")
-      .gte("created_at", since24h)
-      .limit(1)
-      .maybeSingle();
-    if (recentAlert) return { findings: summary.driftCount + summary.stuckCount, alerted: false };
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -882,6 +902,9 @@ async function scanAndAlertBooksDrift(adminClient: any, verifiedDrift: any[]): P
         stuck: summary.stuckCount,
         shops: summary.shopCount,
         tax_holds_24h: summary.taxHoldCount,
+        // Per-drift ledger: what this email covered, so tomorrow's run stays
+        // quiet unless a row is new or its amount changed.
+        alerted: alertedSignatures(freshAll),
       },
     });
     return { findings: summary.driftCount + summary.stuckCount, alerted: true };

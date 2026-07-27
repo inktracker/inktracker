@@ -148,3 +148,60 @@ export function buildBooksDriftAlertText(summary) {
   lines.push("Runbook: check qb_event_log for the row's recent create/refresh events before editing anything.");
   return lines.join("\n");
 }
+
+// ── Per-drift operator-alert dedup ──────────────────────────────────
+// The operator email used to re-fire nightly for as long as ANY drift
+// existed (a global 24h dedup), so one unresolved row (Kato's, 2026-07)
+// meant a nightly email forever. Once the operator has been told about a
+// specific drift — and the shop already has its in-app notice + Match
+// button — repeating it every night is noise. These helpers make the
+// alert per-drift: a row is emailed only when it's NEW or its dollar
+// amount CHANGED since the last alert. The "already alerted" ledger lives
+// in qb_event_log: each books_drift_alert event carries
+// response_body.alerted = [{ key, cents }].
+
+/** Stable identity of a drift row across nightly runs. */
+export function driftAckKey(row) {
+  const source = row?.source ?? "quotes";
+  return `${row?.shop_owner ?? ""}|${row?.ref ?? ""}|${source}`;
+}
+
+/** Signed drift in whole cents — the exact amount compared across runs. */
+export function driftCents(row) {
+  return Math.round(Number(row?.drift ?? 0) * 100);
+}
+
+/**
+ * Fold prior books_drift_alert event bodies into a key → last-alerted-cents
+ * map. Bodies MUST be applied oldest-first so the newest amount wins.
+ * @param {Array<{ alerted?: Array<{ key: string, cents: number }> }>} eventBodies
+ */
+export function buildPriorAlertMap(eventBodies) {
+  /** @type {Record<string, number>} */
+  const map = {};
+  for (const body of Array.isArray(eventBodies) ? eventBodies : []) {
+    for (const s of body?.alerted ?? []) {
+      if (s && typeof s.key === "string") map[s.key] = Number(s.cents);
+    }
+  }
+  return map;
+}
+
+/**
+ * Keep only the drift rows the operator should be emailed about now:
+ * never alerted before, or the amount changed since the last alert.
+ * @param {Array<object>} rows
+ * @param {Record<string, number>} priorCentsByKey  key → last-alerted cents
+ */
+export function selectUnalertedDrift(rows, priorCentsByKey = {}) {
+  const prior = priorCentsByKey || {};
+  return (Array.isArray(rows) ? rows : []).filter((r) => {
+    const key = driftAckKey(r);
+    return !(key in prior) || prior[key] !== driftCents(r);
+  });
+}
+
+/** The signatures to record for a batch of just-alerted rows. */
+export function alertedSignatures(rows) {
+  return (Array.isArray(rows) ? rows : []).map((r) => ({ key: driftAckKey(r), cents: driftCents(r) }));
+}

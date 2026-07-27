@@ -5,6 +5,11 @@ import {
   summarizeBooksDrift,
   shouldSendBooksDriftAlert,
   buildBooksDriftAlertText,
+  driftAckKey,
+  driftCents,
+  buildPriorAlertMap,
+  selectUnalertedDrift,
+  alertedSignatures,
 } from "../booksDriftAlert.js";
 
 describe("findDriftRows", () => {
@@ -108,5 +113,54 @@ describe("buildBooksDriftAlertText", () => {
     expect(text).toContain("ORD-1");
     expect(text).toContain("2 tax-mismatch hold(s)");
     expect(text).toContain("QB is the authority");
+  });
+});
+
+describe("per-drift operator-alert dedup", () => {
+  const kato = { shop_owner: "kato@thunder-house.com", ref: "Q-2026-9Q31", source: "quotes", drift: -84.96 };
+
+  it("driftAckKey is stable per shop/ref/source; driftCents is signed integer cents", () => {
+    expect(driftAckKey(kato)).toBe("kato@thunder-house.com|Q-2026-9Q31|quotes");
+    expect(driftCents(kato)).toBe(-8496);
+    expect(driftAckKey({ shop_owner: "a@x.com", ref: "R" })).toBe("a@x.com|R|quotes"); // defaults source
+  });
+
+  it("buildPriorAlertMap keeps the NEWEST amount when events replay oldest-first", () => {
+    const map = buildPriorAlertMap([
+      { alerted: [{ key: "a@x|Q1|quotes", cents: 100 }] },
+      { alerted: [{ key: "a@x|Q1|quotes", cents: 250 }, { key: "b@x|I2|invoices", cents: -30 }] },
+    ]);
+    expect(map).toEqual({ "a@x|Q1|quotes": 250, "b@x|I2|invoices": -30 });
+  });
+
+  it("selectUnalertedDrift emits a never-seen row, suppresses an unchanged one, re-emits a changed one", () => {
+    const rows = [
+      { shop_owner: "a@x.com", ref: "Q1", source: "quotes", drift: 5.00 },   // never alerted
+      { shop_owner: "b@x.com", ref: "I2", source: "invoices", drift: -3.00 }, // alerted, unchanged
+      { shop_owner: "c@x.com", ref: "Q3", source: "quotes", drift: 9.99 },    // alerted, amount changed
+    ];
+    const prior = { "b@x.com|I2|invoices": -300, "c@x.com|Q3|quotes": 100 };
+    const fresh = selectUnalertedDrift(rows, prior);
+    expect(fresh.map((r) => r.ref)).toEqual(["Q1", "Q3"]);
+  });
+
+  it("Kato's persistent drift goes quiet after the first alert, until the amount changes", () => {
+    const rows = [kato];
+    // Night 1: nothing recorded → alert.
+    let fresh = selectUnalertedDrift(rows, {});
+    expect(fresh).toHaveLength(1);
+    // Record what we alerted, replay into the map.
+    const map = buildPriorAlertMap([{ alerted: alertedSignatures(fresh) }]);
+    expect(map).toEqual({ "kato@thunder-house.com|Q-2026-9Q31|quotes": -8496 });
+    // Night 2+: same drift → silent.
+    expect(selectUnalertedDrift(rows, map)).toHaveLength(0);
+    // QB changes the amount → re-alert once.
+    expect(selectUnalertedDrift([{ ...kato, drift: -90.0 }], map)).toHaveLength(1);
+  });
+
+  it("alertedSignatures pairs each row's key with its cents", () => {
+    expect(alertedSignatures([kato])).toEqual([
+      { key: "kato@thunder-house.com|Q-2026-9Q31|quotes", cents: -8496 },
+    ]);
   });
 });
