@@ -35,6 +35,12 @@ export default function Invoices() {
   const location = useLocation();
   const urlParams = new URLSearchParams(location.search);
   const initialCustomer = urlParams.get("customer") || "";
+  // Deep-link target. The notification bell links here as
+  // `Invoices?id=<row id>` for qb_invoice_modified events — the invoice
+  // modal is the ONLY place the "Modified in QuickBooks / Match to
+  // QuickBooks" banner lives, so a notification that merely dumps the
+  // shop on the invoice list doesn't actually offer the fix.
+  const deepLinkId = urlParams.get("id") || "";
 
   const [invoices, setInvoices] = useState([]);
   const [customers, setCustomers] = useState({});
@@ -107,6 +113,19 @@ export default function Invoices() {
     }
     loadData();
   }, []);
+
+  // Open the deep-linked invoice once, after the list has loaded. Guarded
+  // by a ref rather than by `selected` so closing the modal doesn't
+  // immediately reopen it, and so a background QB refresh replacing
+  // `invoices` can't pop it back up.
+  const deepLinkOpenedRef = useRef(false);
+  useEffect(() => {
+    if (!deepLinkId || deepLinkOpenedRef.current || invoices.length === 0) return;
+    const match = invoices.find((i) => i.id === deepLinkId);
+    if (!match) return;
+    deepLinkOpenedRef.current = true;
+    setSelected(match);
+  }, [deepLinkId, invoices]);
 
   const handleAdvFilterChange = (key, value) => {
     setAdvFilters(prev => value ? { ...prev, [key]: value } : { ...prev, [key]: undefined });
