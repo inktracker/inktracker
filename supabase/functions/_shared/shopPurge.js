@@ -19,6 +19,7 @@ export const SHOP_PURGE_TABLES = Object.freeze([
   { table: "artwork_objects",  column: "shop_owner" },
   { table: "notification_log", column: "shop_owner" },
   { table: "notifications",    column: "shop_owner" },
+  { table: "change_log",       column: "shop_owner" },
   { table: "messages",         column: "shop_owner" },
   { table: "invoices",         column: "shop_owner" },
   { table: "purchase_orders",  column: "shop_owner" },

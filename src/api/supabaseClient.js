@@ -87,6 +87,9 @@ const TABLE_MAP = {
   BrokerDocument: "broker_documents",
   BrokerFile: "broker_files",
   PurchaseOrder: "purchase_orders",
+  // Append-only document history (who/when/where-from). Needs an explicit
+  // entry: the default pluralisation would look for "changelogs".
+  ChangeLog: "change_log",
 };
 
 // Base44 used "created_date" as the auto-timestamp column name; Supabase uses "created_at"
