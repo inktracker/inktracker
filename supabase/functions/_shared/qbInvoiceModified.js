@@ -19,28 +19,56 @@ export const QB_MODIFIED_TOLERANCE = 0.01;
 
 /**
  * Decide whether a fresh QB total warrants a shop notification.
- * Notify only on the TRANSITION (QB's number moved since our last
- * mirror) into disagreement — repeated webhook deliveries or edits
- * that keep QB in agreement stay quiet.
+ * Notify on the TRANSITION into disagreement — repeated webhook
+ * deliveries and edits that keep QB in agreement stay quiet.
+ *
+ * FIRST MIRROR (priorQbTotal == null): this used to return
+ * shouldNotify:false unconditionally, on the theory that a row with no
+ * prior mirror has nothing to compare against. That silently swallowed
+ * the single most common case. Invoices created FROM InkTracker get
+ * qb_total stamped at create time (qbSync createInvoice), so they
+ * always have a prior — but rows imported by pullInvoices never get
+ * qb_total written at all, only `total`. So every import-born invoice
+ * sat at qb_total = NULL until the shop's first QB-side edit, and that
+ * edit was exactly the one the guard suppressed.
+ *
+ * Lisa Gotts INV-2026-OW0M1-r3 (2026-07-28, QB invoice 3746): edited
+ * $5000 → $4995 in QBO, Invoice/Update webhook arrived and mirrored,
+ * the invoice modal showed the "Modified in QuickBooks" banner — and
+ * no bell notification was ever written. prod `notifications` had zero
+ * qb_invoice_modified rows, ever.
+ *
+ * A first mirror that lands in disagreement is real news, and it is
+ * not noisy: pullInvoices sets local `total` FROM the QB total, so an
+ * untouched imported invoice agrees and stays quiet. It only fires
+ * once the shop actually changes the invoice in QuickBooks.
  *
  * @param {object} args
  * @param {number|string|null} args.localTotal    the row's as-sold total
  * @param {number|string|null} args.priorQbTotal  qb_total mirror BEFORE this event
  * @param {number|string|null} args.freshQbTotal  live TotalAmt from the webhook fetch
- * @returns {{ qbChanged: boolean, diverges: boolean, shouldNotify: boolean }}
+ * @returns {{ qbChanged: boolean, diverges: boolean, firstMirror: boolean, shouldNotify: boolean }}
  */
 export function detectQbInvoiceModification({ localTotal, priorQbTotal, freshQbTotal }) {
   // Number(null) is 0, so the null check must come before coercion.
   const fresh = freshQbTotal == null ? NaN : Number(freshQbTotal);
-  if (!Number.isFinite(fresh)) return { qbChanged: false, diverges: false, shouldNotify: false };
+  if (!Number.isFinite(fresh)) {
+    return { qbChanged: false, diverges: false, firstMirror: false, shouldNotify: false };
+  }
   // Cents-rounded deltas — raw float subtraction turns a 1¢ move into
   // 0.010000000000005 and trips the > tolerance check.
   const centsDelta = (a, b) => Math.abs(Number((Number(a) - Number(b)).toFixed(2)));
-  const qbChanged = priorQbTotal == null
-    ? false // first mirror write — nothing to compare against, don't notify
+  const firstMirror = priorQbTotal == null;
+  const qbChanged = firstMirror
+    ? false
     : centsDelta(priorQbTotal, fresh) > QB_MODIFIED_TOLERANCE;
   const diverges = localTotal != null && centsDelta(localTotal, fresh) > QB_MODIFIED_TOLERANCE;
-  return { qbChanged, diverges, shouldNotify: qbChanged && diverges };
+  return {
+    qbChanged,
+    diverges,
+    firstMirror,
+    shouldNotify: diverges && (qbChanged || firstMirror),
+  };
 }
 
 /**

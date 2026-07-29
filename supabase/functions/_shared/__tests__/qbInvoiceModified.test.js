@@ -10,7 +10,7 @@ describe("detectQbInvoiceModification", () => {
   it("notifies on the transition: QB moved AND now disagrees with IT", () => {
     // Kato's $300 line: mirror had 19477.53, QB edit made it 19777.53, IT at 19477.53
     const d = detectQbInvoiceModification({ localTotal: 19477.53, priorQbTotal: 19477.53, freshQbTotal: 19777.53 });
-    expect(d).toEqual({ qbChanged: true, diverges: true, shouldNotify: true });
+    expect(d).toEqual({ qbChanged: true, diverges: true, firstMirror: false, shouldNotify: true });
   });
 
   it("stays quiet when QB edit brings QB INTO agreement (the Kato correction case)", () => {
@@ -27,8 +27,30 @@ describe("detectQbInvoiceModification", () => {
     expect(d.diverges).toBe(true); // still divergent, but not NEW news
   });
 
-  it("first mirror write never notifies (no prior to compare)", () => {
-    const d = detectQbInvoiceModification({ localTotal: 100, priorQbTotal: null, freshQbTotal: 150 });
+  // Regression: Lisa Gotts INV-2026-OW0M1-r3 / QB 3746, 2026-07-28.
+  // Import-born rows (pullInvoices writes `total` but never `qb_total`)
+  // reach their first QB-side edit with priorQbTotal = null. The old
+  // first-mirror guard suppressed exactly that notification, so prod
+  // had zero qb_invoice_modified rows ever written.
+  it("first mirror that lands in DISAGREEMENT notifies (import-born rows)", () => {
+    const d = detectQbInvoiceModification({ localTotal: 5000, priorQbTotal: null, freshQbTotal: 4995 });
+    expect(d.firstMirror).toBe(true);
+    expect(d.qbChanged).toBe(false);
+    expect(d.diverges).toBe(true);
+    expect(d.shouldNotify).toBe(true);
+  });
+
+  it("first mirror that AGREES stays quiet (untouched imported invoice)", () => {
+    // pullInvoices sets local `total` from the QB total, so a freshly
+    // imported invoice agrees on its first mirror — no noise.
+    const d = detectQbInvoiceModification({ localTotal: 4995, priorQbTotal: null, freshQbTotal: 4995 });
+    expect(d.firstMirror).toBe(true);
+    expect(d.diverges).toBe(false);
+    expect(d.shouldNotify).toBe(false);
+  });
+
+  it("first mirror with no local total to compare stays quiet", () => {
+    const d = detectQbInvoiceModification({ localTotal: null, priorQbTotal: null, freshQbTotal: 150 });
     expect(d.shouldNotify).toBe(false);
   });
 
