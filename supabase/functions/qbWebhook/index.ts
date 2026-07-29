@@ -33,6 +33,7 @@ import {
 import {
   detectQbInvoiceModification,
   buildQbMirrorPatch,
+  buildQbLineSnapshot,
   buildQbModifiedNotification,
 } from "../_shared/qbInvoiceModified.js";
 import { recordShopNotification } from "../_shared/shopNotifications.js";
@@ -135,13 +136,17 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
 
   const [{ data: quote }, { data: invoiceRow }] = await Promise.all([
     supabase.from("quotes")
-      .select("id, quote_id, total, qb_total, paid")
+      .select("id, quote_id, total, qb_total, qb_line_snapshot, paid")
       .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
     supabase.from("invoices")
-      .select("id, invoice_id, total, qb_total, paid")
+      .select("id, invoice_id, total, qb_total, qb_line_snapshot, paid")
       .eq("qb_invoice_id", qbInvoiceId).eq("shop_owner", shopOwner).maybeSingle(),
   ]);
   if (!quote && !invoiceRow) return; // not an InkTracker-linked invoice
+
+  // Built once per event — the same QB line state is compared against
+  // each linked row's own prior snapshot.
+  const freshLines = buildQbLineSnapshot(freshInvoice);
 
   let notified = false;
   for (const [table, row] of [["invoices", invoiceRow], ["quotes", quote]] as const) {
@@ -150,6 +155,8 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
       localTotal: row.total,
       priorQbTotal: row.qb_total,
       freshQbTotal,
+      priorLines: (row as any).qb_line_snapshot ?? null,
+      freshLines,
     });
     const patch = buildQbMirrorPatch(freshInvoice, row);
     if (patch) {
@@ -167,6 +174,8 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
         qbInvoiceId,
         localTotal: row.total,
         freshQbTotal,
+        lineChanges: detection.lineChanges,
+        totalDiverges: detection.diverges,
       }));
       await logEvent(supabase, {
         shop_owner: shopOwner,
@@ -174,7 +183,12 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
         direction: "inbound",
         status: "success",
         qb_invoice_id: qbInvoiceId,
-        response_body: { local_total: row.total, qb_total: freshQbTotal, table },
+        response_body: {
+          local_total: row.total,
+          qb_total: freshQbTotal,
+          table,
+          line_changes: detection.lineChanges,
+        },
       });
     }
   }
