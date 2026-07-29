@@ -638,10 +638,6 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
     const discountTotal = isFlat
       ? discountFlat
       : Number(((subtotal * discountPct) / 100).toFixed(2));
-    const discountLabel = isFlat
-      ? ` (less $${discountFlat.toFixed(2)} discount)`
-      : ` (less ${discountPct}% discount)`;
-
     if (subtotal > 0 && discountTotal > 0) {
       let remaining = discountTotal;
       const salesLines = lines.filter((l) => l.DetailType === "SalesItemLineDetail" && !l._isFee);
@@ -650,7 +646,21 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
           ? remaining
           : Number(((line.Amount / subtotal) * discountTotal).toFixed(2));
         line.Amount = Number((line.Amount - share).toFixed(2));
-        line.Description = (line.Description || "") + discountLabel;
+        // Label each line with the discount THIS line actually absorbed.
+        // The flat label used to be built once from the discount TOTAL
+        // and appended to every line, so a single $90 discount printed
+        // "(less $90.00 discount)" on all three lines of INV-2026-F93AM
+        // — $270 of discounts to anyone reading the invoice, against
+        // $90 of real money. Only the labels were wrong; the Amounts
+        // were always the correct pro-rated shares.
+        //
+        // Percent discounts are exempt: the discount is spread
+        // proportionally, so every line really does absorb the same
+        // percentage and "(less 10% discount)" is accurate per line.
+        const lineLabel = isFlat
+          ? ` (less $${share.toFixed(2)} discount)`
+          : ` (less ${discountPct}% discount)`;
+        line.Description = (line.Description || "") + lineLabel;
         if (line.SalesItemLineDetail) {
           line.SalesItemLineDetail.UnitPrice = Number(
             (line.Amount / (line.SalesItemLineDetail.Qty || 1)).toFixed(4),
