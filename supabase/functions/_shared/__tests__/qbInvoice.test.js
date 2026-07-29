@@ -552,8 +552,15 @@ describe("buildInvoiceLinesFromPayload", () => {
     expect(lines[0].Amount).toBe(1);
   });
 
+  // The discount is emitted as its OWN QBO DiscountLineDetail line
+  // against the whole invoice, so the QB invoice reads
+  // SUBTOTAL / Discount / TOTAL. Sales lines keep the price they were
+  // sold at — nothing is spread into them and no rate is back-computed.
   describe("discount handling", () => {
-    it("distributes a flat discount proportionally across line amounts", () => {
+    const discountLine = (lines) => lines.find((l) => l.DetailType === "DiscountLineDetail");
+    const salesLines = (lines) => lines.filter((l) => l.DetailType === "SalesItemLineDetail");
+
+    it("emits ONE discount line and leaves sales-line amounts alone", () => {
       const lines = buildInvoiceLinesFromPayload({
         lines: [
           { qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print" },
@@ -562,14 +569,17 @@ describe("buildInvoiceLinesFromPayload", () => {
         discountAmount: 30,
         discountType: "flat",
       }, itemMap, "Screen Print");
-      // $30 off $300 total = 10% per line: line1 -10, line2 -20
-      expect(lines[0].Amount).toBe(90);
-      expect(lines[1].Amount).toBe(180);
-      // total still sums to original - discount
-      expect(lines[0].Amount + lines[1].Amount).toBe(270);
+
+      expect(salesLines(lines).map((l) => l.Amount)).toEqual([100, 200]);
+      expect(lines.filter((l) => l.DetailType === "DiscountLineDetail")).toHaveLength(1);
+      expect(discountLine(lines).Amount).toBe(30);
+      expect(discountLine(lines).DiscountLineDetail.PercentBased).toBe(false);
     });
 
-    it("distributes a percent discount across line amounts", () => {
+    it("converts a percent discount to an explicit amount", () => {
+      // PercentBased:false with a computed amount — so QB subtracts
+      // exactly what InkTracker quoted rather than re-deriving a
+      // percentage against its own positional subtotal.
       const lines = buildInvoiceLinesFromPayload({
         lines: [
           { qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print" },
@@ -577,97 +587,48 @@ describe("buildInvoiceLinesFromPayload", () => {
         ],
         discountPercent: 10,
       }, itemMap, "Screen Print");
-      expect(lines[0].Amount + lines[1].Amount).toBe(180);
+      expect(discountLine(lines).Amount).toBe(20);
+      expect(discountLine(lines).DiscountLineDetail.PercentBased).toBe(false);
     });
 
-    it("annotates each discounted line with a label", () => {
+    it("no longer stamps a discount note onto line descriptions", () => {
       const lines = buildInvoiceLinesFromPayload({
         lines: [{ qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print", description: "Tee" }],
         discountPercent: 15,
       }, itemMap, "Screen Print");
-      expect(lines[0].Description).toBe("Tee (less 15% discount)");
+      expect(salesLines(lines)[0].Description).toBe("Tee");
+      expect(salesLines(lines)[0].Description).not.toContain("less");
     });
 
-    it("uses the dollar-amount label for flat discounts", () => {
-      const lines = buildInvoiceLinesFromPayload({
-        lines: [{ qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print" }],
-        discountAmount: 25,
-        discountType: "flat",
-      }, itemMap, "Screen Print");
-      expect(lines[0].Description).toContain("less $25.00 discount");
-    });
-
-    // Regression: INV-2026-F93AM (Choo Choo's Tavern). A single $90 flat
-    // discount printed "(less $90.00 discount)" on all THREE lines —
-    // $270 of discounts on a customer-facing invoice against $90 of real
-    // money. The Amounts were always right; only the labels lied.
-    it("labels each line with ITS OWN share of a flat discount, not the total", () => {
+    // Joe's ask: rates on a customer-facing invoice must read as money.
+    // The old spread back-computed UnitPrice from the discounted Amount
+    // and printed 15.2542 / 19.492 / 10.1692 on INV-2026-F93AM.
+    it("keeps UnitPrice at 2dp, not a back-computed 4dp rate", () => {
       const lines = buildInvoiceLinesFromPayload({
         lines: [
-          { qty: 12, unitPrice: 22.75, amount: 273.00, itemName: "Screen Print", description: "Tank Tops" },
-          { qty: 10, unitPrice: 23.90, amount: 239.00, itemName: "Screen Print", description: "Hoodies" },
-          { qty: 12, unitPrice: 6.50,  amount:  78.00, itemName: "Screen Print", description: "Tanks" },
+          { qty: 12, unitPrice: 18, amount: 216, itemName: "Screen Print" },
+          { qty: 10, unitPrice: 23, amount: 230, itemName: "Screen Print" },
+          { qty: 12, unitPrice: 12, amount: 144, itemName: "Screen Print" },
         ],
         discountAmount: 90,
         discountType: "flat",
       }, itemMap, "Screen Print");
-
-      // No line claims the whole $90.
-      const claimed = lines.map((l) => {
-        const m = l.Description.match(/less \$([\d.]+) discount/);
-        return Number(m[1]);
-      });
-      expect(claimed.every((c) => c < 90)).toBe(true);
-
-      // The labels sum to exactly the real discount — the number a
-      // customer would arrive at by adding up what's printed.
-      expect(Number(claimed.reduce((a, b) => a + b, 0).toFixed(2))).toBe(90);
-
-      // And the labels agree with the money actually taken off.
-      const preDiscount = 273 + 239 + 78;
-      const postDiscount = lines.reduce((s, l) => s + l.Amount, 0);
-      expect(Number((preDiscount - postDiscount).toFixed(2))).toBe(90);
+      expect(salesLines(lines).map((l) => l.SalesItemLineDetail.UnitPrice)).toEqual([18, 23, 12]);
+      for (const l of salesLines(lines)) {
+        const dp = String(l.SalesItemLineDetail.UnitPrice).split(".")[1] ?? "";
+        expect(dp.length).toBeLessThanOrEqual(2);
+      }
     });
 
-    it("keeps the percent label per line (each line really absorbs that percent)", () => {
+    it("rounds an odd incoming unit price to 2dp", () => {
       const lines = buildInvoiceLinesFromPayload({
-        lines: [
-          { qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print", description: "A" },
-          { qty: 1, unitPrice: 300, amount: 300, itemName: "Screen Print", description: "B" },
-        ],
-        discountPercent: 10,
+        lines: [{ qty: 12, unitPrice: 15.2542, amount: 183.05, itemName: "Screen Print" }],
+        discountPercent: 0,
       }, itemMap, "Screen Print");
-      expect(lines[0].Description).toBe("A (less 10% discount)");
-      expect(lines[1].Description).toBe("B (less 10% discount)");
+      expect(lines[0].SalesItemLineDetail.UnitPrice).toBe(15.25);
     });
 
-    // The re-import stripper must still recognise the new per-line
-    // labels, or pullInvoices starts writing them into line_items.
-    it("emits flat labels that stripQbDiscountNote still removes", () => {
-      const lines = buildInvoiceLinesFromPayload({
-        lines: [
-          { qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print", description: "Tee" },
-          { qty: 1, unitPrice: 200, amount: 200, itemName: "Screen Print", description: "Hoodie" },
-        ],
-        discountAmount: 30,
-        discountType: "flat",
-      }, itemMap, "Screen Print");
-      expect(stripQbDiscountNote(lines[0].Description)).toBe("Tee");
-      expect(stripQbDiscountNote(lines[1].Description)).toBe("Hoodie");
-    });
-
-    it("recomputes UnitPrice after the discount is applied", () => {
-      const lines = buildInvoiceLinesFromPayload({
-        lines: [{ qty: 10, unitPrice: 10, amount: 100, itemName: "Screen Print" }],
-        discountPercent: 10,
-      }, itemMap, "Screen Print");
-      // $100 - 10% = $90, qty 10 → unit price $9
-      expect(lines[0].SalesItemLineDetail.UnitPrice).toBe(9);
-    });
-
-    it("the last line absorbs rounding remainder so amounts sum exactly", () => {
-      // $100 with 33.33% gives $33.33 total → distributed across 3 lines may
-      // produce rounding drift if naive. Last line gets the remainder.
+    it("the invoice still nets to subtotal minus discount", () => {
       const lines = buildInvoiceLinesFromPayload({
         lines: [
           { qty: 1, unitPrice: 33.33, amount: 33.33, itemName: "Screen Print" },
@@ -677,8 +638,49 @@ describe("buildInvoiceLinesFromPayload", () => {
         discountAmount: 10,
         discountType: "flat",
       }, itemMap, "Screen Print");
-      const total = lines.reduce((s, l) => s + l.Amount, 0);
-      expect(Number(total.toFixed(2))).toBe(90); // $100 - $10 = $90
+      const sales = salesLines(lines).reduce((s, l) => s + l.Amount, 0);
+      expect(Number((sales - discountLine(lines).Amount).toFixed(2))).toBe(90);
+    });
+
+    it("caps the discount at the discountable subtotal (no negative invoice)", () => {
+      const lines = buildInvoiceLinesFromPayload({
+        lines: [{ qty: 1, unitPrice: 50, amount: 50, itemName: "Screen Print" }],
+        discountAmount: 500,
+        discountType: "flat",
+      }, itemMap, "Screen Print");
+      expect(discountLine(lines).Amount).toBe(50);
+    });
+
+    it("uses the shop's discount reason as the line description", () => {
+      const lines = buildInvoiceLinesFromPayload({
+        lines: [{ qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print" }],
+        discountAmount: 10,
+        discountType: "flat",
+        discountDescription: "Repeat customer",
+      }, itemMap, "Screen Print");
+      expect(discountLine(lines).Description).toBe("Repeat customer");
+    });
+
+    it("names the percentage when there's no reason (a flat amount can't convey it)", () => {
+      const pct = buildInvoiceLinesFromPayload({
+        lines: [{ qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print" }],
+        discountPercent: 10,
+      }, itemMap, "Screen Print");
+      expect(discountLine(pct).Description).toBe("Discount (10%)");
+
+      const flat = buildInvoiceLinesFromPayload({
+        lines: [{ qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print" }],
+        discountAmount: 10,
+        discountType: "flat",
+      }, itemMap, "Screen Print");
+      expect(discountLine(flat).Description).toBe("Discount");
+    });
+
+    it("emits no discount line when there is no discount", () => {
+      const lines = buildInvoiceLinesFromPayload({
+        lines: [{ qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print" }],
+      }, itemMap, "Screen Print");
+      expect(discountLine(lines)).toBeUndefined();
     });
 
     it("doesn't choke when the invoice has only zero-amount lines + a discount", () => {
@@ -1111,10 +1113,14 @@ describe("buildInvoiceLinesFromPayload — per-line tax + fees", () => {
       { description: "Shipping", qty: 1, unitPrice: 15, amount: 15, itemName: "Shipping", taxable: false, isFee: true },
     ], discountPercent: 10 };
     const lines = buildInvoiceLinesFromPayload(payload, itemIdMap, "Screen Printing", false);
-    const tee = lines.find((l) => l.Description.startsWith("Tee"));
+    const tee = lines.find((l) => l.Description === "Tee");
     const ship = lines.find((l) => l.Description === "Shipping");
-    expect(tee.Amount).toBeCloseTo(90, 2);
+    const disc = lines.find((l) => l.DetailType === "DiscountLineDetail");
+    // Sales lines are untouched now; the fee-exclusion rule shows up in
+    // the discount AMOUNT — 10% of the $100 tee, not of $115.
+    expect(tee.Amount).toBeCloseTo(100, 2);
     expect(ship.Amount).toBeCloseTo(15, 2);
+    expect(disc.Amount).toBeCloseTo(10, 2);
   });
 
   it("strips transient _taxable/_isFee from emitted lines", () => {

@@ -72,6 +72,22 @@ export const RECONCILE_SEVERITY = Object.freeze({
  * @param {object} args.qbResponse  The Invoice object QB returned (or
  *                                  fetched back). Expects { Line[],
  *                                  TotalAmt, TxnTaxDetail }.
+ * @param {number} [args.sentDiscount] Discount carried on its own QBO
+ *                                  DiscountLineDetail line. REQUIRED for
+ *                                  correctness on discounted invoices:
+ *                                  sumQbLineAmounts counts only
+ *                                  SalesItemLineDetail lines, so both
+ *                                  subtotals are PRE-discount, while
+ *                                  QB's TotalAmt is POST-discount.
+ *                                  Without subtracting it here, every
+ *                                  discounted invoice reports
+ *                                  totalDrift = −discount and gets
+ *                                  classified TAX_MISMATCH — which puts
+ *                                  it on hold and blocks the payment
+ *                                  link. Defaults to 0, which is also
+ *                                  correct for the legacy inline-spread
+ *                                  shape where sales lines were already
+ *                                  post-discount.
  * @param {number} [args.tolerance] Max acceptable drift in dollars
  *                                  (default $0.01 — handles 4-decimal
  *                                  unit-price rounding).
@@ -99,7 +115,7 @@ export const RECONCILE_SEVERITY = Object.freeze({
  * Result also carries booleans `lineAmountDrift`, `taxMismatch`, and
  * `missingTax` so the caller can route notifications without re-deriving.
  */
-export function reconcileQbInvoice({ sentLines, sentTax, qbResponse, tolerance = DEFAULT_TOLERANCE }) {
+export function reconcileQbInvoice({ sentLines, sentTax, qbResponse, sentDiscount = 0, tolerance = DEFAULT_TOLERANCE }) {
   const tol = Number(tolerance);
   const safeTol = Number.isFinite(tol) && tol >= 0 ? tol : DEFAULT_TOLERANCE;
 
@@ -134,7 +150,12 @@ export function reconcileQbInvoice({ sentLines, sentTax, qbResponse, tolerance =
   const qbTax        = Number.isFinite(qbTaxRaw) ? Number(qbTaxRaw.toFixed(2)) : 0;
 
   const sentTaxNum   = toMoneyOrNull(sentTax) ?? 0;
-  const sentTotal    = Number((sentSubtotal + sentTaxNum).toFixed(2));
+  // Subtotals above count SALES lines only, so they're pre-discount when
+  // the discount rides its own DiscountLineDetail line. QB's TotalAmt is
+  // post-discount, so the discount has to come off here or every
+  // discounted invoice reads as a tax mismatch.
+  const sentDiscountNum = toMoneyOrNull(sentDiscount) ?? 0;
+  const sentTotal    = Number((sentSubtotal - sentDiscountNum + sentTaxNum).toFixed(2));
 
   const subtotalDrift = Number((qbSubtotal - sentSubtotal).toFixed(2));
   const totalDrift    = Number.isFinite(qbTotal) ? Number((qbTotal - sentTotal).toFixed(2)) : NaN;

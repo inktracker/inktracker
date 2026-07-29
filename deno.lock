@@ -16,6 +16,13 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@capacitor/app@^8.1.1",
+        "npm:@capacitor/assets@^3.0.5",
+        "npm:@capacitor/browser@^8.0.4",
+        "npm:@capacitor/cli@^8.4.2",
+        "npm:@capacitor/core@^8.4.2",
+        "npm:@capacitor/ios@^8.4.2",
+        "npm:@capacitor/status-bar@^8.0.3",
         "npm:@eslint/js@^9.19.0",
         "npm:@playwright/test@^1.60.0",
         "npm:@radix-ui/react-dialog@^1.1.6",

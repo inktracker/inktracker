@@ -872,11 +872,25 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // (e.g. shipping) → NON. Tax-exempt customers or a 0% rate force NON on all.
   // Strip the transient _taxable/_isFee hints (set by buildInvoiceLinesFromPayload)
   // so they never reach QuickBooks.
+  // Captured DURING the strip, because _isFee is deleted below and the
+  // reconciliation further down still needs to know how much of the
+  // discountable (non-fee) subtotal was taxable. The discount now rides
+  // its own DiscountLineDetail line, so sales lines are pre-discount —
+  // expectedTax must still be computed on the POST-discount taxable
+  // base, which is what the quote actually billed the customer.
+  let discountableSubtotal = 0;
+  let discountableTaxableSubtotal = 0;
+
   lines.forEach((l: any) => {
     if (l.SalesItemLineDetail) {
       const lineTaxable = l._taxable !== false;
       const code = (isTaxExempt || taxPercent === 0 || !lineTaxable) ? "NON" : "TAX";
       l.SalesItemLineDetail.TaxCodeRef = { value: code };
+      if (!l._isFee) {
+        const amt = Number(l.Amount) || 0;
+        discountableSubtotal += amt;
+        if (code === "TAX") discountableTaxableSubtotal += amt;
+      }
     }
     delete l._taxable;
     delete l._isFee;
@@ -1278,10 +1292,27 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       s + (l?.SalesItemLineDetail?.TaxCodeRef?.value === "TAX" ? (Number(l?.Amount) || 0) : 0),
     0,
   );
-  const expectedTax = Number((taxableSubtotalForReconcile * (taxPercent / 100)).toFixed(2));
+
+  // The discount is its own line now, so sales-line Amounts are
+  // pre-discount. Take off the share of the discount that falls on
+  // TAXABLE lines before computing expected tax — proportional across
+  // the discountable (non-fee) subtotal, which is exactly what the old
+  // inline spread produced. Without this the expected tax is computed
+  // on a pre-discount base and every discounted taxable invoice trips
+  // the hard tax gate below.
+  const sentDiscount = Number(
+    (lines.find((l: any) => l?.DetailType === "DiscountLineDetail")?.Amount ?? 0),
+  ) || 0;
+  const taxableDiscountShare = discountableSubtotal > 0
+    ? Number(((sentDiscount * discountableTaxableSubtotal) / discountableSubtotal).toFixed(2))
+    : 0;
+  const expectedTaxBase = Math.max(0, taxableSubtotalForReconcile - taxableDiscountShare);
+  const expectedTax = Number((expectedTaxBase * (taxPercent / 100)).toFixed(2));
+
   const reconciliation = reconcileQbInvoice({
     sentLines: lines,
     sentTax: expectedTax,
+    sentDiscount,
     qbResponse: qbInvoiceFinal,
   });
 
@@ -1949,7 +1980,19 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
 
     // Calculate subtotal (pre-tax)
     const taxTotal = Number(qbInv.TxnTaxDetail?.TotalTax ?? 0);
-    const subtotal = totalAmt - taxTotal;
+    // A discount now rides its own DiscountLineDetail line. Import it as
+    // a real discount field instead of letting it disappear into the
+    // total. Local `subtotal` is PRE-discount by app semantics, so it
+    // has to be grossed back up — storing a post-discount subtotal
+    // alongside discount > 0 is what double-subtracts on the invoice
+    // display (the same trap buildAdoptPatches guards).
+    const qbDiscount = Number(
+      (qbInv.Line ?? [])
+        .filter((l: any) => l?.DetailType === "DiscountLineDetail")
+        .reduce((s: number, l: any) => s + (Number(l.Amount) || 0), 0)
+        .toFixed(2),
+    );
+    const subtotal = Number((totalAmt - taxTotal + qbDiscount).toFixed(2));
 
     // Find paid date from linked payments if paid
     let paidDate: string | null = null;
@@ -1975,11 +2018,13 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       // QB's memo, but keep any local "[date] Synced from QuickBooks"
       // audit lines — a Sync-All must not erase the shop's sync history.
       notes: mergeNotesPreservingSyncLines(qbInv.CustomerMemo?.value, existingRow?.notes),
-      discount: 0,
+      discount: qbDiscount,
+      discount_type: qbDiscount > 0 ? "flat" : undefined,
       tax_rate: 0,
       rush_rate: 0,
       extras: {},
     };
+    if (payload.discount_type === undefined) delete payload.discount_type;
 
     if (existingId) {
       // Locally-born invoices (order-born, or rich local line items) keep
@@ -1992,6 +2037,7 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       if (!shouldReplaceLocalInvoiceItems(existingRow)) {
         delete payload.line_items;
         delete payload.discount;
+        delete payload.discount_type;
         delete payload.tax_rate;
         delete payload.rush_rate;
         delete payload.extras;
