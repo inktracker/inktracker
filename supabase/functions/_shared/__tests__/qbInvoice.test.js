@@ -597,6 +597,65 @@ describe("buildInvoiceLinesFromPayload", () => {
       expect(lines[0].Description).toContain("less $25.00 discount");
     });
 
+    // Regression: INV-2026-F93AM (Choo Choo's Tavern). A single $90 flat
+    // discount printed "(less $90.00 discount)" on all THREE lines —
+    // $270 of discounts on a customer-facing invoice against $90 of real
+    // money. The Amounts were always right; only the labels lied.
+    it("labels each line with ITS OWN share of a flat discount, not the total", () => {
+      const lines = buildInvoiceLinesFromPayload({
+        lines: [
+          { qty: 12, unitPrice: 22.75, amount: 273.00, itemName: "Screen Print", description: "Tank Tops" },
+          { qty: 10, unitPrice: 23.90, amount: 239.00, itemName: "Screen Print", description: "Hoodies" },
+          { qty: 12, unitPrice: 6.50,  amount:  78.00, itemName: "Screen Print", description: "Tanks" },
+        ],
+        discountAmount: 90,
+        discountType: "flat",
+      }, itemMap, "Screen Print");
+
+      // No line claims the whole $90.
+      const claimed = lines.map((l) => {
+        const m = l.Description.match(/less \$([\d.]+) discount/);
+        return Number(m[1]);
+      });
+      expect(claimed.every((c) => c < 90)).toBe(true);
+
+      // The labels sum to exactly the real discount — the number a
+      // customer would arrive at by adding up what's printed.
+      expect(Number(claimed.reduce((a, b) => a + b, 0).toFixed(2))).toBe(90);
+
+      // And the labels agree with the money actually taken off.
+      const preDiscount = 273 + 239 + 78;
+      const postDiscount = lines.reduce((s, l) => s + l.Amount, 0);
+      expect(Number((preDiscount - postDiscount).toFixed(2))).toBe(90);
+    });
+
+    it("keeps the percent label per line (each line really absorbs that percent)", () => {
+      const lines = buildInvoiceLinesFromPayload({
+        lines: [
+          { qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print", description: "A" },
+          { qty: 1, unitPrice: 300, amount: 300, itemName: "Screen Print", description: "B" },
+        ],
+        discountPercent: 10,
+      }, itemMap, "Screen Print");
+      expect(lines[0].Description).toBe("A (less 10% discount)");
+      expect(lines[1].Description).toBe("B (less 10% discount)");
+    });
+
+    // The re-import stripper must still recognise the new per-line
+    // labels, or pullInvoices starts writing them into line_items.
+    it("emits flat labels that stripQbDiscountNote still removes", () => {
+      const lines = buildInvoiceLinesFromPayload({
+        lines: [
+          { qty: 1, unitPrice: 100, amount: 100, itemName: "Screen Print", description: "Tee" },
+          { qty: 1, unitPrice: 200, amount: 200, itemName: "Screen Print", description: "Hoodie" },
+        ],
+        discountAmount: 30,
+        discountType: "flat",
+      }, itemMap, "Screen Print");
+      expect(stripQbDiscountNote(lines[0].Description)).toBe("Tee");
+      expect(stripQbDiscountNote(lines[1].Description)).toBe("Hoodie");
+    });
+
     it("recomputes UnitPrice after the discount is applied", () => {
       const lines = buildInvoiceLinesFromPayload({
         lines: [{ qty: 10, unitPrice: 10, amount: 100, itemName: "Screen Print" }],
