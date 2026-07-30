@@ -15,6 +15,7 @@ import {
   hoursOnPressDay as schedulerHoursOnPressDay,
 } from "@/lib/scheduler/schedulerHelpers";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
+import OrderNotesIcon, { orderNotesTooltip } from "../components/orders/OrderNotesIcon";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import ACOrderModal from "../components/orders/ACOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
@@ -719,8 +720,9 @@ export default function Production() {
                         </td>
                         <td className="px-3 py-3.5 font-mono text-xs text-slate-500">{o.order_id}</td>
                         <td className="px-3 py-3.5">
-                          <div className="font-semibold text-slate-800 dark:text-slate-200">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                             {getOrderDisplayClient(o, customers[o.customer_id])}
+                            <OrderNotesIcon order={o} />
                           </div>
                           {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
                             <div className="text-xs text-slate-500 mt-0.5">
@@ -759,7 +761,10 @@ export default function Production() {
                     <div className="flex justify-between items-start mb-2">
                       <div>
                         <div className="font-mono text-xs text-slate-500">{o.order_id}</div>
-                        <div className="font-semibold text-slate-800 dark:text-slate-200">{getOrderDisplayClient(o, customers[o.customer_id])}</div>
+                        <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          {getOrderDisplayClient(o, customers[o.customer_id])}
+                          <OrderNotesIcon order={o} />
+                        </div>
                         {getOrderDisplayJobTitle(o, customers[o.customer_id]) && (
                           <div className="text-xs text-slate-500 mt-0.5">
                             Job: {getOrderDisplayJobTitle(o, customers[o.customer_id])}
@@ -932,7 +937,9 @@ export default function Production() {
                                         }
                                       }}
                                       className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${isQuoteEvent ? "cursor-pointer" : "cursor-grab"} truncate ${chipClass}`}
-                                      title={`${subjectName} — ${ev.step}`}
+                                      // Month chips are too small for the notes icon —
+                                      // surface job notes via the hover tooltip instead.
+                                      title={`${subjectName} — ${ev.step}${orderNotesTooltip(subject) ? `\nNotes: ${orderNotesTooltip(subject)}` : ""}`}
                                     >
                                       {subjectName}
                                       <span className="opacity-60 ml-1">· {ev.step}</span>
@@ -1090,10 +1097,13 @@ export default function Production() {
               onDragEnd={handleChipDragEnd}
               onClick={() => setViewing(order)}
               className={`group relative select-none cursor-grab active:cursor-grabbing bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg px-2 py-1 text-[11px] leading-tight transition h-[32px] flex items-center ${draggingOrderId === order.id ? "opacity-50" : ""} ${clippedLeft ? "rounded-l-none border-l-0" : ""} ${clippedRight ? "rounded-r-none border-r-0" : ""}`}
-              title={`${order.order_id || ""} · ${client}\nDue ${fmtDate(order.due_date)}${total > 1 ? ` · ${total}-day span` : ""}`}
+              title={`${order.order_id || ""} · ${client}\nDue ${fmtDate(order.due_date)}${total > 1 ? ` · ${total}-day span` : ""}${orderNotesTooltip(order) ? `\nNotes: ${orderNotesTooltip(order)}` : ""}`}
             >
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-teal-900 truncate">{client}</div>
+                <div className="font-semibold text-teal-900 truncate flex items-center gap-1">
+                  <span className="truncate">{client}</span>
+                  <OrderNotesIcon order={order} className="!text-amber-600" />
+                </div>
                 <div className="text-teal-700/80 flex items-center justify-between gap-2 text-[10px]">
                   <span className="truncate">{order.order_id || "—"}</span>
                   {hrs > 0 && <span className="font-semibold tabular-nums">{hrs}h</span>}
@@ -1428,6 +1438,7 @@ export default function Production() {
                               </div>
                               <div className="mt-1.5 flex flex-wrap items-center gap-1">
                                 <Badge s={o.status} />
+                                <OrderNotesIcon order={o} />
                                 {key === "overdue" && (
                                   <span className="text-[10px] font-semibold uppercase tracking-widest bg-red-50 text-red-700 border border-red-200 px-1.5 py-0.5 rounded">
                                     Past due

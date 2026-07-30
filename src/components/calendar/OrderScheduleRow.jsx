@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronRight, Pencil, Check, X, CalendarDays } from "lucide-react";
 import Badge from "../shared/Badge";
 import { O_STATUSES } from "../shared/pricing";
+import OrderNotesIcon from "../orders/OrderNotesIcon";
 
 // Mirrors STATUS_COLORS in src/pages/Calendar.jsx + src/pages/Production.jsx.
 // Each step gets a visually distinct hue so the schedule row reads as a
@@ -203,6 +204,7 @@ export default function OrderScheduleRow({ order, companyName, onUpdateStepDate,
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="font-semibold text-slate-800 text-sm">{companyName}</div>
+            <OrderNotesIcon order={order} />
             <div className="text-xs text-slate-500 font-mono">{order.order_id}</div>
             {isPast && !isToday && (
               <span className="text-[10px] font-bold text-red-500 bg-red-50 px-1.5 py-0.5 rounded-full border border-red-200">Overdue</span>
