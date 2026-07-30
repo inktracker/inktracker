@@ -1312,7 +1312,7 @@ describe("buildTaxRecordFromQbInvoice — ShipAddr fallback (backfill)", () => {
 });
 
 // ── Pull-path round-trip guards (INV-2026-CQY1X, 2026-07-03) ────────────────
-import { stripQbDiscountNote, shouldReplaceLocalInvoiceItems, shouldCascadeImportedPaid } from "../qbInvoice.js";
+import { stripQbDiscountNote, shouldReplaceLocalInvoiceItems, shouldCascadeImportedPaid, qbAllowsDiscountLines } from "../qbInvoice.js";
 
 describe("stripQbDiscountNote", () => {
   it("strips the flat-discount label our push appends", () => {
@@ -1421,5 +1421,35 @@ describe("pickItemVariantMatch (near-duplicate QB item guard)", () => {
   it("empty/junk input → null", () => {
     expect(pick("", [norm("Anything")])).toBeNull();
     expect(pick(norm("Customer Supplied"), null)).toBeNull();
+  });
+});
+
+// ── qbAllowsDiscountLines (discount preflight) ──────────────────────────────
+// qbSync checks this BEFORE pushing a discounted invoice: QBO rejects
+// DiscountLineDetail lines when the realm's Sales → Discount setting is
+// off, and the preflight turns that into instructions instead of a raw
+// API error. null = can't tell → caller fails OPEN (never block
+// invoicing on a preflight hiccup).
+describe("qbAllowsDiscountLines", () => {
+  const prefs = (allow) => ({
+    QueryResponse: { Preferences: [{ SalesFormsPrefs: { AllowDiscount: allow } }] },
+  });
+
+  it("reads real booleans", () => {
+    expect(qbAllowsDiscountLines(prefs(true))).toBe(true);
+    expect(qbAllowsDiscountLines(prefs(false))).toBe(false);
+  });
+
+  it('reads QBO\'s "true"/"false" string variants', () => {
+    expect(qbAllowsDiscountLines(prefs("true"))).toBe(true);
+    expect(qbAllowsDiscountLines(prefs("false"))).toBe(false);
+  });
+
+  it("returns null (fail-open) for missing or garbled responses", () => {
+    expect(qbAllowsDiscountLines(prefs(undefined))).toBe(null);
+    expect(qbAllowsDiscountLines(prefs("yes"))).toBe(null);
+    expect(qbAllowsDiscountLines({ QueryResponse: { Preferences: [] } })).toBe(null);
+    expect(qbAllowsDiscountLines({})).toBe(null);
+    expect(qbAllowsDiscountLines(null)).toBe(null);
   });
 });

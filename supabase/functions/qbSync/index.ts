@@ -42,6 +42,7 @@ import {
   shouldCascadeImportedPaid,
   pickQbInvoiceForAdoption,
   mergeCustomerAuthoritative,
+  qbAllowsDiscountLines,
 } from "../_shared/qbInvoice.js";
 import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
 import { mergeNotesPreservingSyncLines } from "../_shared/qbInvoiceModified.js";
@@ -792,6 +793,62 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       .eq("id", customer.id)
       .maybeSingle();
     if (!custErr && dbCust) customer = mergeCustomerAuthoritative(customer, dbCust);
+  }
+
+  // ── Discount preflight ───────────────────────────────────────────────────
+  // The discount rides its own QBO DiscountLineDetail line, and QBO only
+  // accepts discount lines when the realm's Sales → Discount setting is ON
+  // (Preferences.SalesFormsPrefs.AllowDiscount). Rather than gamble on the
+  // rejection shape, check BEFORE any QB write and fail with instructions
+  // the shop can act on — designed failure state, not a raw API error.
+  // Runs only when the payload actually carries a discount, so the common
+  // undiscounted path costs nothing. Fail-open: if the Preferences read
+  // itself errors, proceed — a preflight hiccup must not block invoicing.
+  const discountPct  = Number(invoicePayload?.discountPercent) || 0;
+  const discountFlat = Number(invoicePayload?.discountAmount)  || 0;
+  const wantsDiscount =
+    ((invoicePayload?.discountType === "flat" || discountFlat > 0) && discountFlat > 0) ||
+    discountPct > 0;
+  if (wantsDiscount) {
+    let allowDiscount: boolean | null = null;
+    try {
+      const prefs = await qbQuery(token, realmId, "SELECT * FROM Preferences");
+      allowDiscount = qbAllowsDiscountLines(prefs);
+    } catch (e) {
+      console.error("[createInvoice] discount preflight Preferences read failed (fail-open):", (e as Error)?.message);
+    }
+    if (allowDiscount === false) {
+      const fixPath =
+        "In QuickBooks: Settings (gear icon) → Account and settings → Sales → " +
+        "Sales form content → turn on \"Discount\" → Save.";
+      // Bell notification so the instruction survives the modal closing.
+      // Best-effort — the thrown error below is the primary surface.
+      try {
+        const adminNotifyClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        await recordShopNotification(adminNotifyClient, {
+          shopOwner: quote?.shop_owner,
+          eventType: "qb_discount_disabled",
+          severity: "warning",
+          title: `Turn on Discounts in QuickBooks to send ${quote?.quote_id || "this invoice"}`,
+          body:
+            `This invoice has a discount, but your QuickBooks company doesn't have discounts ` +
+            `turned on, so QuickBooks would reject it. ${fixPath} Then create the invoice again. ` +
+            `No invoice was created and nothing was changed in QuickBooks.`,
+          relatedEntity: "quote",
+          relatedId: quote?.id ? String(quote.id) : null,
+          metadata: { realm_id: realmId },
+        });
+      } catch (notifyErr) {
+        console.error("[createInvoice] discount-disabled notification failed:", (notifyErr as Error)?.message);
+      }
+      throw new Error(
+        `This invoice has a discount, but your QuickBooks doesn't have discounts turned on. ` +
+        `${fixPath} Then click Create in QuickBooks again. Nothing was created in QuickBooks.`,
+      );
+    }
   }
 
   // 1. Find or create customer in QB

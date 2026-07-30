@@ -606,6 +606,25 @@ export function buildUpdateFailureResponse({
 // expected-tax base post-discount, matching what the quote billed. See
 // reconcileQbInvoice — a discounted invoice must not read as a tax
 // mismatch just because its sales lines are now pre-discount.
+/**
+ * Does this QBO realm accept DiscountLineDetail lines?
+ * Reads Preferences.SalesFormsPrefs.AllowDiscount from a
+ * `SELECT * FROM Preferences` response. Returns:
+ *   true  — discounts enabled
+ *   false — disabled (a discount line would be rejected)
+ *   null  — can't tell (missing/garbled response) → caller fails OPEN,
+ *           because a preflight hiccup must never block invoicing.
+ * QBO has returned this both as a real boolean and as "true"/"false"
+ * strings across API shapes, so both are handled.
+ */
+export function qbAllowsDiscountLines(prefsResponse) {
+  const raw = prefsResponse?.QueryResponse?.Preferences?.[0]?.SalesFormsPrefs?.AllowDiscount;
+  if (typeof raw === "boolean") return raw;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return null;
+}
+
 // Label for the discount line. Prefers the shop's own reason (the
 // discount_description field shipped in #596/#597) so the customer sees
 // "Repeat customer" rather than a bare "Discount"; falls back to naming
