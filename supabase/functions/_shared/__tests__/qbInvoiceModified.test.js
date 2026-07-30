@@ -2,15 +2,93 @@ import { describe, it, expect } from "vitest";
 import {
   detectQbInvoiceModification,
   buildQbMirrorPatch,
+  buildQbLineSnapshot,
+  diffQbLineSnapshots,
   buildQbModifiedNotification,
   mergeNotesPreservingSyncLines,
 } from "../qbInvoiceModified.js";
+
+// A QB invoice line as QBO returns it — one flat Description string.
+const qbLine = (id, desc, qty, amount) => ({
+  Id: id,
+  DetailType: "SalesItemLineDetail",
+  Description: desc,
+  Amount: amount,
+  SalesItemLineDetail: { Qty: qty },
+});
+
+describe("buildQbLineSnapshot", () => {
+  it("captures id/description/qty/amount for sales lines only", () => {
+    const snap = buildQbLineSnapshot({
+      Line: [
+        qbLine("1", "Comfort Colors 9360 Blue Spruce | S:1, M:2", 12, 183.05),
+        { Id: "2", DetailType: "DiscountLineDetail", Amount: 90 },
+        { Id: "3", DetailType: "SubTotalLineDetail", Amount: 500 },
+      ],
+    });
+    expect(snap).toEqual([
+      { i: "1", d: "Comfort Colors 9360 Blue Spruce | S:1, M:2", q: 12, a: 183.05 },
+    ]);
+  });
+
+  it("tolerates a missing/!array Line", () => {
+    expect(buildQbLineSnapshot({})).toEqual([]);
+    expect(buildQbLineSnapshot(null)).toEqual([]);
+  });
+});
+
+describe("diffQbLineSnapshots", () => {
+  const before = [{ i: "1", d: "Comfort Colors 9360 Black", q: 12, a: 183.05 }];
+
+  it("names a garment-color edit made in QuickBooks", () => {
+    const after = [{ i: "1", d: "Comfort Colors 9360 Gray", q: 12, a: 183.05 }];
+    const changes = diffQbLineSnapshots(before, after);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toContain("Black");
+    expect(changes[0]).toContain("Gray");
+  });
+
+  it("catches quantity and amount moves", () => {
+    const after = [{ i: "1", d: "Comfort Colors 9360 Black", q: 14, a: 213.05 }];
+    expect(diffQbLineSnapshots(before, after)).toEqual([
+      "Line 1 quantity: 12 → 14",
+      "Line 1 amount: $183.05 → $213.05",
+    ]);
+  });
+
+  it("reports added and removed lines", () => {
+    expect(diffQbLineSnapshots(before, [
+      ...before,
+      { i: "2", d: "Hoodies", q: 10, a: 194.92 },
+    ])[0]).toContain("added in QuickBooks");
+    expect(diffQbLineSnapshots(before, [])[0]).toContain("removed in QuickBooks");
+  });
+
+  it("is quiet when nothing moved, and when there's no prior snapshot", () => {
+    expect(diffQbLineSnapshots(before, [...before])).toEqual([]);
+    expect(diffQbLineSnapshots(null, before)).toEqual([]);
+  });
+
+  it("falls back to position when QB reissues line ids", () => {
+    const after = [{ i: "99", d: "Comfort Colors 9360 Gray", q: 12, a: 183.05 }];
+    const changes = diffQbLineSnapshots(before, after);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toContain("description");
+  });
+
+  it("ignores sub-penny amount noise", () => {
+    expect(diffQbLineSnapshots(before, [{ ...before[0], a: 183.055 }])).toEqual([]);
+  });
+});
 
 describe("detectQbInvoiceModification", () => {
   it("notifies on the transition: QB moved AND now disagrees with IT", () => {
     // Kato's $300 line: mirror had 19477.53, QB edit made it 19777.53, IT at 19477.53
     const d = detectQbInvoiceModification({ localTotal: 19477.53, priorQbTotal: 19477.53, freshQbTotal: 19777.53 });
-    expect(d).toEqual({ qbChanged: true, diverges: true, firstMirror: false, shouldNotify: true });
+    expect(d).toEqual({
+      qbChanged: true, diverges: true, firstMirror: false,
+      lineChanges: [], linesChanged: false, shouldNotify: true,
+    });
   });
 
   it("stays quiet when QB edit brings QB INTO agreement (the Kato correction case)", () => {
@@ -51,6 +129,32 @@ describe("detectQbInvoiceModification", () => {
 
   it("first mirror with no local total to compare stays quiet", () => {
     const d = detectQbInvoiceModification({ localTotal: null, priorQbTotal: null, freshQbTotal: 150 });
+    expect(d.shouldNotify).toBe(false);
+  });
+
+  // Joe's black→gray case: the shop retypes a garment color in QBO and
+  // the invoice total never moves. Total-only detection said nothing.
+  it("notifies on a line edit even when the total is unchanged", () => {
+    const d = detectQbInvoiceModification({
+      localTotal: 500,
+      priorQbTotal: 500,
+      freshQbTotal: 500,
+      priorLines: [{ i: "1", d: "Comfort Colors 9360 Black", q: 12, a: 500 }],
+      freshLines: [{ i: "1", d: "Comfort Colors 9360 Gray", q: 12, a: 500 }],
+    });
+    expect(d.qbChanged).toBe(false);
+    expect(d.diverges).toBe(false);
+    expect(d.linesChanged).toBe(true);
+    expect(d.shouldNotify).toBe(true);
+    expect(d.lineChanges[0]).toContain("Gray");
+  });
+
+  it("identical lines and identical totals stay quiet", () => {
+    const lines = [{ i: "1", d: "Comfort Colors 9360 Black", q: 12, a: 500 }];
+    const d = detectQbInvoiceModification({
+      localTotal: 500, priorQbTotal: 500, freshQbTotal: 500,
+      priorLines: lines, freshLines: [...lines],
+    });
     expect(d.shouldNotify).toBe(false);
   });
 
@@ -119,7 +223,10 @@ describe("buildQbModifiedNotification", () => {
     expect(row.severity).toBe("warning");
     expect(row.title).toContain("Q-2026-CT5D");
     expect(row.body).toContain("$19777.53");
-    expect(row.body).toContain("Sync from QuickBooks");
+    // Must name the button as it is actually labelled in
+    // InvoiceDetailModal — the old copy said "Sync from QuickBooks",
+    // which no longer exists anywhere in the UI.
+    expect(row.body).toContain("Match to QuickBooks");
     expect(row.related_id).toBe("row-uuid");
     expect(row.metadata.qb_total).toBe(19777.53);
   });
