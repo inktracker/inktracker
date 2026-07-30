@@ -13,15 +13,46 @@ import { buildInvoiceLinesFromPayload } from "../../../../supabase/functions/_sh
 
 const r2 = (n) => Math.round(n * 100) / 100;
 
-// Replicate qbSync's reconcile: tax applies only to TAX-coded lines.
+// Replicate qbSync's reconcile: tax applies only to TAX-coded lines. The discount rides
+// its own QBO DiscountLineDetail line, so SALES lines are pre-discount
+// while the customer was quoted tax on the POST-discount base — the
+// taxable share of the discount has to come off before applying the
+// rate, and the discount comes off the invoice total. Keep this in
+// lockstep with handleCreateInvoice in supabase/functions/qbSync.
 function deriveQbTotals(lines, taxPercent) {
-  const sentSubtotal = lines.reduce((s, l) => s + (Number(l.Amount) || 0), 0);
-  const taxableSubtotal = lines.reduce(
+  const salesLines = lines.filter((l) => l.DetailType !== "DiscountLineDetail");
+  const discount = lines.reduce(
+    (s, l) => s + (l.DetailType === "DiscountLineDetail" ? (Number(l.Amount) || 0) : 0),
+    0,
+  );
+  const sentSubtotal = salesLines.reduce((s, l) => s + (Number(l.Amount) || 0), 0);
+  const grossTaxable = salesLines.reduce(
     (s, l) => s + (l?.SalesItemLineDetail?.TaxCodeRef?.value === "TAX" ? (Number(l.Amount) || 0) : 0),
     0,
   );
+  // Fees are excluded from the discount base by the builder, so
+  // apportion the discount across the discountable (non-fee) lines and
+  // take only the taxable part of that off the tax base.
+  const discountable = salesLines.reduce(
+    (s, l) => s + (l._isFee ? 0 : (Number(l.Amount) || 0)),
+    0,
+  );
+  const discountableTaxable = salesLines.reduce(
+    (s, l) => s + (!l._isFee && l?.SalesItemLineDetail?.TaxCodeRef?.value === "TAX" ? (Number(l.Amount) || 0) : 0),
+    0,
+  );
+  const taxableDiscountShare = discountable > 0
+    ? r2((discount * discountableTaxable) / discountable)
+    : 0;
+  const taxableSubtotal = r2(Math.max(0, grossTaxable - taxableDiscountShare));
   const tax = r2(taxableSubtotal * (taxPercent / 100));
-  return { sentSubtotal: r2(sentSubtotal), taxableSubtotal: r2(taxableSubtotal), tax, total: r2(sentSubtotal + tax) };
+  return {
+    sentSubtotal: r2(sentSubtotal),
+    discount: r2(discount),
+    taxableSubtotal,
+    tax,
+    total: r2(sentSubtotal - discount + tax),
+  };
 }
 
 // Map every itemName the payload references to a dummy QB item id so no line

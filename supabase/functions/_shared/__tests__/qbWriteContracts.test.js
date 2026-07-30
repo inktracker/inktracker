@@ -399,3 +399,85 @@ describe("reconcileQbInvoice — line-amount fidelity", () => {
     expect(() => reconcileQbInvoice({ sentLines: [{}], sentTax: NaN, qbResponse: { TotalAmt: "garbage" } })).not.toThrow();
   });
 });
+
+// ── Discount lines ──────────────────────────────────────────────────────────
+//
+// The discount rides its own QBO DiscountLineDetail line, so the sales
+// lines InkTracker sends are PRE-discount while QB's TotalAmt is
+// POST-discount. If reconcileQbInvoice doesn't account for that, every
+// discounted invoice reports totalDrift = −discount, classifies as
+// TAX_MISMATCH, and gets held with no customer payment link.
+describe("reconcileQbInvoice — discount lines", () => {
+  const sales = (amount) => ({
+    DetailType: "SalesItemLineDetail",
+    Amount: amount,
+    SalesItemLineDetail: { TaxCodeRef: { value: "TAX" } },
+  });
+  const discount = (amount) => ({
+    DetailType: "DiscountLineDetail",
+    Amount: amount,
+    DiscountLineDetail: { PercentBased: false },
+  });
+
+  it("a discounted, untaxed invoice reconciles OK (not a tax mismatch)", () => {
+    const sentLines = [sales(216), sales(230), sales(144), discount(90)];
+    const r = reconcileQbInvoice({
+      sentLines,
+      sentTax: 0,
+      sentDiscount: 90,
+      // QB echoes the lines and reports the post-discount total.
+      qbResponse: { Line: sentLines, TotalAmt: 500, TxnTaxDetail: { TotalTax: 0 } },
+    });
+    expect(r.totalDrift).toBe(0);
+    expect(r.taxMismatch).toBe(false);
+    expect(r.lineAmountDrift).toBe(false);
+    expect(r.severity).toBe(RECONCILE_SEVERITY.OK);
+  });
+
+  it("without sentDiscount the same invoice would be held — the regression", () => {
+    const sentLines = [sales(216), sales(230), sales(144), discount(90)];
+    const r = reconcileQbInvoice({
+      sentLines,
+      sentTax: 0,
+      qbResponse: { Line: sentLines, TotalAmt: 500, TxnTaxDetail: { TotalTax: 0 } },
+    });
+    expect(r.totalDrift).toBe(-90);
+    expect(r.taxMismatch).toBe(true);
+  });
+
+  it("a discounted TAXABLE invoice reconciles when QB taxes the discounted base", () => {
+    // $590 of goods, $90 off, 8% on the $500 that remains = $40.
+    const sentLines = [sales(590), discount(90)];
+    const r = reconcileQbInvoice({
+      sentLines,
+      sentTax: 40,
+      sentDiscount: 90,
+      qbResponse: { Line: sentLines, TotalAmt: 540, TxnTaxDetail: { TotalTax: 40 } },
+    });
+    expect(r.severity).toBe(RECONCILE_SEVERITY.OK);
+  });
+
+  it("still catches a real tax divergence on a discounted invoice", () => {
+    // QB taxed the PRE-discount base ($590 × 8% = $47.20) — the open AST
+    // question. The hard tax gate must still fire, not be masked.
+    const sentLines = [sales(590), discount(90)];
+    const r = reconcileQbInvoice({
+      sentLines,
+      sentTax: 40,
+      sentDiscount: 90,
+      qbResponse: { Line: sentLines, TotalAmt: 547.2, TxnTaxDetail: { TotalTax: 47.2 } },
+    });
+    expect(r.taxMismatch).toBe(true);
+    expect(r.severity).toBe(RECONCILE_SEVERITY.TAX_MISMATCH);
+  });
+
+  it("undiscounted invoices are unaffected (sentDiscount defaults to 0)", () => {
+    const sentLines = [sales(100)];
+    const r = reconcileQbInvoice({
+      sentLines,
+      sentTax: 0,
+      qbResponse: { Line: sentLines, TotalAmt: 100, TxnTaxDetail: { TotalTax: 0 } },
+    });
+    expect(r.severity).toBe(RECONCILE_SEVERITY.OK);
+  });
+});

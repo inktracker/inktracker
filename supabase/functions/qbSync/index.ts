@@ -42,6 +42,7 @@ import {
   shouldCascadeImportedPaid,
   pickQbInvoiceForAdoption,
   mergeCustomerAuthoritative,
+  qbAllowsDiscountLines,
 } from "../_shared/qbInvoice.js";
 import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
 import { mergeNotesPreservingSyncLines } from "../_shared/qbInvoiceModified.js";
@@ -794,6 +795,62 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     if (!custErr && dbCust) customer = mergeCustomerAuthoritative(customer, dbCust);
   }
 
+  // ── Discount preflight ───────────────────────────────────────────────────
+  // The discount rides its own QBO DiscountLineDetail line, and QBO only
+  // accepts discount lines when the realm's Sales → Discount setting is ON
+  // (Preferences.SalesFormsPrefs.AllowDiscount). Rather than gamble on the
+  // rejection shape, check BEFORE any QB write and fail with instructions
+  // the shop can act on — designed failure state, not a raw API error.
+  // Runs only when the payload actually carries a discount, so the common
+  // undiscounted path costs nothing. Fail-open: if the Preferences read
+  // itself errors, proceed — a preflight hiccup must not block invoicing.
+  const discountPct  = Number(invoicePayload?.discountPercent) || 0;
+  const discountFlat = Number(invoicePayload?.discountAmount)  || 0;
+  const wantsDiscount =
+    ((invoicePayload?.discountType === "flat" || discountFlat > 0) && discountFlat > 0) ||
+    discountPct > 0;
+  if (wantsDiscount) {
+    let allowDiscount: boolean | null = null;
+    try {
+      const prefs = await qbQuery(token, realmId, "SELECT * FROM Preferences");
+      allowDiscount = qbAllowsDiscountLines(prefs);
+    } catch (e) {
+      console.error("[createInvoice] discount preflight Preferences read failed (fail-open):", (e as Error)?.message);
+    }
+    if (allowDiscount === false) {
+      const fixPath =
+        "In QuickBooks: Settings (gear icon) → Account and settings → Sales → " +
+        "Sales form content → turn on \"Discount\" → Save.";
+      // Bell notification so the instruction survives the modal closing.
+      // Best-effort — the thrown error below is the primary surface.
+      try {
+        const adminNotifyClient = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        await recordShopNotification(adminNotifyClient, {
+          shopOwner: quote?.shop_owner,
+          eventType: "qb_discount_disabled",
+          severity: "warning",
+          title: `Turn on Discounts in QuickBooks to send ${quote?.quote_id || "this invoice"}`,
+          body:
+            `This invoice has a discount, but your QuickBooks company doesn't have discounts ` +
+            `turned on, so QuickBooks would reject it. ${fixPath} Then create the invoice again. ` +
+            `No invoice was created and nothing was changed in QuickBooks.`,
+          relatedEntity: "quote",
+          relatedId: quote?.id ? String(quote.id) : null,
+          metadata: { realm_id: realmId },
+        });
+      } catch (notifyErr) {
+        console.error("[createInvoice] discount-disabled notification failed:", (notifyErr as Error)?.message);
+      }
+      throw new Error(
+        `This invoice has a discount, but your QuickBooks doesn't have discounts turned on. ` +
+        `${fixPath} Then click Create in QuickBooks again. Nothing was created in QuickBooks.`,
+      );
+    }
+  }
+
   // 1. Find or create customer in QB
   const qbCustomerId = await findOrCreateCustomer(token, realmId, customer, supabase);
   if (!qbCustomerId) throw new Error("Could not find or create QuickBooks customer");
@@ -872,11 +929,25 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // (e.g. shipping) → NON. Tax-exempt customers or a 0% rate force NON on all.
   // Strip the transient _taxable/_isFee hints (set by buildInvoiceLinesFromPayload)
   // so they never reach QuickBooks.
+  // Captured DURING the strip, because _isFee is deleted below and the
+  // reconciliation further down still needs to know how much of the
+  // discountable (non-fee) subtotal was taxable. The discount now rides
+  // its own DiscountLineDetail line, so sales lines are pre-discount —
+  // expectedTax must still be computed on the POST-discount taxable
+  // base, which is what the quote actually billed the customer.
+  let discountableSubtotal = 0;
+  let discountableTaxableSubtotal = 0;
+
   lines.forEach((l: any) => {
     if (l.SalesItemLineDetail) {
       const lineTaxable = l._taxable !== false;
       const code = (isTaxExempt || taxPercent === 0 || !lineTaxable) ? "NON" : "TAX";
       l.SalesItemLineDetail.TaxCodeRef = { value: code };
+      if (!l._isFee) {
+        const amt = Number(l.Amount) || 0;
+        discountableSubtotal += amt;
+        if (code === "TAX") discountableTaxableSubtotal += amt;
+      }
     }
     delete l._taxable;
     delete l._isFee;
@@ -1278,10 +1349,27 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       s + (l?.SalesItemLineDetail?.TaxCodeRef?.value === "TAX" ? (Number(l?.Amount) || 0) : 0),
     0,
   );
-  const expectedTax = Number((taxableSubtotalForReconcile * (taxPercent / 100)).toFixed(2));
+
+  // The discount is its own line now, so sales-line Amounts are
+  // pre-discount. Take off the share of the discount that falls on
+  // TAXABLE lines before computing expected tax — proportional across
+  // the discountable (non-fee) subtotal, which is exactly what the old
+  // inline spread produced. Without this the expected tax is computed
+  // on a pre-discount base and every discounted taxable invoice trips
+  // the hard tax gate below.
+  const sentDiscount = Number(
+    (lines.find((l: any) => l?.DetailType === "DiscountLineDetail")?.Amount ?? 0),
+  ) || 0;
+  const taxableDiscountShare = discountableSubtotal > 0
+    ? Number(((sentDiscount * discountableTaxableSubtotal) / discountableSubtotal).toFixed(2))
+    : 0;
+  const expectedTaxBase = Math.max(0, taxableSubtotalForReconcile - taxableDiscountShare);
+  const expectedTax = Number((expectedTaxBase * (taxPercent / 100)).toFixed(2));
+
   const reconciliation = reconcileQbInvoice({
     sentLines: lines,
     sentTax: expectedTax,
+    sentDiscount,
     qbResponse: qbInvoiceFinal,
   });
 
@@ -1949,7 +2037,19 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
 
     // Calculate subtotal (pre-tax)
     const taxTotal = Number(qbInv.TxnTaxDetail?.TotalTax ?? 0);
-    const subtotal = totalAmt - taxTotal;
+    // A discount now rides its own DiscountLineDetail line. Import it as
+    // a real discount field instead of letting it disappear into the
+    // total. Local `subtotal` is PRE-discount by app semantics, so it
+    // has to be grossed back up — storing a post-discount subtotal
+    // alongside discount > 0 is what double-subtracts on the invoice
+    // display (the same trap buildAdoptPatches guards).
+    const qbDiscount = Number(
+      (qbInv.Line ?? [])
+        .filter((l: any) => l?.DetailType === "DiscountLineDetail")
+        .reduce((s: number, l: any) => s + (Number(l.Amount) || 0), 0)
+        .toFixed(2),
+    );
+    const subtotal = Number((totalAmt - taxTotal + qbDiscount).toFixed(2));
 
     // Find paid date from linked payments if paid
     let paidDate: string | null = null;
@@ -1975,11 +2075,13 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       // QB's memo, but keep any local "[date] Synced from QuickBooks"
       // audit lines — a Sync-All must not erase the shop's sync history.
       notes: mergeNotesPreservingSyncLines(qbInv.CustomerMemo?.value, existingRow?.notes),
-      discount: 0,
+      discount: qbDiscount,
+      discount_type: qbDiscount > 0 ? "flat" : undefined,
       tax_rate: 0,
       rush_rate: 0,
       extras: {},
     };
+    if (payload.discount_type === undefined) delete payload.discount_type;
 
     if (existingId) {
       // Locally-born invoices (order-born, or rich local line items) keep
@@ -1992,6 +2094,7 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
       if (!shouldReplaceLocalInvoiceItems(existingRow)) {
         delete payload.line_items;
         delete payload.discount;
+        delete payload.discount_type;
         delete payload.tax_rate;
         delete payload.rush_rate;
         delete payload.extras;

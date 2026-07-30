@@ -581,9 +581,63 @@ export function buildUpdateFailureResponse({
 //   defaultItemName  — fallback when a line's itemName isn't in the map
 //   taxExempt        — when true, every line gets TaxCodeRef='NON' instead of 'TAX'
 //
-// Discount handling: rather than emit a separate DiscountLineDetail (which
-// QB applies BEFORE tax), we distribute the discount proportionally across
-// line Amounts so QB taxes the discounted total.
+// Discount handling: the discount is emitted as its OWN QBO
+// DiscountLineDetail line against the whole invoice, so the QB invoice
+// reads
+//
+//     SUBTOTAL   590.00
+//     Discount   -90.00
+//     TOTAL      500.00
+//
+// Sales lines keep the price they were actually sold at. Previously the
+// discount was spread proportionally into each line's Amount with the
+// UnitPrice back-computed from it, which printed rates like 15.2542 and
+// 19.492 on customer-facing invoices, and stamped a "(less $X
+// discount)" note onto every line description.
+//
+// The discount line is emitted with an explicit Amount and
+// PercentBased:false rather than a percentage. QBO applies a discount
+// line to the sum of the lines preceding it — with an explicit amount
+// that positional rule can't quietly pull setup/shipping fees into the
+// discount base, so the fee-exclusion rule below stays authoritative
+// and the number InkTracker shows is the number QB subtracts.
+//
+// Tax: `sentDiscount` on the returned metadata lets the caller keep its
+// expected-tax base post-discount, matching what the quote billed. See
+// reconcileQbInvoice — a discounted invoice must not read as a tax
+// mismatch just because its sales lines are now pre-discount.
+/**
+ * Does this QBO realm accept DiscountLineDetail lines?
+ * Reads Preferences.SalesFormsPrefs.AllowDiscount from a
+ * `SELECT * FROM Preferences` response. Returns:
+ *   true  — discounts enabled
+ *   false — disabled (a discount line would be rejected)
+ *   null  — can't tell (missing/garbled response) → caller fails OPEN,
+ *           because a preflight hiccup must never block invoicing.
+ * QBO has returned this both as a real boolean and as "true"/"false"
+ * strings across API shapes, so both are handled.
+ */
+export function qbAllowsDiscountLines(prefsResponse) {
+  const raw = prefsResponse?.QueryResponse?.Preferences?.[0]?.SalesFormsPrefs?.AllowDiscount;
+  if (typeof raw === "boolean") return raw;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return null;
+}
+
+// Label for the discount line. Prefers the shop's own reason (the
+// discount_description field shipped in #596/#597) so the customer sees
+// "Repeat customer" rather than a bare "Discount"; falls back to naming
+// the percentage, which a flat amount can't convey once it's on its own
+// line.
+function buildDiscountDescription(payload, { isFlat, discountPct }) {
+  const reason = typeof payload?.discountDescription === "string"
+    ? payload.discountDescription.trim()
+    : "";
+  if (reason) return reason;
+  return isFlat ? "Discount" : `Discount (${discountPct}%)`;
+}
+
 export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName, taxExempt = false) {
   const lines = [];
   const safeMap = itemIdMap instanceof Map ? itemIdMap : new Map();
@@ -615,15 +669,17 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
       _isFee: !!line?.isFee,
       SalesItemLineDetail: {
         ItemRef:     { value: itemId },
-        UnitPrice:   unitPrice,
+        // Money, so 2dp — QBO renders whatever precision it's given and
+        // a rate like 15.2542 on a customer's invoice reads as a bug.
+        // Nothing back-computes this any more: it's the price the line
+        // was sold at, and the discount lives on its own line below.
+        UnitPrice:   Number(unitPrice.toFixed(2)),
         Qty:         qty,
         TaxCodeRef:  { value: lineTaxCode },
       },
     });
   }
 
-  // Apply discount inline rather than as a separate line so QB taxes the
-  // post-discount total.
   const discountPct  = Number(payload?.discountPercent) || 0;
   const discountFlat = Number(payload?.discountAmount)  || 0;
   const isFlat       = payload?.discountType === "flat" || discountFlat > 0;
@@ -638,25 +694,23 @@ export function buildInvoiceLinesFromPayload(payload, itemIdMap, defaultItemName
     const discountTotal = isFlat
       ? discountFlat
       : Number(((subtotal * discountPct) / 100).toFixed(2));
-    const discountLabel = isFlat
-      ? ` (less $${discountFlat.toFixed(2)} discount)`
-      : ` (less ${discountPct}% discount)`;
 
     if (subtotal > 0 && discountTotal > 0) {
-      let remaining = discountTotal;
-      const salesLines = lines.filter((l) => l.DetailType === "SalesItemLineDetail" && !l._isFee);
-      salesLines.forEach((line, i) => {
-        const share = i === salesLines.length - 1
-          ? remaining
-          : Number(((line.Amount / subtotal) * discountTotal).toFixed(2));
-        line.Amount = Number((line.Amount - share).toFixed(2));
-        line.Description = (line.Description || "") + discountLabel;
-        if (line.SalesItemLineDetail) {
-          line.SalesItemLineDetail.UnitPrice = Number(
-            (line.Amount / (line.SalesItemLineDetail.Qty || 1)).toFixed(4),
-          );
-        }
-        remaining = Number((remaining - share).toFixed(2));
+      // Never discount below zero. A flat discount larger than the
+      // discountable subtotal would otherwise hand QB a negative
+      // invoice total.
+      const capped = Number(Math.min(discountTotal, subtotal).toFixed(2));
+      lines.push({
+        DetailType: "DiscountLineDetail",
+        Amount: capped,
+        Description: buildDiscountDescription(payload, { isFlat, discountPct, capped }),
+        DiscountLineDetail: {
+          // Explicit amount, not PercentBased — see the header note: it
+          // keeps QB's positional subtotal rule from redefining the
+          // discount base, and it guarantees QB subtracts exactly what
+          // InkTracker quoted.
+          PercentBased: false,
+        },
       });
     }
   }
