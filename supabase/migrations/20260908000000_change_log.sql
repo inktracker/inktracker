@@ -53,11 +53,20 @@ CREATE POLICY change_log_select_own ON public.change_log
   TO authenticated
   USING (shop_owner = ((SELECT auth.jwt()) ->> 'email'));
 
+-- `actor` is the WHO of the audit trail, so the insert policies pin it to
+-- the caller's own JWT email (or null). Without this, any authenticated
+-- team member could attribute a change to someone else — a forgeable
+-- audit trail is worse than none. Service-role writers (edge functions)
+-- bypass RLS and may set actor freely (they record QB/system events
+-- where there is no InkTracker user).
 DROP POLICY IF EXISTS change_log_insert_own ON public.change_log;
 CREATE POLICY change_log_insert_own ON public.change_log
   FOR INSERT
   TO authenticated
-  WITH CHECK (shop_owner = ((SELECT auth.jwt()) ->> 'email'));
+  WITH CHECK (
+    shop_owner = ((SELECT auth.jwt()) ->> 'email')
+    AND (actor IS NULL OR actor = ((SELECT auth.jwt()) ->> 'email'))
+  );
 
 -- Team members (managers / employees) work under the owner's
 -- shop_owner, so they need the assigned_shops containment path used by
@@ -85,11 +94,16 @@ DROP POLICY IF EXISTS change_log_insert_team ON public.change_log;
 CREATE POLICY change_log_insert_team ON public.change_log
   FOR INSERT
   TO authenticated
-  WITH CHECK (shop_owner IN (
-    SELECT jsonb_array_elements_text(p.assigned_shops)
-    FROM profiles p
-    WHERE p.auth_id = (SELECT auth.uid()) AND p.assigned_shops IS NOT NULL
-  ));
+  WITH CHECK (
+    shop_owner IN (
+      SELECT jsonb_array_elements_text(p.assigned_shops)
+      FROM profiles p
+      WHERE p.auth_id = (SELECT auth.uid()) AND p.assigned_shops IS NOT NULL
+    )
+    -- Team members act under the owner's shop_owner, so `actor` is the
+    -- ONLY record of who touched it — it must be their own identity.
+    AND (actor IS NULL OR actor = ((SELECT auth.jwt()) ->> 'email'))
+  );
 
 COMMENT ON TABLE public.change_log IS
   'Append-only shop-facing history: who changed which document, when, and from where (quickbooks | inktracker | system). Never mutates the document it describes.';
