@@ -4,6 +4,7 @@ import {
   validateUploadCandidate,
   rejectDangerousSvg,
   getLogoDownscaleDims,
+  isTransformableArtworkPath,
   ALLOWED_UPLOAD_EXTS,
   MAX_UPLOAD_BYTES,
 } from "./uploadValidation";
@@ -130,11 +131,24 @@ export async function uploadLogo(file, ownerId = "") {
 // helper parses the path out of those URLs so we can sign uniformly.
 // Returns `null` if it can't resolve a path or signing fails — callers
 // should fall back to whatever URL they already have.
-export async function signArtworkUrl(pathOrUrl, expiresInSec = DEFAULT_SIGNED_TTL) {
+
+export async function signArtworkUrl(pathOrUrl, expiresInSec = DEFAULT_SIGNED_TTL, { width } = {}) {
   if (!pathOrUrl) return null;
   const path = resolveArtworkPath(pathOrUrl);
   if (!path) return null;
+  // Optional server-side thumbnail (PRO image transforms, 2026-07-31).
+  // Grid/thumb surfaces pass `width` so a 200px tile stops downloading a
+  // print-res original; the guard is centralized HERE so callers don't
+  // each have to know which formats the transformer supports. Falls back
+  // to a plain signed URL if transform signing fails for any reason.
+  const wantTransform = Number.isFinite(Number(width)) && Number(width) > 0 && isTransformableArtworkPath(path);
   try {
+    if (wantTransform) {
+      const { data } = await supabase.storage
+        .from(BUCKET)
+        .createSignedUrl(path, expiresInSec, { transform: { width: Number(width), quality: 80 } });
+      if (data?.signedUrl) return data.signedUrl;
+    }
     const { data, error } = await supabase.storage
       .from(BUCKET)
       .createSignedUrl(path, expiresInSec);

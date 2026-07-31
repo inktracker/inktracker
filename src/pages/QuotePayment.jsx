@@ -60,8 +60,16 @@ function ProofThumb({ art, onOpen }) {
         </div>
       ) : (
         <img
-          src={art._src}
-          onError={() => setImgFailed(true)}
+          src={art._thumbSrc || art._src}
+          onError={(e) => {
+            // Thumbnail transform failed (unsupported format, transform
+            // hiccup) → retry the untransformed original before giving up.
+            if (art._thumbSrc && art._src && e.currentTarget.src !== art._src) {
+              e.currentTarget.src = art._src;
+              return;
+            }
+            setImgFailed(true);
+          }}
           alt={art.name || "Art proof"}
           className="w-full h-full object-contain"
         />
@@ -553,7 +561,11 @@ export default function QuotePayment() {
             .map((a) => {
               const fallback = a.url || a.file_url;
               const src = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback }) || fallback;
-              return { ...a, _src: src };
+              // Grid tiles get a 640px server-side thumbnail (PRO image
+              // transforms) — the enlarge lightbox keeps the original so
+              // what the customer approves is full quality.
+              const thumb = artworkProxyUrl({ type: "quote", id: quote.id, token: publicToken, pathOrUrl: a.path || fallback, width: 640 });
+              return { ...a, _src: src, _thumbSrc: thumb || src };
             });
           if (proofs.length === 0) return null;
           return (

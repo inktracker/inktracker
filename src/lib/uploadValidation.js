@@ -99,3 +99,14 @@ export async function rejectDangerousSvg(file, ext) {
     );
   }
 }
+
+// ── Image-transform eligibility (PRO, 2026-07-31) ───────────────────────────
+// Raster formats Supabase Image Transformations can resize. SVG/BMP/PDF
+// (and anything else) must be signed plain — requesting a transform on
+// them errors at fetch time. Pure so it's testable without supabaseClient;
+// signArtworkUrl (uploadFile.js) and the artworkProof proxy both apply
+// this rule. Keep in lockstep with RASTER_RE in
+// supabase/functions/artworkProof/index.ts.
+export function isTransformableArtworkPath(path) {
+  return /\.(jpe?g|png|gif|webp)$/i.test(String(path ?? ""));
+}

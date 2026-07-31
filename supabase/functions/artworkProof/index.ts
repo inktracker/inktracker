@@ -37,6 +37,17 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const SIGNED_TTL = 2 * 60 * 60;        // 2h
 const REDIRECT_CACHE_SECS = 60 * 60;   // 1h browser cache on the 302
 
+// Optional server-side thumbnails (Supabase Image Transformations — PRO,
+// enabled 2026-07-31). Callers append `&w=<width>` for grid/thumb contexts
+// so a 200px tile stops downloading a print-res original. Whitelisted so a
+// caller can't mint unbounded distinct transform variants (each unique
+// width is a separate origin-image transform + cache entry), and applied
+// only to raster formats the transformer supports — PDFs, SVGs, and
+// anything else pass through untransformed. Enlarge/download surfaces
+// simply omit `w` and get the original, so approval quality is unchanged.
+const THUMB_WIDTHS = new Set([320, 640, 1024]);
+const RASTER_RE = /\.(jpe?g|png|gif|webp)$/i;
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -145,9 +156,26 @@ Deno.serve(async (req) => {
 
     if (!authorizedPaths(row).has(reqPath)) return fail(404, req);
 
-    const { data: signed, error } = await admin.storage
-      .from("artwork").createSignedUrl(reqPath, SIGNED_TTL);
-    if (error || !signed?.signedUrl) return fail(404, req);
+    // Thumbnail transform when requested + applicable (see THUMB_WIDTHS
+    // note). Falls back to the untransformed original if transform signing
+    // fails for any reason — a broken thumbnail must never take down a
+    // proof image that would have worked plain.
+    const wParam = parseInt(url.searchParams.get("w") || "", 10);
+    const wantTransform = THUMB_WIDTHS.has(wParam) && RASTER_RE.test(reqPath);
+
+    let signedUrl = "";
+    if (wantTransform) {
+      const { data } = await admin.storage
+        .from("artwork")
+        .createSignedUrl(reqPath, SIGNED_TTL, { transform: { width: wParam, quality: 80 } });
+      if (data?.signedUrl) signedUrl = data.signedUrl;
+    }
+    if (!signedUrl) {
+      const { data, error } = await admin.storage
+        .from("artwork").createSignedUrl(reqPath, SIGNED_TTL);
+      if (error || !data?.signedUrl) return fail(404, req);
+      signedUrl = data.signedUrl;
+    }
 
     // 302 to the signed URL. Browser-cacheable (see the header note above) so
     // repeat views of the same artwork reuse the same signed URL instead of
@@ -157,7 +185,7 @@ Deno.serve(async (req) => {
       status: 302,
       headers: {
         ...CORS,
-        Location: signed.signedUrl,
+        Location: signedUrl,
         "Cache-Control": `private, max-age=${REDIRECT_CACHE_SECS}`,
       },
     });
