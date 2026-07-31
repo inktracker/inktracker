@@ -139,3 +139,22 @@ describe("getLogoDownscaleDims", () => {
     expect(getLogoDownscaleDims("png", undefined, undefined)).toBeNull();
   });
 });
+
+// ── isTransformableArtworkPath (PRO image transforms) ───────────────────────
+// signArtworkUrl + the artworkProof proxy only request a resize for
+// formats the transformer supports; everything else signs plain.
+import { isTransformableArtworkPath } from "../uploadValidation";
+
+describe("isTransformableArtworkPath", () => {
+  it("accepts raster formats", () => {
+    for (const p of ["a.png", "b.jpg", "c.jpeg", "d.gif", "e.webp", "F.PNG", "sub/dir/g.JpG"]) {
+      expect(isTransformableArtworkPath(p)).toBe(true);
+    }
+  });
+
+  it("rejects formats the transformer can't resize", () => {
+    for (const p of ["proof.pdf", "logo.svg", "old.bmp", "seps.ai", "vec.eps", "noext", "", null, undefined]) {
+      expect(isTransformableArtworkPath(p)).toBe(false);
+    }
+  });
+});

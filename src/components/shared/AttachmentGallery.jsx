@@ -55,7 +55,12 @@ export default function AttachmentGallery({
     let cancelled = false;
     (async () => {
       const entries = await Promise.all(
-        items.map(async (a) => [a.id, await signArtworkUrl(a.path || a.url)]),
+        // Grid tiles render ~150px — sign a 320px server-side thumbnail
+        // (PRO image transforms) instead of the print-res original.
+        // signArtworkUrl only transforms raster formats; PDFs/SVGs get a
+        // plain signed URL. The enlarge overlay signs its own full-size
+        // URL, so preview quality is unchanged.
+        items.map(async (a) => [a.id, await signArtworkUrl(a.path || a.url, undefined, { width: 320 })]),
       );
       if (!cancelled) setSigned(Object.fromEntries(entries.filter(([, u]) => u)));
     })();

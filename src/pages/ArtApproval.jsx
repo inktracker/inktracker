@@ -47,8 +47,16 @@ function ProofPreviewBlock({ art, onEnlarge }) {
       >
         {imgFailed ? unavailable : (
           <img
-            src={art._src}
-            onError={() => setImgFailed(true)}
+            src={art._thumbSrc || art._src}
+            onError={(e) => {
+              // Thumbnail transform failed → retry the untransformed
+              // original before showing the unavailable state.
+              if (art._thumbSrc && art._src && e.currentTarget.src !== art._src) {
+                e.currentTarget.src = art._src;
+                return;
+              }
+              setImgFailed(true);
+            }}
             alt={art.name}
             className="w-full max-h-96 object-contain"
           />
@@ -256,7 +264,12 @@ export default function ArtApproval() {
   const artwork = getOrderArtwork(order).map((art) => {
     const fallback = art.url;
     const src = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback }) || fallback;
-    return { ...art, _src: src };
+    // Inline preview gets a 1024px server-side thumbnail (PRO image
+    // transforms; this preview renders up to max-h-96 so 1024 wide keeps
+    // it crisp on retina) — the full-screen enlarge keeps the original,
+    // so what the customer APPROVES is always full quality.
+    const thumb = artworkProxyUrl({ type: "order", id: order.id, token: publicToken, pathOrUrl: art.path || fallback, width: 1024 });
+    return { ...art, _src: src, _thumbSrc: thumb || src };
   });
   const alreadyApproved = order?.art_approved;
 
