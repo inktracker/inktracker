@@ -37,6 +37,9 @@ import {
   buildQbModifiedNotification,
 } from "../_shared/qbInvoiceModified.js";
 import { recordShopNotification } from "../_shared/shopNotifications.js";
+import { recordChange, CHANGE_SOURCES } from "../_shared/changeLog.js";
+
+const fmtUsd = (n: unknown) => `$${Number(n ?? 0).toFixed(2)}`;
 // Set secret: npx supabase secrets set QB_WEBHOOK_VERIFIER_TOKEN=<from Intuit Developer Portal>
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
@@ -164,6 +167,39 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
         .eq("id", row.id).eq("shop_owner", shopOwner);
       if (patchErr) console.error(`[qbWebhook] qb mirror patch failed on ${table} for ${qbInvoiceId}:`, patchErr.message);
     }
+    // Durable history. Logged per linked row and independently of the
+    // notification, which is deduped to one per event and dismissable —
+    // the shop still needs to be able to answer "what changed on this
+    // invoice, and when" long after the bell is cleared. Recording only;
+    // no price, total, or line item is altered by this.
+    const qbRef = (table === "invoices" ? (row as any).invoice_id : (row as any).quote_id) || `QB #${qbInvoiceId}`;
+    if (detection.linesChanged || (detection.qbChanged && detection.diverges)) {
+      const changeList = [...detection.lineChanges];
+      if (detection.qbChanged) {
+        changeList.unshift(`Invoice total: ${fmtUsd(row.qb_total)} → ${fmtUsd(freshQbTotal)}`);
+      }
+      await recordChange(supabase, {
+        shopOwner,
+        entityType: table === "invoices" ? "invoice" : "quote",
+        entityId: row.id,
+        entityRef: qbRef,
+        source: CHANGE_SOURCES.QUICKBOOKS,
+        // QBO doesn't report the acting user on the Invoice entity, so
+        // there is no name to record. The UI says "in QuickBooks".
+        actor: null,
+        summary: detection.linesChanged
+          ? `Edited in QuickBooks — ${detection.lineChanges.length} line change${detection.lineChanges.length === 1 ? "" : "s"}`
+          : `Total changed in QuickBooks to ${fmtUsd(freshQbTotal)}`,
+        changes: changeList,
+        metadata: {
+          qb_invoice_id: qbInvoiceId,
+          qb_total: freshQbTotal,
+          local_total: row.total,
+          total_diverges: detection.diverges,
+        },
+      });
+    }
+
     if (detection.shouldNotify && !notified) {
       notified = true;
       await recordShopNotification(supabase, buildQbModifiedNotification({
