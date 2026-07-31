@@ -17,7 +17,25 @@ import { publicErrorPage, isBrowserNavigation } from "../_shared/publicErrors.ts
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const SIGNED_TTL = 60 * 60; // 1h — fresh on every proxy hit, so expiry never matters
+// Egress economics (2026-07-31 Free-cap blowout): every proxy hit used to
+// mint a DIFFERENT signed URL and stamp the 302 no-store, so browsers could
+// never cache anything — each proof view/refresh re-downloaded print-res
+// originals, and the ~289 MB artwork bucket left Supabase ~19×/cycle
+// (5.5 GB). Browser caching is the only lever that reduces billed egress
+// (Supabase bills CDN-cached egress too), so:
+//
+//   - the 302 is now cacheable for REDIRECT_CACHE_SECS (private: it carries
+//     a per-recipient tokened path, keep it out of shared caches),
+//   - a browser that reuses the cached redirect hits the SAME signed URL,
+//     and the storage response under that URL is browser-cacheable,
+//   - SIGNED_TTL is 2× the redirect cache so a redirect served at the very
+//     end of its cache life still points at a URL with ≥1h of validity.
+//
+// Security model unchanged: token check still runs on every cache MISS, and
+// a revoked token stops new signings within the cache window's worst case
+// (1h) — same order as the signed URL lifetime we already accepted.
+const SIGNED_TTL = 2 * 60 * 60;        // 2h
+const REDIRECT_CACHE_SECS = 60 * 60;   // 1h browser cache on the 302
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -131,11 +149,17 @@ Deno.serve(async (req) => {
       .from("artwork").createSignedUrl(reqPath, SIGNED_TTL);
     if (error || !signed?.signedUrl) return fail(404, req);
 
-    // 302 to the freshly-signed URL. no-store so the redirect itself isn't cached
-    // (the signed URL it points to is short-lived).
+    // 302 to the signed URL. Browser-cacheable (see the header note above) so
+    // repeat views of the same artwork reuse the same signed URL instead of
+    // re-downloading the original on every render. `private` keeps the
+    // tokened mapping out of shared/proxy caches.
     return new Response(null, {
       status: 302,
-      headers: { ...CORS, Location: signed.signedUrl, "Cache-Control": "no-store" },
+      headers: {
+        ...CORS,
+        Location: signed.signedUrl,
+        "Cache-Control": `private, max-age=${REDIRECT_CACHE_SECS}`,
+      },
     });
   } catch (err) {
     console.error("[artworkProof] error:", (err as Error).message);
