@@ -36,6 +36,7 @@ import { notify } from "@/lib/notify";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
 import ReactivateLink from "../shared/ReactivateLink";
+import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 
 // Shown on every disabled write affordance when the shop is read-only
 // (subscription lapsed). Viewing stays fully intact — only DB-mutating
@@ -266,6 +267,10 @@ function getPreferredGarmentDescription(li) {
 
 function getGarmentHeader(li) {
   const number = getPreferredGarmentNumber(li);
+  // Shop's custom title wins over resolved/supplier fields — see
+  // src/lib/quotes/garmentTitle.js.
+  const custom = customGarmentHeader(li, number);
+  if (custom) return custom;
   const storedName = cleanText(li?.productName || "");
   const rawDescription = (storedName && !looksLikeCode(storedName))
     ? storedName

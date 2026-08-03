@@ -168,3 +168,33 @@ describe("QB fees — numbers match end to end", () => {
     expect(qb.total).toBe(140); // 100 + 25 + 15
   });
 });
+
+describe("QB line description uses the shop's custom garment title", () => {
+  it("customTitle replaces the brand in the styleLabel", () => {
+    // Truman's 31-069: an OTTO cap whose style number collides with an
+    // S&S fleece crewneck. The customer's QB invoice must carry the
+    // shop's name for the garment, not the colliding supplier's.
+    loadShopPricingConfig(null);
+    const quote = {
+      line_items: [{
+        ...garmentLine,
+        style: "31-069",
+        brand: "Otto",
+        garmentColor: "Drk Green/Khaki",
+        customTitle: "Otto Cap 5 Panel Mid Profile",
+      }],
+      tax_rate: 0,
+      discount: 0,
+    };
+    const payload = buildQBInvoicePayload(quote);
+    const desc = payload.lines[0].description;
+    expect(desc).toContain("Otto Cap 5 Panel Mid Profile 31-069 Drk Green/Khaki");
+    expect(desc).not.toContain("Otto 31-069"); // brand alone must not lead
+  });
+
+  it("without customTitle the brand-led label is unchanged", () => {
+    loadShopPricingConfig(null);
+    const payload = buildQBInvoicePayload({ line_items: [garmentLine], tax_rate: 0, discount: 0 });
+    expect(payload.lines[0].description).toContain("Comfort Colors 1717 Banana");
+  });
+});

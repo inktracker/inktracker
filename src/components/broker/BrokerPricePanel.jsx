@@ -6,6 +6,7 @@ import {
   BROKER_MARKUP,
   STANDARD_MARKUP,
 } from "../shared/pricing";
+import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 
 function cleanText(value) {
   return String(value || "").trim();
@@ -122,6 +123,10 @@ function getDisplayDescription(li) {
 
 function getHeaderLine(li) {
   const styleNumber = getDisplayStyleNumber(li);
+  // Shop's custom title wins over resolved/supplier fields — see
+  // src/lib/quotes/garmentTitle.js.
+  const custom = customGarmentHeader(li, styleNumber);
+  if (custom) return custom;
   const description = getDisplayDescription(li);
   return description ? `${styleNumber} - ${description}` : styleNumber;
 }
