@@ -16,6 +16,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
 import { escapeHtml } from "../_shared/emailSanitize.js";
+import { buildWelcomeEmail } from "../_shared/welcomeEmail.ts";
 
 const SEND_FROM = Deno.env.get("FROM_EMAIL") ?? "quotes@info.inktracker.app";
 // Where signup notifications land. Env-overridable so a future teammate
@@ -111,7 +112,51 @@ Deno.serve(async (req) => {
       resend_id: result.id ?? null,
     });
 
-    return Response.json({ sent: result.ok, reason: result.reason ?? null });
+    // ── Welcome email → the NEW SHOP OWNER ──────────────────────────────
+    // Self-signups only: invited managers/employees/brokers already get
+    // an invite email, and a "your trial is live" welcome would read as
+    // billing noise to someone who isn't the account owner. Same trigger,
+    // same self-validation, own dedupe key (one welcome per email, ever).
+    // Fully isolated: any failure here must never affect the admin
+    // notification above or the signup itself.
+    let welcomeSent: boolean | null = null;
+    if (isSelfSignup) {
+      try {
+        const { data: welcomed } = await admin
+          .from("notification_log")
+          .select("id")
+          .eq("event_type", "welcome_email")
+          .eq("shop_owner", profile.email)
+          .eq("status", "sent")
+          .limit(1);
+        if (!welcomed || welcomed.length === 0) {
+          const welcome = buildWelcomeEmail({ email: profile.email, shopName: shopLabel });
+          const wResult = await sendResendEmail({
+            from: `InkTracker <${SEND_FROM}>`,
+            to: [profile.email],
+            // Replies go to a human — for a new product, answering the
+            // welcome email IS the support channel.
+            reply_to: ADMIN_EMAIL,
+            subject: welcome.subject,
+            html: welcome.html,
+          });
+          welcomeSent = wResult.ok;
+          await logNotificationAttempt(admin, {
+            shop_owner: profile.email,
+            event_type: "welcome_email",
+            recipient_email: profile.email,
+            subject: welcome.subject,
+            status: wResult.ok ? "sent" : "failed",
+            failure_reason: wResult.ok ? null : wResult.reason,
+            resend_id: wResult.id ?? null,
+          });
+        }
+      } catch (welcomeErr) {
+        console.error("[notifySignup] welcome email failed (non-fatal):", (welcomeErr as Error)?.message);
+      }
+    }
+
+    return Response.json({ sent: result.ok, reason: result.reason ?? null, welcomeSent });
   } catch (err) {
     console.error("[notifySignup] error:", err);
     return Response.json({ error: String((err as any)?.message ?? err) }, { status: 500 });
