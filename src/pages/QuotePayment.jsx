@@ -32,6 +32,7 @@ import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
+import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 
 // Proof-grid tile. PDFs get a static tile instead of a live <object> embed —
 // an embedded PDF thumbnail downloads the whole file per tile AND renders the
@@ -177,6 +178,10 @@ function getPreferredGarmentDescription(li) {
 
 function getGarmentHeader(li) {
   const number = getPreferredGarmentNumber(li);
+  // Shop's custom title wins over resolved/supplier fields — see
+  // src/lib/quotes/garmentTitle.js.
+  const custom = customGarmentHeader(li, number);
+  if (custom) return custom;
   const description = getPreferredGarmentDescription(li);
   return description ? `${number} - ${description}` : number;
 }

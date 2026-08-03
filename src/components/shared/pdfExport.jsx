@@ -19,6 +19,7 @@ import { imprintColorLabel, imprintCountText } from '../../lib/quotes/imprintLab
 import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges';
 import { signArtworkUrl } from '../../lib/uploadFile';
 import { stripSyncNotes } from '../../lib/invoices/qbModifiedSync';
+import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -371,6 +372,10 @@ function getGarmentDescription(li) {
 
 function getItemHeaderLine(li) {
   const garmentNumber = getGarmentNumber(li);
+  // Shop's custom title wins over resolved/supplier fields — see
+  // src/lib/quotes/garmentTitle.js.
+  const custom = customGarmentHeader(li, garmentNumber);
+  if (custom) return custom;
   const storedName = (li?.productName || '').trim();
   const description = (storedName && !looksLikeCode(storedName))
     ? trimToShortGarmentTitle(storedName)

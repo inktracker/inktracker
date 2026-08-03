@@ -956,7 +956,12 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP, configOve
     const qty = getQty(li);
     if (qty === 0) return;
 
-    const styleLabel = [li.brand, li.style, li.garmentColor].filter(Boolean).join(" ") || "Garment";
+    // Shop's custom title replaces the brand in the QB line description —
+    // it IS the shop's name for this garment (see lib/quotes/garmentTitle.js;
+    // an OTTO 31-069 cap must not read as S&S's 31-069 crewneck on the
+    // customer's invoice). Style + color still append for traceability.
+    const customTitle = typeof li.customTitle === "string" ? li.customTitle.trim() : "";
+    const styleLabel = [customTitle || li.brand, li.style, li.garmentColor].filter(Boolean).join(" ") || "Garment";
     const sizeBreakdown = sortSizeEntries(Object.entries(li.sizes || {}))
       .filter(([, v]) => Number(v) > 0)
       .map(([k, v]) => `${k}:${v}`)

@@ -12,6 +12,7 @@ import {
   getShopPricingConfig,
 } from "../../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
+import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { getImprintArtwork } from "./orderDetailHelpers";
 import ReactivateLink from "../../shared/ReactivateLink";
@@ -62,7 +63,8 @@ export default function OrderLineItems({
             <div className="bg-slate-100 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
               <div>
                 <span className="font-bold text-slate-900 dark:text-slate-100 text-base">
-                  {li.style || "Garment"}
+                  {/* Shop's custom title wins — see lib/quotes/garmentTitle.js */}
+                  {customGarmentHeader(li, li.style) || li.style || "Garment"}
                 </span>
                 {li.garmentColor && (
                   <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>

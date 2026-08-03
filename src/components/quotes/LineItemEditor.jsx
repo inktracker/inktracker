@@ -22,6 +22,7 @@ import { supabase } from "@/api/supabaseClient";
 import { preferredSupplier, pickDefaultOption, orderBySupplierPreference } from "@/lib/suppliers/preference";
 import { buildSaleSizePrices } from "@/lib/suppliers/salePricing";
 import { notify } from "@/lib/notify";
+import { customGarmentHeader, getCustomGarmentTitle } from "@/lib/quotes/garmentTitle";
 
 // Query S&S Activewear, AS Colour, and SanMar in parallel and merge results.
 // AS Colour uses `styleCode`, the others use `styleNumber` — same wire format
@@ -522,6 +523,11 @@ function extractDescFromTitle(title, brand, partNumber) {
 
 function getGarmentHeader(li) {
   const number = getPreferredGarmentNumber(li);
+  // The shop's own title beats every resolved/supplier field — see
+  // src/lib/quotes/garmentTitle.js for the contract (Truman's 31-069:
+  // an OTTO cap number that collides with an S&S fleece crewneck).
+  const custom = customGarmentHeader(li, number);
+  if (custom) return custom;
   const storedName = cleanText(li?.productName || "");
   // Only use productName if it's not a code (avoid "1717 - 1717")
   const description = (storedName && !looksLikeCode(storedName))
@@ -675,6 +681,8 @@ export default function LineItemEditor({
     _rawOnChange(updated);
   };
   const [isCollapsed, setIsCollapsed] = useState(false);
+  // Inline editor for the custom display title (see garmentTitle.js).
+  const [editingTitle, setEditingTitle] = useState(false);
   const [ssColors, setSsColors] = useState([]);
   const [ssInventory, setSsInventory] = useState({});
   const [ssPriceMap, setSsPriceMap] = useState({});
@@ -1259,12 +1267,40 @@ export default function LineItemEditor({
         <div className="grid grid-cols-1 md:grid-cols-2 md:divide-x divide-slate-100">
           <div className="p-5 space-y-5">
             <div className="rounded-xl border border-teal-100 bg-teal-50 px-4 py-3">
-              <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400 mb-1">
-                Display Header Preview
+              <div className="flex items-center justify-between mb-1">
+                <div className="text-[11px] font-bold uppercase tracking-widest text-teal-400">
+                  Display Header Preview
+                </div>
+                {/* Custom title — the escape hatch for style numbers that
+                    collide across suppliers (an OTTO 31-069 cap vs S&S's
+                    31-069 fleece): the lookup's name is often WRONG, and
+                    before this there was nowhere to type your own. Set
+                    here, it wins on every surface (quote, PDF, customer
+                    pages, QB) and lookups never overwrite it. */}
+                <button
+                  type="button"
+                  onClick={() => setEditingTitle((v) => !v)}
+                  className="text-[11px] font-semibold text-teal-600 hover:text-teal-800 transition"
+                >
+                  {editingTitle ? "Done" : getCustomGarmentTitle(li) ? "Edit title" : "Customize title"}
+                </button>
               </div>
-              <div className="text-sm font-bold text-slate-900">
-                {getGarmentHeader(li)}
-              </div>
+              {editingTitle ? (
+                <input
+                  type="text"
+                  value={li.customTitle || ""}
+                  onChange={(e) => update("customTitle", e.target.value)}
+                  onBlur={() => setEditingTitle(false)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingTitle(false); }}
+                  placeholder="Your title for this garment (leave blank to use the supplier's)"
+                  autoFocus
+                  className="w-full text-sm font-bold border border-teal-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-teal-300"
+                />
+              ) : (
+                <div className="text-sm font-bold text-slate-900">
+                  {getGarmentHeader(li)}
+                </div>
+              )}
               <div className="text-xs text-slate-500 mt-1">
                 {li.brand ? `Brand: ${li.brand}` : ""}
                 {li.brand && li.garmentColor ? " • " : ""}
