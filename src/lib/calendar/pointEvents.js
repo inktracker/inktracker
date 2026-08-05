@@ -15,6 +15,7 @@
 // only while the order is still in progress (a planned completion date).
 
 import { O_STATUSES } from "../../components/shared/pricing";
+import { normalizeAssignedPress } from "../presses/normalizePresses";
 
 export function buildPointEvents(orders, quotes) {
   const map = {};
@@ -50,6 +51,25 @@ export function buildPointEvents(orders, quotes) {
     if (completedChipFromColumn) {
       push(o.completed_date, { order: o, step: "Completed", isDue: false });
     }
+    // Press-run chip: surface the SCHEDULE on the calendar. The press
+    // scheduler writes scheduled_date + assigned_press, but the calendar
+    // historically plotted only due_date/step_dates — so an order running
+    // on the 10th and due the 15th appeared ONLY on the 15th here, and the
+    // two views never lined up (Joe, 2026-06-06). Completed orders skip it
+    // (planning aid, not history — same rule as the Due chip).
+    // assigned_press has v1/v2 storage forms — normalize to the display
+    // string here so every consumer gets a plain name (or skip when the
+    // normalized value is empty).
+    const pressName = normalizeAssignedPress(o.assigned_press);
+    if (o.scheduled_date && pressName && o.status !== "Completed") {
+      push(o.scheduled_date, {
+        order: o,
+        step: "Press Run",
+        isDue: false,
+        press: pressName,
+      });
+    }
+
     // Completed orders don't get a red "Due" chip — the job is done.
     if (o.due_date && o.status !== "Completed") {
       push(o.due_date, { order: o, step: "Due", isDue: true });
