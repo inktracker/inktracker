@@ -1,4 +1,4 @@
-import { openAuthRedirect } from "@/lib/mobile/native";
+import { openAuthRedirect, isNative } from "@/lib/mobile/native";
 import { useState, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import { uploadLogo } from "@/lib/uploadFile";
@@ -650,7 +650,28 @@ export default function OnboardingWizard({ user, onComplete }) {
               </div>
             )}
 
-            {step === 5 && needsCard && (
+            {/* App Store guideline 3.1.1 (1.0 rejection, 2026-08-05): the
+                native app must render NO purchase UI — no prices, no trial
+                CTAs, no Stripe checkout. An 'incomplete' user who signs in
+                on iOS gets a neutral finish-on-the-web card instead of the
+                checkout step. Web is unchanged. */}
+            {step === 5 && needsCard && isNative() && (
+              <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center py-4">
+                <div className="w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center">
+                  <CheckCircle2 className="w-9 h-9 text-teal-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">
+                    {shopName || "Your shop"} is set up
+                  </h3>
+                  <p className="text-sm text-slate-500 leading-relaxed">
+                    Finish setting up your account on the web, then sign back in here.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {step === 5 && needsCard && !isNative() && (
               <div className="flex-1 flex flex-col items-center justify-center gap-4 text-center py-4">
                 <div className="w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center">
                   <CheckCircle2 className="w-9 h-9 text-teal-600" />

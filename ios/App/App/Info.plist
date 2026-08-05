@@ -58,5 +58,17 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Camera / photo-library usage strings. REQUIRED: the web app's
+	     artwork/logo file inputs (accept="image/*") surface "Take Photo"
+	     and "Photo Library" in the iOS attachment sheet, and iOS HARD-KILLS
+	     any app that touches those APIs without these strings. This was the
+	     App Review 1.0 rejection crash (2.1(a), 2026-08-05): reviewer tapped
+	     "Take Photo" on an iPad Air M3 and the app died. -->
+	<key>NSCameraUsageDescription</key>
+	<string>InkTracker uses the camera so you can photograph artwork, logos, and job references to attach to quotes and orders.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>InkTracker accesses your photo library so you can attach existing images of artwork and logos to quotes and orders.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>InkTracker can save proofs and artwork images to your photo library.</string>
 </dict>
 </plist>

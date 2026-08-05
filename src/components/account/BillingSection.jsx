@@ -121,30 +121,15 @@ export default function BillingSection({ user }) {
   const hasPaidPlan = tier === "shop";
   const neverSubscribed = tier === "incomplete";
 
-  // App Store guideline 3.1.1: the iOS app must not show prices or any purchase
-  // affordance. On native we render a read-only status card only — no plans, no
-  // checkout/portal buttons, no tappable "manage" link (plain text pointing to
-  // the web, where the subscription is actually purchased). See
-  // docs/app-store-listing.md and docs/mobile-app.md (Phase 3b).
+  // App Store guideline 3.1.1: the iOS app must not reference the paid
+  // subscription AT ALL. The previous native branch rendered a read-only
+  // plan card ("Shop · active · Manage your plan at inktracker.app") —
+  // and that exact card was App Review's 3.1.1 evidence on the 1.0
+  // rejection (2026-08-05): displaying a paid plan the app doesn't sell
+  // via IAP, plus a pointer to manage it outside the app (steering).
+  // On native the Billing section simply does not exist.
   if (isNative()) {
-    return (
-      <div className="bg-slate-50 rounded-xl p-4 max-w-2xl">
-        <div className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Plan</div>
-        <div className="flex items-center gap-2 mb-3">
-          <span className={`text-sm font-bold px-2.5 py-0.5 rounded-full ${getTierColor(tier)}`}>
-            {getTierLabel(tier)}
-          </span>
-          {sub?.status && (
-            <span className={`text-xs ${sub.status === "active" || sub.status === "trialing" ? "text-emerald-600" : "text-red-500"}`}>
-              {sub.status === "trialing" ? `${sub.trialDaysLeft} days left` : sub.status}
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-slate-500">
-          Manage your plan at inktracker.app
-        </p>
-      </div>
-    );
+    return null;
   }
 
   return (
