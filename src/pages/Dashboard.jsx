@@ -20,6 +20,7 @@ import MfaNudgeBanner from "../components/MfaNudgeBanner";
 import HintTip from "../components/shared/HintTip";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { shopScope } from "@/lib/shopScope";
+import ActivityFeed from "../components/shared/ActivityFeed";
 
 const STATUS_COLORS = {
   Draft: "bg-slate-100 text-slate-600",
@@ -976,6 +977,10 @@ export default function Dashboard() {
           )}
         </div>
       )}
+
+      {/* Shop-wide activity feed (change_log). RLS-scoped: renders nothing
+          for anyone without change_log read. */}
+      <ActivityFeed />
 
     </div>
   );

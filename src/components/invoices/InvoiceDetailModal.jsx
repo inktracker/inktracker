@@ -15,7 +15,6 @@ import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { qbModifiedState, buildAdoptPatches, stripSyncNotes } from "@/lib/invoices/qbModifiedSync";
-import { recordChange, recordEntityEdit } from "@/lib/changeLog";
 import ChangeHistory from "../shared/ChangeHistory";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onInvoiceUpdated, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
@@ -91,16 +90,8 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
         return;
       }
       const updated = await base44.entities.Invoice.update(activeInvoice.id, { invoice_id: next });
-      // History: renaming an invoice is the kind of change that's
-      // baffling later if nobody recorded who did it.
-      recordEntityEdit({
-        entityType: "invoice",
-        entityId: activeInvoice.id,
-        entityRef: next,
-        before: activeInvoice,
-        after: { ...activeInvoice, invoice_id: next },
-        summaryPrefix: "Renamed",
-      });
+      // History: the change_log DB trigger records the rename (with this
+      // user as actor) — no client-side logging needed since 20260911.
       // Same overlay trick as the QB sync above: show the new number
       // immediately even if the parent list hasn't re-rendered yet.
       setSyncedInvoice({ ...activeInvoice, ...updated });
@@ -147,22 +138,11 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
       }
       const updated = await base44.entities.Invoice.update(invoice.id, patches.invoice);
 
-      // History: this is an operator CONSENTING to QuickBooks' numbers,
-      // so it's an InkTracker-sourced change with a real actor — as
-      // distinct from the quickbooks-sourced row the webhook wrote when
-      // the edit first arrived. Both belong in the timeline.
-      recordChange({
-        entityType: "invoice",
-        entityId: invoice.id,
-        entityRef: activeInvoice.invoice_id,
-        summary: `Matched to QuickBooks — total ${fmtMoney(qbModified.localTotal)} → ${fmtMoney(qbModified.qbTotal)}`,
-        changes: [
-          `Total: ${fmtMoney(qbModified.localTotal)} → ${fmtMoney(qbModified.qbTotal)}`,
-          ...(linkedQuote ? ["Linked quote updated to match"] : []),
-          ...(orderId ? ["Linked order updated to match"] : []),
-        ],
-        metadata: { qb_invoice_id: invoice.qb_invoice_id ?? null },
-      });
+      // History: the change_log DB triggers record the adopted totals on
+      // the invoice AND the linked quote/order rows (with this user as
+      // actor) — no client-side logging needed since 20260911. The
+      // quickbooks-sourced row for the ORIGINAL QB-side edit still comes
+      // from qbWebhook; both belong in the timeline.
 
       setSyncedInvoice(updated);
       onInvoiceUpdated?.(updated);

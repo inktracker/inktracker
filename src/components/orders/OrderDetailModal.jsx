@@ -11,6 +11,7 @@ import CollapsibleSection from "../shared/CollapsibleSection";
 import { buildShortfallReorderPayloads, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { notify } from "@/lib/notify";
 import { useAuth } from "@/lib/AuthContext";
+import ChangeHistory from "../shared/ChangeHistory";
 import { canSeeMoney } from "@/lib/managerPermissions";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
@@ -670,6 +671,10 @@ export default function OrderDetailModal({
                 reactivateHref={reactivateHref}
                 showMoney={showMoney}
               />
+
+              {/* Who changed what, when, from where (change_log). Renders
+                  nothing until this order has history. */}
+              <ChangeHistory entityType="order" entityId={order.id} />
 
               <FloorModePanel
                 liveOrder={liveOrder}
