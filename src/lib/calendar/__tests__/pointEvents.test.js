@@ -104,3 +104,37 @@ describe("buildPointEvents — pre-existing behavior preserved", () => {
     expect(buildPointEvents([{ id: "o1", status: "Printing" }], [{}])).toEqual({});
   });
 });
+
+// ── Press-run chips (schedule ↔ calendar unification) ───────────────────────
+describe("press-run events", () => {
+  const base = { id: "o1", order_id: "ORD-1", status: "Pre-Press", due_date: "2026-08-15" };
+
+  it("plots scheduled_date with the press name when both fields exist", () => {
+    const map = buildPointEvents([{ ...base, scheduled_date: "2026-08-10", assigned_press: "Press 1" }], []);
+    const runs = (map["2026-08-10"] || []).filter((e) => e.step === "Press Run");
+    expect(runs).toHaveLength(1);
+    expect(runs[0].press).toBe("Press 1");
+    // ...and the due chip still lands on the due date — both views now
+    // visible on one calendar (the 2026-06-06 disconnect).
+    expect((map["2026-08-15"] || []).some((e) => e.isDue)).toBe(true);
+  });
+
+  it("no chip without a press assignment or without a date", () => {
+    const noPress = buildPointEvents([{ ...base, scheduled_date: "2026-08-10" }], []);
+    expect((noPress["2026-08-10"] || []).filter((e) => e.step === "Press Run")).toHaveLength(0);
+    const noDate = buildPointEvents([{ ...base, assigned_press: "Press 1" }], []);
+    expect(Object.values(noDate).flat().filter((e) => e.step === "Press Run")).toHaveLength(0);
+  });
+
+  it("completed orders don't get a press-run chip (planning aid, not history)", () => {
+    const map = buildPointEvents([{ ...base, status: "Completed", completed_date: "2026-08-12", scheduled_date: "2026-08-10", assigned_press: "Press 1" }], []);
+    expect(Object.values(map).flat().filter((e) => e.step === "Press Run")).toHaveLength(0);
+  });
+
+  it("normalizes legacy assigned_press object form to a display name", () => {
+    const map = buildPointEvents([{ ...base, scheduled_date: "2026-08-10", assigned_press: { name: "Big Auto" } }], []);
+    const runs = (map["2026-08-10"] || []).filter((e) => e.step === "Press Run");
+    expect(runs).toHaveLength(1);
+    expect(runs[0].press).toBe("Big Auto");
+  });
+});

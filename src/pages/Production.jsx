@@ -43,6 +43,10 @@ const STATUS_COLORS = {
   "Order Goods":  "bg-orange-50 border-orange-300 text-orange-800",
   "Pre-Press":    "bg-amber-50 border-amber-300 text-amber-800",
   "Printing":     "bg-indigo-50 border-indigo-300 text-indigo-700",
+  // Press-run chips: the SCHEDULE surfacing on the calendar (scheduled_date
+  // + assigned_press from the Press Schedule view). Distinct hue so a
+  // planned press day reads differently from the Printing pipeline step.
+  "Press Run":    "bg-cyan-50 border-cyan-400 text-cyan-800",
   "Completed":    "bg-emerald-100 border-emerald-400 text-emerald-800 font-semibold",
 };
 
@@ -741,7 +745,14 @@ export default function Production() {
                         </td>
                         <td className="px-3 py-3.5">
                           {normalizeAssignedPress(o.assigned_press) ? (
-                            <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">{normalizeAssignedPress(o.assigned_press)}</span>
+                            <div>
+                              <span className="text-[11px] font-semibold text-green-700 bg-green-50 border border-green-100 px-2 py-0.5 rounded-full">{normalizeAssignedPress(o.assigned_press)}</span>
+                              {/* Unification: the table now reflects the SCHEDULE
+                                  (when this order runs), not just the due date. */}
+                              {o.scheduled_date && (
+                                <div className="text-[10px] text-slate-500 mt-1">runs {fmtDate(o.scheduled_date)}</div>
+                              )}
+                            </div>
                           ) : <span className="text-xs text-slate-300">—</span>}
                         </td>
                         <td className="px-3 py-3.5"><Badge s={o.status} /></td>
@@ -823,6 +834,7 @@ export default function Production() {
               { label: "Order Goods",    cls: STATUS_COLORS["Order Goods"] },
               { label: "Pre-Press",      cls: STATUS_COLORS["Pre-Press"] },
               { label: "Printing",       cls: STATUS_COLORS["Printing"] },
+              { label: "Press Run",      cls: STATUS_COLORS["Press Run"] },
               { label: "Due",            cls: "bg-rose-50 border-rose-300 text-rose-700" },
               { label: "Completed",      cls: STATUS_COLORS["Completed"] },
             ].filter((item) => !(hideCompleted && item.label === "Completed")).map((item) => (
@@ -940,10 +952,10 @@ export default function Production() {
                                       className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${isQuoteEvent ? "cursor-pointer" : "cursor-grab"} truncate ${chipClass}`}
                                       // Month chips are too small for the notes icon —
                                       // surface job notes via the hover tooltip instead.
-                                      title={`${subjectName} — ${ev.step}${orderNotesTooltip(subject) ? `\nNotes: ${orderNotesTooltip(subject)}` : ""}`}
+                                      title={`${subjectName} — ${ev.step}${ev.press ? ` on ${ev.press}` : ""}${orderNotesTooltip(subject) ? `\nNotes: ${orderNotesTooltip(subject)}` : ""}`}
                                     >
                                       {subjectName}
-                                      <span className="opacity-60 ml-1">· {ev.step}</span>
+                                      <span className="opacity-60 ml-1">· {ev.press ? ev.press : ev.step}</span>
                                     </div>
                                   );
                                 })}
@@ -1106,7 +1118,20 @@ export default function Production() {
                   <OrderNotesIcon order={order} className="!text-amber-600" />
                 </div>
                 <div className="text-teal-700/80 flex items-center justify-between gap-2 text-[10px]">
-                  <span className="truncate">{order.order_id || "—"}</span>
+                  {/* Unification: due-date pressure INSIDE the schedule view,
+                      so the scheduler can re-prioritize a lane without
+                      flipping to the calendar/table. Red = overdue,
+                      amber = due within 3 days. */}
+                  {(() => {
+                    const isLate = order.due_date && order.due_date < today && order.status !== "Completed";
+                    const dueLbl = order.due_date ? relativeDueLabel(order.due_date, today) : "";
+                    const soon = /Due (today|tomorrow|in [1-3] days)$/.test(dueLbl);
+                    return (
+                      <span className={`truncate ${isLate ? "text-red-600 font-bold" : soon ? "text-amber-700 font-semibold" : ""}`}>
+                        {dueLbl || order.order_id || "—"}
+                      </span>
+                    );
+                  })()}
                   {hrs > 0 && <span className="font-semibold tabular-nums">{hrs}h</span>}
                 </div>
               </div>
