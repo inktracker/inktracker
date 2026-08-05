@@ -179,6 +179,32 @@ export function scrubSentryEvent(event, hint) {
       event.tags = { ...(event.tags || {}), source: "supabase" };
     }
 
+    // ── Stale-module-graph grouping (deploy boundary) ─────────
+    // A browser holding the previous deploy's index.html can resolve a
+    // lazy chunk to an undefined module namespace mid-deploy — surfacing
+    // as `TypeError: Cannot read properties of undefined (reading
+    // 'default')` (2026-08-05, one event, 60s after the alias flip).
+    // The unambiguous chunk-load failures are already in ignoreErrors,
+    // but this variant loads a wrong-graph module successfully and only
+    // dies at the `.default` read, so no pattern there can catch it.
+    //
+    // We keep CAPTURING these (full stack, breadcrumbs) but pin them to
+    // one stable fingerprint: every future occurrence groups into the
+    // same Sentry issue, so the "new issue" email can never re-fire for
+    // this class. Trade-off, accepted deliberately (Joe, 2026-08-05): a
+    // genuine shipped `.default`-on-undefined bug with this exact
+    // message would land in the grouped issue instead of alerting as
+    // new — mitigated because real bugs of that shape almost always
+    // throw additional, distinct errors that still alert, and the
+    // grouped issue's event counter makes any spike visible in the
+    // Sentry UI.
+    const STALE_GRAPH_MSG = /Cannot read properties of undefined \(reading 'default'\)/;
+    const exVal = event.exception?.values?.[0]?.value || event.message || "";
+    if (STALE_GRAPH_MSG.test(exVal)) {
+      event.fingerprint = ["stale-module-graph-deploy-boundary"];
+      event.tags = { ...(event.tags || {}), deploy_boundary: "suspected" };
+    }
+
     // Strip email-looking strings from the top-level message.
     if (event.message) event.message = scrubEmails(event.message);
 

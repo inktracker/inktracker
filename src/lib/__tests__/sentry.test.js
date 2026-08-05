@@ -102,3 +102,27 @@ describe("scrubSentryEvent — failure safety", () => {
     expect(out).toBe(event);
   });
 });
+
+describe("stale-module-graph grouping (deploy boundary)", () => {
+  it("pins the '.default' TypeError to one stable fingerprint + tag", () => {
+    const event = {
+      exception: { values: [{ type: "TypeError", value: "Cannot read properties of undefined (reading 'default')" }] },
+    };
+    const out = scrubSentryEvent(event, {});
+    expect(out.fingerprint).toEqual(["stale-module-graph-deploy-boundary"]);
+    expect(out.tags.deploy_boundary).toBe("suspected");
+  });
+
+  it("matches on event.message when there's no exception", () => {
+    const out = scrubSentryEvent({ message: "Cannot read properties of undefined (reading 'default')" }, {});
+    expect(out.fingerprint).toEqual(["stale-module-graph-deploy-boundary"]);
+  });
+
+  it("leaves other undefined-property TypeErrors alone (they must still alert as new issues)", () => {
+    const out = scrubSentryEvent({
+      exception: { values: [{ type: "TypeError", value: "Cannot read properties of undefined (reading 'total')" }] },
+    }, {});
+    expect(out.fingerprint).toBeUndefined();
+    expect(out.tags?.deploy_boundary).toBeUndefined();
+  });
+});
