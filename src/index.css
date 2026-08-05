@@ -344,3 +344,28 @@ html.cap-native body {
   padding-right: env(safe-area-inset-right);
   box-sizing: border-box;
 }
+
+/* ── Production ticket printing ─────────────────────────────────────────────
+   When the ticket overlay is open and the user prints, show ONLY the
+   ticket sheet: hide the app root and the overlay's screen chrome, and
+   let the sheet flow as normal document content. */
+@media print {
+  body:has(.production-ticket) #root {
+    display: none !important;
+  }
+  .production-ticket {
+    position: static !important;
+    inset: auto !important;
+    overflow: visible !important;
+    background: none !important;
+  }
+  .production-ticket .ticket-chrome {
+    display: none !important;
+  }
+  .production-ticket .ticket-sheet {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    margin: 0 !important;
+    max-width: none !important;
+  }
+}

@@ -3,6 +3,7 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { fmtDate, sortSizeEntries, O_STATUSES, getDisplayName, getShopPricingConfig } from "../components/shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
+import ProductionTicket from "../components/orders/ProductionTicket";
 import { displayFullName } from "@/lib/displayName";
 import {
   countGoodsProgress,
@@ -11,7 +12,7 @@ import {
   nextGoodsStatusOnTap,
   unreceivedCount,
 } from "@/lib/orderGoodsProgress";
-import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 , Printer } from "lucide-react";
 import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 import { getStageTasks } from "@/lib/productionTasks";
@@ -189,6 +190,8 @@ export default function ShopFloor() {
     catch { /* ignore */ }
   }, [updatesStorageKey, updatesCollapsed]);
   const [filter, setFilter] = useState("Active");
+  // Printable production ticket for the selected job.
+  const [showTicket, setShowTicket] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
@@ -538,11 +541,25 @@ export default function ShopFloor() {
     );
   }
 
+  // "My Jobs" — the operator's personal queue. assigned_operator stores the
+  // employee's display label (full_name || email, see OrderJobCostSection),
+  // so match the signed-in user against both forms, case-insensitively.
+  const norm = (v) => String(v || "").trim().toLowerCase();
+  const isMine = (o) => {
+    const op = norm(o.assigned_operator);
+    if (!op) return false;
+    return op === norm(displayFullName(user)) || op === norm(user?.full_name) || op === norm(user?.email);
+  };
+  const myActive = orders.filter(o => isMine(o) && o.status !== "Completed" && o.status !== "Shipped");
+
   const filtered = filter === "Active"
     ? orders.filter(o => o.status !== "Completed" && o.status !== "Shipped")
     : filter === "Completed"
       ? orders.filter(o => o.status === "Completed" || o.status === "Shipped")
-      : orders;
+      : filter === "Mine"
+        ? [...myActive].sort((a, b) =>
+            String(a.scheduled_date || a.due_date || "9999").localeCompare(String(b.scheduled_date || b.due_date || "9999")))
+        : orders;
 
   const currentStepIdx = selected ? STEPS.indexOf(selected.status || "Pre-Press") : -1;
   const nextStep = currentStepIdx >= 0 && currentStepIdx < STEPS.length - 1 ? STEPS[currentStepIdx + 1] : null;
@@ -571,10 +588,11 @@ export default function ShopFloor() {
 
       {/* Filter tabs */}
       <div className="bg-white border-b border-slate-200 px-5 py-2 flex gap-1">
-        {["Active", "All", "Completed"].map(f => (
+        {[...(myActive.length > 0 ? ["Mine"] : []), "Active", "All", "Completed"].map(f => (
           <button key={f} onClick={() => { setFilter(f); setSelected(null); }}
             className={`text-sm font-semibold px-5 py-2 rounded-lg transition ${filter === f ? "bg-teal-600 text-white" : "text-slate-500 hover:bg-slate-100"}`}>
-            {f} {f === "Active" && `(${orders.filter(o => o.status !== "Completed" && o.status !== "Shipped").length})`}
+            {f === "Mine" ? `My Jobs (${myActive.length})` : f}
+            {f === "Active" && ` (${orders.filter(o => o.status !== "Completed" && o.status !== "Shipped").length})`}
           </button>
         ))}
       </div>
@@ -642,6 +660,12 @@ export default function ShopFloor() {
                   {selected.due_date && <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> Due {fmtDate(selected.due_date)}</span>}
                   {normalizeAssignedPress(selected.assigned_press) && <span>Press: {normalizeAssignedPress(selected.assigned_press)}</span>}
                   {selected.assigned_operator && <span>Operator: {selected.assigned_operator}</span>}
+                  <button
+                    onClick={() => setShowTicket(true)}
+                    className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-100 transition"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> Print Ticket
+                  </button>
                 </div>
               </div>
 
@@ -1033,6 +1057,16 @@ export default function ShopFloor() {
           art={previewArt}
           onClose={() => setPreviewArt(null)}
           backLabel="Back to job"
+        />
+      )}
+
+      {showTicket && selected && (
+        <ProductionTicket
+          order={selected}
+          customer={customers[selected.customer_id]}
+          shopName={user?.shop_name}
+          stitchTiers={getShopPricingConfig()?.embroidery?.stitchTiers}
+          onClose={() => setShowTicket(false)}
         />
       )}
     </div>
