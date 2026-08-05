@@ -27,6 +27,7 @@ import SendQuoteModal from "./SendQuoteModal";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import MessagesTab from "../shared/MessagesTab";
 import CollapsibleSection from "../shared/CollapsibleSection";
+import ChangeHistory from "../shared/ChangeHistory";
 import { quoteThreadId } from "@/lib/messageThreads";
 import { isConvertedToOrder } from "@/lib/quotes/approvalState";
 import { imprintColorLabel, imprintCountText } from "@/lib/quotes/imprintLabels";
@@ -1300,6 +1301,13 @@ export default function QuoteDetailModal({
               }}
             />
           </CollapsibleSection>
+
+          {/* Who changed what, when, from where (change_log). Renders
+              nothing until this quote has history — and nothing for
+              brokers, whose RLS has no change_log read. */}
+          <div className="px-4 sm:px-6 pb-4">
+            <ChangeHistory entityType="quote" entityId={quote.id} />
+          </div>
 
           <div className="flex flex-wrap gap-2 px-4 sm:px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl">
             {/* Edit is hidden entirely when read-only — the user must not be
