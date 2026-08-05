@@ -37,6 +37,11 @@ export default function OrderLineItems({
   // (creates a draft PO). Disable it; the pricing table / totals are reads.
   readOnly = false,
   reactivateHref,
+  // hide_money teammates (Art/Floor-flavored roles): render the itemization
+  // — garments, sizes, imprints, production detail — without prices, costs,
+  // or totals. Passed by OrderDetailModal from canSeeMoney(user); defaults
+  // true so every other caller (and the standalone tests) is unchanged.
+  showMoney = true,
 }) {
   return (
     <>
@@ -69,11 +74,13 @@ export default function OrderLineItems({
                 {li.garmentColor && (
                   <span className="ml-2 text-xs text-slate-500">· {li.garmentColor}</span>
                 )}
-                <span className="ml-2 text-xs text-slate-500">
-                  Wholesale: {fmtMoney(li.garmentCost)}
-                </span>
+                {showMoney && (
+                  <span className="ml-2 text-xs text-slate-500">
+                    Wholesale: {fmtMoney(li.garmentCost)}
+                  </span>
+                )}
               </div>
-              {r && (
+              {r && showMoney && (
                 <span className="font-bold text-slate-700 text-sm">
                   {fmtMoney(r.lineTotal)}
                 </span>
@@ -116,7 +123,7 @@ export default function OrderLineItems({
                         {qty}
                       </td>
                     </tr>
-                    {r && (
+                    {r && showMoney && (
                       <tr>
                         <td className="px-4 py-2 text-xs text-slate-500">Price/ea</td>
                         {activeSizes.map((sz) => (
@@ -226,7 +233,7 @@ export default function OrderLineItems({
                 );
               })}
 
-              {r && (
+              {r && showMoney && (
                 <div className="bg-teal-50 border border-teal-100 rounded-lg px-3 py-2 space-y-1">
                   <div className="flex justify-between text-xs text-slate-600">
                     <span>Line Subtotal</span>
@@ -262,7 +269,7 @@ export default function OrderLineItems({
         );
       })}
 
-      {totals && (
+      {totals && showMoney && (
         <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-2">
           <div className="flex justify-between text-sm text-slate-500">
             <span>Subtotal</span>

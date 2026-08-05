@@ -73,3 +73,52 @@ describe("hasOwnerAccess — owner-level access for full-partner managers", () =
     expect(hasOwnerAccess(null, "Customers")).toBe(false);
   });
 });
+
+// ── Larger-shop additions: role templates + money visibility ────────────────
+import { ROLE_TEMPLATES, canSeeMoney, MANAGER_SECTIONS } from "../managerPermissions";
+
+describe("ROLE_TEMPLATES", () => {
+  it("every denied key is a real gateable section", () => {
+    const valid = new Set(MANAGER_SECTIONS.map((s) => s.key));
+    for (const t of ROLE_TEMPLATES) {
+      for (const key of Object.keys(t.permissions || {})) {
+        expect(valid.has(key), `${t.key} denies unknown section ${key}`).toBe(true);
+      }
+    }
+  });
+
+  it("templates only ever DENY (allowed-unless-false storage contract)", () => {
+    for (const t of ROLE_TEMPLATES) {
+      for (const v of Object.values(t.permissions || {})) expect(v).toBe(false);
+    }
+  });
+
+  it("full partner is the storage default (null) with money visible", () => {
+    const full = ROLE_TEMPLATES.find((t) => t.key === "full");
+    expect(full.permissions).toBeNull();
+    expect(full.hideMoney).toBe(false);
+  });
+
+  it("art hides money; CSR keeps it (they quote)", () => {
+    expect(ROLE_TEMPLATES.find((t) => t.key === "art").hideMoney).toBe(true);
+    expect(ROLE_TEMPLATES.find((t) => t.key === "front_office").hideMoney).toBe(false);
+  });
+
+  it("every template leaves at least one landing page reachable", () => {
+    for (const t of ROLE_TEMPLATES) {
+      const user = { role: "manager", manager_permissions: t.permissions };
+      const landing = firstAllowedPage(user);
+      expect(landing, `${t.key} lands nowhere`).not.toBe("Account");
+    }
+  });
+});
+
+describe("canSeeMoney", () => {
+  it("hides only on an explicit true flag", () => {
+    expect(canSeeMoney({ hide_money: true })).toBe(false);
+    expect(canSeeMoney({ hide_money: false })).toBe(true);
+    expect(canSeeMoney({})).toBe(true);
+    expect(canSeeMoney(null)).toBe(true);   // loading states must not flash-hide
+    expect(canSeeMoney(undefined)).toBe(true);
+  });
+});

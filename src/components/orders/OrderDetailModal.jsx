@@ -10,6 +10,8 @@ import { uploadFile } from "@/lib/uploadFile";
 import CollapsibleSection from "../shared/CollapsibleSection";
 import { buildShortfallReorderPayloads, totalOrderShortfall } from "@/lib/orders/shortfallReorder";
 import { notify } from "@/lib/notify";
+import { useAuth } from "@/lib/AuthContext";
+import { canSeeMoney } from "@/lib/managerPermissions";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
   countGoodsProgress,
@@ -79,6 +81,12 @@ export default function OrderDetailModal({
   readOnly = false,
   reactivateHref,
 }) {
+  // hide_money display gate (larger-shop roles): the modal renders inside
+  // AuthProvider, so read the signed-in user here and thread a boolean to
+  // OrderLineItems (which stays provider-free for its standalone tests).
+  const { user: authUser } = useAuth();
+  const showMoney = canSeeMoney(authUser);
+
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [saving, setSaving] = useState(false);
@@ -660,6 +668,7 @@ export default function OrderDetailModal({
                 reorderCreating={reorderCreating}
                 readOnly={readOnly}
                 reactivateHref={reactivateHref}
+                showMoney={showMoney}
               />
 
               <FloorModePanel

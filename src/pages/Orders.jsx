@@ -4,6 +4,7 @@ import { base44 } from "@/api/supabaseClient";
 import { cachedFilter } from "@/lib/queries/cachedEntity";
 import { TableRowsSkeleton, ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { O_STATUSES, fmtDate, fmtMoney, getOrderDisplayClient, getOrderDisplayJobTitle } from "../components/shared/pricing";
+import { canSeeMoney } from "@/lib/managerPermissions";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import Badge from "../components/shared/Badge";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
@@ -372,7 +373,7 @@ export default function Orders() {
                       )}
                     </td>
                     <td className="px-3 py-3.5 text-slate-500">{o.due_date ? fmtDate(o.due_date) : "—"}</td>
-                    <td className="px-3 py-3.5 font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</td>
+                    <td className="px-3 py-3.5 font-bold text-slate-800 dark:text-slate-200">{canSeeMoney(user) ? fmtMoney(o.total || 0) : "—"}</td>
                     <td className="px-3 py-3.5"><Badge s={o.status} /></td>
                     <td className="px-3 py-3.5 text-right text-teal-400 text-xs font-semibold">View →</td>
                   </tr>
@@ -406,7 +407,7 @@ export default function Orders() {
                 </div>
                 <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                   <span>Due: {o.due_date ? fmtDate(o.due_date) : "—"}</span>
-                  <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</span>
+                  {canSeeMoney(user) && <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</span>}
                 </div>
                 {artworkCount > 0 && (
                   <div className="mt-2">
