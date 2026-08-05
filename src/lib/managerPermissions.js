@@ -75,3 +75,65 @@ export function firstAllowedPage(user) {
   }
   return "Account"; // always reachable (own profile/security)
 }
+
+// ── Role templates ──────────────────────────────────────────────────────────
+// One-click permission presets matching how a 4-20 person shop actually
+// staffs: instead of the owner reasoning through ten checkboxes per
+// hire, they pick the job. Each template is just a manager_permissions
+// map + the hide_money flag — applying one then tweaking checkboxes is
+// fully supported (templates are a starting point, not a mode).
+//
+// Section keys omitted from `deny` stay allowed (the storage contract:
+// a section is allowed unless explicitly false).
+const deny = (...keys) => Object.fromEntries(keys.map((k) => [k, false]));
+
+export const ROLE_TEMPLATES = [
+  {
+    key: "front_office",
+    label: "Front office / CSR",
+    blurb: "Quotes, customers, and production visibility. No financials or settings.",
+    permissions: deny("Invoices", "Performance", "Pricing", "Team"),
+    hideMoney: false, // CSRs quote — they need prices.
+  },
+  {
+    key: "art",
+    label: "Art department",
+    blurb: "Mockups and production only, with money hidden.",
+    permissions: deny("Quotes", "Customers", "Invoices", "Performance", "Inventory", "Pricing", "Team"),
+    hideMoney: true,
+  },
+  {
+    key: "production_lead",
+    label: "Production lead",
+    blurb: "Production, inventory, purchasing, and the team roster. No quoting or financials.",
+    permissions: deny("Quotes", "Invoices", "Performance", "Pricing"),
+    hideMoney: false,
+  },
+  {
+    key: "books",
+    label: "Bookkeeper",
+    blurb: "Invoices, performance, and customers. No production or quoting.",
+    permissions: deny("Quotes", "Production", "Inventory", "Mockups", "Pricing", "Team"),
+    hideMoney: false,
+  },
+  {
+    key: "full",
+    label: "Full partner",
+    blurb: "Everything except billing and team permissions (owner-only).",
+    permissions: null, // null = full access, the storage default
+    hideMoney: false,
+  },
+];
+
+// ── Money visibility ────────────────────────────────────────────────────────
+// Display-level gate for prices/costs/margins on production surfaces
+// (Production board, Orders, order detail). Deliberately a courtesy /
+// professionalism control — "no margins on the press-side screen" — not
+// a security boundary: the enforcement layer for DATA access is
+// manager_permissions + RLS. A hide_money user with the Production
+// section can still query order totals with their JWT; a user who must
+// not ACCESS financials should have Invoices/Performance denied, which
+// RLS enforces server-side.
+export function canSeeMoney(user) {
+  return user?.hide_money !== true;
+}

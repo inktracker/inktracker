@@ -157,9 +157,13 @@ serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      // hide_money rides the same owner-tenant-checked save. Optional so
+      // existing callers are untouched; only a real boolean writes it.
+      const patch: Record<string, unknown> = { manager_permissions: permissions ?? null };
+      if (typeof body.hideMoney === "boolean") patch.hide_money = body.hideMoney;
       const { data, error } = await adminClient
         .from("profiles")
-        .update({ manager_permissions: permissions ?? null })
+        .update(patch)
         .eq("id", profileId)
         .select()
         .single();

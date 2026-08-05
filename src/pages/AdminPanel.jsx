@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { MANAGER_SECTIONS, hasOwnerAccess } from "@/lib/managerPermissions";
+import { MANAGER_SECTIONS, ROLE_TEMPLATES, hasOwnerAccess } from "@/lib/managerPermissions";
 import { supabase } from "@/api/supabaseClient";
 import { ListCardsSkeleton } from "@/components/shared/Skeletons";
 import { useAuth } from "@/lib/AuthContext";
@@ -100,18 +100,22 @@ export default function AdminPanel() {
     if (hasOwnerAccess(user, "Team")) loadUsers();
   }, [user, loadUsers]);
 
-  async function saveManagerPermissions(profileId, permissions) {
+  async function saveManagerPermissions(profileId, permissions, hideMoney) {
     setActionLoading(prev => ({ ...prev, [`perm-${profileId}`]: true }));
     try {
       const session = await supabase.auth.getSession();
       const token = session?.data?.session?.access_token;
+      const body = { action: "setManagerPermissions", profileId, permissions };
+      if (typeof hideMoney === "boolean") body.hideMoney = hideMoney;
       const { data, error: fnError } = await supabase.functions.invoke("adminAction", {
-        body: { action: "setManagerPermissions", profileId, permissions },
+        body,
         headers: { Authorization: `Bearer ${token}` },
       });
       if (fnError) throw new Error(await extractFnErrorMessage(fnError));
       if (data?.error) throw new Error(data.error);
-      setUsers(prev => prev.map(u => (u.id === profileId ? { ...u, manager_permissions: permissions } : u)));
+      setUsers(prev => prev.map(u => (u.id === profileId
+        ? { ...u, manager_permissions: permissions, ...(typeof hideMoney === "boolean" ? { hide_money: hideMoney } : {}) }
+        : u)));
     } catch (e) {
       notify.error("Couldn't update permissions", e?.message || String(e));
     } finally {
@@ -431,7 +435,7 @@ export default function AdminPanel() {
 
                 {/* Permission editor is the self-escalation surface — owner/admin only. */}
                 {canMutateTeam && u.role === "manager" && (
-                  <ManagerPermissions u={u} busy={!!actionLoading[`perm-${u.id}`]} onSave={(perms) => saveManagerPermissions(u.id, perms)} />
+                  <ManagerPermissions u={u} busy={!!actionLoading[`perm-${u.id}`]} onSave={(perms, hideMoney) => saveManagerPermissions(u.id, perms, hideMoney)} />
                 )}
               </div>
               );
@@ -588,6 +592,12 @@ export default function AdminPanel() {
 // permissions map and persists via onSave (adminAction
 // setManagerPermissions). Backward-compatible: an unset manager shows
 // all-on and stays all-on until the owner restricts something.
+// Collapse a permissions map to null when nothing is denied (the storage
+// contract keeps the common all-access case clean in the DB).
+function anyDeniedPerms(perms) {
+  return MANAGER_SECTIONS.some((s) => perms[s.key] === false) ? perms : null;
+}
+
 function ManagerPermissions({ u, busy, onSave }) {
   const [open, setOpen] = useState(false);
   const perms = u.manager_permissions && typeof u.manager_permissions === "object" ? u.manager_permissions : {};
@@ -602,6 +612,17 @@ function ManagerPermissions({ u, busy, onSave }) {
   }
 
   const deniedCount = MANAGER_SECTIONS.filter((s) => !allowed(s.key)).length;
+  const hideMoney = u.hide_money === true;
+
+  // Which template (if any) matches the CURRENT state exactly — so the
+  // active preset shows as selected, and drifts to "custom" the moment
+  // the owner tweaks a checkbox.
+  const activeTemplate = ROLE_TEMPLATES.find((t) => {
+    const tPerms = t.permissions || {};
+    const currentDenied = MANAGER_SECTIONS.filter((sec) => perms[sec.key] === false).map((sec) => sec.key).sort();
+    const templateDenied = MANAGER_SECTIONS.filter((sec) => tPerms[sec.key] === false).map((sec) => sec.key).sort();
+    return JSON.stringify(currentDenied) === JSON.stringify(templateDenied) && hideMoney === t.hideMoney;
+  });
 
   return (
     <div className="mt-3 ml-13 border border-slate-100 rounded-xl bg-slate-50/60">
@@ -618,7 +639,39 @@ function ManagerPermissions({ u, busy, onSave }) {
         <ChevronDown className={`w-4 h-4 text-slate-500 ml-auto transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="px-4 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+        <>
+          {/* Role templates — one-click presets for how a 4-20 person shop
+              actually staffs. Applying one sets the checkboxes + the money
+              flag; tweaking after is fine (it just becomes custom). */}
+          <div className="px-4 pb-1 flex flex-wrap gap-1.5">
+            {ROLE_TEMPLATES.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                title={t.blurb}
+                disabled={busy}
+                onClick={() => onSave(t.permissions, t.hideMoney)}
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition disabled:opacity-50 ${
+                  activeTemplate?.key === t.key
+                    ? "bg-teal-600 border-teal-600 text-white"
+                    : "bg-white border-slate-200 text-slate-600 hover:border-teal-400"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <label className={`mx-4 mb-1 flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg cursor-pointer hover:bg-white ${busy ? "opacity-50 pointer-events-none" : ""}`}>
+            <input
+              type="checkbox"
+              checked={hideMoney}
+              onChange={() => onSave(anyDeniedPerms(perms), !hideMoney)}
+              className="rounded border-slate-300 text-teal-600 focus:ring-teal-300"
+            />
+            <span className="text-slate-600 font-semibold">Hide financials on production surfaces</span>
+            <span className="text-slate-400">(prices, costs, totals)</span>
+          </label>
+          <div className="px-4 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
           {MANAGER_SECTIONS.map((sec) => (
             <label key={sec.key} className={`flex items-center gap-2 text-xs px-2 py-1.5 rounded-lg cursor-pointer hover:bg-white ${busy ? "opacity-50 pointer-events-none" : ""}`}>
               <input
@@ -630,7 +683,8 @@ function ManagerPermissions({ u, busy, onSave }) {
               <span className="text-slate-600">{sec.label}</span>
             </label>
           ))}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

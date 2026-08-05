@@ -16,6 +16,7 @@ import {
 } from "@/lib/scheduler/schedulerHelpers";
 import OrderDetailModal from "../components/orders/OrderDetailModal";
 import OrderNotesIcon, { orderNotesTooltip } from "../components/orders/OrderNotesIcon";
+import { canSeeMoney } from "@/lib/managerPermissions";
 import InvoiceDetailModal from "../components/invoices/InvoiceDetailModal";
 import ACOrderModal from "../components/orders/ACOrderModal";
 import AdvancedFilters from "../components/AdvancedFilters";
@@ -775,7 +776,7 @@ export default function Production() {
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-500 gap-3">
                       <span>Due: {o.due_date ? fmtDate(o.due_date) : "—"}</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</span>
+                      {canSeeMoney(user) && <span className="font-bold text-slate-800 dark:text-slate-200">{fmtMoney(o.total || 0)}</span>}
                     </div>
                     {artworkCount > 0 && (
                       <div className="mt-2">
