@@ -552,12 +552,11 @@ export default function LoginModal({ isOpen, onClose, defaultMode, embedded = fa
             {mode === "signin" ? (
               // App Store guideline 3.1.1 + "companion app" stance: the native
               // app is sign-in only. No in-app account creation (which leads to
-              // the trial/purchase funnel) — accounts are created on the web.
-              isNative() ? (
-                <p className="text-sm text-slate-500">
-                  New to InkTracker? Create your account at inktracker.app.
-                </p>
-              ) : (
+              // the trial/purchase funnel) — and after the 1.0 rejection
+              // (2026-08-05), no "create your account at inktracker.app"
+              // pointer either: directing users to the place where the paid
+              // account is created is steering. Native shows nothing here.
+              isNative() ? null : (
                 <p className="text-sm text-slate-500">
                   Don&apos;t have an account?{" "}
                   <button

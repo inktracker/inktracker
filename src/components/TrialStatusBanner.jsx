@@ -32,11 +32,15 @@ export default function TrialStatusBanner({ user }) {
   if (!user) return null;
   if (user.role !== "shop" && user.role !== "admin") return null;
   const plansUrl = createPageUrl("Account") + "?billing=1";
-  // App Store guideline 3.1.1: no purchase affordances on native. Keep the
-  // informational status (so a native user still understands their trial /
-  // view-only state) but drop every "subscribe / pick a plan / reactivate"
-  // CTA and soften purchase-instruction copy to point at the web instead.
+  // App Store guideline 3.1.1 (tightened after the 1.0 rejection,
+  // 2026-08-05): the native app must not reference the subscription,
+  // the trial, or where to manage either. "Softened" copy pointing at
+  // inktracker.app was still steering — App Review flagged exactly that
+  // pattern on the billing card. On native this banner renders nothing
+  // in every state; write affordances remain disabled with their own
+  // inline explanations when an account is read-only.
   const native = isNative();
+  if (native) return null;
 
   // 'incomplete' = card-required signup with no payment method yet.
   // computeReadOnly treats it as read-only (correct for the gates), but

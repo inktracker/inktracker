@@ -33,10 +33,13 @@ export default function CancellationBanner({ user }) {
   if (!ends || ends.getTime() <= Date.now()) return null; // only while the end date is still ahead
 
   const endsOn = ends.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-  // App Store guideline 3.1.1: no billing-portal (purchase) affordance on native.
-  // The scheduled-cancel notice still shows; the "Resume subscription" action is
-  // replaced with a plain-text pointer to the web.
+  // App Store guideline 3.1.1 (tightened after the 1.0 rejection,
+  // 2026-08-05): a scheduled-cancellation notice is inherently
+  // subscription messaging, and any pointer to manage it is steering.
+  // On native this banner renders nothing; the shop still sees it on web,
+  // where the subscription actually lives.
   const native = isNative();
+  if (native) return null;
   const canManageBilling = (user.role === "shop" || user.role === "admin") && !native;
 
   async function handleResume() {
