@@ -25,6 +25,7 @@ export default function OrderInvoiceActions({
   handleCreateInvoice,
   handleOpenSend,
   onCreateSlip,
+  onPrintTicket,
   // Read-only (lapsed subscription): disable the write actions in this row
   // (status flow, Create Invoice → QB, Send, Mark Paid). Preview Invoice /
   // View in QB / Close are reads and stay enabled. Defaults keep writable
@@ -123,6 +124,16 @@ export default function OrderInvoiceActions({
         {/* Packing slip — finished orders only. Opens the confirm-quantities
             modal (ordered minus recorded misprints, editable) before the
             price-free PDF preview. */}
+        {/* Production ticket — the paper traveler. Available at every
+            status (it prints when work STARTS, not when it ends). */}
+        {onPrintTicket && (
+          <button
+            onClick={onPrintTicket}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl transition"
+          >
+            <Package className="w-4 h-4" /> Print Ticket
+          </button>
+        )}
         {order.status === "Completed" && onCreateSlip && (
           <button
             onClick={onCreateSlip}

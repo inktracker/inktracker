@@ -12,6 +12,7 @@ import { buildShortfallReorderPayloads, totalOrderShortfall } from "@/lib/orders
 import { notify } from "@/lib/notify";
 import { useAuth } from "@/lib/AuthContext";
 import ChangeHistory from "../shared/ChangeHistory";
+import ProductionTicket from "./ProductionTicket";
 import { canSeeMoney } from "@/lib/managerPermissions";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
@@ -25,6 +26,7 @@ import { normalizePresses, normalizeAssignedPress } from "@/lib/presses/normaliz
 import { Paperclip } from "lucide-react";
 import {
   getDisplayName,
+  getShopPricingConfig,
   O_STATUSES,
 } from "../shared/pricing";
 // Per-stage checklist tasks now live in src/lib/productionTasks.js so
@@ -87,6 +89,8 @@ export default function OrderDetailModal({
   // OrderLineItems (which stays provider-free for its standalone tests).
   const { user: authUser } = useAuth();
   const showMoney = canSeeMoney(authUser);
+  // Printable production ticket (paper traveler) — overlay + window.print.
+  const [showTicket, setShowTicket] = useState(false);
 
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -783,6 +787,7 @@ export default function OrderDetailModal({
             handleCreateInvoice={handleCreateInvoice}
             handleOpenSend={handleOpenSend}
             onCreateSlip={() => setShowPackingSlip(true)}
+            onPrintTicket={() => setShowTicket(true)}
             readOnly={readOnly}
             reactivateHref={reactivateHref}
           />
@@ -825,6 +830,16 @@ export default function OrderDetailModal({
 
       {/* Conditional mount so quantities re-initialize from the order's
           current sizes/_shortfall on every open (modal prop-state rule). */}
+      {showTicket && (
+        <ProductionTicket
+          order={liveOrder}
+          customer={customer}
+          shopName={shopName}
+          stitchTiers={getShopPricingConfig()?.embroidery?.stitchTiers}
+          onClose={() => setShowTicket(false)}
+        />
+      )}
+
       {showPackingSlip && (
         <PackingSlipModal
           order={liveOrder}
