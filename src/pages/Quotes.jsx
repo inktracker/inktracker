@@ -31,6 +31,7 @@ import { notify } from "@/lib/notify";
 import { notifyBrokerOfShopAction } from "@/lib/broker/notifyBrokerOfShopAction";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { shopScope } from "@/lib/shopScope";
+import { buildQuoteDuplicate } from "@/lib/quotes/customerSwitch";
 
 function isBrokerQuote(q) {
   return Boolean(q?.broker_id || q?.broker_email || q?.brokerId);
@@ -362,14 +363,13 @@ export default function Quotes() {
     setDuplicating(true);
     try {
       const newId = `Q-${new Date().getFullYear()}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
-      // converted_order_id / converted_at must not survive duplication —
-      // a Draft born with them can never be converted (handleConvert's
-      // already-converted guard keys on converted_order_id).
-      const { id, created_date, created_at, qb_invoice_id, qb_payment_link, qb_total, qb_tax_amount, qb_subtotal, qb_synced_at, source_email_id, converted_order_id, converted_at, ...rest } = q;
-      // Shop-tz, not UTC. toISOString() returns tomorrow's date after
-      // ~5pm Pacific — the duplicated quote then sorted into tomorrow's
-      // calendar slot.
-      const dup = { ...rest, quote_id: newId, status: "Draft", date: todayInShopTz() };
+      // The exclusion list lives in lib/quotes/customerSwitch (tested):
+      // QB linkage, conversion linkage, and the whole customer-facing
+      // lifecycle — above all public_token, which is minted at first
+      // send and NEVER rotated, so a copied token made the original
+      // customer's emailed link open the duplicate.
+      // Shop-tz date, not UTC (post-5pm-Pacific off-by-one).
+      const dup = buildQuoteDuplicate(q, { quoteId: newId, date: todayInShopTz() });
       const created = await base44.entities.Quote.create(dup);
       setQuotes((prev) => [created, ...prev]);
       setViewing(null);
