@@ -83,7 +83,11 @@ These are why "just make lines editable" corrupts state quietly:
    resets that size's progress to unordered. Never silently drop received
    goods records.
 2. **Shortfall** (`_shortfall` per line) — same rule: shortfall can't
-   exceed the new quantity; block or clamp with confirmation.
+   exceed the new quantity; block or clamp with confirmation. Floor
+   discrepancy marks (decision #2) feed this: an owner/manager opening
+   the editor sees pending marks inline next to the affected size, so
+   "3 short on M" is one click away from the quantity fix + rebill
+   decision it implies.
 3. **POs** (`source_order_id`): if a draft/submitted PO exists, editing
    garment lines shows "PO #X was built from this order's previous
    quantities" with a link — we do NOT auto-edit POs (a submitted PO is a
@@ -124,9 +128,16 @@ can't reach money edits — Tier 1 money editing requires seeing money).
 
 1. ~~Tier 2 default~~ — **ANSWERED: auto-update, record in shop-facing
    notes** (see Tier 2 above).
-2. Should employees (floor) ever edit quantities (misprint reality), or is
-   that owner/manager only? Current shortfall flow gives the floor a
-   controlled path already — doc assumes edits stay owner/manager.
+2. ~~Floor edits~~ — **ANSWERED: employees never change actual
+   quantities.** The floor MARKS differences (the existing
+   shortfall/misprint flow generalizes to a "report a discrepancy"
+   action on any line/size): the mark appends a dated line to the
+   order's shop-facing notes and fires a bell notification to the
+   owner + managers (team bell, #731) — "Press 2 reported 3 short on
+   M / Black Tees, ORD-123". Acting on the mark (actually editing the
+   quantity, rebilling) stays owner/manager, via this feature's
+   Tier-gated editor. Quantities have ONE writer class; the floor has
+   a voice, not a pen.
 3. Paid orders: is "bill the difference" the actual shop expectation, or
    do shops mostly want to edit BEFORE billing (making Tier 4 rare enough
    to defer entirely)?
