@@ -37,6 +37,7 @@ import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
 import ReactivateLink from "../shared/ReactivateLink";
+import { customerSnapshotPatch } from "@/lib/quotes/customerSwitch";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -524,10 +525,11 @@ export default function QuoteEditorModal({
 
     setQ((prev) => ({
       ...prev,
-      customer_id: saved.id,
-      customer_name: saved.name,
-      company: saved.company || "",
-      tax_rate: saved.tax_exempt ? 0 : prev.tax_rate || defaultTaxRate || 8.265,
+      ...customerSnapshotPatch(saved, {
+        defaultTaxRate,
+        currentTaxRate: prev.tax_rate,
+        currentDepositPct: prev.deposit_pct,
+      }),
     }));
 
     setShowNewClient(false);
@@ -852,21 +854,19 @@ export default function QuoteEditorModal({
                     value={q.customer_id}
                     onChange={(e) => {
                       const c = customers.find((x) => x.id === e.target.value);
-
+                      // EVERY customer-snapshot field follows the newly
+                      // selected customer — email, phone, tax id/exempt
+                      // included. Leaving any behind is the "old client
+                      // detail kept filling the data" bug (2026-08-06):
+                      // emails/payment links kept going to the previous
+                      // client after a duplicate-and-switch.
                       setQ({
                         ...q,
-                        customer_id: e.target.value,
-                        customer_name: c ? c.name : "",
-                        // Denormalize company onto the quote so the list/email/
-                        // payment views show the shop name even when the viewer
-                        // can't read the full customer record (e.g. a manager
-                        // with the Customers section turned off) or it was later
-                        // deleted/merged. getDisplayName still prefers the live
-                        // customer record when available.
-                        company: c ? (c.company || "") : "",
-                        tax_rate: c?.tax_exempt ? 0 : q.tax_rate || defaultTaxRate || 8.265,
-                        // Apply the client's default payment terms to this new quote
-                        deposit_pct: c ? Number(c.default_deposit_pct ?? 0) : q.deposit_pct,
+                        ...customerSnapshotPatch(c || null, {
+                          defaultTaxRate,
+                          currentTaxRate: q.tax_rate,
+                          currentDepositPct: q.deposit_pct,
+                        }),
                       });
                     }}
                     className="flex-1 min-w-0 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300 truncate"
