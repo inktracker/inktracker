@@ -39,12 +39,15 @@ dates, notes, press/operator (already editable), discounts/extras.
   (art-approval link) are re-minted.
 
 ### Tier 2 — Invoiced locally, not in QB
-Same edit surface, plus a required choice at save:
-- **"Update the invoice to match"** (default): the linked invoice row's
-  lines/totals rewrite from the order, change_log records both.
-- **"Leave the invoice"**: order and invoice now disagree; the invoice
-  modal shows a drift notice (reuse the qbModifiedState pattern against
-  order totals instead of qb totals).
+**DECIDED (Joe, 2026-08-06): auto-update.** Saving an order edit rewrites
+the linked invoice's lines/totals to match — no per-save prompt. The
+record lives in two places:
+- change_log rows on BOTH documents (trigger-written, with actor), and
+- a dated line appended to the invoice's shop-facing notes — same
+  pattern as buildSyncNote's QB audit lines:
+  `[2026-08-06] Updated from order edit: total $500.00 → $560.00`.
+  stripSyncNotes-style filtering keeps it OFF customer-facing surfaces
+  (PDF, QB CustomerMemo); it's the shop's paper trail, not the client's.
 
 ### Tier 3 — In QuickBooks (qb_invoice_id set), unpaid
 Money edits allowed but the save flow ends with an explicit **"Push update
@@ -119,8 +122,8 @@ can't reach money edits — Tier 1 money editing requires seeing money).
 
 ## Open product questions for Joe
 
-1. Tier 2 default — auto-update the local invoice, or always ask? (Doc
-   assumes ask-with-default-yes.)
+1. ~~Tier 2 default~~ — **ANSWERED: auto-update, record in shop-facing
+   notes** (see Tier 2 above).
 2. Should employees (floor) ever edit quantities (misprint reality), or is
    that owner/manager only? Current shortfall flow gives the floor a
    controlled path already — doc assumes edits stay owner/manager.
