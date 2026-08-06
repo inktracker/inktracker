@@ -13,6 +13,8 @@ import { notify } from "@/lib/notify";
 import { useAuth } from "@/lib/AuthContext";
 import ChangeHistory from "../shared/ChangeHistory";
 import ProductionTicket from "./ProductionTicket";
+import OrderEditorModal from "./OrderEditorModal";
+import { getOrderEditTier, EDIT_TIERS } from "@/lib/orders/editOrderEngine";
 import { canSeeMoney } from "@/lib/managerPermissions";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
@@ -91,6 +93,9 @@ export default function OrderDetailModal({
   const showMoney = canSeeMoney(authUser);
   // Printable production ticket (paper traveler) — overlay + window.print.
   const [showTicket, setShowTicket] = useState(false);
+  // Edit Order (phase 1) — overlay open state. Tier gating computed
+  // below, after the invoice hook provides relatedInvoice.
+  const [showEditor, setShowEditor] = useState(false);
 
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -166,6 +171,16 @@ export default function OrderDetailModal({
     handleCreateInvoice,
     handleOpenSend,
   } = useOrderInvoice({ order, customer, onComplete, callAction });
+
+  // Edit Order (phase 1): tier-gated by linked-document state — see
+  // docs/edit-order-design.md. Money editing needs money visibility, and
+  // employees never get here (owner/manager surface). Tier 3 (QB) and
+  // 4 (paid/completed) show the reason instead of the editor.
+  const editTier = getOrderEditTier(liveOrder, relatedInvoice);
+  const canEditOrder =
+    showMoney &&
+    ["shop", "admin", "manager"].includes(authUser?.role) &&
+    editTier.tier <= EDIT_TIERS.INVOICED;
   // Shop-configured press list (Account → Production Setup) + this
   // shop's employees, used to populate the two Assigned dropdowns
   // below the cost fields. Empty arrays just mean the dropdown shows
@@ -788,6 +803,8 @@ export default function OrderDetailModal({
             handleOpenSend={handleOpenSend}
             onCreateSlip={() => setShowPackingSlip(true)}
             onPrintTicket={() => setShowTicket(true)}
+            onEditOrder={["shop", "admin", "manager"].includes(authUser?.role) ? () => setShowEditor(true) : undefined}
+            editOrderDisabledReason={!canEditOrder ? (editTier.reason || (!showMoney ? "Editing recalculates pricing - not available with financials hidden." : null)) : null}
             readOnly={readOnly}
             reactivateHref={reactivateHref}
           />
@@ -830,6 +847,16 @@ export default function OrderDetailModal({
 
       {/* Conditional mount so quantities re-initialize from the order's
           current sizes/_shortfall on every open (modal prop-state rule). */}
+      {showEditor && (
+        <OrderEditorModal
+          order={liveOrder}
+          linkedInvoice={relatedInvoice}
+          sourcePO={sourcePO}
+          onClose={() => setShowEditor(false)}
+          onSaved={(updated) => { setLiveOrder(updated); onUpdated?.(updated); }}
+        />
+      )}
+
       {showTicket && (
         <ProductionTicket
           order={liveOrder}

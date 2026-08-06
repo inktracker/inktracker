@@ -26,6 +26,8 @@ export default function OrderInvoiceActions({
   handleOpenSend,
   onCreateSlip,
   onPrintTicket,
+  onEditOrder,
+  editOrderDisabledReason,
   // Read-only (lapsed subscription): disable the write actions in this row
   // (status flow, Create Invoice → QB, Send, Mark Paid). Preview Invoice /
   // View in QB / Close are reads and stay enabled. Defaults keep writable
@@ -124,6 +126,19 @@ export default function OrderInvoiceActions({
         {/* Packing slip — finished orders only. Opens the confirm-quantities
             modal (ordered minus recorded misprints, editable) before the
             price-free PDF preview. */}
+        {/* Edit Order (phase 1, docs/edit-order-design.md): tiers 1-2
+            open the editor; QB-linked / paid / completed / money-hidden
+            show the reason in the tooltip and stay disabled. */}
+        {onEditOrder && (
+          <button
+            onClick={editOrderDisabledReason ? undefined : onEditOrder}
+            disabled={!!editOrderDisabledReason || readOnly}
+            title={editOrderDisabledReason || (readOnly ? roTitle : undefined)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 bg-white hover:bg-slate-50 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Edit Order
+          </button>
+        )}
         {/* Production ticket — the paper traveler. Available at every
             status (it prints when work STARTS, not when it ends). */}
         {onPrintTicket && (
