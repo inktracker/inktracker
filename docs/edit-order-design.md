@@ -1,6 +1,7 @@
 # Edit Order — design
 
-**Status:** DRAFT for Joe's review · 2026-08-06
+**Status:** APPROVED — all four product questions answered (Joe,
+2026-08-06); Phase 1 buildable. · 2026-08-06
 **Driver:** repeated shop requests for "better ways to modify open orders."
 The duplicate-and-switch bug (#735) was the sharpest instance; the underlying
 gap is that orders are effectively immutable after conversion — the shop's
@@ -159,7 +160,16 @@ can't reach money edits — Tier 1 money editing requires seeing money).
    (locked / bill_difference / direct_adjust — see Tier 4). Default
    bill_difference; direct_adjust degrades to bill_difference for
    QB-paid invoices until phase-3 credit memos.
-4. Does editing an order update the SOURCE QUOTE too? Doc says NO — the
-   quote is the historical agreement that produced the order; the order is
-   the living document. The quote gets a one-line change_log entry
-   ("superseded by order edit") for the paper trail.
+4. ~~Source quote~~ — **ANSWERED: shop's choice** via a companion
+   setting (`order_edit_quote_sync`, same Account cluster as
+   paid_edit_policy):
+   - **`keep_historical`** (default) — the quote stays the original
+     agreement; it gets a dated shop-facing note ("[date] Order ORD-123
+     edited after conversion — quote reflects the ORIGINAL agreement")
+     plus its change_log entry, so nobody mistakes it for current.
+   - **`sync_to_order`** — the quote's lines/totals rewrite to match the
+     edited order, with the mirror-image dated note ("[date] Updated to
+     match order edit: total $X → $Y"). For shops that treat the quote
+     as a living mirror rather than a record.
+   Both policies write the note — the trail is not optional, only the
+   direction of truth is.
