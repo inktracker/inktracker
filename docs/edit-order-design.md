@@ -62,15 +62,32 @@ re-estimate and the hold-on-mismatch gate).
   QB customer; switching means void-in-QB + recreate, which is Tier-4
   territory and phase 2 at the earliest.
 
-### Tier 4 — Paid (fully or deposit) or Completed
-Locked for money edits. Production fields (dates, press, operator, notes,
-step data) stay editable — they never were money. The affordance offered
-instead:
-- Paid: "Bill the difference" → a NEW invoice for the delta (additional
-  charges), or a credit note path (phase 3; QB credit memos are their own
-  project).
-- Completed: Reorder (exists) — a finished job is history, history doesn't
-  change (performance stats already counted it).
+### Tier 4 — Paid (fully or deposit)
+**DECIDED (Joe, 2026-08-06): shop's choice.** A per-shop setting
+(`paid_edit_policy`, Account → Invoices) controls what happens when an
+order with a paid invoice is edited:
+
+- **`locked`** — money edits blocked once paid; production fields only.
+  For shops that treat a paid invoice as sealed.
+- **`bill_difference`** (default) — edits allowed; on save the delta
+  becomes a NEW invoice (positive delta) or a recorded credit balance on
+  the customer (negative delta; credit-note/refund execution is the
+  shop's outside-the-app action until phase 3). The paid invoice itself
+  never changes.
+- **`direct_adjust`** — edits rewrite the paid invoice's lines/totals
+  directly, with the payment re-applied against the new total (over/
+  underpayment surfaced as balance). Powerful and honest for cash/check
+  shops; the dated-notes + change_log trail carries the history.
+
+QB boundary, regardless of policy: an invoice PAID IN QUICKBOOKS has
+payments applied inside QB — direct_adjust cannot touch those without
+QB credit-memo work (phase 3). For QB-paid invoices, `direct_adjust`
+degrades to `bill_difference` with a notice explaining why.
+
+### Completed orders
+Reorder (exists) — a finished job is history, history doesn't change
+(performance stats already counted it). Production fields stay editable
+in every tier; they never were money.
 
 ## Production side-effects (the non-money hazards)
 
@@ -138,9 +155,10 @@ can't reach money edits — Tier 1 money editing requires seeing money).
    quantity, rebilling) stays owner/manager, via this feature's
    Tier-gated editor. Quantities have ONE writer class; the floor has
    a voice, not a pen.
-3. Paid orders: is "bill the difference" the actual shop expectation, or
-   do shops mostly want to edit BEFORE billing (making Tier 4 rare enough
-   to defer entirely)?
+3. ~~Paid orders~~ — **ANSWERED: shop's choice** via `paid_edit_policy`
+   (locked / bill_difference / direct_adjust — see Tier 4). Default
+   bill_difference; direct_adjust degrades to bill_difference for
+   QB-paid invoices until phase-3 credit memos.
 4. Does editing an order update the SOURCE QUOTE too? Doc says NO — the
    quote is the historical agreement that produced the order; the order is
    the living document. The quote gets a one-line change_log entry
