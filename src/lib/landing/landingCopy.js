@@ -13,7 +13,7 @@ export const HERO = Object.freeze({
   // Matches the typewriter lines (lib/landing/typewriter.js) + hero section.
   h1: "Run your shop without the chaos.",
   sub: "InkTracker is shop management software for screen printing and embroidery shops — quotes, production, invoicing, and QuickBooks sync in one place. By printers, for printers.",
-  trialLine: "14-day free trial · cancel anytime",
+  trialLine: "14-day free trial · no card required · cancel anytime",
 });
 
 export const VALUE_PROPS = Object.freeze([
@@ -51,7 +51,7 @@ export const PRICING_INCLUDES = Object.freeze([
 export const PRICING = Object.freeze({
   price: "$99",
   per: "/mo",
-  annualLine: "Or $999/year — saves $189. 14-day free trial.",
+  annualLine: "Or $999/year — saves $189. 14-day free trial, no card required.",
 });
 
 export const FAQ_ITEMS = Object.freeze([
