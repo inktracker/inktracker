@@ -1,0 +1,48 @@
+name: Trial lifecycle drip
+
+# Daily trigger for the lifecycleDrip edge function — day-2 activation
+# nudge + trial-ending reminder for trialing shops. Same pattern as
+# qb-reconcile.yml: GitHub's scheduler (reliable, free, red ❌ on
+# failure) hitting the function directly with CRON_SECRET.
+#
+# 15:00 UTC ≈ 8am Pacific — emails land at the start of a shop's day,
+# not overnight. Dedup lives in the function (notification_log,
+# one-per-shop-ever per event type), so an extra manual run is always
+# safe.
+#
+# Uses the SAME CRON_SECRET repo secret qb-reconcile.yml already needs —
+# no new setup.
+
+on:
+  schedule:
+    - cron: "0 15 * * *"
+  workflow_dispatch: {} # manual trigger for testing
+
+concurrency:
+  group: lifecycle-drip
+  cancel-in-progress: false
+
+jobs:
+  drip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger lifecycleDrip
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::CRON_SECRET repo secret is not set — add it (must match the Supabase CRON_SECRET)."
+            exit 1
+          fi
+          code=$(curl -sS -o /tmp/drip.json -w "%{http_code}" -X POST \
+            "https://skmltfbibaqcjddmeqvi.supabase.co/functions/v1/lifecycleDrip" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Content-Type: application/json" \
+            --data "{}")
+          echo "HTTP $code"
+          cat /tmp/drip.json | head -c 4000; echo
+          if [ "$code" != "200" ]; then
+            echo "::error::lifecycleDrip returned $code (401 = CRON_SECRET mismatch with Supabase)."
+            exit 1
+          fi
