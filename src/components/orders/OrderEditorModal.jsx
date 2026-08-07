@@ -22,10 +22,12 @@ import {
   getShopPricingConfig,
   getQty,
   fmtMoney,
+  newLineItem,
 } from "../shared/pricing";
 import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import { customerSnapshotPatch } from "@/lib/quotes/customerSwitch";
 import {
+  goodsMarkCount,
   orderEditBlockers,
   orderEditWarnings,
   buildEditPatches,
@@ -65,6 +67,22 @@ export default function OrderEditorModal({ order, customers: customersProp, link
     notes: order.notes || "",
   }));
   const [saving, setSaving] = useState(false);
+  // Pending floor discrepancy marks (decision #2): recent "Reported a
+  // discrepancy" change_log rows render above the lines so the fix they
+  // imply is one click away. Read-only context, not state to mutate.
+  const [marks, setMarks] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await base44.entities.ChangeLog.filter(
+          { entity_type: "order", entity_id: String(order.id) }, "-created_at", 20,
+        );
+        if (!cancelled) setMarks((rows || []).filter((r) => (r.summary || "").startsWith("Reported a discrepancy")));
+      } catch { /* non-fatal - marks are context */ }
+    })();
+    return () => { cancelled = true; };
+  }, [order.id]);
 
   const cfg = getShopPricingConfig();
   const addonsByScope = useMemo(() => buildAddonsByScope(cfg || {}), [cfg]);
@@ -224,6 +242,18 @@ export default function OrderEditorModal({ order, customers: customersProp, link
             </div>
           </div>
 
+          {marks.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-1">
+              <div className="text-xs font-bold text-amber-800 uppercase tracking-wide">Floor reports on this order</div>
+              {marks.map((m) => (
+                <div key={m.id} className="text-xs text-amber-800">
+                  {"•"} {m.summary.replace("Reported a discrepancy — ", "")}
+                  <span className="text-amber-600"> {"—"} {m.actor || "floor"}, {new Date(m.created_at).toLocaleDateString()}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
           {draft.line_items.map((li, idx) => (
             <LineItemEditor
               key={li.id || idx}
@@ -237,6 +267,18 @@ export default function OrderEditorModal({ order, customers: customersProp, link
               canRemove={draft.line_items.length > 1}
             />
           ))}
+
+          <button
+            type="button"
+            onClick={() => setDraft((p) => ({ ...p, line_items: [...p.line_items, newLineItem()] }))}
+            disabled={goodsMarkCount(order) > 0}
+            title={goodsMarkCount(order) > 0
+              ? "Goods are already marked ordered/received - adding lines would mis-point those marks (keyed by line position). Clear goods progress first."
+              : undefined}
+            className="w-full border-2 border-dashed border-slate-300 rounded-xl py-3 text-sm font-semibold text-slate-500 hover:border-teal-400 hover:text-teal-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            + Add Garment Group
+          </button>
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Order notes</label>

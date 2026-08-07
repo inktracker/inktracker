@@ -14,6 +14,7 @@ import QuickBooksSection from "../components/account/QuickBooksSection";
 import BillingSection from "../components/account/BillingSection";
 import PricingConfigEditor from "../components/account/PricingConfigEditor";
 import ProductionTasksSection from "../components/account/ProductionTasksSection";
+import OrderEditingSection from "../components/account/OrderEditingSection";
 import DeleteAccountSection from "../components/account/DeleteAccountSection";
 import ExportDataSection from "../components/account/ExportDataSection";
 import SupplierKeysSection from "../components/account/SupplierKeysSection";
@@ -743,6 +744,8 @@ export default function Account() {
 
         <Section icon={CheckSquare} title="Production Tasks">
           <ProductionTasksSection user={user} />
+
+          <OrderEditingSection user={user} />
         </Section>
 
         <Section icon={Package} title="Supplier API Keys">

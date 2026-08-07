@@ -102,3 +102,6 @@ verify_jwt = false
 
 [functions.notifySignup]
 verify_jwt = false
+
+[functions.reportDiscrepancy]
+verify_jwt = false

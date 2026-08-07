@@ -192,6 +192,45 @@ export default function ShopFloor() {
   const [filter, setFilter] = useState("Active");
   // Printable production ticket for the selected job.
   const [showTicket, setShowTicket] = useState(false);
+  // Floor discrepancy report (Edit Order decision #2): the floor MARKS
+  // differences — dated note + bell to owner/managers — never edits
+  // quantities. { lineIdx, size, qty, reason } while the form is open.
+  const [reportOpen, setReportOpen] = useState(false);
+  const [report, setReport] = useState({ lineIdx: 0, size: "", qty: 1, reason: "short" });
+  const [reportBusy, setReportBusy] = useState(false);
+
+  async function submitDiscrepancy() {
+    if (reportBusy || !selected) return;
+    setReportBusy(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const li = (selected.line_items || [])[report.lineIdx] || {};
+      const lineLabel = [li.brand, li.style, li.garmentColor].filter(Boolean).join(" ");
+      const { data, error } = await supabase.functions.invoke("reportDiscrepancy", {
+        body: {
+          orderId: selected.id,
+          lineLabel,
+          size: report.size,
+          qty: Number(report.qty) || 0,
+          reason: report.reason,
+        },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      notify.success("Reported", "The office has been notified.");
+      // Reflect the appended note locally so the amber notes box updates.
+      if (data?.noteLine) {
+        setSelected((prev) => prev ? { ...prev, notes: prev.notes ? prev.notes + "\n" + data.noteLine : data.noteLine } : prev);
+      }
+      setReportOpen(false);
+      setReport({ lineIdx: 0, size: "", qty: 1, reason: "short" });
+    } catch (err) {
+      notify.error("Couldn't send the report", err);
+    } finally {
+      setReportBusy(false);
+    }
+  }
   const [refreshing, setRefreshing] = useState(false);
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
@@ -661,12 +700,63 @@ export default function ShopFloor() {
                   {normalizeAssignedPress(selected.assigned_press) && <span>Press: {normalizeAssignedPress(selected.assigned_press)}</span>}
                   {selected.assigned_operator && <span>Operator: {selected.assigned_operator}</span>}
                   <button
+                    onClick={() => setReportOpen((v) => !v)}
+                    className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-100 transition"
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5" /> Report issue
+                  </button>
+                  <button
                     onClick={() => setShowTicket(true)}
-                    className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-100 transition"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-teal-700 bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-lg hover:bg-teal-100 transition"
                   >
                     <Printer className="w-3.5 h-3.5" /> Print Ticket
                   </button>
                 </div>
+                {reportOpen && (
+                  <div className="mt-3 bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-wrap items-end gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-amber-800 mb-1">Garment</label>
+                      <select value={report.lineIdx} onChange={(e) => setReport((r) => ({ ...r, lineIdx: Number(e.target.value), size: "" }))}
+                        className="text-sm border border-amber-200 rounded-lg px-2 py-1.5 bg-white">
+                        {(selected.line_items || []).map((li, i) => (
+                          <option key={li.id || i} value={i}>{[li.brand, li.style, li.garmentColor].filter(Boolean).join(" ") || `Line ${i + 1}`}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-amber-800 mb-1">Size</label>
+                      <select value={report.size} onChange={(e) => setReport((r) => ({ ...r, size: e.target.value }))}
+                        className="text-sm border border-amber-200 rounded-lg px-2 py-1.5 bg-white">
+                        <option value="">Pick…</option>
+                        {sortSizeEntries(Object.entries(((selected.line_items || [])[report.lineIdx] || {}).sizes || {}))
+                          .filter(([, v]) => parseInt(v) > 0)
+                          .map(([sz, ct]) => <option key={sz} value={sz}>{sz} ({ct})</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-amber-800 mb-1">Qty</label>
+                      <input type="number" min="1" value={report.qty} onChange={(e) => setReport((r) => ({ ...r, qty: e.target.value }))}
+                        className="w-16 text-sm border border-amber-200 rounded-lg px-2 py-1.5 bg-white" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-amber-800 mb-1">Issue</label>
+                      <select value={report.reason} onChange={(e) => setReport((r) => ({ ...r, reason: e.target.value }))}
+                        className="text-sm border border-amber-200 rounded-lg px-2 py-1.5 bg-white">
+                        <option value="short">Short (missing)</option>
+                        <option value="misprinted">Misprinted</option>
+                        <option value="damaged">Damaged blank</option>
+                        <option value="wrong size/color received">Wrong size/color received</option>
+                      </select>
+                    </div>
+                    <button
+                      onClick={submitDiscrepancy}
+                      disabled={reportBusy || !report.size || !(Number(report.qty) > 0)}
+                      className="text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                    >
+                      {reportBusy ? "Sending…" : "Send to office"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Status pipeline. Layout: header + current status chip on
