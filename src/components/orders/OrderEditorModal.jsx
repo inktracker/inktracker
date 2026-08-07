@@ -31,7 +31,6 @@ import {
   goodsMarkCount,
   getOrderEditTier,
   tierCapabilities,
-  EDIT_TIERS,
   orderEditBlockers,
   orderEditWarnings,
   buildEditPatches,
