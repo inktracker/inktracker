@@ -87,6 +87,11 @@ import {
   selectUnalertedDrift,
   alertedSignatures,
 } from "../_shared/booksDriftAlert.js";
+import {
+  summarizeGrowth,
+  buildGrowthReportText,
+  buildGrowthReportSubject,
+} from "../_shared/growthReport.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -1039,6 +1044,87 @@ async function scanAndAlertEmailHealth(adminClient: any): Promise<{ failed: numb
   }
 }
 
+// ── Weekly growth report (Monday runs only) ─────────────────────────
+// Funnel summary → operator: signups, trial activation, trials ending,
+// expired-without-converting, paying-shop count. Piggybacks this cron
+// (05:00 UTC = Sunday evening PT; Joe reads it Monday morning) instead
+// of adding a new scheduled trigger. Pure logic in _shared/growthReport.js.
+// Same contract as the scans above: OPERATOR-ONLY, dedup via qb_event_log
+// (6-day window so a manual weekday re-run doesn't repeat it), every
+// failure swallowed — monitoring, never the work.
+async function scanAndSendGrowthReport(adminClient: any): Promise<{ sent: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { sent: false };
+  if (new Date().getUTCDay() !== 1) return { sent: false }; // Mondays only
+  try {
+    const since = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recent } = await adminClient
+      .from("qb_event_log")
+      .select("id")
+      .eq("action", "growth_report")
+      .gte("created_at", since)
+      .limit(1)
+      .maybeSingle();
+    if (recent) return { sent: false };
+
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const [profilesRes, quotesRes, ordersRes] = await Promise.all([
+      adminClient
+        .from("profiles")
+        .select("email, shop_name, company_name, subscription_tier, subscription_status, trial_ends_at, created_at")
+        .eq("role", "shop"),
+      adminClient
+        .from("quotes")
+        .select("shop_owner")
+        .gte("created_at", weekAgo)
+        .limit(2000),
+      adminClient
+        .from("orders")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", weekAgo),
+    ]);
+    if (profilesRes.error) {
+      console.warn("[qbReconcile] growth-report profile query failed:", profilesRes.error.message);
+      return { sent: false };
+    }
+
+    const stats = summarizeGrowth({
+      profiles: profilesRes.data ?? [],
+      quoteOwners: (quotesRes.data ?? []).map((q: any) => q.shop_owner),
+      orderCount7d: ordersRes.count ?? 0,
+    });
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: `InkTracker <${ALERT_FROM_EMAIL}>`,
+        to: [OPERATOR_ALERT_EMAIL],
+        subject: buildGrowthReportSubject(stats),
+        text: buildGrowthReportText(stats),
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[qbReconcile] growth-report send failed: ${res.status} ${await res.text()}`);
+      return { sent: false };
+    }
+    await logEvent(adminClient, {
+      shop_owner:    "__system__",
+      action:        "growth_report",
+      direction:     "outbound",
+      status:        "success",
+      response_body: {
+        signups: stats.newSignups.length,
+        trials: stats.activeTrials.length,
+        paying: stats.payingShops,
+      },
+    });
+    return { sent: true };
+  } catch (err) {
+    console.warn("[qbReconcile] growth-report exception:", (err as Error)?.message);
+    return { sent: false };
+  }
+}
+
 // ── Main handler ────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -1067,6 +1153,8 @@ Deno.serve(async (req) => {
   console.error(`[qbReconcile] integrity: ${integrityResult.violations} violation(s), alerted=${integrityResult.alerted}`);
   const emailHealth = await scanAndAlertEmailHealth(adminClient);
   console.error(`[qbReconcile] email-health: ${emailHealth.failed} failed send(s) in 24h, alerted=${emailHealth.alerted}`);
+  const growthReport = await scanAndSendGrowthReport(adminClient);
+  console.error(`[qbReconcile] growth-report: sent=${growthReport.sent}`);
 
   try {
     // Find every profile with QB connected, LEAST-recently-reconciled
