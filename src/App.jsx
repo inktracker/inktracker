@@ -567,7 +567,7 @@ function PublicLandingPage() {
                   Take a tour
                 </a>
               </div>
-              <p className="text-white/55 text-xs mt-6 tracking-wide">14-day free trial · cancel anytime</p>
+              <p className="text-white/55 text-xs mt-6 tracking-wide">14-day free trial · no card required · cancel anytime</p>
             </div>
           </div>
         </section>
@@ -961,7 +961,7 @@ function PublicLandingPage() {
               </div>
               <p className="text-[15px] md:text-base" style={{ color: MUTED }}>
                 Or <strong style={{ color: INK }}>$999/year</strong> — saves $189.
-                14-day free trial.
+                14-day free trial, no card required.
               </p>
 
               <div className="my-10 mx-auto max-w-2xl grid sm:grid-cols-2 gap-x-8 gap-y-3 text-left">
@@ -1021,7 +1021,7 @@ function PublicLandingPage() {
               </button>
             </div>
             <p className="mt-6 text-xs tracking-wide" style={{ color: MUTED }}>
-              14-day free trial · cancel anytime
+              14-day free trial · no card required · cancel anytime
             </p>
           </div>
         </section>

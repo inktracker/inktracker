@@ -12,35 +12,38 @@ import { SITE, GUIDE } from "../content/comparisons.mjs";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (...p) => readFileSync(join(ROOT, ...p), "utf8");
 
-// The trial REQUIRES a card (since 2026-07-02). Any "no card" phrasing in
-// marketing content is a false claim — see PR #560 for the original sweep.
-const NO_CARD_CLAIM = /no (?:credit )?card|without a (?:credit )?card|card[- ]?free/i;
+// The trial is CARDLESS again (2026-08-06, migration 20260926 — the card
+// wall converted 0 of 2 organic signups). The false claim is now the
+// REVERSE of PR #560's sweep: content implying a card is needed to START
+// the trial. ("Add a payment method" copy about converting/continuing
+// after the trial is still fine — the regex targets start-the-trial claims.)
+const CARD_REQUIRED_CLAIM = /(?:add|enter|requires?) a (?:credit )?card to (?:start|begin|try)|payment method to start|(?<!no )card (?:is )?required/i;
 
-describe("blog — no false 'no card' trial claims", () => {
-  it("no post content claims the trial is card-free", () => {
+describe("blog — no stale 'card required to start trial' claims", () => {
+  it("no post content claims the trial needs a card", () => {
     for (const post of POSTS) {
-      expect(JSON.stringify(post), `post "${post.slug}"`).not.toMatch(NO_CARD_CLAIM);
+      expect(JSON.stringify(post), `post "${post.slug}"`).not.toMatch(CARD_REQUIRED_CLAIM);
     }
   });
 
-  it("no generated blog page claims the trial is card-free", () => {
+  it("no generated blog page claims the trial needs a card", () => {
     const pages = [
       ["public", "blog", "index.html"],
       ["public", "for-printers", "index.html"],
       ...POSTS.map((p) => ["public", "blog", p.slug, "index.html"]),
     ];
     for (const p of pages) {
-      expect(read(...p), p.join("/")).not.toMatch(NO_CARD_CLAIM);
+      expect(read(...p), p.join("/")).not.toMatch(CARD_REQUIRED_CLAIM);
     }
   });
 
   it("generator templates and comparison content are clean too", () => {
-    expect(read("scripts", "generate-blog.mjs"), "generate-blog.mjs").not.toMatch(NO_CARD_CLAIM);
+    expect(read("scripts", "generate-blog.mjs"), "generate-blog.mjs").not.toMatch(CARD_REQUIRED_CLAIM);
     expect(read("scripts", "generate-compare-pages.mjs"), "generate-compare-pages.mjs").not.toMatch(
-      NO_CARD_CLAIM,
+      CARD_REQUIRED_CLAIM,
     );
-    expect(JSON.stringify({ SITE, GUIDE }), "comparisons.mjs content").not.toMatch(NO_CARD_CLAIM);
-    expect(read("index.html"), "index.html (app shell JSON-LD)").not.toMatch(NO_CARD_CLAIM);
+    expect(JSON.stringify({ SITE, GUIDE }), "comparisons.mjs content").not.toMatch(CARD_REQUIRED_CLAIM);
+    expect(read("index.html"), "index.html (app shell JSON-LD)").not.toMatch(CARD_REQUIRED_CLAIM);
   });
 });
 
