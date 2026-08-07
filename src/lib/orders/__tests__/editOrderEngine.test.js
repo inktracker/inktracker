@@ -7,6 +7,7 @@ import {
   imprintsChanged,
   isStructuralLineChange,
   buildEditPatches,
+  tierCapabilities,
   editConflict,
   appendNote,
 } from "../editOrderEngine";
@@ -103,9 +104,27 @@ describe("buildEditPatches — decided policies", () => {
     expect(invoicePatch.notes).toBe("existing note\n[2026-08-06] Updated from order edit: total $500.00 → $560.00");
   });
 
-  it("QB-linked or paid invoices are NEVER auto-patched (phase boundaries)", () => {
-    expect(buildEditPatches({ order, edited, linkedInvoice: { qb_invoice_id: "7" }, quote: null, today: "2026-08-06" }).invoicePatch).toBeNull();
+  it("tier 3 (phase 2): QB-linked unpaid invoices auto-patch WITH qb_push_pending — local truth is newer", () => {
+    const { invoicePatch } = buildEditPatches({ order, edited, linkedInvoice: { qb_invoice_id: "7", total: 500, notes: "" }, quote: null, today: "2026-08-06" });
+    expect(invoicePatch.total).toBe(560);
+    expect(invoicePatch.qb_push_pending).toBe(true);
+    expect(invoicePatch.notes).toContain("Updated from order edit");
+  });
+
+  it("tier 2 invoices never carry the push flag (nothing to push)", () => {
+    const { invoicePatch } = buildEditPatches({ order, edited, linkedInvoice: { id: "inv", total: 500, notes: "" }, quote: null, today: "2026-08-06" });
+    expect(invoicePatch.qb_push_pending).toBeUndefined();
+  });
+
+  it("PAID invoices are never auto-patched (phase-3 boundary holds)", () => {
     expect(buildEditPatches({ order, edited, linkedInvoice: { paid: true }, quote: null, today: "2026-08-06" }).invoicePatch).toBeNull();
+    expect(buildEditPatches({ order, edited, linkedInvoice: { qb_invoice_id: "7", paid: true }, quote: null, today: "2026-08-06" }).invoicePatch).toBeNull();
+  });
+
+  it("tierCapabilities: tier 3 edits but cannot switch customer; push required", () => {
+    expect(tierCapabilities(EDIT_TIERS.INVOICED)).toEqual({ canEdit: true, canSwitchCustomer: true, pushRequired: false });
+    expect(tierCapabilities(EDIT_TIERS.IN_QB)).toEqual({ canEdit: true, canSwitchCustomer: false, pushRequired: true });
+    expect(tierCapabilities(EDIT_TIERS.PAID_OR_DONE).canEdit).toBe(false);
   });
 
   it("quote keep_historical (default): one marker note, added once, no money rewrite (decision #4)", () => {

@@ -116,3 +116,25 @@ describe("stripSyncNotes (customer-facing surfaces)", () => {
     expect(stripSyncNotes(undefined)).toBe("");
   });
 });
+
+// ── Push-pending precedence (Edit Order phase 2) ────────────────────────────
+import { qbPushPending } from "../qbModifiedSync";
+
+describe("qbPushPending suppresses the Match banner (direction guard)", () => {
+  const edited = { qb_invoice_id: "77", qb_push_pending: true, total: 560, qb_total: 500 };
+
+  it("flags only a QB-linked invoice with the pending marker", () => {
+    expect(qbPushPending(edited)).toBe(true);
+    expect(qbPushPending({ qb_push_pending: true })).toBe(false); // no QB invoice → nothing to push
+    expect(qbPushPending({ qb_invoice_id: "77" })).toBe(false);
+    expect(qbPushPending(null)).toBe(false);
+  });
+
+  it("qbModifiedState stays quiet while a push is pending — Match would revert the shop's own edit", () => {
+    // Totals diverge (560 vs 500) but the divergence is OURS.
+    expect(qbModifiedState(edited).modified).toBe(false);
+    // Once the push clears the flag (qbSync write-back), normal Match
+    // detection resumes for genuine QB-side edits.
+    expect(qbModifiedState({ ...edited, qb_push_pending: false }).modified).toBe(true);
+  });
+});

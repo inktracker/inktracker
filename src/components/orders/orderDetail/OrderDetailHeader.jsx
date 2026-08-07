@@ -10,6 +10,7 @@ import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
 // (displayClient, displayJobTitle, artworkFiles) are threaded in.
 export default function OrderDetailHeader({
   order,
+  qbPushPending = false,
   displayClient,
   displayJobTitle,
   artworkFiles,
@@ -60,6 +61,14 @@ export default function OrderDetailHeader({
         </div>
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <Badge s={order.status} />
+          {qbPushPending && (
+            <span
+              className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full"
+              title="This order's invoice was edited locally — QuickBooks still shows the previous version. Open the invoice to push the update."
+            >
+              QB out of date
+            </span>
+          )}
           {order.paid ? (
             <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
               Paid

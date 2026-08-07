@@ -12,7 +12,7 @@
 // agreement, recorded loudly — the change_log triggers carry the actor).
 
 import { useState, useMemo, useEffect } from "react";
-import { base44 } from "@/api/supabaseClient";
+import { base44, supabase } from "@/api/supabaseClient";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import LineItemEditor from "../quotes/LineItemEditor";
 import {
@@ -26,8 +26,12 @@ import {
 } from "../shared/pricing";
 import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
 import { customerSnapshotPatch } from "@/lib/quotes/customerSwitch";
+import { createInvoiceInQB } from "@/lib/invoices/createInvoiceInQB";
 import {
   goodsMarkCount,
+  getOrderEditTier,
+  tierCapabilities,
+  EDIT_TIERS,
   orderEditBlockers,
   orderEditWarnings,
   buildEditPatches,
@@ -85,6 +89,7 @@ export default function OrderEditorModal({ order, customers: customersProp, link
   }, [order.id]);
 
   const cfg = getShopPricingConfig();
+  const caps = tierCapabilities(getOrderEditTier(order, linkedInvoice).tier);
   const addonsByScope = useMemo(() => buildAddonsByScope(cfg || {}), [cfg]);
 
   const update = (patch) => setDraft((prev) => ({ ...prev, ...patch }));
@@ -169,6 +174,29 @@ export default function OrderEditorModal({ order, customers: customersProp, link
       if (quotePatch && quote) await base44.entities.Quote.update(quote.id, quotePatch);
       const savedOrder = await base44.entities.Order.update(order.id, orderPatch);
 
+      // Tier 3: the explicit push step (design). Declining leaves the
+      // pending-push badge; the invoice modal offers the push any time.
+      if (caps.pushRequired && invoicePatch && linkedInvoice) {
+        const pushNow = window.confirm(
+          `Saved. Push this update to QuickBooks now?\n\n` +
+          `QuickBooks still shows the previous version of invoice ${linkedInvoice.invoice_id || ""}. ` +
+          `Push updates the QB invoice to match (tax re-checks apply). ` +
+          `If you skip, the invoice carries a "push pending" notice until you push.`,
+        );
+        if (pushNow) {
+          try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const freshRows = await base44.entities.Invoice.filter({ shop_owner: order.shop_owner, id: linkedInvoice.id });
+            const freshInv = freshRows?.[0] || { ...linkedInvoice, ...invoicePatch };
+            const result = await createInvoiceInQB({ base44, invoice: freshInv, customer: customers.find((c) => c.id === draft.customer_id), session });
+            if (!result.ok) throw new Error(result.error || "QuickBooks push failed");
+            notify.success("Pushed to QuickBooks", "The QB invoice now matches your edit.");
+          } catch (pushErr) {
+            notify.error("Saved locally, but the QuickBooks push failed", `${pushErr?.message || pushErr}. The invoice shows a push-pending notice — push from there when ready.`);
+          }
+        }
+      }
+
       onSaved?.(savedOrder || { ...order, ...orderPatch });
       onClose();
     } catch (err) {
@@ -210,6 +238,8 @@ export default function OrderEditorModal({ order, customers: customersProp, link
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Customer</label>
               <select
                 value={draft.customer_id}
+                disabled={!caps.canSwitchCustomer}
+                title={!caps.canSwitchCustomer ? "This order's invoice is in QuickBooks — the QB invoice belongs to this customer. Switching customers on a QB-invoiced order arrives with phase 3 (void + recreate)." : undefined}
                 onChange={(e) => {
                   const c = customers.find((x) => x.id === e.target.value);
                   // Same rule as the quote editor (#735): EVERY snapshot

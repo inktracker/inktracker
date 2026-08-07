@@ -14,8 +14,9 @@ import { resolveInvoicePdfSource } from "@/lib/invoice/resolveInvoicePdfSource";
 import { MessageSquare } from "lucide-react";
 import { notify } from "@/lib/notify";
 import { todayInShopTz } from "@/lib/shopTimezone";
-import { qbModifiedState, buildAdoptPatches, stripSyncNotes } from "@/lib/invoices/qbModifiedSync";
+import { qbModifiedState, qbPushPending, buildAdoptPatches, stripSyncNotes } from "@/lib/invoices/qbModifiedSync";
 import ChangeHistory from "../shared/ChangeHistory";
+import { createInvoiceInQB } from "@/lib/invoices/createInvoiceInQB";
 
 export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkPaid, onDelete, onConvertToInvoice, onAddToProduction, onInvoiceUpdated, onSendSuccess, readOnly = false, readOnlyReason = "", reactivateHref }) {
   const [loading, setLoading] = useState(false);
@@ -46,6 +47,28 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
   // notice clears immediately even if the parent doesn't re-render.
   const [syncedInvoice, setSyncedInvoice] = useState(null);
   const [syncingQb, setSyncingQb] = useState(false);
+  // Edit Order phase 2: push local edits to the existing QB invoice
+  // (qbSync's resync/update path). Success mirrors qb_* back and clears
+  // qb_push_pending server-side.
+  const [pushingQb, setPushingQb] = useState(false);
+  async function handlePushToQb() {
+    if (pushingQb) return;
+    setPushingQb(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Not signed in");
+      const result = await createInvoiceInQB({ base44, invoice: activeInvoice, customer, session });
+      if (!result.ok) throw new Error(result.error || "QuickBooks push failed");
+      const freshRows = await base44.entities.Invoice.filter({ shop_owner: activeInvoice.shop_owner, id: activeInvoice.id });
+      const fresh = freshRows?.[0];
+      if (fresh) { setSyncedInvoice(fresh); onInvoiceUpdated?.(fresh); }
+      setQbStatus({ type: "success", text: "QuickBooks invoice updated to match your edit." });
+    } catch (err) {
+      setQbStatus({ type: "error", text: `Push didn't complete: ${err?.message || "unknown error"}. Your local edit is safe — click Push again to retry.` });
+    } finally {
+      setPushingQb(false);
+    }
+  }
   const activeInvoice = syncedInvoice || invoice;
   const qbModified = qbModifiedState(activeInvoice);
 
@@ -644,6 +667,26 @@ export default function InvoiceDetailModal({ invoice, customer, onClose, onMarkP
           {invoice.notes && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
               <span className="font-semibold">Notes: </span>{invoice.notes}
+            </div>
+          )}
+
+          {/* Local edits awaiting a QuickBooks push (Edit Order tier 3).
+              Takes precedence over the Match banner — the divergence is
+              OURS, and Match would revert the shop's own edit. */}
+          {qbPushPending(activeInvoice) && (
+            <div className="bg-teal-50 dark:bg-teal-900/20 rounded-xl border border-teal-200 dark:border-teal-800 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-slate-700 dark:text-slate-200">
+                <span className="font-semibold">Local changes not yet in QuickBooks.</span>{" "}
+                This invoice was updated by an order edit — QuickBooks still shows the previous version.
+              </div>
+              <button
+                onClick={handlePushToQb}
+                disabled={pushingQb || readOnly}
+                title={readOnly ? readOnlyReason : undefined}
+                className="bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {pushingQb ? "Pushing…" : "Push update to QuickBooks"}
+              </button>
             </div>
           )}
 
