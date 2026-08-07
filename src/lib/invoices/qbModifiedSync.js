@@ -15,7 +15,22 @@ const centsDelta = (a, b) => Math.abs(Number((Number(a) - Number(b)).toFixed(2))
  * Does this row's as-sold total disagree with QB's mirrored total?
  * Rows never mirrored (qb_total null) are never "modified".
  */
+/**
+ * Direction guard (Edit Order phase 2). When a tier-3 order edit updated
+ * the local invoice, LOCAL truth is newer than QuickBooks — the exact
+ * inverse of the Match flow. While the push is pending, the Match banner
+ * must not render (it would tell the shop to revert their own edit);
+ * the Push banner takes precedence.
+ */
+export function qbPushPending(row) {
+  return row?.qb_push_pending === true && row?.qb_invoice_id != null;
+}
+
 export function qbModifiedState(row) {
+  // Push-pending suppresses "modified in QB": the divergence is OURS.
+  if (qbPushPending(row)) {
+    return { modified: false, localTotal: null, qbTotal: null, delta: 0 };
+  }
   if (!row || row.qb_total == null || row.total == null) {
     return { modified: false, localTotal: null, qbTotal: null, delta: 0 };
   }

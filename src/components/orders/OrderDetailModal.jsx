@@ -180,7 +180,7 @@ export default function OrderDetailModal({
   const canEditOrder =
     showMoney &&
     ["shop", "admin", "manager"].includes(authUser?.role) &&
-    editTier.tier <= EDIT_TIERS.INVOICED;
+    editTier.tier <= EDIT_TIERS.IN_QB; // phase 2: QB-invoiced orders edit + push
   // Shop-configured press list (Account → Production Setup) + this
   // shop's employees, used to populate the two Assigned dropdowns
   // below the cost fields. Empty arrays just mean the dropdown shows
@@ -632,6 +632,7 @@ export default function OrderDetailModal({
       >
         <OrderDetailHeader
           order={order}
+          qbPushPending={relatedInvoice?.qb_push_pending === true}
           displayClient={displayClient}
           displayJobTitle={displayJobTitle}
           artworkFiles={artworkFiles}

@@ -27,10 +27,27 @@ export function getOrderEditTier(order, linkedInvoice) {
     return { tier: EDIT_TIERS.PAID_OR_DONE, reason: "This order's invoice is paid. Editing paid work arrives with the billing policies (phase 3)." };
   }
   if (linkedInvoice?.qb_invoice_id) {
-    return { tier: EDIT_TIERS.IN_QB, reason: "This order's invoice is in QuickBooks. Pushing edits to QB arrives in phase 2 — until then, edit the invoice via QuickBooks or keep production fields here." };
+    // Phase 2: tier 3 is EDITABLE — money edits update the local invoice
+    // and mark a push pending; the save flow offers the explicit "Push
+    // update to QuickBooks" step (design). Customer switch stays blocked:
+    // a QB invoice belongs to a QB customer (void+recreate is phase 3).
+    return { tier: EDIT_TIERS.IN_QB, reason: null };
   }
   if (linkedInvoice) return { tier: EDIT_TIERS.INVOICED, reason: null };
   return { tier: EDIT_TIERS.UNBILLED, reason: null };
+}
+
+/**
+ * What each tier permits. Tier 3's customer lock is the one asymmetry:
+ * the QB invoice belongs to a QB customer — switching means void +
+ * recreate in QuickBooks (phase 3).
+ */
+export function tierCapabilities(tier) {
+  return {
+    canEdit: tier <= EDIT_TIERS.IN_QB,
+    canSwitchCustomer: tier <= EDIT_TIERS.INVOICED,
+    pushRequired: tier === EDIT_TIERS.IN_QB,
+  };
 }
 
 // ── Production guards ───────────────────────────────────────────────────────
@@ -174,11 +191,14 @@ export function buildEditPatches({ order, edited, linkedInvoice, quote, quoteSyn
   };
 
   let invoicePatch = null;
-  if (linkedInvoice && !linkedInvoice.qb_invoice_id && !linkedInvoice.paid) {
-    // Tier 2 — DECIDED: auto-update, dated shop-facing note. The note is
-    // shop-only (stripSyncNotes-style filtering keeps [date]-prefixed
-    // audit lines off customer surfaces).
+  if (linkedInvoice && !linkedInvoice.paid) {
+    // Tiers 2 AND 3 — DECIDED: auto-update the local invoice with the
+    // dated shop-facing note. Tier 3 additionally marks qb_push_pending:
+    // local truth is now NEWER than QuickBooks, and the flag both drives
+    // the "Push update" flow and suppresses the Match banner (which
+    // would tell the shop to revert their own edit).
     invoicePatch = {
+      ...(linkedInvoice.qb_invoice_id ? { qb_push_pending: true } : {}),
       line_items: edited.line_items,
       subtotal: edited.subtotal,
       tax: edited.tax,

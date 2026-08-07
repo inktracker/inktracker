@@ -1603,6 +1603,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
       ...adoptQbTaxFields,
+      // Edit Order phase 2: a successful push/resync means QuickBooks now
+      // reflects the local invoice — clear the pending-push flag set by a
+      // tier-3 order edit (unblocks the Match banner's normal behavior).
+      qb_push_pending: false,
     });
 
     if (!okQuotes && !okInvoices) {
