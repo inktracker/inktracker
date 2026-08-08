@@ -378,6 +378,16 @@ html.cap-native body {
     background: #fff;
     z-index: 30;
   }
+  /* iOS-app-on-Mac window (html.cap-macwin, set by initNativeApp): the host
+     draws a ~56pt iPhone status area inside the window but env() under-
+     reports it — use a fixed clearance instead of env() for the bar and
+     scrim so the title doesn't collide with the drawn clock. */
+  html.cap-macwin .app-topbar {
+    padding-top: calc(58px + 0.75rem);
+  }
+  html.cap-macwin body::before {
+    height: 58px;
+  }
 }
 
 /* ── Production ticket printing ─────────────────────────────────────────────
