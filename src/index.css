@@ -335,10 +335,15 @@ a[class*="font-bold"][class*="px-"]:not([class*="text-[10px]"]):not([class*="tex
 /* ── Native (Capacitor iOS) safe areas ──────────────────────────────────────
    Only applied inside the native shell (html.cap-native, set by
    src/lib/mobile/native.js). On web these rules never match, so the browser
-   layout is unchanged. Insets keep the app clear of the notch / status bar /
-   home indicator. Visual tuning happens on-device in Phase 3b. */
+   layout is unchanged.
+
+   NO padding-top here: capacitor.config.json sets ios.contentInset "always",
+   which already places scrolled content below the status bar natively.
+   Adding env(safe-area-inset-top) on top of that DOUBLE-inset the page — the
+   ~100px dead band above the header Joe hit on build 3 (2026-08-08). The
+   remaining edges keep in-flow content clear of the home indicator / notch
+   sides, which contentInset alone doesn't pad for in-flow layout. */
 html.cap-native body {
-  padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
   padding-left: env(safe-area-inset-left);
   padding-right: env(safe-area-inset-right);
