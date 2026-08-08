@@ -6,7 +6,7 @@
     "url": "https://www.inktracker.app"
   },
   "ios": {
-    "contentInset": "always",
+    "contentInset": "never",
     "backgroundColor": "#ffffff"
   },
   "plugins": {

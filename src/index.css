@@ -337,16 +337,18 @@ a[class*="font-bold"][class*="px-"]:not([class*="text-[10px]"]):not([class*="tex
    src/lib/mobile/native.js). On web these rules never match, so the browser
    layout is unchanged.
 
-   Two on-device findings from build 3 (2026-08-08):
-   1. ios.contentInset "always" does NOT inset in-flow layout — dropping the
-      CSS top padding put the header under the clock. Body padding-top is
-      the real top inset and must stay.
-   2. A bare body padding-top reads as a gray dead band above the white top
-      bar ("menu bar sits very low"). Fix: on phones the sticky top bar
-      PULLS ITSELF UP over the inset (negative margin) and pads its content
-      down instead — the white bar runs to the physical screen top like a
-      native nav bar, and stays under the clock when stuck while scrolling.
-      On md+ (iPad/desktop, no top bar) the plain body inset still applies. */
+   Measured in-app 2026-08-08 (debug readout, iPhone 17 Pro sim, env=62px):
+   - ios.contentInset "always" does NOT inset in-flow layout; the CSS env()
+     padding is the only real top inset.
+   - The negative-margin/compensating-padding trick does NOT work in WebKit:
+     with body padding-top 62 + .app-topbar margin-top -62, the bar's rect
+     still measured top=62 (margin collapsed away) while its 74px padding
+     applied — producing a gray band AND a tall padded bar stacked below it.
+   Robust arrangement, no margin games: on phones (max-md, where the sticky
+   .app-topbar exists) the body gets NO top padding and the bar alone carries
+   the inset — white bar from the physical screen top, content below the
+   clock, pins correctly when scrolling. On md+ (iPad/desktop, no top bar)
+   the plain body inset applies. */
 html.cap-native body {
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
@@ -354,9 +356,28 @@ html.cap-native body {
   padding-right: env(safe-area-inset-right);
   box-sizing: border-box;
 }
-html.cap-native .app-topbar {
-  margin-top: calc(-1 * env(safe-area-inset-top));
-  padding-top: calc(env(safe-area-inset-top) + 0.75rem); /* keep the py-3 feel */
+@media (max-width: 767px) {
+  html.cap-native body {
+    padding-top: 0;
+  }
+  html.cap-native .app-topbar {
+    padding-top: calc(env(safe-area-inset-top) + 0.75rem); /* keep the py-3 feel */
+  }
+  /* Scrolled content passes under the transparent status bar (sticky pinning
+     is defeated app-wide by the root's overflow-x-hidden — pre-existing, same
+     on web). This fixed scrim whites out the clock zone so scrolled text
+     never collides with the time/battery. Invisible at rest: it exactly
+     overlays the .app-topbar's own inset padding. */
+  html.cap-native body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top);
+    background: #fff;
+    z-index: 30;
+  }
 }
 
 /* ── Production ticket printing ─────────────────────────────────────────────
