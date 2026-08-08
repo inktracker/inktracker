@@ -1,4 +1,5 @@
 import { createPageUrl } from "@/utils";
+import { isNative } from "@/lib/mobile/native";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
@@ -110,6 +111,11 @@ export default function Layout({ children, currentPageName }) {
     // the SPA catch-all), and never subscription/permission gated — public
     // content, every role. Shown on both desktop + mobile nav.
     if (n.external) {
+      // App Store guideline 3.1.1: external items open MARKETING pages
+      // (blog/tools), which carry trial + pricing CTAs. Inside the native
+      // app that's purchase steering — the exact pattern the 1.0 rejection
+      // flagged on the billing card. Native renders no path to them.
+      if (isNative()) return null;
       const ExtIcon = ICON_MAP[n.page];
       return (
         <a
