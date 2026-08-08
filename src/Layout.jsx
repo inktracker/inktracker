@@ -335,7 +335,7 @@ export default function Layout({ children, currentPageName }) {
             cancel is scheduled with a future end date. Display only. */}
         <CancellationBanner user={user} />
         {/* Mobile header */}
-        <div className="md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 sticky top-0 z-30">
+        <div className="app-topbar md:hidden bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 sticky top-0 z-30">
           <button onClick={() => setMobileMenuOpen(true)} aria-label="Open menu" className="p-1 text-slate-500 hover:text-slate-700">
             <Menu className="w-6 h-6" />
           </button>
