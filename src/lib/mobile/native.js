@@ -127,6 +127,17 @@ function routeDeepLink(url) {
 export async function initNativeApp() {
   if (!isNative()) return;
   document.documentElement.classList.add("cap-native");
+  // "Designed for iPad" running ON A MAC (TestFlight/App Store on Apple
+  // silicon): the OS draws an iPhone-style status area inside the window but
+  // the webview under-reports env(safe-area-inset-top), so the top bar's
+  // content collides with the drawn clock (Joe, 2026-08-08). Distinguish the
+  // Mac host from a real iPad (which also reports MacIntel in desktop-content
+  // mode) by touch support: real iPads report maxTouchPoints > 0, Macs 0.
+  // CSS hook: html.cap-macwin overrides the env()-based top clearances with a
+  // fixed one sized to the drawn status area.
+  if (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) === 0) {
+    document.documentElement.classList.add("cap-macwin");
+  }
 
   try {
     const { StatusBar, Style } = await import("@capacitor/status-bar");
