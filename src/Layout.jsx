@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
-import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight, BookOpen } from "lucide-react";
+import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight, BookOpen, HardHat } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
 import OnboardingAssistant from "./components/onboarding/OnboardingAssistant";
@@ -31,12 +31,18 @@ const ICON_MAP = {
   Account: Settings,
   Resources: BookOpen,
   AdminPanel: ShieldCheck,
+  ShopFloor: HardHat,
 };
 
 const NAV = [
   { label: "Dashboard", page: "Dashboard" },
   { label: "Quotes", page: "Quotes" },
   { label: "Production", page: "Production" },
+  // Floor Mode — the same press-side view employees live in (ShopFloor),
+  // reachable by owners/managers who want the on-press experience on their
+  // own phone/tablet (Joe, 2026-08-10). Employees are already locked to
+  // /ShopFloor by the role redirect; this just gives everyone else a door in.
+  { label: "Floor Mode", page: "ShopFloor" },
   { label: "Customers", page: "Customers" },
   { label: "Inventory", page: "Inventory" },
   { label: "Invoices", page: "Invoices" },
