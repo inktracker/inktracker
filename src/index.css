@@ -378,6 +378,17 @@ html.cap-native body {
     background: #fff;
     z-index: 30;
   }
+  /* ShopFloor (html.cap-floor while mounted): the page draws its own teal
+     header instead of .app-topbar. Give that header the inset (its py-4 is
+     1rem) and recolor the status scrim to match — a white strip over the
+     teal header is exactly the "cut off by the header" bug (Joe,
+     2026-08-10). teal-600 is the brand forest green from tailwind.config. */
+  html.cap-native.cap-floor .floor-header {
+    padding-top: calc(env(safe-area-inset-top) + 1rem);
+  }
+  html.cap-native.cap-floor body::before {
+    background: #3a7050;
+  }
   /* iOS-app-on-Mac window (html.cap-macwin, set by initNativeApp): the host
      draws a ~56pt iPhone status area inside the window but env() under-
      reports it — use a fixed clearance instead of env() for the bar and

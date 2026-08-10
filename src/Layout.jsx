@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
-import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight, BookOpen, HardHat } from "lucide-react";
+import { Home, FileText, Package, Users, Archive, Receipt, Wand2, Code2, Settings, BarChart2, ShieldCheck, Menu, X, Palette, Lock, Truck, ChevronDown, ChevronRight, BookOpen, Pencil } from "lucide-react";
 import GlobalSearch from "./components/GlobalSearch";
 import NotificationBell from "./components/NotificationBell";
 import OnboardingAssistant from "./components/onboarding/OnboardingAssistant";
@@ -31,7 +31,7 @@ const ICON_MAP = {
   Account: Settings,
   Resources: BookOpen,
   AdminPanel: ShieldCheck,
-  ShopFloor: HardHat,
+  ShopFloor: Pencil,
 };
 
 const NAV = [
