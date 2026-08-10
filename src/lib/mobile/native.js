@@ -138,6 +138,32 @@ export async function initNativeApp() {
   if (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) === 0) {
     document.documentElement.classList.add("cap-macwin");
   }
+  // TEMP diagnostics (2026-08-08, remove after Mac-window debugging): beacon
+  // layout facts to a localhost listener when one is running on the host.
+  // 127.0.0.1 is a trustworthy origin (mixed-content exempt) and this fails
+  // silently everywhere a listener isn't running.
+  setTimeout(() => {
+    try {
+      const probe = document.createElement("div");
+      probe.style.cssText = "position:absolute;height:env(safe-area-inset-top);width:1px;visibility:hidden";
+      document.body.appendChild(probe);
+      const envTop = probe.getBoundingClientRect().height;
+      probe.remove();
+      const bar = document.querySelector(".app-topbar");
+      const d = {
+        env: envTop,
+        barTop: bar ? Math.round(bar.getBoundingClientRect().top) : null,
+        barPT: bar ? getComputedStyle(bar).paddingTop : null,
+        cls: document.documentElement.className,
+        ua: navigator.userAgent,
+        platform: navigator.platform,
+        touch: navigator.maxTouchPoints,
+        w: window.innerWidth, h: window.innerHeight,
+        sw: screen.width, sh: screen.height,
+      };
+      fetch("http://127.0.0.1:8642/diag?" + encodeURIComponent(JSON.stringify(d))).catch(() => {});
+    } catch { /* diagnostics only */ }
+  }, 4000);
 
   try {
     const { StatusBar, Style } = await import("@capacitor/status-bar");
