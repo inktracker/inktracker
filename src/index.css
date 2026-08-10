@@ -389,6 +389,15 @@ html.cap-native body {
   html.cap-native.cap-floor body::before {
     background: #3a7050;
   }
+  /* The mobile slide-out drawer is position:fixed — it ignores every body
+     inset, so its logo row rendered under the clock (Joe, 2026-08-10).
+     Give the panel itself the top inset. */
+  html.cap-native .app-drawer {
+    padding-top: env(safe-area-inset-top);
+  }
+  html.cap-macwin .app-drawer {
+    padding-top: 58px; /* Mac-hosted window: env() under-reports; match the topbar/scrim clearance */
+  }
   /* iOS-app-on-Mac window (html.cap-macwin, set by initNativeApp): the host
      draws a ~56pt iPhone status area inside the window but env() under-
      reports it — use a fixed clearance instead of env() for the bar and
