@@ -177,6 +177,17 @@ export default function ShopFloor() {
   // they can expand history when they actually need it.
   const updatesStorageKey = selected?.id ? `shopfloor-updates-collapsed-${selected.id}` : null;
   const [updatesCollapsed, setUpdatesCollapsed] = useState(true);
+  // Native shell (Capacitor): ShopFloor draws its own teal header instead of
+  // the Layout .app-topbar, so it needs the same safe-area treatment — and
+  // the global white status-bar scrim (html.cap-native body::before) must
+  // turn teal here or it paints a white strip over the header. cap-floor on
+  // <html> scopes both rules (see index.css); cleanup on unmount restores
+  // the normal chrome for the rest of the app.
+  useEffect(() => {
+    document.documentElement.classList.add("cap-floor");
+    return () => document.documentElement.classList.remove("cap-floor");
+  }, []);
+
   useEffect(() => {
     if (!updatesStorageKey) return;
     try {
@@ -607,7 +618,7 @@ export default function ShopFloor() {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col">
       {/* Header */}
-      <header className="bg-teal-600 text-white px-5 py-4 flex items-center justify-between sticky top-0 z-20 shadow-lg">
+      <header className="floor-header bg-teal-600 text-white px-5 py-4 flex items-center justify-between sticky top-0 z-20 shadow-lg">
         <div className="flex items-center gap-3">
           <Package className="w-7 h-7" />
           <div>
