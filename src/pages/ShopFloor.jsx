@@ -619,9 +619,23 @@ export default function ShopFloor() {
           <button onClick={handleRefresh} className="p-2 hover:bg-teal-500 rounded-lg transition">
             <RefreshCw className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} />
           </button>
-          <button onClick={handleLogout} className="p-2 hover:bg-teal-500 rounded-lg transition">
-            <LogOut className="w-5 h-5" />
-          </button>
+          {/* Employees live here — their exit is sign-out. Owners/managers
+              arrive via the "Floor Mode" nav item (2026-08-10) and ShopFloor
+              covers the whole viewport, so without this they'd have NO way
+              back except signing out. Give them an explicit exit instead. */}
+          {user && user.role !== "employee" ? (
+            <button
+              onClick={() => { window.location.href = "/Dashboard"; }}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-teal-500 rounded-lg transition text-sm font-semibold"
+            >
+              <LogOut className="w-5 h-5" />
+              Exit Floor Mode
+            </button>
+          ) : (
+            <button onClick={handleLogout} className="p-2 hover:bg-teal-500 rounded-lg transition">
+              <LogOut className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </header>
 
