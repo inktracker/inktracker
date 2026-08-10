@@ -356,7 +356,7 @@ export default function Layout({ children, currentPageName }) {
         {mobileMenuOpen && (
           <div className="md:hidden fixed inset-0 z-40">
             <div className="absolute inset-0 bg-slate-900/50" onClick={() => setMobileMenuOpen(false)} />
-            <div className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl flex flex-col">
+            <div className="app-drawer absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl flex flex-col">
               <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5 min-w-0">
                   {logoUrl ? (
