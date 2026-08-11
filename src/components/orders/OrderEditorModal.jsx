@@ -15,6 +15,7 @@ import { useState, useMemo, useEffect } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import LineItemEditor from "../quotes/LineItemEditor";
+import JobFeesSection from "../quotes/JobFeesSection";
 import {
   calcLinkedLinePrice,
   buildLinkedQtyMap,
@@ -25,6 +26,7 @@ import {
   newLineItem,
 } from "../shared/pricing";
 import { buildAddonsByScope } from "@/lib/pricing/extrasScopes";
+import { normalizeAdditionalCharges } from "@/lib/pricing/additionalCharges";
 import { customerSnapshotPatch } from "@/lib/quotes/customerSwitch";
 import { createInvoiceInQB } from "@/lib/invoices/createInvoiceInQB";
 import {
@@ -69,6 +71,12 @@ export default function OrderEditorModal({ order, customers: customersProp, link
     due_date: order.due_date || "",
     job_title: order.job_title || "",
     notes: order.notes || "",
+    // Fee fields (Kato: "I can't access any extra charges"). setup_total is
+    // the flat snapshot dollar amount — the per-quote knobs behind it
+    // (skips/override/reorder) aren't carried onto orders, so the honest
+    // edit here is the amount itself, not a recompute from shop config.
+    setup_total: Number(order.setup_total) || 0,
+    additional_charges: JSON.parse(JSON.stringify(order.additional_charges || [])),
   }));
   const [saving, setSaving] = useState(false);
   // Pending floor discrepancy marks (decision #2): recent "Reported a
@@ -102,25 +110,43 @@ export default function OrderEditorModal({ order, customers: customersProp, link
   // Deliberate recompute — the edit is a new agreement. Same engine and
   // extras resolution the rest of the app prices with; fresh _ppp /
   // _lineTotal stamps become the new as-sold snapshot. Lives in
-  // editOrderEngine (unit-tested) because it must honor the clientPpp
-  // per-piece override exactly like the quote save path — the modal's
-  // original inline copy didn't, silently re-stamping engine prices over
-  // typed ones (Kato, 2026-08-11).
-  function recomputeMoney(lines) {
+  // editOrderEngine (unit-tested): it honors the clientPpp per-piece
+  // override exactly like the quote save path (Kato, 2026-08-11) and
+  // composes the DRAFT's fees (now editable here) through the app-wide
+  // taxable/non-taxable split.
+  function recomputeMoney(lines, fees) {
     return recomputeOrderMoney(lines, order, {
       calcLinkedLinePrice,
       buildLinkedQtyMap,
       getLineExtras,
       getQty,
-    });
+    }, fees);
   }
+
+  // Live totals: drives the job-fee percent sync, the fee sections, and
+  // the summary strip — the same numbers the save will stamp.
+  const live = useMemo(
+    () => recomputeMoney(draft.line_items, draft),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [draft],
+  );
 
   async function handleSave() {
     if (saving || blockers.length > 0) return;
     setSaving(true);
     try {
-      const { stamped, subtotal, tax, total } = recomputeMoney(draft.line_items);
-      const edited = { ...draft, line_items: stamped, subtotal, tax, total };
+      const { stamped, subtotal, setup, tax, total } = recomputeMoney(draft.line_items, draft);
+      const edited = {
+        ...draft,
+        line_items: stamped,
+        subtotal,
+        setup_total: setup,
+        // Normalized (half-typed rows dropped) so every viewer renders the
+        // same itemized lines — mirrors the quote editor's save.
+        additional_charges: normalizeAdditionalCharges(draft.additional_charges),
+        tax,
+        total,
+      };
 
       const warnings = orderEditWarnings(order, stamped, { sourcePO });
       const delta = Number((total - Number(order.total || 0)).toFixed(2));
@@ -301,6 +327,148 @@ export default function OrderEditorModal({ order, customers: customersProp, link
           >
             + Add Garment Group
           </button>
+
+          {/* Setup / screen fees — the order carries the SNAPSHOT amount only
+              (the per-quote skip/override knobs don't convert), so the edit
+              is the dollar amount itself. Zero it to waive screens. */}
+          <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5">
+            <div className="flex items-center justify-between text-sm gap-3">
+              <div className="min-w-0">
+                <span className="text-slate-500 font-semibold">Setup / screen fees</span>
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  Flat amount from the original quote — set to 0 to remove.
+                </p>
+              </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <span className="text-slate-500 text-xs">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={draft.setup_total}
+                  onChange={(e) => update({ setup_total: e.target.value === "" ? 0 : Math.max(0, parseFloat(e.target.value) || 0) })}
+                  className="w-24 text-right text-sm border border-slate-200 dark:border-slate-700 rounded px-2 py-1 bg-white dark:bg-slate-900 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Job fees — per_job add-on toggles, same section the quote editor
+              uses (writes tagged rows into additional_charges). */}
+          <JobFeesSection
+            addonsByScope={addonsByScope}
+            additionalCharges={draft.additional_charges}
+            subtotal={live.subtotal}
+            onChange={(next) => update({ additional_charges: next })}
+          />
+
+          {/* Additional fees — one-off named charges (shipping, rush, screen
+              fee, …) with amount + taxable toggle. Mirrors the quote editor. */}
+          {(() => {
+            const charges = Array.isArray(draft.additional_charges) ? draft.additional_charges : [];
+            const updateCharge = (idx, patch) =>
+              update({ additional_charges: charges.map((c, i) => (i === idx ? { ...c, ...patch } : c)) });
+            const addCharge = () =>
+              // TAX-04: new charges default TAXABLE (same rationale as the
+              // quote editor — over-collecting is the shop-safe error).
+              update({ additional_charges: [...charges, { id: `ac-${Date.now()}`, label: "", amount: "", taxable: true }] });
+            const removeCharge = (idx) =>
+              update({ additional_charges: charges.filter((_, i) => i !== idx) });
+            return (
+              <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-500 font-semibold">Additional Fees</span>
+                  <button
+                    type="button"
+                    onClick={addCharge}
+                    className="text-xs text-teal-600 font-semibold hover:text-teal-800"
+                  >
+                    + Add fee
+                  </button>
+                </div>
+                {charges.length === 0 && (
+                  <p className="text-xs text-slate-500">Add shipping, rush, or other one-off charges.</p>
+                )}
+                {charges.map((c, idx) => (
+                  <div key={c.id || idx} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. Estimated shipping"
+                      value={c.label ?? ""}
+                      onChange={(e) => updateCharge(idx, { label: e.target.value })}
+                      className="flex-1 min-w-0 text-xs border border-slate-200 dark:border-slate-700 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                    />
+                    <div className="flex items-center gap-0.5">
+                      <span className="text-slate-500 text-xs">$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={c.amount ?? ""}
+                        onChange={(e) => updateCharge(idx, { amount: e.target.value })}
+                        className="w-20 text-right text-xs border border-slate-200 dark:border-slate-700 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-teal-300"
+                      />
+                    </div>
+                    <label
+                      className="flex items-center gap-1 text-[11px] text-slate-500 cursor-pointer select-none"
+                      title="Apply sales tax to this charge"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!c.taxable}
+                        onChange={(e) => updateCharge(idx, { taxable: e.target.checked })}
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600"
+                      />
+                      Tax
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeCharge(idx)}
+                      className="text-slate-300 hover:text-rose-500 text-lg leading-none px-1"
+                      title="Remove fee"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {live.addl.total > 0 && (
+                  <div className="flex items-center justify-between text-xs border-t border-slate-100 dark:border-slate-700 pt-1.5">
+                    <span className="text-slate-500">Fees subtotal</span>
+                    <span className="font-semibold text-slate-600 dark:text-slate-300">{fmtMoney(live.addl.total)}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Live totals — the same numbers Review & Save will stamp. */}
+          <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 space-y-1 text-sm">
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>Subtotal</span><span className="tabular-nums">{fmtMoney(live.subtotal)}</span>
+            </div>
+            {live.discountAmount > 0 && (
+              <div className="flex justify-between text-xs text-slate-500">
+                <span>Discount</span><span className="tabular-nums">−{fmtMoney(live.discountAmount)}</span>
+              </div>
+            )}
+            {live.setup > 0 && (
+              <div className="flex justify-between text-xs text-slate-500">
+                <span>Setup</span><span className="tabular-nums">{fmtMoney(live.setup)}</span>
+              </div>
+            )}
+            {live.addl.total > 0 && (
+              <div className="flex justify-between text-xs text-slate-500">
+                <span>Additional fees</span><span className="tabular-nums">{fmtMoney(live.addl.total)}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-xs text-slate-500">
+              <span>Tax</span><span className="tabular-nums">{fmtMoney(live.tax)}</span>
+            </div>
+            <div className="flex justify-between font-bold text-slate-800 dark:text-slate-100 border-t border-slate-200 dark:border-slate-700 pt-1">
+              <span>Total</span><span className="tabular-nums">{fmtMoney(live.total)}</span>
+            </div>
+          </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Order notes</label>

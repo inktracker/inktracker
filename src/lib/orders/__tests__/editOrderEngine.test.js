@@ -148,6 +148,41 @@ describe("buildEditPatches — decided policies", () => {
   it("reports the money delta for the confirm dialog", () => {
     expect(buildEditPatches({ order, edited, linkedInvoice: null, quote: null, today: "2026-08-06" }).moneyDelta).toBe(60);
   });
+
+  it("fee fields ride every patch: order, invoice, and sync_to_order quote", () => {
+    const charges = [{ id: "ac-1", label: "Screen fee", amount: 25, taxable: true }];
+    const withFees = { ...edited, setup_total: 40, additional_charges: charges };
+    const inv = { id: "inv1", total: 500, notes: "" };
+    const quote = { total: 500, notes: "" };
+    const { orderPatch, invoicePatch, quotePatch } = buildEditPatches({
+      order, edited: withFees, linkedInvoice: inv, quote, quoteSyncPolicy: "sync_to_order", today: "2026-08-06",
+    });
+    expect(orderPatch.setup_total).toBe(40);
+    expect(orderPatch.additional_charges).toEqual(charges);
+    expect(invoicePatch.setup_total).toBe(40);
+    expect(invoicePatch.additional_charges).toEqual(charges);
+    expect(quotePatch.setup_total).toBe(40);
+    expect(quotePatch.additional_charges).toEqual(charges);
+  });
+
+  it("removing every additional charge propagates the empty list (fee taken OFF, not left stale)", () => {
+    const feeOrder = { ...order, setup_total: 40, additional_charges: [{ id: "ac-1", label: "Screen fee", amount: 25, taxable: true }] };
+    const { orderPatch, invoicePatch } = buildEditPatches({
+      order: feeOrder,
+      edited: { ...edited, setup_total: 0, additional_charges: [] },
+      linkedInvoice: { id: "inv1", total: 500, notes: "" }, quote: null, today: "2026-08-06",
+    });
+    expect(orderPatch.setup_total).toBe(0);
+    expect(orderPatch.additional_charges).toEqual([]);
+    expect(invoicePatch.additional_charges).toEqual([]);
+  });
+
+  it("edits that don't touch fees carry the order's existing values through", () => {
+    const feeOrder = { ...order, setup_total: 40, additional_charges: [{ id: "ac-1", label: "Screen fee", amount: 25, taxable: true }] };
+    const { orderPatch } = buildEditPatches({ order: feeOrder, edited, linkedInvoice: null, quote: null, today: "2026-08-06" });
+    expect(orderPatch.setup_total).toBe(40);
+    expect(orderPatch.additional_charges).toEqual(feeOrder.additional_charges);
+  });
 });
 
 describe("editConflict (stale-write guard)", () => {
@@ -156,6 +191,11 @@ describe("editConflict (stale-write guard)", () => {
   it("flags a concurrent edit to any tracked field", () => {
     expect(editConflict(snap, { ...snap, total: 480 })).toBe(true);
     expect(editConflict(snap, { ...snap, line_items: [line({ sizes: { M: 9, L: 5 } })] })).toBe(true);
+  });
+
+  it("flags concurrent fee edits even when the total happens to match", () => {
+    expect(editConflict(snap, { ...snap, setup_total: 40 })).toBe(true);
+    expect(editConflict(snap, { ...snap, additional_charges: [{ id: "ac-1", label: "Rush", amount: 10, taxable: true }] })).toBe(true);
   });
 
   it("ignores background qb_* mirror writes (untracked fields)", () => {
@@ -209,5 +249,32 @@ describe("recomputeOrderMoney — clientPpp override (Kato 2026-08-11)", () => {
     expect(subtotal).toBe(Number((97.3 + 174).toFixed(2)));
     expect(tax).toBe(Number((subtotal * 0.1).toFixed(2)));
     expect(total).toBe(Number((subtotal + tax).toFixed(2)));
+  });
+
+  it("fees param overrides the order's own fee fields (the editable draft wins)", () => {
+    const lines = [{ sizes: { M: 10 } }]; // 174.00
+    const o = { ...order, setup_total: 40, additional_charges: [{ id: "ac-1", label: "Screen fee", amount: 25, taxable: true }], tax_rate: 10 };
+    const kept = recomputeOrderMoney(lines, o, deps);
+    expect(kept.total).toBe(Number(((174 + 40 + 25) * 1.1).toFixed(2)));
+    // Draft removed both fees → they're OUT of the new agreement.
+    const removed = recomputeOrderMoney(lines, o, deps, { setup_total: 0, additional_charges: [] });
+    expect(removed.setup).toBe(0);
+    expect(removed.addl.total).toBe(0);
+    expect(removed.total).toBe(Number((174 * 1.1).toFixed(2)));
+  });
+
+  it("taxable/non-taxable split matches the app-wide contract (non-taxable added AFTER tax)", () => {
+    const lines = [{ sizes: { M: 10 } }]; // 174.00
+    const o = { ...order, tax_rate: 10 };
+    const fees = {
+      setup_total: 0,
+      additional_charges: [
+        { id: "a", label: "Rush", amount: 50, taxable: true },
+        { id: "b", label: "Shipping", amount: 30, taxable: false },
+      ],
+    };
+    const { tax, total } = recomputeOrderMoney(lines, o, deps, fees);
+    expect(tax).toBe(Number(((174 + 50) * 0.1).toFixed(2)));
+    expect(total).toBe(Number((174 + 50 + tax + 30).toFixed(2)));
   });
 });
