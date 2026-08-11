@@ -53,7 +53,10 @@ export default function JobFeesSection({ addonsByScope, additionalCharges, subto
       { mode: addon.mode, rate: parseFloat(addon.rate) || 0 },
       subtotal
     );
-    onChange([...charges, { id, label: addon.label, amount, taxable: true }]);
+    // Taxability comes from the fee's pricing-config setting (Account →
+    // Pricing → per-job fee "Tax" checkbox). The shop can still flip it
+    // per-quote on the row this writes into Additional Fees.
+    onChange([...charges, { id, label: addon.label, amount, taxable: addon.taxable !== false }]);
   };
 
   return (

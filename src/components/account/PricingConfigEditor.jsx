@@ -177,6 +177,20 @@ export default function PricingConfigEditor({ user }) {
     });
   }
 
+  // Per-job fee taxability. Parallel map like extraBasis — absent means
+  // TAXABLE (today's behavior, and the shop-safe default: over-collecting
+  // then remitting beats silently under-collecting). Only surfaced in the
+  // editor for per_job fees: per_garment/per_print fees ride line pricing,
+  // where the whole line is taxed as usual.
+  function setExtraTaxable(key, taxable, scope) {
+    setConfig(prev => {
+      const slice = getSlice(prev, scope);
+      return setSlice(prev, scope, {
+        extraTaxable: { ...(slice.extraTaxable || {}), [key]: !!taxable },
+      });
+    });
+  }
+
   function addExtra(scope) {
     const id = `custom_${Date.now()}`;
     setConfig(prev => {
@@ -230,6 +244,7 @@ export default function PricingConfigEditor({ user }) {
         updateExtraLabel={updateExtraLabel}
         setExtraMode={setExtraMode}
         setExtraBasis={setExtraBasis}
+        setExtraTaxable={setExtraTaxable}
         updateExtra={updateExtra}
         removeExtra={removeExtra}
         addExtra={addExtra}

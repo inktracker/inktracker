@@ -18,6 +18,7 @@ export function ExtrasEditor({
   updateExtraLabel,
   setExtraMode,
   setExtraBasis,
+  setExtraTaxable,
   updateExtra,
   removeExtra,
   addExtra,
@@ -27,6 +28,7 @@ export function ExtrasEditor({
   const extraLabels = slice.extraLabels || {};
   const extraModes = slice.extraModes || {};
   const extraBasis = slice.extraBasis || {};
+  const extraTaxable = slice.extraTaxable || {};
   const title = opts.title ?? "Extra Fees";
   const description = opts.description ?? "Rename, reprice, recategorize, or remove fees. The category sets how a fee applies: per garment (× pieces), per print (× print locations × pieces), or per job (once for the whole order). Toggle $ / % for a flat amount or a percentage of the line's decoration cost.";
   return (
@@ -56,6 +58,24 @@ export function ExtrasEditor({
                 <option value="per_print">Per print</option>
                 <option value="per_job">Per job</option>
               </select>
+              {/* Taxability — per-job fees only (they bill as whole-order
+                  additional charges; digitizing/shipping-style fees are
+                  non-taxable in many states). Absent from the map = taxable,
+                  so existing fees keep charging tax exactly as before. */}
+              {basis === "per_job" && (
+                <label
+                  className="flex items-center gap-1 shrink-0 text-[10px] text-slate-500 cursor-pointer select-none"
+                  title="Apply sales tax when this fee is added to a quote"
+                >
+                  <input
+                    type="checkbox"
+                    checked={extraTaxable[key] !== false}
+                    onChange={e => setExtraTaxable(key, e.target.checked, scope)}
+                    className="w-3.5 h-3.5 rounded border-slate-300 text-teal-600"
+                  />
+                  Tax
+                </label>
+              )}
               <div className="flex shrink-0 border border-slate-200 rounded overflow-hidden">
                 <button
                   type="button"
