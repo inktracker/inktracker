@@ -22,6 +22,12 @@ export const MANAGER_SECTIONS = [
   { key: "Mockups",     label: "Mockups" },
   { key: "Team",        label: "Team roster (Admin panel — view only)" },
   { key: "Pricing",     label: "Pricing settings (Account → Pricing)" },
+  // Pseudo-section (like Pricing): gates the Edit Order affordance on
+  // converted orders — line/pricing-level changes, not floor status moves.
+  // Absent from a stored map = allowed, so existing managers keep today's
+  // access until the owner unticks it (Joe, 2026-08-11: "edits only by
+  // those authorized by the shop owner").
+  { key: "OrderEditing", label: "Edit converted orders (changes lines & pricing)" },
 ];
 
 const SECTION_KEYS = new Set(MANAGER_SECTIONS.map((s) => s.key));
@@ -92,7 +98,7 @@ export const ROLE_TEMPLATES = [
     key: "front_office",
     label: "Front office / CSR",
     blurb: "Quotes, customers, and production visibility. No financials or settings.",
-    permissions: deny("Invoices", "Performance", "Pricing", "Team"),
+    permissions: deny("Invoices", "Performance", "Pricing", "Team", "OrderEditing"),
     hideMoney: false, // CSRs quote — they need prices.
   },
   {

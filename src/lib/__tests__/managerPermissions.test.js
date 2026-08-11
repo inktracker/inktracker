@@ -122,3 +122,23 @@ describe("canSeeMoney", () => {
     expect(canSeeMoney(undefined)).toBe(true);
   });
 });
+
+describe("OrderEditing pseudo-section (owner-authorized order edits)", () => {
+  it("absent from the map = allowed (existing managers unchanged)", () => {
+    expect(managerCanAccess({ role: "manager", manager_permissions: { Quotes: true } }, "OrderEditing")).toBe(true);
+    expect(managerCanAccess({ role: "manager", manager_permissions: null }, "OrderEditing")).toBe(true);
+  });
+  it("explicitly false = denied", () => {
+    expect(managerCanAccess({ role: "manager", manager_permissions: { OrderEditing: false } }, "OrderEditing")).toBe(false);
+  });
+  it("owners/admins always pass", () => {
+    expect(managerCanAccess({ role: "shop" }, "OrderEditing")).toBe(true);
+    expect(managerCanAccess({ role: "admin", manager_permissions: { OrderEditing: false } }, "OrderEditing")).toBe(true);
+  });
+  it("the CSR template denies it; production lead and full partner do not", () => {
+    const byKey = Object.fromEntries(ROLE_TEMPLATES.map((t) => [t.key, t]));
+    expect(byKey.front_office.permissions.OrderEditing).toBe(false);
+    expect(byKey.production_lead.permissions.OrderEditing).toBeUndefined();
+    expect(byKey.full.permissions).toBeNull();
+  });
+});
