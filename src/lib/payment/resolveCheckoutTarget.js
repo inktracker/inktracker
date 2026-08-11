@@ -24,6 +24,9 @@
  * rejected at the host level.
  */
 
+// LOCKSTEP: the nightly pay-link monitor (supabase/functions/_shared/
+// qbPayLinkAlert.js) mirrors these patterns server-side and emails the
+// operator when a stored link stops matching. Update both together.
 // connect.intuit.com hosts both real and fake payment URLs — distinguish by path.
 // Intuit changed the share-link shape (~2026-08-06): new links mint as the
 // short form /t/scs-… instead of /portal/app/CommerceNetwork/view/scs-….
