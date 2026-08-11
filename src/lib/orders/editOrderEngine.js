@@ -168,6 +168,50 @@ export function appendNote(existingNotes, line) {
 }
 
 /**
+ * Recompute an edited order's money with fresh engine stamps — EXCEPT
+ * lines carrying a clientPpp override (the "price per item" box), which
+ * must win exactly as they do on the quote save path (QuoteEditorModal
+ * stamping + the QB line builder, pinned by pricingEdgeCases QI1).
+ * Kato 2026-08-11: typed $9.73/pc for customer-supplied shirts, save
+ * re-stamped the engine's $17.40 and QB billed it.
+ *
+ * `deps` injects the pricing helpers (calcLinkedLinePrice,
+ * buildLinkedQtyMap, getLineExtras, getQty) so this stays unit-testable
+ * without the module-global pricing config.
+ */
+export function recomputeOrderMoney(lines, order, deps) {
+  const { calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty } = deps;
+  const linkedQtyMap = buildLinkedQtyMap(lines);
+  let subtotal = 0;
+  const stamped = lines.map((li) => {
+    const override = Number(li?.clientPpp);
+    const hasOverride = Number.isFinite(override) && override > 0;
+    if (hasOverride) {
+      const qty = getQty(li) || 0;
+      const lineTotal = Number((override * qty).toFixed(2));
+      subtotal += lineTotal;
+      // Override is the all-in per-piece agreement: no separate rush fee,
+      // mirroring the quote save (rushFee forced 0 under override).
+      return { ...li, _ppp: override, _lineTotal: lineTotal, _rushFee: 0 };
+    }
+    const r = calcLinkedLinePrice(li, order.rush_rate, getLineExtras(li, order), undefined, linkedQtyMap);
+    const lineTotal = Number(r?.lineTotal || 0);
+    subtotal += lineTotal;
+    return { ...li, _ppp: r?.ppp ?? li._ppp, _lineTotal: lineTotal };
+  });
+  subtotal = Number(subtotal.toFixed(2));
+  const discount = Number(order.discount) || 0;
+  const isFlat = order.discount_type === "flat";
+  const afterDisc = discount > 0 ? (isFlat ? Math.max(0, subtotal - discount) : subtotal * (1 - discount / 100)) : subtotal;
+  const setup = Number(order.setup_total) || 0;
+  const addl = (order.additional_charges || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const taxable = afterDisc + setup + addl;
+  const tax = Number((taxable * ((Number(order.tax_rate) || 0) / 100)).toFixed(2));
+  const total = Number((taxable + tax).toFixed(2));
+  return { stamped, subtotal, tax, total };
+}
+
+/**
  * All patches an order edit produces. Money fields for `edited` arrive
  * ALREADY recomputed by the caller (the modal runs the pricing engine);
  * this function decides where they propagate.
