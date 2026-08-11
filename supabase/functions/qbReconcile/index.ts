@@ -92,6 +92,11 @@ import {
   buildGrowthReportText,
   buildGrowthReportSubject,
 } from "../_shared/growthReport.js";
+import {
+  summarizePayLinkHealth,
+  shouldSendPayLinkAlert,
+  buildPayLinkAlertText,
+} from "../_shared/qbPayLinkAlert.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -1044,6 +1049,70 @@ async function scanAndAlertEmailHealth(adminClient: any): Promise<{ failed: numb
   }
 }
 
+// ── Pay-link validation monitor ─────────────────────────────────────
+// Re-validates recent QB payment links against the frontend's known-good
+// patterns (lockstep mirror in _shared/qbPayLinkAlert.js). When Intuit
+// changes their share-link format — as they did 2026-08-06 — customers
+// silently lose the Approve & Pay button; this turns that into a
+// next-morning operator email instead of a days-later report from a shop.
+// Same contract as the scans above: 24h dedup via qb_event_log, failures
+// swallowed, never blocks the real work.
+async function scanAndAlertPayLinks(adminClient: any): Promise<{ failing: number; alerted: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { failing: 0, alerted: false };
+  try {
+    const sinceDays = 4;
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+    const { data: rows, error } = await adminClient
+      .from("quotes")
+      .select("quote_id, shop_owner, qb_payment_link")
+      .not("qb_payment_link", "is", null)
+      .gte("created_at", since)
+      .limit(500);
+    if (error) {
+      console.warn("[qbReconcile] pay-link scan query failed:", error.message);
+      return { failing: 0, alerted: false };
+    }
+    const summary = summarizePayLinkHealth(rows ?? []);
+    if (!shouldSendPayLinkAlert(summary)) return { failing: 0, alerted: false };
+
+    const dedupSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recent } = await adminClient
+      .from("qb_event_log")
+      .select("id")
+      .eq("action", "paylink_alert")
+      .gte("created_at", dedupSince)
+      .limit(1)
+      .maybeSingle();
+    if (recent) return { failing: summary.failing.length, alerted: false };
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: `InkTracker <${ALERT_FROM_EMAIL}>`,
+        to: [OPERATOR_ALERT_EMAIL],
+        subject: `[InkTracker] Pay links failing validation — ${summary.failing.length} quote(s) show Approve-only`,
+        text: buildPayLinkAlertText(summary, { sinceDays }),
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[qbReconcile] pay-link alert send failed: ${res.status} ${await res.text()}`);
+      return { failing: summary.failing.length, alerted: false };
+    }
+    await logEvent(adminClient, {
+      shop_owner:    "__system__",
+      action:        "paylink_alert",
+      direction:     "outbound",
+      status:        "success",
+      response_body: { failing: summary.failing.length, checked: summary.checked },
+    });
+    return { failing: summary.failing.length, alerted: true };
+  } catch (err) {
+    console.warn("[qbReconcile] pay-link scan exception:", (err as Error)?.message);
+    return { failing: 0, alerted: false };
+  }
+}
+
 // ── Weekly growth report (Monday runs only) ─────────────────────────
 // Funnel summary → operator: signups, trial activation, trials ending,
 // expired-without-converting, paying-shop count. Piggybacks this cron
@@ -1155,6 +1224,8 @@ Deno.serve(async (req) => {
   console.error(`[qbReconcile] email-health: ${emailHealth.failed} failed send(s) in 24h, alerted=${emailHealth.alerted}`);
   const growthReport = await scanAndSendGrowthReport(adminClient);
   console.error(`[qbReconcile] growth-report: sent=${growthReport.sent}`);
+  const payLinks = await scanAndAlertPayLinks(adminClient);
+  console.error(`[qbReconcile] pay-links: ${payLinks.failing} failing validation, alerted=${payLinks.alerted}`);
 
   try {
     // Find every profile with QB connected, LEAST-recently-reconciled
