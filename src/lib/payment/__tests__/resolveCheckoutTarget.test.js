@@ -128,3 +128,18 @@ describe("resolveCheckoutTarget", () => {
     expect(r.provider).toBe("stripe");
   });
 });
+
+describe("Intuit short share links (format flip ~2026-08-06)", () => {
+  it("accepts the new /t/scs-… short form", () => {
+    expect(isQBPaymentLink("https://connect.intuit.com/t/scs-v1-abc123-1")).toBe(true);
+  });
+  it("still accepts the long CommerceNetwork form", () => {
+    expect(isQBPaymentLink("https://connect.intuit.com/portal/app/CommerceNetwork/view/scs-v1-abc123")).toBe(true);
+  });
+  it("still rejects the legacy login-required portal path", () => {
+    expect(isQBPaymentLink("https://connect.intuit.com/portal/asei/CommerceNetwork/consumer/view-invoice?x=1")).toBe(false);
+  });
+  it("rejects other /t/ paths that are not scs tokens", () => {
+    expect(isQBPaymentLink("https://connect.intuit.com/t/login")).toBe(false);
+  });
+});

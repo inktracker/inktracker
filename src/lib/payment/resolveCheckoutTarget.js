@@ -25,7 +25,14 @@
  */
 
 // connect.intuit.com hosts both real and fake payment URLs — distinguish by path.
-const QB_SHARE_LINK_PATH_PREFIX = "/portal/app/CommerceNetwork/view/scs-";
+// Intuit changed the share-link shape (~2026-08-06): new links mint as the
+// short form /t/scs-… instead of /portal/app/CommerceNetwork/view/scs-….
+// Both are the same anonymous-pay scs-v1 token; accept either. (Discovered
+// when every QB quote sent after the flip fell back to Approve-only.)
+const QB_SHARE_LINK_PATH_PREFIXES = [
+  "/portal/app/CommerceNetwork/view/scs-",
+  "/t/scs-",
+];
 
 const QB_PAYMENT_HOST_PATTERNS = [
   /(^|\.)payments\.intuit\.com$/i,
@@ -57,7 +64,7 @@ export function isQBPaymentLink(url) {
   // `/portal/asei/CommerceNetwork/consumer/view-invoice` fake URL falls
   // through and gets rejected here.
   if (host === "connect.intuit.com") {
-    return parsed.pathname.startsWith(QB_SHARE_LINK_PATH_PREFIX);
+    return QB_SHARE_LINK_PATH_PREFIXES.some((p) => parsed.pathname.startsWith(p));
   }
 
   if (QB_LOGIN_HOSTS.includes(host)) return false;
