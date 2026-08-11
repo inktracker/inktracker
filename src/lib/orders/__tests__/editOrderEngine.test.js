@@ -10,6 +10,7 @@ import {
   tierCapabilities,
   editConflict,
   appendNote,
+  recomputeOrderMoney,
 } from "../editOrderEngine";
 
 const line = (over = {}) => ({
@@ -166,5 +167,47 @@ describe("appendNote", () => {
   it("accumulates, never overwrites", () => {
     expect(appendNote("", "[d] a")).toBe("[d] a");
     expect(appendNote("prior", "[d] a")).toBe("prior\n[d] a");
+  });
+});
+
+
+describe("recomputeOrderMoney — clientPpp override (Kato 2026-08-11)", () => {
+  // Stub engine: always prices $17.40/pc so an ignored override is loud.
+  const deps = {
+    calcLinkedLinePrice: (li) => {
+      const qty = Object.values(li.sizes || {}).reduce((s, n) => s + n, 0);
+      return { ppp: 17.4, lineTotal: 17.4 * qty, rushFee: 0 };
+    },
+    buildLinkedQtyMap: () => ({}),
+    getLineExtras: () => ({}),
+    getQty: (li) => Object.values(li.sizes || {}).reduce((s, n) => s + n, 0),
+  };
+  const order = { rush_rate: 0, discount: 0, discount_type: "percent", setup_total: 0, additional_charges: [], tax_rate: 0 };
+
+  it("a typed per-piece price survives save (engine does not re-stamp it)", () => {
+    const lines = [{ sizes: { M: 10 }, clientPpp: 9.73 }];
+    const { stamped, subtotal, total } = recomputeOrderMoney(lines, order, deps);
+    expect(stamped[0]._ppp).toBe(9.73);
+    expect(stamped[0]._lineTotal).toBe(97.3);
+    expect(stamped[0]._rushFee).toBe(0);
+    expect(subtotal).toBe(97.3);
+    expect(total).toBe(97.3);
+  });
+
+  it("lines without an override still get fresh engine stamps", () => {
+    const lines = [{ sizes: { M: 10 } }, { sizes: { L: 4 }, clientPpp: 0 }];
+    const { stamped, subtotal } = recomputeOrderMoney(lines, order, deps);
+    expect(stamped[0]._ppp).toBe(17.4);
+    expect(stamped[1]._ppp).toBe(17.4); // clientPpp 0 = no override
+    expect(subtotal).toBe(Number((17.4 * 14).toFixed(2)));
+  });
+
+  it("mixed lines: override and engine prices sum with discount + tax", () => {
+    const lines = [{ sizes: { M: 10 }, clientPpp: 9.73 }, { sizes: { L: 10 } }];
+    const o = { ...order, tax_rate: 10 };
+    const { subtotal, tax, total } = recomputeOrderMoney(lines, o, deps);
+    expect(subtotal).toBe(Number((97.3 + 174).toFixed(2)));
+    expect(tax).toBe(Number((subtotal * 0.1).toFixed(2)));
+    expect(total).toBe(Number((subtotal + tax).toFixed(2)));
   });
 });

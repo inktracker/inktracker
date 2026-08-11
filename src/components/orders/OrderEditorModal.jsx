@@ -35,6 +35,7 @@ import {
   orderEditWarnings,
   buildEditPatches,
   editConflict,
+  recomputeOrderMoney,
 } from "@/lib/orders/editOrderEngine";
 import { todayInShopTz } from "@/lib/shopTimezone";
 import { notify } from "@/lib/notify";
@@ -100,26 +101,18 @@ export default function OrderEditorModal({ order, customers: customersProp, link
 
   // Deliberate recompute — the edit is a new agreement. Same engine and
   // extras resolution the rest of the app prices with; fresh _ppp /
-  // _lineTotal stamps become the new as-sold snapshot.
+  // _lineTotal stamps become the new as-sold snapshot. Lives in
+  // editOrderEngine (unit-tested) because it must honor the clientPpp
+  // per-piece override exactly like the quote save path — the modal's
+  // original inline copy didn't, silently re-stamping engine prices over
+  // typed ones (Kato, 2026-08-11).
   function recomputeMoney(lines) {
-    const linkedQtyMap = buildLinkedQtyMap(lines);
-    let subtotal = 0;
-    const stamped = lines.map((li) => {
-      const r = calcLinkedLinePrice(li, order.rush_rate, getLineExtras(li, order), undefined, linkedQtyMap);
-      const lineTotal = Number(r?.lineTotal || 0);
-      subtotal += lineTotal;
-      return { ...li, _ppp: r?.ppp ?? li._ppp, _lineTotal: lineTotal };
+    return recomputeOrderMoney(lines, order, {
+      calcLinkedLinePrice,
+      buildLinkedQtyMap,
+      getLineExtras,
+      getQty,
     });
-    subtotal = Number(subtotal.toFixed(2));
-    const discount = Number(order.discount) || 0;
-    const isFlat = order.discount_type === "flat";
-    const afterDisc = discount > 0 ? (isFlat ? Math.max(0, subtotal - discount) : subtotal * (1 - discount / 100)) : subtotal;
-    const setup = Number(order.setup_total) || 0;
-    const addl = (order.additional_charges || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
-    const taxable = afterDisc + setup + addl;
-    const tax = Number((taxable * ((Number(order.tax_rate) || 0) / 100)).toFixed(2));
-    const total = Number((taxable + tax).toFixed(2));
-    return { stamped, subtotal, tax, total };
   }
 
   async function handleSave() {
