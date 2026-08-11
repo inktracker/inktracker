@@ -5,7 +5,7 @@
 // did, not an offer to apply it.
 
 import { useState, useEffect } from "react";
-import { History, Building2, Laptop, Cog } from "lucide-react";
+import { History, Building2, Laptop, Cog, ChevronRight, ChevronDown } from "lucide-react";
 import { base44 } from "@/api/supabaseClient";
 
 const SOURCE_META = {
@@ -17,6 +17,10 @@ const SOURCE_META = {
 export default function ChangeHistory({ entityType, entityId, limit = 20 }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Collapsed by default (Joe, 2026-08-11): the history is reference
+  // material, not something to read on every open — the header shows the
+  // change count so it's clear there's something behind the chevron.
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,10 +49,22 @@ export default function ChangeHistory({ entityType, entityId, limit = 20 }) {
 
   return (
     <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
-      <div className="flex items-center gap-2 mb-3">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className={`w-full flex items-center gap-2 text-left ${expanded ? "mb-3" : ""}`}
+      >
         <History className="w-4 h-4 text-slate-500" />
         <div className="text-sm font-bold text-slate-900 dark:text-slate-100">History</div>
-      </div>
+        <span className="text-xs text-slate-500">
+          {entries.length} change{entries.length === 1 ? "" : "s"}
+        </span>
+        {expanded
+          ? <ChevronDown className="w-4 h-4 text-slate-400 ml-auto" />
+          : <ChevronRight className="w-4 h-4 text-slate-400 ml-auto" />}
+      </button>
+      {expanded && (
       <div className="space-y-3">
         {entries.map((e) => {
           const meta = SOURCE_META[e.source] ?? SOURCE_META.system;
@@ -79,6 +95,7 @@ export default function ChangeHistory({ entityType, entityId, limit = 20 }) {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
