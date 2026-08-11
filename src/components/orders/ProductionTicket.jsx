@@ -38,6 +38,18 @@ export default function ProductionTicket({ order, customer, shopName, stitchTier
     });
   });
 
+  // Print support without :has(): the @media print rule that hides the app
+  // behind this overlay originally keyed on body:has(.production-ticket),
+  // which older browsers (Firefox < 121, Chrome < 105) silently ignore —
+  // the whole app printed instead of the ticket (Kato, 2026-08-11). A JS-
+  // toggled body class works everywhere; the :has() rule stays as backup.
+  // The component only mounts while the ticket overlay is open, so
+  // mount/unmount maps exactly to add/remove.
+  useEffect(() => {
+    document.body.classList.add("production-ticket-open");
+    return () => document.body.classList.remove("production-ticket-open");
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {

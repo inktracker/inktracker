@@ -203,7 +203,14 @@ function getLineItemPricing(li, quote) {
     };
   }
 
-  // Legacy fallback
+  // Legacy fallback (pre-stamping rows only — every modern save stamps).
+  // Honor the clientPpp per-piece override here too, mirroring the stamp
+  // ladder used by OrderLineItems / InvoiceDetailModal / pdfExport.
+  const override = Number(li?.clientPpp);
+  if (Number.isFinite(override) && override > 0 && qty > 0) {
+    const lineTotal = override * qty;
+    return { qty, pricing: { ppp: override, lineTotal, rushFee: 0 }, lineTotal, perPiece: override };
+  }
   const linkedQtyMap = buildLinkedQtyMap(quote.line_items || []);
   const pricing = calcLinkedLinePrice(li, quote.rush_rate, getLineExtras(li, quote), undefined, linkedQtyMap);
   const lineTotal = pricing ? pricing.lineTotal : 0;
