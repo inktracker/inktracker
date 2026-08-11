@@ -60,9 +60,25 @@ describe("sliceToAddons", () => {
       extraModes: { tags: "flat", colorMatch: "percent" },
     });
     expect(out).toEqual([
-      { key: "colorMatch", label: "Color Match", rate: 10, mode: "percent", basis: "per_garment" },
-      { key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat", basis: "per_garment" },
+      { key: "colorMatch", label: "Color Match", rate: 10, mode: "percent", basis: "per_garment", taxable: true },
+      { key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat", basis: "per_garment", taxable: true },
     ]);
+  });
+
+  it("taxable defaults to true when extraTaxable is absent (existing shops unchanged)", () => {
+    const out = sliceToAddons({ extras: { digitizing: 25 } });
+    expect(out[0].taxable).toBe(true);
+  });
+
+  it("taxable false only when explicitly configured off", () => {
+    const out = sliceToAddons({
+      extras: { digitizing: 25, rush: 40 },
+      extraBasis: { digitizing: "per_job", rush: "per_job" },
+      extraTaxable: { digitizing: false },
+    });
+    const byKey = Object.fromEntries(out.map((a) => [a.key, a]));
+    expect(byKey.digitizing.taxable).toBe(false);
+    expect(byKey.rush.taxable).toBe(true);
   });
 
   it("defaults missing modes to 'flat'", () => {
@@ -128,7 +144,7 @@ describe("buildAddonsByScope", () => {
       extras: { tags: 1.5 },
       extraLabels: { tags: "Custom Tags" },
     });
-    expect(out.root).toEqual([{ key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat", basis: "per_garment" }]);
+    expect(out.root).toEqual([{ key: "tags", label: "Custom Tags", rate: 1.5, mode: "flat", basis: "per_garment", taxable: true }]);
     expect(out.embroidery).toEqual([]);
     expect(out.custom).toEqual({});
   });
@@ -141,7 +157,7 @@ describe("buildAddonsByScope", () => {
         extraModes: { puff: "flat" },
       },
     });
-    expect(out.embroidery).toEqual([{ key: "puff", label: "Puff", rate: 2, mode: "flat", basis: "per_garment" }]);
+    expect(out.embroidery).toEqual([{ key: "puff", label: "Puff", rate: 2, mode: "flat", basis: "per_garment", taxable: true }]);
     expect(out.root).toEqual([]);
   });
 
@@ -153,7 +169,7 @@ describe("buildAddonsByScope", () => {
       },
     });
     expect(Object.keys(out.custom)).toEqual(["DTG", "DTF"]);
-    expect(out.custom.DTG).toEqual([{ key: "rush", label: "Rush Setup", rate: 1, mode: "flat", basis: "per_garment" }]);
+    expect(out.custom.DTG).toEqual([{ key: "rush", label: "Rush Setup", rate: 1, mode: "flat", basis: "per_garment", taxable: true }]);
     expect(out.custom.DTF[0].label).toBe("Color");
   });
 

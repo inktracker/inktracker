@@ -58,6 +58,10 @@ export function sliceToAddons(slice, defaultLabels = {}) {
     // Category (per_print / per_garment / per_job). Absent → per_garment, so
     // every existing fee behaves exactly as before.
     basis: normalizeExtraBasis(slice.extraBasis?.[key]),
+    // Per-job taxability (Kato, 2026-08-10: digitizing/shipping fees are
+    // non-taxable in many states). Absent → taxable = today's behavior.
+    // Only consumed by the job-fee path; line-level fees ignore it.
+    taxable: slice.extraTaxable?.[key] !== false,
   }));
   return list.sort((a, b) =>
     (a.label || "").localeCompare(b.label || "", undefined, { sensitivity: "base" })
