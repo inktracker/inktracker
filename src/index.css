@@ -415,6 +415,14 @@ html.cap-native body {
    ticket sheet: hide the app root and the overlay's screen chrome, and
    let the sheet flow as normal document content. */
 @media print {
+  /* Two SEPARATE rules for the same job — never comma-join them: a browser
+     without :has() support drops an entire selector list containing it,
+     which would disable the class-based rule in exactly the browsers that
+     need it. The class is set by ProductionTicket on mount (universal);
+     :has() stays as backup for any ticket render without the effect. */
+  body.production-ticket-open #root {
+    display: none !important;
+  }
   body:has(.production-ticket) #root {
     display: none !important;
   }
