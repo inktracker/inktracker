@@ -7,6 +7,9 @@
 // record every field with the actor. This module holds every rule that
 // doesn't need I/O, so the whole decision surface is unit-tested.
 
+import { sumAdditionalCharges } from "../pricing/additionalCharges";
+import { roundedQuoteTotals } from "../pricing/quoteRounding";
+
 const clean = (s) => (typeof s === "string" ? s.trim() : "");
 const fmtUsd = (n) => `$${Number(n || 0).toFixed(2)}`;
 
@@ -178,8 +181,14 @@ export function appendNote(existingNotes, line) {
  * `deps` injects the pricing helpers (calcLinkedLinePrice,
  * buildLinkedQtyMap, getLineExtras, getQty) so this stays unit-testable
  * without the module-global pricing config.
+ *
+ * `fees` (optional) supplies edited { setup_total, additional_charges };
+ * defaults to the order's own values. Composition follows the app-wide
+ * contract (roundedQuoteTotals): taxable charges join the taxed base,
+ * non-taxable are added AFTER tax — matching the quote editor, payment
+ * page, and QB lines so the itemized breakdown foots everywhere.
  */
-export function recomputeOrderMoney(lines, order, deps) {
+export function recomputeOrderMoney(lines, order, deps, fees) {
   const { calcLinkedLinePrice, buildLinkedQtyMap, getLineExtras, getQty } = deps;
   const linkedQtyMap = buildLinkedQtyMap(lines);
   let subtotal = 0;
@@ -200,15 +209,19 @@ export function recomputeOrderMoney(lines, order, deps) {
     return { ...li, _ppp: r?.ppp ?? li._ppp, _lineTotal: lineTotal };
   });
   subtotal = Number(subtotal.toFixed(2));
-  const discount = Number(order.discount) || 0;
-  const isFlat = order.discount_type === "flat";
-  const afterDisc = discount > 0 ? (isFlat ? Math.max(0, subtotal - discount) : subtotal * (1 - discount / 100)) : subtotal;
-  const setup = Number(order.setup_total) || 0;
-  const addl = (order.additional_charges || []).reduce((s, c) => s + (Number(c.amount) || 0), 0);
-  const taxable = afterDisc + setup + addl;
-  const tax = Number((taxable * ((Number(order.tax_rate) || 0) / 100)).toFixed(2));
-  const total = Number((taxable + tax).toFixed(2));
-  return { stamped, subtotal, tax, total };
+  const feeSrc = fees || order;
+  const setup = Math.round((Number(feeSrc.setup_total) || 0) * 100) / 100;
+  const addl = sumAdditionalCharges(feeSrc.additional_charges);
+  const rt = roundedQuoteTotals({
+    sub: subtotal,
+    discount: order.discount,
+    discountType: order.discount_type,
+    setup,
+    addlTaxable: addl.taxable,
+    addlNonTax: addl.nonTaxable,
+    taxRate: order.tax_rate,
+  });
+  return { stamped, subtotal, setup, addl, discountAmount: rt.discountAmount, tax: rt.tax, total: rt.total };
 }
 
 /**
@@ -221,6 +234,13 @@ export function recomputeOrderMoney(lines, order, deps) {
 export function buildEditPatches({ order, edited, linkedInvoice, quote, quoteSyncPolicy = "keep_historical", today }) {
   const clearArt = order?.art_approved && imprintsChanged(order?.line_items, edited?.line_items);
 
+  // Fee fields ride the same patch: setup_total and additional_charges are
+  // part of the agreement's money, and every consumer of the order's total
+  // (invoice display, QB push lines, payment page) reads them itemized —
+  // patching total without them would leave the breakdown unable to foot.
+  const setupTotal = edited.setup_total ?? order.setup_total ?? 0;
+  const additionalCharges = edited.additional_charges ?? order.additional_charges ?? null;
+
   const orderPatch = {
     line_items: edited.line_items,
     customer_id: edited.customer_id,
@@ -229,6 +249,8 @@ export function buildEditPatches({ order, edited, linkedInvoice, quote, quoteSyn
     job_title: edited.job_title ?? order.job_title ?? "",
     notes: edited.notes ?? order.notes ?? "",
     subtotal: edited.subtotal,
+    setup_total: setupTotal,
+    additional_charges: additionalCharges,
     tax: edited.tax,
     total: edited.total,
     ...(clearArt ? { art_approved: false, art_approved_by: null, art_approved_at: null } : {}),
@@ -245,6 +267,8 @@ export function buildEditPatches({ order, edited, linkedInvoice, quote, quoteSyn
       ...(linkedInvoice.qb_invoice_id ? { qb_push_pending: true } : {}),
       line_items: edited.line_items,
       subtotal: edited.subtotal,
+      setup_total: setupTotal,
+      additional_charges: additionalCharges,
       tax: edited.tax,
       total: edited.total,
       customer_id: edited.customer_id,
@@ -262,6 +286,8 @@ export function buildEditPatches({ order, edited, linkedInvoice, quote, quoteSyn
       quotePatch = {
         line_items: edited.line_items,
         subtotal: edited.subtotal,
+        setup_total: setupTotal,
+        additional_charges: additionalCharges,
         tax: edited.tax,
         total: edited.total,
         notes: appendNote(
@@ -292,7 +318,7 @@ export function buildEditPatches({ order, edited, linkedInvoice, quote, quoteSyn
 // ── Stale-write guard ───────────────────────────────────────────────────────
 // Snapshot at open, compare on save against a fresh read. Field-scoped so
 // background qb_* mirror writes don't false-positive.
-const CONFLICT_FIELDS = ["line_items", "customer_id", "due_date", "job_title", "notes", "total", "status"];
+const CONFLICT_FIELDS = ["line_items", "customer_id", "due_date", "job_title", "notes", "setup_total", "additional_charges", "total", "status"];
 
 export function editConflict(openedSnapshot, freshRow) {
   if (!openedSnapshot || !freshRow) return false;
