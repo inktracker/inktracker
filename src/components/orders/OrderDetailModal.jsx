@@ -15,7 +15,7 @@ import ChangeHistory from "../shared/ChangeHistory";
 import ProductionTicket from "./ProductionTicket";
 import OrderEditorModal from "./OrderEditorModal";
 import { getOrderEditTier, EDIT_TIERS } from "@/lib/orders/editOrderEngine";
-import { canSeeMoney } from "@/lib/managerPermissions";
+import { canSeeMoney, managerCanAccess } from "@/lib/managerPermissions";
 import { artApprovalUrl, orderStatusUrl } from "@/lib/publicUrls";
 import {
   countGoodsProgress,
@@ -177,9 +177,14 @@ export default function OrderDetailModal({
   // employees never get here (owner/manager surface). Tier 3 (QB) and
   // 4 (paid/completed) show the reason instead of the editor.
   const editTier = getOrderEditTier(liveOrder, relatedInvoice);
+  // Owner-controlled authorization: managers additionally need the
+  // OrderEditing permission (AdminPanel checkbox; absent = allowed).
+  // Every accepted edit is recorded in change_log with the editor's
+  // email by a DB trigger — internal-only, customers can't read it.
   const canEditOrder =
     showMoney &&
     ["shop", "admin", "manager"].includes(authUser?.role) &&
+    managerCanAccess(authUser, "OrderEditing") &&
     editTier.tier <= EDIT_TIERS.IN_QB; // phase 2: QB-invoiced orders edit + push
   // Shop-configured press list (Account → Production Setup) + this
   // shop's employees, used to populate the two Assigned dropdowns
@@ -805,7 +810,7 @@ export default function OrderDetailModal({
             onCreateSlip={() => setShowPackingSlip(true)}
             onPrintTicket={() => setShowTicket(true)}
             onEditOrder={["shop", "admin", "manager"].includes(authUser?.role) ? () => setShowEditor(true) : undefined}
-            editOrderDisabledReason={!canEditOrder ? (editTier.reason || (!showMoney ? "Editing recalculates pricing - not available with financials hidden." : null)) : null}
+            editOrderDisabledReason={!canEditOrder ? (editTier.reason || (!showMoney ? "Editing recalculates pricing - not available with financials hidden." : (!managerCanAccess(authUser, "OrderEditing") ? "Order editing hasn't been enabled for your account - ask the shop owner." : null))) : null}
             readOnly={readOnly}
             reactivateHref={reactivateHref}
           />
