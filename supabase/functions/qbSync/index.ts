@@ -359,6 +359,29 @@ async function qbUpdate(token: string, realmId: string, entity: string, body: ob
   return data;
 }
 
+// DocNumber-family lookup: the base DocNumber plus its -rN revisions.
+// QBO's query language does NOT support OR (QueryParserError 4000 —
+// proven live 2026-08-12: the old single `X OR LIKE 'X-r%'` query has
+// been failing since it shipped, silently swallowed by callers' try/
+// catch, leaving the duplicate-adoption guard dead). Two valid queries,
+// merged and de-duped by Id.
+async function qbQueryInvoiceFamily(token: string, realmId: string, base: string, fields = "*") {
+  const escaped = escapeQbStringLiteral(base);
+  const [exactResp, revResp] = [
+    await qbQuery(token, realmId, `SELECT ${fields} FROM Invoice WHERE DocNumber = '${escaped}'`),
+    await qbQuery(token, realmId, `SELECT ${fields} FROM Invoice WHERE DocNumber LIKE '${escaped}-r%'`),
+  ];
+  const byId = new Map<string, any>();
+  for (const inv of [
+    ...(exactResp?.QueryResponse?.Invoice ?? []),
+    ...(revResp?.QueryResponse?.Invoice ?? []),
+  ]) {
+    if (inv?.Id != null) byId.set(String(inv.Id), inv);
+    else if (inv?.DocNumber) byId.set(`doc:${inv.DocNumber}`, inv);
+  }
+  return [...byId.values()];
+}
+
 // Void a QB invoice (deposit-path settlement). QBO voids via
 // POST /invoice?operation=void with Id + SyncToken. Voiding an
 // already-voided invoice returns a stale-object 4xx — treated as success
@@ -1067,14 +1090,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // is what turned every one of these races into a duplicate.
   let familyDocNumbers: string[] | null = null;
   if (!qbInvoiceId) {
-    const escapedBaseForFamily = escapeQbStringLiteral(String(quote.quote_id || ""));
     try {
-      const familyResp = await qbQuery(
-        token,
-        realmId,
-        `SELECT * FROM Invoice WHERE DocNumber = '${escapedBaseForFamily}' OR DocNumber LIKE '${escapedBaseForFamily}-r%'`,
-      );
-      const family = familyResp?.QueryResponse?.Invoice || [];
+      const family = await qbQueryInvoiceFamily(token, realmId, String(quote.quote_id || ""));
       familyDocNumbers = family.map((i: any) => String(i.DocNumber || "")).filter(Boolean);
       const picked = pickQbInvoiceForAdoption(family);
       if (picked.paid) {
@@ -1270,19 +1287,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // adoption guards found NOTHING to update: no DB-linked invoice, no source
   // quote's invoice, and an empty (or unreadable) DocNumber family in QB.
   if (!qbInvoiceId) {
-    const escapedBase = escapeQbStringLiteral(baseDocNumber);
     // Reuse the family query from adoption guard 2 when it succeeded; only
     // re-query when that lookup failed (familyDocNumbers === null) or was
     // skipped because a stale qb_invoice_id got cleared by the resync path.
     let existingDocs: string[] = familyDocNumbers ?? [];
     if (familyDocNumbers === null) {
       try {
-        const existingResp = await qbQuery(
-          token,
-          realmId,
-          `SELECT DocNumber FROM Invoice WHERE DocNumber = '${escapedBase}' OR DocNumber LIKE '${escapedBase}-r%'`,
-        );
-        existingDocs = (existingResp?.QueryResponse?.Invoice || [])
+        const familyRows = await qbQueryInvoiceFamily(token, realmId, baseDocNumber, "Id, DocNumber");
+        existingDocs = familyRows
           .map((i: any) => String(i.DocNumber || ""))
           .filter(Boolean);
       } catch (e) {
@@ -2053,8 +2065,7 @@ async function handleCreateDepositInvoice(token: string, realmId: string, params
   // DocNumber: {quote_id}-DEP, with the same family-collision fallback as
   // the main path (a voided prior deposit invoice keeps its DocNumber).
   const baseDoc = depositDocNumber(fresh.quote_id);
-  const famData = await qbQuery(token, realmId, `SELECT Id, DocNumber, TotalAmt FROM Invoice WHERE DocNumber = '${escapeQbStringLiteral(baseDoc)}' OR DocNumber LIKE '${escapeQbStringLiteral(baseDoc)}-r%'`);
-  const family: any[] = famData?.QueryResponse?.Invoice ?? [];
+  const family: any[] = await qbQueryInvoiceFamily(token, realmId, baseDoc, "Id, DocNumber, TotalAmt");
   const live = family.find((i) => Number(i.TotalAmt ?? 0) > 0);
   let created: any;
   let depInvoiceId: string;
