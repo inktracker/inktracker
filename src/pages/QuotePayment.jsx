@@ -995,9 +995,9 @@ export default function QuotePayment() {
               subLabel = `Deposit of ${fmtMoney(depositAmount)} already paid`;
             }
 
-            const securityLabel = (depositDue ? depositAvailable : qbAvailable)
-              ? "Secure payment powered by QuickBooks"
-              : "Secure payment powered by Stripe";
+            // QuickBooks is the only live payment rail (Stripe removed at
+            // launch, PR #201) — no state should claim otherwise.
+            const securityLabel = "Secure payment powered by QuickBooks";
 
             return (
               <>

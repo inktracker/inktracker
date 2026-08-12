@@ -1623,10 +1623,11 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         const freshRow = freshDep?.QueryResponse?.Invoice?.[0];
         if (freshRow) await qbVoidInvoice(token, realmId, depositInvoiceId, freshRow.SyncToken);
         console.log(`[createInvoice] deposit settled: moved ${linked.length} payment(s) from deposit invoice ${depositInvoiceId} onto ${qbInvoiceId}, deposit invoice voided`);
-        // Local truth: money is collected. The webhook usually stamped
-        // deposit_paid already; when settlement DISCOVERS the payment
-        // (webhook missed), stamp it here so the shop's records and the
-        // customer page agree with QB (audit HIGH: silent discovery).
+        // Local truth: money is collected. Stamped on EVERY successful
+        // move — idempotent and truthful when the webhook already set it
+        // (values re-assert what QB shows), essential when settlement
+        // DISCOVERED the payment (webhook missed) so the shop's records
+        // and the customer page agree with QB.
         depositCollectedAtSettle = settlement.collected ?? depositAmount;
       } else if (settlement.action === DEPOSIT_SETTLE.VOID_UNPAID) {
         // Race guard: a payment may have applied between the settlement
@@ -1640,7 +1641,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
           throw new Error(`deposit invoice ${depositInvoiceId} received a payment mid-settlement — retry the sync to settle it properly`);
         }
         await qbVoidInvoice(token, realmId, depositInvoiceId, depInvoice.SyncToken);
-        if (depositRow?.deposit_paid || quote.deposit_paid) {
+        // Fresh row wins over the caller's snapshot (?? not ||): a stale
+        // payload must neither skip a real cash deposit nor invent one
+        // (verification pass 2026-08-12, finding 1).
+        if (depositRow?.deposit_paid ?? quote.deposit_paid) {
           // The deposit WAS collected — just not through the deposit
           // invoice (cash/check marked manually, or a moved-then-void-
           // failed retry). Post the manual payment now; no scary
@@ -1668,7 +1672,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         // marked paid: the customer's money is now an unapplied credit in
         // QB. Never fabricate a Payment for it — alert the shop to apply
         // the credit (audit HIGH: shop voided a paid deposit invoice).
-        if ((depositRow?.deposit_paid || quote.deposit_paid) && !existingInvoiceHadPayment) {
+        if ((depositRow?.deposit_paid ?? quote.deposit_paid) && !existingInvoiceHadPayment) {
           try {
             const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
             await recordShopNotification(adminClient, {
@@ -1710,7 +1714,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         console.error("[createInvoice] failed to push deposit-settlement notification:", notifErr);
       }
     }
-  } else if (quote.deposit_paid && depositAmount > 0 && !taxBlocked && !existingInvoiceHadPayment) {
+  } else if ((depositRow?.deposit_paid ?? quote.deposit_paid) && depositAmount > 0 && !taxBlocked && !existingInvoiceHadPayment) {
     // B: manually-marked deposit (no deposit invoice). A failure here is
     // REAL money drift: the deposit shows paid in InkTracker but the QB
     // invoice carries the full balance, so a customer who pays QB-side is
