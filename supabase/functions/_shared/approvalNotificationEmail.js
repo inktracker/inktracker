@@ -116,7 +116,10 @@ export function buildQuoteApprovalEmail({ quote, shop, customer, recipient }) {
   return { subject, html, reply_to };
 }
 
-export function buildQuotePaymentEmail({ quote, shop, customer, recipient, orderId, amountPaid }) {
+// kind: "full" (default) | "deposit". A deposit payment gets its own
+// subject/copy — the amount is the deposit, the job still carries a
+// remaining balance, and the CTA copy must not read "paid in full".
+export function buildQuotePaymentEmail({ quote, shop, customer, recipient, orderId, amountPaid, kind = "full" }) {
   if (!quote) throw new Error("buildQuotePaymentEmail: quote required");
   if (!recipient) throw new Error("buildQuotePaymentEmail: recipient required");
 
@@ -142,18 +145,29 @@ export function buildQuotePaymentEmail({ quote, shop, customer, recipient, order
       : `https://www.inktracker.app/Quotes?id=${encodeURIComponent(quote.id)}`;
   const ctaText  = isBroker ? "Open Broker Portal" : "Open Orders in InkTracker";
 
-  const nextStep = isBroker
-    ? "Your client paid. The shop has been notified to start production."
-    : orderId
-      ? "The quote is now an order on your production board. Time to get to work."
-      : "Open the quote to review the payment status.";
+  const isDeposit = kind === "deposit";
+  const remaining = Math.max(0, (Number(quote.total) || 0) - amount);
+  const nextStep = isDeposit
+    ? (isBroker
+        ? "Your client paid the deposit. The shop has been notified to start production."
+        : `Deposit collected — the job is on your production board. The remaining ${formatMoney(remaining)} is billed on the final invoice.`)
+    : isBroker
+      ? "Your client paid. The shop has been notified to start production."
+      : orderId
+        ? "The quote is now an order on your production board. Time to get to work."
+        : "Open the quote to review the payment status.";
 
-  const subject = `Payment received: ${totalFmt} on quote ${quoteIdHuman} from ${customerName}`;
+  const subject = isDeposit
+    ? `Deposit received: ${totalFmt} on quote ${quoteIdHuman} from ${customerName}`
+    : `Payment received: ${totalFmt} on quote ${quoteIdHuman} from ${customerName}`;
   const html    = renderEmail({
-    headerTitle: "Client Paid the Quote",
-    bodyTitle:   `${customerName} paid ${totalFmt} on quote ${quoteIdHuman}`,
+    headerTitle: isDeposit ? "Client Paid the Deposit" : "Client Paid the Quote",
+    bodyTitle:   isDeposit
+      ? `${customerName} paid a ${totalFmt} deposit on quote ${quoteIdHuman}`
+      : `${customerName} paid ${totalFmt} on quote ${quoteIdHuman}`,
     bodyLines: [
       `Amount: <strong>${totalFmt}</strong>`,
+      isDeposit ? `Remaining balance: <strong>${formatMoney(remaining)}</strong> (billed on the final invoice)` : "",
       orderId ? `Order: <strong>${escapeHtml(String(orderId))}</strong>` : "",
       `Paid: ${dateFmt}`,
     ].filter(Boolean),
@@ -386,13 +400,18 @@ export async function sendAndLogApprovalNotification(supabase, args) {
   // unchanged. If the lookup itself fails we proceed with the send —
   // one duplicate email is a lesser evil than silently dropping a real
   // payment notification.
-  if (event_type === "quote_payment" && quote_id) {
+  // deposit_payment gets the SAME per-quote dedup, keyed to its own
+  // event_type — a deposit email and a later full-payment email for the
+  // same quote are both legitimate (different events), but neither may
+  // repeat itself (memory: payment-email dedup, #612 — deposits must not
+  // reuse the quote_payment key).
+  if ((event_type === "quote_payment" || event_type === "deposit_payment") && quote_id) {
     try {
       const { data: prior } = await supabase
         .from("notification_log")
         .select("id")
         .eq("quote_id", quote_id)
-        .eq("event_type", "quote_payment")
+        .eq("event_type", event_type)
         .eq("status", "sent")
         .limit(1);
       if (Array.isArray(prior) && prior.length > 0) {

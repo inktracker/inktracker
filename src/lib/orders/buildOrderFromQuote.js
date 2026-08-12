@@ -97,6 +97,11 @@ export function buildOrderFromQuote(quote, { userEmail = "", now = Date.now(), t
     // deposit_paid is already carried below.
     additional_charges: q.additional_charges ?? null,
     deposit_pct: q.deposit_pct ?? null,
+    // Deposit-path (docs/deposit-path-design.md): the dollar SNAPSHOT and
+    // the outstanding deposit-invoice pointer ride quote → order → invoice
+    // so final-invoice settlement can find them without a reverse-join.
+    deposit_amount: q.deposit_amount ?? null,
+    qb_deposit_invoice_id: q.qb_deposit_invoice_id ?? null,
     status: "Art Approval",
     line_items: q.line_items,
     notes: q.notes,

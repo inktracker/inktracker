@@ -31,7 +31,7 @@ import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { savedAfterDiscount } from "@/lib/quotes/effectiveTotals";
 import { localDateStr } from "@/lib/dateRangeUtils";
 import ArtworkPreviewOverlay from "@/components/shared/ArtworkPreviewOverlay";
-import { DEPOSITS_ENABLED } from "@/lib/deposits";
+import { DEPOSITS_ENABLED, depositAmountFor, depositRequested } from "@/lib/deposits";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 
 // Proof-grid tile. PDFs get a static tile instead of a live <object> embed —
@@ -341,7 +341,18 @@ export default function QuotePayment() {
   // fall back to approve-only so the broker collects from their client
   // out-of-band. (Display totals are likewise gated via customerFacingTotals.)
   const qbAvailable = qbCheckoutTarget.provider === "qb" && Boolean(qbCheckoutTarget.url) && !qbStaleFlag && !isBrokerQuote(quote);
-  const canCollectPayment = qbAvailable;
+
+  // Deposit collection (docs/deposit-path-design.md): an unpaid requested
+  // deposit routes to the DEPOSIT invoice's link — validated through the
+  // same lockstep validator as the main link (login-hosts rejected, share-
+  // link formats only). The deposit is a fixed snapshot, so the staleness
+  // check (which compares the FULL invoice's total) does not apply.
+  const depositDue = DEPOSITS_ENABLED && depositRequested(quote) && !isBrokerQuote(quote);
+  const depositCheckoutTarget = resolveCheckoutTarget({ qb_payment_link: quote?.qb_deposit_payment_link });
+  const depositAvailable = depositDue &&
+    depositCheckoutTarget.provider === "qb" && Boolean(depositCheckoutTarget.url);
+
+  const canCollectPayment = depositDue ? depositAvailable : qbAvailable;
 
   async function handleApprove() {
     if (!quote?.id) return false;
@@ -410,11 +421,19 @@ export default function QuotePayment() {
       return;
     }
 
+    // Deposit due → the DEPOSIT invoice's link is the checkout target
+    // (the full invoice usually doesn't exist yet). Fixed snapshot
+    // amount; validated by the same lockstep link validator.
+    if (depositDue && depositAvailable) {
+      window.location.href = depositCheckoutTarget.url;
+      return;
+    }
+
     // Prefer QB payment page when the link is a real customer-facing payment
     // URL. resolveCheckoutTarget rejects anything that would land the customer
     // at an Intuit login screen.
     const qbTarget = resolveCheckoutTarget(quote);
-    if (qbTarget.provider === "qb" && qbTarget.url) {
+    if (!depositDue && qbTarget.provider === "qb" && qbTarget.url) {
       window.location.href = qbTarget.url;
       return;
     }
@@ -896,10 +915,14 @@ export default function QuotePayment() {
                 <div className="w-full bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl px-5 py-4 text-center">
                   <div className="font-bold text-base mb-1 flex items-center justify-center gap-2">
                     <CheckCircle2 className="w-5 h-5" />
-                    Quote approved
+                    {DEPOSITS_ENABLED && quote?.deposit_paid && depositAmountFor(quote) > 0
+                      ? `Deposit of ${fmtMoney(depositAmountFor(quote))} received`
+                      : "Quote approved"}
                   </div>
                   <div className="text-sm text-emerald-700">
-                    {customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment.
+                    {DEPOSITS_ENABLED && quote?.deposit_paid && depositAmountFor(quote) > 0
+                      ? `Your job is in production. ${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will send the final invoice for the remaining balance.`
+                      : `${customerFacingShopName({ quote, shopName: shop?.shop_name, fallback: "The shop" })} will be in touch about payment.`}
                   </div>
                 </div>
               )
@@ -935,27 +958,29 @@ export default function QuotePayment() {
               qbStale: qbStaleFlag,
               fallbackTotal: totals.total,
             }).total) || 0;
-            // Deposits aren't collectible online (QB bills full; Stripe path
-            // removed) — force 0 so the button says "Approve & Pay $full"
-            // instead of promising a deposit the QB link can't take.
-            const depositPct = !DEPOSITS_ENABLED ? 0 : (customer?.default_deposit_pct != null
-              ? Number(customer.default_deposit_pct) || 0
-              : parseFloat(quote?.deposit_pct) || 0);
-            const depositAmount = Math.round(effectiveTotal * (depositPct / 100) * 100) / 100;
+            // Deposit dollars: SNAPSHOT-first (deposit_amount is what the
+            // minted deposit invoice actually charges — the button must
+            // show THAT number, never a re-derived one). Pct-derivation is
+            // only the pre-mint fallback inside depositAmountFor.
+            const depositAmount = DEPOSITS_ENABLED ? depositAmountFor(quote) : 0;
+            const depositPct = Number(quote?.deposit_pct) || 0;
             const depositPaid = quote?.deposit_paid;
+            const hasDeposit = depositAmount > 0 && !isBrokerQuote(quote);
 
             let buttonLabel = `Approve & Pay ${fmtMoney(effectiveTotal)}`;
             let subLabel = null;
-            if (depositPct > 0 && !depositPaid) {
+            if (hasDeposit && !depositPaid) {
               buttonLabel = `Approve & Pay Deposit ${fmtMoney(depositAmount)}`;
-              subLabel = `${depositPct}% deposit · full total ${fmtMoney(effectiveTotal)}`;
-            } else if (depositPct > 0 && depositPaid) {
-              const balance = Math.round((effectiveTotal - depositAmount) * 100) / 100;
+              subLabel = depositPct > 0
+                ? `${depositPct}% deposit · full total ${fmtMoney(effectiveTotal)}`
+                : `Deposit · full total ${fmtMoney(effectiveTotal)}`;
+            } else if (hasDeposit && depositPaid) {
+              const balance = Math.max(0, Math.round((effectiveTotal - depositAmount) * 100) / 100);
               buttonLabel = `Pay Remaining Balance ${fmtMoney(balance)}`;
               subLabel = `Deposit of ${fmtMoney(depositAmount)} already paid`;
             }
 
-            const securityLabel = qbAvailable
+            const securityLabel = (depositDue ? depositAvailable : qbAvailable)
               ? "Secure payment powered by QuickBooks"
               : "Secure payment powered by Stripe";
 

@@ -118,6 +118,8 @@ export function buildOrderFromInvoice(
     additional_charges: inv.additional_charges ?? null,
     deposit_pct: inv.deposit_pct ?? null,
     deposit_paid: Boolean(inv.deposit_paid),
+    deposit_amount: inv.deposit_amount ?? null,
+    qb_deposit_invoice_id: inv.qb_deposit_invoice_id ?? null,
     tax_rate: Number(inv.tax_rate) || 0,
     subtotal: Number(inv.subtotal) || 0,
     tax: Number(inv.tax) || 0,

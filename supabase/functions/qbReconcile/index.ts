@@ -50,6 +50,8 @@ import {
 import { buildQuotePatchFromFreshInvoice } from "../_shared/qbRefreshLogic.js";
 import { parseRetryAfterMs } from "../_shared/qbRateLimit.ts";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
+import { isDepositInvoicePaid } from "../_shared/qbDeposit.js";
+import { processDepositInvoicePaid } from "../_shared/qbDepositPaid.js";
 import {
   isInvoiceFullyPaid,
   isRecentQbPayment,
@@ -314,6 +316,49 @@ async function reconcileShop(adminClient: any, profile: any) {
         });
       }
     }
+  }
+
+  // Deposit pass — quotes with an outstanding deposit invoice
+  // (docs/deposit-path-design.md). The real-time signal is the qbWebhook
+  // Payment/Invoice event; this is the webhook-miss backstop, same as the
+  // cascade passes above. Live Balance check per candidate, capped so a
+  // shop with many open deposits can't burn the cron budget.
+  try {
+    const DEPOSIT_CHECK_CAP = 25;
+    const { data: depCandidates, error: depErr } = await adminClient
+      .from("quotes")
+      .select("*")
+      .eq("shop_owner", shopOwner)
+      .eq("deposit_paid", false)
+      .not("qb_deposit_invoice_id", "is", null)
+      .gte("date", sixtyDaysAgo.slice(0, 10))
+      .limit(200);
+    if (depErr) {
+      classifications.push({ error: `deposit candidates query: ${depErr.message}` });
+    } else {
+      for (const depQuote of (depCandidates ?? []).slice(0, DEPOSIT_CHECK_CAP)) {
+        try {
+          const resp = await qbQuery(accessToken, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(String(depQuote.qb_deposit_invoice_id))}'`);
+          const live = resp?.QueryResponse?.Invoice?.[0] ?? null;
+          if (isDepositInvoicePaid(live)) {
+            const { flipped, orderId } = await processDepositInvoicePaid(adminClient, {
+              quote: depQuote,
+              qbInvoiceId: String(depQuote.qb_deposit_invoice_id),
+              shopOwner,
+              qbInvoice: live,
+              source: "reconcile",
+            });
+            classifications.push({ kind: "deposit-paid-recovered", quote_id: depQuote.quote_id, flipped, order_id: orderId });
+          } else {
+            classifications.push({ kind: "deposit-open", quote_id: depQuote.quote_id });
+          }
+        } catch (err) {
+          classifications.push({ error: (err as Error)?.message, qb_invoice_id: depQuote.qb_deposit_invoice_id });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[qbReconcile] deposit pass failed for ${shopOwner}:`, (err as Error)?.message);
   }
 
   // Fourth pass — books-drift verification. Mirror-flagged candidates

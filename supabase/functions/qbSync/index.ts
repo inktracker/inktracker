@@ -59,6 +59,17 @@ import {
 } from "../_shared/shopNotifications.js";
 import { withQbAudit, logEvent } from "../_shared/qbAudit.js";
 import {
+  depositDocNumber,
+  isDepositDocNumber,
+  computeDepositAmount,
+  shouldMintDepositInvoice,
+  buildDepositInvoiceBody,
+  DEPOSIT_SETTLE,
+  decideDepositSettlement,
+  paymentsLinkedToInvoice,
+  buildPaymentRelinkBody,
+} from "../_shared/qbDeposit.js";
+import {
   withQbIdempotency,
   withQbRowSerialization,
   IDEMPOTENCY_OUTCOMES,
@@ -344,6 +355,25 @@ async function qbUpdate(token: string, realmId: string, entity: string, body: ob
     `update ${entity}`,
   );
   if (!res.ok) throw new Error(`QB update ${entity} failed: ${res.status} ${JSON.stringify(data)}`);
+  return data;
+}
+
+// Void a QB invoice (deposit-path settlement). QBO voids via
+// POST /invoice?operation=void with Id + SyncToken. Voiding an
+// already-voided invoice returns a stale-object 4xx — treated as success
+// by the caller's decideDepositSettlement re-read, not here.
+async function qbVoidInvoice(token: string, realmId: string, invoiceId: string, syncToken: string) {
+  const url = `${QB_BASE}/${realmId}/invoice?operation=void&minorversion=65`;
+  const { res, data } = await qbFetchWithRetry(
+    url,
+    {
+      method: "POST",
+      headers: qbHeaders(token),
+      body: JSON.stringify({ Id: String(invoiceId), SyncToken: String(syncToken) }),
+    },
+    "void invoice",
+  );
+  if (!res.ok) throw new Error(`QB void invoice failed: ${res.status} ${JSON.stringify(data)}`);
   return data;
 }
 
@@ -771,8 +801,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       const { data, error } = await supabase
         .from(table)
         .select(table === "invoices"
-          ? "id, qb_invoice_id, qb_doc_number, order_id"
-          : "id, qb_invoice_id, qb_doc_number, quote_id")
+          ? "id, qb_invoice_id, qb_doc_number, order_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid"
+          : "id, qb_invoice_id, qb_doc_number, quote_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid")
         .eq("id", quote.id)
         .maybeSingle();
       if (!error && data) { sourceRow = data; break; }
@@ -1478,34 +1508,123 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     linkFailureReason = linkResult.reason;
   }
 
-  // 4b. If the quote's deposit was already paid, record the payment against this invoice.
-  // A failure here is REAL money drift: the deposit shows as paid in
-  // InkTracker but the QB invoice still has the full balance outstanding,
-  // so a customer who pays the QB-side balance ends up double-billed.
-  // Surface a structured warning to the frontend AND a shop notification
-  // so the operator can manually record the payment in QB. The invoice
-  // itself was created successfully, so we still finish the rest of the
-  // sync — but the response will carry depositRecordFailed: true.
+  // 4b. Deposit settlement + recording (docs/deposit-path-design.md).
+  //
+  // Two representations converge here into ONE end state (full invoice +
+  // linked Payment, Balance = remainder):
+  //
+  //   A. A DEPOSIT INVOICE exists (customer paid — or was asked to pay —
+  //      through the QB deposit-collection invoice). Settle it: move any
+  //      applied payment(s) onto THIS final invoice, then void the deposit
+  //      invoice. Move-first, void-second — every intermediate state is
+  //      retryable and never loses applied money.
+  //
+  //   B. No deposit invoice, but deposit_paid is true (shop marked a
+  //      cash/check deposit manually). Post a linked Payment for the
+  //      SNAPSHOT amount, clamped to the invoice's open balance.
+  //
+  // Both are skipped while tax-held: a held invoice isn't final, and the
+  // clean re-sync runs this block again.
   let depositRecordFailed = false;
-  const depositAmount = Number(invoicePayload?.depositAmount) || 0;
-  // Skip while tax-held: a held invoice isn't going out, and recording the
-  // deposit now would double it when the fixed invoice is re-synced.
-  // Skip when the existing QB invoice ALREADY carries a payment
-  // (existingInvoiceHadPayment) — the deposit was recorded on a prior sync, and
-  // posting it again would over-apply and zero out a balance still owed
-  // (NEW-12). A first-time create has no existing payment, so the deposit is
-  // still recorded exactly once.
-  if (quote.deposit_paid && depositAmount > 0 && !taxBlocked && !existingInvoiceHadPayment) {
+  let depositSettled: string | null = null; // DEPOSIT_SETTLE.* outcome for the response/audit
+  const depositRow = sourceRow ?? quote;
+  const depositInvoiceId = String(depositRow?.qb_deposit_invoice_id || quote.qb_deposit_invoice_id || "");
+  // Snapshot-first (deposit_amount is the agreement); payload-derived only
+  // as the legacy fallback for pre-snapshot rows.
+  const depositAmount = computeDepositAmount({ ...quote, ...depositRow }) ||
+    (Number(invoicePayload?.depositAmount) || 0);
+
+  if (depositInvoiceId && !taxBlocked && String(depositInvoiceId) !== String(qbInvoiceId)) {
     try {
-      await qbCreate(token, realmId, "payment", {
-        CustomerRef: { value: qbCustomerId },
-        TotalAmt: depositAmount,
-        PrivateNote: `InkTracker deposit for quote ${quote.quote_id}`,
-        Line: [{
-          Amount: depositAmount,
-          LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: "Invoice" }],
-        }],
-      });
+      const depData = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(depositInvoiceId)}'`);
+      const depInvoice = depData?.QueryResponse?.Invoice?.[0] ?? null;
+      const settlement = decideDepositSettlement(depInvoice);
+      depositSettled = settlement.action;
+
+      if (settlement.action === DEPOSIT_SETTLE.MOVE_AND_VOID) {
+        // Find payments applied to the deposit invoice (QBO SQL can't
+        // filter on LinkedTxn — query by customer, filter client-side).
+        const custId = String(depInvoice.CustomerRef?.value || qbCustomerId);
+        const payData = await qbQuery(token, realmId, `SELECT * FROM Payment WHERE CustomerRef = '${escapeQbStringLiteral(custId)}' ORDERBY MetaData.CreateTime DESC MAXRESULTS 200`);
+        const linked = paymentsLinkedToInvoice(payData?.QueryResponse?.Payment ?? [], depositInvoiceId);
+        if (linked.length === 0) {
+          // Balance says money is applied but no payment matched (credit
+          // memo? journal entry?). Do NOT void — that would orphan money.
+          throw new Error(`deposit invoice ${depositInvoiceId} shows collected funds but no linked Payment found — manual review required`);
+        }
+        for (const pay of linked) {
+          const relink = buildPaymentRelinkBody(pay, depositInvoiceId, qbInvoiceId);
+          if (relink) await qbUpdate(token, realmId, "payment", relink);
+        }
+        // Re-read for a fresh SyncToken (the relink bumped it), then void.
+        const freshDep = await qbQuery(token, realmId, `SELECT Id, SyncToken FROM Invoice WHERE Id = '${escapeQbStringLiteral(depositInvoiceId)}'`);
+        const freshRow = freshDep?.QueryResponse?.Invoice?.[0];
+        if (freshRow) await qbVoidInvoice(token, realmId, depositInvoiceId, freshRow.SyncToken);
+        console.log(`[createInvoice] deposit settled: moved ${linked.length} payment(s) from deposit invoice ${depositInvoiceId} onto ${qbInvoiceId}, deposit invoice voided`);
+      } else if (settlement.action === DEPOSIT_SETTLE.VOID_UNPAID) {
+        await qbVoidInvoice(token, realmId, depositInvoiceId, depInvoice.SyncToken);
+        try {
+          const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+          await recordShopNotification(adminClient, {
+            shopOwner: quote.shop_owner,
+            eventType: "qb_deposit_not_collected",
+            severity:  "warning",
+            title:     `Deposit for ${quote.quote_id} was never paid`,
+            body:      `The final QuickBooks invoice was created, but the requested deposit was never collected — the deposit invoice has been voided and the customer now owes the full balance on the final invoice.`,
+            relatedEntity: "quote",
+            relatedId:     String(quote.id ?? ""),
+            metadata: { quote_id: quote.quote_id, qb_invoice_id: qbInvoiceId, deposit_amount: depositAmount },
+          });
+        } catch { /* notification is best-effort */ }
+      }
+      // ALREADY_GONE → a prior settlement (or QBO-side delete) finished the
+      // job; nothing to do. The write-back below clears the local pointers.
+    } catch (err) {
+      depositRecordFailed = true;
+      depositSettled = "failed";
+      console.error("[createInvoice] CRITICAL: deposit settlement failed — will retry on next sync:", err);
+      try {
+        const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        await recordShopNotification(adminClient, {
+          shopOwner: quote.shop_owner,
+          eventType: "qb_deposit_move_failed",
+          severity:  "alert",
+          title:     `Deposit settlement failed for ${quote.quote_id}`,
+          body:      `The final QuickBooks invoice was created, but moving the customer's deposit payment onto it failed. QuickBooks may briefly show both the deposit invoice and the full final invoice. Re-syncing the invoice retries automatically; if this persists, in QuickBooks move the payment from invoice ${depositInvoiceId} to the final invoice and void the deposit invoice.`,
+          relatedEntity: "quote",
+          relatedId:     String(quote.id ?? ""),
+          metadata: {
+            quote_id: quote.quote_id,
+            qb_invoice_id: qbInvoiceId,
+            qb_deposit_invoice_id: depositInvoiceId,
+            deposit_amount: depositAmount,
+            error: (err as Error)?.message ?? String(err),
+          },
+        });
+      } catch (notifErr) {
+        console.error("[createInvoice] failed to push deposit-settlement notification:", notifErr);
+      }
+    }
+  } else if (quote.deposit_paid && depositAmount > 0 && !taxBlocked && !existingInvoiceHadPayment) {
+    // B: manually-marked deposit (no deposit invoice). A failure here is
+    // REAL money drift: the deposit shows paid in InkTracker but the QB
+    // invoice carries the full balance, so a customer who pays QB-side is
+    // double-billed. Clamp to the live open balance so a re-post after a
+    // downward edit can never over-apply.
+    try {
+      const liveBalance = Number((qbInvoiceFinal ?? created)?.Balance ?? depositAmount);
+      const clamped = Math.min(depositAmount, Math.max(0, liveBalance));
+      if (clamped > 0.009) {
+        await qbCreate(token, realmId, "payment", {
+          CustomerRef: { value: qbCustomerId },
+          TotalAmt: clamped,
+          PrivateNote: `InkTracker deposit for quote ${quote.quote_id}`,
+          Line: [{
+            Amount: clamped,
+            LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: "Invoice" }],
+          }],
+        });
+      }
     } catch (err) {
       depositRecordFailed = true;
       console.error("[createInvoice] CRITICAL: deposit payment record failed — operator must record manually:", err);
@@ -1557,6 +1676,25 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // good link and break "Approve & Pay". Omit the field to keep the existing link.
   const linkField = paymentLink ? { qb_payment_link: paymentLink } : {};
 
+  // Deposit-settlement write-back: once the deposit invoice is settled
+  // (moved+voided / voided-unpaid / already gone), the local pointers to it
+  // are cleared — its pay link is dead and nothing should route a customer
+  // there. On failure the pointers stay, which is what makes the next
+  // createInvoice retry the settlement. The deposit_amount snapshot is
+  // stamped if the row predates the snapshot column.
+  // Column check (feedback_db_columns): quotes carry the pay link column,
+  // invoices only the id — per-table patches below.
+  const settlementSucceeded = depositSettled !== null && depositSettled !== "failed";
+  const depositSettleQuotes = settlementSucceeded
+    ? { qb_deposit_invoice_id: null, qb_deposit_payment_link: null }
+    : {};
+  const depositSettleInvoices = settlementSucceeded
+    ? { qb_deposit_invoice_id: null }
+    : {};
+  const depositSnapshotField = depositAmount > 0 && !(Number(depositRow?.deposit_amount) > 0)
+    ? { deposit_amount: depositAmount }
+    : {};
+
   // 5. Save QB invoice ID + DocNumber + payment link + final QB-computed
   // totals back to the source record. Both ids matter — the internal id
   // for API calls, the DocNumber for the operator-facing UI.
@@ -1585,6 +1723,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
       ...linkField,
+      ...depositSettleQuotes,
+      ...depositSnapshotField,
       qb_synced_at:    new Date().toISOString(),
       qb_subtotal:     qbSubtotal,
       qb_tax_amount:   qbTaxAmount,
@@ -1599,6 +1739,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_invoice_id:   qbInvoiceId,
       qb_doc_number:   qbDocNumber,
       ...linkField,
+      ...depositSettleInvoices,
+      ...depositSnapshotField,
       qb_subtotal:     qbSubtotal,
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
@@ -1672,6 +1814,9 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     // the deposit manually in QuickBooks → Receive Payment. A shop
     // notification was also written.
     depositRecordFailed,
+    // Deposit-invoice settlement outcome ("move_and_void" | "void_unpaid" |
+    // "already_gone" | "failed" | null when no deposit invoice existed).
+    depositSettled,
     // True when QB's tax didn't match the quote, so the invoice is on hold:
     // no payment link was minted and the frontend must NOT send the customer
     // email. The shop reconciles (see docs/qb-tax-sync.md) and re-syncs.
@@ -1690,6 +1835,131 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     qbTaxAmount,
     qbTotal,
     customerRef: qbCustomerId,
+  };
+}
+
+// ── Action: createDepositInvoice (deposit-path collection vehicle) ─────────
+// Mints the small, real QB invoice the customer pays their deposit through
+// (docs/deposit-path-design.md). One NON-taxed line for the snapshot amount,
+// DocNumber {quote_id}-DEP, share link minted the same way as the main
+// create path. Idempotent: an existing deposit invoice is adopted (link
+// re-minted if missing), never duplicated.
+const DEPOSIT_ITEM_NAME = "Customer Deposit";
+
+async function handleCreateDepositInvoice(token: string, realmId: string, params: any, supabase: any) {
+  const quote = params?.quote ?? {};
+  if (!quote?.id) throw new Error("createDepositInvoice requires quote.id");
+
+  // Authoritative re-read — the caller's snapshot may be stale (same
+  // contract as handleCreateInvoice).
+  const { data: fresh, error: freshErr } = await supabase
+    .from("quotes")
+    .select("id, quote_id, shop_owner, status, total, customer_email, customer_id, deposit_pct, deposit_paid, deposit_amount, qb_invoice_id, qb_deposit_invoice_id, qb_deposit_payment_link, converted_order_id")
+    .eq("id", quote.id)
+    .maybeSingle();
+  if (freshErr || !fresh) throw new Error(`createDepositInvoice: quote ${quote.id} not found`);
+
+  if (fresh.deposit_paid) {
+    return { skipped: "deposit_already_paid", qbDepositInvoiceId: fresh.qb_deposit_invoice_id ?? null };
+  }
+  if (fresh.qb_invoice_id) {
+    // A final invoice already exists — the deposit window has passed; the
+    // customer pays the final invoice's balance. Never mint a second
+    // collectible document for the same money.
+    return { skipped: "final_invoice_exists", qbInvoiceId: fresh.qb_invoice_id };
+  }
+  const depositAmount = computeDepositAmount(fresh);
+  if (depositAmount <= 0.009) {
+    return { skipped: "no_deposit_requested" };
+  }
+
+  // Idempotent adoption: a deposit invoice already exists (from a prior
+  // mint whose link or write-back failed). Verify it live, re-mint the
+  // link if needed, and return it.
+  if (fresh.qb_deposit_invoice_id) {
+    const depData = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(String(fresh.qb_deposit_invoice_id))}'`);
+    const existing = depData?.QueryResponse?.Invoice?.[0];
+    if (existing && Number(existing.TotalAmt ?? 0) > 0) {
+      let link = fresh.qb_deposit_payment_link || null;
+      let linkFailureReason: string | null = null;
+      if (!link) {
+        const minted = await mintInvoicePaymentLink(token, realmId, String(existing.Id), fresh.customer_email || null, existing, params?.noEmail === true);
+        link = minted.link;
+        linkFailureReason = minted.reason;
+        if (link) {
+          await supabase.from("quotes").update({ qb_deposit_payment_link: link }).eq("id", fresh.id);
+        }
+      }
+      return { qbDepositInvoiceId: String(existing.Id), depositAmount, depositPaymentLink: link, linkFailureReason, adopted: true };
+    }
+    // Stale pointer (voided/deleted in QB) — fall through to a fresh mint.
+  }
+
+  // Resolve customer + deposit item.
+  const customer = params?.customer;
+  const qbCustomerId = await findOrCreateCustomer(token, realmId, customer, supabase);
+  if (!qbCustomerId) throw new Error("Could not find or create QuickBooks customer");
+  const itemIdMap = await resolveItemIdMap(token, realmId, { lines: [{ itemName: DEPOSIT_ITEM_NAME }] }, null);
+  const itemId = itemIdMap.get(DEPOSIT_ITEM_NAME);
+  if (!itemId) throw new Error(`Could not resolve QB item "${DEPOSIT_ITEM_NAME}"`);
+
+  // DocNumber: {quote_id}-DEP, with the same family-collision fallback as
+  // the main path (a voided prior deposit invoice keeps its DocNumber).
+  const baseDoc = depositDocNumber(fresh.quote_id);
+  const famData = await qbQuery(token, realmId, `SELECT Id, DocNumber, TotalAmt FROM Invoice WHERE DocNumber = '${escapeQbStringLiteral(baseDoc)}' OR DocNumber LIKE '${escapeQbStringLiteral(baseDoc)}-r%'`);
+  const family: any[] = famData?.QueryResponse?.Invoice ?? [];
+  const live = family.find((i) => Number(i.TotalAmt ?? 0) > 0);
+  let created: any;
+  let depInvoiceId: string;
+  if (live) {
+    // Live same-DocNumber invoice we lost the pointer to — adopt it.
+    depInvoiceId = String(live.Id);
+    const fullData = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(depInvoiceId)}'`);
+    created = { Invoice: fullData?.QueryResponse?.Invoice?.[0] };
+  } else {
+    const taken = new Set(family.map((i) => String(i.DocNumber)));
+    const docNumber = nextAvailableDocNumber(baseDoc, taken);
+    const billEmail = [fresh.customer_email, customer?.email].find((e) => isLikelyEmail(e))?.trim() || null;
+    const body = buildDepositInvoiceBody({
+      qbCustomerId,
+      docNumber,
+      itemId,
+      amount: depositAmount,
+      quoteId: fresh.quote_id,
+      depositPct: fresh.deposit_pct,
+      billEmail,
+      txnDate: new Date().toISOString().slice(0, 10),
+    });
+    created = await qbCreate(token, realmId, "invoice", body);
+    depInvoiceId = String(created?.Invoice?.Id || "");
+    if (!depInvoiceId) throw new Error("QB deposit-invoice create returned no Id");
+  }
+
+  const minted = await mintInvoicePaymentLink(token, realmId, depInvoiceId, fresh.customer_email || null, created?.Invoice ?? created, params?.noEmail === true);
+
+  // Write-back (same retry posture as the main path — losing this pointer
+  // risks a duplicate deposit invoice on re-send).
+  const patch: Record<string, unknown> = {
+    qb_deposit_invoice_id: depInvoiceId,
+    deposit_amount: depositAmount,
+    payment_status: "Deposit Requested",
+    ...(minted.link ? { qb_deposit_payment_link: minted.link } : {}),
+  };
+  let wroteBack = false;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error } = await supabase.from("quotes").update(patch).eq("id", fresh.id);
+    if (!error) { wroteBack = true; break; }
+    console.error(`[createDepositInvoice] write-back failed (attempt ${attempt + 1}):`, error.message);
+  }
+  if (!wroteBack) {
+    console.error(`[createDepositInvoice] CRITICAL: deposit invoice ${depInvoiceId} exists in QB but the pointer write-back failed for quote ${fresh.id}`);
+  }
+
+  return {
+    qbDepositInvoiceId: depInvoiceId,
+    depositAmount,
+    depositPaymentLink: minted.link,
+    linkFailureReason: minted.reason,
   };
 }
 
@@ -1989,6 +2259,16 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
 
   for (const qbInv of all) {
     const docNumber = qbInv.DocNumber || `QB-${qbInv.Id}`;
+
+    // Deposit-path: deposit invoices are temporary collection vehicles
+    // (docs/deposit-path-design.md), never local invoice rows. Importing
+    // one would double-count the deposit as its own receivable. Matched by
+    // the -DEP DocNumber suffix (covers voided ones too, which drop out of
+    // most queries anyway once TotalAmt is 0).
+    if (isDepositDocNumber(docNumber)) {
+      skipped++;
+      continue;
+    }
 
     // Find an existing InkTracker row to update, in priority order:
     //   1. qb_invoice_id match — most authoritative, survives DocNumber
@@ -2853,6 +3133,65 @@ Deno.serve(async (req) => {
         }
         result = idempOutcome.result;
         if (idempOutcome.fromCache) result = { ...result, fromCache: true };
+        break;
+      }
+      case "createDepositInvoice": {
+        // Deposit-path collection vehicle (docs/deposit-path-design.md).
+        // Same envelope as createInvoice: idempotency key (double-click
+        // collapse), per-row lock (two surfaces racing), audit trail.
+        const depAdmin = createClient(
+          Deno.env.get("SUPABASE_URL")!,
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+        );
+        const depQuote = params?.quote ?? {};
+        const depShop = depQuote?.shop_owner || shopOwnerEmail;
+        const depIdempKey = params?.idempotencyKey ?? (depQuote?.id ? `createDepositInvoice:${depQuote.id}` : null);
+        const depAuditCtx = {
+          shop_owner: depShop,
+          action: "create_deposit_invoice",
+          quote_id: depQuote?.id ?? null,
+          qb_invoice_id: depQuote?.qb_deposit_invoice_id ?? null,
+          idempotency_key: depIdempKey,
+          request_body: {
+            quote_id: depQuote?.quote_id,
+            deposit_pct: depQuote?.deposit_pct,
+            deposit_amount: depQuote?.deposit_amount,
+          },
+        };
+        const depLockKey = depQuote?.id
+          ? `create_deposit_invoice_row:${depQuote.id}`
+          : (depQuote?.quote_id ? `create_deposit_invoice_row:${depShop}:${depQuote.quote_id}` : null);
+        const depOutcome = await withQbIdempotency(
+          depAdmin,
+          depIdempKey,
+          { shop_owner: depShop, action: "create_deposit_invoice" },
+          async () => {
+            const serialized = await withQbRowSerialization(
+              depAdmin,
+              depLockKey,
+              { shop_owner: depShop, action: "create_deposit_invoice_lock" },
+              () => withQbAudit(depAdmin, depAuditCtx, () =>
+                handleCreateDepositInvoice(qbToken, realmId, params, supabase),
+              ),
+            );
+            if (!serialized.acquired) {
+              return {
+                inFlight: true,
+                message: "Another deposit-invoice sync for this quote is still running — wait a moment, then refresh.",
+              };
+            }
+            return serialized.result;
+          },
+        );
+        if (depOutcome.outcome === IDEMPOTENCY_OUTCOMES.IN_FLIGHT) {
+          result = {
+            inFlight: true,
+            message: "Another request with the same idempotency key is still processing.",
+          };
+          break;
+        }
+        result = depOutcome.result;
+        if (depOutcome.fromCache) result = { ...result, fromCache: true };
         break;
       }
       case "estimateTax": {

@@ -134,8 +134,17 @@ export function orderEditBlockers(order, editedLines) {
 
 // ── Warnings (soft — save proceeds after acknowledgement) ───────────────────
 
-export function orderEditWarnings(order, editedLines, { sourcePO } = {}) {
+export function orderEditWarnings(order, editedLines, { sourcePO, editedTotal } = {}) {
   const warnings = [];
+  // Deposit-path: the deposit is a fixed snapshot the customer already
+  // paid — an edit that drops the total below it means the shop has
+  // over-collected and owes the customer the difference out-of-band.
+  const depositSnap = Number(order?.deposit_amount) || 0;
+  if (order?.deposit_paid && depositSnap > 0 && Number.isFinite(Number(editedTotal)) && Number(editedTotal) < depositSnap) {
+    warnings.push(
+      `The new total ($${Number(editedTotal).toFixed(2)}) is BELOW the $${depositSnap.toFixed(2)} deposit the customer already paid — you'll owe them the difference. QuickBooks will show a credit on the invoice.`,
+    );
+  }
   if (sourcePO) {
     warnings.push(
       `Purchase order ${sourcePO.po_number || ""} was built from this order's previous quantities — it is NOT auto-edited (a submitted PO is a real commitment). Review it after saving.`.replace("  ", " "),

@@ -92,6 +92,18 @@ describe("warnings + art approval", () => {
     const w = orderEditWarnings({ line_items: [line()] }, [line()], { sourcePO: { po_number: "PO-9" } });
     expect(w.some((x) => x.includes("NOT auto-edited"))).toBe(true);
   });
+
+  it("deposit-path: editing the total below a PAID deposit warns (over-collection)", () => {
+    const order = { line_items: [line()], deposit_paid: true, deposit_amount: 500 };
+    const w = orderEditWarnings(order, [line()], { editedTotal: 400 });
+    expect(w.some((x) => x.includes("BELOW the $500.00 deposit"))).toBe(true);
+  });
+
+  it("no deposit warning when unpaid, above the deposit, or no snapshot", () => {
+    expect(orderEditWarnings({ line_items: [line()], deposit_paid: false, deposit_amount: 500 }, [line()], { editedTotal: 400 })).toEqual([]);
+    expect(orderEditWarnings({ line_items: [line()], deposit_paid: true, deposit_amount: 500 }, [line()], { editedTotal: 600 })).toEqual([]);
+    expect(orderEditWarnings({ line_items: [line()], deposit_paid: true }, [line()], { editedTotal: 400 })).toEqual([]);
+  });
 });
 
 describe("buildEditPatches — decided policies", () => {

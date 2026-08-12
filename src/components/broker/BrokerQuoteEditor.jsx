@@ -937,15 +937,21 @@ export default function BrokerQuoteEditor({
                   Edit the per-piece price on each line to adjust the client total.
                 </div>
 
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Deposit</span>
-                  <span>{fmtMoney(retailTotals.deposit)}</span>
-                </div>
+                {/* Gate on an actual deposit — these rows rendered "$0.00"
+                    for every non-deposit quote (ungated pre-deposit-path). */}
+                {DEPOSITS_ENABLED && Number(q.deposit_pct) > 0 && (
+                  <>
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <span>Deposit</span>
+                      <span>{fmtMoney(retailTotals.deposit)}</span>
+                    </div>
 
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Remaining Balance</span>
-                  <span>{fmtMoney(retailRemaining)}</span>
-                </div>
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <span>Remaining Balance</span>
+                      <span>{fmtMoney(retailRemaining)}</span>
+                    </div>
+                  </>
+                )}
 
                 <div className="flex justify-between items-center border-t border-slate-200 pt-2 mt-2">
                   <span className="text-xs font-bold text-green-700">

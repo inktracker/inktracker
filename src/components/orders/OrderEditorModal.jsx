@@ -148,7 +148,7 @@ export default function OrderEditorModal({ order, customers: customersProp, link
         total,
       };
 
-      const warnings = orderEditWarnings(order, stamped, { sourcePO });
+      const warnings = orderEditWarnings(order, stamped, { sourcePO, editedTotal: total });
       const delta = Number((total - Number(order.total || 0)).toFixed(2));
       const deltaLine = delta === 0
         ? "Total unchanged."

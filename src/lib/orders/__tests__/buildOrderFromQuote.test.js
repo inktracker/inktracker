@@ -64,6 +64,19 @@ describe("buildOrderFromQuote — the audit-trail invariants", () => {
     expect(order.deposit_paid).toBe(true);
   });
 
+  it("deposit-path: carries the dollar snapshot + deposit-invoice pointer (settlement needs both)", () => {
+    const q = baseQuote({ deposit_amount: 250, qb_deposit_invoice_id: "1988" });
+    const order = buildOrderFromQuote(q, { userEmail: "shop@x.com", now: NOW });
+    expect(order.deposit_amount).toBe(250);
+    expect(order.qb_deposit_invoice_id).toBe("1988");
+  });
+
+  it("deposit-path fields default to null when absent", () => {
+    const order = buildOrderFromQuote(baseQuote(), { userEmail: "shop@x.com", now: NOW });
+    expect(order.deposit_amount).toBeNull();
+    expect(order.qb_deposit_invoice_id).toBeNull();
+  });
+
   it("carries customer_email forward (defends against later customer renames)", () => {
     const order = buildOrderFromQuote(baseQuote(), { userEmail: "shop@x.com", now: NOW });
     expect(order.customer_email).toBe("acme@example.com");

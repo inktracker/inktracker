@@ -19,6 +19,14 @@ import {
 // We allow DELETE against Supabase tables (that's our own data) — only
 // QB-bound deletions are forbidden. The DELETE_QB_PATTERNS matches on
 // QB-specific shapes only.
+//
+// ONE scoped exception (2026-08-12, docs/deposit-path-design.md):
+// qbVoidInvoice voids the InkTracker-authored DEPOSIT invoice at
+// settlement — the temporary collection vehicle the deposit path mints
+// itself. Voiding preserves the record and audit trail in QBO (it is
+// not deletion), and the tests below pin the helper to exactly its two
+// settlement call sites. Every shop/customer-authored document remains
+// untouchable.
 // ════════════════════════════════════════════════════════════════════════════
 
 const FUNCTIONS_DIR = path.resolve(__dirname, "../../"); // supabase/functions
@@ -79,17 +87,55 @@ describe("INVARIANT — InkTracker cannot delete anything in QuickBooks", () => 
     });
   }
 
-  it("the qbSync helpers expose only qbCreate and qbUpdate — no destructive helper", () => {
+  it("the qbSync helpers expose only qbCreate and qbUpdate — no destructive helper (deposit-invoice void is the ONE scoped exception)", () => {
     const qbSyncSource = readFileSync(path.join(FUNCTIONS_DIR, "qbSync/index.ts"), "utf8");
     // Grep for any function declaration that smells like a delete
     // helper. Must exclude buildOrderInsert, etc — only flag function
     // names whose root verb is delete/remove/void/destroy.
+    //
+    // EXCEPTION (deposit path, docs/deposit-path-design.md, 2026-08-12):
+    // qbVoidInvoice exists to void the InkTracker-AUTHORED deposit
+    // invoice at settlement — a temporary collection vehicle we minted,
+    // never a shop- or customer-authored document. Voiding (not deleting)
+    // keeps the record + audit trail in QBO. The invariant otherwise
+    // stands: nothing else in QB may be voided/deleted, and the test
+    // below pins qbVoidInvoice to its two settlement call sites so a
+    // drive-by reuse fails CI.
+    const ALLOWED_DESTRUCTIVE = new Set(["qbVoidInvoice"]);
     const helperDecls = qbSyncSource.match(/(?:function|const)\s+(qb\w+)\s*[(=]/g) ?? [];
     const helperNames = helperDecls.map((d) =>
       d.replace(/(?:function|const)\s+/, "").replace(/[(=]\s*$/, "").trim(),
     );
     for (const n of helperNames) {
+      if (ALLOWED_DESTRUCTIVE.has(n)) continue;
       expect(n, `unexpected destructive helper: ${n}`).not.toMatch(/(delete|remove|void|destroy)/i);
+    }
+  });
+
+  it("qbVoidInvoice is called ONLY from deposit settlement (drive-by reuse fails here)", () => {
+    const qbSyncSource = readFileSync(path.join(FUNCTIONS_DIR, "qbSync/index.ts"), "utf8");
+    const lines = qbSyncSource.split("\n");
+    const callSites = [];
+    lines.forEach((line, i) => {
+      const codeOnly = line.replace(/\/\/.*$/, "");
+      // Call sites only — skip the declaration itself.
+      if (/\bqbVoidInvoice\s*\(/.test(codeOnly) && !/async function qbVoidInvoice/.test(codeOnly)) {
+        callSites.push(i + 1);
+      }
+    });
+    // Exactly two: MOVE_AND_VOID (paid deposit settles onto the final
+    // invoice) and VOID_UNPAID (deposit never collected). Adding a third
+    // call site is a design change that must update this test AND the
+    // design doc deliberately.
+    expect(callSites.length, `qbVoidInvoice call sites at lines ${callSites.join(", ")}`).toBe(2);
+    for (const ln of callSites) {
+      // Both must sit inside the deposit-settlement block: scan up to 60
+      // lines back for the settlement decision marker.
+      const context = lines.slice(Math.max(0, ln - 60), ln).join("\n");
+      expect(
+        /decideDepositSettlement|DEPOSIT_SETTLE/.test(context),
+        `qbVoidInvoice at line ${ln} is outside the deposit-settlement block`,
+      ).toBe(true);
     }
   });
 });
