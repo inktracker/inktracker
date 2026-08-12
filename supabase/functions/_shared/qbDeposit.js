@@ -131,27 +131,61 @@ export function paymentsLinkedToInvoice(payments, invoiceId) {
  * lines pointing at the deposit invoice are re-pointed; applications to
  * other invoices (shouldn't exist, but customers are creative in QBO)
  * stay untouched.
+ *
+ * `maxApply` (optional): the final invoice's open Balance. Re-pointed
+ * applications are clamped so the total moved never exceeds it — QBO
+ * rejects over-application outright, which would wedge settlement
+ * forever (order edited below the deposit). A clamped remainder simply
+ * becomes an unapplied customer credit on the Payment, matching the
+ * order-edit warning copy ("QuickBooks will show a credit").
  */
-export function buildPaymentRelinkBody(payment, depositInvoiceId, finalInvoiceId) {
+export function buildPaymentRelinkBody(payment, depositInvoiceId, finalInvoiceId, maxApply) {
   const from = String(depositInvoiceId);
   const to = String(finalInvoiceId);
+  let allowance = Number.isFinite(Number(maxApply)) ? Math.max(0, r2(maxApply)) : Infinity;
   let changed = false;
-  const lines = (payment?.Line ?? []).map((l) => {
-    const linked = (l?.LinkedTxn ?? []).map((t) => {
-      if (t?.TxnType === "Invoice" && String(t?.TxnId) === from) {
-        changed = true;
-        return { ...t, TxnId: to };
-      }
-      return t;
+  const lines = [];
+  for (const l of (payment?.Line ?? [])) {
+    const pointsAtDeposit = (l?.LinkedTxn ?? []).some(
+      (t) => t?.TxnType === "Invoice" && String(t?.TxnId) === from,
+    );
+    if (!pointsAtDeposit) { lines.push(l); continue; }
+    changed = true;
+    const amt = r2(l?.Amount ?? 0);
+    const applied = allowance === Infinity ? amt : Math.min(amt, allowance);
+    if (applied <= 0) {
+      // No room left on the final invoice — leave this portion unapplied
+      // (drop the application line entirely; the Payment's TotalAmt keeps
+      // the money as customer credit).
+      continue;
+    }
+    if (allowance !== Infinity) allowance = r2(allowance - applied);
+    lines.push({
+      ...l,
+      Amount: applied,
+      LinkedTxn: (l.LinkedTxn ?? []).map((t) =>
+        (t?.TxnType === "Invoice" && String(t?.TxnId) === from) ? { ...t, TxnId: to } : t,
+      ),
     });
-    return { ...l, LinkedTxn: linked };
-  });
+  }
   if (!changed) return null;
   return {
     ...payment,
     Line: lines,
     sparse: false,
   };
+}
+
+/**
+ * Settlement must never move/void a document it can't PROVE is an
+ * InkTracker deposit invoice — the pointer column is data, and data can
+ * be wrong (buggy carry-forward, hostile write). Trust requires the
+ * -DEP DocNumber family OR our own PrivateNote stamp.
+ */
+export function isTrustedDepositInvoice(invoice) {
+  if (!invoice) return false;
+  if (isDepositDocNumber(invoice.DocNumber)) return true;
+  return String(invoice.PrivateNote || "").startsWith("InkTracker deposit invoice");
 }
 
 // ── Webhook / reconcile: deposit-invoice paid detection ─────────────────────

@@ -136,13 +136,18 @@ export function orderEditBlockers(order, editedLines) {
 
 export function orderEditWarnings(order, editedLines, { sourcePO, editedTotal } = {}) {
   const warnings = [];
-  // Deposit-path: the deposit is a fixed snapshot the customer already
-  // paid — an edit that drops the total below it means the shop has
-  // over-collected and owes the customer the difference out-of-band.
+  // Deposit-path: the deposit is a fixed snapshot — paid OR already
+  // requested via a live deposit invoice (the invoice keeps charging the
+  // snapshot regardless of this edit). An edit that drops the total below
+  // it means the shop will over-collect and owe the customer the
+  // difference out-of-band.
   const depositSnap = Number(order?.deposit_amount) || 0;
-  if (order?.deposit_paid && depositSnap > 0 && Number.isFinite(Number(editedTotal)) && Number(editedTotal) < depositSnap) {
+  const depositCommitted = order?.deposit_paid || order?.qb_deposit_invoice_id;
+  if (depositCommitted && depositSnap > 0 && Number.isFinite(Number(editedTotal)) && Number(editedTotal) < depositSnap) {
     warnings.push(
-      `The new total ($${Number(editedTotal).toFixed(2)}) is BELOW the $${depositSnap.toFixed(2)} deposit the customer already paid — you'll owe them the difference. QuickBooks will show a credit on the invoice.`,
+      order?.deposit_paid
+        ? `The new total ($${Number(editedTotal).toFixed(2)}) is BELOW the $${depositSnap.toFixed(2)} deposit the customer already paid — you'll owe them the difference. QuickBooks will show a credit on the invoice.`
+        : `The new total ($${Number(editedTotal).toFixed(2)}) is BELOW the $${depositSnap.toFixed(2)} deposit invoice already sent to the customer — if they pay it, you'll owe them the difference. Void the deposit invoice in QuickBooks first if the deposit should change.`,
     );
   }
   if (sourcePO) {

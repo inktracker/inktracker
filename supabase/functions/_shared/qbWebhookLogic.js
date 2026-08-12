@@ -297,6 +297,17 @@ export function buildOrderInsertFromQuote(quote, orderId) {
     tax,
     total,
     paid:               false,
+    // Deposit-path (docs/deposit-path-design.md): the SERVER-side twin of
+    // src/lib/orders/buildOrderFromQuote.js MUST carry the same deposit
+    // fields — this builder runs on every webhook/reconcile conversion,
+    // which is every online-paid deposit. Dropping qb_deposit_invoice_id
+    // here made settlement unreachable on the canonical flow and branch B
+    // fabricated a phantom QB Payment (audit 2026-08-12, CRITICAL 1).
+    // Parity is pinned by orderBuilderParity.test.js.
+    deposit_pct:           quote.deposit_pct ?? null,
+    deposit_paid:          Boolean(quote.deposit_paid),
+    deposit_amount:        quote.deposit_amount ?? null,
+    qb_deposit_invoice_id: quote.qb_deposit_invoice_id ?? null,
     selected_artwork:   quote.selected_artwork || [],
   };
 }

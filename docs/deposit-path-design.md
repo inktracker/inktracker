@@ -75,6 +75,51 @@ New columns (migration `20261012000000_deposit_path.sql`):
 CHECK `deposit_amount IS NULL OR deposit_amount >= 0` on all three.
 `deposit_pct`/`deposit_paid` columns already exist everywhere (20260819).
 
+## Audit hardening round (2026-08-12, five adversarial audits)
+
+Findings fixed on top of the base design — the settlement mechanism held;
+the pointer plumbing and several surfaces did not:
+
+- **Builder parity (CRITICAL)**: the edge-side order builder
+  (`buildOrderInsertFromQuote`) now carries all deposit fields; a parity
+  test pins the frontend/edge builders together. Without it, every
+  online-paid deposit lost its pointer at conversion and branch B posted a
+  phantom Payment.
+- **Duplication (CRITICAL)**: `QUOTE_DUPLICATE_EXCLUDED` strips
+  `deposit_amount`, `deposit_paid_at`, and both deposit-invoice pointers.
+- **Paid predicate**: `Approved && deposit_paid` no longer renders "Paid —
+  Thank You!" — the balance is still owed.
+- **Trust gate**: settlement refuses to move/void any QB document it
+  can't prove is ours (`isTrustedDepositInvoice`: -DEP DocNumber family or
+  our PrivateNote stamp) — a planted pointer can't void a real invoice.
+  The employee column guard also covers `orders.qb_deposit_invoice_id`.
+- **Identity-keyed clearing**: settlement clears pointers on quotes,
+  orders, AND invoices by `qb_deposit_invoice_id` match, and stamps
+  `deposit_paid` when settlement itself discovered the money (webhook
+  miss).
+- **VOID_UNPAID rules**: re-checks for in-flight payments before voiding;
+  a locally-marked (cash) deposit posts the manual Payment instead of the
+  false "never paid" email; ALREADY_GONE with a paid deposit alerts that
+  the customer's money sits as an unapplied QB credit.
+- **Relink clamp**: payments moved onto the final invoice are clamped to
+  its open balance (over-collection becomes visible customer credit, not
+  a wedged settlement loop).
+- **Mint/final mutual exclusion**: `createDepositInvoice` shares the
+  `create_invoice_row` lock with `createInvoice` and resolves the WHOLE
+  quote→order→invoice chain before deciding `final_invoice_exists`.
+- **Customer page**: deposit routing requires a live vehicle and no final
+  invoice; either rail (deposit or final link) can collect; label follows
+  routing.
+- **Watchdogs**: nightly reconcile clears dead vehicles (voided in QBO)
+  and notifies; alerts on deposits collected 30+ days with no final
+  invoice; the pay-link format monitor scans `qb_deposit_payment_link`.
+- **Anon hardening**: neither the wizard RPC nor `createQuoteFromPayload`
+  accepts `deposit_paid` from the payload anymore; `quotes.deposit_pct`
+  default drops 50 → 0.
+- **Money display**: invoice PDF/email show "Deposit applied − $X /
+  Balance due"; quote PDF shows "Deposit due now / Balance at completion";
+  broker editors show read-only deposit terms only.
+
 ## Failure & race handling
 
 - Mint fails → send proceeds without a deposit link; shop notified

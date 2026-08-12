@@ -8,6 +8,7 @@ import { invoiceThreadId, addRefTag, logOutboundMessage } from "@/lib/messageThr
 import { deriveQbSendState } from "@/lib/quotes/qbSendState";
 import { describeEdgeError } from "@/lib/edgeErrors";
 import { resolveCheckoutTarget } from "@/lib/payment/resolveCheckoutTarget";
+import { depositAmountFor } from "@/lib/deposits";
 import ModalBackdrop from "../shared/ModalBackdrop";
 
 export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess }) {
@@ -68,8 +69,14 @@ export default function SendInvoiceModal({ invoice, customer, onClose, onSuccess
       return;
     }
     setSubject(`Invoice ${invoice.invoice_id} from ${shop}`);
+    // Deposit-path: a settled deposit reduces what's owed — the email must
+    // state the remaining balance or check-payers overpay by the deposit.
+    const dep = invoice.deposit_paid ? depositAmountFor(invoice) : 0;
+    const depLines = dep > 0
+      ? `\nDeposit applied: -${fmtMoney(dep)}\nBalance due: ${fmtMoney(Math.max(0, (Number(invoice.total) || 0) - dep))}`
+      : "";
     setBody(
-      `Hi ${invoice.customer_name || "there"},\n\nYour invoice is ready.\n\nInvoice: ${invoice.invoice_id}\nTotal: ${fmtMoney(invoice.total)}\n${invoice.due ? `Due: ${invoice.due}` : ""}\n\nPlease let us know if you have any questions.\n\nThank you for your business!\n${shop}`
+      `Hi ${invoice.customer_name || "there"},\n\nYour invoice is ready.\n\nInvoice: ${invoice.invoice_id}\nTotal: ${fmtMoney(invoice.total)}${depLines}\n${invoice.due ? `Due: ${invoice.due}` : ""}\n\nPlease let us know if you have any questions.\n\nThank you for your business!\n${shop}`
     );
   }, [shopName, invoice.invoice_id, invoice.customer_name, invoice.total, invoice.due, isPaid]);
 

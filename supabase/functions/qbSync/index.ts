@@ -68,6 +68,7 @@ import {
   decideDepositSettlement,
   paymentsLinkedToInvoice,
   buildPaymentRelinkBody,
+  isTrustedDepositInvoice,
 } from "../_shared/qbDeposit.js";
 import {
   withQbIdempotency,
@@ -798,13 +799,28 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   let sourceRow: any = null;
   if (quote?.id) {
     for (const table of ["invoices", "quotes"]) {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from(table)
         .select(table === "invoices"
           ? "id, qb_invoice_id, qb_doc_number, order_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid"
           : "id, qb_invoice_id, qb_doc_number, quote_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid")
         .eq("id", quote.id)
         .maybeSingle();
+      if (error) {
+        // Deploy-order armor: if the deposit-path migration hasn't landed
+        // yet, the deposit columns 42703 — which would null sourceRow for
+        // EVERY invoice and silently disable the stale-snapshot authority
+        // read (the #636 duplicate class). Fall back to the pre-deposit
+        // column set so the authority read survives a functions-first
+        // deploy. Migration-first remains the required order.
+        ({ data, error } = await supabase
+          .from(table)
+          .select(table === "invoices"
+            ? "id, qb_invoice_id, qb_doc_number, order_id"
+            : "id, qb_invoice_id, qb_doc_number, quote_id")
+          .eq("id", quote.id)
+          .maybeSingle());
+      }
       if (!error && data) { sourceRow = data; break; }
     }
     if (sourceRow?.qb_invoice_id && String(sourceRow.qb_invoice_id) !== String(quote.qb_invoice_id || "")) {
@@ -1527,6 +1543,10 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // clean re-sync runs this block again.
   let depositRecordFailed = false;
   let depositSettled: string | null = null; // DEPOSIT_SETTLE.* outcome for the response/audit
+  // Set when MOVE_AND_VOID DISCOVERED the collected money (webhook miss):
+  // the write-back then stamps deposit_paid locally so shop records, the
+  // customer page, and QB agree.
+  let depositCollectedAtSettle: number | null = null;
   const depositRow = sourceRow ?? quote;
   const depositInvoiceId = String(depositRow?.qb_deposit_invoice_id || quote.qb_deposit_invoice_id || "");
   // Snapshot-first (deposit_amount is the agreement); payload-derived only
@@ -1534,10 +1554,40 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   const depositAmount = computeDepositAmount({ ...quote, ...depositRow }) ||
     (Number(invoicePayload?.depositAmount) || 0);
 
+  // Shared poster for a manually-collected deposit (cash/check): a real
+  // QB Payment for the snapshot amount, clamped to the live open balance.
+  const postManualDepositPayment = async () => {
+    const liveBalance = Number((qbInvoiceFinal ?? created)?.Balance ?? depositAmount);
+    const clamped = Math.min(depositAmount, Math.max(0, liveBalance));
+    if (clamped > 0.009) {
+      await qbCreate(token, realmId, "payment", {
+        CustomerRef: { value: qbCustomerId },
+        TotalAmt: clamped,
+        PrivateNote: `InkTracker deposit for quote ${quote.quote_id}`,
+        Line: [{
+          Amount: clamped,
+          LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: "Invoice" }],
+        }],
+      });
+    }
+  };
+
   if (depositInvoiceId && !taxBlocked && String(depositInvoiceId) !== String(qbInvoiceId)) {
     try {
       const depData = await qbQuery(token, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(depositInvoiceId)}'`);
       const depInvoice = depData?.QueryResponse?.Invoice?.[0] ?? null;
+
+      // TRUST GATE: never move/void a document we can't prove is our own
+      // deposit invoice (-DEP DocNumber family or our PrivateNote stamp).
+      // The pointer column is data, and data can be wrong or hostile —
+      // this is what stands between settlement and voiding a REAL
+      // customer invoice (audit 2026-08-12, MAJOR).
+      if (depInvoice && !isTrustedDepositInvoice(depInvoice)) {
+        throw new Error(
+          `qb_deposit_invoice_id ${depositInvoiceId} points at "${depInvoice.DocNumber}", which is NOT an InkTracker deposit invoice — refusing to touch it. Clear the pointer or void the deposit invoice manually.`,
+        );
+      }
+
       const settlement = decideDepositSettlement(depInvoice);
       depositSettled = settlement.action;
 
@@ -1552,33 +1602,88 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
           // memo? journal entry?). Do NOT void — that would orphan money.
           throw new Error(`deposit invoice ${depositInvoiceId} shows collected funds but no linked Payment found — manual review required`);
         }
+        // Clamp total moved to the final invoice's open balance — QBO
+        // rejects over-application (order edited below the deposit would
+        // wedge settlement forever); the excess stays as customer credit.
+        let finalBalance = Number((qbInvoiceFinal ?? created)?.Balance ?? NaN);
         for (const pay of linked) {
-          const relink = buildPaymentRelinkBody(pay, depositInvoiceId, qbInvoiceId);
-          if (relink) await qbUpdate(token, realmId, "payment", relink);
+          const relink = buildPaymentRelinkBody(pay, depositInvoiceId, qbInvoiceId, finalBalance);
+          if (relink) {
+            await qbUpdate(token, realmId, "payment", relink);
+            if (Number.isFinite(finalBalance)) {
+              const moved = relink.Line
+                .filter((l: any) => (l?.LinkedTxn ?? []).some((t: any) => String(t?.TxnId) === String(qbInvoiceId)))
+                .reduce((s: number, l: any) => s + (Number(l.Amount) || 0), 0);
+              finalBalance = Math.max(0, finalBalance - moved);
+            }
+          }
         }
         // Re-read for a fresh SyncToken (the relink bumped it), then void.
         const freshDep = await qbQuery(token, realmId, `SELECT Id, SyncToken FROM Invoice WHERE Id = '${escapeQbStringLiteral(depositInvoiceId)}'`);
         const freshRow = freshDep?.QueryResponse?.Invoice?.[0];
         if (freshRow) await qbVoidInvoice(token, realmId, depositInvoiceId, freshRow.SyncToken);
         console.log(`[createInvoice] deposit settled: moved ${linked.length} payment(s) from deposit invoice ${depositInvoiceId} onto ${qbInvoiceId}, deposit invoice voided`);
+        // Local truth: money is collected. The webhook usually stamped
+        // deposit_paid already; when settlement DISCOVERS the payment
+        // (webhook missed), stamp it here so the shop's records and the
+        // customer page agree with QB (audit HIGH: silent discovery).
+        depositCollectedAtSettle = settlement.collected ?? depositAmount;
       } else if (settlement.action === DEPOSIT_SETTLE.VOID_UNPAID) {
+        // Race guard: a payment may have applied between the settlement
+        // read and this void (customer clicked pay seconds ago). Re-check
+        // for linked payments before voiding — money must never be
+        // unapplied by our void.
+        const custId = String(depInvoice.CustomerRef?.value || qbCustomerId);
+        const payData = await qbQuery(token, realmId, `SELECT * FROM Payment WHERE CustomerRef = '${escapeQbStringLiteral(custId)}' ORDERBY MetaData.CreateTime DESC MAXRESULTS 200`);
+        const lateLinked = paymentsLinkedToInvoice(payData?.QueryResponse?.Payment ?? [], depositInvoiceId);
+        if (lateLinked.length > 0) {
+          throw new Error(`deposit invoice ${depositInvoiceId} received a payment mid-settlement — retry the sync to settle it properly`);
+        }
         await qbVoidInvoice(token, realmId, depositInvoiceId, depInvoice.SyncToken);
-        try {
-          const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-          await recordShopNotification(adminClient, {
-            shopOwner: quote.shop_owner,
-            eventType: "qb_deposit_not_collected",
-            severity:  "warning",
-            title:     `Deposit for ${quote.quote_id} was never paid`,
-            body:      `The final QuickBooks invoice was created, but the requested deposit was never collected — the deposit invoice has been voided and the customer now owes the full balance on the final invoice.`,
-            relatedEntity: "quote",
-            relatedId:     String(quote.id ?? ""),
-            metadata: { quote_id: quote.quote_id, qb_invoice_id: qbInvoiceId, deposit_amount: depositAmount },
-          });
-        } catch { /* notification is best-effort */ }
+        if (depositRow?.deposit_paid || quote.deposit_paid) {
+          // The deposit WAS collected — just not through the deposit
+          // invoice (cash/check marked manually, or a moved-then-void-
+          // failed retry). Post the manual payment now; no scary
+          // "never paid" email (audit MAJORs: cash-swallow + mislabel).
+          if (!existingInvoiceHadPayment) {
+            await postManualDepositPayment();
+          }
+        } else {
+          try {
+            const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+            await recordShopNotification(adminClient, {
+              shopOwner: quote.shop_owner,
+              eventType: "qb_deposit_not_collected",
+              severity:  "warning",
+              title:     `Deposit for ${quote.quote_id} was never paid`,
+              body:      `The final QuickBooks invoice was created, but the requested deposit was never collected — the deposit invoice has been voided and the customer now owes the full balance on the final invoice.`,
+              relatedEntity: "quote",
+              relatedId:     String(quote.id ?? ""),
+              metadata: { quote_id: quote.quote_id, qb_invoice_id: qbInvoiceId, deposit_amount: depositAmount },
+            });
+          } catch { /* notification is best-effort */ }
+        }
+      } else if (settlement.action === DEPOSIT_SETTLE.ALREADY_GONE) {
+        // Vehicle voided/deleted OUTSIDE settlement while the deposit was
+        // marked paid: the customer's money is now an unapplied credit in
+        // QB. Never fabricate a Payment for it — alert the shop to apply
+        // the credit (audit HIGH: shop voided a paid deposit invoice).
+        if ((depositRow?.deposit_paid || quote.deposit_paid) && !existingInvoiceHadPayment) {
+          try {
+            const adminClient = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+            await recordShopNotification(adminClient, {
+              shopOwner: quote.shop_owner,
+              eventType: "qb_deposit_credit_orphaned",
+              severity:  "alert",
+              title:     `Deposit for ${quote.quote_id}: paid deposit invoice was removed in QuickBooks`,
+              body:      `The customer's $${depositAmount.toFixed(2)} deposit was collected, but its deposit invoice was voided or deleted inside QuickBooks — the money is now an unapplied credit on the customer. In QuickBooks, apply that credit to invoice ${String(qbInvoiceFinal?.DocNumber || baseDocNumber)} or the final invoice will over-bill by the deposit.`,
+              relatedEntity: "quote",
+              relatedId:     String(quote.id ?? ""),
+              metadata: { quote_id: quote.quote_id, qb_invoice_id: qbInvoiceId, qb_deposit_invoice_id: depositInvoiceId, deposit_amount: depositAmount },
+            });
+          } catch { /* best-effort */ }
+        }
       }
-      // ALREADY_GONE → a prior settlement (or QBO-side delete) finished the
-      // job; nothing to do. The write-back below clears the local pointers.
     } catch (err) {
       depositRecordFailed = true;
       depositSettled = "failed";
@@ -1590,7 +1695,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
           eventType: "qb_deposit_move_failed",
           severity:  "alert",
           title:     `Deposit settlement failed for ${quote.quote_id}`,
-          body:      `The final QuickBooks invoice was created, but moving the customer's deposit payment onto it failed. QuickBooks may briefly show both the deposit invoice and the full final invoice. Re-syncing the invoice retries automatically; if this persists, in QuickBooks move the payment from invoice ${depositInvoiceId} to the final invoice and void the deposit invoice.`,
+          body:      `The final QuickBooks invoice was created, but moving the customer's deposit payment onto it failed. QuickBooks may briefly show both the deposit invoice and the full final invoice. Open the invoice in InkTracker and push it to QuickBooks again to retry the settlement; if it keeps failing, in QuickBooks move the payment from invoice ${depositInvoiceId} to the final invoice and void the deposit invoice.`,
           relatedEntity: "quote",
           relatedId:     String(quote.id ?? ""),
           metadata: {
@@ -1609,22 +1714,9 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
     // B: manually-marked deposit (no deposit invoice). A failure here is
     // REAL money drift: the deposit shows paid in InkTracker but the QB
     // invoice carries the full balance, so a customer who pays QB-side is
-    // double-billed. Clamp to the live open balance so a re-post after a
-    // downward edit can never over-apply.
+    // double-billed. Clamped to the live open balance inside the helper.
     try {
-      const liveBalance = Number((qbInvoiceFinal ?? created)?.Balance ?? depositAmount);
-      const clamped = Math.min(depositAmount, Math.max(0, liveBalance));
-      if (clamped > 0.009) {
-        await qbCreate(token, realmId, "payment", {
-          CustomerRef: { value: qbCustomerId },
-          TotalAmt: clamped,
-          PrivateNote: `InkTracker deposit for quote ${quote.quote_id}`,
-          Line: [{
-            Amount: clamped,
-            LinkedTxn: [{ TxnId: qbInvoiceId, TxnType: "Invoice" }],
-          }],
-        });
-      }
+      await postManualDepositPayment();
     } catch (err) {
       depositRecordFailed = true;
       console.error("[createInvoice] CRITICAL: deposit payment record failed — operator must record manually:", err);
@@ -1680,11 +1772,39 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
   // (moved+voided / voided-unpaid / already gone), the local pointers to it
   // are cleared — its pay link is dead and nothing should route a customer
   // there. On failure the pointers stay, which is what makes the next
-  // createInvoice retry the settlement. The deposit_amount snapshot is
-  // stamped if the row predates the snapshot column.
-  // Column check (feedback_db_columns): quotes carry the pay link column,
-  // invoices only the id — per-table patches below.
+  // createInvoice retry the settlement.
+  //
+  // Cleared BY IDENTITY, not by row id: the push often runs from the
+  // invoices row, and a row-id-only clear left the source QUOTE (and the
+  // order) pointing a live customer button at a voided Intuit page (audit
+  // 2026-08-12, HIGH). One identity-keyed update per table; MOVE_AND_VOID
+  // discovery also stamps deposit_paid so local records match QB.
+  // Column check (feedback_db_columns): quotes carry the pay link column
+  // + deposit_paid_at/payment_status; orders/invoices don't all.
   const settlementSucceeded = depositSettled !== null && depositSettled !== "failed";
+  if (settlementSucceeded && depositInvoiceId) {
+    const discovered = depositCollectedAtSettle !== null;
+    const nowIso = new Date().toISOString();
+    const clearPointer = { qb_deposit_invoice_id: null };
+    const paidStamp = discovered
+      ? { deposit_paid: true, ...(depositCollectedAtSettle! > 0 ? { deposit_amount: Math.round(depositCollectedAtSettle! * 100) / 100 } : {}) }
+      : {};
+    const tableUpdates: Array<[string, Record<string, unknown>]> = [
+      ["quotes", { ...clearPointer, qb_deposit_payment_link: null, ...paidStamp, ...(discovered ? { deposit_paid_at: nowIso, payment_status: "Deposit Paid" } : {}) }],
+      ["orders", { ...clearPointer, ...paidStamp }],
+      ["invoices", { ...clearPointer, ...paidStamp }],
+    ];
+    for (const [table, patch] of tableUpdates) {
+      const { error: clearErr } = await supabase
+        .from(table)
+        .update(patch)
+        .eq("qb_deposit_invoice_id", depositInvoiceId)
+        .eq("shop_owner", quote.shop_owner);
+      if (clearErr) {
+        console.error(`[createInvoice] deposit pointer clear failed on ${table} for ${depositInvoiceId}:`, clearErr.message);
+      }
+    }
+  }
   const depositSettleQuotes = settlementSucceeded
     ? { qb_deposit_invoice_id: null, qb_deposit_payment_link: null }
     : {};
@@ -1854,7 +1974,7 @@ async function handleCreateDepositInvoice(token: string, realmId: string, params
   // contract as handleCreateInvoice).
   const { data: fresh, error: freshErr } = await supabase
     .from("quotes")
-    .select("id, quote_id, shop_owner, status, total, customer_email, customer_id, deposit_pct, deposit_paid, deposit_amount, qb_invoice_id, qb_deposit_invoice_id, qb_deposit_payment_link, converted_order_id")
+    .select("id, quote_id, shop_owner, status, total, customer_email, customer_id, deposit_pct, deposit_paid, deposit_amount, qb_invoice_id, qb_deposit_invoice_id, qb_deposit_payment_link, converted_order_id, broker_id, broker_email")
     .eq("id", quote.id)
     .maybeSingle();
   if (freshErr || !fresh) throw new Error(`createDepositInvoice: quote ${quote.id} not found`);
@@ -1862,11 +1982,34 @@ async function handleCreateDepositInvoice(token: string, realmId: string, params
   if (fresh.deposit_paid) {
     return { skipped: "deposit_already_paid", qbDepositInvoiceId: fresh.qb_deposit_invoice_id ?? null };
   }
-  if (fresh.qb_invoice_id) {
+  // Broker quotes never mint deposit invoices: the quote's total is the
+  // WHOLESALE charge and the end client can't pay QB checkout anyway
+  // (design doc, out of scope). Server-side backstop for the UI gate.
+  if (fresh.broker_id || (fresh as any).broker_email) {
+    return { skipped: "broker_quote" };
+  }
+  // Final-invoice check must cover the WHOLE chain, not just the quotes
+  // row: order-completion pushes write qb_invoice_id onto the INVOICES
+  // row, and quotes.qb_invoice_id stays null on that flow (audit
+  // 2026-08-12, CRITICAL). A converted quote's chain is quote →
+  // converted_order_id → orders.order_id → invoices.order_id.
+  let finalInvoiceId: string | null = fresh.qb_invoice_id || null;
+  if (!finalInvoiceId && fresh.converted_order_id) {
+    const { data: chainInv } = await supabase
+      .from("invoices")
+      .select("qb_invoice_id")
+      .eq("order_id", fresh.converted_order_id)
+      .eq("shop_owner", fresh.shop_owner)
+      .not("qb_invoice_id", "is", null)
+      .limit(1)
+      .maybeSingle();
+    finalInvoiceId = chainInv?.qb_invoice_id || null;
+  }
+  if (finalInvoiceId) {
     // A final invoice already exists — the deposit window has passed; the
     // customer pays the final invoice's balance. Never mint a second
     // collectible document for the same money.
-    return { skipped: "final_invoice_exists", qbInvoiceId: fresh.qb_invoice_id };
+    return { skipped: "final_invoice_exists", qbInvoiceId: finalInvoiceId };
   }
   const depositAmount = computeDepositAmount(fresh);
   if (depositAmount <= 0.009) {
@@ -2257,6 +2400,28 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+  // Deposit-path: collect every deposit-invoice id this tenant has EVER
+  // pointed at (quotes ∪ orders ∪ invoices) so the Id-based skip below
+  // works even when QBO reassigned our DocNumber (custom transaction
+  // numbers OFF) or the shop renamed it inside QBO. Best-effort — the
+  // -DEP suffix test still catches the normal case.
+  const depositInvoiceIds = new Set<string>();
+  try {
+    for (const table of ["quotes", "orders", "invoices"]) {
+      const { data: depRows } = await supabase
+        .from(table)
+        .select("qb_deposit_invoice_id")
+        .eq("shop_owner", shopOwner)
+        .not("qb_deposit_invoice_id", "is", null)
+        .limit(2000);
+      for (const r of depRows ?? []) {
+        if (r?.qb_deposit_invoice_id) depositInvoiceIds.add(String(r.qb_deposit_invoice_id));
+      }
+    }
+  } catch (e) {
+    console.warn("[pullInvoices] deposit-id set unavailable (pre-migration?):", (e as Error)?.message);
+  }
+
   for (const qbInv of all) {
     const docNumber = qbInv.DocNumber || `QB-${qbInv.Id}`;
 
@@ -2264,8 +2429,9 @@ async function handlePullInvoices(token: string, realmId: string, supabase: any,
     // (docs/deposit-path-design.md), never local invoice rows. Importing
     // one would double-count the deposit as its own receivable. Matched by
     // the -DEP DocNumber suffix (covers voided ones too, which drop out of
-    // most queries anyway once TotalAmt is 0).
-    if (isDepositDocNumber(docNumber)) {
+    // most queries anyway once TotalAmt is 0) AND by the tenant's known
+    // deposit-invoice ids (covers QBO-side DocNumber renames).
+    if (isDepositDocNumber(docNumber) || depositInvoiceIds.has(String(qbInv.Id))) {
       skipped++;
       continue;
     }
@@ -3158,9 +3324,13 @@ Deno.serve(async (req) => {
             deposit_amount: depQuote?.deposit_amount,
           },
         };
+        // SAME lock key as createInvoice (not a deposit-specific one):
+        // the deposit mint and a concurrent final-invoice push for the
+        // same quote must serialize, or both documents go collectible at
+        // once (audit 2026-08-12, MEDIUM — mint-vs-final race).
         const depLockKey = depQuote?.id
-          ? `create_deposit_invoice_row:${depQuote.id}`
-          : (depQuote?.quote_id ? `create_deposit_invoice_row:${depShop}:${depQuote.quote_id}` : null);
+          ? `create_invoice_row:${depQuote.id}`
+          : (depQuote?.quote_id ? `create_invoice_row:${depShop}:${depQuote.quote_id}` : null);
         const depOutcome = await withQbIdempotency(
           depAdmin,
           depIdempKey,

@@ -62,7 +62,13 @@ export async function processDepositInvoicePaid(supabase, { quote, qbInvoiceId, 
   if (orderId) {
     await supabase
       .from("orders")
-      .update({ deposit_paid: true, ...(patch.deposit_amount ? { deposit_amount: patch.deposit_amount } : {}) })
+      .update({
+        deposit_paid: true,
+        ...(patch.deposit_amount ? { deposit_amount: patch.deposit_amount } : {}),
+        // The pointer MUST ride to the order (→ invoice) or settlement
+        // can never find the deposit invoice at final push (CRITICAL 1).
+        ...(quote.qb_deposit_invoice_id ? { qb_deposit_invoice_id: quote.qb_deposit_invoice_id } : {}),
+      })
       .eq("order_id", orderId)
       .eq("shop_owner", shopOwner);
   }

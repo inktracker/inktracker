@@ -49,10 +49,15 @@ export function quoteAlreadyApproved(quote) {
 // itself, because a shop can manually convert a quote to an order with
 // no payment taken — that quote still legitimately owes its balance.
 export function quoteAlreadyPaid(quote) {
+  // NOTE (deposit-path, 2026-08-12): "Approved && deposit_paid" used to
+  // count as PAID here — a Stripe-era shortcut. With deposits actually
+  // collectible, a deposit-paid quote still OWES its remaining balance;
+  // rendering "Paid — Thank You!" on it lied to the customer. The
+  // deposit-paid state now renders its own honest banner ("Deposit of $X
+  // received…") via the approved/converted branches on QuotePayment.
   return (
     quote?.paid === true ||
     quote?.status === "Approved and Paid" ||
-    quote?.status === "Paid" ||
-    (quote?.status === "Approved" && Boolean(quote?.deposit_paid))
+    quote?.status === "Paid"
   );
 }

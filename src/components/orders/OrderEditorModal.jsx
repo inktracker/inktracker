@@ -256,8 +256,12 @@ export default function OrderEditorModal({ order, customers: customersProp, link
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Customer</label>
               <select
                 value={draft.customer_id}
-                disabled={!caps.canSwitchCustomer}
-                title={!caps.canSwitchCustomer ? "This order's invoice is in QuickBooks — the QB invoice belongs to this customer. Switching customers on a QB-invoiced order arrives with phase 3 (void + recreate)." : undefined}
+                disabled={!caps.canSwitchCustomer || Boolean(order.qb_deposit_invoice_id) || Boolean(order.deposit_paid)}
+                title={!caps.canSwitchCustomer
+                  ? "This order's invoice is in QuickBooks — the QB invoice belongs to this customer. Switching customers on a QB-invoiced order arrives with phase 3 (void + recreate)."
+                  : (order.qb_deposit_invoice_id || order.deposit_paid)
+                    ? "This order carries a customer deposit (invoice or payment) filed under this customer in QuickBooks — switching customers would cross-wire whose money settles where."
+                    : undefined}
                 onChange={(e) => {
                   const c = customers.find((x) => x.id === e.target.value);
                   // Same rule as the quote editor (#735): EVERY snapshot

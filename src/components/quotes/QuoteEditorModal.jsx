@@ -860,14 +860,31 @@ export default function QuoteEditorModal({
                       // detail kept filling the data" bug (2026-08-06):
                       // emails/payment links kept going to the previous
                       // client after a duplicate-and-switch.
-                      setQ({
-                        ...q,
-                        ...customerSnapshotPatch(c || null, {
-                          defaultTaxRate,
-                          currentTaxRate: q.tax_rate,
-                          currentDepositPct: q.deposit_pct,
-                        }),
+                      // Deposit-path guard: once a deposit invoice is
+                      // minted (or the deposit is paid), it is filed under
+                      // THIS customer in QuickBooks — switching customers
+                      // cross-wires whose money settles where. Warn, and
+                      // never let the new customer's default_deposit_pct
+                      // overwrite the locked terms.
+                      const depositLockedSwitch = Boolean(q.qb_deposit_invoice_id) || Boolean(q.deposit_paid);
+                      if (depositLockedSwitch && c) {
+                        const ok = window.confirm(
+                          q.deposit_paid
+                            ? `The current customer already PAID a deposit on this quote. Switching customers will strand that deposit — QuickBooks can't apply one customer's payment to another customer's invoice. Are you sure?`
+                            : `A deposit invoice for this quote was already sent to the current customer in QuickBooks. Switching customers orphans it — void it in QuickBooks first. Switch anyway?`,
+                        );
+                        if (!ok) return;
+                      }
+                      const switchPatch = customerSnapshotPatch(c || null, {
+                        defaultTaxRate,
+                        currentTaxRate: q.tax_rate,
+                        currentDepositPct: q.deposit_pct,
                       });
+                      if (depositLockedSwitch) {
+                        // Locked terms survive the switch verbatim.
+                        switchPatch.deposit_pct = q.deposit_pct;
+                      }
+                      setQ({ ...q, ...switchPatch });
                     }}
                     className="flex-1 min-w-0 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300 truncate"
                   >

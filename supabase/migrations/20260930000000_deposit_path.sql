@@ -58,6 +58,14 @@ alter table invoices add  constraint invoices_deposit_pct_range
 create index if not exists idx_quotes_qb_deposit_invoice_id
   on quotes (qb_deposit_invoice_id) where qb_deposit_invoice_id is not null;
 
+-- With deposits COLLECTIBLE, a DEFAULT 50 on deposit_pct is a loaded gun:
+-- any insert path that omits the field would silently demand a deposit.
+-- Every current code path sets it explicitly; the default becomes 0.
+-- (Existing rows keep their values — legacy pct>0 rows without a minted
+-- deposit invoice are harmless: the customer page requires a live
+-- qb_deposit_invoice_id before routing to deposit collection.)
+alter table quotes alter column deposit_pct set default 0;
+
 -- ── Employee financial-column guard: deposit_amount joins the denylist ──
 -- Lockstep with 20260711020000 + 20260819000000 (same function, one more
 -- column). Employees must not edit the deposit snapshot.
@@ -89,6 +97,13 @@ BEGIN
      OR NEW.deposit_paid    IS DISTINCT FROM OLD.deposit_paid
      OR NEW.deposit_pct     IS DISTINCT FROM OLD.deposit_pct
      OR NEW.deposit_amount  IS DISTINCT FROM OLD.deposit_amount
+     -- qb_deposit_invoice_id drives settlement's payment-move + VOID in
+     -- the shop's QB realm — the single most dangerous column on this
+     -- table. Written only by service-role edge functions, which bypass
+     -- this guard by design (security audit 2026-08-12, HIGH). NOTE:
+     -- orders has no qb_invoice_id column — do not "defensively" add it
+     -- here; the trigger would 42703 on every employee update.
+     OR NEW.qb_deposit_invoice_id IS DISTINCT FROM OLD.qb_deposit_invoice_id
      OR NEW.additional_charges IS DISTINCT FROM OLD.additional_charges
      OR NEW.rush_rate       IS DISTINCT FROM OLD.rush_rate
      OR NEW.setup_total     IS DISTINCT FROM OLD.setup_total

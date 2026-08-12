@@ -171,7 +171,12 @@ Deno.serve(async (req) => {
       rush_rate: Math.max(0, Number(payload.rush_rate) || 0),
       extras: payload.extras || {},
       deposit_pct: Math.min(100, Math.max(0, Number(payload.deposit_pct) || 0)),
-      deposit_paid: !!payload.deposit_paid,
+      // deposit_paid is NEVER accepted from the payload: with deposits
+      // collectible, "paid" is set only by the webhook/reconcile after
+      // real money lands (or the shop's manual toggle). A forged true
+      // here would make qbSync auto-post a phantom QB Payment at
+      // invoicing time (audit 2026-08-12).
+      deposit_paid: false,
       notes: payload.notes || "",
       source: payload.source || "api",
       ...(payload.source_email_id ? { source_email_id: payload.source_email_id } : {}),

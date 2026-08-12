@@ -63,6 +63,11 @@ export function customerSnapshotPatch(customer, { defaultTaxRate, currentTaxRate
  * tokens are minted at first send and never rotated, so a copied token
  * makes the ORIGINAL customer's emailed link open the duplicate.
  */
+// Deposit-path columns are LIFECYCLE state, never job shape: a duplicate
+// inheriting qb_deposit_invoice_id would share ONE live QB deposit invoice
+// between two quotes — the webhook lookup breaks on the multi-match, the
+// nightly reconcile converts BOTH quotes off one payment, and whichever
+// settles first strands the other (audit 2026-08-12, CRITICAL 2).
 export const QUOTE_DUPLICATE_EXCLUDED = [
   "id", "created_date", "created_at",
   // QB linkage (a duplicate has no QB invoice)
@@ -76,6 +81,10 @@ export const QUOTE_DUPLICATE_EXCLUDED = [
   "public_token", "payment_link", "sent_to", "sent_date",
   "sent_to_client_at", "client_status", "client_approved_at",
   "payment_status", "paid", "paid_date", "deposit_paid", "expires_date",
+  // deposit-path lifecycle (see comment above): the SNAPSHOT and the live
+  // deposit-invoice pointers must never survive duplication. deposit_pct
+  // stays (job-shaped terms); everything minted/collected resets.
+  "deposit_amount", "deposit_paid_at", "qb_deposit_invoice_id", "qb_deposit_payment_link",
 ];
 
 /**

@@ -322,7 +322,9 @@ async function reconcileShop(adminClient: any, profile: any) {
   // (docs/deposit-path-design.md). The real-time signal is the qbWebhook
   // Payment/Invoice event; this is the webhook-miss backstop, same as the
   // cascade passes above. Live Balance check per candidate, capped so a
-  // shop with many open deposits can't burn the cron budget.
+  // shop with many open deposits can't burn the cron budget. NO date
+  // window: the pointer predicate is already narrow, and a deposit older
+  // than any window is exactly the one a missed webhook stranded.
   try {
     const DEPOSIT_CHECK_CAP = 25;
     const { data: depCandidates, error: depErr } = await adminClient
@@ -331,24 +333,60 @@ async function reconcileShop(adminClient: any, profile: any) {
       .eq("shop_owner", shopOwner)
       .eq("deposit_paid", false)
       .not("qb_deposit_invoice_id", "is", null)
-      .gte("date", sixtyDaysAgo.slice(0, 10))
+      .order("created_at", { ascending: false })
       .limit(200);
     if (depErr) {
       classifications.push({ error: `deposit candidates query: ${depErr.message}` });
     } else {
+      if ((depCandidates ?? []).length > DEPOSIT_CHECK_CAP) {
+        console.warn(`[qbReconcile] deposit pass capped at ${DEPOSIT_CHECK_CAP}/${depCandidates!.length} for ${shopOwner}`);
+      }
       for (const depQuote of (depCandidates ?? []).slice(0, DEPOSIT_CHECK_CAP)) {
         try {
-          const resp = await qbQuery(accessToken, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(String(depQuote.qb_deposit_invoice_id))}'`);
+          const depId = String(depQuote.qb_deposit_invoice_id);
+          const resp = await qbQuery(accessToken, realmId, `SELECT * FROM Invoice WHERE Id = '${escapeQbStringLiteral(depId)}'`);
           const live = resp?.QueryResponse?.Invoice?.[0] ?? null;
           if (isDepositInvoicePaid(live)) {
             const { flipped, orderId } = await processDepositInvoicePaid(adminClient, {
               quote: depQuote,
-              qbInvoiceId: String(depQuote.qb_deposit_invoice_id),
+              qbInvoiceId: depId,
               shopOwner,
               qbInvoice: live,
               source: "reconcile",
             });
             classifications.push({ kind: "deposit-paid-recovered", quote_id: depQuote.quote_id, flipped, order_id: orderId });
+          } else if (!live || Number(live.TotalAmt ?? 0) <= 0) {
+            // Vehicle is DEAD (voided/deleted inside QBO, outside
+            // settlement). Clear the pointers so the customer button
+            // stops routing to a dead Intuit page and the shop's
+            // "void it in QuickBooks first" remediation actually works;
+            // tell the shop the deposit request is gone.
+            await adminClient
+              .from("quotes")
+              .update({ qb_deposit_invoice_id: null, qb_deposit_payment_link: null })
+              .eq("id", depQuote.id)
+              .eq("shop_owner", shopOwner);
+            await adminClient
+              .from("orders")
+              .update({ qb_deposit_invoice_id: null })
+              .eq("qb_deposit_invoice_id", depId)
+              .eq("shop_owner", shopOwner);
+            await adminClient
+              .from("invoices")
+              .update({ qb_deposit_invoice_id: null })
+              .eq("qb_deposit_invoice_id", depId)
+              .eq("shop_owner", shopOwner);
+            await recordShopNotification(adminClient, {
+              shopOwner,
+              eventType: "qb_deposit_invoice_removed",
+              severity: "warning",
+              title: `Deposit invoice for ${depQuote.quote_id} was removed in QuickBooks`,
+              body: `The deposit invoice for quote ${depQuote.quote_id} was voided or deleted inside QuickBooks before the customer paid it. The deposit request has been cleared — re-send the quote to request the deposit again, or invoice the full amount.`,
+              relatedEntity: "quote",
+              relatedId: String(depQuote.id ?? ""),
+              metadata: { quote_id: depQuote.quote_id, qb_deposit_invoice_id: depId },
+            });
+            classifications.push({ kind: "deposit-vehicle-dead", quote_id: depQuote.quote_id });
           } else {
             classifications.push({ kind: "deposit-open", quote_id: depQuote.quote_id });
           }
@@ -356,6 +394,53 @@ async function reconcileShop(adminClient: any, profile: any) {
           classifications.push({ error: (err as Error)?.message, qb_invoice_id: depQuote.qb_deposit_invoice_id });
         }
       }
+    }
+
+    // Stale-settled watchdog: deposit collected but the final invoice
+    // never happened. Kato's manual halving at least tripped the drift
+    // alert — the deposit path must not remove that tripwire and replace
+    // it with silence. One reminder per quote per week (deduped via
+    // qb_event_log action reconcile_deposit_stale).
+    const STALE_DEPOSIT_DAYS = 30;
+    const staleCutoff = new Date(Date.now() - STALE_DEPOSIT_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: staleDeps } = await adminClient
+      .from("quotes")
+      .select("id, quote_id, shop_owner, deposit_amount, deposit_paid_at, qb_deposit_invoice_id")
+      .eq("shop_owner", shopOwner)
+      .eq("deposit_paid", true)
+      .not("qb_deposit_invoice_id", "is", null)
+      .lt("deposit_paid_at", staleCutoff)
+      .limit(25);
+    for (const stale of staleDeps ?? []) {
+      const { data: recent } = await adminClient
+        .from("qb_event_log")
+        .select("id")
+        .eq("shop_owner", shopOwner)
+        .eq("quote_id", stale.id)
+        .eq("action", "reconcile_deposit_stale")
+        .gte("created_at", weekAgo)
+        .limit(1);
+      if ((recent ?? []).length > 0) continue;
+      await logEvent(adminClient, {
+        shop_owner: shopOwner,
+        action: "reconcile_deposit_stale",
+        status: "success",
+        quote_id: stale.id,
+        qb_invoice_id: String(stale.qb_deposit_invoice_id),
+        response_body: { quote_id_human: stale.quote_id, deposit_paid_at: stale.deposit_paid_at },
+      });
+      await recordShopNotification(adminClient, {
+        shopOwner,
+        eventType: "qb_deposit_awaiting_final",
+        severity: "warning",
+        title: `Deposit on ${stale.quote_id} collected ${STALE_DEPOSIT_DAYS}+ days ago — final invoice still pending`,
+        body: `The customer paid a $${Number(stale.deposit_amount || 0).toFixed(2)} deposit on ${String(stale.deposit_paid_at || "").slice(0, 10)}, but the job has never been invoiced. Until the final invoice is created, the deposit sits on its own invoice in QuickBooks. Complete the order (or invoice it) to settle the books.`,
+        relatedEntity: "quote",
+        relatedId: String(stale.id ?? ""),
+        metadata: { quote_id: stale.quote_id, deposit_amount: stale.deposit_amount },
+      });
+      classifications.push({ kind: "deposit-stale-unsettled", quote_id: stale.quote_id });
     }
   } catch (err) {
     console.warn(`[qbReconcile] deposit pass failed for ${shopOwner}:`, (err as Error)?.message);
@@ -1117,7 +1202,26 @@ async function scanAndAlertPayLinks(adminClient: any): Promise<{ failing: number
       console.warn("[qbReconcile] pay-link scan query failed:", error.message);
       return { failing: 0, alerted: false };
     }
-    const summary = summarizePayLinkHealth(rows ?? []);
+    // Deposit-path: qb_deposit_payment_link rides the SAME lockstep
+    // validator on the customer page, so the next Intuit format flip
+    // would silently kill every deposit button too. Scan it under the
+    // same contract (audit 2026-08-12). Best-effort — pre-migration
+    // DBs just skip it.
+    let depositRows: any[] = [];
+    try {
+      const { data: depLinkRows } = await adminClient
+        .from("quotes")
+        .select("quote_id, shop_owner, qb_deposit_payment_link")
+        .not("qb_deposit_payment_link", "is", null)
+        .gte("created_at", since)
+        .limit(500);
+      depositRows = (depLinkRows ?? []).map((r: any) => ({
+        quote_id: `${r.quote_id} (deposit)`,
+        shop_owner: r.shop_owner,
+        qb_payment_link: r.qb_deposit_payment_link,
+      }));
+    } catch { /* pre-migration */ }
+    const summary = summarizePayLinkHealth([...(rows ?? []), ...depositRows]);
     if (!shouldSendPayLinkAlert(summary)) return { failing: 0, alerted: false };
 
     const dedupSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

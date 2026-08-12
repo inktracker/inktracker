@@ -822,7 +822,7 @@ export default function QuoteDetailModal({
               <Badge s={quote.status} />
               {DEPOSITS_ENABLED && quote.deposit_paid ? (
                 <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-                  Paid
+                  {quote.paid ? "Paid" : "Deposit Paid"}
                 </span>
               ) : null}
               <button

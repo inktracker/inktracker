@@ -120,6 +120,10 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     DEPOSITS_ENABLED &&
     !quote.deposit_paid &&
     !(quote.qb_invoice_id || null) &&
+    // Broker quotes never mint deposit invoices — the quote total is the
+    // WHOLESALE charge and end clients can't pay QB checkout (design doc;
+    // server refuses too via skipped:"broker_quote").
+    !isBrokerQuote(quote) &&
     depositAmountFor(quote) > 0;
   const depositDollars = depositAmountFor(quote);
 

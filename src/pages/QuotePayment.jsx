@@ -219,13 +219,11 @@ function getLineItemPricing(li, quote) {
   return { qty, pricing, lineTotal, perPiece };
 }
 
-// buildCheckoutLineItems + decideCustomerCharge moved to
-// src/lib/quotes/customerCharge.js so they're testable. See
-// __tests__/customerCharge.test.js for the pinned contracts:
-//   CT1–CT6  effectiveCustomerTotal priority (qb > saved > live)
-//   DC1–DC8  deposit / remaining / full math
-//   BL1–BL5  Stripe line-item shape + refuse-on-$0 contract
-//   XC1–XC4  end-to-end "Stripe charges what the email said"
+// NOTE: the old Stripe-era customerCharge.js module (decideCustomerCharge /
+// buildCheckoutLineItems) was DELETED 2026-08-12 — it was orphaned (nothing
+// imported it) and its "customer default_deposit_pct overrides the quote"
+// contract contradicted the deposit path's snapshot-first rule. Deposit
+// amounts on this page come from depositAmountFor (src/lib/deposits.js).
 
 export default function QuotePayment() {
   const [quote, setQuote] = useState(null);
@@ -347,12 +345,25 @@ export default function QuotePayment() {
   // same lockstep validator as the main link (login-hosts rejected, share-
   // link formats only). The deposit is a fixed snapshot, so the staleness
   // check (which compares the FULL invoice's total) does not apply.
-  const depositDue = DEPOSITS_ENABLED && depositRequested(quote) && !isBrokerQuote(quote);
+  //
+  // depositDue requires a LIVE vehicle (qb_deposit_invoice_id) and no
+  // final invoice: legacy quotes with a stray deposit_pct but no minted
+  // deposit invoice keep their normal full-pay flow, and once the final
+  // invoice exists the deposit window has passed (settlement voided the
+  // vehicle). Never dead-end a customer who has a working final link.
+  const depositDue = DEPOSITS_ENABLED &&
+    depositRequested(quote) &&
+    !isBrokerQuote(quote) &&
+    Boolean(quote?.qb_deposit_invoice_id) &&
+    !quote?.qb_invoice_id;
   const depositCheckoutTarget = resolveCheckoutTarget({ qb_payment_link: quote?.qb_deposit_payment_link });
   const depositAvailable = depositDue &&
     depositCheckoutTarget.provider === "qb" && Boolean(depositCheckoutTarget.url);
 
-  const canCollectPayment = depositDue ? depositAvailable : qbAvailable;
+  // Either rail collects: prefer the deposit when it's live, otherwise the
+  // final invoice's link (which bills the correct remaining balance once a
+  // deposit has settled onto it).
+  const canCollectPayment = depositAvailable || qbAvailable;
 
   async function handleApprove() {
     if (!quote?.id) return false;
@@ -424,16 +435,17 @@ export default function QuotePayment() {
     // Deposit due → the DEPOSIT invoice's link is the checkout target
     // (the full invoice usually doesn't exist yet). Fixed snapshot
     // amount; validated by the same lockstep link validator.
-    if (depositDue && depositAvailable) {
+    if (depositAvailable) {
       window.location.href = depositCheckoutTarget.url;
       return;
     }
 
     // Prefer QB payment page when the link is a real customer-facing payment
     // URL. resolveCheckoutTarget rejects anything that would land the customer
-    // at an Intuit login screen.
+    // at an Intuit login screen. (Also the remaining-balance rail after a
+    // deposit settles — the final invoice's Balance IS the remainder.)
     const qbTarget = resolveCheckoutTarget(quote);
-    if (!depositDue && qbTarget.provider === "qb" && qbTarget.url) {
+    if (qbAvailable && qbTarget.provider === "qb" && qbTarget.url) {
       window.location.href = qbTarget.url;
       return;
     }
@@ -969,7 +981,10 @@ export default function QuotePayment() {
 
             let buttonLabel = `Approve & Pay ${fmtMoney(effectiveTotal)}`;
             let subLabel = null;
-            if (hasDeposit && !depositPaid) {
+            // Label follows ROUTING (depositAvailable), never just the pct:
+            // a quote with a stray pct but no live deposit vehicle routes to
+            // the full-pay link, so the button must say the full amount.
+            if (depositAvailable && !depositPaid) {
               buttonLabel = `Approve & Pay Deposit ${fmtMoney(depositAmount)}`;
               subLabel = depositPct > 0
                 ? `${depositPct}% deposit · full total ${fmtMoney(effectiveTotal)}`
