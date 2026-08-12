@@ -134,8 +134,22 @@ export function orderEditBlockers(order, editedLines) {
 
 // ── Warnings (soft — save proceeds after acknowledgement) ───────────────────
 
-export function orderEditWarnings(order, editedLines, { sourcePO } = {}) {
+export function orderEditWarnings(order, editedLines, { sourcePO, editedTotal } = {}) {
   const warnings = [];
+  // Deposit-path: the deposit is a fixed snapshot — paid OR already
+  // requested via a live deposit invoice (the invoice keeps charging the
+  // snapshot regardless of this edit). An edit that drops the total below
+  // it means the shop will over-collect and owe the customer the
+  // difference out-of-band.
+  const depositSnap = Number(order?.deposit_amount) || 0;
+  const depositCommitted = order?.deposit_paid || order?.qb_deposit_invoice_id;
+  if (depositCommitted && depositSnap > 0 && Number.isFinite(Number(editedTotal)) && Number(editedTotal) < depositSnap) {
+    warnings.push(
+      order?.deposit_paid
+        ? `The new total ($${Number(editedTotal).toFixed(2)}) is BELOW the $${depositSnap.toFixed(2)} deposit the customer already paid — you'll owe them the difference. QuickBooks will show a credit on the invoice.`
+        : `The new total ($${Number(editedTotal).toFixed(2)}) is BELOW the $${depositSnap.toFixed(2)} deposit invoice already sent to the customer — if they pay it, you'll owe them the difference. Void the deposit invoice in QuickBooks first if the deposit should change.`,
+    );
+  }
   if (sourcePO) {
     warnings.push(
       `Purchase order ${sourcePO.po_number || ""} was built from this order's previous quantities — it is NOT auto-edited (a submitted PO is a real commitment). Review it after saving.`.replace("  ", " "),

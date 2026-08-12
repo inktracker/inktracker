@@ -322,6 +322,27 @@ describe("buildQuotePaymentEmail (BPE)", () => {
     expect(r.html).toContain("Open Broker Portal");
   });
 
+  it("BPE-D1 — kind:'deposit' gets deposit subject + remaining-balance line", () => {
+    const r = buildQuotePaymentEmail({
+      quote: { ...baseQuote, total: 1000 }, shop: null, customer: null, recipient: shopRecipient,
+      orderId: "ORD-77", amountPaid: 400, kind: "deposit",
+    });
+    expect(r.subject).toContain("Deposit received");
+    expect(r.subject).toContain("$400.00");
+    expect(r.html).toContain("Remaining balance");
+    expect(r.html).toContain("$600.00");
+    expect(r.html).not.toContain("paid in full");
+  });
+
+  it("BPE-D2 — default kind stays byte-identical to the pre-deposit copy (no regression)", () => {
+    const r = buildQuotePaymentEmail({
+      quote: baseQuote, shop: null, customer: null, recipient: shopRecipient,
+      orderId: "ORD-77", amountPaid: 500,
+    });
+    expect(r.subject).toContain("Payment received");
+    expect(r.subject).not.toContain("Deposit");
+  });
+
   it("BPE5 — amountPaid wins over quote.total when both are present", () => {
     // Deposit case: amountPaid is the actual payment, quote.total is
     // the full quote. Subject + body show what the customer actually

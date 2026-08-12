@@ -1094,8 +1094,17 @@ export function buildQBInvoicePayload(quote, markup = STANDARD_MARKUP, configOve
   const totals = hasSavedTotal ? null : calcQuoteTotalsWithLinking(quote, markup, configOverride);
   const depositPct = parseFloat(quote.deposit_pct) || 0;
   const totalForDeposit = hasSavedTotal ? quote.total : (totals.afterDisc + totals.tax);
-  const depositAmount = quote.deposit_paid && depositPct > 0
-    ? Number((totalForDeposit * depositPct / 100).toFixed(2))
+  // SNAPSHOT-first (deposit-path): deposit_amount is the agreement fixed at
+  // mint/mark time — a later quote/order edit changes the remainder, never
+  // the deposit already taken. Pct-derivation only for pre-snapshot rows.
+  // Same rounding as depositAmountFor / computeDepositAmount (banker-free
+  // Math.round to cents) — toFixed rounds half-cents differently and the
+  // three implementations must never disagree by a penny.
+  const depositSnap = Number(quote.deposit_amount);
+  const depositAmount = quote.deposit_paid
+    ? (Number.isFinite(depositSnap) && depositSnap > 0
+        ? Math.round(depositSnap * 100) / 100
+        : (depositPct > 0 ? Math.round(totalForDeposit * (depositPct / 100) * 100) / 100 : 0))
     : 0;
 
   const discVal = parseFloat(quote.discount) || 0;

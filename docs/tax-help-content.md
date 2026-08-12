@@ -118,7 +118,7 @@ Each additional charge has an "Apply sales tax to this charge" toggle. If it's o
 ## 9. Deposits & tax
 
 **Q: How does tax work with a deposit?**
-The deposit is a percentage of the full quote total, which already includes tax. So a deposit collects a proportional share of the tax up front; the remaining tax is collected with the balance. The customer's total across deposit + balance equals the full taxed total.
+The deposit amount is a percentage of the full quote total (which includes tax), so the *dollars* you collect up front include a proportional share of the tax. On the books, though, the deposit invoice itself is an untaxed prepayment — **all sales tax is assessed once, on the final invoice**, where QuickBooks' Automated Sales Tax calculates it on the full job. When the deposit is applied to the final invoice, the customer's total across deposit + balance equals the full taxed total, and your tax liability is reported entirely on the final invoice.
 
 ---
 

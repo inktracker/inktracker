@@ -20,6 +20,7 @@ import { normalizeAdditionalCharges } from '../../lib/pricing/additionalCharges'
 import { signArtworkUrl } from '../../lib/uploadFile';
 import { stripSyncNotes } from '../../lib/invoices/qbModifiedSync';
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
+import { depositAmountFor } from "@/lib/deposits";
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -746,7 +747,7 @@ function renderLineItems(
   return { yPos, pdfLineTotals };
 }
 
-function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null, extraFeeLines = [], discountDescription = '') {
+function renderTotals(doc, totals, discount, taxRate, depositInfo, pageWidth, margin, yPos, isClientMode = false, discountType = 'percent', rushRate = 0, pdfSubtotal = null, extraFeeLines = [], discountDescription = '') {
   doc.setDrawColor(180, 180, 200);
   doc.setLineWidth(0.4);
   doc.line(margin, yPos, pageWidth - margin, yPos);
@@ -832,6 +833,24 @@ function renderTotals(doc, totals, discount, taxRate, _depositPct, pageWidth, ma
   doc.setTextColor(67, 56, 202);
   doc.text(fmtMoney(totals.total), pageWidth - margin - 2, yPos, { align: 'right' });
   yPos += 8;
+
+  // Deposit-path: when a deposit is requested/paid, the PDF must say what
+  // is due NOW vs at completion — the total alone contradicts the
+  // pay-deposit button in the same email (previously a dead param).
+  const depAmt = Number(depositInfo?.amount) || 0;
+  if (depAmt > 0) {
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.setTextColor(13, 148, 136);
+    doc.text(depositInfo.paid ? 'Deposit received:' : 'Deposit due now:', margin, yPos);
+    doc.text(fmtMoney(depAmt), pageWidth - margin - 2, yPos, { align: 'right' });
+    yPos += 6;
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(100, 100, 120);
+    doc.text('Balance at completion:', margin, yPos);
+    doc.text(fmtMoney(Math.max(0, Math.round((Number(totals.total || 0) - depAmt) * 100) / 100)), pageWidth - margin - 2, yPos, { align: 'right' });
+    yPos += 8;
+  }
 
   return yPos;
 }
@@ -1089,7 +1108,8 @@ export async function exportQuoteToPDF(
     totals,
     quote.discount,
     effectiveTaxRate,
-    quote.deposit_pct,
+    // Snapshot-aware deposit rows ("due now / balance at completion").
+    { amount: depositAmountFor(quote), paid: Boolean(quote.deposit_paid) },
     pageWidth,
     margin,
     yPos,
@@ -1658,7 +1678,10 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
   const subtotal = Number(invoice.subtotal) || lineSubtotal;
   const tax = Number(invoice.tax) || 0;
   const total = Number(invoice.total) || (subtotal + tax);
-  const balanceDue = invoice.paid ? 0 : total;
+  // Deposit-path: a settled deposit reduces what's owed — printing the
+  // full total as BALANCE DUE made check-payers overpay by the deposit.
+  const invoiceDeposit = invoice.deposit_paid ? depositAmountFor(invoice) : 0;
+  const balanceDue = invoice.paid ? 0 : Math.max(0, Math.round((total - invoiceDeposit) * 100) / 100);
 
   const tLabelX = pageWidth - margin - 50;
   const tValueX = pageWidth - margin;
@@ -1689,6 +1712,9 @@ export async function exportInvoiceToPDF(invoice, customer, shopOrOptions, logoU
 
   totalsRow(`TAX (${taxRate}%)`, fmtMoney(tax));
   totalsRow('TOTAL', fmtMoney(total));
+  if (invoiceDeposit > 0 && !invoice.paid) {
+    totalsRow('DEPOSIT APPLIED', `-${fmtMoney(invoiceDeposit)}`, { color: [22, 101, 52] });
+  }
 
   // Balance due — bigger, bold
   yPos += 1;

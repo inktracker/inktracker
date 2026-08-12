@@ -18,6 +18,7 @@ import {
 import { effectiveQuoteTotals } from "@/lib/quotes/effectiveTotals";
 import { toCustomerFacingQuote, isBrokerQuote } from "@/lib/quotes/customerFacingQuote";
 import { useBillingGate } from "@/lib/billing-gate";
+import { DEPOSITS_ENABLED, depositAmountFor } from "@/lib/deposits";
 
 // Saved totals win over live recompute — keeps the email's number
 // pinned to what the editor stamped on the row, so the customer
@@ -106,6 +107,26 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   const [creatingQbInvoice, setCreatingQbInvoice] = useState(false);
   const [qbError, setQbError] = useState("");
 
+  // ── Deposit mode (docs/deposit-path-design.md) ──────────────────────
+  // A quote with an unpaid requested deposit sends the customer a DEPOSIT
+  // invoice (small, real QB invoice they pay through the normal link),
+  // not the full invoice. The full invoice comes later and settles the
+  // deposit onto itself. Once a FINAL invoice exists the deposit window
+  // has passed — the server refuses to mint (final_invoice_exists) and
+  // this stays false.
+  const [qbDepositInvoiceId, setQbDepositInvoiceId] = useState(quote.qb_deposit_invoice_id ?? null);
+  const [qbDepositLink, setQbDepositLink] = useState(quote.qb_deposit_payment_link ?? null);
+  const depositMode =
+    DEPOSITS_ENABLED &&
+    !quote.deposit_paid &&
+    !(quote.qb_invoice_id || null) &&
+    // Broker quotes never mint deposit invoices — the quote total is the
+    // WHOLESALE charge and end clients can't pay QB checkout (design doc;
+    // server refuses too via skipped:"broker_quote").
+    !isBrokerQuote(quote) &&
+    depositAmountFor(quote) > 0;
+  const depositDollars = depositAmountFor(quote);
+
   // Idempotency key for the next createInvoice attempt. Held in a ref
   // so a React re-render mid-flight doesn't lose it — only an explicit
   // clearQbAttemptKey() (after success/terminal failure) generates a
@@ -130,6 +151,8 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         if (fresh.qb_doc_number   != null) setQbDocNumber(fresh.qb_doc_number);
         if (fresh.qb_payment_link != null) setQbPaymentLink(fresh.qb_payment_link);
         if (fresh.qb_total        != null) setQbTotal(fresh.qb_total);
+        if (fresh.qb_deposit_invoice_id   != null) setQbDepositInvoiceId(fresh.qb_deposit_invoice_id);
+        if (fresh.qb_deposit_payment_link != null) setQbDepositLink(fresh.qb_deposit_payment_link);
       } catch (err) {
         // Non-fatal — modal will operate on the parent prop's snapshot.
         console.warn("[SendQuoteModal] quote refresh failed:", err?.message);
@@ -140,13 +163,18 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
 
   // Pure state derivation — tells us whether to show Create, the
   // success bar, or the warning bar, and whether QB state currently
-  // blocks Send.
-  const qbState = deriveQbSendState({ qbInvoiceId, qbPaymentLink });
+  // blocks Send. In deposit mode the DEPOSIT invoice/link are the
+  // documents that gate the send — same state machine, deposit inputs.
+  const qbState = depositMode
+    ? deriveQbSendState({ qbInvoiceId: qbDepositInvoiceId, qbPaymentLink: qbDepositLink })
+    : deriveQbSendState({ qbInvoiceId, qbPaymentLink });
   // Quote edited AFTER the QB invoice was cut → the pay-now link charges the
   // OLD amount. qb_total mirrors the QB invoice (qbSync + QB webhook), so a
   // total mismatch is the money-correct staleness signal (predicate tested
   // in qbSendState.test.js).
-  const qbStale = qbState.status !== "needs_create" &&
+  // Deposit mode is never "stale": the deposit is a fixed-dollar
+  // agreement (snapshot), deliberately NOT tracking later quote edits.
+  const qbStale = !depositMode && qbState.status !== "needs_create" &&
     qbInvoiceOutOfSync({ qbTotal, currentTotal: customerTotals.total });
 
   // ── Confirmation gate ───────────────────────────────────────────────
@@ -229,7 +257,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     if (qbState.status === "needs_create") {
       const recipientEmail = recipientEmails[0] || quote?.customer_email;
       const proceed = window.confirm(
-        `This creates the QuickBooks invoice and emails ${recipientEmail || "the customer"} your quote — one message with the PDF, Approve button, and pay-now link. QuickBooks won't send a separate email. Continue?`
+        depositMode
+          ? `This creates a QuickBooks DEPOSIT invoice for ${fmtMoney(depositDollars)} and emails ${recipientEmail || "the customer"} your quote — one message with the PDF, Approve button, and a pay-deposit link. The full invoice (minus this deposit) is created later when you invoice the job. Continue?`
+          : `This creates the QuickBooks invoice and emails ${recipientEmail || "the customer"} your quote — one message with the PDF, Approve button, and pay-now link. QuickBooks won't send a separate email. Continue?`
       );
       if (!proceed) return;
     }
@@ -273,6 +303,62 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
             phone: "",
             company: "",
           };
+      // ── Deposit mode: mint the DEPOSIT invoice instead ─────────────
+      // No AST/tax hold applies (single NON line); the full invoice —
+      // and every tax check — comes later at final invoicing, which
+      // also settles this deposit invoice onto it.
+      if (depositMode) {
+        const depKey = qbAttemptKeyRef.current || crypto.randomUUID();
+        qbAttemptKeyRef.current = depKey;
+        const { data: depData, error: depErr } = await base44.functions.invoke("qbSync", {
+          action: "createDepositInvoice",
+          accessToken: session.access_token,
+          quote: { ...quote, customer_email: resolvedEmail },
+          customer: customerPayload,
+          idempotencyKey: depKey,
+          noEmail: true,
+        });
+        if (depErr) {
+          let realMessage = "";
+          try {
+            const body = await depErr.context?.json?.();
+            realMessage = body?.error || body?.message || "";
+          } catch { /* fall back below */ }
+          throw new Error(realMessage || depErr.message || "Couldn't reach QuickBooks. Please try again.");
+        }
+        if (depData?.error) throw new Error(depData.error);
+        if (depData?.inFlight) {
+          setQbError("Already creating this deposit invoice — waiting on the first request. Refresh in a moment.");
+          return;
+        }
+        clearQbAttemptKey();
+        if (depData?.skipped === "final_invoice_exists") {
+          // Deposit window passed (a full invoice already exists) —
+          // reload so the modal re-derives out of deposit mode.
+          setQbError("A full QuickBooks invoice already exists for this quote, so the deposit step was skipped. Close and reopen this modal to send the full invoice.");
+          return;
+        }
+        setQbDepositInvoiceId(depData?.qbDepositInvoiceId || null);
+        setQbDepositLink(depData?.depositPaymentLink || null);
+        autoSendAfter = Boolean(depData?.qbDepositInvoiceId && depData?.depositPaymentLink);
+        if (!depData?.depositPaymentLink && depData?.linkFailureReason) {
+          autoSendAfter = false;
+          if (depData.linkFailureReason === "no_link_after_retry") {
+            setQbError(
+              "QuickBooks created the deposit invoice but didn't mint a payment link, even after retries. " +
+              "The most common cause is that QB Payments isn't activated on your QuickBooks account. " +
+              "Open QuickBooks → Settings (gear icon) → Payments → Get Started, then retry.",
+            );
+          } else if (depData.linkFailureReason === "no_bill_email") {
+            setQbError(
+              "Can't get a payment link from QuickBooks without the customer's email. " +
+              "Add an email to the customer record (or this quote) and try again.",
+            );
+          }
+        }
+        return; // deposit branch complete — full-invoice path below never runs
+      }
+
       // Carry the QB invoice id from a prior attempt (e.g. the held first
       // send) so an acceptQbTax retry UPDATES that invoice instead of
       // creating a duplicate. State `qbInvoiceId` is set after the first call.
@@ -629,6 +715,7 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         taggedSubject,
         body,
         paymentLink,
+        ...(depositMode && qbDepositLink ? { buttonLabel: "View Quote & Pay Deposit" } : {}),
         // Pass the customer-facing brand name (broker for broker quotes,
         // shop for direct quotes) — this is what renders in the email
         // header. The edge function also derives a fromHeader from
@@ -855,7 +942,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                   <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 flex items-start gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
                     <span className="text-xs text-emerald-700 leading-relaxed">
-                      QB invoice {qbDocNumber || `#${qbInvoiceId}`} ready — its pay-now link is included in the quote email InkTracker sends. QuickBooks doesn't send a separate email.
+                      {depositMode
+                        ? `QB deposit invoice ready (${fmtMoney(depositDollars)}) — its pay-deposit link is included in the quote email InkTracker sends. The full invoice is created when you invoice the finished job.`
+                        : `QB invoice ${qbDocNumber || `#${qbInvoiceId}`} ready — its pay-now link is included in the quote email InkTracker sends. QuickBooks doesn't send a separate email.`}
                     </span>
                   </div>
                 )}
@@ -931,9 +1020,15 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                       className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-[#2CA01C] hover:bg-[#238516] rounded-xl transition disabled:opacity-50"
                     >
                       {creatingQbInvoice ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                      {creatingQbInvoice ? "Creating QB invoice…" : "Create QB Invoice & Send Quote"}
+                      {creatingQbInvoice
+                        ? (depositMode ? "Creating deposit invoice…" : "Creating QB invoice…")
+                        : (depositMode ? `Create QB Deposit Invoice (${fmtMoney(depositDollars)}) & Send` : "Create QB Invoice & Send Quote")}
                     </button>
-                    <p className="text-xs text-slate-500">Creates the invoice in QuickBooks to get a pay-now link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. QuickBooks doesn't email a separate copy. Skip this step to send a plain quote (no pay-now link).</p>
+                    <p className="text-xs text-slate-500">
+                      {depositMode
+                        ? `Creates a ${fmtMoney(depositDollars)} deposit invoice in QuickBooks to get a pay-deposit link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. The full invoice — with this deposit applied — is created when you invoice the finished job.`
+                        : "Creates the invoice in QuickBooks to get a pay-now link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. QuickBooks doesn't email a separate copy. Skip this step to send a plain quote (no pay-now link)."}
+                    </p>
                     {qbError && (
                       <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
                         {qbError}

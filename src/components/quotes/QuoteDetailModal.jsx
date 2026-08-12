@@ -35,7 +35,7 @@ import { taxProviderFor } from "@/lib/tax/factory";
 import { MessageSquare, UserCheck, UserX, Paperclip } from "lucide-react";
 import { notify } from "@/lib/notify";
 import AttachmentGallery from "../shared/AttachmentGallery";
-import { DEPOSITS_ENABLED } from "@/lib/deposits";
+import { DEPOSITS_ENABLED, depositAmountFor } from "@/lib/deposits";
 import ReactivateLink from "../shared/ReactivateLink";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 
@@ -822,7 +822,7 @@ export default function QuoteDetailModal({
               <Badge s={quote.status} />
               {DEPOSITS_ENABLED && quote.deposit_paid ? (
                 <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-                  Paid
+                  {quote.paid ? "Paid" : "Deposit Paid"}
                 </span>
               ) : null}
               <button
@@ -909,11 +909,11 @@ export default function QuoteDetailModal({
                     {Number(quote.rush_rate) > 0 ? "Yes" : "No"}
                   </span>
                 </div>
-                {DEPOSITS_ENABLED && (
+                {DEPOSITS_ENABLED && Number(quote.deposit_pct) > 0 && (
                   <div className="flex justify-between text-sm text-slate-500">
                     <span>Deposit</span>
                     <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      {quote.deposit_pct || 50}%
+                      {Number(quote.deposit_pct)}%
                     </span>
                   </div>
                 )}
@@ -1224,10 +1224,10 @@ export default function QuoteDetailModal({
                     );
                   })()}
 
-                  {DEPOSITS_ENABLED && (
+                  {DEPOSITS_ENABLED && depositAmountFor(quote) > 0 && (
                     <div className="flex justify-between text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
-                      <span className="font-semibold">Deposit Due</span>
-                      <span className="font-bold">{fmtMoney(totals.deposit)}</span>
+                      <span className="font-semibold">{quote.deposit_paid ? "Deposit Paid" : "Deposit Due"}</span>
+                      <span className="font-bold">{fmtMoney(depositAmountFor(quote))}</span>
                     </div>
                   )}
                 </div>

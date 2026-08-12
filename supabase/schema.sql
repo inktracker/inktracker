@@ -102,8 +102,14 @@ CREATE TABLE IF NOT EXISTS quotes (
   line_items       JSONB DEFAULT '[]',
   discount         NUMERIC DEFAULT 0,
   tax_rate         NUMERIC DEFAULT 8.265,
-  deposit_pct      NUMERIC DEFAULT 50,
+  deposit_pct      NUMERIC DEFAULT 0,
   deposit_paid     BOOLEAN DEFAULT FALSE,
+  -- Deposit-path (20260930000000): dollar snapshot + collection-vehicle
+  -- pointers. See docs/deposit-path-design.md.
+  deposit_amount          NUMERIC,
+  deposit_paid_at         TIMESTAMPTZ,
+  qb_deposit_invoice_id   TEXT,
+  qb_deposit_payment_link TEXT,
   sent_to          TEXT,
   sent_date        TIMESTAMPTZ,
   client_status    TEXT,
@@ -160,6 +166,9 @@ CREATE TABLE IF NOT EXISTS orders (
   paid_date    DATE,
   pdf_url      TEXT,
   selected_artwork JSONB DEFAULT '[]',
+  -- Deposit-path (20260930000000): carry-forward snapshot + pointer.
+  deposit_amount        NUMERIC,
+  qb_deposit_invoice_id TEXT,
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -192,7 +201,10 @@ CREATE TABLE IF NOT EXISTS invoices (
   broker_id     TEXT,
   broker_name   TEXT,
   qb_invoice_id TEXT,
-  qb_payment_link TEXT
+  qb_payment_link TEXT,
+  -- Deposit-path (20260930000000): settlement reads these at final push.
+  deposit_amount        NUMERIC,
+  qb_deposit_invoice_id TEXT
 );
 
 -- ──────────────────────────────────────────────────────────

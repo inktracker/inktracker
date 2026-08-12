@@ -235,6 +235,7 @@ export function buildSendQuoteEmailRequest({
   shopName,
   shopLogoUrl,
   pdfBase64,
+  buttonLabel,
 }) {
   // Single source of truth for customer-facing brand: shared with the
   // /QuotePayment header and any other end-client surface, via
@@ -264,6 +265,9 @@ export function buildSendQuoteEmailRequest({
     quoteTotal: quote?.total ?? null,
     paymentLink,
     approveLink: paymentLink,
+    // Deposit-mode sends override the button text ("View Quote & Pay
+    // Deposit") — the edge default stays "View Quote & Pay Online".
+    ...(buttonLabel ? { buttonLabel } : {}),
     shopName: effectiveShopName,
     shopLogoUrl: shopLogoUrl || "",
     subject: taggedSubject,

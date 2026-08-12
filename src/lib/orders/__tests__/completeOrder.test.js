@@ -190,6 +190,8 @@ describe("buildOrderCompletionPlan — invoiceCreate shape", () => {
       discount_type: "flat",
       deposit_pct: 50,
       deposit_paid: true,
+      deposit_amount: 250,
+      qb_deposit_invoice_id: "1988",
     };
     const plan = buildOrderCompletionPlan(order, { today: TODAY, shopOwner: SHOP });
     expect(plan.invoiceCreate).toMatchObject({
@@ -198,6 +200,8 @@ describe("buildOrderCompletionPlan — invoiceCreate shape", () => {
       discount_type: "flat",
       deposit_pct: 50,
       deposit_paid: true,
+      deposit_amount: 250,
+      qb_deposit_invoice_id: "1988",
     });
   });
 

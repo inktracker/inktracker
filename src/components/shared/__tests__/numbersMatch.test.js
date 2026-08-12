@@ -171,8 +171,11 @@ describe("Numbers match — quote totals ↔ QB invoice payload", () => {
     const quote = makeQuote({ deposit_pct: 50, deposit_paid: true });
     const totals = calcQuoteTotalsWithLinking(quote);
     const payload = buildQBInvoicePayload(quote);
-    // afterDisc + tax = total; deposit is 50% of that.
-    const expectedDeposit = Number((totals.total * 0.50).toFixed(2));
+    // afterDisc + tax = total; deposit is 50% of that. Rounding is the
+    // app-wide r2 (Math.round to cents) — lockstep with depositAmountFor /
+    // computeDepositAmount; toFixed rounds half-cents differently and the
+    // implementations must never disagree by a penny (deposit-path audit).
+    const expectedDeposit = Math.round(totals.total * 0.50 * 100) / 100;
     expect(payload.depositAmount).toBeCloseTo(expectedDeposit, 2);
   });
 

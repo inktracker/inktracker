@@ -79,6 +79,14 @@ export function computeQuoteTotals(
     additionalTotal: addl.total,
     tax,
     total,
-    deposit: total * ((parseFloat(String(quote.deposit_pct)) || 0) / 100),
+    // Deposit-path: the SNAPSHOT (deposit_amount, fixed at mint/mark time)
+    // wins over pct-derivation — lockstep with src/lib/deposits.js
+    // depositAmountFor and _shared/qbDeposit.js computeDepositAmount.
+    deposit: (() => {
+      const snap = Number((quote as { deposit_amount?: unknown }).deposit_amount);
+      if (Number.isFinite(snap) && snap > 0) return Math.round(snap * 100) / 100;
+      const pct = Math.min(100, Math.max(0, parseFloat(String(quote.deposit_pct)) || 0));
+      return Math.round(total * (pct / 100) * 100) / 100;
+    })(),
   };
 }

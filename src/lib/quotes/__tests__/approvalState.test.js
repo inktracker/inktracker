@@ -57,8 +57,8 @@ describe("quoteAlreadyPaid — unchanged from the inline QuotePayment logic", ()
     expect(quoteAlreadyPaid({ status })).toBe(true);
   });
 
-  it("true for Approved + deposit_paid", () => {
-    expect(quoteAlreadyPaid({ status: "Approved", deposit_paid: true })).toBe(true);
+  it("FALSE for Approved + deposit_paid — the remaining balance is still owed (deposit-path)", () => {
+    expect(quoteAlreadyPaid({ status: "Approved", deposit_paid: true })).toBe(false);
   });
 
   it("false for Approved without deposit_paid", () => {

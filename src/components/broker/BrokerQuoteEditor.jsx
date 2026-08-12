@@ -184,7 +184,8 @@ export default function BrokerQuoteEditor({
   );
 
   const brokerProfit = Math.max(0, retailTotals.total - totals.total);
-  const brokerRemaining = Math.max(0, totals.total - totals.deposit);
+  // (brokerRemaining removed with the live deposit control — broker
+  // deposits are out-of-band; see the read-only terms note below.)
   const retailRemaining = Math.max(0, retailTotals.total - retailTotals.deposit);
 
   const selectedArtworkIds = useMemo(
@@ -813,53 +814,20 @@ export default function BrokerQuoteEditor({
                 </span>
               </div>
 
-              {DEPOSITS_ENABLED && (
-              <div className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={Number(q.deposit_pct) > 0}
-                      onChange={(e) =>
-                        setQ({
-                          ...q,
-                          deposit_pct: e.target.checked ? 50 : 0,
-                        })
-                      }
-                      className="accent-teal-600"
-                    />
-                    <span className="text-teal-700 font-semibold text-xs">Deposit</span>
-                  </label>
-                  {Number(q.deposit_pct) > 0 && (
-                    <>
-                      <input
-                        type="number"
-                        min="1"
-                        max="100"
-                        value={q.deposit_pct}
-                        onChange={(e) => {
-                          const v = parseInt(e.target.value, 10);
-                          setQ({ ...q, deposit_pct: Number.isFinite(v) ? Math.max(1, Math.min(100, v)) : 50 });
-                        }}
-                        className="w-10 text-xs text-center border border-teal-200 rounded px-1 py-0.5 bg-white focus:outline-none"
-                      />
-                      <span className="text-teal-400 text-xs">%</span>
-                    </>
-                  )}
-                </div>
-                {Number(q.deposit_pct) > 0 && (
-                  <span className="font-bold text-teal-800">
-                    {fmtMoney(totals.deposit)}
-                  </span>
-                )}
-              </div>
-              )}
-
+              {/* Broker quotes are OUT OF SCOPE for online deposit
+                  collection (docs/deposit-path-design.md): end clients
+                  never get QB checkout, so a deposit control here would
+                  promise a collection path that doesn't exist. Any
+                  deposit terms the broker tracks with their client stay
+                  out-of-band; a stray pct (e.g. from a customer default)
+                  renders as a read-only note, not a live control. */}
               {DEPOSITS_ENABLED && Number(q.deposit_pct) > 0 && (
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Remaining Balance</span>
-                  <span className="font-semibold text-slate-700">
-                    {fmtMoney(brokerRemaining)}
+                <div className="flex justify-between items-center gap-2 bg-slate-50 rounded-xl px-3 py-2 border border-slate-200">
+                  <span className="text-slate-600 font-semibold text-xs">
+                    Deposit terms ({Number(q.deposit_pct)}%) — collected by you, not through InkTracker
+                  </span>
+                  <span className="font-bold text-slate-700">
+                    {fmtMoney(totals.deposit)}
                   </span>
                 </div>
               )}
@@ -937,15 +905,21 @@ export default function BrokerQuoteEditor({
                   Edit the per-piece price on each line to adjust the client total.
                 </div>
 
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Deposit</span>
-                  <span>{fmtMoney(retailTotals.deposit)}</span>
-                </div>
+                {/* Gate on an actual deposit — these rows rendered "$0.00"
+                    for every non-deposit quote (ungated pre-deposit-path). */}
+                {DEPOSITS_ENABLED && Number(q.deposit_pct) > 0 && (
+                  <>
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <span>Deposit</span>
+                      <span>{fmtMoney(retailTotals.deposit)}</span>
+                    </div>
 
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Remaining Balance</span>
-                  <span>{fmtMoney(retailRemaining)}</span>
-                </div>
+                    <div className="flex justify-between text-xs text-slate-500">
+                      <span>Remaining Balance</span>
+                      <span>{fmtMoney(retailRemaining)}</span>
+                    </div>
+                  </>
+                )}
 
                 <div className="flex justify-between items-center border-t border-slate-200 pt-2 mt-2">
                   <span className="text-xs font-bold text-green-700">

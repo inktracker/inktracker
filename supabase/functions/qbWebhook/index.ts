@@ -15,6 +15,7 @@ import { claimWebhookEventDetailed, releaseWebhookEvent, CLAIM_OUTCOMES, extract
 import { logEvent } from "../_shared/qbAudit.js";
 import { verifyQbSignature } from "../_shared/qbWebhookSignature.js";
 import { convertQuoteToOrder } from "../_shared/qbConvertQuote.js";
+import { processDepositInvoicePaid } from "../_shared/qbDepositPaid.js";
 import {
   chooseQuotePaymentRecipient,
   buildQuotePaymentEmail,
@@ -228,6 +229,47 @@ async function mirrorQbInvoiceEdit(supabase: any, freshInvoice: any, qbInvoiceId
       });
     }
   }
+}
+
+// ── Deposit invoice paid (docs/deposit-path-design.md) ─────────────────────
+// The deposit invoice is the temporary collection vehicle: when it's paid,
+// the QUOTE's deposit is collected — set deposit_paid (+ snapshot what QB
+// actually collected), convert the quote to an order (a paid deposit IS the
+// commitment), and email the shop. Returns true when the id matched a
+// deposit invoice (caller then skips the normal paid-invoice path).
+async function handleDepositInvoicePaid(supabase: any, qbInvoiceId: string, shopOwner: string, qbInvoice: any): Promise<boolean> {
+  // NOT maybeSingle: a multi-match (two quotes pointing at one deposit
+  // invoice — should be impossible since QUOTE_DUPLICATE_EXCLUDED covers
+  // the pointer, but a real payment must never be dropped on a data bug)
+  // processes the OLDEST quote and alerts loudly instead of erroring out.
+  const { data: quotes, error } = await supabase
+    .from("quotes")
+    .select("*")
+    .eq("qb_deposit_invoice_id", qbInvoiceId)
+    .eq("shop_owner", shopOwner)
+    .order("created_at", { ascending: true })
+    .limit(2);
+  if (error) {
+    console.error(`[qbWebhook] deposit lookup failed for ${qbInvoiceId}: ${error.message}`);
+    return false; // fall through to the normal path (which will no-op)
+  }
+  const quote = quotes?.[0];
+  if (!quote) return false;
+  if ((quotes?.length ?? 0) > 1) {
+    console.error(`[qbWebhook] MULTIPLE quotes point at deposit invoice ${qbInvoiceId} for ${shopOwner} — processing the oldest (${quote.quote_id}); investigate the duplicate pointer.`);
+    await logEvent(supabase, {
+      shop_owner: shopOwner,
+      action: "webhook_deposit_paid",
+      status: "error",
+      qb_invoice_id: qbInvoiceId,
+      quote_id: quote.id,
+      error_message: "multiple quotes share one qb_deposit_invoice_id — duplicate pointer bug",
+    });
+  }
+  const { handled } = await processDepositInvoicePaid(supabase, {
+    quote, qbInvoiceId, shopOwner, qbInvoice, source: "webhook",
+  });
+  return handled;
 }
 
 async function handlePaidInvoice(supabase: any, qbInvoiceId: string, shopOwner: string) {
@@ -454,7 +496,11 @@ async function processNotification(supabase: any, notification: any) {
         for (const invId of invoiceIds) {
           const invData = await qbGet(accessToken, realmId, `invoice/${invId}`);
           if (isInvoiceFullyPaid(invData?.Invoice)) {
-            await handlePaidInvoice(supabase, invId, shopOwner);
+            // Deposit invoices are matched first (separate id column) —
+            // a paid deposit flips deposit_paid + converts; it must NOT
+            // run the full-payment cascade.
+            const wasDeposit = await handleDepositInvoicePaid(supabase, invId, shopOwner, invData?.Invoice);
+            if (!wasDeposit) await handlePaidInvoice(supabase, invId, shopOwner);
           } else {
             console.error(`[qbWebhook] Payment ${entity.id} left invoice ${invId} with an open balance — not marking paid locally`);
           }
@@ -465,7 +511,8 @@ async function processNotification(supabase: any, notification: any) {
         // Fetch the invoice to check if Balance = 0 (fully paid)
         const data = await qbGet(accessToken, realmId, `invoice/${entity.id}`);
         if (isInvoiceFullyPaid(data?.Invoice)) {
-          await handlePaidInvoice(supabase, entity.id, shopOwner);
+          const wasDeposit = await handleDepositInvoicePaid(supabase, entity.id, shopOwner, data?.Invoice);
+          if (!wasDeposit) await handlePaidInvoice(supabase, entity.id, shopOwner);
         }
         // QB-side EDIT propagation. We used to fetch the fresh invoice
         // and discard everything but paid state — edited amounts then

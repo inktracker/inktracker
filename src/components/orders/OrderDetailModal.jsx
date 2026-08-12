@@ -518,7 +518,10 @@ export default function OrderDetailModal({
         discount: order.discount || 0,
         discount_type: order.discount_type || "percent",
         tax_rate: order.tax_rate || 0,
-        deposit_pct: 50,
+        // Reorders inherit the ORDER's deposit terms, not a hardcoded 50 —
+        // the old literal 50 disagreed with every editor default (0) and
+        // silently re-imposed deposits on shops that don't use them.
+        deposit_pct: order.deposit_pct ?? 0,
         deposit_paid: false,
       });
       setReordered(true);

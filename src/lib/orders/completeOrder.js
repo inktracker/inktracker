@@ -150,6 +150,11 @@ export function buildOrderCompletionPlan(
     discount_description: order.discount_description ?? null,
     deposit_pct: order.deposit_pct ?? 0,
     deposit_paid: !!order.deposit_paid,
+    // Deposit-path: snapshot + deposit-invoice pointer carry onto the
+    // invoice so qbSync's settlement (move payment + void deposit invoice)
+    // runs when this invoice is pushed to QB.
+    deposit_amount: order.deposit_amount ?? null,
+    qb_deposit_invoice_id: order.qb_deposit_invoice_id ?? null,
     // QB linkage inherited from the originating quote (null when the
     // quote never went to QB). Without it, this row and the later
     // QB pull can't recognize each other — see param doc above.

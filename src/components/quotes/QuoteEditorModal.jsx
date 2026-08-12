@@ -860,14 +860,31 @@ export default function QuoteEditorModal({
                       // detail kept filling the data" bug (2026-08-06):
                       // emails/payment links kept going to the previous
                       // client after a duplicate-and-switch.
-                      setQ({
-                        ...q,
-                        ...customerSnapshotPatch(c || null, {
-                          defaultTaxRate,
-                          currentTaxRate: q.tax_rate,
-                          currentDepositPct: q.deposit_pct,
-                        }),
+                      // Deposit-path guard: once a deposit invoice is
+                      // minted (or the deposit is paid), it is filed under
+                      // THIS customer in QuickBooks — switching customers
+                      // cross-wires whose money settles where. Warn, and
+                      // never let the new customer's default_deposit_pct
+                      // overwrite the locked terms.
+                      const depositLockedSwitch = Boolean(q.qb_deposit_invoice_id) || Boolean(q.deposit_paid);
+                      if (depositLockedSwitch && c) {
+                        const ok = window.confirm(
+                          q.deposit_paid
+                            ? `The current customer already PAID a deposit on this quote. Switching customers will strand that deposit — QuickBooks can't apply one customer's payment to another customer's invoice. Are you sure?`
+                            : `A deposit invoice for this quote was already sent to the current customer in QuickBooks. Switching customers orphans it — void it in QuickBooks first. Switch anyway?`,
+                        );
+                        if (!ok) return;
+                      }
+                      const switchPatch = customerSnapshotPatch(c || null, {
+                        defaultTaxRate,
+                        currentTaxRate: q.tax_rate,
+                        currentDepositPct: q.deposit_pct,
                       });
+                      if (depositLockedSwitch) {
+                        // Locked terms survive the switch verbatim.
+                        switchPatch.deposit_pct = q.deposit_pct;
+                      }
+                      setQ({ ...q, ...switchPatch });
                     }}
                     className="flex-1 min-w-0 text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-300 truncate"
                   >
@@ -1617,13 +1634,31 @@ export default function QuoteEditorModal({
                 </span>
               </div>
 
-              {DEPOSITS_ENABLED && (
-              <div className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100">
+              {DEPOSITS_ENABLED && (() => {
+                // Once the deposit invoice is minted (qb_deposit_invoice_id),
+                // the deposit is a fixed agreement — changing the % here
+                // couldn't change the invoice the customer was sent. Locked
+                // with the snapshot amount displayed.
+                const depositLocked = Boolean(q.qb_deposit_invoice_id) || Boolean(q.deposit_paid);
+                const snapAmt = Number(q.deposit_amount);
+                const displayAmt = Number.isFinite(snapAmt) && snapAmt > 0
+                  ? snapAmt
+                  : Math.round(totalWithSetup * (Number(q.deposit_pct) / 100) * 100) / 100;
+                return (
+              <div
+                className="flex justify-between items-center gap-2 bg-teal-50 rounded-xl px-3 py-2 border border-teal-100"
+                title={depositLocked
+                  ? (q.deposit_paid
+                      ? "Deposit already paid — the amount is locked."
+                      : "A deposit invoice was already sent to the customer — the amount is locked. Void it in QuickBooks first if you need to change the deposit.")
+                  : undefined}
+              >
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <label className={`flex items-center gap-1.5 select-none ${depositLocked ? "cursor-not-allowed opacity-70" : "cursor-pointer"}`}>
                     <input
                       type="checkbox"
                       checked={Number(q.deposit_pct) > 0}
+                      disabled={depositLocked}
                       onChange={(e) =>
                         setQ({
                           ...q,
@@ -1632,9 +1667,11 @@ export default function QuoteEditorModal({
                       }
                       className="accent-teal-600"
                     />
-                    <span className="text-teal-700 font-semibold text-xs">Deposit</span>
+                    <span className="text-teal-700 font-semibold text-xs">
+                      Deposit{depositLocked ? (q.deposit_paid ? " (paid)" : " (invoice sent)") : ""}
+                    </span>
                   </label>
-                  {Number(q.deposit_pct) > 0 && (
+                  {Number(q.deposit_pct) > 0 && !depositLocked && (
                     <>
                       <input
                         type="number"
@@ -1650,14 +1687,18 @@ export default function QuoteEditorModal({
                       <span className="text-teal-400 text-xs">%</span>
                     </>
                   )}
+                  {Number(q.deposit_pct) > 0 && depositLocked && (
+                    <span className="text-teal-500 text-xs">{Number(q.deposit_pct)}%</span>
+                  )}
                 </div>
                 {Number(q.deposit_pct) > 0 && (
                   <span className="font-bold text-teal-800">
-                    {fmtMoney(Math.round(totalWithSetup * (Number(q.deposit_pct) / 100) * 100) / 100)}
+                    {fmtMoney(displayAmt)}
                   </span>
                 )}
               </div>
-              )}
+                );
+              })()}
             </div>
           </div>
         </div>
