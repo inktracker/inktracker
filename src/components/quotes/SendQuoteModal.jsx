@@ -1113,7 +1113,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
             <h3 className="text-base font-bold text-slate-900 mb-2">Send this quote?</h3>
             <p className="text-sm text-slate-600 leading-relaxed">
               About to email <span className="font-semibold">{recipientEmails.join(", ")}</span>
-              {qbPaymentLink ? " with the QuickBooks payment link." : " with the quote details (no pay-now link)."}
+              {depositMode && qbDepositLink
+                ? ` with the pay-deposit link (${fmtMoney(depositDollars)}).`
+                : qbPaymentLink ? " with the QuickBooks payment link." : " with the quote details (no pay-now link)."}
             </p>
             <div className="mt-5 flex gap-2">
               <button
