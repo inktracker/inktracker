@@ -13,7 +13,7 @@
 // questions and point users at the right page/setting.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
-import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const MODEL = Deno.env.get("ONBOARDING_ASSISTANT_MODEL") ?? "claude-haiku-4-5-20251001";
@@ -236,7 +236,7 @@ Deno.serve(async (req) => {
   }
 
   // Enforce trial / paid subscription
-  const blocked = requireActiveSubscription(profile);
+  const blocked = await requireActiveTeamSubscription(admin, profile);
   if (blocked) return blocked;
 
   // Employees don't get the assistant (shop floor only — no setup decisions).

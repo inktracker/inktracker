@@ -11,7 +11,7 @@
 // the frontend logs the row.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
-import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { renderEmailLayout, EMAIL_INK } from "../_shared/emailLayout.ts";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
     }
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const { data: profile } = await admin.from("profiles").select("email, shop_owner, assigned_shops, subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
-    const blocked = requireActiveSubscription(profile);
+    const blocked = await requireActiveTeamSubscription(admin, profile);
     if (blocked) return blocked;
 
     const {

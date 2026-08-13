@@ -201,8 +201,10 @@ function JobDetailDrawer({ job, onClose, broker, shop, shopHeader, brokerHeader 
                 <button
                   onClick={() => previewPdf(exportQuoteToPDF(job._rawQuote, {
                     mode: "client",
-                    // Broker → client preview: broker brands the PDF.
-                    logoUrl: broker?.logo_url || shop?.logo_url || "",
+                    // Broker → client preview: broker's logo or NONE —
+                    // never fall back to the print shop's logo on a
+                    // client-facing document (white-label rule).
+                    logoUrl: broker?.logo_url || "",
                     output: "blob",
                   }))}
                   className="flex-1 inline-flex items-center justify-center gap-1.5 text-xs font-semibold border border-slate-200 text-slate-600 py-2 rounded-xl hover:bg-slate-100 transition"

@@ -1,6 +1,6 @@
 // FedEx Shipping — getRates, createShipment, trackShipment, validateAddress
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
-import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import {
   CORS, FEDEX_BASE, FEDEX_ACCOUNT_NUMBER, SHIPPER_ADDRESS, SHIPPER_CONTACT,
   fedexFetch,
@@ -61,7 +61,7 @@ Deno.serve(async (req) => {
     {
       const admin = adminClient();
       const { data: subProfile } = await admin.from("profiles").select("shop_owner, email, subscription_tier, subscription_status, trial_ends_at").eq("auth_id", user.id).maybeSingle();
-      const blocked = requireActiveSubscription(subProfile);
+      const blocked = await requireActiveTeamSubscription(admin, subProfile);
       if (blocked) return blocked;
       shopOwner = subProfile?.shop_owner || subProfile?.email || user.email;
     }

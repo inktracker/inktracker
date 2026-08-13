@@ -1,6 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
-import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 
 const GMAIL_CLIENT_ID = Deno.env.get("GMAIL_CLIENT_ID")!;
 const GMAIL_CLIENT_SECRET = Deno.env.get("GMAIL_CLIENT_SECRET")!;
@@ -536,7 +536,7 @@ Deno.serve(async (req) => {
     if (!profile) return json({ error: "Profile not found" });
 
     // Subscription check — Gmail scanning and Gemini cost money
-    const blocked = requireActiveSubscription(profile);
+    const blocked = await requireActiveTeamSubscription(adminClient(), profile);
     if (blocked) return blocked;
 
     // ── getAuthUrl ──────────────────────────────────────────────────

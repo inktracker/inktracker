@@ -3,7 +3,7 @@
 // shop owner or broker's actual email so replies go directly to them.
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
-import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { escapeHtml, sanitizeEmailBody } from "../_shared/emailSanitize.js";
 import { sendResendEmail } from "../_shared/resendClient.js";
 import { logNotificationAttempt } from "../_shared/approvalNotificationEmail.js";
@@ -53,7 +53,7 @@ Deno.serve(async (req) => {
         const { data: profile } = await admin.from("profiles")
           .select("email, shop_owner, assigned_shops, subscription_tier, subscription_status, trial_ends_at")
           .eq("auth_id", user.id).maybeSingle();
-        const blocked = requireActiveSubscription(profile);
+        const blocked = await requireActiveTeamSubscription(admin, profile);
         if (blocked) return blocked;
         caller = {
           email: String(profile?.email || user.email || "").toLowerCase(),
@@ -242,7 +242,15 @@ Deno.serve(async (req) => {
       const { data: ownerProf } = await admin.from("profiles").select("shop_name, logo_url").eq("email", q.shop_owner).maybeSingle();
       // Prefer the owner's canonical profiles.shop_name over the shops mirror.
       shopName = (q.broker_id ? (q.broker_company || q.broker_name) : "") || ownerProf?.shop_name || shopRow?.shop_name || shopName || "InkTracker";
-      shopLogoUrl = ownerProf?.logo_url || null;
+      if (q.broker_id) {
+        // White-label rule (security audit 2026-08-13): a broker quote's
+        // email must NEVER carry the print shop's logo — the shop is
+        // invisible to the end client by design. Broker's own logo or none.
+        const { data: brokerProf } = await admin.from("profiles").select("logo_url").eq("email", q.broker_id).maybeSingle();
+        shopLogoUrl = brokerProf?.logo_url || null;
+      } else {
+        shopLogoUrl = ownerProf?.logo_url || null;
+      }
     }
 
     const emailSubject = subject || `Your Quote from ${shopName} - Quote #${quoteId}`;
@@ -289,7 +297,7 @@ Deno.serve(async (req) => {
         ? `<p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 20px;">${customBody}</p>`
         : `
           <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 12px;">Hi ${firstName},</p>
-          <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 24px;">Your quote is ready for review. Click below to view, approve, or pay online.</p>
+          <p style="color:${EMAIL_INK};font-size:15px;line-height:1.65;margin:0 0 24px;">${brokerName ? "Your quote is ready for review. Click below to view and approve." : "Your quote is ready for review. Click below to view, approve, or pay online."}</p>
         `
       }
       ${proofHtml}
@@ -297,7 +305,9 @@ Deno.serve(async (req) => {
            quoteTotal — otherwise every "we received your request" email showed
            a prominent "Quote Total $0.00" contradicting the message. */ ""}
       ${hasRealTotal ? renderEmailHighlight("Quote Total", `$${total}`) : ""}
-      ${(paymentLink || approveLink) ? renderEmailButton(buttonLabel || "View Quote & Pay Online", paymentLink || approveLink) : ""}
+      ${/* Broker quotes are approve-only (no QB checkout for end clients) —
+           never promise "Pay Online" on a page that can't take payment. */ ""}
+      ${(paymentLink || approveLink) ? renderEmailButton(buttonLabel || (brokerName ? "View & Approve Quote" : "View Quote & Pay Online"), paymentLink || approveLink) : ""}
       ${brokerName ? `<p style="color:${EMAIL_MUTED};font-size:13px;margin:8px 0 0;">Submitted by ${safeBrokerName}${brokerEmail ? ` &middot; ${safeBrokerEmail}` : ""}</p>` : ""}
     `;
 

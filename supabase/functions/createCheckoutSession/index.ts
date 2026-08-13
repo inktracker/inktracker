@@ -14,6 +14,7 @@ import {
 import { toCustomerFacingQuote } from "../_shared/customerFacingQuote.js";
 import { insertShopNotification } from "../_shared/notifications.js";
 import { resolveApproveQuoteUpdate, APPROVE_GUARD_OR } from "../_shared/approveQuoteEffect.js";
+import { sanitizeQuoteForCustomer, sanitizeOrderForCustomer, customerFacingShopPayload, isBrokerDoc } from "../_shared/publicSafe.js";
 import { toPublicMessage } from "../_shared/publicErrors.ts";
 
 // The quote/customer rows returned to the UNauthenticated payment page must
@@ -90,6 +91,19 @@ async function withOwnerProfile(supabase: any, shop: any, ownerEmail: string) {
   };
 }
 
+// Broker logo/phone for white-label brand payloads (broker docs only).
+async function loadBrokerProfile(supabase: any, doc: any) {
+  if (!isBrokerDoc(doc)) return null;
+  const email = doc.broker_id || doc.broker_email;
+  if (!email) return null;
+  const { data } = await supabase
+    .from("profiles")
+    .select("logo_url, phone")
+    .eq("email", email)
+    .maybeSingle();
+  return data ?? null;
+}
+
 // ── getQuote ─────────────────────────────────────────────────────────────────
 
 async function handleGetQuote(quoteId: string, token?: string) {
@@ -131,7 +145,12 @@ async function handleGetQuote(quoteId: string, token?: string) {
     customer = c ?? null;
   }
 
-  return { quote: publicSafeQuote(quote), shop, customer: publicSafeCustomer(customer) };
+  const brokerProf = await loadBrokerProfile(supabase, quote);
+  return {
+    quote: sanitizeQuoteForCustomer(publicSafeQuote(quote)),
+    shop: customerFacingShopPayload({ shop, doc: quote, brokerProfile: brokerProf }),
+    customer: publicSafeCustomer(customer),
+  };
 }
 
 // ── approveQuote ─────────────────────────────────────────────────────────────
@@ -286,7 +305,12 @@ async function handleApproveQuote(quoteId: string, token?: string) {
     console.error("[approveQuote] notification build/send failed:", notifyErr);
   }
 
-  return { quote: publicSafeQuote(quote), shop, customer: publicSafeCustomer(customer) };
+  const brokerProf = await loadBrokerProfile(supabase, quote);
+  return {
+    quote: sanitizeQuoteForCustomer(publicSafeQuote(quote)),
+    shop: customerFacingShopPayload({ shop, doc: quote, brokerProfile: brokerProf }),
+    customer: publicSafeCustomer(customer),
+  };
 }
 
 // ── getOrder ──────────────────────────────────────────────────────────────────
@@ -321,7 +345,11 @@ async function handleGetOrder(orderId: string, token?: string) {
     .limit(1);
 
   const shop = await withOwnerProfile(supabase, shops?.[0] ?? null, order.shop_owner);
-  return { order, shop };
+  const brokerProfOrd = await loadBrokerProfile(supabase, order);
+  return {
+    order: sanitizeOrderForCustomer(order),
+    shop: customerFacingShopPayload({ shop, doc: order, brokerProfile: brokerProfOrd }),
+  };
 }
 
 // ── approveArtwork ────────────────────────────────────────────────────────────

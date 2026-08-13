@@ -6,7 +6,7 @@ import { captureError } from "../_shared/observability.ts";
 import { loadProfileWithSecrets, updateProfileSecrets } from "../_shared/profileSecrets.ts";
 import { refreshQbTokenSerialized } from "../_shared/qbTokenLock.js";
 import { mintPaymentLink } from "../_shared/qbPaymentLink.js";
-import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { parseRetryAfterMs, QbRateLimitError } from "../_shared/qbRateLimit.ts";
 import {
   decideTokenRefresh,
@@ -802,8 +802,8 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       let { data, error } = await supabase
         .from(table)
         .select(table === "invoices"
-          ? "id, qb_invoice_id, qb_doc_number, order_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid"
-          : "id, qb_invoice_id, qb_doc_number, quote_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid")
+          ? "id, qb_invoice_id, qb_doc_number, order_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id"
+          : "id, qb_invoice_id, qb_doc_number, quote_id, qb_deposit_invoice_id, deposit_amount, deposit_pct, deposit_paid, broker_id")
         .eq("id", quote.id)
         .maybeSingle();
       if (error) {
@@ -829,6 +829,19 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
         `DB row ${quote.id} says "${sourceRow.qb_invoice_id}". Using the DB value.`,
       );
     }
+  }
+
+  // Broker-quote guard (security audit 2026-08-13, P1): a QB invoice
+  // built from a broker quote bills the END CLIENT at the WHOLESALE
+  // price — the shop's books carry an invoice (and a live pay link) to a
+  // stranger for the wrong amount. The wholesale bill belongs to the
+  // BROKER, which is a different flow (broker billing, not built yet).
+  // Same rule the deposit path already enforces (skipped:"broker_quote").
+  if (quote.broker_id || quote.broker_email || sourceRow?.broker_id) {
+    return {
+      error: "Broker quotes can't create a QuickBooks invoice to the end client — the QB amount would be your wholesale price billed to the broker's customer. Bill the broker directly for now; in-app broker billing is coming.",
+      brokerBlocked: true,
+    };
   }
 
   let customer = params.customer;
@@ -3096,6 +3109,30 @@ Deno.serve(async (req) => {
       return Response.json({ error: "Invalid access token" }, { status: 401, headers: CORS });
     }
 
+    // Broker deny (security audit 2026-08-13, P1) — BEFORE every action,
+    // including checkConnection: the shop_owner token fallback inside
+    // findUserProfile was built for MANAGERS, and a broker riding it got
+    // the shop's full QB session (read all financials, record payments,
+    // deactivate customers, create invoices). Brokers have no QuickBooks
+    // surface, period. checkConnection answers false so broker UIs simply
+    // hide QB affordances instead of erroring.
+    {
+      const { data: roleRow } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("auth_id", user.id)
+        .maybeSingle();
+      if (roleRow?.role === "broker") {
+        if (action === "checkConnection") {
+          return Response.json({ connected: false }, { headers: CORS });
+        }
+        return Response.json(
+          { success: false, error: "QuickBooks operations aren't available on broker accounts." },
+          { status: 200, headers: CORS },
+        );
+      }
+    }
+
     if (action === "checkConnection") {
       const result = await handleCheckConnection(supabase, user.id, user.email ?? null);
       return Response.json(result, { headers: CORS });
@@ -3187,8 +3224,11 @@ Deno.serve(async (req) => {
     // any other caller sees the clean message via data.error instead
     // of "Edge Function returned a non-2xx status code".
     {
-      const { data: subProfile } = await supabase.from("profiles").select("subscription_tier, subscription_status, trial_ends_at, shop_owner, email").eq("auth_id", user.id).maybeSingle();
-      const blocked = requireActiveSubscription(subProfile);
+      const { data: subProfile } = await supabase.from("profiles").select("subscription_tier, subscription_status, trial_ends_at, shop_owner, email, role").eq("auth_id", user.id).maybeSingle();
+      // (Broker deny lives earlier, before checkConnection — see the block
+      // after auth. Here: team-aware subscription resolution.)
+      const guardAdmin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const blocked = await requireActiveTeamSubscription(guardAdmin, subProfile);
       if (blocked) {
         const body = await blocked.json().catch(() => ({ error: "Subscription required" }));
         return Response.json(
