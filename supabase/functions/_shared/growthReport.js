@@ -17,7 +17,18 @@ const DAY_MS = 86400000;
 // prints. `profiles` is every role='shop' profile (small table);
 // `quoteOwners` is the shop_owner column of quotes created in the last
 // 7 days (activity pulse + activation check).
-export function summarizeGrowth({ profiles, quoteOwners, orderCount7d }, now = Date.now()) {
+// Shop-count thresholds Joe watches (2026-08-13 "monitor those things"):
+// QB Partner Program Silver (~$300/mo) and the Intuit App Assessment both
+// revisit around 10 PAYING shops. "Paying" = a real Stripe subscription —
+// comped accounts and the demo shop read active/shop in profiles but pay
+// nothing (memory: comped accounts must never count).
+export const PAYING_SHOPS_THRESHOLD = 10;
+export const PAYING_SHOPS_WARN_AT = 8;
+// Resend free plan is 3,000 emails/month; warn at 80%. Override via the
+// caller when the plan changes.
+export const RESEND_MONTHLY_CAP_DEFAULT = 3000;
+
+export function summarizeGrowth({ profiles, quoteOwners, orderCount7d, stripeSubEmails, emails30d, resendMonthlyCap }, now = Date.now()) {
   const rows = profiles || [];
   const weekAgo = now - 7 * DAY_MS;
   const ts = (v) => {
@@ -34,7 +45,9 @@ export function summarizeGrowth({ profiles, quoteOwners, orderCount7d }, now = D
   const activeTrials = [];
   const trialsEndingSoon = [];
   const expiredLast7d = [];
+  const stripeSet = new Set((stripeSubEmails || []).map((e) => String(e || "").toLowerCase()));
   let payingShops = 0;
+  let compedShops = 0;
 
   for (const p of rows) {
     const created = ts(p.created_at);
@@ -48,7 +61,16 @@ export function summarizeGrowth({ profiles, quoteOwners, orderCount7d }, now = D
 
     if (p.subscription_tier === "shop" &&
         (p.subscription_status === "active" || p.subscription_status === "trialing")) {
-      payingShops++;
+      // Only a real Stripe subscription counts as PAYING. Everything else
+      // in this state (owner's own shop, comps, demo) is "comped" — it
+      // must never advance the 10-shop triggers. When the caller can't
+      // supply the Stripe set (query failed), fall back to the old
+      // overcount but mark it estimated.
+      if (stripeSubEmails == null || stripeSet.has(String(p.email || "").toLowerCase())) {
+        payingShops++;
+      } else {
+        compedShops++;
+      }
     }
 
     if (p.subscription_tier === "trial" && trialEnds) {
@@ -65,15 +87,47 @@ export function summarizeGrowth({ profiles, quoteOwners, orderCount7d }, now = D
 
   activeTrials.sort((a, b) => a.daysLeft - b.daysLeft);
 
+  const cap = Number(resendMonthlyCap) > 0 ? Number(resendMonthlyCap) : RESEND_MONTHLY_CAP_DEFAULT;
   return {
     newSignups,
     activeTrials,
     trialsEndingSoon,
     expiredLast7d,
     payingShops,
+    payingIsEstimate: stripeSubEmails == null,
+    compedShops,
     quotes7d: (quoteOwners || []).length,
     orders7d: orderCount7d ?? 0,
+    emails30d: Number(emails30d) || 0,
+    resendMonthlyCap: cap,
   };
+}
+
+// The threshold-watch block appended to the weekly report. Pure so the
+// trigger lines are pinned by tests.
+export function buildThresholdWatchText(s) {
+  const lines = ["Threshold watch:"];
+  const paying = s.payingShops;
+  const est = s.payingIsEstimate ? " (ESTIMATE — Stripe lookup failed, may overcount comps)" : "";
+  if (paying >= PAYING_SHOPS_THRESHOLD) {
+    lines.push(`  • 🔔 ${paying} paying shops${est} — the ${PAYING_SHOPS_THRESHOLD}-shop triggers are DUE: revisit QB Partner Program Silver (~$300/mo) and schedule the Intuit App Assessment.`);
+  } else if (paying >= PAYING_SHOPS_WARN_AT) {
+    lines.push(`  • ⚠ ${paying} paying shops${est} — approaching the ${PAYING_SHOPS_THRESHOLD}-shop triggers (QB Partner Silver + Intuit App Assessment). Start budgeting/scheduling.`);
+  } else {
+    lines.push(`  • ${paying} paying shop(s)${est} of ${PAYING_SHOPS_THRESHOLD} before the QB Partner Silver / Intuit App Assessment triggers.`);
+  }
+  if (s.compedShops > 0) {
+    lines.push(`  • ${s.compedShops} comped/demo shop(s) excluded from the paying count.`);
+  }
+  const pct = s.resendMonthlyCap > 0 ? Math.round((s.emails30d / s.resendMonthlyCap) * 100) : 0;
+  if (pct >= 100) {
+    lines.push(`  • 🔔 Email volume ${s.emails30d}/30d is AT/OVER the Resend plan cap (${s.resendMonthlyCap}/mo) — upgrade the plan now (sends will start failing).`);
+  } else if (pct >= 80) {
+    lines.push(`  • ⚠ Email volume ${s.emails30d}/30d is ${pct}% of the Resend plan cap (${s.resendMonthlyCap}/mo) — plan the upgrade.`);
+  } else {
+    lines.push(`  • Email volume: ${s.emails30d} sends in 30d (${pct}% of the ${s.resendMonthlyCap}/mo Resend cap).`);
+  }
+  return lines.join("\n");
 }
 
 export function buildGrowthReportText(s) {
@@ -81,7 +135,9 @@ export function buildGrowthReportText(s) {
   return [
     "InkTracker — weekly growth report",
     "",
-    `Paying shops: ${s.payingShops}`,
+    `Paying shops (Stripe subscriptions): ${s.payingShops}${s.payingIsEstimate ? " (estimate)" : ""}`,
+    "",
+    buildThresholdWatchText(s),
     `Platform activity (7d): ${s.quotes7d} quote(s), ${s.orders7d} order(s)`,
     "",
     `New signups (7d): ${s.newSignups.length}`,
