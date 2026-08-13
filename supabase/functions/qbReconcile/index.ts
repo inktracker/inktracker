@@ -1285,10 +1285,11 @@ async function scanAndSendGrowthReport(adminClient: any): Promise<{ sent: boolea
     if (recent) return { sent: false };
 
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const [profilesRes, quotesRes, ordersRes] = await Promise.all([
+    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const [profilesRes, quotesRes, ordersRes, stripeRes, emailsRes] = await Promise.all([
       adminClient
         .from("profiles")
-        .select("email, shop_name, company_name, subscription_tier, subscription_status, trial_ends_at, created_at")
+        .select("id, email, shop_name, company_name, subscription_tier, subscription_status, trial_ends_at, created_at")
         .eq("role", "shop"),
       adminClient
         .from("quotes")
@@ -1299,16 +1300,43 @@ async function scanAndSendGrowthReport(adminClient: any): Promise<{ sent: boolea
         .from("orders")
         .select("id", { count: "exact", head: true })
         .gte("created_at", weekAgo),
+      // Threshold watch: PAYING = real Stripe subscription (comps/demo
+      // read active in profiles but pay nothing and must never advance
+      // the 10-shop triggers).
+      adminClient
+        .from("profile_secrets")
+        .select("profile_id")
+        .not("stripe_subscription_id", "is", null),
+      // Resend-cap watch: total sends logged in the last 30 days.
+      adminClient
+        .from("notification_log")
+        .select("id", { count: "exact", head: true })
+        .gte("created_at", monthAgo),
     ]);
     if (profilesRes.error) {
       console.warn("[qbReconcile] growth-report profile query failed:", profilesRes.error.message);
       return { sent: false };
     }
 
+    // Map stripe-holding profile_ids → emails via the profiles rows we
+    // already fetched. Null (not []) when the lookup failed, so the
+    // summary can mark the paying count as an estimate instead of
+    // silently reporting zero paying shops.
+    let stripeSubEmails: string[] | null = null;
+    if (!stripeRes.error) {
+      const ids = new Set((stripeRes.data ?? []).map((r: any) => r.profile_id));
+      stripeSubEmails = (profilesRes.data ?? [])
+        .filter((p: any) => ids.has(p.id))
+        .map((p: any) => p.email);
+    }
+
     const stats = summarizeGrowth({
       profiles: profilesRes.data ?? [],
       quoteOwners: (quotesRes.data ?? []).map((q: any) => q.shop_owner),
       orderCount7d: ordersRes.count ?? 0,
+      stripeSubEmails,
+      emails30d: emailsRes.error ? 0 : (emailsRes.count ?? 0),
+      resendMonthlyCap: Number(Deno.env.get("RESEND_MONTHLY_CAP")) || undefined,
     });
 
     const res = await fetch("https://api.resend.com/emails", {

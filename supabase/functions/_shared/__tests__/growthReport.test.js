@@ -3,6 +3,7 @@ import {
   summarizeGrowth,
   buildGrowthReportText,
   buildGrowthReportSubject,
+  buildThresholdWatchText,
 } from "../growthReport.js";
 
 const NOW = Date.parse("2026-08-10T15:00:00Z");
@@ -40,8 +41,25 @@ describe("summarizeGrowth", () => {
     // Only trials that lapsed WITHIN the week are churn news; day-30 stale rows aren't.
     expect(s.expiredLast7d.map((x) => x.email)).toEqual(["expired@c.co"]);
     expect(s.payingShops).toBe(1); // canceled doesn't count
+    expect(s.payingIsEstimate).toBe(true); // no stripe set supplied
     expect(s.quotes7d).toBe(2);
     expect(s.orders7d).toBe(5);
+  });
+
+  it("PAYING requires a real Stripe subscription — comps/demo count as comped, never paying", () => {
+    const s = summarizeGrowth({
+      profiles: [
+        profile({ email: "kato@t.com", subscription_tier: "shop", subscription_status: "active", trial_ends_at: null, created_at: days(-40) }),
+        profile({ email: "comp@e.co", subscription_tier: "shop", subscription_status: "active", trial_ends_at: null, created_at: days(-40) }),
+        profile({ email: "demo@x.app", subscription_tier: "shop", subscription_status: "active", trial_ends_at: null, created_at: days(-40) }),
+      ],
+      quoteOwners: [],
+      orderCount7d: 0,
+      stripeSubEmails: ["KATO@T.COM"], // case-insensitive
+    }, NOW);
+    expect(s.payingShops).toBe(1);
+    expect(s.compedShops).toBe(2);
+    expect(s.payingIsEstimate).toBe(false);
   });
 
   it("counts per-owner weekly quotes for the activation flag", () => {
@@ -82,5 +100,38 @@ describe("report formatting", () => {
     expect(buildGrowthReportSubject(stats())).toBe(
       "[InkTracker] Weekly growth: 0 signup(s), 1 trial(s), 0 paying",
     );
+  });
+});
+
+describe("threshold watch (2026-08-13 'monitor those things')", () => {
+  const base = { newSignups: [], activeTrials: [], trialsEndingSoon: [], expiredLast7d: [], quotes7d: 0, orders7d: 0, compedShops: 0, payingIsEstimate: false, emails30d: 100, resendMonthlyCap: 3000 };
+  it("below warn: neutral progress line naming the 10-shop triggers", () => {
+    const t = buildThresholdWatchText({ ...base, payingShops: 2 });
+    expect(t).toContain("2 paying shop(s) of 10");
+    expect(t).toContain("QB Partner Silver");
+    expect(t).not.toContain("⚠");
+  });
+  it("at 8: approaching warning", () => {
+    const t = buildThresholdWatchText({ ...base, payingShops: 8 });
+    expect(t).toContain("⚠ 8 paying shops");
+    expect(t).toContain("approaching");
+  });
+  it("at 10+: triggers DUE", () => {
+    const t = buildThresholdWatchText({ ...base, payingShops: 11 });
+    expect(t).toContain("🔔 11 paying shops");
+    expect(t).toContain("Intuit App Assessment");
+  });
+  it("estimate flag surfaces when the Stripe lookup failed", () => {
+    const t = buildThresholdWatchText({ ...base, payingShops: 6, payingIsEstimate: true });
+    expect(t).toContain("ESTIMATE");
+  });
+  it("Resend cap: neutral under 80%, warns at 80%, alarms at 100%", () => {
+    expect(buildThresholdWatchText({ ...base, payingShops: 2, emails30d: 500 })).toContain("17% of the 3000/mo");
+    expect(buildThresholdWatchText({ ...base, payingShops: 2, emails30d: 2500 })).toContain("⚠ Email volume 2500/30d is 83%");
+    expect(buildThresholdWatchText({ ...base, payingShops: 2, emails30d: 3100 })).toContain("🔔 Email volume 3100/30d is AT/OVER");
+  });
+  it("comped count is disclosed", () => {
+    const t = buildThresholdWatchText({ ...base, payingShops: 2, compedShops: 3 });
+    expect(t).toContain("3 comped/demo shop(s) excluded");
   });
 });
