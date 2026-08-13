@@ -15,6 +15,16 @@ import { EMPTY_CALC } from "./taxProvider";
  * `qb_total` on the quote are returned.
  */
 
+// QBO rejects the whole request (400 code 2050) when CustomerMemo exceeds
+// 1,000 chars. Mirrors clampQbMemo in supabase/functions/_shared/qbInvoice.js
+// (frontend can't import the Deno module) — keep the two in lockstep.
+const QB_MEMO_MAX = 1000;
+function clampQbMemo(text, max = QB_MEMO_MAX) {
+  const s = String(text ?? "");
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + "…";
+}
+
 const SHIP_TO_KEYS = ["street", "city", "state", "zip", "country"];
 
 function pickShipTo(customer) {
@@ -77,7 +87,7 @@ export function buildQBOInvoiceJSON(quote, { customer = {} } = {}) {
     Line,
     // Empty TxnTaxDetail signals to QBO that we want AST to calculate.
     TxnTaxDetail: {},
-    CustomerMemo: { value: quote?.notes || "" },
+    CustomerMemo: { value: clampQbMemo(quote?.notes) },
   };
   if (shipTo) {
     payload.BillAddr = { Line1: shipTo.street, City: shipTo.city, CountrySubDivisionCode: shipTo.state, PostalCode: shipTo.zip, Country: shipTo.country };
