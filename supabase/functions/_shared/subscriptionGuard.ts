@@ -19,6 +19,36 @@ type Profile = {
 };
 
 /**
+ * Team-aware guard (broker security audit 2026-08-13, P1): team members
+ * (manager / employee / broker) ride the SHOP's subscription — their own
+ * profile carries an inert tier (house rule: never gate by the member's
+ * own tier; 20260926 migration calls team tiers "inert"). Resolve the
+ * owner's profile via profile.shop_owner and guard THAT. Falls back to
+ * guarding the member's own profile when no owner row resolves (fails
+ * toward the old behavior, never more permissive for owners themselves —
+ * owners have no shop_owner).
+ *
+ * `admin` must be a service-role client: the caller's RLS may not permit
+ * reading the owner's profile row.
+ */
+export async function requireActiveTeamSubscription(admin: any, profile: Profile | null): Promise<Response | null> {
+  const ownerEmail = profile?.shop_owner;
+  if (ownerEmail) {
+    try {
+      const { data: owner } = await admin
+        .from("profiles")
+        .select("subscription_tier, subscription_status, trial_ends_at, past_due_since")
+        .eq("email", ownerEmail)
+        .maybeSingle();
+      if (owner) return requireActiveSubscription(owner);
+    } catch (_e) {
+      // fall through to own-profile guard
+    }
+  }
+  return requireActiveSubscription(profile);
+}
+
+/**
  * Checks if a profile has an active subscription (paid or valid trial).
  * Returns null if active, or a 403 Response if expired/canceled.
  */

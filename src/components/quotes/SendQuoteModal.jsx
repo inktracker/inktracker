@@ -679,10 +679,12 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         pdfBase64 = await exportQuoteToPDF(quoteForPdf, {
           mode: "client",
           // Customer-facing PDF: same broker-vs-shop brand resolution
-          // as the email body. The PDF header shouldn't leak the print
-          // shop's name to the broker's end client either.
+          // as the email body. The PDF header must not leak the print
+          // shop's name OR LOGO to the broker's end client — logoUrl here
+          // is the signed-in shop operator's logo, so broker quotes send
+          // none (white-label rule; the broker's own send path brands it).
           shopName: displayBrandName,
-          logoUrl,
+          logoUrl: isBrokerQuote(quote) ? "" : logoUrl,
           customerCompany: customer?.company || "",
           customerEmail: quote.customer_email || customer?.email || "",
           customerPhone: customer?.phone || "",
@@ -721,7 +723,9 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         // header. The edge function also derives a fromHeader from
         // brokerName separately; both stay in sync.
         shopName: displayBrandName,
-        shopLogoUrl: logoUrl,
+        // Broker quotes: never the shop's logo (the edge function also
+        // enforces this server-side by swapping in the broker's logo).
+        shopLogoUrl: isBrokerQuote(quote) ? "" : logoUrl,
         pdfBase64,
       });
       const { data: res, error: invokeErr } = await supabase.functions.invoke("sendQuoteEmail", {

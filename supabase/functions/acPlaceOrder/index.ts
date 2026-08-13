@@ -36,7 +36,7 @@ import {
 } from "../_shared/acOrderLogic.js";
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { loadShopProfileForUser, loadProfileWithSecrets } from "../_shared/profileSecrets.ts";
-import { requireActiveSubscription } from "../_shared/subscriptionGuard.ts";
+import { requireActiveTeamSubscription } from "../_shared/subscriptionGuard.ts";
 import { claimSupplierOrder, finishSupplierOrder } from "../_shared/supplierIdempotency.js";
 
 Deno.serve(async (req) => {
@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
     const { profile } = await loadShopProfileForUser(admin, user.id);
 
     // Subscription gate — order placement costs real money downstream.
-    const blocked = requireActiveSubscription(profile);
+    const blocked = await requireActiveTeamSubscription(admin, profile);
     if (blocked) return blocked;
 
     // STRICT per-shop credentials only — NO env fallback. The platform's
