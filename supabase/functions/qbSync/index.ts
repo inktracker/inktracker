@@ -43,6 +43,7 @@ import {
   pickQbInvoiceForAdoption,
   mergeCustomerAuthoritative,
   qbAllowsDiscountLines,
+  clampQbMemo,
 } from "../_shared/qbInvoice.js";
 import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
 import { mergeNotesPreservingSyncLines } from "../_shared/qbInvoiceModified.js";
@@ -1212,7 +1213,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
           AllowOnlineCreditCardPayment: true,
           AllowOnlineACHPayment: true,
           Line: lines,
-          CustomerMemo: { value: quote.notes || "" },
+          CustomerMemo: { value: clampQbMemo(quote.notes) },
           PrivateNote: `InkTracker Quote ${baseDocNumber} — updated ${new Date().toISOString().slice(0, 10)}`
             + (quote.job_title ? ` · Job: ${quote.job_title}` : ""),
         };
@@ -1312,7 +1313,7 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       AllowOnlineCreditCardPayment: true,
       AllowOnlineACHPayment: true,
       Line: lines,
-      CustomerMemo: { value: quote.notes || "" },
+      CustomerMemo: { value: clampQbMemo(quote.notes) },
       // PrivateNote is QB's internal memo (visible to the shop in QB, not on
       // the customer's invoice). Append the InkTracker job title so it flows
       // to accounting for reference.

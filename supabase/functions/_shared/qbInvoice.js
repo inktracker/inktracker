@@ -473,6 +473,19 @@ export function buildTaxRecordFromQbInvoice(qbInvoice, ctx = {}) {
   };
 }
 
+// ── CustomerMemo length clamp ──────────────────────────────────────────────
+// QBO rejects the whole invoice (400 code 2050, "STRING LENGTH ... MAX:1,000")
+// when CustomerMemo exceeds 1,000 chars — hit live 2026-08-13 when a quote's
+// notes ran to 2,256 chars. Clamp everywhere a memo is built so a long note
+// degrades to a truncated memo instead of a failed send.
+export const QB_MEMO_MAX = 1000;
+
+export function clampQbMemo(text, max = QB_MEMO_MAX) {
+  const s = String(text ?? "");
+  if (s.length <= max) return s;
+  return s.slice(0, max - 1) + "…";
+}
+
 // ── Single-quote SQL escaping for QB QBO query strings ─────────────────────
 // QB BNF requires '' (two single quotes) to escape a single quote inside
 // a string literal. Anything else (e.g. \') silently breaks the query.

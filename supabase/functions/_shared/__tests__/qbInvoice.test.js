@@ -10,6 +10,8 @@ import {
   buildTaxRecordFromQbInvoice,
   qbJurisdictionRate,
   escapeQbStringLiteral,
+  clampQbMemo,
+  QB_MEMO_MAX,
   buildInvoiceLinesFromPayload,
   extractPaymentLink,
   buildQbSendInvoiceUrl,
@@ -1451,5 +1453,24 @@ describe("qbAllowsDiscountLines", () => {
     expect(qbAllowsDiscountLines({ QueryResponse: { Preferences: [] } })).toBe(null);
     expect(qbAllowsDiscountLines({})).toBe(null);
     expect(qbAllowsDiscountLines(null)).toBe(null);
+  });
+});
+
+describe("clampQbMemo (QB 400 code 2050 guard)", () => {
+  it("passes short and exactly-max memos through untouched", () => {
+    expect(clampQbMemo("hello")).toBe("hello");
+    const exact = "x".repeat(QB_MEMO_MAX);
+    expect(clampQbMemo(exact)).toBe(exact);
+  });
+  it("clamps over-length memos to exactly the QB max", () => {
+    const long = "x".repeat(2256); // the live failure length
+    const out = clampQbMemo(long);
+    expect(out.length).toBe(QB_MEMO_MAX);
+    expect(out.endsWith("…")).toBe(true);
+    expect(out.startsWith("x".repeat(QB_MEMO_MAX - 1))).toBe(true);
+  });
+  it("treats null/undefined as empty string (matches old `|| \"\"` behavior)", () => {
+    expect(clampQbMemo(null)).toBe("");
+    expect(clampQbMemo(undefined)).toBe("");
   });
 });
