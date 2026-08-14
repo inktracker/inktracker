@@ -4,8 +4,9 @@ import {
   buildLinkedQtyMap,
   fmtMoney,
 } from "../shared/pricing";
+import { computeTradeTotal } from "@/lib/partnerTradePricing";
 
-export default function PricePanel({ li, rushRate, extras, allLineItems = [], markup, onChange, sizePrices }) {
+export default function PricePanel({ li, rushRate, extras, allLineItems = [], markup, onChange, sizePrices, partnerConfig = null, partnerLabel = null }) {
   const qty = getQty(li);
   const linkedQtyMap = buildLinkedQtyMap(allLineItems);
   const r = calcLinkedLinePrice(li, rushRate, extras, markup, linkedQtyMap, sizePrices);
@@ -30,6 +31,13 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
   const suggestedPpp = r.ppp;
   const avgPpp = hasOverride ? pppOverride : suggestedPpp;
   const displayTotal = hasOverride ? (pppOverride * qty) : r.lineTotal;
+
+  // Partner sourcing (Phase 2b): if this line is done by a partner with a
+  // published sheet, show what it COSTS you (their rate) and your MARGIN
+  // (retail − cost). Retail above is unchanged. Reuses the trade-price engine.
+  const partnerCost = partnerConfig ? computeTradeTotal([li], partnerConfig) : null;
+  const partnerMargin = partnerCost != null ? Math.round((displayTotal - partnerCost) * 100) / 100 : null;
+  const marginPct = partnerCost != null && displayTotal > 0 ? Math.round((partnerMargin / displayTotal) * 100) : null;
 
   return (
     <div className="bg-slate-900 rounded-xl overflow-hidden border border-slate-800">
@@ -156,6 +164,26 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
         </div>
         <div className="text-2xl font-bold text-white">{fmtMoney(displayTotal)}</div>
       </div>
+
+      {partnerLabel && partnerCost == null && (
+        <div className="bg-amber-950/40 border-t border-amber-900/50 px-4 py-2.5 text-xs text-amber-300">
+          {partnerLabel} hasn&rsquo;t published rates — set the price manually above; margin isn&rsquo;t tracked.
+        </div>
+      )}
+      {partnerCost != null && (
+        <div className="bg-slate-950 border-t border-slate-800 px-4 py-3 grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Your cost ({partnerLabel})</div>
+            <div className="text-white font-semibold text-lg">{fmtMoney(partnerCost)}</div>
+            <div className="text-slate-500 text-xs">{fmtMoney(qty > 0 ? partnerCost / qty : 0)}/pc</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Your margin</div>
+            <div className={`font-semibold text-lg ${partnerMargin >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtMoney(partnerMargin)}</div>
+            <div className="text-slate-500 text-xs">{marginPct != null ? `${marginPct}%` : ""}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

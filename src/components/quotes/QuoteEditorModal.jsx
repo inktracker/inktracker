@@ -35,6 +35,8 @@ import CollapsibleSection from "../shared/CollapsibleSection";
 import { roundedQuoteTotals } from "@/lib/pricing/quoteRounding";
 import LineItemEditor from "./LineItemEditor";
 import { shopScope } from "@/lib/shopScope";
+import { listPartnerships, activePartners } from "@/lib/partners";
+import { getPartnerTradeSheet, computeTradeTotal } from "@/lib/partnerTradeSheet";
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
 import ReactivateLink from "../shared/ReactivateLink";
 import { customerSnapshotPatch } from "@/lib/quotes/customerSwitch";
@@ -179,6 +181,10 @@ export default function QuoteEditorModal({
     embroidery: [],
     custom: {},
   });
+  // Active partners + their published trade sheets (Phase 2b): tagging a line
+  // "sourced from partner X" reads X's rates for the line's COST/margin — the
+  // customer-facing retail price is unchanged. [{ partner, config }].
+  const [partnerSheets, setPartnerSheets] = useState([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   // "Calculate tax" — fetch QB's authoritative tax for the ship-to and fill the
@@ -316,6 +322,15 @@ export default function QuoteEditorModal({
             });
           }
         } catch {}
+        // Active partners + their trade sheets, for line-level partner sourcing.
+        try {
+          const links = await listPartnerships();
+          const active = activePartners(links, shopScope(currentUser));
+          const sheets = await Promise.all(
+            active.map(async (p) => ({ partner: p, config: await getPartnerTradeSheet(p, shopScope(currentUser)) })),
+          );
+          setPartnerSheets(sheets);
+        } catch { /* no partners — feature stays hidden */ }
       } catch (error) {
         console.error("Error loading current user:", error);
       }
@@ -712,12 +727,25 @@ export default function QuoteEditorModal({
         const ppp = hasOverride ? override : r.ppp;
         const lineTotal = ppp * qty;
         const rushFee = hasOverride ? 0 : r.rushFee;
+        // Partner sourcing (Phase 2b): snapshot the partner's COST for this
+        // line so job P&L reads a static number — never a live re-fetch of the
+        // partner sheet (RLS would return null once the partnership ends). The
+        // customer-facing retail (_ppp/_lineTotal) is untouched.
+        const src = li.partner_source;
+        const sheet = src ? partnerSheets.find((s) => s.partner === src) : null;
+        const partnerStamp = sheet?.config
+          ? (() => {
+              const cost = computeTradeTotal([li], sheet.config);
+              return { _partner_cost: cost, _partner_ppp: qty > 0 ? Math.round((cost / qty) * 100) / 100 : 0 };
+            })()
+          : { _partner_cost: null, _partner_ppp: null };
         return {
           ...li,
           _ppp: ppp,
           _lineTotal: lineTotal,
           _rushFee: rushFee,
           _addon_labels: showAddonLabels ? getActiveAddonLabels(li, q, savePc) : [],
+          ...partnerStamp,
         };
       });
       // Compute totals from stamped line items — one source of truth
@@ -1268,6 +1296,7 @@ export default function QuoteEditorModal({
                   rushRate={q.rush_rate}
                   extras={q.extras}
                   addonsByScope={addonsByScope}
+                  partnerSheets={partnerSheets}
                   allLineItems={q.line_items}
                   savedImprints={savedImprints}
                   onChange={(updated) => updateLineItem(idx, updated)}
