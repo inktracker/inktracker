@@ -3,6 +3,9 @@ import ReactivateLink from "../shared/ReactivateLink";
 import AttachmentGallery from "../shared/AttachmentGallery";
 import ArtworkPreviewOverlay from "../shared/ArtworkPreviewOverlay";
 import SendInvoiceModal from "../invoices/SendInvoiceModal";
+import SendToPartnerModal from "./SendToPartnerModal";
+import { PARTNER_STATUS_LABELS } from "@/lib/partners";
+import { Handshake } from "lucide-react";
 import PackingSlipModal from "./PackingSlipModal";
 import { createPortal } from "react-dom";
 import { base44, supabase } from "@/api/supabaseClient";
@@ -96,6 +99,7 @@ export default function OrderDetailModal({
   // Edit Order (phase 1) — overlay open state. Tier gating computed
   // below, after the invoice hook provides relatedInvoice.
   const [showEditor, setShowEditor] = useState(false);
+  const [showSendToPartner, setShowSendToPartner] = useState(false);
 
   const [shopName, setShopName] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
@@ -834,8 +838,40 @@ export default function OrderDetailModal({
             readOnly={readOnly}
             reactivateHref={reactivateHref}
           />
+
+          {/* Shop partnerships (docs/shop-partnerships-design.md): offer
+              this job (or lines of it) to a partner shop. Once accepted,
+              partner progress mirrors here as a status chip. */}
+          {["shop", "admin", "manager"].includes(authUser?.role) && !readOnly && (
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowSendToPartner(true)}
+                className="text-xs font-semibold text-teal-600 hover:text-teal-800 flex items-center gap-1.5"
+              >
+                <Handshake className="w-3.5 h-3.5" /> Send to Partner
+              </button>
+              {liveOrder?.partner_status && (
+                <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                  liveOrder.partner_status === "completed"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-teal-50 text-teal-700 border border-teal-200"
+                }`}>
+                  {PARTNER_STATUS_LABELS[liveOrder.partner_status] || `Partner: ${liveOrder.partner_status}`}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {showSendToPartner && (
+        <SendToPartnerModal
+          order={liveOrder || order}
+          onClose={() => setShowSendToPartner(false)}
+          onSent={() => { /* offer pending — chip appears on acceptance */ }}
+        />
+      )}
 
       {previewArt && (
         <ArtworkPreviewOverlay

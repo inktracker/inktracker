@@ -108,3 +108,6 @@ verify_jwt = false
 
 [functions.reportDiscrepancy]
 verify_jwt = false
+
+[functions.partnerHandoff]
+verify_jwt = false
