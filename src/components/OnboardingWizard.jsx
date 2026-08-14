@@ -155,16 +155,36 @@ export default function OnboardingWizard({ user, onComplete }) {
     // reflect what we INTENDED to save, even if Supabase was
     // unreachable; the hard reload will re-sync from DB anyway).
     const shopPayload = buildShopUpsertPayload(wizardInput);
-    // Also upsert a Shop entity so quotes/orders can find it
-    try {
-      const shops = await base44.entities.Shop.filter({ owner_email: user.email });
-      if (shops?.length) {
-        await base44.entities.Shop.update(shops[0].id, shopPayload);
-      } else {
-        await base44.entities.Shop.create(shopPayload);
+    // Also upsert a Shop entity so quotes/orders can find it.
+    //
+    // This is NOT non-blocking (audit 2026-08-13, live on a day-one
+    // signup): without a shops row the public wizard, quote branding,
+    // and customer-facing pages all run on placeholders — the shop
+    // looks broken to its customers and nobody knows why. Retry with
+    // backoff; if all attempts fail, surface it loudly and STILL let
+    // onboarding finish (the user shouldn't be trapped), but with an
+    // honest instruction instead of silence.
+    let shopUpsertOk = false;
+    for (let attempt = 0; attempt < 3 && !shopUpsertOk; attempt++) {
+      try {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 800 * attempt));
+        const shops = await base44.entities.Shop.filter({ owner_email: user.email });
+        if (shops?.length) {
+          await base44.entities.Shop.update(shops[0].id, shopPayload);
+        } else {
+          await base44.entities.Shop.create(shopPayload);
+        }
+        shopUpsertOk = true;
+      } catch (shopErr) {
+        console.error(`Shop upsert failed (attempt ${attempt + 1}/3):`, shopErr);
       }
-    } catch (shopErr) {
-      console.warn("Shop upsert failed (non-blocking):", shopErr);
+    }
+    if (!shopUpsertOk) {
+      alert(
+        "Your shop details couldn't be saved just now (everything else is set up). " +
+        "Please open Account → Shop Details and hit Save once you're in — " +
+        "until then, quotes and your public order form will show placeholder branding.",
+      );
     }
 
     // Refresh the in-memory timezone singleton so calendar / date
