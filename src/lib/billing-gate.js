@@ -19,6 +19,7 @@
 
 import { useAuth } from "@/lib/AuthContext";
 import { getEffectiveTier, computeReadOnly } from "@/lib/billing";
+import { isNative } from "@/lib/mobile/native";
 import { createPageUrl } from "@/utils";
 
 // The Account billing deep-link every reactivate CTA points at.
@@ -43,7 +44,11 @@ export function useBillingGate(userOverride) {
     if (readOnly) {
       // alert() is the codebase's existing convention; a toast/modal
       // would be nicer but consistency wins for now.
-      alert(`Your trial has ended. Subscribe in Account → Plans to ${actionLabel}.`);
+      // Native (iOS) shows neutral copy: no purchase language or
+      // upgrade steering in the app (App Review guideline 3.1.1).
+      alert(isNative()
+        ? `Your account is read-only, so you can't ${actionLabel} right now. Please manage your account from a computer.`
+        : `Your trial has ended. Subscribe in Account → Plans to ${actionLabel}.`);
       return true;
     }
     return false;
@@ -54,6 +59,9 @@ export function useBillingGate(userOverride) {
 
 // Human-readable reason shown in tooltips / the banner when read-only.
 function readOnlyReason(user) {
+  // Native: one neutral sentence for every lapsed state — "reactivate"/
+  // billing language stays off the device (guideline 3.1.1).
+  if (isNative()) return "Your account is read-only. Manage your account from a computer.";
   const status = user?.subscription_status;
   const tier = getEffectiveTier(user);
   if (status === "past_due") {
