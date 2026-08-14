@@ -250,24 +250,6 @@ Deno.serve(async (req) => {
         .eq("shop_owner", myShop).eq("order_id", params.orderId).maybeSingle();
       if (!order) return json({ error: "Order not found" }, 404);
 
-      // Line-level split: an order can go to MULTIPLE partners, but no single
-      // LINE may be out to two live hand-offs at once (that would double-
-      // produce it). Reject if any requested line is already committed.
-      const allLineIds = (order.line_items ?? []).map((li: any, i: number) => String(li?.id ?? i));
-      const requestedIds = (params.lineIds ?? allLineIds).map(String);
-      const { data: liveHandoffs } = await db.from("partner_handoffs")
-        .select("source_line_ids")
-        .eq("sending_shop", myShop).eq("source_order_id", order.order_id)
-        .in("status", ["offered", "accepted", "in_production"]);
-      const committed = new Set<string>();
-      for (const h of liveHandoffs ?? []) {
-        for (const id of h.source_line_ids ?? []) committed.add(String(id));
-      }
-      const clash = requestedIds.filter((id: string) => committed.has(id));
-      if (clash.length) {
-        return json({ error: "Some of those lines are already out to a partner. Pick lines that aren't committed yet." }, 400);
-      }
-
       const tradeTotal = Number(params.tradeTotal);
       if (!Number.isFinite(tradeTotal) || tradeTotal <= 0) {
         // Product decision (design doc): a hand-off carries a real trade
@@ -287,18 +269,33 @@ Deno.serve(async (req) => {
       });
       if (!spec.lines.length) return json({ error: "Select at least one line to send." }, 400);
 
-      const { data: handoff, error: hErr } = await db.from("partner_handoffs").insert({
-        sending_shop: myShop,
-        receiving_shop: partnerShop,
-        source_order_id: order.order_id,
-        source_line_ids: (params.lineIds ?? []).map(String),
-        blind,
-        due_date: params.dueDate || order.due_date || null,
-        offered_trade_total: Math.round(tradeTotal * 100) / 100,
-        note: params.note || null,
-        spec,
-      }).select().single();
-      if (hErr) return json({ error: hErr.message }, 500);
+      // Record the RESOLVED line ids (null = all lines), never []. The stored
+      // set IS what the overlap guard reads, so a whole-order hand-off must
+      // list every line — otherwise the next offer sees nothing committed.
+      const allLineIds = (order.line_items ?? []).map((li: any, i: number) => String(li?.id ?? i));
+      const resolvedLineIds = (params.lineIds ?? allLineIds).map(String);
+
+      // Atomic insert: offer_partner_handoff() takes an advisory lock on the
+      // (shop, order) pair and re-checks per-line overlap inside the txn, so
+      // two concurrent offers can't both commit the same line. LINE_OVERLAP
+      // (unique_violation, 23505) → friendly message.
+      const { data: handoff, error: hErr } = await db.rpc("offer_partner_handoff", {
+        p_sending_shop: myShop,
+        p_receiving_shop: partnerShop,
+        p_source_order_id: order.order_id,
+        p_line_ids: resolvedLineIds,
+        p_blind: blind,
+        p_due_date: params.dueDate || order.due_date || null,
+        p_offered_trade_total: Math.round(tradeTotal * 100) / 100,
+        p_note: params.note || null,
+        p_spec: spec,
+      });
+      if (hErr) {
+        if (String(hErr.code) === "23505" || String(hErr.message).includes("LINE_OVERLAP")) {
+          return json({ error: "Some of those lines are already out to a partner. Pick lines that aren't committed yet." }, 400);
+        }
+        return json({ error: hErr.message }, 500);
+      }
 
       const myName = await shopDisplayName(db, myShop);
       await notifyAndEmail(db, {
@@ -329,6 +326,9 @@ Deno.serve(async (req) => {
       const myName = await shopDisplayName(db, myShop);
 
       if (response === "decline") {
+        // No rollup refresh needed: decline is CAS-gated to 'offered', and an
+        // offered hand-off contributes nothing to partner_cost/partner_status,
+        // so the aggregate is unchanged (other split partners are untouched).
         const { data: swapped, error: dErr } = await db.from("partner_handoffs")
           .update({ status: "declined" }).eq("id", handoff.id).eq("status", "offered").select("id");
         if (dErr) return json({ error: "Couldn't record the decline — please try again." }, 500);
@@ -438,6 +438,7 @@ Deno.serve(async (req) => {
       }
       // Guarded: if the receiver accepted in the meantime, the CAS finds 0
       // rows and we report the real state instead of silently "cancelling".
+      // No rollup refresh needed — same invariant as decline (offered-only).
       const { data: swapped, error: cErr } = await db.from("partner_handoffs")
         .update({ status: "cancelled" }).eq("id", handoff.id).eq("status", "offered").select("id");
       if (cErr) return json({ error: "Couldn't cancel — please try again." }, 500);

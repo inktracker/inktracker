@@ -6,10 +6,69 @@
 -- carries a single partner_cost/partner_status pair, but both are now
 -- AGGREGATES over the order's hand-offs, recomputed by a single function.
 
--- No more "one live hand-off per order" — overlap is now enforced per LINE
--- in the edge function (a requested line already committed to a live
--- hand-off is rejected). Distinct lines to distinct partners are allowed.
+-- No more "one live hand-off per order" — overlap is now enforced per LINE.
+-- source_line_ids is text[], so a plain partial-unique index can't express
+-- "no two live hand-offs share a line". Instead the insert goes through
+-- offer_partner_handoff() below, which serializes concurrent offers for the
+-- same order under an advisory lock and re-checks overlap inside the txn —
+-- a real DB-level guarantee, not a best-effort app read-then-insert.
 drop index if exists partner_handoffs_one_live_per_order;
+
+-- Atomic offer: lock the (shop, order) pair, reject if any requested line is
+-- already out to a live hand-off, else insert. One transaction, so two
+-- concurrent offers of the same line can't both win (closes the TOCTOU the
+-- dropped unique index used to cover).
+create or replace function public.offer_partner_handoff(
+  p_sending_shop      text,
+  p_receiving_shop    text,
+  p_source_order_id   text,
+  p_line_ids          text[],
+  p_blind             boolean,
+  p_due_date          date,
+  p_offered_trade_total numeric,
+  p_note              text,
+  p_spec              jsonb)
+returns partner_handoffs
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_clash text[];
+  v_row   partner_handoffs;
+begin
+  -- Serialize offers for this order so the overlap check and insert are one
+  -- critical section. Released automatically at end of this function's txn.
+  perform pg_advisory_xact_lock(hashtext(p_sending_shop || '|' || p_source_order_id));
+
+  select array_agg(x) into v_clash
+  from unnest(p_line_ids) x
+  where exists (
+    select 1 from partner_handoffs h
+    where h.sending_shop    = p_sending_shop
+      and h.source_order_id = p_source_order_id
+      and h.status in ('offered','accepted','in_production')
+      and x = any(h.source_line_ids)
+  );
+  if v_clash is not null then
+    raise exception 'LINE_OVERLAP: % already out to a partner', v_clash
+      using errcode = 'unique_violation';
+  end if;
+
+  insert into partner_handoffs (
+    sending_shop, receiving_shop, source_order_id, source_line_ids,
+    blind, due_date, offered_trade_total, note, spec)
+  values (
+    p_sending_shop, p_receiving_shop, p_source_order_id, coalesce(p_line_ids, '{}'),
+    p_blind, p_due_date, p_offered_trade_total, p_note, p_spec)
+  returning * into v_row;
+
+  return v_row;
+end;
+$$;
+
+revoke execute on function public.offer_partner_handoff(text,text,text,text[],boolean,date,numeric,text,jsonb) from public;
+grant  execute on function public.offer_partner_handoff(text,text,text,text[],boolean,date,numeric,text,jsonb) to service_role;
 
 -- Recompute the sender order's partner rollup from ALL its hand-offs:
 --   partner_cost   = Σ agreed_trade_total over accepted/in_production/completed
@@ -44,6 +103,9 @@ begin
   v_status := case
     when v_rank = 1 then 'accepted'
     when v_rank = 2 then 'in_production'
+    -- All active legs completed BUT a partner bailed → 'cancelled' (needs
+    -- attention), never a green 'completed' that hides unproduced lines.
+    when v_rank = 3 and v_has_cancelled then 'cancelled'
     when v_rank = 3 then 'completed'
     when v_has_cancelled then 'cancelled'
     else null
