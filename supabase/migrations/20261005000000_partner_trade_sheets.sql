@@ -10,12 +10,29 @@
 -- decoration sheet does).
 create table if not exists partner_trade_sheets (
   shop_owner  text primary key,           -- the shop publishing the sheet
-  scale_pct   numeric,                     -- % of own standard rates (editor continuity)
   config      jsonb not null default '{}', -- resolved decoration rate sheet (engine shape)
   updated_at  timestamptz not null default now()
 );
 
+-- scale_pct lives in an OWNER-ONLY sidecar, never the partner-readable table.
+-- The published config is retail × scale_pct, so a partner who could read
+-- scale_pct alongside config would divide it out and recover the receiver's
+-- retail decoration rates. Keeping it here (no partner-read policy) means a
+-- partner only ever sees the resolved trade rates, never the markup relation.
+create table if not exists partner_trade_sheet_meta (
+  shop_owner  text primary key,
+  scale_pct   numeric,                     -- % of own standard rates (editor continuity)
+  updated_at  timestamptz not null default now()
+);
+
 alter table partner_trade_sheets enable row level security;
+alter table partner_trade_sheet_meta enable row level security;
+
+drop policy if exists partner_trade_sheet_meta_owner on partner_trade_sheet_meta;
+create policy partner_trade_sheet_meta_owner on partner_trade_sheet_meta
+  for all to authenticated
+  using (acts_for_shop(shop_owner))
+  with check (acts_for_shop(shop_owner));
 
 -- Owner: full read/write on their own sheet (same as editing their own
 -- pricing — not a cross-tenant surface, so authenticated is fine).

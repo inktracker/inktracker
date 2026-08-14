@@ -14,6 +14,11 @@ import {
 
 // Turn a "% of my own standard rates" into a resolved decoration sheet in the
 // shape the pricing engine reads (custom_techniques, embroidery.enabled).
+// Known limitation (acceptance-gated, so a suggestion nit not a money bug):
+// per-piece decoration EXTRAS and the embroidery digitizing fee are not
+// carried, so a line with an imprint extra toggled prices its extra at the
+// platform default and digitizing isn't surfaced. The receiver still confirms
+// the number by accepting; the sender can adjust before sending.
 export function buildTradeSheetConfig(shopConfig, scalePct) {
   const s = buildScaledSheet(shopConfig, scalePct);
   return {
