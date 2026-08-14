@@ -10,6 +10,17 @@
 -- garments): decoration-only pricing when the SENDER supplies, garment-
 -- inclusive when the receiver does.
 
+-- Safety: the drop/recreate below is only lossless while the 20261005 tables
+-- are empty (verified zero rows in prod at deploy). Abort rather than silently
+-- destroy a saved default sheet if that ever stops being true.
+do $$
+begin
+  if to_regclass('public.partner_trade_sheets') is not null
+     and (select count(*) from public.partner_trade_sheets) > 0 then
+    raise exception 'partner_trade_sheets has rows — migrate data (add partner_email default ''*'') instead of dropping';
+  end if;
+end $$;
+
 drop policy if exists partner_trade_sheets_owner on partner_trade_sheets;
 drop policy if exists partner_trade_sheets_partner_read on partner_trade_sheets;
 drop policy if exists partner_trade_sheet_meta_owner on partner_trade_sheet_meta;

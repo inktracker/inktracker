@@ -249,7 +249,13 @@ export default function PartnerTradeSheetEditor() {
             className={`px-2.5 py-1 rounded-lg border font-semibold ${!receiverSupplies ? "border-teal-600 bg-teal-50 text-teal-700" : "border-slate-200 text-slate-500"}`}>
             The sending shop
           </button>
-          <button type="button" onClick={() => setReceiverSupplies(true)}
+          <button type="button"
+            onClick={() => {
+              setReceiverSupplies(true);
+              // Ensure an editable markup bracket exists even if the shop never
+              // set garment brackets (else the grid would be empty & invisible).
+              setDraft((d) => (d && (d.garmentMarkup || []).length ? d : { ...d, garmentMarkup: [{ above: 0, markup: 1.4 }] }));
+            }}
             className={`px-2.5 py-1 rounded-lg border font-semibold ${receiverSupplies ? "border-teal-600 bg-teal-50 text-teal-700" : "border-slate-200 text-slate-500"}`}>
             I supply the blanks
           </button>

@@ -61,8 +61,12 @@ export function tradeConfigFromDraft(draft, shopConfig, receiverSuppliesGarments
 //   - sender supplies blanks (default): DECORATION only (printCost + extras) —
 //     garment cost ignored.
 //   - receiver supplies blanks (config.receiver_supplies_garments): the FULL
-//     line total (garment × the receiver's markup + decoration), using the
-//     order line's garment cost as the basis (the sender still confirms).
+//     line total (garment × the receiver's markup + decoration). Basis note:
+//     this uses the SENDER's order-line garment cost (all we have on a blind
+//     hand-off), so when the receiver's true blank cost differs it's an
+//     approximation — the sender can adjust and the receiver confirms on
+//     accept. A line with garmentCost 0 (customer-supplied) contributes no
+//     garment component.
 export function computeTradeTotal(lines, config) {
   const arr = Array.isArray(lines) ? lines : [];
   if (!arr.length || !config) return 0;
