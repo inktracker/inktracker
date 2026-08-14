@@ -148,12 +148,20 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
 
 ### Phase 2 — trade price sheets (broker-style margins)
 
-**Phase 2a — trade sheet + hand-off auto-fill (SHIPPED 2026-08-14, #772):**
-- The receiver (the shop doing the work) publishes ONE trade sheet in
-  Account → Partners: a % of their own standard decoration rates
-  (reuses `buildScaledSheet`; the resolved sheet is stored, never their
-  raw retail config). Table `partner_trade_sheets` — owner writes,
-  ACTIVE partners read (the one cross-tenant read, RLS-scoped).
+**Phase 2a — trade sheet + hand-off auto-fill (SHIPPED 2026-08-14, #772 + #773):**
+- The receiver publishes trade rates in Account → Partners with the SAME
+  flexibility as broker pricing: a DEFAULT sheet (`partner_email='*'`) plus
+  per-partner overrides, full per-cell matrices across every decoration
+  method (screen print first/additional, embroidery stitch tiers, custom
+  techniques), seeded by a Quick Price % of their own standard rates.
+- **Who supplies the blanks** is a per-sheet toggle: decoration-only when
+  the SENDER supplies (the default), garment-inclusive (garment × the
+  receiver's markup) when the receiver does.
+- Table `partner_trade_sheets` keyed `(shop_owner, partner_email)` — owner
+  writes; an active partner reads ONLY their own row or the `'*'` default
+  (never another partner's specific row). Stores the resolved sheet;
+  `scale_pct` lives in an owner-only sidecar so a partner can't invert it
+  back to retail rates.
 - The Send-to-Partner box **pre-fills the trade price from the partner's
   sheet**: the selected lines' DECORATION cost (`printCost`, garment-
   independent) priced through the SAME engine (`calcLinkedLinePrice`) —

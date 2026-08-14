@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTradeSheetConfig, computeTradeTotal } from "@/lib/partnerTradePricing";
+import { buildTradeSheetConfig, tradeConfigFromDraft, computeTradeTotal } from "@/lib/partnerTradePricing";
 
 // A minimal but realistic receiver shop config: screen print + embroidery.
 const shopConfig = {
@@ -64,5 +64,30 @@ describe("computeTradeTotal — decoration-only, at the partner's rates", () => 
   it("returns 0 for no lines or no sheet", () => {
     expect(computeTradeTotal([], buildTradeSheetConfig(shopConfig, 100))).toBe(0);
     expect(computeTradeTotal([spLine(10)], null)).toBe(0);
+  });
+});
+
+describe("tradeConfigFromDraft — who supplies the garments", () => {
+  const draft = {
+    tiers: [25, 50, 100, 200], maxColors: 8,
+    firstPrint: shopConfig.firstPrint, addlPrint: shopConfig.addlPrint,
+    garmentMarkup: [{ above: 0, markup: 1.5 }],
+    embroidery: null, customTechniques: {},
+  };
+
+  it("sender-supplies: decoration-only, garment ignored (250)", () => {
+    const cfg = tradeConfigFromDraft(draft, shopConfig, false);
+    expect(cfg.receiver_supplies_garments).toBe(false);
+    expect(cfg.garmentMarkup).toBeUndefined();
+    expect(computeTradeTotal([spLine(10)], cfg)).toBe(250);
+    expect(computeTradeTotal([spLine(999)], cfg)).toBe(250); // still garment-independent
+  });
+
+  it("receiver-supplies: adds garment × markup on top of decoration", () => {
+    const cfg = tradeConfigFromDraft(draft, shopConfig, true);
+    expect(cfg.receiver_supplies_garments).toBe(true);
+    expect(cfg.garmentMarkup).toEqual([{ above: 0, markup: 1.5 }]);
+    // decoration 250 + garment (10 × 1.5 × 50 = 750) = 1000.
+    expect(computeTradeTotal([spLine(10)], cfg)).toBe(1000);
   });
 });
