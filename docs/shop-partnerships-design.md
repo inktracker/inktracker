@@ -111,8 +111,10 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
    blind toggle (default on), REQUIRED trade price you've agreed offline
    (v1: typed manually; Phase 2 auto-fills), note, due date →
    `partnerHandoff` edge fn creates the offer + bell/email to receiver.
-   One live hand-off per order (DB partial-unique index); artwork is NOT
-   copied here.
+   An order can be **split across multiple partners** — different lines to
+   different shops — but no single LINE may be out to two live hand-offs at
+   once (edge-fn overlap check + the Send-to-Partner UI locks committed
+   lines). Artwork is NOT copied here.
 3. **Accept/decline** (receiver, new Partners inbox card on Dashboard):
    accept → a guarded compare-and-swap (`offered→accepted`) wins the race
    BEFORE the order is created, so two concurrent accepts can't mint two
@@ -136,9 +138,13 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
    through the normal flow. The UI nudges this: on completion, the
    receiver's side shows "Invoice Biota MFG $450 →" prefilled via the
    existing invoice-create path.
-6. **Job costing**: the sender's order stores `partner_cost`
-   (= agreed_trade_total) so Performance/job P&L can show
-   revenue − partner cost (closes part of the audit's cost-tracking gap).
+6. **Job costing**: the sender's order stores `partner_cost` and
+   `partner_status` as AGGREGATES over all the order's hand-offs
+   (`refresh_order_partner_rollup` — one SQL function, shared by the mirror
+   trigger and the edge-fn accept path). `partner_cost` = Σ agreed trade
+   totals across accepted/in-production/completed hand-offs; `partner_status`
+   = the least-advanced active chip (so "completed" only when every partner
+   is done). Performance/job P&L shows revenue − partner cost.
 
 ### Phase 2 — trade price sheets (broker-style margins)
 
@@ -156,8 +162,8 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
 
 ### Phase 3 (later, explicitly deferred)
 
-- Line-level split hand-offs mid-production, partner discovery
-  ("find embroiderers"), automatic partner payouts, capacity sharing.
+- Partner discovery ("find embroiderers"), automatic partner payouts,
+  capacity sharing. (Line-level split shipped 2026-08-14, #771.)
 - **Due-date counter negotiation.** Cut from the MVP: it needs a sender-
   side accept/reject surface and an outbound-hand-off view that don't
   exist yet, and the half-built version let a receiver bind the sender to
