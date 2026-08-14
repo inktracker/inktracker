@@ -71,11 +71,11 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
     if (!partnerShop) { setPartnerSheet(null); return; }
     let cancelled = false;
     (async () => {
-      const sheet = await getPartnerTradeSheet(partnerShop);
+      const sheet = await getPartnerTradeSheet(partnerShop, myShop);
       if (!cancelled) setPartnerSheet(sheet);
     })();
     return () => { cancelled = true; };
-  }, [partnerShop]);
+  }, [partnerShop, myShop]);
 
   const selectedLineObjs = useMemo(
     () => (order.line_items || []).filter((li, idx) => selectedLines.has(String(li?.id ?? idx))),
