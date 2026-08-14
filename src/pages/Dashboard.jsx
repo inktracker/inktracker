@@ -16,6 +16,7 @@ import { isConvertedToOrder } from "@/lib/quotes/approvalState";
 import BrokerMessaging from "../components/broker/BrokerMessaging";
 import BrokerNotificationFeed from "../components/broker/BrokerNotificationFeed";
 import GettingStartedChecklist from "../components/GettingStartedChecklist";
+import PartnerInboxCard from "../components/dashboard/PartnerInboxCard";
 import MfaNudgeBanner from "../components/MfaNudgeBanner";
 import HintTip from "../components/shared/HintTip";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
@@ -750,6 +751,9 @@ export default function Dashboard() {
               </>
             );
           })()}
+
+          {/* Incoming partner job offers — renders nothing when empty */}
+          <PartnerInboxCard />
 
           {/* Getting Started Checklist */}
           <div data-tour="checklist">

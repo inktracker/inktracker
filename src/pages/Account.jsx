@@ -5,7 +5,8 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { FormSkeleton } from "@/components/shared/Skeletons";
 import { uploadLogo } from "@/lib/uploadFile";
 import { normalizeBrandColor } from "@/lib/branding";
-import { User, LogOut, Package, Link2, Mail, ChevronDown, Wand2, CreditCard, CheckSquare, Shield } from "lucide-react";
+import { User, LogOut, Package, Link2, Mail, ChevronDown, Wand2, CreditCard, CheckSquare, Shield, Handshake } from "lucide-react";
+import PartnersSection from "../components/account/PartnersSection";
 import { loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 import SecuritySection from "../components/account/SecuritySection";
@@ -634,6 +635,12 @@ export default function Account() {
         {(user?.role === "admin" || user?.role === "shop") && <Section icon={CreditCard} title="Billing & Plan" defaultOpen={location.search?.includes("billing")}>
           <BillingSection user={user} />
         </Section>}
+
+        {(user?.role === "admin" || user?.role === "shop" || user?.role === "manager") && (
+          <Section icon={Handshake} title="Partners">
+            <PartnersSection />
+          </Section>
+        )}
 
         <Section icon={User} title="Account">
           <div className="space-y-5">
