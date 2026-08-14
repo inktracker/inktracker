@@ -148,17 +148,25 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
 
 ### Phase 2 — trade price sheets (broker-style margins)
 
-- Receiver publishes a per-partner sheet (percent-off-retail or fixed
-  per-method rates — reuse the `broker_pricing` editor UI shape).
-- **Quote-time integration** (the payoff): in the sender's quote editor,
-  a line can be tagged `source: partner:<shop>`; its COST comes live
-  from the partner's sheet while its RETAIL comes from the sender's own
-  markup — margin visible per line before the quote is sent. Mixed
-  orders (100 shirts self + 50 hats partner) price in one quote.
-- Hand-off then pre-fills the trade price from the sheet; acceptance
-  snapshots it; the receiver's invoice generates FROM the snapshot —
-  the two ledgers can't drift because there's one number, written once.
+**Phase 2a — trade sheet + hand-off auto-fill (SHIPPED 2026-08-14, #772):**
+- The receiver (the shop doing the work) publishes ONE trade sheet in
+  Account → Partners: a % of their own standard decoration rates
+  (reuses `buildScaledSheet`; the resolved sheet is stored, never their
+  raw retail config). Table `partner_trade_sheets` — owner writes,
+  ACTIVE partners read (the one cross-tenant read, RLS-scoped).
+- The Send-to-Partner box **pre-fills the trade price from the partner's
+  sheet**: the selected lines' DECORATION cost (`printCost`, garment-
+  independent) priced through the SAME engine (`calcLinkedLinePrice`) —
+  no forked math. The sender can still override; acceptance snapshots it,
+  so the invoice-from-snapshot invariant holds. Integrity gate: the
+  receiver confirms by accepting.
 - Sender's customer invoice is untouched retail (their normal flow).
+
+**Phase 2b — quote-time line sourcing (DEFERRED):**
+- In the sender's quote editor, a line tagged `source: partner:<shop>`
+  gets its COST live from the partner's sheet while RETAIL stays the
+  sender's markup — margin visible per line, mixed orders (100 shirts
+  self + 50 hats partner) in one quote. Not built yet.
 
 ### Phase 3 (later, explicitly deferred)
 

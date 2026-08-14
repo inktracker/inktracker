@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import ModalBackdrop from "../shared/ModalBackdrop";
 import { useAuth } from "@/lib/AuthContext";
 import { shopScope } from "@/lib/shopScope";
 import { notify } from "@/lib/notify";
 import { fmtMoney } from "../shared/pricing";
 import { listPartnerships, activePartners, offerHandoff, listHandoffs } from "@/lib/partners";
+import { getPartnerTradeSheet, computeTradeTotal } from "@/lib/partnerTradeSheet";
 import { Handshake, Loader2, X } from "lucide-react";
 
 const LIVE_HANDOFF = new Set(["offered", "accepted", "in_production"]);
@@ -25,6 +26,8 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
   const [committedLines, setCommittedLines] = useState({});
   const [blind, setBlind] = useState(true);
   const [tradeTotal, setTradeTotal] = useState("");
+  const [userEditedPrice, setUserEditedPrice] = useState(false);
+  const [partnerSheet, setPartnerSheet] = useState(null);
   const [note, setNote] = useState("");
   const [dueDate, setDueDate] = useState(order.due_date || "");
   const [sending, setSending] = useState(false);
@@ -61,6 +64,35 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
       } catch { /* best-effort; the edge fn still guards overlap */ }
     })();
   }, [myShop, order.order_id]);
+
+  // Pull the partner's published trade sheet (RLS grants it only while
+  // actively partnered) so the trade price can auto-fill from their rates.
+  useEffect(() => {
+    if (!partnerShop) { setPartnerSheet(null); return; }
+    let cancelled = false;
+    (async () => {
+      const sheet = await getPartnerTradeSheet(partnerShop);
+      if (!cancelled) setPartnerSheet(sheet);
+    })();
+    return () => { cancelled = true; };
+  }, [partnerShop]);
+
+  const selectedLineObjs = useMemo(
+    () => (order.line_items || []).filter((li, idx) => selectedLines.has(String(li?.id ?? idx))),
+    [order.line_items, selectedLines],
+  );
+
+  // Suggested trade price = the selected lines' DECORATION cost at the
+  // partner's rates (same engine as a quote; garment cost excluded).
+  const suggested = useMemo(
+    () => (partnerSheet && selectedLineObjs.length ? computeTradeTotal(selectedLineObjs, partnerSheet) : 0),
+    [partnerSheet, selectedLineObjs],
+  );
+
+  // Pre-fill from the partner's rates until the user types their own number.
+  useEffect(() => {
+    if (suggested > 0 && !userEditedPrice) setTradeTotal(String(suggested));
+  }, [suggested, userEditedPrice]);
 
   const toggleLine = (id) => {
     setSelectedLines((prev) => {
@@ -165,9 +197,22 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Trade price ($)</label>
-              <input type="number" step="0.01" min="0" value={tradeTotal} onChange={(e) => setTradeTotal(e.target.value)}
+              <input type="number" step="0.01" min="0" value={tradeTotal}
+                onChange={(e) => { setUserEditedPrice(true); setTradeTotal(e.target.value); }}
                 placeholder="what you'll pay them"
                 className="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-900" />
+              {suggested > 0 && (
+                <p className="text-[11px] text-slate-400 mt-1">
+                  {userEditedPrice && String(suggested) !== tradeTotal ? (
+                    <button type="button" onClick={() => { setUserEditedPrice(false); setTradeTotal(String(suggested)); }}
+                      className="text-teal-600 hover:text-teal-800 font-medium">
+                      Use {partnerShop}&rsquo;s rate: {fmtMoney(suggested)}
+                    </button>
+                  ) : (
+                    <>From {partnerShop}&rsquo;s rates — adjust if you agreed otherwise.</>
+                  )}
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Need it by</label>
