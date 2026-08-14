@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { shopScope } from "@/lib/shopScope";
 import { notify } from "@/lib/notify";
 import { listPartnerships, invitePartner, respondToInvite, partnerOf } from "@/lib/partners";
+import PartnerTradeSheetEditor from "./PartnerTradeSheetEditor";
 import { Handshake, Loader2, Check, X } from "lucide-react";
 
 // Account → Partners: peer shops you subcontract with
@@ -121,6 +122,8 @@ export default function PartnersSection() {
           )}
         </div>
       )}
+
+      <PartnerTradeSheetEditor />
     </div>
   );
 }
