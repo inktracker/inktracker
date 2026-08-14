@@ -4,8 +4,10 @@ import { useAuth } from "@/lib/AuthContext";
 import { shopScope } from "@/lib/shopScope";
 import { notify } from "@/lib/notify";
 import { fmtMoney } from "../shared/pricing";
-import { listPartnerships, activePartners, offerHandoff } from "@/lib/partners";
+import { listPartnerships, activePartners, offerHandoff, listHandoffs } from "@/lib/partners";
 import { Handshake, Loader2, X } from "lucide-react";
+
+const LIVE_HANDOFF = new Set(["offered", "accepted", "in_production"]);
 
 // Send an order (or selected lines) to a partner shop
 // (docs/shop-partnerships-design.md). Blind by default: the partner sees
@@ -19,6 +21,8 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
   const [partnerShop, setPartnerShop] = useState("");
   const [selectedLines, setSelectedLines] = useState(() =>
     new Set((order.line_items || []).map((li, idx) => String(li?.id ?? idx))));
+  // line id → partner email it's already committed to (a live hand-off).
+  const [committedLines, setCommittedLines] = useState({});
   const [blind, setBlind] = useState(true);
   const [tradeTotal, setTradeTotal] = useState("");
   const [note, setNote] = useState("");
@@ -35,8 +39,28 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
       } catch {
         setPartners([]);
       }
+      try {
+        // Lines already out to a partner (split support): lock them so this
+        // order's remaining lines can go to a DIFFERENT partner without ever
+        // double-committing a line. The edge fn enforces the same rule.
+        const handoffs = await listHandoffs();
+        const committed = {};
+        for (const h of handoffs) {
+          if (String(h.sending_shop).toLowerCase() !== String(myShop).toLowerCase()) continue;
+          if (h.source_order_id !== order.order_id) continue;
+          if (!LIVE_HANDOFF.has(h.status)) continue;
+          for (const id of h.source_line_ids || []) committed[String(id)] = h.receiving_shop;
+        }
+        setCommittedLines(committed);
+        // Drop committed lines from the default selection.
+        setSelectedLines((prev) => {
+          const next = new Set(prev);
+          for (const id of Object.keys(committed)) next.delete(id);
+          return next;
+        });
+      } catch { /* best-effort; the edge fn still guards overlap */ }
     })();
-  }, [myShop]);
+  }, [myShop, order.order_id]);
 
   const toggleLine = (id) => {
     setSelectedLines((prev) => {
@@ -112,6 +136,16 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
                 const id = String(li?.id ?? idx);
                 const label = li.customTitle || [li.brand, li.style].filter(Boolean).join(" ") || `Line ${idx + 1}`;
                 const qty = Object.values(li.sizes || {}).reduce((s, v) => s + (parseInt(v) || 0), 0);
+                const committedTo = committedLines[id];
+                if (committedTo) {
+                  return (
+                    <div key={id} className="flex items-center gap-2 text-sm select-none bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2 opacity-60">
+                      <input type="checkbox" checked={false} disabled className="accent-teal-600" />
+                      <span className="flex-1 text-slate-500 line-through">{label}</span>
+                      <span className="text-[10px] font-semibold text-teal-700">→ {committedTo}</span>
+                    </div>
+                  );
+                }
                 return (
                   <label key={id} className="flex items-center gap-2 text-sm cursor-pointer select-none bg-slate-50 dark:bg-slate-800 rounded-lg px-3 py-2">
                     <input type="checkbox" checked={selectedLines.has(id)} onChange={() => toggleLine(id)} className="accent-teal-600" />
@@ -120,6 +154,11 @@ export default function SendToPartnerModal({ order, onClose, onSent }) {
                   </label>
                 );
               })}
+              {Object.keys(committedLines).length > 0 && (
+                <p className="text-[11px] text-slate-400 pt-0.5">
+                  Struck-through lines are already out to a partner — send the rest to another shop.
+                </p>
+              )}
             </div>
           </div>
 

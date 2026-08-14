@@ -4,6 +4,7 @@ import AttachmentGallery from "../shared/AttachmentGallery";
 import ArtworkPreviewOverlay from "../shared/ArtworkPreviewOverlay";
 import SendInvoiceModal from "../invoices/SendInvoiceModal";
 import SendToPartnerModal from "./SendToPartnerModal";
+import PartnerHandoffsSummary from "./PartnerHandoffsSummary";
 import { PARTNER_STATUS_LABELS } from "@/lib/partners";
 import { Handshake } from "lucide-react";
 import PackingSlipModal from "./PackingSlipModal";
@@ -840,26 +841,30 @@ export default function OrderDetailModal({
           />
 
           {/* Shop partnerships (docs/shop-partnerships-design.md): offer
-              this job (or lines of it) to a partner shop. Once accepted,
-              partner progress mirrors here as a status chip. */}
+              this job — or specific lines of it — to one or more partner
+              shops. An order can be split across partners; each hand-off's
+              progress and the aggregate chip mirror here. */}
           {["shop", "admin", "manager"].includes(authUser?.role) && !readOnly && (
-            <div className="flex items-center gap-3 pt-1">
-              <button
-                type="button"
-                onClick={() => setShowSendToPartner(true)}
-                className="text-xs font-semibold text-teal-600 hover:text-teal-800 flex items-center gap-1.5"
-              >
-                <Handshake className="w-3.5 h-3.5" /> Send to Partner
-              </button>
-              {liveOrder?.partner_status && (
-                <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
-                  liveOrder.partner_status === "completed"
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : "bg-teal-50 text-teal-700 border border-teal-200"
-                }`}>
-                  {PARTNER_STATUS_LABELS[liveOrder.partner_status] || `Partner: ${liveOrder.partner_status}`}
-                </span>
-              )}
+            <div className="pt-1">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowSendToPartner(true)}
+                  className="text-xs font-semibold text-teal-600 hover:text-teal-800 flex items-center gap-1.5"
+                >
+                  <Handshake className="w-3.5 h-3.5" /> Send to Partner
+                </button>
+                {liveOrder?.partner_status && (
+                  <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                    liveOrder.partner_status === "completed"
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : "bg-teal-50 text-teal-700 border border-teal-200"
+                  }`}>
+                    {PARTNER_STATUS_LABELS[liveOrder.partner_status] || `Partner: ${liveOrder.partner_status}`}
+                  </span>
+                )}
+              </div>
+              <PartnerHandoffsSummary order={liveOrder} />
             </div>
           )}
         </div>

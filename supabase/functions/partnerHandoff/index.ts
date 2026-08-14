@@ -250,15 +250,22 @@ Deno.serve(async (req) => {
         .eq("shop_owner", myShop).eq("order_id", params.orderId).maybeSingle();
       if (!order) return json({ error: "Order not found" }, 404);
 
-      // One live hand-off per order (the sender order carries a single
-      // partner_cost/partner_status pair). A DB partial-unique index is the
-      // real guard; this is the friendly message before hitting it.
-      const { data: liveHandoff } = await db.from("partner_handoffs")
-        .select("id, status")
+      // Line-level split: an order can go to MULTIPLE partners, but no single
+      // LINE may be out to two live hand-offs at once (that would double-
+      // produce it). Reject if any requested line is already committed.
+      const allLineIds = (order.line_items ?? []).map((li: any, i: number) => String(li?.id ?? i));
+      const requestedIds = (params.lineIds ?? allLineIds).map(String);
+      const { data: liveHandoffs } = await db.from("partner_handoffs")
+        .select("source_line_ids")
         .eq("sending_shop", myShop).eq("source_order_id", order.order_id)
-        .in("status", ["offered", "accepted", "in_production"]).limit(1).maybeSingle();
-      if (liveHandoff) {
-        return json({ error: "This order already has an open partner hand-off. Cancel it first to re-send." }, 400);
+        .in("status", ["offered", "accepted", "in_production"]);
+      const committed = new Set<string>();
+      for (const h of liveHandoffs ?? []) {
+        for (const id of h.source_line_ids ?? []) committed.add(String(id));
+      }
+      const clash = requestedIds.filter((id: string) => committed.has(id));
+      if (clash.length) {
+        return json({ error: "Some of those lines are already out to a partner. Pick lines that aren't committed yet." }, 400);
       }
 
       const tradeTotal = Number(params.tradeTotal);
@@ -397,12 +404,15 @@ Deno.serve(async (req) => {
           .update({ receiving_order_id: orderId }).eq("id", handoff.id);
         if (linkErr) console.warn("[partnerHandoff] receiving_order_id backlink failed:", linkErr.message);
 
-        // Sender-side: cost + status chip on their order (checked).
-        const { error: senderErr } = await db.from("orders")
-          .update({ partner_status: "accepted", partner_cost: agreed })
-          .eq("shop_owner", handoff.sending_shop)
-          .eq("order_id", handoff.source_order_id);
-        if (senderErr) console.warn("[partnerHandoff] sender order stamp failed:", senderErr.message);
+        // Sender-side: rebuild the aggregate cost + chip across ALL of this
+        // order's hand-offs (split-safe — a second partner's accept sums in,
+        // never clobbers the first). One SQL function, shared with the mirror
+        // trigger, so the rollup logic lives in exactly one place.
+        const { error: rollupErr } = await db.rpc("refresh_order_partner_rollup", {
+          p_sending_shop: handoff.sending_shop,
+          p_source_order_id: handoff.source_order_id,
+        });
+        if (rollupErr) console.warn("[partnerHandoff] partner rollup failed:", rollupErr.message);
 
         await notifyAndEmail(db, {
           shopOwner: handoff.sending_shop,
