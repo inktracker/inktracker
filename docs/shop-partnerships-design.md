@@ -108,16 +108,24 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
    ("Biota MFG wants to send you embroidery work — set up your shop").
    Accept → `active`.
 2. **Send to partner** (OrderDetailModal): pick partner, pick lines,
-   blind toggle (default on), optional trade price you've agreed
-   offline (v1: typed manually; Phase 2 auto-fills), note, due date →
-   `partnerHandoff` edge fn creates the offer + copies artwork + bell/
-   email to receiver.
-3. **Accept/decline/counter** (receiver, new Partners inbox card on
-   Dashboard): accept → service-role creates a real order in their shop
-   (via the EDGE `buildOrderInsertFromQuote`-style builder — parity
-   lesson from the deposit audit: ONE builder, tested), customer name =
-   sending shop ("Biota MFG"), `partner_handoff_id` backlink. It flows
-   through their Production/ShopFloor untouched.
+   blind toggle (default on), REQUIRED trade price you've agreed offline
+   (v1: typed manually; Phase 2 auto-fills), note, due date →
+   `partnerHandoff` edge fn creates the offer + bell/email to receiver.
+   One live hand-off per order (DB partial-unique index); artwork is NOT
+   copied here.
+3. **Accept/decline** (receiver, new Partners inbox card on Dashboard):
+   accept → a guarded compare-and-swap (`offered→accepted`) wins the race
+   BEFORE the order is created, so two concurrent accepts can't mint two
+   orders; then artwork is copied into the receiver's tenant (ownership-
+   gated against `artwork_objects`, so a tampered ref can't pull another
+   tenant's file), and service-role creates a real order in their shop
+   (via the EDGE builder — parity lesson from the deposit audit: ONE
+   builder, tested), customer name = sending shop ("Biota MFG"),
+   `partner_handoff_id` backlink. It flows through their Production/
+   ShopFloor untouched. **Due-date counter is deferred to a later phase**
+   (see below) — v1 is accept/decline; date negotiation is partner-to-
+   partner. Receiver orders are money-locked to the snapshot so the Edit
+   Order recompute can't collapse the trade total.
 4. **Status mirror**: receiver's order status changes write a
    `partner_status` chip onto the sender's order (change_log + the
    existing realtime channel; sender's OrderStatus page for THEIR
@@ -150,6 +158,13 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
 
 - Line-level split hand-offs mid-production, partner discovery
   ("find embroiderers"), automatic partner payouts, capacity sharing.
+- **Due-date counter negotiation.** Cut from the MVP: it needs a sender-
+  side accept/reject surface and an outbound-hand-off view that don't
+  exist yet, and the half-built version let a receiver bind the sender to
+  a date they never approved. v1 is accept/decline; the schema keeps
+  `counter_due_date` (unused) so the flow can be added without a
+  migration. Also deferred with it: a sender "cancel this offer" UI
+  (`cancelHandoff` exists and is CAS-guarded, just not yet surfaced).
 
 ## Edge cases & guards (first pass — audit before build)
 
@@ -185,8 +200,8 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
 
 1. Migration + `shop_partners` + invite/accept UI (small).
 2. `partnerSpec.js` sanitizer + tests (pure).
-3. `partnerHandoff` edge fn (offer/accept/decline/counter/status-mirror)
-   + artwork copy + bells/emails.
+3. `partnerHandoff` edge fn (offer/accept/decline/status-mirror)
+   + artwork copy-on-accept + bells/emails.
 4. Sender "Send to partner" UI + receiver inbox card.
 5. Completion → prefilled invoice nudge + `partner_cost` on sender.
 6. Adversarial audits (tenant isolation, blind-mode leaks, money) —

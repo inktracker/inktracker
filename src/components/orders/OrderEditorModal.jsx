@@ -114,13 +114,30 @@ export default function OrderEditorModal({ order, customers: customersProp, link
   // override exactly like the quote save path (Kato, 2026-08-11) and
   // composes the DRAFT's fees (now editable here) through the app-wide
   // taxable/non-taxable split.
+  // Partner (subcontracted) orders carry a SNAPSHOTTED trade total and
+  // price-stripped lines — recomputing from those priceless lines would
+  // collapse the agreed fee to ~$0, which is the number their invoice to
+  // the partner generates from. Pin the money to the accepted snapshot and
+  // let the operator still edit sizes/specs for production.
+  const isPartnerOrder = !!order.partner_handoff_id;
+
   function recomputeMoney(lines, fees) {
-    return recomputeOrderMoney(lines, order, {
+    const r = recomputeOrderMoney(lines, order, {
       calcLinkedLinePrice,
       buildLinkedQtyMap,
       getLineExtras,
       getQty,
     }, fees);
+    if (isPartnerOrder) {
+      return {
+        ...r,
+        subtotal: Number(order.subtotal || 0),
+        setup: Number(order.setup_total || 0),
+        tax: Number(order.tax || 0),
+        total: Number(order.total || 0),
+      };
+    }
+    return r;
   }
 
   // Live totals: drives the job-fee percent sync, the fee sections, and

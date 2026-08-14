@@ -56,4 +56,5 @@ export const PARTNER_STATUS_LABELS = Object.freeze({
   accepted: "Partner: accepted",
   in_production: "Partner: in production",
   completed: "Partner: completed",
+  cancelled: "Partner: cancelled",
 });

@@ -9,9 +9,10 @@
 //   invite        { partnerEmail, specialty }        → shop_partners row + bell/email
 //   respondInvite { partnershipId, accept }          → active/ended + bell
 //   offer         { partnerShop, orderId, lineIds?, blind?, note?,
-//                   dueDate?, tradeTotal }           → partner_handoffs row + artwork copy + bell/email
-//   respond       { handoffId, response: 'accept'|'decline'|'counter',
-//                   counterDueDate? }                → on accept: receiver order created, trade total SNAPSHOTTED
+//                   dueDate?, tradeTotal }           → partner_handoffs row + bell/email
+//   respond       { handoffId, response: 'accept'|'decline' }
+//                                                    → on accept: artwork copied, receiver order
+//                                                      created, trade total SNAPSHOTTED (guarded CAS)
 //   cancel        { handoffId }                      → sender cancels an un-accepted offer
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
@@ -22,7 +23,18 @@ import {
   buildPartnerSpec,
   buildReceiverOrderInsert,
   partnerCustomerLabel,
+  specLeaks,
 } from "../_shared/partnerSpec.js";
+import { resolveArtworkPath } from "../_shared/artworkPath.js";
+
+// Owner-email shape gate. myShop/partnerShop are interpolated into
+// PostgREST .or() filter strings, so a value containing , ( ) . or a
+// filter operator could distort the partnership lookup. Emails never
+// contain those, so requiring a plain email shape closes the injection.
+const EMAIL_RE = /^[^\s,()"'`]+@[^\s,()"'`]+\.[^\s,()"'`]+$/;
+function isEmail(s: string): boolean {
+  return EMAIL_RE.test(s) && s.length <= 254;
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -39,10 +51,11 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: CORS });
 }
 
-// Receiver-side order id — same shape the rest of the app mints.
-function newOrderId() {
+// Receiver-side order id — same shape the rest of the app mints. `attempt`
+// perturbs the suffix so a retry after a same-ms unique collision differs.
+function newOrderId(attempt = 0) {
   const year = new Date().getFullYear();
-  const suffix = Date.now().toString(36).slice(-5).toUpperCase();
+  const suffix = (Date.now() + attempt * 37).toString(36).slice(-5).toUpperCase();
   return `ORD-${year}-${suffix}`;
 }
 
@@ -68,14 +81,43 @@ async function notifyAndEmail(db: any, { shopOwner, eventType, title, body, rela
 }
 
 // Copy imprint artwork into the receiver's tenant (design rule: copy,
-// never shared access). Best-effort per object; failures are recorded on
-// the spec so the receiver knows art is missing rather than assuming none.
-async function copyArtwork(db: any, spec: any, receivingShop: string) {
+// never shared access). Runs at ACCEPT time so a declined offer never
+// leaves a copy behind. Two invariants:
+//   1. Ownership gate — the source path MUST be registered to the SENDER
+//      in artwork_objects. Storage paths are flat (timestamp-random.ext),
+//      so a tampered line_items[].artwork_url could otherwise pull another
+//      tenant's private object through the service-role copy. artwork_objects
+//      is the authoritative owner map.
+//   2. The sender's raw refs are stripped up front and re-pointed ONLY to a
+//      copy we own — so a sender storage reference can never cross into the
+//      receiver's order (which would grant cross-tenant read via the
+//      reference-fallback storage policy).
+// Best-effort per object; failures leave the imprint art-less and are noted
+// on the spec so the receiver knows to ask rather than assume none.
+async function copyArtwork(db: any, spec: any, senderShop: string, receivingShop: string) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const missing: string[] = [];
   for (const line of spec.lines ?? []) {
     for (const imp of line.imprints ?? []) {
-      const src = imp.artworkPath || imp.artwork || null;
-      if (!src || typeof src !== "string") continue;
+      const src =
+        resolveArtworkPath(imp.artwork_url) ||
+        (typeof imp.artworkPath === "string" ? imp.artworkPath : null) ||
+        (typeof imp.artwork === "string" ? imp.artwork : null);
+      // Drop the sender's refs FIRST; only a copy we own is re-attached.
+      delete imp.artwork;
+      delete imp.artworkPath;
+      delete imp.artwork_url;
+      if (!src) continue;
+
+      const { data: owned } = await db.from("artwork_objects")
+        .select("name").eq("name", src).eq("shop_owner", senderShop).maybeSingle();
+      if (!owned) {
+        // Not provably the sender's (tampered ref, or legacy art with no
+        // mapping row) — refuse to copy rather than risk cross-tenant read.
+        missing.push(src.split("/").pop() || src);
+        continue;
+      }
+
       const dest = `partner/${crypto.randomUUID()}_${src.split("/").pop()}`;
       try {
         const { error: copyErr } = await db.storage.from("artwork").copy(src, dest);
@@ -84,15 +126,10 @@ async function copyArtwork(db: any, spec: any, receivingShop: string) {
           name: dest, shop_owner: receivingShop, uploader_email: receivingShop,
         });
         if (mapErr) console.warn("[partnerHandoff] artwork_objects mapping failed:", mapErr.message);
-        imp.artworkPath = dest;
-        delete imp.artwork;
-        delete imp.artwork_url;
+        imp.artwork_url = `${supabaseUrl}/storage/v1/object/public/artwork/${dest}`;
       } catch (e) {
         console.warn(`[partnerHandoff] artwork copy failed for ${src}:`, (e as Error)?.message);
         missing.push(src.split("/").pop() || src);
-        delete imp.artworkPath;
-        delete imp.artwork;
-        delete imp.artwork_url;
       }
     }
   }
@@ -130,11 +167,13 @@ Deno.serve(async (req) => {
     }
     const myShop = String(profile.shop_owner || profile.email || "").toLowerCase();
     if (!myShop) return json({ error: "No shop resolved for this account" }, 403);
+    if (!isEmail(myShop)) return json({ error: "Your shop account has an invalid owner email." }, 400);
 
     // ── invite ─────────────────────────────────────────────────────────
     if (action === "invite") {
       const partnerEmail = String(params.partnerEmail || "").trim().toLowerCase();
       if (!partnerEmail || partnerEmail === myShop) return json({ error: "Enter your partner shop's owner email." }, 400);
+      if (!isEmail(partnerEmail)) return json({ error: "That doesn't look like a valid email." }, 400);
       const { data: partnerProf } = await db
         .from("profiles").select("email, role, shop_name").eq("email", partnerEmail).maybeSingle();
       if (!partnerProf || partnerProf.role !== "shop") {
@@ -201,6 +240,7 @@ Deno.serve(async (req) => {
     // ── offer ──────────────────────────────────────────────────────────
     if (action === "offer") {
       const partnerShop = String(params.partnerShop || "").toLowerCase();
+      if (!isEmail(partnerShop)) return json({ error: "Pick a valid partner shop." }, 400);
       const { data: link } = await db.from("shop_partners").select("id, status")
         .or(`and(shop_a.eq.${myShop},shop_b.eq.${partnerShop}),and(shop_a.eq.${partnerShop},shop_b.eq.${myShop})`)
         .eq("status", "active").limit(1).maybeSingle();
@@ -210,6 +250,17 @@ Deno.serve(async (req) => {
         .eq("shop_owner", myShop).eq("order_id", params.orderId).maybeSingle();
       if (!order) return json({ error: "Order not found" }, 404);
 
+      // One live hand-off per order (the sender order carries a single
+      // partner_cost/partner_status pair). A DB partial-unique index is the
+      // real guard; this is the friendly message before hitting it.
+      const { data: liveHandoff } = await db.from("partner_handoffs")
+        .select("id, status")
+        .eq("sending_shop", myShop).eq("source_order_id", order.order_id)
+        .in("status", ["offered", "accepted", "in_production"]).limit(1).maybeSingle();
+      if (liveHandoff) {
+        return json({ error: "This order already has an open partner hand-off. Cancel it first to re-send." }, 400);
+      }
+
       const tradeTotal = Number(params.tradeTotal);
       if (!Number.isFinite(tradeTotal) || tradeTotal <= 0) {
         // Product decision (design doc): a hand-off carries a real trade
@@ -218,13 +269,16 @@ Deno.serve(async (req) => {
       }
 
       const blind = params.blind !== false; // default TRUE
-      let spec = buildPartnerSpec(order, {
+      // Artwork is NOT copied here — copying happens on ACCEPT so a declined
+      // offer leaves nothing in the receiver's tenant. The stored spec keeps
+      // the sender's opaque refs; the receiver can't read them (no storage
+      // RLS grant, not on a quote/order they own) until they accept.
+      const spec = buildPartnerSpec(order, {
         lineIds: params.lineIds ?? null,
         blind,
         note: params.note || "",
       });
       if (!spec.lines.length) return json({ error: "Select at least one line to send." }, 400);
-      spec = await copyArtwork(db, spec, partnerShop);
 
       const { data: handoff, error: hErr } = await db.from("partner_handoffs").insert({
         sending_shop: myShop,
@@ -252,11 +306,15 @@ Deno.serve(async (req) => {
       return json({ ok: true, handoff });
     }
 
-    // ── respond (receiver) ─────────────────────────────────────────────
+    // ── respond (receiver): accept | decline ──────────────────────────
+    // Every transition is a guarded compare-and-swap on status='offered'
+    // so two concurrent accepts (two tabs, owner+manager, a retry) can't
+    // both win — the loser gets 0 rows and "already handled". v1 has no
+    // counter flow (date negotiation happens partner-to-partner).
     if (action === "respond") {
       const { data: handoff } = await db.from("partner_handoffs").select("*").eq("id", params.handoffId).maybeSingle();
       if (!handoff || handoff.receiving_shop !== myShop) return json({ error: "Hand-off not found" }, 404);
-      if (!["offered", "countered"].includes(handoff.status)) {
+      if (handoff.status !== "offered") {
         return json({ error: "This hand-off was already handled." }, 400);
       }
       const response = String(params.response || "");
@@ -264,27 +322,15 @@ Deno.serve(async (req) => {
       const myName = await shopDisplayName(db, myShop);
 
       if (response === "decline") {
-        await db.from("partner_handoffs").update({ status: "declined" }).eq("id", handoff.id);
+        const { data: swapped, error: dErr } = await db.from("partner_handoffs")
+          .update({ status: "declined" }).eq("id", handoff.id).eq("status", "offered").select("id");
+        if (dErr) return json({ error: "Couldn't record the decline — please try again." }, 500);
+        if (!swapped?.length) return json({ error: "This hand-off was already handled." }, 400);
         await notifyAndEmail(db, {
           shopOwner: handoff.sending_shop,
           eventType: "partner_handoff_declined",
           title: `${myName} declined the job for ${handoff.source_order_id}`,
           body: params.reason ? `Reason: ${params.reason}` : "You can re-offer it to another partner from the order.",
-          relatedEntity: "partner_handoff",
-          relatedId: String(handoff.id),
-          metadata: {},
-        });
-        return json({ ok: true });
-      }
-
-      if (response === "counter") {
-        if (!params.counterDueDate) return json({ error: "Pick the date you can deliver." }, 400);
-        await db.from("partner_handoffs").update({ status: "countered", counter_due_date: params.counterDueDate }).eq("id", handoff.id);
-        await notifyAndEmail(db, {
-          shopOwner: handoff.sending_shop,
-          eventType: "partner_handoff_countered",
-          title: `${myName} can do ${handoff.source_order_id} — by ${params.counterDueDate}`,
-          body: `They can't hit ${handoff.due_date || "the requested date"} but offered ${params.counterDueDate}. Accept the new date by re-sending, or decline.`,
           relatedEntity: "partner_handoff",
           relatedId: String(handoff.id),
           metadata: {},
@@ -299,27 +345,64 @@ Deno.serve(async (req) => {
         if (!Number.isFinite(agreed) || agreed <= 0) {
           return json({ error: "This offer has no trade price — ask the sender to re-offer with one." }, 400);
         }
-        const orderId = newOrderId();
+
+        // WIN THE RACE FIRST: flip offered→accepted before creating the
+        // order. The loser of a concurrent accept gets 0 rows here and
+        // never reaches the order insert, so one job = one receiver order.
+        const { data: won, error: casErr } = await db.from("partner_handoffs")
+          .update({ status: "accepted", agreed_trade_total: agreed, accepted_at: new Date().toISOString() })
+          .eq("id", handoff.id).eq("status", "offered").select("id");
+        if (casErr) return json({ error: "Couldn't accept — please try again." }, 500);
+        if (!won?.length) return json({ error: "This hand-off was already handled." }, 400);
+
+        // Copy artwork into our tenant now (ownership-gated), then rebuild
+        // and re-check the spec before it lands on our order.
         const todayIso = new Date().toISOString().slice(0, 10);
-        const insert = buildReceiverOrderInsert(
-          { ...handoff, sending_shop_name: senderName, agreed_trade_total: agreed },
-          orderId,
-          todayIso,
-        );
-        const { error: oErr } = await db.from("orders").insert(insert);
-        if (oErr) return json({ error: `Couldn't create the order: ${oErr.message}` }, 500);
+        const acceptedSpec = await copyArtwork(db, structuredClone(handoff.spec || {}), handoff.sending_shop, myShop);
+        const residual = specLeaks(acceptedSpec);
+        if (residual.length) {
+          // Should be impossible (offer already ran the check); refuse and
+          // roll the handoff back rather than write leaked data to an order.
+          await db.from("partner_handoffs").update({ status: "offered", agreed_trade_total: null, accepted_at: null })
+            .eq("id", handoff.id).eq("status", "accepted");
+          console.error("[partnerHandoff] accepted spec leaked:", residual.join(", "));
+          return json({ error: "Couldn't accept this offer — please ask the sender to re-send it." }, 500);
+        }
 
-        await db.from("partner_handoffs").update({
-          status: "accepted",
-          receiving_order_id: orderId,
-          agreed_trade_total: agreed,
-          accepted_at: new Date().toISOString(),
-        }).eq("id", handoff.id);
+        // Create the receiver order, retrying once on an id collision.
+        let orderId = "";
+        let insert: any = null;
+        let oErr: any = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          orderId = newOrderId(attempt);
+          insert = buildReceiverOrderInsert(
+            { ...handoff, spec: acceptedSpec, sending_shop_name: senderName, agreed_trade_total: agreed },
+            orderId,
+            todayIso,
+          );
+          const res = await db.from("orders").insert(insert);
+          oErr = res.error;
+          if (!oErr) break;
+          if (!String(oErr.code).startsWith("23")) break; // non-unique error: don't retry
+        }
+        if (oErr) {
+          // Order never created — undo the CAS so the offer is re-acceptable.
+          await db.from("partner_handoffs").update({ status: "offered", agreed_trade_total: null, accepted_at: null })
+            .eq("id", handoff.id).eq("status", "accepted");
+          return json({ error: "Couldn't create the order — please try again." }, 500);
+        }
 
-        // Sender-side: cost + status chip on their order.
-        await db.from("orders").update({ partner_status: "accepted", partner_cost: agreed })
+        // Backlink the receiver order onto the handoff (checked).
+        const { error: linkErr } = await db.from("partner_handoffs")
+          .update({ receiving_order_id: orderId }).eq("id", handoff.id);
+        if (linkErr) console.warn("[partnerHandoff] receiving_order_id backlink failed:", linkErr.message);
+
+        // Sender-side: cost + status chip on their order (checked).
+        const { error: senderErr } = await db.from("orders")
+          .update({ partner_status: "accepted", partner_cost: agreed })
           .eq("shop_owner", handoff.sending_shop)
           .eq("order_id", handoff.source_order_id);
+        if (senderErr) console.warn("[partnerHandoff] sender order stamp failed:", senderErr.message);
 
         await notifyAndEmail(db, {
           shopOwner: handoff.sending_shop,
@@ -340,10 +423,15 @@ Deno.serve(async (req) => {
     if (action === "cancel") {
       const { data: handoff } = await db.from("partner_handoffs").select("*").eq("id", params.handoffId).maybeSingle();
       if (!handoff || handoff.sending_shop !== myShop) return json({ error: "Hand-off not found" }, 404);
-      if (!["offered", "countered"].includes(handoff.status)) {
+      if (handoff.status !== "offered") {
         return json({ error: "Accepted hand-offs can't be cancelled here — coordinate with your partner." }, 400);
       }
-      await db.from("partner_handoffs").update({ status: "cancelled" }).eq("id", handoff.id);
+      // Guarded: if the receiver accepted in the meantime, the CAS finds 0
+      // rows and we report the real state instead of silently "cancelling".
+      const { data: swapped, error: cErr } = await db.from("partner_handoffs")
+        .update({ status: "cancelled" }).eq("id", handoff.id).eq("status", "offered").select("id");
+      if (cErr) return json({ error: "Couldn't cancel — please try again." }, 500);
+      if (!swapped?.length) return json({ error: "Too late — your partner already responded to this offer." }, 409);
       return json({ ok: true });
     }
 

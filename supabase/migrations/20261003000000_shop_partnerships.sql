@@ -53,6 +53,15 @@ create table if not exists partner_handoffs (
 create index if not exists partner_handoffs_sending_idx   on partner_handoffs (sending_shop, status);
 create index if not exists partner_handoffs_receiving_idx on partner_handoffs (receiving_shop, status);
 
+-- One LIVE hand-off per source order. The sender order carries a single
+-- partner_cost/partner_status pair, so a second concurrent offer/accept of
+-- the same order would clobber its P&L and fight over the chip. Terminal
+-- states (declined/cancelled/completed) are excluded so an order can be
+-- re-offered after a decline.
+create unique index if not exists partner_handoffs_one_live_per_order
+  on partner_handoffs (sending_shop, source_order_id)
+  where status in ('offered','accepted','in_production');
+
 -- ── Sender-side mirror + costing columns on orders ─────────────────────
 alter table orders
   add column if not exists partner_handoff_id  uuid,     -- receiver side: backlink to the hand-off
@@ -69,6 +78,10 @@ alter table partner_handoffs enable row level security;
 -- brokers are excluded from partnership surfaces. Reading profiles from
 -- another table's policy is the established safe pattern (no profiles
 -- self-reference).
+-- Case-insensitive match: the edge function lowercases every party column,
+-- while orders.shop_owner / profiles.email can be mixed-case. Comparing
+-- case-sensitively would make a mixed-case shop fail its own RLS closed and
+-- silently miss its orders. lower() both sides keeps them in lockstep.
 create or replace function public.acts_for_shop(p_shop text)
 returns boolean
 language sql
@@ -80,7 +93,7 @@ as $$
     select 1 from public.profiles p
     where p.auth_id = auth.uid()
       and p.role in ('shop','admin','manager')
-      and (p.email = p_shop or p.shop_owner = p_shop)
+      and (lower(p.email) = lower(p_shop) or lower(p.shop_owner) = lower(p_shop))
   );
 $$;
 
@@ -89,18 +102,14 @@ create policy shop_partners_select on shop_partners
   for select to authenticated
   using (acts_for_shop(shop_a) or acts_for_shop(shop_b));
 
+-- ALL writes to shop_partners go through the partnerHandoff edge function
+-- (service role), exactly like partner_handoffs. Authenticated INSERT/UPDATE
+-- policies previously let either party self-activate an invite or rewrite
+-- shop_a/shop_b to a non-consenting shop, bypassing the invite→accept
+-- consent flow (audit 2026-08). No authenticated write policies exist now —
+-- that omission IS the consent boundary.
 drop policy if exists shop_partners_insert on shop_partners;
-create policy shop_partners_insert on shop_partners
-  for insert to authenticated
-  with check (acts_for_shop(shop_a) and status = 'invited');
-
--- Either side may update the link (accept / end). Column-level shape is
--- enforced app-side; the dangerous surface (hand-offs) is service-role only.
 drop policy if exists shop_partners_update on shop_partners;
-create policy shop_partners_update on shop_partners
-  for update to authenticated
-  using (acts_for_shop(shop_a) or acts_for_shop(shop_b))
-  with check (acts_for_shop(shop_a) or acts_for_shop(shop_b));
 
 -- Hand-offs: both parties may READ their own; ALL writes go through the
 -- partnerHandoff edge function (service role). No authenticated write
@@ -207,17 +216,38 @@ begin
   select * into v_handoff from partner_handoffs where id = new.partner_handoff_id;
   if not found then return new; end if;
 
+  -- Spoof guard: only the RECEIVER's own order may drive the mirror. Without
+  -- this, a sender (who knows the handoff uuid via RLS) could stamp
+  -- partner_handoff_id on one of their own orders and flip its status to
+  -- fake progress/completion on their own board.
+  if new.shop_owner is distinct from v_handoff.receiving_shop then
+    return new;
+  end if;
+
   v_mirror := case
+    when new.status in ('Cancelled','Canceled','Voided') then 'cancelled'
     when new.status in ('Completed','Ready for Pickup') then 'completed'
     when new.status = 'Art Approval' then 'accepted'
     else 'in_production'
   end;
 
+  -- Advance the hand-off ONLY from a live state. FOUND tells us whether this
+  -- was a real transition — so the completion/cancel bell fires exactly once
+  -- and a bounce back into a completed status can't re-notify or regress.
   update partner_handoffs
-     set status = case when v_mirror = 'completed' then 'completed' else 'in_production' end,
+     set status = case
+                    when v_mirror = 'completed' then 'completed'
+                    when v_mirror = 'cancelled' then 'cancelled'
+                    else 'in_production'
+                  end,
          completed_at = case when v_mirror = 'completed' then coalesce(completed_at, now()) else completed_at end
    where id = v_handoff.id
      and status in ('accepted','in_production');
+  if not found then
+    -- Hand-off already terminal (completed/cancelled/declined) — freeze the
+    -- sender chip and don't re-notify.
+    return new;
+  end if;
 
   update orders o
      set partner_status = v_mirror
@@ -235,6 +265,19 @@ begin
         '. Expect their invoice' ||
         case when v_handoff.agreed_trade_total is not null
              then ' for $' || to_char(v_handoff.agreed_trade_total, 'FM999999990.00') else '' end || '.',
+      'order',
+      v_handoff.source_order_id,
+      jsonb_build_object('partner_handoff_id', v_handoff.id, 'receiving_shop', v_handoff.receiving_shop)
+    );
+  elsif v_mirror = 'cancelled' then
+    insert into notifications (shop_owner, event_type, severity, title, body, related_entity, related_id, metadata)
+    values (
+      v_handoff.sending_shop,
+      'partner_job_cancelled',
+      'warning',
+      'Partner cancelled the job',
+      'Your partner cancelled the subcontracted work on order ' || v_handoff.source_order_id ||
+        '. Re-place it with another partner or produce it in-house.',
       'order',
       v_handoff.source_order_id,
       jsonb_build_object('partner_handoff_id', v_handoff.id, 'receiving_shop', v_handoff.receiving_shop)

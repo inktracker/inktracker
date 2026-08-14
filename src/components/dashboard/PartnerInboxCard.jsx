@@ -4,7 +4,7 @@ import { shopScope } from "@/lib/shopScope";
 import { notify } from "@/lib/notify";
 import { fmtMoney } from "../shared/pricing";
 import { listHandoffs, respondToHandoff } from "@/lib/partners";
-import { Handshake, Loader2, Check, X, CalendarClock } from "lucide-react";
+import { Handshake, Loader2, Check, X } from "lucide-react";
 
 // Dashboard card: incoming partner job offers
 // (docs/shop-partnerships-design.md). Renders nothing when there are no
@@ -14,8 +14,6 @@ export default function PartnerInboxCard() {
   const myShop = shopScope(user);
   const [offers, setOffers] = useState([]);
   const [busyId, setBusyId] = useState(null);
-  const [counterFor, setCounterFor] = useState(null); // handoff id being countered
-  const [counterDate, setCounterDate] = useState("");
 
   const load = async () => {
     try {
@@ -28,15 +26,13 @@ export default function PartnerInboxCard() {
   };
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const act = async (handoff, response, extra = {}) => {
+  const act = async (handoff, response) => {
     setBusyId(handoff.id);
     try {
-      const res = await respondToHandoff(handoff.id, response, extra);
+      const res = await respondToHandoff(handoff.id, response);
       if (response === "accept") {
         notify.success("Job accepted", `It's on your production board as ${res?.receivingOrderId || "a new order"}.`);
       }
-      setCounterFor(null);
-      setCounterDate("");
       await load();
     } catch (err) {
       notify.error("Couldn't respond", err);
@@ -69,35 +65,17 @@ export default function PartnerInboxCard() {
             <div className="text-xs text-slate-500">
               Due {h.due_date || "TBD"}{h.spec?.note ? ` — “${h.spec.note}”` : ""}
             </div>
-            {counterFor === h.id ? (
-              <div className="flex items-center gap-2">
-                <input type="date" value={counterDate} onChange={(e) => setCounterDate(e.target.value)}
-                  className="text-sm border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-900" />
-                <button onClick={() => act(h, "counter", { counterDueDate: counterDate })}
-                  disabled={busyId === h.id || !counterDate}
-                  className="px-3 py-1.5 text-xs font-bold bg-teal-600 text-white rounded-lg disabled:opacity-50">
-                  Offer this date
-                </button>
-                <button onClick={() => { setCounterFor(null); setCounterDate(""); }}
-                  className="text-xs text-slate-500 hover:text-slate-700">cancel</button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button onClick={() => act(h, "accept")} disabled={busyId === h.id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition disabled:opacity-50">
-                  {busyId === h.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                  Accept
-                </button>
-                <button onClick={() => setCounterFor(h.id)} disabled={busyId === h.id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-50 transition">
-                  <CalendarClock className="w-3.5 h-3.5" /> Different date
-                </button>
-                <button onClick={() => act(h, "decline")} disabled={busyId === h.id}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-500 rounded-lg hover:bg-slate-50 transition">
-                  <X className="w-3.5 h-3.5" /> Decline
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <button onClick={() => act(h, "accept")} disabled={busyId === h.id}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition disabled:opacity-50">
+                {busyId === h.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Accept
+              </button>
+              <button onClick={() => act(h, "decline")} disabled={busyId === h.id}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-slate-200 dark:border-slate-700 text-slate-500 rounded-lg hover:bg-slate-50 transition">
+                <X className="w-3.5 h-3.5" /> Decline
+              </button>
+            </div>
           </div>
         );
       })}
