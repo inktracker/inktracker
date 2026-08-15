@@ -624,6 +624,9 @@ export default function LineItemEditor({
   // on the line's first imprint technique — different lines in the
   // same quote can show different fee lists.
   addonsByScope = { root: [], embroidery: [], custom: {} },
+  // Active partners + their trade sheets (Phase 2b). When set, a line can be
+  // tagged as done by a partner: its COST reads their rates; retail is unchanged.
+  partnerSheets = [],
   allLineItems = [],
   savedImprints = [],
   onChange: _rawOnChange,
@@ -1729,12 +1732,30 @@ export default function LineItemEditor({
           </div>
 
           <div className="p-5 bg-slate-50">
+            {partnerSheets.length > 0 && (
+              <div className="mb-3 flex items-center gap-2 flex-wrap">
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">Made by</label>
+                <select
+                  value={li.partner_source || ""}
+                  onChange={(e) => onChange({ ...li, partner_source: e.target.value || null })}
+                  className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white"
+                >
+                  <option value="">In-house</option>
+                  {partnerSheets.map((s) => (
+                    <option key={s.partner} value={s.partner}>{s.partner}{s.config ? "" : " (no rates)"}</option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-slate-400">partner does this line — see your cost &amp; margin below</span>
+              </div>
+            )}
             <PricePanel
               li={li}
               rushRate={rushRate}
               extras={lineExtras}
               allLineItems={previewLineItems}
               markup={STANDARD_MARKUP}
+              partnerConfig={(partnerSheets.find((s) => s.partner === li.partner_source) || {}).config || null}
+              partnerLabel={li.partner_source || null}
               onChange={onChange}
               sizePrices={
                 // Manual-cost lines must not have session lookup data

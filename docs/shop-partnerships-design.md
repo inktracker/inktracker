@@ -170,11 +170,18 @@ cost fields — same discipline (and test style) as `publicSafe.js`.
   receiver confirms by accepting.
 - Sender's customer invoice is untouched retail (their normal flow).
 
-**Phase 2b — quote-time line sourcing (DEFERRED):**
-- In the sender's quote editor, a line tagged `source: partner:<shop>`
-  gets its COST live from the partner's sheet while RETAIL stays the
-  sender's markup — margin visible per line, mixed orders (100 shirts
-  self + 50 hats partner) in one quote. Not built yet.
+**Phase 2b — quote-time line sourcing (SHIPPED 2026-08-14, #774):**
+- In the quote editor a line has a "Made by" selector (In-house / each
+  active partner). Tagging it partner-sourced stores `li.partner_source`
+  and shows a COST + MARGIN block in the line's price panel: cost =
+  `computeTradeTotal([line], partnerSheet)` (their rates, reusing the
+  engine), margin = retail − cost. The customer-facing RETAIL
+  (`_ppp`/`_lineTotal`) is UNCHANGED — this is a shop-only display overlay.
+- On save, `_partner_cost` / `_partner_ppp` are snapshotted onto the line
+  (like `_ppp`) so job P&L reads a static number, never a live re-fetch of
+  the partner sheet (which RLS would null once a partnership ends).
+- Deferred follow-ups: a job-level margin rollup in the totals panel, and
+  auto-selecting the tagged partner at hand-off time.
 
 ### Phase 3 (later, explicitly deferred)
 

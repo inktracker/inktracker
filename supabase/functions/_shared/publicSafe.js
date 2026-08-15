@@ -15,6 +15,12 @@
 // consumers are documented per function.
 
 const COST_KEY_RE = /cost/i;
+// Partner-sourcing keys (Phase 2b) are shop-internal: partner_source is the
+// SUBCONTRACTOR's email (blind-handoff privacy) and _partner_ppp is the shop's
+// per-piece COST. _partner_cost also matches COST_KEY_RE, but strip the whole
+// family here so a rename can't silently re-leak one. No customer surface
+// consumes any partner_* field.
+const PARTNER_KEY_RE = /^_?partner(_|$)/i;
 
 /** True when the quote belongs to a broker (mirrors src/lib isBrokerQuote). */
 export function isBrokerDoc(doc) {
@@ -28,7 +34,7 @@ export function sanitizeLineItems(lineItems) {
     if (!li || typeof li !== "object") return li;
     const out = {};
     for (const [k, v] of Object.entries(li)) {
-      if (COST_KEY_RE.test(k)) continue;
+      if (COST_KEY_RE.test(k) || PARTNER_KEY_RE.test(k)) continue;
       out[k] = v;
     }
     return out;

@@ -26,6 +26,20 @@ describe("sanitizeLineItems — shop costs never reach ANY customer", () => {
     expect(li._ppp).toBe(12);
     expect(li.sizes).toEqual({ M: 10 });
   });
+  it("strips partner-sourcing keys — subcontractor email + shop cost never reach the customer", () => {
+    const [li] = sanitizeLineItems([{
+      style: "1717", _ppp: 12, sizes: { M: 10 },
+      partner_source: "frontst@example.com", // subcontractor identity (blind handoff)
+      _partner_cost: 300, _partner_ppp: 6,    // shop's cost / margin basis
+      partner_status: "accepted",
+    }]);
+    expect(li.partner_source).toBeUndefined();
+    expect(li._partner_cost).toBeUndefined();
+    expect(li._partner_ppp).toBeUndefined();
+    expect(li.partner_status).toBeUndefined();
+    expect(li._ppp).toBe(12); // retail kept
+    expect(li.sizes).toEqual({ M: 10 });
+  });
   it("tolerates junk", () => {
     expect(sanitizeLineItems(null)).toBeNull();
     expect(sanitizeLineItems([null, "x"])).toEqual([null, "x"]);
