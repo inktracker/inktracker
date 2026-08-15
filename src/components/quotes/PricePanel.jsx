@@ -32,10 +32,20 @@ export default function PricePanel({ li, rushRate, extras, allLineItems = [], ma
   const avgPpp = hasOverride ? pppOverride : suggestedPpp;
   const displayTotal = hasOverride ? (pppOverride * qty) : r.lineTotal;
 
-  // Partner sourcing (Phase 2b): if this line is done by a partner with a
-  // published sheet, show what it COSTS you (their rate) and your MARGIN
-  // (retail − cost). Retail above is unchanged. Reuses the trade-price engine.
-  const partnerCost = partnerConfig ? computeTradeTotal([li], partnerConfig) : null;
+  // Partner sourcing (Phase 2b): if this line is done by a partner, show what
+  // it COSTS you (their rate) and your MARGIN (retail − cost). Retail above is
+  // unchanged. Reuses the trade-price engine. Prefer the partner's live sheet;
+  // fall back to the cost SNAPSHOTTED at save when the sheet is no longer
+  // readable (e.g. the partnership ended) so a saved quote keeps its number
+  // instead of falsely reading "no rates".
+  const configHasRates = !!(partnerConfig && (
+    Object.keys(partnerConfig.firstPrint || {}).length ||
+    partnerConfig.embroidery?.pricing ||
+    Object.keys(partnerConfig.custom_techniques || {}).length
+  ));
+  const liveCost = configHasRates ? computeTradeTotal([li], partnerConfig) : null;
+  const snapCost = Number.isFinite(Number(li?._partner_cost)) ? Number(li._partner_cost) : null;
+  const partnerCost = liveCost != null ? liveCost : snapCost;
   const partnerMargin = partnerCost != null ? Math.round((displayTotal - partnerCost) * 100) / 100 : null;
   const marginPct = partnerCost != null && displayTotal > 0 ? Math.round((partnerMargin / displayTotal) * 100) : null;
 
