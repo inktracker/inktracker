@@ -4,7 +4,7 @@ import { shopScope } from "@/lib/shopScope";
 import { notify } from "@/lib/notify";
 import { listPartnerships, invitePartner, respondToInvite, partnerOf } from "@/lib/partners";
 import PartnerTradeSheetEditor from "./PartnerTradeSheetEditor";
-import { Handshake, Loader2, Check, X } from "lucide-react";
+import { Loader2, Check, X } from "lucide-react";
 
 // Account → Partners: peer shops you subcontract with
 // (docs/shop-partnerships-design.md). Invite by owner email; the other
@@ -59,10 +59,6 @@ export default function PartnersSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Handshake className="w-5 h-5 text-teal-600" />
-        <h3 className="font-bold text-slate-900">Partner Shops</h3>
-      </div>
       <p className="text-xs text-slate-500 leading-relaxed">
         Partners are other InkTracker shops you subcontract with — send them the work
         you don't do in-house (embroidery, printing, …) straight from an order. They

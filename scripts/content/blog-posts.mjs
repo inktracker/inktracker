@@ -482,4 +482,73 @@ export const POSTS = Object.freeze([
       },
     ],
   },
+
+  // ── Post 8 — Subcontracting to partner shops ─────────────────────────────
+  {
+    slug: "how-to-subcontract-print-work",
+    title: "How to send work to another shop without losing the customer or your margin",
+    description:
+      "Every shop hits work it can't do in-house — the embroidery order when you only print, the rush when your press is booked. Here's how to subcontract it cleanly: keep the customer, protect the margin, and skip the double entry.",
+    category: "Production",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-08-14",
+    updated: "2026-08-14",
+    readMin: 7,
+    ogImage: SITE.logo,
+    cta: true,
+    body: [
+      { type: "p", html: "Every shop runs into work it can't do in-house. A great customer sends over an order that's half printed tees and half embroidered caps, and you only print. Or a 5,000-piece job lands the same week your press is already booked solid. The work is right there — you just can't do all of it yourself." },
+      { type: "p", html: "Most shops handle that one of two ways, and both cost you. You turn the job away and send the customer somewhere else, or you refer them to a friend's shop for the part you can't do — and now that shop has your customer's name, their contact, and a reason to quote them directly next time. Either way you've handed off the relationship to keep the work moving." },
+      { type: "h2", text: "There's a third option: subcontract, quietly" },
+      { type: "p", html: "Keep the customer. Send the <i>production</i> to a shop that does the thing you don't. You stay the point of contact, you invoice your customer at your price, and the other shop does the caps and bills you their trade rate. Done right, your customer never knows another shop touched the job." },
+      { type: "p", html: "The reason more shops don't do this isn't that they don't have someone to send it to — most of us know an embroiderer or a bigger printer down the road. It's that doing it cleanly is fiddly, and when it's fiddly, three things go wrong." },
+      { type: "h2", text: "The three things that go wrong" },
+      { type: "ul", items: [
+        "<b>You leak the customer.</b> The moment the other shop sees who the job is for — the company name on the art, the ship-to, the contact email — you've given them everything they'd need to skip you next time. Most won't. But you shouldn't have to trust that instead of controlling it.",
+        "<b>You quote blind on margin.</b> You send the customer a price before you know what the sub is actually going to charge you. You find out their real cost when the invoice shows up — after you've already committed to your number. Sometimes the margin's fine; sometimes the embroidery ate it.",
+        "<b>The hand-off is a mess.</b> You retype the specs into an email, attach the art, hope you got the thread colors right, and then have no idea where it stands until you call and ask. When it comes back, you're reconciling two sets of paperwork that were never talking to each other.",
+      ] },
+      { type: "p", html: "None of those are reasons not to subcontract. They're just the parts you have to get right — and they're exactly the parts a system can handle instead of your inbox." },
+      { type: "h2", text: "What a clean hand-off actually looks like" },
+      { type: "p", html: "Strip it down and a good subcontract hand-off follows four rules:" },
+      { type: "ul", items: [
+        "<b>Blind by default.</b> The shop doing the work gets what it needs to produce — the garments, the sizes, the imprint details, the art — and nothing about your side: not your customer, not your retail price.",
+        "<b>Agree the trade price up front, and lock it.</b> Both sides see one number before the work starts, and that same number is what gets invoiced at the end. No \"we'll settle up later\" that drifts.",
+        "<b>Keep the money on rails you already use.</b> The shop that did the work invoices the shop that sent it like any other customer. No new payment system, no escrow, no app-holds-the-money middle layer.",
+        "<b>Know your margin before you quote, not after.</b> If the sub's rate is baked into your quote as a cost, you see your profit on that line while you're building it — not when their invoice arrives.",
+      ] },
+      { type: "callout", title: "The tell", html: "If your current way of sending work out relies on you remembering to strip the customer's name off the art, or on you guessing the sub's price until their invoice lands, that's not a subcontracting workflow — it's a favor with paperwork. The fix is to make those four rules automatic." },
+      { type: "h2", text: "How we built it" },
+      { type: "p", html: "InkTracker shops can partner with each other and pass production back and forth — I built it because I kept hitting the embroidery-order problem myself. Here's how it works, and it maps straight onto the four rules above." },
+      { type: "p", html: "You invite another InkTracker shop by their owner email; they accept, and now you can send each other work. From any order you pick the whole job or just specific lines — the caps, say, and not the tees — and send them to your partner. It goes over <b>blind</b>: they see the specs, quantities, and art they need to make it, and never your customer or your pricing. The art crosses as a copy into their shop, not a shared link." },
+      { type: "p", html: "They accept the job and it lands on their production board as a real order, flowing through their normal Art Approval → Printing → Done pipeline. Their progress mirrors back onto your order as a status chip, and you get a note when it's finished — so you're never calling to ask where it stands." },
+      { type: "p", html: "The price isn't a guess. The shop doing the work sets their own <b>trade rates</b> — the same kind of per-method, per-quantity price sheet they'd use for anything else, and they can set different rates for different partners. When you send them a job, the trade price fills in from their sheet. You can still adjust it, and they confirm it by accepting, so the number both sides agree to is the number that gets invoiced. No drift." },
+      { type: "p", html: "And because that cost is known, you see it while you're quoting. Tag a line on a quote as made by a partner and it shows you your cost and your margin on that line — before you send the quote to your customer. A mixed job — 100 printed tees you'll run yourself and 50 embroidered caps going to your partner — prices in one quote, with the margin visible on each part. Your customer just sees your price, as always." },
+      { type: "p", html: "When it's done, billing rides the rails you already have: the shop that did the work invoices the shop that sent it as an ordinary customer, through the normal invoice flow. There's no new money layer. And if a single order needs two different specialties, you can split it — the caps to your embroiderer, the prints to another shop — each as its own clean hand-off." },
+      { type: "p", html: "The whole point is that saying \"yes\" to a job you can only half-do stops meaning you either turn it away or give away the customer. You keep the relationship and the invoice, someone you trust does the part you don't, and you knew your margin before you ever quoted it." },
+    ],
+    related: [
+      { href: "/blog/how-to-price-embroidery", text: "How to price embroidery" },
+      { href: "/blog/quickbooks-for-screen-printers", text: "QuickBooks for screen printers" },
+    ],
+    faqs: [
+      {
+        q: "Will the shop I send work to see my customer?",
+        a: "Not by default. Hand-offs are blind: the partner doing the work gets the garments, sizes, imprint details, and art they need to produce the job, and never your customer's identity or your retail pricing. The art crosses as a copy into their shop rather than a shared link, so nothing points back to your client.",
+      },
+      {
+        q: "How do I know what the other shop will charge before I quote my customer?",
+        a: "The shop doing the work publishes their own trade rates, so the trade price fills in when you send them a job. You can also tag a line on a quote as made by a partner and see your cost and margin on it before you send the quote — so you're pricing your customer with the real cost in hand, not guessing.",
+      },
+      {
+        q: "How does the money work between two shops?",
+        a: "On the rails you already use. When the job is done, the shop that produced it invoices the shop that sent it as an ordinary customer, through the normal invoice flow. There's no separate payment system, escrow, or app-held balance — one shop bills the other, same as any customer.",
+      },
+      {
+        q: "Can I split one order across more than one partner?",
+        a: "Yes. Different lines on the same order can go to different shops — the embroidered caps to one partner, the printed tees to another — each as its own blind hand-off with its own trade price. The same line can't go to two shops at once, so nothing gets double-produced.",
+      },
+    ],
+  },
 ]);
