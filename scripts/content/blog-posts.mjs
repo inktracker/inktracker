@@ -482,4 +482,71 @@ export const POSTS = Object.freeze([
       },
     ],
   },
+
+  // ── Post 8 — Partnering with other shops ────────────────────────────────
+  {
+    slug: "how-to-subcontract-print-work",
+    title: "How to partner with other shops and take on work you can't do in-house",
+    description:
+      "Every shop hits jobs that don't fit — embroidery when you only print, a rush when your press is booked. Instead of turning them away, team up with shops whose strengths cover your gaps. Here's how to make those hand-offs clean.",
+    category: "Production",
+    author: "Joe",
+    authorRole: "Founder, InkTracker",
+    date: "2026-08-14",
+    updated: "2026-08-14",
+    readMin: 7,
+    ogImage: SITE.logo,
+    cta: true,
+    body: [
+      { type: "p", html: "Every shop has a lane. You might run a tight screen-print operation but not touch embroidery. You might have a six-color auto but no DTG. Or you're just booked solid the week a 5,000-piece order lands. Sooner or later a job comes in that your shop can't fully do — and it feels like the only choices are to turn it away or send your customer down the road to someone else." },
+      { type: "p", html: "There's a better move, and the best shops already make it: they build relationships with other shops and pass work back and forth. You take the embroidery a printer down the road can't do; they send you the screen printing you're set up for. Nobody turns away good work, and nobody loses a customer — because you're working together, not competing for the same job." },
+      { type: "h2", text: "Team up instead of turning it away" },
+      { type: "p", html: "The idea is simple. Find a few shops whose strengths cover your gaps — an embroiderer if you print, a bigger printer if you get slammed on volume — and become the shop that covers theirs. When a job comes in that's half yours and half theirs, you keep serving the customer and hand the other half to a shop you trust. They do what they're great at, you do what you're great at, and the customer gets the whole order from one place." },
+      { type: "p", html: "This isn't new — shops have traded work with each other forever. What's always been clunky is the <i>doing</i> of it, and that clunkiness is why a lot of shops still turn work away instead of passing it along. Get the hand-off right and it stops being a hassle and starts being a real part of how you grow." },
+      { type: "h2", text: "What makes a shop partnership actually work" },
+      { type: "p", html: "A good working relationship between two shops comes down to a few things being clear:" },
+      { type: "ul", items: [
+        "<b>The hand-off is clean.</b> Your partner gets exactly what they need to make the job — the garments, sizes, imprint details, and art — without you retyping it into an email and hoping the thread colors survived. And you can see where it stands without calling to ask.",
+        "<b>The price is agreed up front.</b> Both shops know the trade price before the work starts, and that's the number that gets invoiced. No sending your customer a quote and then finding out what it really cost you when your partner's invoice shows up.",
+        "<b>The roles are clear.</b> You keep the customer relationship and send the invoice; your partner focuses on production. You both know who's doing what, so nothing falls through the crack between two shops.",
+        "<b>The terms are consistent.</b> A trade rate your partner sets once, so every hand-off between you prices the same way. Clear terms are what let a partnership run for years without friction.",
+      ] },
+      { type: "p", html: "Get those four right and passing work to a partner feels like handing it to your own back room — which is the whole point." },
+      { type: "callout", title: "The relationship is the asset", html: "The shops that do this well aren't chasing a one-off. They're building a small network of shops they can lean on — and who lean on them back. The software's job is just to make each hand-off easy enough that the relationship is worth keeping." },
+      { type: "h2", text: "How we built it" },
+      { type: "p", html: "InkTracker shops can partner with each other and pass production back and forth. I built it because my own shop kept hitting the embroidery-order problem, and every workaround meant retyping specs and guessing prices. Here's how it works." },
+      { type: "p", html: "You invite a shop you work with by their owner email; they accept, and now the two of you can send each other jobs. From any order you pick the whole thing or just specific lines — the caps, not the tees — and send them over. The hand-off carries what your partner needs to produce the work: the specs, the quantities, and the art, copied into their shop so it's theirs to run from. Your customer's contact details and your own pricing stay on your side — not to hide anything, but because your partner doesn't need them to make the job, and the customer stays your relationship to look after." },
+      { type: "p", html: "They accept the job and it lands on their production board as a real order, moving through their normal Art Approval → Printing → Done flow. Their progress mirrors back onto your order so you can see where it is, and you get a note when it's finished. No status calls." },
+      { type: "p", html: "Pricing is agreed, not guessed. Your partner sets their own <b>trade rates</b> — a per-method, per-quantity price sheet, and they can give different partners different rates. When you send them a job, the trade price fills in from their sheet; you can adjust it, and they confirm by accepting, so both shops agree on the number that gets invoiced." },
+      { type: "p", html: "Because that cost is known, you see it while you quote. Tag a line as made by a partner and it shows your cost and your margin on that line before the quote goes out — so a mixed job, 100 printed tees you'll run and 50 embroidered caps going to your partner, prices in one quote with the margin clear on each part." },
+      { type: "p", html: "When it's done, billing runs on the rails you already use: your partner invoices you as an ordinary customer through the normal invoice flow. No new money layer. And if one order needs two specialties, you can split it — caps to your embroiderer, prints to another shop — each a clean hand-off of its own." },
+      { type: "p", html: "The bigger idea is that you don't have to be able to do everything to say yes to everything. Build a handful of solid shop relationships, make the hand-offs easy, and between you there's very little you can't take on." },
+    ],
+    related: [
+      { href: "/blog/how-to-price-embroidery", text: "How to price embroidery" },
+      { href: "/blog/quickbooks-for-screen-printers", text: "QuickBooks for screen printers" },
+    ],
+    faqs: [
+      {
+        q: "How do I find shops to partner with?",
+        a: "Start with the shops you already know — the embroiderer you've referred work to, the bigger printer you've leaned on in a pinch, the shop that sends you the work they can't do. Partnerships work best between shops whose strengths cover each other's gaps, so you're trading work rather than competing for it. Invite a shop by their owner email; once they accept, you can send each other jobs.",
+      },
+      {
+        q: "Does my partner see my customer's information?",
+        a: "Your partner gets what they need to produce the job — the specs, quantities, and art (so if a design has a logo, they'll see it, same as any shop making the goods). Your customer's contact details and your pricing aren't part of the hand-off by default, since they're not needed to run the work, and you stay the customer's point of contact. You can choose to share more when it makes sense.",
+      },
+      {
+        q: "How do we agree on price?",
+        a: "The shop doing the work publishes their own trade rates, so the trade price fills in when a job is sent to them. The sending shop can adjust it, and the receiving shop confirms by accepting — so both sides agree on the number before the work starts, and that's what gets invoiced. You can also see your cost and margin on a partner-made line while you're still quoting your customer.",
+      },
+      {
+        q: "How does the money work between two shops?",
+        a: "On the rails you already use. When the job is done, the shop that produced it invoices the shop that sent it as an ordinary customer, through the normal invoice flow. There's no separate payment system, escrow, or app-held balance — one shop bills the other, same as any customer.",
+      },
+      {
+        q: "Can I split one order across more than one partner?",
+        a: "Yes. Different lines on the same order can go to different shops — the embroidered caps to one partner, the printed tees to another — each as its own hand-off with its own trade price. The same line can't go to two shops at once, so nothing gets double-produced.",
+      },
+    ],
+  },
 ]);
