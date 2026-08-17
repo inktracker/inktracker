@@ -21,6 +21,8 @@ import { signArtworkUrl } from '../../lib/uploadFile';
 import { stripSyncNotes } from '../../lib/invoices/qbModifiedSync';
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { depositAmountFor } from "@/lib/deposits";
+import { slipSize } from "@/lib/orders/packingSlipLayout";
+import { drawCompactSlip } from "@/lib/orders/packingSlipDraw";
 
 let _jsPdfPromise;
 function loadJsPDF() {
@@ -1293,9 +1295,24 @@ export async function exportOrderToPDF(order, shopName, logoUrl, output, custome
 // ship counts from PackingSlipModal (order qty minus misprints, operator-
 // edited). Falls back to the line's ordered sizes when a line/size is
 // absent so the export also works standalone.
-export async function exportPackingSlipToPDF(order, shopName, logoUrl, output, customerCompany, finalQuantities) {
+// `sizeId` picks the page shape (see lib/orders/packingSlipLayout.js):
+//   "letter" — 8.5 × 11 paperwork copy, the full layout below.
+//   "4x6"    — carton label; delegates to the condensed renderer, because at
+//              label size the full header/logo/notes crowd out the only thing
+//              a packer needs (Joe, 2026-08-17: "way too big for a packing
+//              slip at 4x6"). Default stays letter so existing callers are
+//              unchanged apart from A4 → true US Letter dimensions.
+export async function exportPackingSlipToPDF(order, shopName, logoUrl, output, customerCompany, finalQuantities, sizeId = "letter") {
   const jsPDF = await loadJsPDF();
-  const doc = new jsPDF();
+  const cfg = slipSize(sizeId);
+
+  if (cfg.id === "4x6") {
+    const labelDoc = new jsPDF({ unit: "mm", format: cfg.format, orientation: cfg.orientation });
+    drawCompactSlip(labelDoc, { order, shopName, customerCompany, finalQuantities, sizeId: cfg.id });
+    return finalizePdf(labelDoc, {}, output, `PackingSlip-${order.order_id}.pdf`);
+  }
+
+  const doc = new jsPDF({ unit: "mm", format: cfg.format, orientation: cfg.orientation });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
