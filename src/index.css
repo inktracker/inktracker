@@ -459,10 +459,19 @@ html.cap-native body {
      which would disable the class-based rule in exactly the browsers that
      need it. The class is set by ProductionTicket on mount (universal);
      :has() stays as backup for any ticket render without the effect. */
-  body.production-ticket-open #root {
+  /* Hide EVERY direct child of body except the ticket itself.
+     Hiding #root alone was not enough: ModalBackdrop deliberately
+     createPortal()s its modals to document.body (to escape ancestor
+     clipping), so an open OrderDetailModal is a SIBLING of #root, not a
+     child — it sailed straight past a #root-only rule and printed on top
+     of the ticket. Kato reported exactly that (2026-08-17: "it still goes
+     to the background on the print page"), and it reproduces in headless
+     Chrome: modal text overprinting the ticket sheet on page 1.
+     The packing slip never had this bug because it opens its own tab. */
+  body.production-ticket-open > *:not(.production-ticket) {
     display: none !important;
   }
-  body:has(.production-ticket) #root {
+  body:has(.production-ticket) > *:not(.production-ticket) {
     display: none !important;
   }
   .production-ticket {
