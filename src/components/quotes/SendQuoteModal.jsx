@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { base44, supabase } from "@/api/supabaseClient";
 import ModalBackdrop from "../shared/ModalBackdrop";
+import QuoteSentConfirmation from "./QuoteSentConfirmation";
 import { Mail, Loader2, CheckCircle2, AlertCircle, X } from "lucide-react";
 import { buildQBInvoicePayload, fmtMoney, BROKER_MARKUP } from "../shared/pricing";
 import { exportQuoteToPDF } from "../shared/pdfExport";
@@ -800,21 +801,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
         </div>
 
         {sent ? (
-           <div className="p-8 flex flex-col items-center gap-4 text-center">
-             <CheckCircle2 className="w-12 h-12 text-emerald-500" />
-             <div>
-               <div className="font-semibold text-slate-900 text-base">
-                 Email sent successfully
-               </div>
-               <div className="text-sm text-slate-500 mt-1">Sent to {recipientEmails.join(", ")}</div>
-             </div>
-             <button
-               onClick={onClose}
-               className="mt-2 px-6 py-2 text-sm font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition"
-             >
-               Close
-             </button>
-           </div>
+           <QuoteSentConfirmation
+             recipients={recipientEmails}
+             quoteId={quote.quote_id}
+             onClose={onClose}
+           />
          ) : (
            <>
              <div className="p-6 space-y-4">
