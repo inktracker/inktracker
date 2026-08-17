@@ -37,7 +37,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          # Node 22+ — see db-backup.yml: supabase-js >= 2.112 needs a native
+          # WebSocket that Node 20 doesn't have, and createClient() throws.
+          node-version: "22"
       - name: Install supabase-js
         run: npm ci --omit=dev || npm install @supabase/supabase-js@2
       - name: Export storage buckets
