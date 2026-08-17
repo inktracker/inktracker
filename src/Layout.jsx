@@ -400,8 +400,9 @@ export default function Layout({ children, currentPageName }) {
         <OnboardingAssistant user={user} />
       )}
 
-      {/* Upgrade modal */}
-      {showUpgrade && (
+      {/* Upgrade modal — never on native (no purchase/plan-steering UI, App
+          Store guideline 3.1.1). Web unchanged. */}
+      {showUpgrade && !isNative() && (
         <ModalBackdrop onClose={() => setShowUpgrade(null)} z="z-50">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
             <div className="w-12 h-12 rounded-full bg-teal-100 flex items-center justify-center mx-auto mb-4">
