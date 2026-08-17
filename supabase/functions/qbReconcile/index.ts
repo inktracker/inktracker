@@ -99,6 +99,11 @@ import {
   shouldSendPayLinkAlert,
   buildPayLinkAlertText,
 } from "../_shared/qbPayLinkAlert.js";
+import {
+  summarizeUnsentQuotes,
+  shouldSendUnsentQuoteAlert,
+  buildUnsentQuoteAlertText,
+} from "../_shared/unsentQuoteAlert.js";
 
 const QB_CLIENT_ID     = Deno.env.get("QB_CLIENT_ID")!;
 const QB_CLIENT_SECRET = Deno.env.get("QB_CLIENT_SECRET")!;
@@ -1262,6 +1267,69 @@ async function scanAndAlertPayLinks(adminClient: any): Promise<{ failing: number
   }
 }
 
+// ── "Sent" quotes that were never emailed ───────────────────────────
+// Watches the invariant status "Sent" ⇒ sent_date AND sent_to are set.
+// A violation means a shop thinks its customer has a quote and the
+// customer has nothing — the failure mode Joe hit on Q-2026-HNUD
+// (2026-08-17), where only his own missing copy gave it away. Pure logic
+// in _shared/unsentQuoteAlert.js. Same contract as the scans above: 24h
+// dedup via qb_event_log, every failure swallowed, never blocks the work.
+async function scanAndAlertUnsentQuotes(adminClient: any): Promise<{ failing: number; alerted: boolean }> {
+  if (!OPERATOR_ALERT_EMAIL || !RESEND_API_KEY) return { failing: 0, alerted: false };
+  try {
+    const sinceDays = 7;
+    const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000).toISOString();
+    const { data: rows, error } = await adminClient
+      .from("quotes")
+      .select("quote_id, shop_owner, status, sent_date, sent_to, created_at")
+      .eq("status", "Sent")
+      .gte("created_at", since)
+      .limit(500);
+    if (error) {
+      console.warn("[qbReconcile] unsent-quote scan query failed:", error.message);
+      return { failing: 0, alerted: false };
+    }
+    const summary = summarizeUnsentQuotes(rows ?? [], { now: Date.now() });
+    if (!shouldSendUnsentQuoteAlert(summary)) return { failing: 0, alerted: false };
+
+    const dedupSince = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recent } = await adminClient
+      .from("qb_event_log")
+      .select("id")
+      .eq("action", "unsent_quote_alert")
+      .gte("created_at", dedupSince)
+      .limit(1)
+      .maybeSingle();
+    if (recent) return { failing: summary.failing.length, alerted: false };
+
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: `InkTracker <${ALERT_FROM_EMAIL}>`,
+        to: [OPERATOR_ALERT_EMAIL],
+        subject: `[InkTracker] ${summary.failing.length} quote(s) marked Sent but never emailed`,
+        text: buildUnsentQuoteAlertText(summary, { sinceDays }),
+      }),
+    });
+    if (!res.ok) {
+      console.warn(`[qbReconcile] unsent-quote alert send failed: ${res.status} ${await res.text()}`);
+      return { failing: summary.failing.length, alerted: false };
+    }
+    await logEvent(adminClient, {
+      shop_owner:    "__system__",
+      action:        "unsent_quote_alert",
+      direction:     "outbound",
+      status:        "success",
+      response_body: { failing: summary.failing.length, checked: summary.checked },
+    });
+    return { failing: summary.failing.length, alerted: true };
+  } catch (err) {
+    console.warn("[qbReconcile] unsent-quote scan exception:", (err as Error)?.message);
+    return { failing: 0, alerted: false };
+  }
+}
+
 // ── Weekly growth report (Monday runs only) ─────────────────────────
 // Funnel summary → operator: signups, trial activation, trials ending,
 // expired-without-converting, paying-shop count. Piggybacks this cron
@@ -1403,6 +1471,9 @@ Deno.serve(async (req) => {
   console.error(`[qbReconcile] growth-report: sent=${growthReport.sent}`);
   const payLinks = await scanAndAlertPayLinks(adminClient);
   console.error(`[qbReconcile] pay-links: ${payLinks.failing} failing validation, alerted=${payLinks.alerted}`);
+
+  const unsent = await scanAndAlertUnsentQuotes(adminClient);
+  console.error(`[qbReconcile] unsent quotes: ${unsent.failing} marked Sent but never emailed, alerted=${unsent.alerted}`);
 
   try {
     // Find every profile with QB connected, LEAST-recently-reconciled

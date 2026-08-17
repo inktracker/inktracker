@@ -1880,8 +1880,14 @@ async function handleCreateInvoice(token: string, realmId: string, params: any, 
       qb_tax_amount:   qbTaxAmount,
       qb_total:        qbTotal,
       ...adoptQbTaxFields,
-      // Don't advance a held invoice to "Sent" — it hasn't been sent.
-      status:          (!taxBlocked && quote.status === "Draft") ? "Sent" : quote.status,
+      // Status is NOT advanced here. Creating a QB invoice is not sending:
+      // QB stopped auto-emailing on invoice create (2026-06-26), so the only
+      // thing that reaches the customer is our own sendQuoteEmail. This line
+      // used to flip Draft → "Sent", which made a quote read as Sent while
+      // nobody had been emailed — Joe hit exactly that on Q-2026-HNUD
+      // (2026-08-17): QB invoice 3778 + pay link created, email never sent,
+      // quote showed "Sent" with sent_to/sent_date null. The send path owns
+      // status/sent_to/sent_date, and only after Resend accepts the message.
     });
 
     // Also mirror onto the invoices table (invoice-originated, same ID format).
