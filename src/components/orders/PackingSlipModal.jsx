@@ -3,6 +3,7 @@ import { Eye } from "lucide-react";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import { exportPackingSlipToPDF, previewPdf } from "@/components/shared/pdfExport";
 import { initialSlipQuantities } from "@/lib/orders/packingSlip";
+import { SLIP_SIZES } from "@/lib/orders/packingSlipLayout";
 import { notify } from "@/lib/notify";
 
 // Confirm-quantities step before generating a packing slip PDF.
@@ -22,6 +23,16 @@ import { notify } from "@/lib/notify";
 export default function PackingSlipModal({ order, customer, shopName, logoUrl, onClose }) {
   const [quantities, setQuantities] = useState(() => initialSlipQuantities(order));
   const [building, setBuilding] = useState(false);
+  // Page size sticks per shop — most shops print the same stock every time,
+  // so asking again on every slip would be busywork.
+  const [sizeId, setSizeId] = useState(() => {
+    try { return localStorage.getItem("packingSlipSize") || "letter"; } catch { return "letter"; }
+  });
+
+  function pickSize(id) {
+    setSizeId(id);
+    try { localStorage.setItem("packingSlipSize", id); } catch { /* private mode */ }
+  }
 
   function setQty(liIdx, size, value) {
     // Allow clearing the field while typing; clamp to a non-negative int.
@@ -46,7 +57,7 @@ export default function PackingSlipModal({ order, customer, shopName, logoUrl, o
     setBuilding(true);
     try {
       await previewPdf(
-        exportPackingSlipToPDF(order, shopName, logoUrl, "blob", customer?.company, cleanQuantities())
+        exportPackingSlipToPDF(order, shopName, logoUrl, "blob", customer?.company, cleanQuantities(), sizeId)
       );
     } catch (err) {
       notify.error("Couldn't build the packing slip", err);
@@ -128,6 +139,28 @@ export default function PackingSlipModal({ order, customer, shopName, logoUrl, o
               </div>
             );
           })}
+        </div>
+
+        <div className="px-6 pb-4">
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Paper size</div>
+          <div className="flex flex-wrap gap-2">
+            {Object.values(SLIP_SIZES).map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => pickSize(s.id)}
+                aria-pressed={sizeId === s.id}
+                className={`text-left px-3 py-2 rounded-xl border transition ${
+                  sizeId === s.id
+                    ? "border-teal-500 bg-teal-50 dark:bg-teal-900/20"
+                    : "border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800"
+                }`}
+              >
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">{s.label}</div>
+                <div className="text-[11px] text-slate-500">{s.hint}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 rounded-b-2xl flex items-center gap-3">
