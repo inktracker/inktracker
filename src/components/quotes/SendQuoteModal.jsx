@@ -521,17 +521,14 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // shows up under either banner.
       if (!data.paymentLink && data.linkFailureReason) {
         autoSendAfter = false;
+        // no_bill_email is covered by the send_failed banner (which detects the
+        // missing email directly), so only the QB-Payments case needs a toast.
         if (data.linkFailureReason === "no_link_after_retry") {
           setQbError(
             "QuickBooks created the invoice but didn't mint a payment link, even after retries. " +
             "The most common cause is that QB Payments isn't activated on your QuickBooks account. " +
             "Open QuickBooks → Settings (gear icon) → Payments → Get Started, then retry. " +
             "If QB Payments is already on, this is a transient QBO issue — try again in a minute.",
-          );
-        } else if (data.linkFailureReason === "no_bill_email") {
-          setQbError(
-            "Can't get a payment link from QuickBooks without the customer's email. " +
-            "Add an email to the customer record (or this quote) and try again.",
           );
         }
       }
@@ -983,8 +980,17 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                     <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 flex items-start gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                       <div className="text-xs text-amber-700 leading-relaxed">
-                        <div className="font-semibold mb-0.5">QB invoice {qbDocNumber || `#${qbInvoiceId}`} created, but no payment link came back.</div>
-                        You can send the quote anyway — the customer will see the line items + total but won't have a pay-now button. Or retry below to get the link.
+                        {(emailsInput || "").trim() ? (
+                          <>
+                            <div className="font-semibold mb-0.5">QB invoice {qbDocNumber || `#${qbInvoiceId}`} created, but no payment link came back.</div>
+                            You can send the quote anyway — the customer will see the line items + total but won&rsquo;t have a pay-now button. Or retry below to get the link.
+                          </>
+                        ) : (
+                          <>
+                            <div className="font-semibold mb-0.5">QB invoice {qbDocNumber || `#${qbInvoiceId}`} created, but it has no customer email.</div>
+                            QuickBooks can&rsquo;t make a pay-now link without one. Add the customer&rsquo;s email above, then retry. You can also send the quote as-is — the customer sees the line items + total, just no pay-now button.
+                          </>
+                        )}
                       </div>
                     </div>
                     {qbError && (
