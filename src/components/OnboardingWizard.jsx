@@ -305,7 +305,7 @@ export default function OnboardingWizard({ user, onComplete }) {
               <img src="https://qtrypzzcjebvfcihiynt.supabase.co/storage/v1/object/public/base44-prod/public/69aa650fd3e825e66ff81817/b4e2dc53f_logo.png"
                 alt="InkTracker" className="w-9 h-9 rounded-xl" />
               <h2 className="text-xl font-bold text-slate-900">
-                {current.id === "done" && needsCard ? "Start Your Free Trial" : current.title}
+                {current.id === "done" && needsCard && !isNative() ? "Start Your Free Trial" : current.title}
               </h2>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { openAuthRedirect } from "@/lib/mobile/native";
+import { openAuthRedirect, isNative } from "@/lib/mobile/native";
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
@@ -632,7 +632,7 @@ export default function Account() {
           />
         </Section>
 
-        {(user?.role === "admin" || user?.role === "shop") && <Section icon={CreditCard} title="Billing & Plan" defaultOpen={location.search?.includes("billing")}>
+        {(user?.role === "admin" || user?.role === "shop") && !isNative() && <Section icon={CreditCard} title="Billing & Plan" defaultOpen={location.search?.includes("billing")}>
           <BillingSection user={user} />
         </Section>}
 
