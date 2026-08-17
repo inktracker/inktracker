@@ -1284,6 +1284,10 @@ async function scanAndAlertUnsentQuotes(adminClient: any): Promise<{ failing: nu
       .select("quote_id, shop_owner, status, sent_date, sent_to, created_at")
       .eq("status", "Sent")
       .gte("created_at", since)
+      // The demo shop's seeded quotes are written straight to "Sent" with no
+      // delivery record (they were never emailed — they're fiction). Real
+      // violations only, or this alert cries wolf every single night.
+      .neq("shop_owner", "demo@inktracker.app")
       .limit(500);
     if (error) {
       console.warn("[qbReconcile] unsent-quote scan query failed:", error.message);
