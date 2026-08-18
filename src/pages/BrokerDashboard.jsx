@@ -48,10 +48,7 @@ import ModalBackdrop from "../components/shared/ModalBackdrop";
 import { exportQuoteToPDF } from "../components/shared/pdfExport";
 import { STANDARD_MARKUP, O_STATUSES, getBrokerClientDisplay } from "../components/shared/pricing";
 import { normalizeQuoteStatus } from "@/lib/broker/quoteStatus";
-import {
-  getQuoteTotalSafe as getQuoteTotalSafeLib,
-  getClientTotalSafe as getClientTotalSafeLib,
-} from "@/lib/broker/quoteTotals";
+import { getQuoteTotalSafe as getQuoteTotalSafeLib } from "@/lib/broker/quoteTotals";
 import SendQuoteModal from "../components/quotes/SendQuoteModal";
 import { notify } from "@/lib/notify";
 
@@ -143,7 +140,11 @@ function QuoteDetailDrawer({ quote, onClose, onEdit, onSubmit, onDelete, onUpdat
         deposit:   (Number(quote.total)) * ((parseFloat(quote.deposit_pct) || 0) / 100),
       }
     : calcQuoteTotals(quote, BROKER_MARKUP);
-  const clientTotals = (Number.isFinite(quote.client_total) && Number.isFinite(quote.client_subtotal))
+  // Gate on > 0, not Number.isFinite: client_* are NOT NULL DEFAULT 0
+  // (20260607, no backfill), so Number.isFinite(0) === true treated every
+  // unstamped quote as stamped and the drawer showed the client "$0.00".
+  // Same gate as toCustomerFacingQuote — a real client total is always > 0.
+  const clientTotals = Number(quote.client_total) > 0
     ? {
         sub:       Number(quote.client_subtotal),
         afterDisc: Number(quote.client_total) - Number(quote.client_tax || 0),
@@ -936,6 +937,11 @@ export default function BrokerDashboard({ initialTab } = {}) {
       broker_email: user.email,
       broker_name: user.display_name || user.full_name || "",
       broker_company: user.company_name || "",
+      // Stamped from the profile so the Shop Order Form PDF can print it —
+      // pdfExport reads quote.broker_phone, but nothing ever wrote it (the
+      // editor only set it on a throwaway preview object), so the shop's
+      // copy always showed a blank broker phone. Broker audit 2026-08-17.
+      broker_phone: user.phone || "",
       shop_owner: isSubmittingToShop ? assignedShop : null,
     };
 
@@ -989,14 +995,36 @@ export default function BrokerDashboard({ initialTab } = {}) {
 
   async function handleDeleteQuote(quote, { isShopVisible = false } = {}) {
     if (!quote?.id) return;
-    // Warn more loudly when the shop has already seen it — they'll
-    // notice it vanish from their queue with no cross-tenant
-    // notification yet. The drawer's `isShopVisible` flag covers
-    // Pending + Shop Approved (the two states the shop reviews).
+    // Warn more loudly when the shop has already seen it. The drawer's
+    // `isShopVisible` flag covers Pending + Shop Approved (the two states
+    // the shop reviews).
     const msg = isShopVisible
       ? "This quote is in the shop's queue. Deleting will remove it from their view immediately. Continue?"
       : "Delete this quote? This cannot be undone.";
     if (!window.confirm(msg)) return;
+
+    // Tell the shop BEFORE the row disappears. Without this, a quote the
+    // shop was reviewing simply vanished from their Pending queue with no
+    // trace — the reverse direction (shop deletes an order) has notified
+    // the broker since revertQuoteOnOrderDelete. Best-effort: a failed
+    // notification never blocks the delete.
+    if (isShopVisible && quote.shop_owner) {
+      try {
+        await base44.entities.BrokerNotification.create({
+          shop_owner: quote.shop_owner,
+          broker_id: user.email,
+          broker_name: user.display_name || user.full_name || "",
+          broker_company: user.company_name || "",
+          action: "broker_deleted_quote",
+          item_label: `${quote.quote_id} — ${quote.customer_name || "Unknown client"} (withdrawn by broker)`,
+          item_id: quote.id,
+          item_entity: "Quote",
+          read: false,
+        });
+      } catch (err) {
+        console.warn("Couldn't notify shop of quote withdrawal (non-fatal):", err);
+      }
+    }
 
     await base44.entities.Quote.delete(quote.id);
     setQuotes((prev) => prev.filter((q) => q.id !== quote.id));
@@ -1540,6 +1568,3 @@ function getQuoteTotalSafe(quote) {
   return getQuoteTotalSafeLib(quote, (q) => calcQuoteTotals(q, BROKER_MARKUP));
 }
 
-function getClientTotalSafe(quote) {
-  return getClientTotalSafeLib(quote, (q) => calcQuoteTotals(q, STANDARD_MARKUP));
-}

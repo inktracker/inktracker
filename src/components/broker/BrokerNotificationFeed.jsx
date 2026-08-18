@@ -32,6 +32,16 @@ const ACTION_META = {
     bg: "bg-green-50",
     page: "Dashboard",
   },
+  broker_deleted_quote: {
+    // Broker withdrew a quote the shop could already see (Pending / Shop
+    // Approved). Before this action existed the row simply vanished from
+    // the shop's queue with no trace — broker audit 2026-08-17.
+    label: "withdrew a quote from your queue",
+    icon: X,
+    color: "text-rose-600",
+    bg: "bg-rose-50",
+    page: "Quotes",
+  },
   client_approved_quote: {
     // Action name preserved for backward compat with existing rows; under
     // the new client-first workflow this fires when the broker submits a

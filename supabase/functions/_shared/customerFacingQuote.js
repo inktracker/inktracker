@@ -35,12 +35,21 @@ export function toCustomerFacingQuote(quote) {
       })
     : quote.line_items;
 
+  // Only swap when the client-side stamps are REAL. The 20260607 migration
+  // created client_* as NOT NULL DEFAULT 0 with no backfill, so on any
+  // unstamped broker quote the columns are 0, not NULL — `??` alone never
+  // falls back, and this helper handed callers $0 totals. The client-side
+  // port (src/lib/quotes/customerFacingQuote.js) gained this exact `> 0`
+  // gate long ago; the server port kept the original bug. A real stamped
+  // client total is always > 0 (client price = wholesale + markup).
+  const hasClientTotals = Number(quote.client_total) > 0;
+
   return {
     ...quote,
     line_items: lineItems,
-    subtotal: quote.client_subtotal ?? quote.subtotal,
-    tax: quote.client_tax ?? quote.tax,
-    total: quote.client_total ?? quote.total,
+    subtotal: hasClientTotals ? (quote.client_subtotal ?? quote.subtotal) : quote.subtotal,
+    tax: hasClientTotals ? (quote.client_tax ?? quote.tax) : quote.tax,
+    total: hasClientTotals ? quote.client_total : quote.total,
     tax_rate: quote.broker_tax_rate != null ? quote.broker_tax_rate : quote.tax_rate,
   };
 }

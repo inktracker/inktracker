@@ -50,3 +50,35 @@ describe("toCustomerFacingQuote", () => {
     expect(out.total).toBe(108);
   });
 });
+
+// ── Zero-fallback regression (broker audit 2026-08-17) ──────────────────────
+// client_* columns are NOT NULL DEFAULT 0 with no backfill, so an unstamped
+// broker quote carries 0, not NULL. `??` alone never fell back, and this
+// helper handed callers $0 totals — createCheckoutSession then refused the
+// charge ("Nothing to charge") or, worse, would have charged the fallback.
+// The client-side port has this `> 0` gate; the server port was missing it.
+describe("unstamped client totals fall back to broker totals", () => {
+  const unstamped = {
+    broker_id: "b@x.co",
+    subtotal: 500, tax: 0, total: 500,
+    client_subtotal: 0, client_tax: 0, client_total: 0,
+    line_items: [],
+  };
+  it("keeps broker-side totals when client_total is the DEFAULT 0", () => {
+    const out = toCustomerFacingQuote(unstamped);
+    expect(out.total).toBe(500);
+    expect(out.subtotal).toBe(500);
+  });
+  it("still swaps when client totals are genuinely stamped", () => {
+    const out = toCustomerFacingQuote({
+      ...unstamped, client_subtotal: 580, client_tax: 20, client_total: 600,
+    });
+    expect(out.total).toBe(600);
+    expect(out.subtotal).toBe(580);
+    expect(out.tax).toBe(20);
+  });
+  it("non-broker quotes pass through untouched regardless of client_* defaults", () => {
+    const out = toCustomerFacingQuote({ total: 375, client_total: 0, line_items: [] });
+    expect(out.total).toBe(375);
+  });
+});
