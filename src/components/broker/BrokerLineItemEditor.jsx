@@ -501,6 +501,17 @@ export default function BrokerLineItemEditor({
 
   const qty = getQty(li);
 
+  // Freshest line item for ASYNC continuations. handleStyleBlur awaits a
+  // supplier lookup that can take several seconds; the broker keeps typing
+  // (sizes, color, cost) while it runs. Applying the lookup to the
+  // closure-captured `li` from blur time rolled every one of those cells
+  // back to the pre-lookup snapshot — Joe's "cells sometimes reset after
+  // entering info" (2026-08-17, broker portal). Mirrors the liRef guard
+  // LineItemEditor added for the identical bug on the shop side; this
+  // editor never got it.
+  const liRef = useRef(li);
+  useEffect(() => { liRef.current = li; }, [li]);
+
   // Persist sizePrices on the line item when color data is available
   useEffect(() => {
     // Broker typed their own Garment Cost — don't resurrect supplier
@@ -537,14 +548,19 @@ export default function BrokerLineItemEditor({
 
       setBrandOptions(options);
 
+      // Everything below reads liRef.current, NOT the closure `li`: the
+      // lookup we just awaited can take seconds, and any cells the broker
+      // filled in meanwhile live only on the fresh line item.
+      const freshLi = liRef.current;
+
       // Saved supplier → shop preference → first option (the broker
       // editor always auto-applies something; keep that, just make the
       // pick supplier-aware).
       const selected = pickDefaultOption(options, {
-        brand: li.brand,
-        supplier: li.supplier,
+        brand: freshLi.brand,
+        supplier: freshLi.supplier,
         preferred,
-        color: li.garmentColor,
+        color: freshLi.garmentColor,
       }) || options[0];
 
       if (!selected) {
@@ -554,7 +570,7 @@ export default function BrokerLineItemEditor({
       setSsColors(selected.colors || []);
       setSsInventory(selected.inventoryMap || {});
       setSsPriceMap(selected.priceMap || {});
-      onChange(applySelectedMatch(li, selected));
+      onChange(applySelectedMatch(freshLi, selected));
     } catch (e) {
       setBrandOptions([]);
       setSsColors([]);
