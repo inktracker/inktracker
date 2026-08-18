@@ -495,7 +495,16 @@ async function handleCreateSession(params: any) {
   // pay $1 for a $600 quote. The customer-facing total is client_total for
   // broker quotes (falls back to total). Deposit % comes from the customer
   // record (preferred) or the quote, mirroring the QuotePayment page math.
-  const fullCents = Math.round(Number(existing.client_total ?? existing.total ?? 0) * 100);
+  //
+  // client_total is NOT NULL DEFAULT 0 (20260607 migration), so `??` never
+  // falls back: on every NON-broker quote `0 ?? total` computed 0 cents and
+  // this handler returned "Nothing to charge" — Stripe checkout was dead for
+  // standard quotes from 2026-06-22 until this fix (masked in practice by
+  // shops using QuickBooks pay links). Use client_total only when it's a
+  // real stamped value (> 0); a stamped client total is always > 0.
+  const clientTotalNum = Number(existing.client_total);
+  const chargeBase = clientTotalNum > 0 ? clientTotalNum : Number(existing.total ?? 0);
+  const fullCents = Math.round(chargeBase * 100);
   let depositPct = Number(existing.deposit_pct) || 0;
   if (params.isDeposit && existing.customer_id) {
     const { data: cust } = await supabase

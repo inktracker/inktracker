@@ -521,9 +521,14 @@ export default function BrokerLineItemEditor({
     const colorPrices = (ssColors.find(c => c.colorName === li.garmentColor) || {}).sizePrices;
     if (colorPrices && Object.keys(colorPrices).length > 0) {
       sizePricesRef.current = colorPrices;
-      const current = li.sizePrices || {};
+      // Same staleness class as handleStyleBlur: this effect fires right
+      // after a lookup resolves (ssColors identity change), so the render
+      // that scheduled it may predate cells the broker typed during the
+      // lookup. Merge onto the FRESH line item, never the closure one.
+      const freshLi = liRef.current;
+      const current = freshLi.sizePrices || {};
       if (JSON.stringify(current) !== JSON.stringify(colorPrices)) {
-        _rawOnChange({ ...li, sizePrices: colorPrices });
+        _rawOnChange({ ...freshLi, sizePrices: colorPrices });
       }
     }
   }, [ssColors, li.garmentColor]);
@@ -570,6 +575,16 @@ export default function BrokerLineItemEditor({
       setSsColors(selected.colors || []);
       setSsInventory(selected.inventoryMap || {});
       setSsPriceMap(selected.priceMap || {});
+      // Always reset the ref — including to null — so switching to a style
+      // without per-size prices clears the prior supplier's table instead of
+      // the onChange wrapper re-attaching it and pegging line totals to the
+      // old garment's costs. Mirrors LineItemEditor's "always reset" fix.
+      const colors = selected.colors || [];
+      const firstColor =
+        colors.find((c) => c.colorName === freshLi.garmentColor)?.colorName ||
+        colors[0]?.colorName || freshLi.garmentColor;
+      const freshSp = (selected.sizePriceMap && selected.sizePriceMap[firstColor]) || null;
+      sizePricesRef.current = freshSp && Object.keys(freshSp).length > 0 ? freshSp : null;
       onChange(applySelectedMatch(freshLi, selected));
     } catch (e) {
       setBrandOptions([]);
