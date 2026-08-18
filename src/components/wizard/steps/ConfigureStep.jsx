@@ -254,6 +254,9 @@ export default function ConfigureStep({
           no-op render — falls through to false now that styles
           render inline above. Left for the diff to read as a
           pure relocation, easy to delete in a follow-up sweep. */}
+      {/* eslint-disable-next-line no-constant-binary-expression -- the `false &&`
+          is the intentional no-op guard described above; deleting the block is a
+          separate cleanup, not something to do inside a bug-fix diff. */}
       {false && styleOptions.length > 0 && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {styleOptions.map(s => {
           const ep = enrichedPreviews[s.id];
