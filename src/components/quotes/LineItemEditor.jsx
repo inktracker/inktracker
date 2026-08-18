@@ -1292,7 +1292,7 @@ export default function LineItemEditor({
                 <input
                   type="text"
                   value={li.customTitle || ""}
-                  onChange={(e) => update("customTitle", e.target.value)}
+                  onChange={(e) => onChange({ ...li, customTitle: e.target.value })}
                   onBlur={() => setEditingTitle(false)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingTitle(false); }}
                   placeholder="Your title for this garment (leave blank to use the supplier's)"

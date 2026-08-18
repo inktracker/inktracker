@@ -42,7 +42,25 @@ export default [
       "unused-imports": pluginUnusedImports,
     },
     rules: {
+      // MUST be spread INTO this object. Spreading the recommended configs
+      // above only looks like it enables them: a later `rules:` key replaces
+      // the spread `rules` wholesale, so every recommended rule — no-undef,
+      // no-dupe-keys, no-unreachable — was silently OFF. That's how a call to
+      // an undefined `update()` shipped to a shop's quote builder: typing in
+      // the custom-title box threw ReferenceError on every keystroke and the
+      // field looked frozen (reported 2026-08-18). Lint could not have caught
+      // it. Keep these spreads first; explicit overrides below win.
+      ...pluginJs.configs.recommended.rules,
+      ...pluginReact.configs.flat.recommended.rules,
       "no-unused-vars": "off",
+      // Cosmetic only (apostrophes/quotes in JSX copy) and ~200 hits of
+      // existing, correct-rendering prose. Not worth entity-escaping the
+      // whole app; it catches no bug class we care about.
+      "react/no-unescaped-entities": "off",
+      // Empty catch is a deliberate idiom here (localStorage in private
+      // mode, best-effort notification inserts). Keep the rule for every
+      // OTHER empty block.
+      "no-empty": ["error", { allowEmptyCatch: true }],
       "react/jsx-uses-vars": "error",
       "react/jsx-uses-react": "error",
       "unused-imports/no-unused-imports": "error",
