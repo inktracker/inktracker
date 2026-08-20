@@ -24,13 +24,47 @@ const BUCKETS = ["artwork", "tax-certificates"];
 const OUT = "storage-backup";
 const sb = createClient(URL, KEY, { auth: { persistSession: false } });
 
+// Retry transient storage errors before declaring a real failure.
+//
+// 2026-08-20: a single object returned "Bad Gateway" (a 502 from Supabase's
+// edge, gone on the next request) and failed the ENTIRE nightly backup —
+// 134 objects downloaded fine, one blip, whole run red. The fail-loud
+// contract below is correct and stays; what was missing is the distinction
+// between "the object is gone" and "the network hiccupped."
+//
+// Deliberately does NOT retry not-found: a missing object is a real finding,
+// not a blip, and retrying it just delays the alarm.
+const RETRIES = 3;
+const isTransient = (msg = "") =>
+  /bad gateway|gateway timeout|service unavailable|timeout|timed out|socket|network|ECONN|EAI_AGAIN|fetch failed|502|503|504/i.test(msg);
+
+async function withRetry(label, fn) {
+  let lastMsg = "";
+  for (let attempt = 1; attempt <= RETRIES; attempt++) {
+    const { data, error } = await fn();
+    if (!error) return { data, error: null };
+    lastMsg = error.message || String(error);
+    if (!isTransient(lastMsg) || attempt === RETRIES) {
+      return { data: null, error: { message: lastMsg } };
+    }
+    const waitMs = 500 * 2 ** (attempt - 1); // 0.5s, 1s
+    console.warn(`[backup] ${label}: ${lastMsg} — retry ${attempt}/${RETRIES - 1} in ${waitMs}ms`);
+    await new Promise((r) => setTimeout(r, waitMs));
+  }
+  return { data: null, error: { message: lastMsg } };
+}
+
 // Storage list is one level at a time; recurse into "folders" (entries with no
 // id / no metadata are folders).
 async function listAll(bucket, prefix = "") {
   const out = [];
   let offset = 0;
   for (;;) {
-    const { data, error } = await sb.storage.from(bucket).list(prefix, { limit: 1000, offset });
+    // Same retry as download: a transient 502 on a LIST call is worse — it
+    // skips an entire bucket, not one object.
+    const { data, error } = await withRetry(`list ${bucket}/${prefix}`, () =>
+      sb.storage.from(bucket).list(prefix, { limit: 1000, offset })
+    );
     if (error) throw new Error(`list ${bucket}/${prefix}: ${error.message}`);
     if (!data || data.length === 0) break;
     for (const entry of data) {
@@ -65,7 +99,9 @@ for (const bucket of BUCKETS) {
     // so they don't register as a backup failure.
     const base = path.split("/").pop();
     if (base === ".emptyFolderPlaceholder" || base === ".keep") continue;
-    const { data, error } = await sb.storage.from(bucket).download(path);
+    const { data, error } = await withRetry(`download ${bucket}/${path}`, () =>
+      sb.storage.from(bucket).download(path)
+    );
     if (error) {
       console.error(`[backup] download failed ${bucket}/${path}: ${error.message}`);
       failed++;

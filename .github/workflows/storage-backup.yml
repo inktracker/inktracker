@@ -53,6 +53,14 @@ jobs:
           fi
           node scripts/backup-storage.mjs
       - name: Upload backup artifact
+        # always(): keep whatever DID download even when the export step
+        # failed. 2026-08-20 one object 502'd, the step exited 1, this step
+        # was skipped, and 134 successfully-downloaded objects were thrown
+        # away — the night produced no backup at all instead of a nearly
+        # complete one. The job still fails (the export step's exit code
+        # stands), so the alarm and dead-man's-switch are unaffected; we just
+        # stop discarding good data on the way out.
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: storage-backup-${{ github.run_id }}
