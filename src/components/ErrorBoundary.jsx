@@ -32,6 +32,33 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     console.error("ErrorBoundary caught:", error, info.componentStack);
+
+    // Report to Sentry. Until 2026-08-24 this method ONLY console.logged,
+    // which meant the single most user-visible failure we have — the
+    // full-page "Something went wrong" screen — was completely invisible in
+    // monitoring. A shop could hit it every day and we'd only learn by being
+    // told. (Found while chasing a "Reveal is not defined" crash that turned
+    // out to have no matching identifier in any of our 114 shipped chunks;
+    // with no Sentry event there was no stack to attribute it from.)
+    //
+    // Fire-and-forget + lazy import, matching AuthContext: reporting a crash
+    // must never itself throw inside an error handler, and pulling @sentry
+    // must not block the fallback UI from rendering.
+    //
+    // componentStack goes in `extra`, not the message — it's what turns
+    // "TypeError somewhere" into "TypeError inside LineItemEditor".
+    import("@/lib/sentry")
+      .then((m) => m.captureException?.(error, {
+        componentStack: info?.componentStack,
+        boundary: this.props.mode === "inline" ? "inline" : "page",
+        // Whether a SHOP'S CUSTOMER saw this, not just staff — the same
+        // distinction the UI copy makes below, and the one that decides how
+        // urgent a crash is.
+        customerFacing: this.props.customerFacing ??
+          (typeof window !== "undefined" && isCustomerFacingPath(window.location?.pathname)),
+        path: typeof window !== "undefined" ? window.location?.pathname : null,
+      }))
+      .catch(() => {});
   }
 
   render() {
