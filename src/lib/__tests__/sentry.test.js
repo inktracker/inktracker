@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scrubSentryEvent } from "@/lib/sentry";
+import { scrubSentryEvent, EXTENSION_DENY_URLS } from "@/lib/sentry";
 
 describe("scrubSentryEvent — Supabase error normalization", () => {
   it("wraps a bare Supabase error object into a tagged message + SupabaseError type", () => {
@@ -124,5 +124,37 @@ describe("stale-module-graph grouping (deploy boundary)", () => {
     }, {});
     expect(out.fingerprint).toBeUndefined();
     expect(out.tags?.deploy_boundary).toBeUndefined();
+  });
+});
+
+describe("EXTENSION_DENY_URLS — browser-extension noise", () => {
+  const denied = (url) => EXTENSION_DENY_URLS.some((re) => re.test(url));
+
+  // 2026-08-21: PayPal Honey fired two "high priority" alerts in one second.
+  // A Safari extension installed as a macOS app reports frames under
+  // /Applications/<Name>.app/, which matched none of the scheme patterns.
+  it("drops PayPal Honey's macOS app-bundle frames", () => {
+    expect(denied("/Applications/PayPal%20Honey.app/Contents/Resources/inject.js")).toBe(true);
+    expect(denied("file:///Applications/PayPal Honey.app/Contents/injected.js")).toBe(true);
+  });
+
+  it("drops the extension schemes across browsers", () => {
+    expect(denied("safari-web-extension://ABC-123/content.js")).toBe(true);
+    expect(denied("chrome-extension://kjfghlkjdefg/inject.js")).toBe(true);
+    expect(denied("moz-extension://11112222/background.js")).toBe(true);
+  });
+
+  // The whole point of filtering by ORIGIN rather than by message: our own
+  // errors must keep alerting, including the generic promise-rejection
+  // bucket that the Honey noise landed in.
+  it("keeps InkTracker's own bundle and edge-function frames", () => {
+    expect(denied("https://inktracker.app/assets/index-a1b2c3.js")).toBe(false);
+    expect(denied("https://inktracker.app/assets/QuotePayment-9f8e.js")).toBe(false);
+    expect(denied("http://localhost:5173/src/main.jsx")).toBe(false);
+    expect(denied("https://skmltfbibaqcjddmeqvi.supabase.co/functions/v1/qbSync")).toBe(false);
+  });
+
+  it("does not deny a shop's own site path that merely mentions applications", () => {
+    expect(denied("https://inktracker.app/applications/index.js")).toBe(false);
   });
 });
