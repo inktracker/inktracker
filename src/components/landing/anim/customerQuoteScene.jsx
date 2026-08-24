@@ -43,7 +43,7 @@ function ceaseInOut(t) { return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2; }
 
 function CQLogo({ size = 36 }) {
   return (
-    <img src="assets/inktracker-logo.png" alt=""
+    <img src="/landing/demo-assets/inktracker-logo.png" alt=""
       style={{ width: size, height: size, display: 'block', objectFit: 'contain', flexShrink: 0 }} />
   );
 }

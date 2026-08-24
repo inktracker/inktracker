@@ -41,7 +41,7 @@ function iveaseOut(t) { return 1 - Math.pow(1 - t, 3); }
 function iveaseIn(t) { return t * t; }
 
 function IVLogo({ size = 32 }) {
-  return <img src="assets/inktracker-logo.png" alt="" style={{ width: size, height: size, display: 'block', objectFit: 'contain', flexShrink: 0 }} />;
+  return <img src="/landing/demo-assets/inktracker-logo.png" alt="" style={{ width: size, height: size, display: 'block', objectFit: 'contain', flexShrink: 0 }} />;
 }
 
 // ─── Demo invoice data (reuses customer-demo names for continuity) ─────────

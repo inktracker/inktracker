@@ -111,7 +111,7 @@ function PFlameMark({ size = 32, animate = false, time = 0, ripple = false }) {
         }} />
       )}
       <img
-        src="assets/inktracker-logo.png"
+        src="/landing/demo-assets/inktracker-logo.png"
         alt="InkTracker"
         style={{
           width: '100%', height: '100%', objectFit: 'contain',

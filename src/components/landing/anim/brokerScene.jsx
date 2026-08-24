@@ -42,7 +42,7 @@ function brclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 function breaseOut(t) { return 1 - Math.pow(1 - t, 3); }
 
 function BRLogo({ size = 32 }) {
-  return <img src="assets/inktracker-logo.png" alt="" style={{ width: size, height: size, display: 'block', objectFit: 'contain', flexShrink: 0 }} />;
+  return <img src="/landing/demo-assets/inktracker-logo.png" alt="" style={{ width: size, height: size, display: 'block', objectFit: 'contain', flexShrink: 0 }} />;
 }
 
 // ─── Demo: shops the broker reps + their recent activity ───────────────────

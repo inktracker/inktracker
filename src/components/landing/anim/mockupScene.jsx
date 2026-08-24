@@ -41,7 +41,7 @@ function mclamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 // ─── Logo ───────────────────────────────────────────────────────────────────
 function MLogo({ size = 32 }) {
   return (
-    <img src="assets/inktracker-logo.png" alt="InkTracker"
+    <img src="/landing/demo-assets/inktracker-logo.png" alt="InkTracker"
       style={{ width: size, height: size, display: 'block', objectFit: 'contain', flexShrink: 0 }} />
   );
 }
@@ -272,11 +272,11 @@ function TShirt({ width = 760, rawOpacity = 0, cleanOpacity = 0, cleaned }) {
   const h = w * 1.05;
   return (
     <div style={{ position: 'relative', width: w, height: h, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <img src="assets/shirt-blank.png" alt=""
+      <img src="/landing/demo-assets/shirt-blank.png" alt=""
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block', opacity: 1 }} />
-      <img src="assets/shirt-real.png" alt=""
+      <img src="/landing/demo-assets/shirt-real.png" alt=""
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block', opacity: rawOpacity, transition: 'opacity 80ms linear' }} />
-      <img src="assets/shirt-real-clean.png" alt=""
+      <img src="/landing/demo-assets/shirt-real-clean.png" alt=""
         style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block', opacity: cleanOpacity, transition: 'opacity 80ms linear' }} />
     </div>
   );

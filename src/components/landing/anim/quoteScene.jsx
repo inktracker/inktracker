@@ -78,7 +78,7 @@ function SceneHook() {
 // ─── Logo ───────────────────────────────────────────────────────────────────
 function Logo({ size = 32 }) {
   return (
-    <img src="assets/inktracker-logo.png" alt="InkTracker"
+    <img src="/landing/demo-assets/inktracker-logo.png" alt="InkTracker"
       style={{ width: size, height: size, display: 'block', objectFit: 'contain', flexShrink: 0 }} />
   );
 }
