@@ -16,6 +16,25 @@ const ENV = import.meta.env.MODE || "development";
 
 let initialized = false;
 
+/**
+ * Stack-frame URLs that mean "this error came from a browser extension, not
+ * from InkTracker." Passed to Sentry as `denyUrls`. Exported so the patterns
+ * can be unit-tested — an inline array in Sentry.init can silently stop
+ * matching and nobody would find out except through alert noise.
+ *
+ * @type {RegExp[]}
+ */
+export const EXTENSION_DENY_URLS = [
+  /^(safari-web-)?extension:\/\//i,
+  /^safari-extension:\/\//i,
+  /^chrome-extension:\/\//i,
+  /^moz-extension:\/\//i,
+  /^chrome:\/\//i,
+  // macOS app-bundle frames (Safari extensions shipped inside an .app).
+  /^file:\/\/\/Applications\//i,
+  /\/Applications\/[^/]+\.app\//i,
+];
+
 export function initSentry() {
   if (initialized) return;
   if (!DSN) {
@@ -50,7 +69,10 @@ export function initSentry() {
       // User navigated away mid-fetch — not our bug.
       "AbortError",
       "Non-Error promise rejection captured",
-      // Common browser extension noise.
+      // Common browser extension noise. NOTE: ignoreErrors matches the
+      // error MESSAGE/type, not the stack frame URL — these only catch the
+      // cases where the scheme happens to appear in the message text. The
+      // real filtering by origin is denyUrls below; keep both.
       /chrome-extension:/,
       /moz-extension:/,
       // Stale-chunk errors after a fresh deploy. UpdateAvailableBanner
@@ -68,6 +90,24 @@ export function initSentry() {
       // page-hide. Their code, not ours — fires on every link-in-bio visit.
       /window\.webkit\.messageHandlers/,
     ],
+
+    // Drop events whose code came from a browser extension rather than from
+    // us. denyUrls matches the STACK FRAME URL, which is the only reliable
+    // signal here — an extension's unhandled rejection carries whatever
+    // message the extension chose, so no ignoreErrors pattern can catch it.
+    //
+    // 2026-08-21: the PayPal Honey Safari extension fired two "high priority"
+    // alerts in the same second — an UnavailableError plus a bare "Object
+    // captured as promise rejection". Neither touched InkTracker code. Safari
+    // web extensions installed as macOS apps report frames under
+    // /Applications/<Name>.app/..., which no scheme pattern matches.
+    //
+    // Deliberately NOT adding "Object captured as promise rejection" to
+    // ignoreErrors: our own `if (error) throw error` sites reject with plain
+    // Supabase objects, and while scrubSentryEvent renames those to
+    // "SupabaseError", any object it can't recognize would be silently lost.
+    // Filtering by origin drops extension noise without blinding us to ours.
+    denyUrls: EXTENSION_DENY_URLS,
 
     beforeSend: scrubSentryEvent,
   });
