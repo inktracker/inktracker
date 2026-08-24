@@ -62,3 +62,22 @@ export const FAQ_ITEMS = Object.freeze([
   { q: "How do I know InkTracker won't disappear in six months?", a: "Biota Mfg has been printing in the Reno/Tahoe area for ten years and we run the shop on InkTracker daily. If it stops being maintained, our own production stops. The financial structure also funds long-horizon land-conservation work — both keep this project on a multi-year commitment." },
   { q: "How does the conservation contribution actually work?", a: "A piece of every subscription is allocated to a long-term land-conservation fund operated by Biota Mfg. The full five-year plan — how funds are set aside, deployed, and reported — lives at biotamfg.com/pages/wildways." },
 ]);
+
+// Copy for the two scroll-linked set pieces (SqueegeePull, StitchText). Lives
+// here for the same reason the rest does: App.jsx must not carry its own copy
+// of landing text, or the static snapshot and the React page drift apart.
+export const SQUEEGEE = Object.freeze({
+  eyebrow: "One pull",
+  label: "Quote to paid",
+  lines: Object.freeze([
+    "Garment costs pulled live from S&S Activewear and AS Colour as you build.",
+    "Per-imprint setups, shortfalls and broker margins handled, not bolted on.",
+    "QuickBooks sync both directions — invoices, payments, deposits.",
+  ]),
+});
+
+export const STITCH = Object.freeze({
+  eyebrow: "Stitched in",
+  headline: "EMBROIDERY",
+  sub: "Stitch-count tiers, digitizing fees and cap pricing — quoted the way an embroidery shop actually quotes them, not forced through a screen-print calculator.",
+});

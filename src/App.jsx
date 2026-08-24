@@ -4,6 +4,8 @@ import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import ScrollDemo from "@/components/landing/ScrollDemo";
 import Reveal, { CountUp } from "@/components/landing/Reveal";
+import SqueegeePull from "@/components/landing/SqueegeePull";
+import StitchText from "@/components/landing/StitchText";
 import { Toaster } from "@/components/ui/toaster";
 // Static legal/marketing/setup pages — lazy so they don't sit in the eager
 // app shell (they were ~part of the "270 KB unused JS on Quotes" Lighthouse
@@ -36,7 +38,7 @@ import {
   INITIAL_STATE as TYPEWRITER_INITIAL_STATE,
   advanceTypewriter,
 } from "@/lib/landing/typewriter";
-import { FAQ_ITEMS, VALUE_PROPS, PRICING_INCLUDES } from "@/lib/landing/landingCopy";
+import { FAQ_ITEMS, VALUE_PROPS, PRICING_INCLUDES, SQUEEGEE, STITCH } from "@/lib/landing/landingCopy";
 import {
   interpretActivationResponse,
   activationRetryDelayMs,
@@ -602,8 +604,15 @@ function PublicLandingPage() {
           </div>
         </section>
 
-        {/* TOUR — featured modules grid. Big clean tiles, hairline borders,
-            hover lifts to a soft shadow. Tile opens existing iframe modal. */}
+        {/* Scroll-linked set piece: the reader's scroll pulls the squeegee,
+            and the copy is printed onto the garment behind the blade. */}
+        <SqueegeePull
+          eyebrow={SQUEEGEE.eyebrow}
+          headline={<>Quote to<br />paid.</>}
+          label={SQUEEGEE.label}
+          lines={SQUEEGEE.lines}
+        />
+
         {/* ── FEATURE TOUR ────────────────────────────────────────────────
             Full-bleed scroll beats: one module per beat, copy alternating
             left/right, the demo playing beneath it as you arrive.
@@ -777,6 +786,13 @@ function PublicLandingPage() {
             </div>
           </div>
         </section>
+
+        {/* Second set piece: the needle embroiders the headline on scroll. */}
+        <StitchText
+          eyebrow={STITCH.eyebrow}
+          headline={STITCH.headline}
+          sub={STITCH.sub}
+        />
 
         {/* WILDWAYS — two-column "conservation mission" block on a dark
             forest backdrop. Left column: eyebrow chip, headline, body,
