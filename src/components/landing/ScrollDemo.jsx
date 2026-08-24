@@ -28,6 +28,8 @@ export default function ScrollDemo({
   load,
   component: componentName = "default",
   duration,
+  clipStart = 0,
+  clipEnd = null,
   width = 1920,
   height = 1080,
   background = "#0B0B0E",
@@ -53,20 +55,40 @@ export default function ScrollDemo({
     if (!el || mod) return undefined;
     let cancelled = false;
 
+    const arm = () => {
+      Promise.all([import("./anim/engine.jsx"), load()]).then(([engine, scene]) => {
+        if (cancelled) return;
+        setMod({ Stage: engine.Stage, Scene: scene[componentName] || scene.default });
+      });
+    };
+
     const io = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
         io.disconnect();
-        Promise.all([import("./anim/engine.jsx"), load()]).then(([engine, scene]) => {
-          if (cancelled) return;
-          setMod({ Stage: engine.Stage, Scene: scene[componentName] || scene.default });
-        });
+        arm();
       },
       { rootMargin: PRELOAD_MARGIN },
     );
     io.observe(el);
+
+    // Safety net. The entire feature is observer-gated, so anything that stops
+    // the observer firing — no support, a stalled compositor, a background tab
+    // that never composites — would otherwise leave a permanently dead black
+    // box on the page. Poll the geometry directly as a backstop.
+    const poll = setInterval(() => {
+      const r = el.getBoundingClientRect();
+      const reach = window.innerHeight * 3;
+      if (r.top < reach && r.bottom > -reach) {
+        clearInterval(poll);
+        io.disconnect();
+        arm();
+      }
+    }, 400);
+
     return () => {
       cancelled = true;
+      clearInterval(poll);
       io.disconnect();
     };
   }, [load, componentName, mod]);
@@ -76,26 +98,42 @@ export default function ScrollDemo({
     const el = slotRef.current;
     if (!el || !mod) return undefined;
 
-    // Reduced motion: never animate. Sit on the final composed frame, which
-    // is the most informative single image of the demo anyway.
+    // Reduced motion used to mean "never animate", which rendered the whole
+    // feature invisible — indistinguishable from the thing being broken. It
+    // now still presents the demo, just without auto-playing it, behind an
+    // unmissable control rather than a 36px corner button.
     if (reduced) {
-      hasPlayed.current = true;
       setEnded(true);
       return undefined;
     }
 
+    const start = () => {
+      if (hasPlayed.current) return;
+      hasPlayed.current = true;
+      setPlaying(true);
+    };
+
     const io = new IntersectionObserver(
       (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
-        if (hasPlayed.current) return;
-        hasPlayed.current = true;
-        setPlaying(true);
+        start();
         io.disconnect();
       },
       { rootMargin: PLAY_MARGIN },
     );
     io.observe(el);
-    return () => io.disconnect();
+
+    const poll = setInterval(() => {
+      if (hasPlayed.current) { clearInterval(poll); return; }
+      const r = el.getBoundingClientRect();
+      if (r.top < window.innerHeight * 0.88 && r.bottom > 0) {
+        clearInterval(poll);
+        io.disconnect();
+        start();
+      }
+    }, 400);
+
+    return () => { clearInterval(poll); io.disconnect(); };
   }, [mod, reduced]);
 
   const handleEnded = () => {
@@ -104,13 +142,16 @@ export default function ScrollDemo({
   };
 
   const replay = () => {
+    hasPlayed.current = true;
     setEnded(false);
     setReplayNonce((n) => n + 1);
     setPlaying(true);
   };
 
-  // Reduced motion pins the playhead at the end; otherwise the Stage owns it.
-  const stagePlaying = reduced ? false : playing;
+  const stagePlaying = playing;
+  // Under reduced motion nothing has auto-played, so the affordance is a real
+  // Play control, not a corner replay glyph.
+  const awaitingManualStart = reduced && !hasPlayed.current;
 
   return (
     <div className={`relative w-full overflow-hidden rounded-2xl bg-black ${className}`} style={{ aspectRatio: `${width} / ${height}` }}>
@@ -120,13 +161,15 @@ export default function ScrollDemo({
             width={width}
             height={height}
             duration={duration}
+            clipStart={clipStart}
+            clipEnd={clipEnd}
             background={background}
             autoplay={false}
             loop={false}
             persist={false}
             keyboard={false}
             playing={stagePlaying}
-            seekNonce={reduced ? 0 : replayNonce}
+            seekNonce={replayNonce}
             onEnded={handleEnded}
           >
             <mod.Scene />
@@ -141,17 +184,34 @@ export default function ScrollDemo({
       {/* Apple ships a manual control on every animation ("Play iPad features
           animation"). Same idea: once it has settled, let the reader replay. */}
       {ended ? (
-        <button
-          type="button"
-          onClick={replay}
-          aria-label={`Replay ${label} animation`}
-          className="absolute bottom-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-        >
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M3 12a9 9 0 1 0 3-6.7" />
-            <path d="M3 4v5h5" />
-          </svg>
-        </button>
+        awaitingManualStart ? (
+          // Reduced motion: an unmissable control, so the demo reads as
+          // something you can play rather than something that is broken.
+          <button
+            type="button"
+            onClick={replay}
+            className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/45 text-white backdrop-blur-[2px] transition hover:bg-black/55 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+          >
+            <span className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-white/80">
+              <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-[0.22em]">Play {label}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={replay}
+            aria-label={`Replay ${label} animation`}
+            className="absolute bottom-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white backdrop-blur transition hover:bg-black/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 12a9 9 0 1 0 3-6.7" />
+              <path d="M3 4v5h5" />
+            </svg>
+          </button>
+        )
       ) : null}
     </div>
   );

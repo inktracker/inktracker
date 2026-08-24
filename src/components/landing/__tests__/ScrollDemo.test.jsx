@@ -133,12 +133,20 @@ describe("ScrollDemo", () => {
     await act(async () => { fire(PRELOAD); });
     await waitFor(() => expect(screen.getByTestId("stage")).toBeTruthy());
 
-    // No play observer is ever registered — there is nothing to animate.
+    // Nothing auto-plays: no play observer is registered at all.
     expect(observers.has(PLAY)).toBe(false);
     expect(stageProps.at(-1).playing).toBe(false);
 
-    // It presents as finished, so the reader still gets the replay affordance
-    // if they choose to opt in to the motion.
-    expect(screen.getByLabelText(/replay/i)).toBeTruthy();
+    // But the demo must not look broken. Reduced motion gets an explicit,
+    // unmissable Play control rather than the corner replay glyph — the old
+    // behaviour (silently hold the end frame) was indistinguishable from the
+    // feature failing to load.
+    const play = screen.getByRole("button", { name: /play writing a quote/i });
+    expect(play).toBeTruthy();
+    expect(screen.queryByLabelText(/replay/i)).toBeNull();
+
+    // And opting in actually animates.
+    await act(async () => { play.click(); });
+    expect(stageProps.at(-1).playing).toBe(true);
   });
 });

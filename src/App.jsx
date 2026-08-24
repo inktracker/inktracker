@@ -3,6 +3,7 @@ import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
 import ScrollDemo from "@/components/landing/ScrollDemo";
+import Reveal, { CountUp } from "@/components/landing/Reveal";
 import { Toaster } from "@/components/ui/toaster";
 // Static legal/marketing/setup pages — lazy so they don't sit in the eager
 // app shell (they were ~part of the "270 KB unused JS on Quotes" Lighthouse
@@ -113,8 +114,16 @@ const FEATURE_CARDS = [
     // 23.5-second animated demo: a quote being built from scratch through
     // customer select, garment style autofill, size breakdown, print
     // location, live pricing count-up, and save → new row in the list.
-    // Built from the design handoff at public/landing/quote-demo/.
-    media: { type: "iframe", src: "/landing/quote-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/quoteScene.jsx"),
+      component: "QuoteDemo",
+      duration: 26.5,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 22.5,
+    },
   },
   {
     title: "Production Tracking",
@@ -123,14 +132,31 @@ const FEATURE_CARDS = [
     // 25-second animated demo of the production kanban — cards moving
     // from art-approval through pre-press, printing, finishing, QC,
     // ready-to-ship, and completed. Built from the design handoff at
-    // public/landing/production-demo/.
-    media: { type: "iframe", src: "/landing/production-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/productionScene.jsx"),
+      component: "ProductionDemo",
+      duration: 25,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 21.0,
+    },
   },
   {
     title: "Invoicing & Payments",
     desc: "Generate invoices, sync to QuickBooks, and send payment links directly to customers.",
     color: "from-emerald-500/20 to-emerald-500/5",
-    media: { type: "iframe", src: "/landing/invoicing-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/invoicingScene.jsx"),
+      component: "InvoicingDemo",
+      duration: 22.0,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 20.0,
+    },
   },
   {
     title: "Customer Management",
@@ -138,14 +164,31 @@ const FEATURE_CARDS = [
     color: "from-blue-500/20 to-blue-500/5",
     // 22-second animated demo — customer list, detail panel with order
     // history, tax-exempt flag. Built from the design handoff at
-    // public/landing/customer-demo/.
-    media: { type: "iframe", src: "/landing/customer-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/customersScene.jsx"),
+      component: "CustomersDemo",
+      duration: 22,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 20.0,
+    },
   },
   {
     title: "Inventory & Restock",
     desc: "Order blanks from S&S Activewear and AS Colour with live pricing.",
     color: "from-amber-500/20 to-amber-500/5",
-    media: { type: "iframe", src: "/landing/inventory-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/inventoryScene.jsx"),
+      component: "InventoryDemo",
+      duration: 22.0,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 20.0,
+    },
   },
   {
     title: "Quote Wizard",
@@ -153,112 +196,64 @@ const FEATURE_CARDS = [
     color: "from-rose-500/20 to-rose-500/5",
     // 25-second animated demo of the customer-facing wizard — color
     // picker, qty/imprint selection, submitting the request. Built
-    // from the design handoff at public/landing/wizard-demo/.
-    media: { type: "iframe", src: "/landing/wizard-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/customerQuoteScene.jsx"),
+      component: "CustomerQuoteDemo",
+      duration: 25,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 23.0,
+    },
   },
   {
     title: "Broker Integration",
     desc: "Resellers submit their clients' orders through their own portal — automatically priced with the markup share you set per broker.",
     color: "from-teal-500/20 to-teal-500/5",
-    media: { type: "iframe", src: "/landing/broker-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/brokerScene.jsx"),
+      component: "BrokerDemo",
+      duration: 22.0,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 20.0,
+    },
   },
   {
     title: "Shop Floor",
     desc: "Mobile-ready view for employees. Job tickets, checklists, and real-time production updates.",
     color: "from-orange-500/20 to-orange-500/5",
-    media: { type: "iframe", src: "/landing/shopfloor-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/shopfloorScene.jsx"),
+      component: "ShopFloorDemo",
+      duration: 22.0,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 20.0,
+    },
   },
   {
     title: "Artwork Proofs",
     desc: "Place artwork on garment templates. Background removal, one-color conversion, and PDF proofs.",
     color: "from-teal-500/20 to-teal-500/5",
-    media: { type: "iframe", src: "/landing/artwork-proofs-demo/index.html" },
+    demo: {
+      load: () => import("@/components/landing/anim/mockupScene.jsx"),
+      component: "MockupDemo",
+      duration: 28.0,
+      // Every one of these films opens on a 3s branded title card and
+      // closes on a lockup. Right for a modal you chose to open; wrong
+      // inline, where the first frame has to already be the product.
+      clipStart: 3.0,
+      clipEnd: 24.5,
+    },
   },
 ];
 
-// Modal for previewing a feature. Shows feature.media (image or video) or a
-// placeholder if media isn't supplied yet. Closes on backdrop click, X
-// button, or Escape. Locks body scroll while open.
-function FeaturePreviewModal({ feature, onClose }) {
-  useEffect(() => {
-    if (!feature) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [feature, onClose]);
-
-  if (!feature) return null;
-  const media = feature.media;
-
-  return (
-    <ModalBackdrop onClose={onClose} z="z-50" bg="bg-black/80" className="animate-in fade-in">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={`${feature.title} preview`}
-        className="bg-black border border-white/10 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <div>
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-0.5">Preview</div>
-            <h3 className="text-lg font-bold text-white">{feature.title}</h3>
-          </div>
-          <button
-            onClick={onClose}
-            aria-label="Close preview"
-            className="text-slate-500 hover:text-white text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/5 transition"
-          >
-            ×
-          </button>
-        </div>
-
-        <div className="bg-black flex items-center justify-center" style={{ aspectRatio: "16 / 9" }}>
-          {media?.type === "image" && (
-            <img src={media.src} alt={media.alt || `${feature.title} screenshot`} className="w-full h-full object-cover" />
-          )}
-          {media?.type === "video" && (
-            <video
-              src={media.src}
-              autoPlay
-              loop
-              muted
-              playsInline
-              className="w-full h-full object-cover"
-              aria-label={`${feature.title} demo`}
-            />
-          )}
-          {media?.type === "iframe" && (
-            <iframe
-              src={media.src}
-              title={`${feature.title} interactive demo`}
-              className="w-full h-full border-0"
-              loading="lazy"
-              // sandbox keeps the embedded React demo from accessing the
-              // parent page; allow-scripts + allow-same-origin are needed
-              // for the demo's localStorage playhead + Babel JSX compile.
-              sandbox="allow-scripts allow-same-origin"
-            />
-          )}
-          {!media && (
-            <div className="text-slate-500 text-sm font-medium">
-              Preview — to be supplied
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-4 border-t border-white/10">
-          <p className="text-sm text-slate-300 leading-relaxed">{feature.desc}</p>
-        </div>
-      </div>
-    </ModalBackdrop>
-  );
-}
 
 // Hero headline animated as a typewriter — line 1 in white, brief pause,
 // line 2 in indigo, then a slow blinking cursor parked at the end. Single
@@ -339,7 +334,6 @@ function TypewriterHeadline({ onRevealReady }) {
 function PublicLandingPage() {
   const [showLogin, setShowLogin] = useState(false);
   const [loginMode, setLoginMode] = useState("signin");
-  const [previewFeature, setPreviewFeature] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // `source` labels which CTA opened signup so the funnel shows which buttons
@@ -610,159 +604,69 @@ function PublicLandingPage() {
 
         {/* TOUR — featured modules grid. Big clean tiles, hairline borders,
             hover lifts to a soft shadow. Tile opens existing iframe modal. */}
-        <section id="tour" className="bg-[#fafaf8] py-24 md:py-32 px-6 border-y" style={{ borderColor: HAIRLINE }}>
-          <div className="max-w-6xl mx-auto">
-            <div className="text-center mb-16 md:mb-20">
+        {/* ── FEATURE TOUR ────────────────────────────────────────────────
+            Full-bleed scroll beats: one module per beat, copy alternating
+            left/right, the demo playing beneath it as you arrive.
+
+            This replaced a 3-column grid of iframe thumbnails. Each of those
+            nine iframes pulled React's development build plus a runtime JSX
+            compiler from a public CDN and compiled its scene in the browser,
+            eagerly, on page load — roughly 27MB of JavaScript and nine
+            in-browser compilers competing for the main thread before the
+            reader had scrolled anywhere near them. That contention is why the
+            page felt inert. Now each demo is a code-split chunk fetched on
+            approach (engine 3kB gz + scene ~10kB gz) and nothing runs until
+            you are close to it. */}
+        <section id="tour" className="bg-[#fafaf8] py-24 md:py-32 border-y overflow-hidden" style={{ borderColor: HAIRLINE }}>
+          <div className="max-w-6xl mx-auto px-6">
+            <Reveal className="text-center mb-20 md:mb-28">
               <p className={eyebrow} style={{ color: MUTED }}>Inside the app</p>
               <h2 className="uppercase tracking-[0.02em] mt-4 leading-[0.95]" style={{ fontFamily: H_FONT, fontSize: 'clamp(2rem, 4.5vw, 3.75rem)', color: INK }}>
                 Featured modules
               </h2>
               <p className="mt-6 text-base md:text-lg max-w-xl mx-auto leading-[1.65]" style={{ color: MUTED }}>
-                Each module is a real piece of the shop. Tap any tile to watch it move.
+                Each module is a real piece of the shop. Scroll — they run themselves.
               </p>
-            </div>
+            </Reveal>
+          </div>
 
-            {/* Lead showcase — the quote demo playing inline, Apple-style:
-                paused on its first frame until you scroll to it, plays once,
-                then holds the final frame. No click required. The grid below
-                stays as-is for the remaining modules. */}
-            <div className="mb-16 md:mb-24">
-              <ScrollDemo
-                load={() => import("@/components/landing/anim/quoteScene.jsx")}
-                component="QuoteDemo"
-                duration={26.5}
-                label="Writing a quote"
-                className="shadow-2xl"
-              />
-              <p className="mt-5 text-center text-sm leading-[1.65]" style={{ color: MUTED }}>
-                A quote built from scratch — customer, garment autofill, size breakdown, live pricing.
-              </p>
-            </div>
-
-            {/* MOBILE — timeline accordion. Each module shows its number
-                in a circle (Y1/Y2-style from Biota's Wildways page) with
-                the title beneath. Tap to expand: description + PREVIEW
-                button that opens the same FeaturePreviewModal as the
-                desktop grid. Connecting vertical line drawn behind via a
-                centered pseudo-stripe. */}
-            <div className="md:hidden relative">
-              {/* Vertical connecting rail */}
-              <span
-                aria-hidden="true"
-                className="absolute left-1/2 -translate-x-1/2 top-6 bottom-6 w-px"
-                style={{ background: HAIRLINE }}
-              />
-              <div className="relative flex flex-col items-stretch gap-1">
-                {FEATURE_CARDS.map((f, i) => (
-                  <details key={f.title} className="group">
-                    <summary className="list-none cursor-pointer flex flex-col items-center py-4 outline-none focus-visible:[&_div]:ring-2 focus-visible:[&_div]:ring-offset-2">
-                      <div
-                        className="relative w-14 h-14 rounded-full flex items-center justify-center transition-colors group-open:bg-[--open-bg]"
-                        style={{
-                          background: '#fff',
-                          border: `2px solid ${FOREST}`,
-                          '--open-bg': FOREST,
-                        }}
-                      >
-                        <span
-                          className="text-lg leading-none transition-colors group-open:text-white"
-                          style={{ fontFamily: H_FONT, color: FOREST, letterSpacing: '0.04em' }}
-                        >
-                          {String(i + 1).padStart(2, '0')}
-                        </span>
-                      </div>
-                      <span
-                        className="mt-3 text-[11px] font-bold tracking-[0.2em] uppercase text-center"
-                        style={{ color: INK, fontFamily: B_FONT }}
-                      >
-                        {f.title}
-                      </span>
-                    </summary>
-                    <div
-                      className="mx-3 mt-3 mb-6 p-5 border-l-4 bg-white"
-                      style={{ borderColor: FOREST, borderTop: `1px solid ${HAIRLINE}`, borderRight: `1px solid ${HAIRLINE}`, borderBottom: `1px solid ${HAIRLINE}` }}
-                    >
-                      <p
-                        className="text-[10px] font-bold tracking-[0.22em] uppercase mb-3"
-                        style={{ color: FOREST, fontFamily: B_FONT }}
-                      >
-                        Module {String(i + 1).padStart(2, '0')}
+          <div className="flex flex-col gap-24 md:gap-40">
+            {FEATURE_CARDS.map((f, i) => {
+              const flipped = i % 2 === 1;
+              return (
+                <div key={f.title} className="max-w-6xl mx-auto w-full px-6">
+                  <div className={`max-w-2xl mb-8 md:mb-10 ${flipped ? "md:ml-auto md:text-right" : ""}`}>
+                    <Reveal>
+                      <p className="text-[10px] font-bold tracking-[0.22em] uppercase" style={{ color: FOREST, fontFamily: B_FONT }}>
+                        Module {String(i + 1).padStart(2, "0")}
                       </p>
-                      <h3
-                        className="uppercase tracking-[0.03em] text-lg leading-tight mb-3"
-                        style={{ fontFamily: H_FONT, color: INK }}
-                      >
+                    </Reveal>
+                    <Reveal delay={80}>
+                      <h3 className="uppercase tracking-[0.03em] mt-3 leading-[1.02]" style={{ fontFamily: H_FONT, color: INK, fontSize: "clamp(1.6rem, 3.4vw, 2.6rem)" }}>
                         {f.title}
                       </h3>
-                      <p className="text-sm leading-[1.65] mb-5" style={{ color: MUTED }}>
+                    </Reveal>
+                    <Reveal delay={160}>
+                      <p className="mt-4 text-base md:text-lg leading-[1.65]" style={{ color: MUTED }}>
                         {f.desc}
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => setPreviewFeature(f)}
-                        className="inline-flex items-center gap-2 text-[11px] font-bold tracking-[0.22em] uppercase px-5 py-3 transition"
-                        style={{ background: FOREST, color: '#fff' }}
-                      >
-                        Preview <span aria-hidden="true">▸</span>
-                      </button>
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </div>
-
-            {/* DESKTOP — grid of paused-iframe thumbnails. Hidden on
-                mobile so the touch-target experience is the accordion above. */}
-            <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-x-7 gap-y-12">
-              {FEATURE_CARDS.map((f, i) => (
-                <button
-                  key={f.title}
-                  type="button"
-                  onClick={() => setPreviewFeature(f)}
-                  className="text-left group focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2"
-                  style={{ '--tw-ring-color': FOREST, '--tw-ring-offset-color': '#fafaf8' }}
-                  aria-label={`Preview ${f.title}`}
-                >
-                  <div
-                    className="relative overflow-hidden border bg-black transition-shadow group-hover:shadow-[0_18px_50px_-12px_rgba(0,0,0,0.18)]"
-                    style={{ borderColor: HAIRLINE, aspectRatio: '16 / 9' }}
-                  >
-                    {f.media?.type === 'iframe' && f.media?.src ? (
-                      <iframe
-                        src={`${f.media.src}?paused=1&t=2.5`}
-                        title=""
-                        aria-hidden="true"
-                        tabIndex={-1}
-                        loading="lazy"
-                        sandbox="allow-scripts allow-same-origin"
-                        className="absolute inset-0 w-full h-full border-0 pointer-events-none"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center" style={{ background: '#f1f0ec' }}>
-                        <span
-                          className="leading-none"
-                          style={{ fontFamily: H_FONT, fontSize: 'clamp(4.5rem, 9vw, 7rem)', color: FOREST, letterSpacing: '0.02em' }}
-                        >
-                          {String(i + 1).padStart(2, '0')}
-                        </span>
-                      </div>
-                    )}
-                    <span
-                      className="absolute bottom-3 right-3 text-[10px] font-bold tracking-[0.22em] uppercase px-2.5 py-1.5"
-                      style={{ background: INK, color: '#fff' }}
-                    >
-                      Play ▸
-                    </span>
+                    </Reveal>
                   </div>
-                  <h3 className="mt-5 uppercase tracking-[0.03em] text-lg md:text-xl leading-tight" style={{ fontFamily: H_FONT, color: INK }}>
-                    {f.title}
-                  </h3>
-                  <p className="mt-2 text-[14px] leading-[1.65]" style={{ color: MUTED }}>
-                    {f.desc}
-                  </p>
-                </button>
-              ))}
-            </div>
+
+                  <Reveal delay={120} distance={32}>
+                    <ScrollDemo
+                      load={f.demo.load}
+                      component={f.demo.component}
+                      duration={f.demo.duration}
+                      clipStart={f.demo.clipStart}
+                      clipEnd={f.demo.clipEnd}
+                      label={f.title}
+                      className="shadow-2xl ring-1 ring-black/5"
+                    />
+                  </Reveal>
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -1092,7 +996,6 @@ function PublicLandingPage() {
       </div>
 
       <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} defaultMode={loginMode} />
-      <FeaturePreviewModal feature={previewFeature} onClose={() => setPreviewFeature(null)} />
     </>
   );
 }

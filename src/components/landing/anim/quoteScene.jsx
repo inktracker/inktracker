@@ -1534,6 +1534,4 @@ function QuoteDemo() {
   );
 }
 
-window.QuoteDemo = QuoteDemo;
-
 export { QuoteDemo };

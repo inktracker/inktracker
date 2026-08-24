@@ -340,13 +340,19 @@ function Stage({
   //   playing  — lets the scroll observer drive playback from outside
   persist = true,
   keyboard = true,
+  // Clip window. These films were authored as standalone ~26s pieces with a
+  // branded title card and an outro — right for a full-screen modal you have
+  // chosen to watch, wrong inline, where the first frame has to already be
+  // the product. clipStart/clipEnd play just the substantive stretch.
+  clipStart = 0,
+  clipEnd = null,
   playing: playingProp = null,
   seekNonce = 0,
   onEnded,
   children,
 }) {
   const [time, setTime] = React.useState(() => {
-    if (!persist) return 0;
+    if (!persist) return clipStart;
     try {
       const v = parseFloat(localStorage.getItem(persistKey + ':t') || '0');
       return isFinite(v) ? clamp(v, 0, duration) : 0;
@@ -401,10 +407,11 @@ function Stage({
       const dt = (ts - lastTsRef.current) / 1000;
       lastTsRef.current = ts;
       setTime((t) => {
+        const stop = clipEnd == null ? duration : clipEnd;
         let next = t + dt;
-        if (next >= duration) {
-          if (loop) next = next % duration;
-          else { next = duration; setPlaying(false); if (onEndedRef.current) onEndedRef.current(); }
+        if (next >= stop) {
+          if (loop) next = clipStart + ((next - clipStart) % (stop - clipStart));
+          else { next = stop; setPlaying(false); if (onEndedRef.current) onEndedRef.current(); }
         }
         return next;
       });
@@ -415,7 +422,7 @@ function Stage({
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       lastTsRef.current = null;
     };
-  }, [playing, duration, loop]);
+  }, [playing, duration, loop, clipStart, clipEnd]);
 
   // Controlled playback: the scroll observer flips `playing` from outside.
   const onEndedRef = React.useRef(onEnded);
@@ -430,8 +437,8 @@ function Stage({
   const firstSeek = React.useRef(true);
   React.useEffect(() => {
     if (firstSeek.current) { firstSeek.current = false; return; }
-    setTime(0);
-  }, [seekNonce]);
+    setTime(clipStart);
+  }, [seekNonce, clipStart]);
 
   // Keyboard: space = play/pause, ← → = seek
   React.useEffect(() => {
