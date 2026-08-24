@@ -27,4 +27,13 @@ regexes = [
   # visitor by design. The confidential reCAPTCHA SECRET key lives only in a
   # Supabase function secret and is never in source.
   '''6LdFgbIsAAAAAKlrO8Sv9y-3HUJv4f-1hjHEjsi9''',
+
+  # RFC 8291 §5 Web Push test vector (published in the RFC since 2017, and
+  # reproduced verbatim in _shared/__tests__/webPush.test.js). generic-api-key
+  # flags the `auth_secret:` assignment on entropy alone. It is sample data
+  # for a key exchange that exists only in the document — allowlisted as the
+  # EXACT literal, not a pattern, so a real 16-byte auth secret would still
+  # trip the scan. The real VAPID keys live in Supabase/Vercel env vars and
+  # never appear in source.
+  '''BTBZMqHH6r4Tts7J_aSIgg''',
 ]

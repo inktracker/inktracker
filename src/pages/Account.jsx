@@ -5,8 +5,9 @@ import { base44, supabase } from "@/api/supabaseClient";
 import { FormSkeleton } from "@/components/shared/Skeletons";
 import { uploadLogo } from "@/lib/uploadFile";
 import { normalizeBrandColor } from "@/lib/branding";
-import { User, LogOut, Package, Link2, Mail, ChevronDown, Wand2, CreditCard, CheckSquare, Shield, Handshake } from "lucide-react";
+import { User, LogOut, Package, Link2, Mail, ChevronDown, Wand2, CreditCard, CheckSquare, Shield, Handshake, BellRing } from "lucide-react";
 import PartnersSection from "../components/account/PartnersSection";
+import PushNotificationsSection from "../components/account/PushNotificationsSection";
 import { loadShopTimezone } from "@/lib/shopTimezone";
 import WizardConfigEditor from "../components/wizard/WizardConfigEditor";
 import SecuritySection from "../components/account/SecuritySection";
@@ -639,6 +640,15 @@ export default function Account() {
         {(user?.role === "admin" || user?.role === "shop" || user?.role === "manager") && (
           <Section icon={Handshake} title="Partners">
             <PartnersSection />
+          </Section>
+        )}
+
+        {/* Native app uses APNs via the Capacitor shell, not Web Push —
+            the browser APIs this section drives don't exist in a WKWebView,
+            so it would render a permanently dead toggle. */}
+        {!isNative() && (
+          <Section icon={BellRing} title="Notifications">
+            <PushNotificationsSection user={user} />
           </Section>
         )}
 
