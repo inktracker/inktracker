@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useRef, Suspense, lazy } from "react";
 import { supabase } from "@/api/supabaseClient";
 import ErrorBoundary, { RouteErrorBoundary } from "@/components/ErrorBoundary";
 import ModalBackdrop from "@/components/shared/ModalBackdrop";
+import ScrollDemo from "@/components/landing/ScrollDemo";
 import { Toaster } from "@/components/ui/toaster";
 // Static legal/marketing/setup pages — lazy so they don't sit in the eager
 // app shell (they were ~part of the "270 KB unused JS on Quotes" Lighthouse
@@ -618,6 +619,23 @@ function PublicLandingPage() {
               </h2>
               <p className="mt-6 text-base md:text-lg max-w-xl mx-auto leading-[1.65]" style={{ color: MUTED }}>
                 Each module is a real piece of the shop. Tap any tile to watch it move.
+              </p>
+            </div>
+
+            {/* Lead showcase — the quote demo playing inline, Apple-style:
+                paused on its first frame until you scroll to it, plays once,
+                then holds the final frame. No click required. The grid below
+                stays as-is for the remaining modules. */}
+            <div className="mb-16 md:mb-24">
+              <ScrollDemo
+                load={() => import("@/components/landing/anim/quoteScene.jsx")}
+                component="QuoteDemo"
+                duration={26.5}
+                label="Writing a quote"
+                className="shadow-2xl"
+              />
+              <p className="mt-5 text-center text-sm leading-[1.65]" style={{ color: MUTED }}>
+                A quote built from scratch — customer, garment autofill, size breakdown, live pricing.
               </p>
             </div>
 
