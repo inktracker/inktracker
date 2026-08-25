@@ -4,6 +4,7 @@ import { supabase } from "@/api/supabaseClient";
 import { useModalA11y } from "@/lib/useModalA11y";
 import { track } from "@/lib/analytics";
 import { authRedirectUrl, isNative } from "@/lib/mobile/native";
+import { parseAuthLinkError } from "@/lib/auth/authLinkError";
 
 // MFA is enforced by <MfaGate> in AuthenticatedApp, not here. This
 // modal's only job is to establish a Supabase session — the gate kicks
@@ -38,6 +39,25 @@ export default function LoginModal({ isOpen, onClose, defaultMode, embedded = fa
   // saw or agreed to the platform agreement. Plain checkbox by design;
   // anything fancier reads as "growth-hack overlay" and erodes trust.
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+
+  // ── Dead sign-in link ────────────────────────────────────────────
+  // Supabase bounces a failed link back with the reason in the URL
+  // FRAGMENT (#error=...&error_code=otp_expired). Nothing read it, so the
+  // user landed on a plain login form having just tapped a link — from
+  // their side, nothing happened at all. Truman hit "Email link is invalid
+  // or has expired" three times in a row before giving up and resetting
+  // his password (2026-08-25).
+  //
+  // Clear the hash once read so a refresh doesn't re-show a stale error,
+  // and so the fragment isn't left sitting in the address bar.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const linkErr = parseAuthLinkError(window.location.hash);
+    if (!linkErr) return;
+    setError(linkErr.message);
+    console.warn("[auth] sign-in link failed:", linkErr.code, linkErr.raw);
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, []);
 
   // ── Cross-device confirmation sync ───────────────────────────────
   // After signup, the desktop tab shows "Confirmation email sent."
@@ -239,7 +259,14 @@ export default function LoginModal({ isOpen, onClose, defaultMode, embedded = fa
         },
       });
       if (otpErr) throw otpErr;
-      setSuccess(`Check ${email.trim()} for a sign-in link. It works even if you haven't set a password.`);
+      setSuccess(
+        isNative()
+          // The link carries the app's custom scheme — a desktop browser
+          // can't open it, so saying "check your email" alone sends people
+          // to their computer and into a dead end.
+          ? `Check ${email.trim()} on this phone for a sign-in link, and open it here. It works even if you haven't set a password.`
+          : `Check ${email.trim()} for a sign-in link. It works even if you haven't set a password.`,
+      );
     } catch (err) {
       setError(err.message || "Couldn't send sign-in link.");
     } finally {
@@ -331,6 +358,20 @@ export default function LoginModal({ isOpen, onClose, defaultMode, embedded = fa
                 <p className="leading-relaxed">
                   We couldn't sign you in with that password. If you were invited to InkTracker, you may not have a password set yet — or you may have reset it since.
                 </p>
+                {/* The autofill trap. Shops whose browser saves their password
+                    describe it as "I sign in with Google" and have genuinely
+                    never typed it. On a computer Chrome fills it silently; the
+                    app can't reach Chrome's saved passwords, so the same person
+                    is locked out with no idea why it differs. Truman hit exactly
+                    this (2026-08-25) and it took a support round-trip. Naming
+                    the cause turns it into a self-serve reset. */}
+                {isNative() && (
+                  <p className="leading-relaxed border-t border-amber-200 pt-3">
+                    <span className="font-semibold">Signs you in automatically on your computer?</span>{" "}
+                    That's your browser filling in a saved password. The app can't use those, so
+                    you'll need the password itself — reset it below and you'll be set everywhere.
+                  </p>
+                )}
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button
                     type="button"
