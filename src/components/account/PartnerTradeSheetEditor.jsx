@@ -127,7 +127,19 @@ export default function PartnerTradeSheetEditor() {
   const [selectedPartner, setSelectedPartner] = useState(DEFAULT_PARTNER);
   const [draft, setDraft] = useState(() => (shopConfig ? buildDraft(null, shopConfig) : null));
   const [receiverSupplies, setReceiverSupplies] = useState(false);
-  const [quickPct, setQuickPct] = useState(75);
+  // 100, not 75. The slider previously defaulted to 75 while the preview
+  // below fell back to shopConfig — i.e. FULL retail. So a shop with no saved
+  // sheet saw "75% of my standard rates" printed over 100% prices, asserting
+  // a trade discount that had never been saved and was not in effect (Joe,
+  // 2026-08-25). The number now matches what the tables actually show until
+  // something is saved.
+  const [quickPct, setQuickPct] = useState(100);
+  // Existence and value are tracked SEPARATELY on purpose. A legacy row can
+  // carry a real trade config with no scale_pct; collapsing the two would
+  // label that sheet "not saved yet" over genuine trade prices — a lie in the
+  // opposite direction to the one being fixed.
+  const [hasSavedSheet, setHasSavedSheet] = useState(false);
+  const [savedPct, setSavedPct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -151,7 +163,12 @@ export default function PartnerTradeSheetEditor() {
       if (cancelled) return;
       setDraft(buildDraft(row?.config, shopConfig));
       setReceiverSupplies(!!row?.config?.receiver_supplies_garments);
-      setQuickPct(row?.scale_pct != null ? Number(row.scale_pct) : 75);
+      // No row → nothing is saved, and buildDraft above just fell back to
+      // shopConfig, so the tables ARE full retail. Say 100, not 75.
+      const savedScale = row?.scale_pct != null ? Number(row.scale_pct) : null;
+      setHasSavedSheet(!!row);
+      setSavedPct(savedScale);
+      setQuickPct(savedScale != null ? savedScale : 100);
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -199,6 +216,10 @@ export default function PartnerTradeSheetEditor() {
     try {
       const config = tradeConfigFromDraft(draft, shopConfig, receiverSupplies);
       await savePartnerTradeSheet(myShop, selectedPartner, quickPct, config);
+      // What's on screen is now what's stored — clears the "not saved yet" /
+      // "unsaved change" notices without needing a reload.
+      setHasSavedSheet(true);
+      setSavedPct(quickPct);
       const who = selectedPartner === DEFAULT_PARTNER ? "all partners" : selectedPartner;
       notify.success("Trade rates saved", `Rates for ${who} are live — they auto-fill when you're sent a job.`);
     } catch (err) {
@@ -279,6 +300,25 @@ export default function PartnerTradeSheetEditor() {
               <span className="text-sm font-bold text-teal-700 w-14 text-right">{quickPct}%</span>
               <span className="text-xs text-slate-500 whitespace-nowrap">of my standard rates</span>
             </div>
+            {/* Say plainly when nothing is saved. The tables below are this
+                shop's full retail in that state, and a partner asking for a
+                price gets no trade suggestion at all (SendToPartnerModal
+                computes 0 without a sheet) — which is safe, but silent. */}
+            {!hasSavedSheet && (
+              <p className="text-[11px] text-slate-600 mt-2 leading-relaxed">
+                <span className="font-semibold">No trade rate saved yet.</span>{" "}
+                The prices below are your full retail. Move the slider and save to set
+                {selectedPartner === DEFAULT_PARTNER ? " a default partner rate." : " this partner's rate."}
+              </p>
+            )}
+            {/* scale_pct records the last quick-scale APPLIED — cells stay
+                hand-editable afterwards, so the two can legitimately diverge.
+                Don't imply the percentage still describes every cell. */}
+            {hasSavedSheet && savedPct !== null && quickPct !== savedPct && (
+              <p className="text-[11px] text-amber-700 mt-2 leading-relaxed">
+                Unsaved change — saved rate is {savedPct}%.
+              </p>
+            )}
           </div>
 
           {receiverSupplies && (draft.garmentMarkup || []).length > 0 && (
