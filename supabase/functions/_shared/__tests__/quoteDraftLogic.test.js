@@ -21,6 +21,24 @@ describe("prompts", () => {
     expect(p).toContain("Do NOT invent");
   });
 
+  // 2026-08-26, Joe's first local test: his OWN outbound offer ("here's the
+  // shirt, $15/pc" + an S&S link) was refused as "not a quote request".
+  // Both directions of the conversation must be draftable, product URLs
+  // must be mined, and stated prices must be captured — but only as text.
+  it("extraction prompt accepts shop-side offers, mines URLs, and captures stated prices", () => {
+    const p = buildExtractionPrompt("Here is a link to that shirt — $15pc. https://ssactivewear.com/p/lane_seven/ls16005");
+    expect(p).toContain("FROM the shop");
+    expect(p).toContain("MINE PRODUCT URLS");
+    expect(p).toContain("STATED PRICE");
+    expect(p).toContain("no quantity is STILL an item");
+  });
+
+  it("draft prompt forbids baking a stated price into the numbers", () => {
+    const d = buildDraftPrompt({ extraction: { items: [] }, historyText: "", todayISO: "2026-08-26", shopPriorsText: "" });
+    expect(d).toContain("STATED PRICE");
+    expect(d).toContain("NOT bake");
+  });
+
   it("draft prompt forbids pricing decisions and resolves dates against TODAY", () => {
     const p = buildDraftPrompt({
       extraction: { items: [] }, historyText: "", todayISO: "2026-08-26", shopPriorsText: "",
