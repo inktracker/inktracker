@@ -40,6 +40,7 @@ import { getPartnerTradeSheet, computeTradeTotal } from "@/lib/partnerTradeSheet
 import { DEPOSITS_ENABLED } from "@/lib/deposits";
 import ReactivateLink from "../shared/ReactivateLink";
 import { customerSnapshotPatch } from "@/lib/quotes/customerSwitch";
+import { applyDraftToQuote, applyCandidateToLine } from "@/lib/quotes/draftFromMessage";
 
 const SUPABASE_FUNC_URL = import.meta.env.VITE_SUPABASE_URL;
 
@@ -232,6 +233,10 @@ export default function QuoteEditorModal({
   const [pasteText, setPasteText] = useState("");
   const [pasting, setPasting] = useState(false);
   const [pasteError, setPasteError] = useState("");
+  // AI draft review panel — assumptions/blanks/candidates from
+  // draftQuoteFromMessage. React state ONLY: it must never ride on `q`,
+  // or it would be persisted into the saved quote row.
+  const [aiPanel, setAiPanel] = useState(null);
 
   const totals = calcQuoteTotals(q);
 
@@ -422,76 +427,28 @@ export default function QuoteEditorModal({
         setPasteError("Not signed in. Please refresh and try again.");
         return;
       }
-      const { data, error: invErr } = await base44.functions.invoke("emailScanner", {
-        action: "parseOnly",
-        text: pasteText,
+      // v2: AI draft (Claude two-pass w/ customer history + catalog).
+      // Replaces the emailScanner regex/Gemini parser this box used before
+      // (hidden 2026-06-02 for misclassifying). Function returns a DRAFT
+      // only — nothing is saved until the shop hits Save here.
+      const { data, error: invErr } = await base44.functions.invoke("draftQuoteFromMessage", {
+        message: pasteText,
         accessToken: session.access_token,
+        customerId: q.customer_id || null,
       });
       if (invErr) {
-        setPasteError(invErr.message || "Failed to parse");
+        setPasteError(invErr.message || "Drafting failed");
         return;
       }
       if (data?.error) {
         setPasteError(data.error);
         return;
       }
-      const parsed = (data.lineItems || []).map((li) => ({ ...newLineItem(), ...li }));
-      if (parsed.length === 0) {
-        setPasteError("Couldn't extract any line items from the text. Try adding more detail (sizes, garment names, style numbers).");
-        return;
-      }
-
-      // If the backend wasn't confident this was a quote-request format,
-      // keep going — we still want to apply whatever customer / notes data
-      // it did pick up, since the user may just be jotting context first.
-      const lowConfidence = data.isQuoteRequest === false;
-
-      // The lookup happens inside LineItemEditor itself when an item mounts
-      // with a style # but no resolved brand — see the autoLookup useEffect
-      // there. This way the brand dropdown shows up populated with all
-      // matching brands and the user can pick the right one.
-      const finalItems = parsed;
-
-      // Merge: replace existing items if the only one is blank, otherwise append.
-      setQ((prev) => {
-        const onlyBlank =
-          prev.line_items.length === 1 &&
-          !prev.line_items[0].style &&
-          !prev.line_items[0].brand &&
-          Object.keys(prev.line_items[0].sizes || {}).length === 0;
-
-        // Build a header block summarizing the email's intent so it's the
-        // first thing visible in Job Notes.
-        const headerLines = [];
-        if (data.summary) headerLines.push(data.summary);
-        if (data.inHandsDate) headerLines.push(`In-hands: ${data.inHandsDate}`);
-        if (data.phone) headerLines.push(`Phone: ${data.phone}`);
-        if (data.company) headerLines.push(`Company: ${data.company}`);
-        const header = headerLines.join("\n");
-
-        return {
-          ...prev,
-          line_items: onlyBlank ? finalItems : [...prev.line_items, ...finalItems],
-          // Customer info — only set if not already populated
-          ...(!prev.customer_name && data.customerName ? { customer_name: data.customerName } : {}),
-          ...(!prev.customer_email && data.customerEmail ? { customer_email: data.customerEmail } : {}),
-          // Job title — pull from summary if blank
-          ...(!prev.job_title && data.summary ? { job_title: data.summary.slice(0, 80) } : {}),
-          // In-hands date — only override if currently the auto-default
-          ...(data.inHandsDate ? { due_date: data.inHandsDate } : {}),
-          // Rush flag
-          ...(data.rushNeeded && !prev.rush_rate ? { rush_rate: 0.2 } : {}),
-          // Notes — prepend the parsed header, then any existing notes, then the raw paste body
-          notes: [header, prev.notes, data.notes].filter(Boolean).join("\n\n").trim(),
-        };
-      });
-
+      const { quote: nextQuote, panel } = applyDraftToQuote(q, data, newLineItem);
+      setQ(nextQuote);
+      setAiPanel(panel);
       setPasteText("");
       setShowPaste(false);
-      if (lowConfidence) {
-        // soft toast — the prefill landed but parser wasn't sure
-        setPasteError("");
-      }
     } catch (err) {
       console.error("Paste Order failed:", err);
       setPasteError(err.message || "Something went wrong.");
@@ -1250,7 +1207,7 @@ export default function QuoteEditorModal({
             {pasteOrderEnabled && showPaste && (
               <div className="border border-emerald-200 bg-emerald-50/40 rounded-xl p-4 space-y-2">
                 <div className="text-xs font-semibold text-slate-700">
-                  Paste a customer email or order list — sizes, style numbers, garment names. The parser will extract line items.
+                  Paste a customer message — an email, a text, a rough list. The assistant drafts the quote: known customers get matched to their order history, vague garments get catalog suggestions. You review everything before it saves.
                 </div>
                 <textarea
                   rows={8}
@@ -1276,8 +1233,76 @@ export default function QuoteEditorModal({
                     disabled={pasting || !pasteText.trim()}
                     className="text-xs font-semibold text-white bg-emerald-600 px-4 py-1.5 rounded-lg hover:bg-emerald-700 transition disabled:opacity-50"
                   >
-                    {pasting ? "Parsing…" : "Parse & Prefill"}
+                    {pasting ? "Drafting…" : "Draft with AI"}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {aiPanel && (
+              <div className="border border-teal-200 bg-teal-50/50 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs font-bold text-slate-700 uppercase tracking-widest">
+                    Draft review{aiPanel.jobTitle ? ` — ${aiPanel.jobTitle}` : ""}
+                  </div>
+                  <button
+                    onClick={() => setAiPanel(null)}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-700 transition"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+
+                {aiPanel.blanks.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Needs you before sending</div>
+                    <ul className="text-xs text-slate-700 space-y-0.5 list-disc pl-4">
+                      {aiPanel.blanks.map((b, i) => <li key={i}>{b}</li>)}
+                    </ul>
+                  </div>
+                )}
+
+                {aiPanel.assumptions.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Assumptions made — check them</div>
+                    <ul className="text-xs text-slate-600 space-y-0.5 list-disc pl-4">
+                      {aiPanel.assumptions.map((a, i) => <li key={i}>{a}</li>)}
+                    </ul>
+                  </div>
+                )}
+
+                {Object.entries(aiPanel.candidatesByLine).map(([lineId, cands]) => {
+                  const targetLine = q.line_items.find((l) => String(l.id) === String(lineId));
+                  if (!targetLine || targetLine.style) return null; // picked already
+                  return (
+                    <div key={lineId} className="space-y-1.5">
+                      <div className="text-[11px] font-bold text-teal-700 uppercase tracking-wider">Pick a garment</div>
+                      <div className="grid gap-1.5 sm:grid-cols-3">
+                        {cands.map((c) => (
+                          <button
+                            key={c.style_number}
+                            onClick={() => setQ((prev) => ({
+                              ...prev,
+                              line_items: prev.line_items.map((l) =>
+                                String(l.id) === String(lineId) ? applyCandidateToLine(l, c) : l),
+                            }))}
+                            className="text-left border border-teal-200 bg-white rounded-lg px-3 py-2 hover:border-teal-500 transition"
+                          >
+                            <div className="text-xs font-semibold text-slate-800">{c.brand} {c.style_number}</div>
+                            <div className="text-[11px] text-slate-500 truncate">{c.style_name}</div>
+                            <div className="text-[11px] text-slate-600 mt-0.5">
+                              {c.from_price != null ? `blanks from $${Number(c.from_price).toFixed(2)}` : "price on lookup"}
+                              {c.colors_available ? ` · ${c.colors_available} colors` : ""}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <div className="text-[11px] text-slate-500">
+                  Prices come from your pricing engine as you complete the lines — the assistant never sets a price.
                 </div>
               </div>
             )}
