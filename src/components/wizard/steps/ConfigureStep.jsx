@@ -1,3 +1,4 @@
+import { useState } from "react";
 import Icon from "@/components/shared/Icon";
 import ColorAnalysisResult from "@/components/shared/ColorAnalysisResult";
 import { BIG_SIZES, SIZES, DEFAULT_EMB_STITCH_TIERS, getEnabledTechniques, getMinOrderQty, getShopPricingConfig, getStandardTurnaroundDays, getWizardRushDisplay } from "@/components/shared/pricing";
@@ -37,6 +38,18 @@ export default function ConfigureStep({
   const styleOptions = selectedGarment
     ? POPULAR_STYLES.filter(s => s.garment === selectedGarment)
     : [];
+
+  // Image URLs that failed to load this session. Supplier CDNs rotate
+  // image paths (BigCommerce bakes an upload timestamp into the URL), so
+  // a styleImage saved into `wizard_styles[]` months ago can 404 today.
+  // Tracking dead URLs lets the render fall through to the next candidate
+  // (enriched preview → placeholder) instead of the browser's
+  // broken-image icon. Render-local UI state only — never persisted.
+  const [deadImgs, setDeadImgs] = useState(() => new Set());
+  const markDead = (url) => {
+    if (url) setDeadImgs(prev => prev.has(url) ? prev : new Set(prev).add(url));
+  };
+  const liveImg = (...urls) => urls.find(u => u && !deadImgs.has(u)) || "";
 
   return (
   <div className="space-y-5">
@@ -200,20 +213,20 @@ export default function ConfigureStep({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {inlineStyles.map(s => {
                       const ep = enrichedPreviews[s.id];
-                      const previewImg = s.styleImage || (typeof ep === "object" ? ep.styleImage : ep) || s.image;
+                      const previewImg = liveImg(s.styleImage, typeof ep === "object" ? ep.styleImage : ep, s.image);
                       const displayName = s.name || (typeof ep === "object" ? ep.name : "") || s.styleNumber || "Style";
                       const displayDesc = s.description || (typeof ep === "object" ? ep.description : "");
                       const displayWeight = s.weight || (typeof ep === "object" ? ep.weight : "");
                       return (
                         <button key={s.id} onClick={() => selectAndEnrichStyle(s)}
                           className="relative group flex items-center gap-3 px-3 py-2.5 rounded-xl border-2 border-slate-200 hover:border-[var(--brand)] hover:bg-[var(--brand-tint)] transition text-left bg-white">
-                          {previewImg ? <img src={previewImg} alt="" className="w-10 h-10 rounded-lg object-contain bg-slate-50" /> :
+                          {previewImg ? <img src={previewImg} alt="" onError={() => markDead(previewImg)} className="w-10 h-10 rounded-lg object-contain bg-slate-50" /> :
                             <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center animate-pulse"><Icon name="tee" className="w-5 h-5 text-slate-300" /></div>}
                           <div className="min-w-0"><div className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{displayName}</div>
                             <div className="text-xs text-slate-500">{displayWeight}{s.tag ? (displayWeight ? " · " : "") + s.tag : ""}</div></div>
                           <div className="fixed inset-0 z-40 pointer-events-none flex items-start justify-center" style={{display:"contents"}}>
                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-white rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-40 overflow-hidden">
-                              {previewImg && <img src={previewImg} alt="" className="w-full aspect-square object-contain bg-white p-4" />}
+                              {previewImg && <img src={previewImg} alt="" onError={() => markDead(previewImg)} className="w-full aspect-square object-contain bg-white p-4" />}
                               <div className="px-4 py-3">
                                 <div className="font-bold text-sm text-slate-900">{displayName}</div>
                                 {displayDesc && <div className="text-xs text-slate-500 mt-0.5">{displayDesc}</div>}
@@ -329,9 +342,9 @@ export default function ConfigureStep({
       {!enrichingStyle && style.colors?.length > 0 ? (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
           {(() => {
-            const baseImg = style.colorImages?.["Black"] || style.styleImage || Object.values(style.colorImages || {})[0] || "";
+            const baseImg = liveImg(style.colorImages?.["Black"], style.styleImage, ...Object.values(style.colorImages || {}));
             return style.colors.filter(c => style.colorImages?.[c] || colorNameToHex(c)).map(c => {
-              const colorImg = style.colorImages?.[c];
+              const colorImg = liveImg(style.colorImages?.[c]);
               const isSelected = color === c;
               return (
                 <button key={c} onClick={() => {
@@ -352,7 +365,7 @@ export default function ConfigureStep({
                   }
                 }}
                   className={`rounded-xl border-2 p-2 text-center transition hover:shadow-md ${isSelected?"border-[var(--brand)] bg-[var(--brand-tint)]":"border-slate-200 hover:border-[var(--brand)]"}`}>
-                  {colorImg ? <img src={colorImg} alt={c} className="w-full aspect-square rounded-lg object-contain bg-white mb-2" />
+                  {colorImg ? <img src={colorImg} alt={c} onError={() => markDead(colorImg)} className="w-full aspect-square rounded-lg object-contain bg-white mb-2" />
                     : <TintedImage baseImg={baseImg} colorName={c} className="w-full aspect-square mb-2" />}
                   <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate">{c}</div>
                   {isSelected && <div className="text-[10px] text-[var(--brand)] mt-0.5">Tap to preview</div>}
