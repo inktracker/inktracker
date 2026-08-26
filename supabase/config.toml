@@ -114,3 +114,6 @@ verify_jwt = false
 
 [functions.sendPush]
 verify_jwt = false
+
+[functions.draftQuoteFromMessage]
+verify_jwt = false
