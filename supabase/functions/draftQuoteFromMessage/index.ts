@@ -190,13 +190,23 @@ Deno.serve(async (req) => {
     for (const li of draft.line_items) {
       if (li.style_number || !li.catalog_search) continue;
       try {
+        // The functions GATEWAY (not the function) rejects calls without an
+        // Authorization header when the sibling was deployed with JWT
+        // verification on — found live: {"code":"UNAUTHORIZED_NO_AUTH_HEADER"}.
+        // Forward the caller's token + anon apikey exactly like the browser does.
         const res = await fetch(`${fnBase}/ssSearchCatalog`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: li.catalog_search, limit: 8, shopOwner: myShop, accessToken }),
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            apikey: Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+          },
+          body: JSON.stringify({ query: li.catalog_search, limit: 8, accessToken }),
         });
         const data = res.ok ? await res.json() : null;
-        (li as any).candidates = shapeCandidates(data?.results || data?.styles || data?.matches || []);
+        // ssSearchCatalog returns { products } — found the hard way in the first
+        // live test (candidates came back empty on every cold request).
+        (li as any).candidates = shapeCandidates(data?.products || []);
       } catch (e) {
         console.error("[quoteDraft] catalog search failed:", (e as Error).message);
         (li as any).candidates = [];

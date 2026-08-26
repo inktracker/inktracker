@@ -121,7 +121,7 @@ export const DRAFT_TOOL = {
               additionalProperties: { type: "integer" },
             },
             total_qty: { type: "integer", description: "Total pieces when a size split wasn't given. 0 when sizes{} is filled in." },
-            catalog_search: { type: "string", description: "When style_number is empty: a supplier catalog search phrase for this item (e.g. 'performance hoodie'). Empty otherwise." },
+            catalog_search: { type: "string", description: "When style_number is empty: 2-3 CONCRETE product words for a supplier catalog search (e.g. 'pullover hoodie', 'performance tee'). No quality adjectives — 'mid-range', 'nice', 'cheap' break the search. Empty otherwise." },
             imprints: {
               type: "array",
               items: {
