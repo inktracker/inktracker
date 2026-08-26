@@ -33,6 +33,16 @@ describe("prompts", () => {
     expect(p).toContain("no quantity is STILL an item");
   });
 
+  // Joe's second local test: a raw size run ("16 Medium / 18 Large / 50 Mai
+  // Tai Shirt - French Oak…") was refused. Bare lists ARE the historical
+  // Paste Order use case — the prompt must say so, and headless size blocks
+  // must still be items.
+  it("extraction prompt accepts bare lists and headless size blocks", () => {
+    const p = buildExtractionPrompt("16 Medium\n18 Large\n10 X Large");
+    expect(p).toContain("BARE LIST");
+    expect(p).toContain("Unspecified garment");
+  });
+
   it("draft prompt forbids baking a stated price into the numbers", () => {
     const d = buildDraftPrompt({ extraction: { items: [] }, historyText: "", todayISO: "2026-08-26", shopPriorsText: "" });
     expect(d).toContain("STATED PRICE");
@@ -89,7 +99,8 @@ describe("coerceExtraction", () => {
 describe("coerceDraft", () => {
   const goodLine = {
     style_number: "TT41", brand: "Team 365", style_name: "Zone Hooded T",
-    garment_color: "Sport Silver", sizes: { M: 15, L: 15, XL: 10 }, total_qty: 0,
+    garment_color: "Sport Silver",
+    sizes: [{ size: "M", qty: 15 }, { size: "L", qty: 15 }, { size: "XL", qty: 10 }], total_qty: 0,
     catalog_search: "", imprints: [{ location: "Left Chest", title: "Logo", colors: 1 }],
   };
 
@@ -107,12 +118,28 @@ describe("coerceDraft", () => {
     expect(d.line_items[0].imprints.map((i) => i.colors)).toEqual([8, 1]);
   });
 
-  it("drops negative/garbage size quantities", () => {
+  it("drops negative/garbage size quantities (legacy object form)", () => {
     const d = coerceDraft({
       line_items: [{ ...goodLine, sizes: { M: -3, L: "12", XL: "nope", HUGE_SIZE_KEY: 5 } }],
       assumptions: [], blanks: [],
     });
     expect(d.line_items[0].sizes).toEqual({ L: 12 });
+  });
+
+  // Joe's bare-list test exposed this: the map-shaped sizes field came back
+  // EMPTY while the model claimed it had copied the split — then the server
+  // size-curve overwrote the customer's real 6/16/18/10 with a generic
+  // spread. Sizes are now an array of rows; losing a stated split is the
+  // one failure mode this feature is not allowed to have.
+  it("accepts the row-array shape, normalizes and merges duplicates", () => {
+    const d = coerceDraft({
+      line_items: [{ ...goodLine, sizes: [
+        { size: "s", qty: 6 }, { size: "M", qty: 16 }, { size: "L", qty: 18 },
+        { size: "XL", qty: 10 }, { size: "m", qty: 2 }, { size: "junk?", qty: -4 },
+      ] }],
+      assumptions: [], blanks: [],
+    });
+    expect(d.line_items[0].sizes).toEqual({ S: 6, M: 18, L: 18, XL: 10 });
   });
 
   it("rejects a lineless draft outright (null → handler re-asks or errors)", () => {

@@ -75,6 +75,10 @@ export function buildExtractionPrompt(message) {
     "  ssactivewear.com/p/lane_seven/ls16005?color=pigment_white → brand 'Lane Seven',",
     "  style 'LS16005', color 'Pigment White'. Record them as an item.",
     "- An item with no quantity is STILL an item — leave quantity_text empty.",
+    "- A BARE LIST of garments/quantities/sizes with no prose around it IS a quote",
+    "  request — shops paste raw size runs all the time. is_quote_request=true.",
+    "- A size/quantity block with NO garment name attached is still an item:",
+    "  description 'Unspecified garment'. The shop will resolve which garment.",
     "- If a price is stated ('$15/pc', 'you'd be looking at $15 each'), record it",
     "  VERBATIM in other_notes prefixed 'STATED PRICE:'. Never drop it.",
     "- 'Dry-fit', 'performance', 'moisture-wicking' describe a garment type, not a color.",
@@ -125,9 +129,17 @@ export const DRAFT_TOOL = {
             style_name: { type: "string" },
             garment_color: { type: "string", description: "Empty if the customer didn't specify and history doesn't imply one." },
             sizes: {
-              type: "object",
-              description: "Size → quantity. ONLY sizes the customer stated or history strongly implies. If they gave only a total, leave empty and put the total in total_qty.",
-              additionalProperties: { type: "integer" },
+              type: "array",
+              description: "EVERY explicitly stated size/quantity MUST appear here, copied exactly ('6 small' → {size:'S', qty:6}). Empty ONLY when the message truly gives no split — then put the total in total_qty.",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  size: { type: "string", description: "S, M, L, XL, 2XL, YS, YM…" },
+                  qty: { type: "integer" },
+                },
+                required: ["size", "qty"],
+              },
             },
             total_qty: { type: "integer", description: "Total pieces when a size split wasn't given. 0 when sizes{} is filled in." },
             catalog_search: { type: "string", description: "When style_number is empty: 2-3 CONCRETE product words for a supplier catalog search (e.g. 'pullover hoodie', 'performance tee'). No quality adjectives — 'mid-range', 'nice', 'cheap' break the search. Empty otherwise." },
@@ -171,6 +183,14 @@ export function buildDraftPrompt({ extraction, historyText, todayISO, shopPriors
     "",
     "HARD RULES:",
     "- NEVER invent quantities, garments, colors, or print specs. Unknowns become blanks[], not guesses.",
+    "- When the message states a size breakdown, copy it into sizes[] EXACTLY and set",
+    "  total_qty to 0. Losing a stated size split is a hard failure.",
+    "- A stated total ('50 Mai Tai Shirt') DIRECTLY followed by its own size breakdown",
+    "  is ONE line item — use the breakdown. But a SEPARATE size block elsewhere in",
+    "  the message is its own line even when the numbers look similar: keep it as",
+    "  'Unspecified garment' and add a blank asking which garment it belongs to.",
+    "  DROPPING QUANTITIES IS THE ONE UNFORGIVABLE FAILURE — when unsure whether two",
+    "  blocks are the same item, keep both and ask in blanks[].",
     "- If the message references a past order, resolve nicknames against ORDER HISTORY ('the dry-fits' → the actual style). Cite the order id in assumptions.",
     "- Print color count drives price. Only set colors > 1 when the message or history establishes it for that same art.",
     "- If the extraction carries a STATED PRICE, you must NOT bake it into any field —",
@@ -308,8 +328,20 @@ function strList(v, cap) {
   return (Array.isArray(v) ? v : []).map(str).filter(Boolean).slice(0, cap);
 }
 function sizesOf(v) {
-  if (!v || typeof v !== "object") return {};
+  // Preferred shape: [{size, qty}] rows (tool-use emits arrays far more
+  // reliably than free-form maps — the map form silently came back empty
+  // while the model CLAIMED it had copied the breakdown). Legacy object
+  // form still accepted.
   const out = {};
+  if (Array.isArray(v)) {
+    for (const row of v) {
+      const k = typeof row?.size === "string" ? row.size.trim().toUpperCase() : "";
+      const n = intOf(row?.qty);
+      if (k && k.length <= 4 && n > 0) out[k] = (out[k] || 0) + n;
+    }
+    return out;
+  }
+  if (!v || typeof v !== "object") return {};
   for (const [k, q] of Object.entries(v)) {
     const n = intOf(q);
     if (n > 0 && typeof k === "string" && k.length <= 4) out[k.toUpperCase()] = n;

@@ -113,8 +113,12 @@ Deno.serve(async (req) => {
       );
     }
     if (!extraction) return json({ error: "Couldn't read that message — try trimming it to the request itself." });
-    if (!extraction.is_quote_request || !extraction.items.length) {
-      return json({ error: "That doesn't look like a quote request — no items found in it." });
+    // Items are the real signal; is_quote_request is only a tiebreaker for
+    // itemless text. A bare size list carries no "asking" language and the
+    // classifier is entitled to shrug — but if items were found, we draft.
+    // (Joe's second local test: a raw size run got refused on this gate.)
+    if (!extraction.items.length) {
+      return json({ error: "No items found — add garment names or style numbers to the list." });
     }
 
     // ── context: customer + history (STRICTLY this shop's rows) ──────
@@ -172,6 +176,15 @@ Deno.serve(async (req) => {
     let draft = coerceDraft(await callClaude(DRAFT_MODEL, draftPrompt, DRAFT_TOOL, 4096));
     if (!draft) draft = coerceDraft(await callClaude(DRAFT_MODEL, draftPrompt, DRAFT_TOOL, 4096));
     if (!draft) return json({ error: "Couldn't build a draft from that message. It's saved nothing — try again or enter it manually." });
+
+    // Deterministic dropped-item guard: the drafter merging lines is fine,
+    // silently losing them is not. If the draft has fewer lines than the
+    // extraction found items, make the shop confirm.
+    if (draft.line_items.length < extraction.items.length) {
+      draft.blanks.push(
+        `The message mentioned ${extraction.items.length} item blocks but the draft has ${draft.line_items.length} line(s) — check nothing was dropped or wrongly merged.`,
+      );
+    }
 
     // Fill size curves where only a total was given (deterministic, not AI).
     for (const li of draft.line_items) {
