@@ -23,6 +23,7 @@ function supplierOfItem(item) {
     || null;
 }
 import { notify } from "@/lib/notify";
+import { matchLinesToItems, buildStockUpdates } from "@/lib/inventory/stockAdditions";
 import { shopScope } from "@/lib/shopScope";
 import { useReadOnly } from "@/lib/billing-gate";
 import ReactivateLink from "@/components/shared/ReactivateLink";
@@ -89,6 +90,43 @@ export default function Inventory() {
   }
   function removeFromNorcalOrder(variantId) {
     setNorcalOrder(prev => persistOrder(prev.filter(i => String(i.variantId) !== String(variantId))));
+  }
+
+  // Post-reorder: add the SELECTED ordered lines to on-hand stock. The modal
+  // already filtered to checked lines; matching + math is pure and tested
+  // (lib/inventory/stockAdditions). Writes go item-by-item; a partial
+  // failure reports honestly instead of pretending.
+  async function addOrderedToStock(lines) {
+    const matches = matchLinesToItems(items, lines);
+    const selected = new Set(lines.map(l => String(l.variantId)));
+    const { updates, totalAdded, skippedUnmatched } = buildStockUpdates(matches, selected);
+    if (!updates.length) return;
+    const done = [];
+    try {
+      for (const u of updates) {
+        await base44.entities.InventoryItem.update(u.id, { qty: u.qty });
+        done.push(u);
+      }
+      setItems(prev => prev.map(it => {
+        const u = done.find(x => x.id === it.id);
+        return u ? { ...it, qty: u.qty } : it;
+      }));
+      notify.success(
+        "Stock updated",
+        `Added ${totalAdded} pcs across ${done.length} item${done.length === 1 ? "" : "s"}.` +
+          (skippedUnmatched ? ` ${skippedUnmatched} line(s) weren't tracked in inventory.` : ""),
+      );
+    } catch (err) {
+      // Keep what DID land (done[]) reflected, report the rest.
+      setItems(prev => prev.map(it => {
+        const u = done.find(x => x.id === it.id);
+        return u ? { ...it, qty: u.qty } : it;
+      }));
+      notify.error(
+        "Some stock updates failed",
+        `${done.length}/${updates.length} item(s) were updated before the error — check quantities. ${err?.message || ""}`,
+      );
+    }
   }
   function clearNorcalOrder() {
     setNorcalOrder(persistOrder([]));
@@ -723,6 +761,8 @@ export default function Inventory() {
           onAddLowItem={(r) => addToSupplierOrder(r, SUPPLIERS[r.supplierKey] || { key: r.supplierKey, label: r.supplierLabel, storeUrl: r.storeUrl })}
           lowReminders={norcalLowReminders}
           onOrdered={clearNorcalOrder}
+          linkedVariantIds={new Set(items.filter(i => i.supplier_variant_id != null && i.supplier_variant_id !== "").map(i => String(i.supplier_variant_id)))}
+          onAddToStock={addOrderedToStock}
         />
       )}
 

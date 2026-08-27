@@ -16,7 +16,10 @@
 //   onAddLowItem — (item) => void  (add a low-stock reminder item to the order)
 //   lowReminders — [{ variantId, title, size, price, supplierLabel }] linked
 //                  supplies low on stock and not already in the order
-//   onOrdered    — () => void  (called after the carts are opened, to clear)
+//   onOrdered    — () => void  (called once the order is fully resolved, to clear)
+//   linkedVariantIds — Set<string> variant ids tracked by an inventory item
+//   onAddToStock — (lines) => void  add the SELECTED ordered lines to on-hand
+//                  stock. Lines: [{ variantId, qty, title, size }].
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
@@ -28,6 +31,7 @@ const fmtPrice = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
 export default function NorcalOrderModal({
   order, onSetQty, onRemove, onClear, onClose, onAddLowItem, lowReminders = [], onOrdered,
+  linkedVariantIds, onAddToStock,
 }) {
   // Two-step submit: first press surfaces the low-stock reminder (if any),
   // second press (or "continue") opens the pre-filled vendor cart(s).
@@ -36,6 +40,11 @@ export default function NorcalOrderModal({
   // second popup fired from the same click, so each cart must open from its own.
   const [opening, setOpening] = useState(false);
   const [opened, setOpened] = useState(() => new Set());
+  // Post-submit step: "add the ordered quantities to stock?" Per-line
+  // checkboxes because a vendor cart isn't a purchase — anything that was
+  // out of stock at checkout must be uncheckable, or we mint phantom
+  // inventory. null = not in this step; Set = current selection.
+  const [stockSelection, setStockSelection] = useState(null);
 
   const totalQty = order.reduce((s, i) => s + (Number(i.qty) || 0), 0);
   const totalCost = order.reduce((s, i) => s + (Number(i.qty) || 0) * (Number(i.price) || 0), 0);
@@ -72,8 +81,14 @@ export default function NorcalOrderModal({
     const next = new Set(opened);
     next.add(group.storeUrl);
     setOpened(next);
-    // Clear the list only once EVERY vendor's cart has actually been opened.
-    if (storeGroups.every((g) => next.has(g.storeUrl))) onOrdered?.();
+    // Once EVERY vendor's cart is open, move to the add-to-stock step
+    // (pre-checking only the lines an inventory item actually tracks).
+    if (storeGroups.every((g) => next.has(g.storeUrl))) {
+      const tracked = order
+        .filter((i) => linkedVariantIds?.has(String(i.variantId)))
+        .map((i) => String(i.variantId));
+      setStockSelection(new Set(tracked));
+    }
   }
 
   function handleSubmit() {
@@ -96,6 +111,97 @@ export default function NorcalOrderModal({
     : vendors.length > 1
       ? `Submit to ${vendors.length} vendors`
       : `Submit to ${vendors[0] || "vendor"}`;
+
+  function finishOrder(addSelected) {
+    if (addSelected && stockSelection?.size) {
+      onAddToStock?.(order.filter((i) => stockSelection.has(String(i.variantId))));
+    }
+    setStockSelection(null);
+    onOrdered?.();
+    onClose?.();
+  }
+
+  if (stockSelection) {
+    // ── Add-to-stock step ────────────────────────────────────────────
+    // Closing here (X / backdrop) counts as Skip: the vendor carts are
+    // already open, so the ORDER is done either way — only the stock
+    // bookkeeping is being declined.
+    return createPortal(
+      <div
+        className="fixed inset-0 z-[70] bg-slate-900/70 backdrop-blur-sm flex items-start justify-center p-4 overflow-auto"
+        onClick={() => finishOrder(false)}
+      >
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-4" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div>
+              <div className="text-sm font-bold text-slate-900">Add to stock?</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                Uncheck anything that didn&apos;t actually get ordered — out of stock, removed at checkout, saved for later.
+              </div>
+            </div>
+            <button onClick={() => finishOrder(false)} className="p-2 text-slate-400 hover:text-slate-600 transition" aria-label="Skip">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="px-5 py-3 space-y-1.5 max-h-[50vh] overflow-auto">
+            {order.map((i) => {
+              const vid = String(i.variantId);
+              const tracked = linkedVariantIds?.has(vid);
+              const checked = stockSelection.has(vid);
+              return (
+                <label
+                  key={vid}
+                  className={`flex items-center gap-3 rounded-lg px-3 py-2 border ${tracked ? "border-slate-200 cursor-pointer hover:bg-slate-50" : "border-slate-100 bg-slate-50 opacity-60"}`}
+                >
+                  <input
+                    type="checkbox"
+                    className="accent-teal-600"
+                    checked={tracked && checked}
+                    disabled={!tracked}
+                    onChange={() => {
+                      setStockSelection((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(vid)) next.delete(vid); else next.add(vid);
+                        return next;
+                      });
+                    }}
+                  />
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm text-slate-800 truncate">{i.title}{i.size ? ` — ${i.size}` : ""}</span>
+                    {!tracked && (
+                      <span className="block text-[11px] text-slate-400">Not tracked in inventory — nothing to add to</span>
+                    )}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">+{Number(i.qty) || 0}</span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-100">
+            <button
+              onClick={() => finishOrder(false)}
+              className="text-sm font-semibold text-slate-600 px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition"
+            >
+              Skip
+            </button>
+            <button
+              onClick={() => finishOrder(true)}
+              disabled={!stockSelection.size}
+              className="text-sm font-bold text-white bg-teal-600 hover:bg-teal-700 px-5 py-2 rounded-xl transition disabled:opacity-50"
+            >
+              Add {[...stockSelection].reduce((s, vid) => {
+                const line = order.find((i) => String(i.variantId) === vid);
+                return s + (Number(line?.qty) || 0);
+              }, 0)} pcs to stock
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+  }
 
   return createPortal(
     <div
