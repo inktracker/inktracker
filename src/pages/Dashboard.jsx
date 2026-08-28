@@ -285,6 +285,7 @@ export default function Dashboard() {
   const [quotes, setQuotes] = useState([]);
   const [orders, setOrders] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [perf30, setPerf30] = useState(null);
   // dashboard_stats RPC result — server-truth for the headline chips
   // (the list fetches above are capped and exist for display only).
   // Null when the RPC failed; chips fall back to capped client math.
@@ -410,7 +411,7 @@ export default function Dashboard() {
       // killing refetch-on-every-navigation. None of these lists are realtime
       // here (only Messages is, below), so caching is safe. Writes elsewhere
       // invalidate the table, so a freshly created quote/order/etc. still shows.
-      const [q, o, invItems, allUsers, custs, localInvoices, statsRpc] = await Promise.all([
+      const [q, o, invItems, allUsers, custs, localInvoices, statsRpc, perfStats30] = await Promise.all([
         cachedFilter("Quote", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 100 }).catch((e) => { console.error("[Dashboard] quotes fetch failed:", e); return []; }),
         cachedFilter("Order", { filters: { shop_owner: shopScope(currentUser) }, sort: "-created_date", limit: 50 }).catch((e) => { console.error("[Dashboard] orders fetch failed:", e); return []; }),
         cachedFilter("InventoryItem", { filters: { shop_owner: shopScope(currentUser) } }).catch((e) => { console.error("[Dashboard] inventory fetch failed:", e); return []; }),
@@ -430,9 +431,23 @@ export default function Dashboard() {
           if (error) { console.error("[Dashboard] dashboard_stats rpc failed:", error.message); return null; }
           return data || null;
         }).catch((e) => { console.error("[Dashboard] dashboard_stats rpc threw:", e); return null; }),
+        // Total Volume (30d) — MUST come from the server. The invoice fetch
+        // above deliberately projects only id/date/total/paid (perf fix #3),
+        // so client-side computeTotalVolume sees no line_items and silently
+        // collapses to order-only units. Shipped that way for ~an hour on
+        // 2026-08-28 (card read 516 while the shop had 1,195 QB-first pcs);
+        // Joe caught it on the dashboard within minutes.
+        supabase.rpc("performance_stats", {
+          p_from: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10),
+          p_to: null,
+        }).then(({ data, error }) => {
+          if (error) { console.error("[Dashboard] performance_stats rpc failed:", error.message); return null; }
+          return data || null;
+        }).catch((e) => { console.error("[Dashboard] performance_stats rpc threw:", e); return null; }),
       ]);
 
       setServerStats(statsRpc);
+      setPerf30(perfStats30);
       setQuotes(q);
       setOrders(o);
       setInventory(invItems);
@@ -615,15 +630,21 @@ export default function Dashboard() {
   // completed orders compete with every open one inside the same 50 rows.
   const revenueLast30 = serverStats?.revenue_30d ?? sumTotals(recentCompleted);
   // 30-day units = TOTAL VOLUME (completed orders + QB-only invoices),
-  // matching the Performance headline — same tested lib, same definition,
-  // so the two surfaces can never disagree again (2026-08-28; the old
-  // order-only number here read 516 while the shop had also invoiced
-  // 1,195 QB-first pieces for California 89).
-  const volume30 = computeTotalVolume({
+  // matching the Performance headline. SERVER-computed (performance_stats):
+  // the local invoice rows are column-projected without line_items, so the
+  // client lib can only see order units — it remains the fallback when the
+  // RPC fails, and in that degraded state the card undercounts QB-first
+  // work rather than erroring.
+  const clientVolume30 = computeTotalVolume({
     orders, invoices, quotes,
     from: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10),
     to: null,
   });
+  const volume30 = {
+    units: perf30?.period_total_volume ?? clientVolume30.units,
+    orderCount: perf30?.period_orders_count ?? clientVolume30.orderCount,
+    invoiceCount: perf30?.period_qb_only_invoice_count ?? clientVolume30.invoiceCount,
+  };
   const unitsLast30 = volume30.units;
 
   // Legacy aliases still used by GettingStartedChecklist + lower-half UI
