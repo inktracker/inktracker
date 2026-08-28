@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { computeTotalVolume } from "@/lib/reports/totalVolume";
 import { useNavigate } from "react-router-dom";
 import { base44, supabase } from "@/api/supabaseClient";
 import { cachedFilter, cachedList } from "@/lib/queries/cachedEntity";
@@ -613,12 +614,17 @@ export default function Dashboard() {
   // The 50-order fetch is the cap MOST likely to lie here: 30 days of
   // completed orders compete with every open one inside the same 50 rows.
   const revenueLast30 = serverStats?.revenue_30d ?? sumTotals(recentCompleted);
-  const unitsLast30 = serverStats?.units_30d ?? recentCompleted.reduce((sum, o) => {
-    return sum + (o.line_items || []).reduce((s, li) => {
-      const sizes = li.sizes || {};
-      return s + Object.values(sizes).reduce((a, v) => a + (parseInt(v, 10) || 0), 0);
-    }, 0);
-  }, 0);
+  // 30-day units = TOTAL VOLUME (completed orders + QB-only invoices),
+  // matching the Performance headline — same tested lib, same definition,
+  // so the two surfaces can never disagree again (2026-08-28; the old
+  // order-only number here read 516 while the shop had also invoiced
+  // 1,195 QB-first pieces for California 89).
+  const volume30 = computeTotalVolume({
+    orders, invoices, quotes,
+    from: new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10),
+    to: null,
+  });
+  const unitsLast30 = volume30.units;
 
   // Legacy aliases still used by GettingStartedChecklist + lower-half UI
   // (the Open Quotes count + dollar total appear on the order-pipeline
@@ -724,7 +730,7 @@ export default function Dashboard() {
                   <MetricCard label="Open Orders" value={openOrdersCount} sub={fmtMoney(openOrdersValue)} color="text-blue-600" onClick={() => navigate(createPageUrl("Production"))} />
                   <MetricCard label={invoicesLabel} value={invoicesValue} sub={invoicesSub} color="text-red-600" onClick={() => navigate(createPageUrl("Invoices"))} />
                   <MetricCard label={revenueLabel} value={revenueValue} sub={revenueSub} color="text-emerald-600" onClick={() => navigate(createPageUrl("Performance"))} />
-                  <MetricCard label="Units Sold (30d)" value={unitsLast30.toLocaleString()} sub={`${recentCompleted.length} order${recentCompleted.length === 1 ? "" : "s"}`} color="text-green-600" onClick={() => navigate(createPageUrl("Performance"))} />
+                  <MetricCard label="Total Volume (30d)" value={unitsLast30.toLocaleString()} sub={`${volume30.orderCount} order${volume30.orderCount === 1 ? "" : "s"}${volume30.invoiceCount ? ` + ${volume30.invoiceCount} QB` : ""}`} color="text-green-600" onClick={() => navigate(createPageUrl("Performance"))} />
                 </div>
                 {qbConnected && !qbMetrics && (
                   <p className="text-[11px] text-slate-500 -mt-3">

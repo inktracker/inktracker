@@ -321,11 +321,18 @@ export default function Performance() {
                 value={fmtMoney(aov)}
                 color="slate"
               />
+              {/* Headline units = TOTAL VOLUME (orders + QB-only invoices).
+                  Changed 2026-08-28: "Units Sold" only counted completed
+                  InkTracker orders, structurally excluding QB-first work —
+                  the night Joe invoiced California 89 for 1,195 pcs, the
+                  card said 360. The number a shop glances at has to match
+                  the shop they actually run. Order-only stays visible in
+                  the row below. */}
               <StatCard
                 icon={Package}
-                label="Units Sold"
-                value={totalUnits.toLocaleString()}
-                sub={`${totalOrders} order${totalOrders === 1 ? "" : "s"}`}
+                label="Total Volume"
+                value={totalVolume.toLocaleString()}
+                sub={`${totalOrders} order${totalOrders === 1 ? "" : "s"} + ${volumeInvoiceCount} QB invoice${volumeInvoiceCount === 1 ? "" : "s"}`}
                 color="violet"
               />
             </div>
@@ -334,10 +341,10 @@ export default function Performance() {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <StatCard
                 icon={Layers}
-                label="Total Volume"
-                value={totalVolume.toLocaleString()}
-                sub={`${totalOrders} order${totalOrders === 1 ? "" : "s"} + ${volumeInvoiceCount} QB invoice${volumeInvoiceCount === 1 ? "" : "s"}`}
-                color="violet"
+                label="Units Sold (Orders)"
+                value={totalUnits.toLocaleString()}
+                sub="Completed InkTracker orders only"
+                color="slate"
               />
               <StatCard
                 icon={Activity}
