@@ -44,6 +44,7 @@ import {
   mergeCustomerAuthoritative,
   qbAllowsDiscountLines,
   clampQbMemo,
+  mapQbPurchaseToExpense,
 } from "../_shared/qbInvoice.js";
 import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
 import { mergeNotesPreservingSyncLines } from "../_shared/qbInvoiceModified.js";
@@ -2234,6 +2235,129 @@ async function handleEstimateTax(token: string, realmId: string, params: any, su
   return { ok: true, tax: taxTotal, subtotal, total, effectiveRate, exempt: isTaxExempt };
 }
 
+// ── Action: pullExpenses (QB → InkTracker) ─────────────────────────────────
+// Rebuild of the import removed with the Performance reports (2026-05-10).
+// That version's known-ids dedup lookup silently hit PostgREST's 1,000-row
+// default cap, so every trigger re-inserted most of the history (~63 copies
+// stacked during tax season). This version doesn't maintain its own dedup
+// state at all: rows upsert onto the expenses_shop_owner_qb_expense_id_uniq
+// index with ignoreDuplicates, so re-running is idempotent by construction.
+// Read-only against QB — pulls Purchases, never writes anything back.
+
+async function handlePullExpenses(
+  token: string,
+  realmId: string,
+  supabase: any,
+  shopOwner: string,
+  sinceDate?: string,
+) {
+  // Optional lower bound on TxnDate. Validated to a date literal so it can
+  // be embedded in the QBO query without escaping concerns.
+  let dateClause = "";
+  if (sinceDate !== undefined && sinceDate !== null && sinceDate !== "") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(sinceDate))) {
+      throw new Error(`pullExpenses: invalid sinceDate "${sinceDate}" — expected YYYY-MM-DD`);
+    }
+    dateClause = ` WHERE TxnDate >= '${sinceDate}'`;
+  }
+
+  // Pull QB purchases (QB caps at ~1000 per page; paginate, hard cap 10K).
+  const pageSize = 1000;
+  const all: any[] = [];
+  let startPosition = 1;
+  let hitCap = false;
+  while (true) {
+    const res = await qbQuery(
+      token,
+      realmId,
+      `SELECT Id, TxnDate, EntityRef, AccountRef, PaymentType, TotalAmt, DocNumber, PrivateNote, Line FROM Purchase${dateClause} STARTPOSITION ${startPosition} MAXRESULTS ${pageSize}`,
+    );
+    const batch: any[] = res?.QueryResponse?.Purchase ?? [];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+    startPosition += pageSize;
+    if (startPosition > 10000) { hitCap = true; break; }
+  }
+  if (hitCap) {
+    console.error(`[pullExpenses] hit 10K-row cap for ${shopOwner} — older QB purchases were NOT pulled. Re-run with a later sinceDate window.`);
+  }
+
+  if (all.length === 0) return { imported: 0, skipped: 0, total: 0, hitCap };
+
+  // Vendor-id → name map (Purchase queries only return {value, type}).
+  const vendorRes = await qbQuery(token, realmId, "SELECT Id, DisplayName FROM Vendor MAXRESULTS 1000");
+  const vendorMap = new Map<string, string>();
+  for (const v of vendorRes?.QueryResponse?.Vendor ?? []) {
+    vendorMap.set(String(v.Id), v.DisplayName ?? "");
+  }
+
+  // Payment-account (Bank/Credit Card) map + upsert into the lookup table.
+  const acctRes = await qbQuery(token, realmId, "SELECT Id, Name, AccountType FROM Account WHERE AccountType IN ('Bank','Credit Card') MAXRESULTS 1000");
+  const acctMap = new Map<string, { name: string; type: string }>();
+  for (const a of acctRes?.QueryResponse?.Account ?? []) {
+    acctMap.set(String(a.Id), { name: a.Name, type: a.AccountType });
+  }
+  if (acctMap.size > 0) {
+    const { data: existingAccts } = await supabase
+      .from("payment_accounts").select("name").eq("shop_owner", shopOwner);
+    const known = new Set((existingAccts ?? []).map((a: any) => a.name));
+    const toCreate = [...acctMap.values()]
+      .filter((a) => !known.has(a.name))
+      .map((a) => ({ shop_owner: shopOwner, name: a.name, type: a.type }));
+    if (toCreate.length > 0) await supabase.from("payment_accounts").insert(toCreate);
+  }
+
+  const nowIso = new Date().toISOString();
+  const newPayees = new Set<string>();
+  const payloads = all
+    .filter((pur) => pur?.Id != null)
+    .map((pur) => {
+      const entityId = pur.EntityRef?.value ? String(pur.EntityRef.value) : null;
+      const payeeName =
+        pur.EntityRef?.name
+        || (entityId ? vendorMap.get(entityId) : null)
+        || "QuickBooks Vendor";
+      newPayees.add(payeeName);
+      const purAcctId = pur.AccountRef?.value ? String(pur.AccountRef.value) : null;
+      return mapQbPurchaseToExpense(pur, {
+        shopOwner,
+        payeeName,
+        accountName: purAcctId ? (acctMap.get(purAcctId)?.name ?? null) : null,
+        nowIso,
+      });
+    });
+
+  // Chunked idempotent insert: the unique index is the dedup authority.
+  // ignoreDuplicates → ON CONFLICT DO NOTHING; the returned representation
+  // contains only the rows actually inserted.
+  let imported = 0;
+  for (let i = 0; i < payloads.length; i += 500) {
+    const chunk = payloads.slice(i, i + 500);
+    const { data: inserted, error } = await supabase
+      .from("expenses")
+      .upsert(chunk, { onConflict: "shop_owner,qb_expense_id", ignoreDuplicates: true })
+      .select("id");
+    if (error) {
+      console.error(`[pullExpenses] upsert chunk failed for ${shopOwner}:`, error.message);
+      continue;
+    }
+    imported += (inserted ?? []).length;
+  }
+
+  // Vendor names → payees lookup so the ExpenseForm dropdown includes them.
+  if (newPayees.size > 0) {
+    const { data: existingPayees } = await supabase
+      .from("payees").select("name").eq("shop_owner", shopOwner);
+    const known = new Set((existingPayees ?? []).map((p: any) => p.name));
+    const toCreate = [...newPayees]
+      .filter((n) => !known.has(n))
+      .map((name) => ({ shop_owner: shopOwner, name }));
+    if (toCreate.length > 0) await supabase.from("payees").insert(toCreate);
+  }
+
+  return { imported, skipped: payloads.length - imported, total: all.length, hitCap };
+}
+
 // ── Action: pullCustomers (QB → InkTracker) ────────────────────────────────
 
 async function handlePullCustomers(token: string, realmId: string, supabase: any, shopOwner: string) {
@@ -3469,6 +3593,9 @@ Deno.serve(async (req) => {
         result = { qbCustomerId };
         break;
       }
+      case "pullExpenses":
+        result = await handlePullExpenses(qbToken, realmId, supabase, shopOwnerEmail, params.sinceDate);
+        break;
       case "pullCustomers":
         result = await handlePullCustomers(qbToken, realmId, supabase, shopOwnerEmail);
         break;

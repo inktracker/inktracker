@@ -944,3 +944,41 @@ export function mergeCustomerAuthoritative(payloadCustomer, dbRow) {
   }
   return merged;
 }
+
+// ── QB Purchase → InkTracker expense row (pullExpenses) ────────────────────
+// Pure mapping for the QB → InkTracker expense import. The edge function
+// resolves vendor/account names from its lookup maps and passes them in;
+// this function owns the row shape so it can be contract-tested.
+export function mapQbPaymentTypeToInkTracker(paymentType) {
+  switch (paymentType) {
+    case "CreditCard": return "Credit Card";
+    case "Cash":       return "Cash";
+    case "Check":      return "Check";
+    default:           return "Other";
+  }
+}
+
+export function mapQbPurchaseToExpense(pur, { shopOwner, payeeName, accountName, nowIso, idFn = null }) {
+  const makeId = idFn ?? (() => crypto.randomUUID());
+  const lineItems = (pur?.Line ?? [])
+    .filter((l) => l?.DetailType === "AccountBasedExpenseLineDetail")
+    .map((l) => ({
+      id: makeId(),
+      category_name: l.AccountBasedExpenseLineDetail?.AccountRef?.name ?? "Other",
+      amount: Number(l.Amount ?? 0),
+      description: l.Description ?? "",
+    }));
+  return {
+    shop_owner:      shopOwner,
+    payee:           payeeName || "QuickBooks Vendor",
+    payment_date:    pur?.TxnDate ?? null,
+    payment_method:  mapQbPaymentTypeToInkTracker(pur?.PaymentType),
+    payment_account: accountName ?? null,
+    ref_number:      pur?.DocNumber ?? null,
+    memo:            pur?.PrivateNote ?? "",
+    line_items:      lineItems,
+    total:           Number(pur?.TotalAmt ?? 0),
+    qb_expense_id:   String(pur?.Id ?? ""),
+    qb_synced_at:    nowIso,
+  };
+}

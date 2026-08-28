@@ -31,6 +31,8 @@ import {
   clampPaymentAmount,
   pickItemVariantMatch,
   normalizeItemName as normItem,
+  mapQbPurchaseToExpense,
+  mapQbPaymentTypeToInkTracker,
 } from "../qbInvoice";
 
 describe("qbInvoiceHasPayment (NEW-12 deposit double-post guard)", () => {
@@ -1477,5 +1479,68 @@ describe("clampQbMemo (QB 400 code 2050 guard)", () => {
   it("treats null/undefined as empty string (matches old `|| \"\"` behavior)", () => {
     expect(clampQbMemo(null)).toBe("");
     expect(clampQbMemo(undefined)).toBe("");
+  });
+});
+
+// ── mapQbPurchaseToExpense / mapQbPaymentTypeToInkTracker ──────────────────
+describe("mapQbPurchaseToExpense", () => {
+  const basePur = {
+    Id: 3196,
+    TxnDate: "2025-05-20",
+    PaymentType: "CreditCard",
+    TotalAmt: 35,
+    DocNumber: "123",
+    PrivateNote: "sub",
+    Line: [
+      { DetailType: "AccountBasedExpenseLineDetail", Amount: 35, Description: "sw", AccountBasedExpenseLineDetail: { AccountRef: { name: "Software" } } },
+      { DetailType: "ItemBasedExpenseLineDetail", Amount: 99 },
+    ],
+  };
+  const opts = { shopOwner: "joe@biotamfg.co", payeeName: "Quickbooks", accountName: "Amex", nowIso: "2026-08-28T00:00:00.000Z", idFn: () => "fixed-id" };
+
+  it("maps the full row shape with only account-based lines", () => {
+    const row = mapQbPurchaseToExpense(basePur, opts);
+    expect(row).toEqual({
+      shop_owner: "joe@biotamfg.co",
+      payee: "Quickbooks",
+      payment_date: "2025-05-20",
+      payment_method: "Credit Card",
+      payment_account: "Amex",
+      ref_number: "123",
+      memo: "sub",
+      line_items: [{ id: "fixed-id", category_name: "Software", amount: 35, description: "sw" }],
+      total: 35,
+      qb_expense_id: "3196",
+      qb_synced_at: "2026-08-28T00:00:00.000Z",
+    });
+  });
+
+  it("stringifies the QB id (the dedup key must compare stably)", () => {
+    expect(mapQbPurchaseToExpense(basePur, opts).qb_expense_id).toBe("3196");
+    expect(typeof mapQbPurchaseToExpense({ ...basePur, Id: "42" }, opts).qb_expense_id).toBe("string");
+  });
+
+  it("falls back to placeholder payee and null account", () => {
+    const row = mapQbPurchaseToExpense(basePur, { ...opts, payeeName: "", accountName: null });
+    expect(row.payee).toBe("QuickBooks Vendor");
+    expect(row.payment_account).toBe(null);
+  });
+
+  it("tolerates a sparse purchase without throwing", () => {
+    const row = mapQbPurchaseToExpense({ Id: 1 }, opts);
+    expect(row.total).toBe(0);
+    expect(row.line_items).toEqual([]);
+    expect(row.memo).toBe("");
+    expect(row.ref_number).toBe(null);
+  });
+});
+
+describe("mapQbPaymentTypeToInkTracker", () => {
+  it("maps known QB payment types and defaults to Other", () => {
+    expect(mapQbPaymentTypeToInkTracker("CreditCard")).toBe("Credit Card");
+    expect(mapQbPaymentTypeToInkTracker("Cash")).toBe("Cash");
+    expect(mapQbPaymentTypeToInkTracker("Check")).toBe("Check");
+    expect(mapQbPaymentTypeToInkTracker("Wire")).toBe("Other");
+    expect(mapQbPaymentTypeToInkTracker(undefined)).toBe("Other");
   });
 });
