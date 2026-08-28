@@ -447,13 +447,18 @@ describe("qbJurisdictionRate", () => {
 });
 
 describe("escapeQbStringLiteral", () => {
-  it("doubles single quotes per QB BNF", () => {
-    expect(escapeQbStringLiteral("O'Brien")).toBe("O''Brien");
-    expect(escapeQbStringLiteral("It's a 'test'")).toBe("It''s a ''test''");
+  it("backslash-escapes single quotes per Intuit QBO query docs", () => {
+    expect(escapeQbStringLiteral("O'Brien")).toBe("O\\'Brien");
+    expect(escapeQbStringLiteral("It's a 'test'")).toBe("It\\'s a \\'test\\'");
   });
 
-  it("does NOT use backslash escaping (QB silently breaks on \\)", () => {
-    expect(escapeQbStringLiteral("foo'bar")).not.toContain("\\");
+  it("does NOT double quotes (QBO parser ends the literal there — prod QueryParserError 2026-08-13)", () => {
+    expect(escapeQbStringLiteral("foo'bar")).not.toContain("''");
+  });
+
+  it("escapes literal backslashes so they can't re-arm a following quote", () => {
+    expect(escapeQbStringLiteral("a\\b")).toBe("a\\\\b");
+    expect(escapeQbStringLiteral("tricky\\'s")).toBe("tricky\\\\\\'s");
   });
 
   it("returns empty string for null/undefined", () => {

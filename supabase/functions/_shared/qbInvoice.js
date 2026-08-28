@@ -487,10 +487,14 @@ export function clampQbMemo(text, max = QB_MEMO_MAX) {
 }
 
 // ── Single-quote SQL escaping for QB QBO query strings ─────────────────────
-// QB BNF requires '' (two single quotes) to escape a single quote inside
-// a string literal. Anything else (e.g. \') silently breaks the query.
+// QBO escapes with a BACKSLASH (\' and \\), per Intuit's query docs. The
+// previous ''-doubling was wrong: QBO's parser ends the literal at the
+// first quote and reads the rest as a second string — QueryParserError in
+// prod on "…'s Farmhouse (Sally Watkinson)", 2026-08-13. Backslash must be
+// escaped first so a literal \ in a name can't re-arm the quote that follows.
+// Safe on the wire: qbQuery sends via encodeURIComponent (\ → %5C).
 export function escapeQbStringLiteral(value) {
-  return String(value ?? "").replace(/'/g, "''");
+  return String(value ?? "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 // ── Revision suffix helpers ────────────────────────────────────────────────
