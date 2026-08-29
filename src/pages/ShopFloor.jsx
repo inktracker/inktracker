@@ -15,6 +15,7 @@ import {
 import { Package, ChevronRight, ChevronDown, RefreshCw, LogOut, Send, Clock, CheckCircle2, AlertTriangle, Loader2 , Printer } from "lucide-react";
 import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
+import TimeClockButton from "../components/team/TimeClockButton";
 import { getStageTasks } from "@/lib/productionTasks";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
 import { normalizeAssignedPress } from "@/lib/presses/normalizePresses";
@@ -627,6 +628,7 @@ export default function ShopFloor() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <TimeClockButton user={user} />
           <button onClick={handleRefresh} className="p-2 hover:bg-teal-500 rounded-lg transition">
             <RefreshCw className={`w-5 h-5 ${refreshing ? "animate-spin" : ""}`} />
           </button>

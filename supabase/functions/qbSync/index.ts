@@ -46,6 +46,7 @@ import {
   clampQbMemo,
   mapQbPurchaseToExpense,
 } from "../_shared/qbInvoice.js";
+import { pickQbEmployeeMatch, buildTimeActivityBody } from "../_shared/qbTime.js";
 import { cascadeMarkInvoicePaid } from "../_shared/qbWebhookLogic.js";
 import { mergeNotesPreservingSyncLines } from "../_shared/qbInvoiceModified.js";
 import {
@@ -2358,6 +2359,69 @@ async function handlePullExpenses(
   return { imported, skipped: payloads.length - imported, total: all.length, hitCap };
 }
 
+// ── Action: pushTimeEntries (InkTracker → QB TimeActivity) ─────────────────
+// Pushes APPROVED, not-yet-synced timesheet entries to QBO as TimeActivity
+// records so QBO Payroll can use them for hourly pay runs. Append-only:
+// creates only, each row stamped with its qb_time_activity_id and never
+// pushed again. Members who don't resolve to exactly one QB Employee are
+// reported back, never guessed (wrong-person payroll is worse than a skip).
+
+async function handlePushTimeEntries(token: string, realmId: string, supabase: any, shopOwner: string) {
+  const { data: entries, error: readErr } = await supabase
+    .from("time_entries")
+    .select("*")
+    .eq("shop_owner", shopOwner)
+    .eq("status", "approved")
+    .is("qb_time_activity_id", null)
+    .gt("minutes", 0)
+    .order("work_date", { ascending: true })
+    .limit(500);
+  if (readErr) throw new Error(`pushTimeEntries: failed to read entries — ${readErr.message}`);
+  if (!entries || entries.length === 0) return { pushed: 0, skipped: 0, unmatched: [], total: 0 };
+
+  const empRes = await qbQuery(token, realmId, "SELECT * FROM Employee MAXRESULTS 1000");
+  const employees = empRes?.QueryResponse?.Employee ?? [];
+
+  let pushed = 0;
+  let skipped = 0;
+  const unmatched = new Set<string>();
+  const failures: string[] = [];
+
+  for (const entry of entries) {
+    const match = pickQbEmployeeMatch(entry, employees);
+    if (!match) {
+      unmatched.add(entry.member_name || entry.member_email);
+      continue;
+    }
+    const body = buildTimeActivityBody(entry, match.Id);
+    if (!body) { skipped++; continue; }
+
+    // Idempotency re-read: a concurrent push may have stamped this row
+    // between our list query and now — never create the same hours twice.
+    const { data: fresh } = await supabase
+      .from("time_entries").select("qb_time_activity_id").eq("id", entry.id).maybeSingle();
+    if (fresh?.qb_time_activity_id) { skipped++; continue; }
+
+    try {
+      const created = await qbCreate(token, realmId, "timeactivity", body);
+      const qbId = created?.TimeActivity?.Id;
+      if (!qbId) throw new Error("QB did not return a TimeActivity ID");
+      await supabase.from("time_entries").update({
+        qb_time_activity_id: String(qbId),
+        qb_employee_id: String(match.Id),
+        qb_synced_at: new Date().toISOString(),
+      }).eq("id", entry.id);
+      pushed++;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[pushTimeEntries] entry ${entry.id} failed:`, msg);
+      failures.push(`${entry.work_date} ${entry.member_email}: ${msg}`);
+    }
+  }
+
+  return { pushed, skipped, unmatched: [...unmatched], failures, total: entries.length };
+}
+
 // ── Action: pullCustomers (QB → InkTracker) ────────────────────────────────
 
 async function handlePullCustomers(token: string, realmId: string, supabase: any, shopOwner: string) {
@@ -3593,6 +3657,9 @@ Deno.serve(async (req) => {
         result = { qbCustomerId };
         break;
       }
+      case "pushTimeEntries":
+        result = await handlePushTimeEntries(qbToken, realmId, supabase, shopOwnerEmail);
+        break;
       case "pullExpenses":
         result = await handlePullExpenses(qbToken, realmId, supabase, shopOwnerEmail, params.sinceDate);
         break;
