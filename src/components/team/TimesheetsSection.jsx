@@ -204,6 +204,14 @@ export default function TimesheetsSection({ user }) {
           </div>
         ))
       )}
+
+      <p className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-400 dark:text-slate-500">
+        Approved hours are sent to QuickBooks as time activities and matched by the
+        employee's InkTracker login email — add each person under Payroll → Employees
+        in QuickBooks with the same email. QuickBooks Payroll then picks the hours up
+        for hourly pay runs. Entries already sent are marked "in QuickBooks" and are
+        never sent twice.
+      </p>
     </div>
   );
 }

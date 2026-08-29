@@ -552,6 +552,13 @@ export default function AdminPanel() {
                     </button>
                   ))}
                 </div>
+                {(inviteRole === "employee" || inviteRole === "manager") && (
+                  <p className="mt-2 text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                    Payroll tip: timesheet hours are matched to QuickBooks by this
+                    email. If you run QuickBooks Payroll, add this person under
+                    Payroll → Employees using the <span className="font-semibold">same email</span>.
+                  </p>
+                )}
               </div>
 
               {inviteError && (
