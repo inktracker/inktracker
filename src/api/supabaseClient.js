@@ -62,6 +62,7 @@ supabase.auth.onAuthStateChange(() => {
 const TABLE_MAP = {
   Quote: "quotes",
   Order: "orders",
+  TimeEntry: "time_entries",
   Customer: "customers",
   User: "profiles",
   Shop: "shops",

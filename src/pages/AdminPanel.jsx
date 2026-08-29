@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { Users, CheckCircle, Clock, Store, Trash2, RefreshCw, ShieldCheck, UserX, Mail, X, ChevronDown, SlidersHorizontal } from "lucide-react";
 import BrokerManager from "@/components/broker/BrokerManager";
+import TimesheetsSection from "@/components/team/TimesheetsSection";
 import { notify } from "@/lib/notify";
 
 // Supabase functions-js returns { data: null, error: FunctionsHttpError }
@@ -443,6 +444,9 @@ export default function AdminPanel() {
           </div>
         )}
       </div>
+
+      {/* Timesheets — owner/admin review + push to QuickBooks. */}
+      {canMutateTeam && <TimesheetsSection user={user} />}
 
       {/* Broker management — owner/admin only (invites + assignment changes). */}
       {canMutateTeam && (
