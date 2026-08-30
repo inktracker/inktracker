@@ -248,9 +248,12 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
   // customer can pay with. Only fires when the user picks "QB" as the
   // payment provider and clicks the explicit "Create QB Invoice" button.
   // Send remains disabled until this succeeds.
-  async function handleCreateQbInvoice({ acceptQbTax = false, resyncOnly = false } = {}) {
-    // Last-mile confirm — this button both creates the QB invoice AND sends
-    // the customer the quote email, so it's a real outbound-email gate.
+  async function handleCreateQbInvoice({ acceptQbTax = false, resyncOnly = false, qbOnly = false } = {}) {
+    // Last-mile confirm — the default button both creates the QB invoice AND
+    // sends the customer the quote email, so it's a real outbound-email gate.
+    // qbOnly is the books-only path: same QB create (same guards, same
+    // noEmail contract), but the auto-send never fires and the quote stays
+    // un-sent — "Sent" must keep meaning emailed (#784).
     // NOTE: QuickBooks does NOT email a separate copy (noEmail:true suppresses
     // the /send fallback); the customer gets ONE InkTracker email with the
     // PDF, Approve button, and pay-now link. Re-tries (status ===
@@ -258,9 +261,11 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
     if (qbState.status === "needs_create") {
       const recipientEmail = recipientEmails[0] || quote?.customer_email;
       const proceed = window.confirm(
-        depositMode
-          ? `This creates a QuickBooks DEPOSIT invoice for ${fmtMoney(depositDollars)} and emails ${recipientEmail || "the customer"} your quote — one message with the PDF, Approve button, and a pay-deposit link. The full invoice (minus this deposit) is created later when you invoice the job. Continue?`
-          : `This creates the QuickBooks invoice and emails ${recipientEmail || "the customer"} your quote — one message with the PDF, Approve button, and pay-now link. QuickBooks won't send a separate email. Continue?`
+        qbOnly
+          ? `This creates the QuickBooks invoice only — nothing is emailed to ${recipientEmail || "the customer"}, and the quote stays un-sent until you send it. Continue?`
+          : depositMode
+            ? `This creates a QuickBooks DEPOSIT invoice for ${fmtMoney(depositDollars)} and emails ${recipientEmail || "the customer"} your quote — one message with the PDF, Approve button, and a pay-deposit link. The full invoice (minus this deposit) is created later when you invoice the job. Continue?`
+            : `This creates the QuickBooks invoice and emails ${recipientEmail || "the customer"} your quote — one message with the PDF, Approve button, and pay-now link. QuickBooks won't send a separate email. Continue?`
       );
       if (!proceed) return;
     }
@@ -439,6 +444,19 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
       // invoice to the quote's current numbers but do NOT auto-send —
       // the operator reviews the refreshed state, then clicks Send.
       if (resyncOnly) autoSendAfter = false;
+
+      // Books-only create: never chain the customer email. On a clean
+      // create, say so explicitly — the operator's next action (send now
+      // vs. later vs. never) is theirs.
+      if (qbOnly) {
+        autoSendAfter = false;
+        if (data.qbInvoiceId && !data.taxBlocked && !data.updateFailed && !data.alreadyPaid) {
+          setQbNotice(
+            `QuickBooks invoice ${data.qbDocNumber || `#${data.qbInvoiceId}`} created — nothing was emailed. ` +
+            "The quote stays un-sent; use Send Quote whenever you're ready, or invoice it from the order.",
+          );
+        }
+      }
 
       // Shop accepted QB's tax on a held send. QB's authoritative tax is now
       // adopted on the quote; refresh the modal to QB's numbers (totals, email
@@ -1025,10 +1043,20 @@ export default function SendQuoteModal({ quote, customer, onClose, onSuccess }) 
                         ? (depositMode ? "Creating deposit invoice…" : "Creating QB invoice…")
                         : (depositMode ? `Create QB Deposit Invoice (${fmtMoney(depositDollars)}) & Send` : "Create QB Invoice & Send Quote")}
                     </button>
+                    {!depositMode && (
+                      <button
+                        type="button"
+                        onClick={() => handleCreateQbInvoice({ qbOnly: true })}
+                        disabled={creatingQbInvoice || sending}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-[#2CA01C] bg-white border border-[#2CA01C]/40 hover:bg-green-50 rounded-xl transition disabled:opacity-50"
+                      >
+                        Create in QuickBooks only — don't email the customer
+                      </button>
+                    )}
                     <p className="text-xs text-slate-500">
                       {depositMode
                         ? `Creates a ${fmtMoney(depositDollars)} deposit invoice in QuickBooks to get a pay-deposit link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. The full invoice — with this deposit applied — is created when you invoice the finished job.`
-                        : "Creates the invoice in QuickBooks to get a pay-now link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. QuickBooks doesn't email a separate copy. Skip this step to send a plain quote (no pay-now link)."}
+                        : "Creates the invoice in QuickBooks to get a pay-now link, then InkTracker sends one branded quote email with the PDF, Approve button, and that link. QuickBooks doesn't email a separate copy. The books-only button puts the invoice in QuickBooks without emailing anyone — the quote stays un-sent."}
                     </p>
                     {qbError && (
                       <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
