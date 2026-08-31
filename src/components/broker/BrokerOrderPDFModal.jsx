@@ -1,5 +1,5 @@
 import { X, Download } from "lucide-react";
-import { fmtDate, fmtMoney, getQty, SIZES, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP, getOrderDisplayClient, getShopPricingConfig } from "../shared/pricing";
+import { fmtDate, fmtMoney, getQty, activeSizeNames, calcLinkedLinePrice, buildLinkedQtyMap, BROKER_MARKUP, getOrderDisplayClient, getShopPricingConfig } from "../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { exportOrderToPDF } from "../shared/pdfExport";
 import ModalBackdrop from "../shared/ModalBackdrop";
@@ -72,7 +72,7 @@ export default function BrokerOrderPDFModal({ order, onClose }) {
               isBrokerOrder ? BROKER_MARKUP : undefined,
               linkedQtyMap
             );
-            const activeSizes = SIZES.filter(sz => (parseInt((li.sizes || {})[sz]) || 0) > 0);
+            const activeSizes = activeSizeNames(li.sizes);
 
             return (
               <div key={li.id || i} className="border border-slate-200 rounded-xl overflow-hidden">

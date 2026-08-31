@@ -12,6 +12,7 @@ import {
   getBrokerMarkupShare,
   getMarkup,
   sortSizeEntries,
+  activeSizeNames,
   fmtMoney,
   buildLinkedQtyMap,
   getPrintKey,
@@ -287,6 +288,37 @@ describe("Helper Functions", () => {
       const sorted = sortSizeEntries(entries);
       expect(sorted[0][0]).toBe("S");
       expect(sorted[1][0]).toBe("Youth L");
+    });
+
+    it("sorts infant/toddler sizes age-ascending, before adult", () => {
+      // Alphabetical would put 12M before 6M — the TGC bodysuit case.
+      const entries = [["12M", 4], ["M", 2], ["NB", 2], ["2T", 3], ["6M", 4], ["18M", 2]];
+      const sorted = sortSizeEntries(entries);
+      expect(sorted.map(([k]) => k)).toEqual(["NB", "6M", "12M", "18M", "2T", "M"]);
+    });
+  });
+
+  describe("activeSizeNames", () => {
+    it("returns EVERY size with a positive qty — infant sizes must not vanish", () => {
+      // The bug: display paths filtered against the adult SIZES constant, so
+      // an infant bodysuit line rendered "12 pcs" with a blank size row on
+      // quote views, PDFs, and production tickets.
+      expect(activeSizeNames({ "6M": 4, NB: 2, "12M": 4, "18M": 2 }))
+        .toEqual(["NB", "6M", "12M", "18M"]);
+    });
+
+    it("mixes families in display order and drops zero/garbage quantities", () => {
+      expect(activeSizeNames({ M: 3, "2T": 3, S: 0, "4T": "junk", XL: 1 }))
+        .toEqual(["2T", "M", "XL"]);
+    });
+
+    it("keeps sizes it has never heard of", () => {
+      expect(activeSizeNames({ "Youth XL": 2, S: 1 })).toEqual(["S", "Youth XL"]);
+    });
+
+    it("survives null/empty", () => {
+      expect(activeSizeNames(null)).toEqual([]);
+      expect(activeSizeNames({})).toEqual([]);
     });
   });
 

@@ -13,7 +13,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Printer, X } from "lucide-react";
-import { SIZES, getQty, getDisplayName } from "../shared/pricing";
+import { activeSizeNames, getQty, getDisplayName } from "../shared/pricing";
 import { imprintCountText } from "@/lib/quotes/imprintLabels";
 import { customGarmentHeader } from "@/lib/quotes/garmentTitle";
 import { getImprintArtwork } from "./orderDetail/orderDetailHelpers";
@@ -113,7 +113,7 @@ export default function ProductionTicket({ order, customer, shopName, stitchTier
         {/* Garments */}
         {lines.map((li, i) => {
           const sizes = li.sizes || {};
-          const activeSizes = SIZES.filter((sz) => (parseInt(sizes[sz]) || 0) > 0);
+          const activeSizes = activeSizeNames(sizes);
           return (
             <div key={li.id || i} className="mb-5 break-inside-avoid">
               <div className="font-bold text-base">

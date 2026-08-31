@@ -7,7 +7,7 @@ import {
   getQty,
   getShortfallQty,
   getCompletedQty,
-  SIZES,
+  activeSizeNames,
   BROKER_MARKUP,
   getShopPricingConfig,
 } from "../../shared/pricing";
@@ -60,9 +60,7 @@ export default function OrderLineItems({
           : useClientPpp
             ? { lineTotal: clientPppOverride * qty, ppp: clientPppOverride, regularPpp: clientPppOverride, oversizePpp: clientPppOverride, overridden: true }
             : calcLinkedLinePrice(li, order.rush_rate, getLineExtras(li, order), markup, linkedQtyMap);
-        const activeSizes = SIZES.filter(
-          (sz) => (parseInt((li.sizes || {})[sz]) || 0) > 0
-        );
+        const activeSizes = activeSizeNames(li.sizes);
         return (
           <div key={li.id} className="border border-slate-200 dark:border-slate-700 border-l-4 border-l-teal-600 rounded-xl overflow-hidden shadow-sm">
             <div className="bg-slate-100 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center">
