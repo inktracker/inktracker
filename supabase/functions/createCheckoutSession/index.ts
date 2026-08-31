@@ -452,7 +452,14 @@ async function handleApproveArtwork(orderId: string, approvedBy: string, token?:
     console.error("[approveArtwork] notification build/send failed:", notifyErr);
   }
 
-  return { order };
+  // Anonymous caller — must return the SAME 15-field allowlist the sibling
+  // handleGetOrder uses (line ~350). Returning the raw row leaked shop_owner,
+  // public_token, totals, notes, and cost/partner line-item fields
+  // (garmentCost*, partner_source = subcontractor email, _partner_ppp) to
+  // whoever holds the approval link — the exact fields publicSafe strips.
+  // The internal `order` above stays raw on purpose (notifications need
+  // shop_owner). Sanitize only at the boundary.
+  return { order: sanitizeOrderForCustomer(order) };
 }
 
 // ── createSession ─────────────────────────────────────────────────────────────
