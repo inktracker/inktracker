@@ -67,11 +67,29 @@ async function armListeners(user) {
   });
 }
 
+// A plugin call into a binary that doesn't CONTAIN the plugin (old App
+// Store build viewing the new site) never gets a bridge reply — the
+// promise just hangs. Race every native call so that case degrades to a
+// clear error instead of an infinite spinner. The permission dialog
+// itself doesn't hit this: iOS resolves requestPermissions only after
+// the user answers, so the window is generous.
+function withHangGuard(promise, ms = 30000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("plugin-unavailable")), ms)),
+  ]);
+}
+
 /** Explicit enable from a button tap — prompts if needed. */
 export async function enableNativePush(user) {
   if (!isNative()) return { ok: false, reason: "not-native" };
   const Push = await plugin();
-  const perm = await Push.requestPermissions();
+  let perm;
+  try {
+    perm = await withHangGuard(Push.requestPermissions());
+  } catch {
+    return { ok: false, reason: "app-update-required" };
+  }
   if (perm.receive !== "granted") return { ok: false, reason: "denied" };
   await armListeners(user);
   return new Promise((resolve) => {
