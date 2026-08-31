@@ -17,6 +17,7 @@ import { notify } from "@/lib/notify";
 import ArtworkPreviewOverlay from "../components/shared/ArtworkPreviewOverlay";
 import TimeClockButton from "../components/team/TimeClockButton";
 import NotificationBell from "../components/NotificationBell";
+import EnablePushButton from "../components/team/EnablePushButton";
 import OrderComments from "../components/orders/OrderComments";
 import { getStageTasks } from "@/lib/productionTasks";
 import { runOrderCompletion } from "@/lib/orders/runOrderCompletion";
@@ -630,6 +631,7 @@ export default function ShopFloor() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <EnablePushButton user={user} />
           <NotificationBell userEmail={user?.email} variant="floor" />
           <TimeClockButton user={user} />
           <button onClick={handleRefresh} className="p-2 hover:bg-teal-500 rounded-lg transition">
