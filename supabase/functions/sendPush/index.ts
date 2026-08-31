@@ -19,12 +19,31 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.102.1";
 import { buildPushRequest, isGoneStatus } from "../_shared/webPush.js";
-import { buildPushPayload, urgencyFor, isFreshEnough } from "../_shared/pushPayload.js";
+import { buildPushPayload, urgencyFor, isFreshEnough, targetUrl } from "../_shared/pushPayload.js";
+import { makeApnsJwt, buildApnsBody, apnsHeaders, isApnsGoneStatus } from "../_shared/apns.js";
 
 const VAPID_PUBLIC = Deno.env.get("VAPID_PUBLIC_KEY") ?? "";
 const VAPID_PRIVATE = Deno.env.get("VAPID_PRIVATE_KEY") ?? "";
 // RFC 8292 requires a contact the push service can reach about abuse.
 const VAPID_SUBJECT = Deno.env.get("VAPID_SUBJECT") ?? "mailto:joe@biotamfg.co";
+
+// APNs (native iOS app) — token-based auth. Absent config just skips ios
+// rows: web delivery must never depend on Apple being set up.
+const APNS_KEY_ID = Deno.env.get("APNS_KEY_ID") ?? "";
+const APNS_TEAM_ID = Deno.env.get("APNS_TEAM_ID") ?? "";
+const APNS_PRIVATE_KEY = Deno.env.get("APNS_PRIVATE_KEY") ?? "";
+const APNS_TOPIC = Deno.env.get("APNS_TOPIC") ?? "app.inktracker.mobile";
+const APNS_HOST = Deno.env.get("APNS_HOST") ?? "https://api.push.apple.com";
+
+// Provider JWTs are valid up to an hour; refresh at 50 minutes.
+let apnsJwtCache: { jwt: string; mintedAt: number } | null = null;
+async function getApnsJwt(): Promise<string> {
+  const now = Date.now();
+  if (apnsJwtCache && now - apnsJwtCache.mintedAt < 50 * 60 * 1000) return apnsJwtCache.jwt;
+  const jwt = await makeApnsJwt({ keyId: APNS_KEY_ID, teamId: APNS_TEAM_ID, privateKeyPem: APNS_PRIVATE_KEY });
+  apnsJwtCache = { jwt, mintedAt: now };
+  return jwt;
+}
 
 // Only deliver notifications created in the last few minutes. A replayed
 // or forged id for an OLD row then does nothing, and a backfill that
@@ -71,9 +90,8 @@ Deno.serve(async (req) => {
 
     let subsQuery = admin
       .from("push_subscriptions")
-      .select("id, platform, endpoint, p256dh, auth_secret")
+      .select("id, platform, endpoint, p256dh, auth_secret, device_token")
       .eq("shop_owner", note.shop_owner)
-      .eq("platform", "web")
       .is("disabled_at", null);
 
     // Addressed notifications (recipient_email set — e.g. an @mention)
@@ -107,6 +125,26 @@ Deno.serve(async (req) => {
 
     const results = await Promise.all(subs.map(async (sub) => {
       try {
+        // ── iOS (APNs) leg ────────────────────────────────────────────
+        if (sub.platform === "ios") {
+          if (!APNS_KEY_ID || !APNS_TEAM_ID || !APNS_PRIVATE_KEY) {
+            return { id: sub.id, status: 0, ok: false, apnsGone: false };
+          }
+          const jwt = await getApnsJwt();
+          const res = await fetch(`${APNS_HOST}/3/device/${sub.device_token}`, {
+            method: "POST",
+            headers: apnsHeaders({ jwt, topic: APNS_TOPIC, severity: note.severity }),
+            body: JSON.stringify(buildApnsBody(note, targetUrl(note.related_entity, note.related_id))),
+          });
+          let reasonBody: unknown = {};
+          if (!res.ok) {
+            reasonBody = await res.json().catch(() => ({}));
+            console.error(`[sendPush] APNs ${res.status} for sub ${sub.id}:`, JSON.stringify(reasonBody));
+          }
+          return { id: sub.id, status: res.status, ok: res.ok, apnsGone: isApnsGoneStatus(res.status, reasonBody) };
+        }
+
+        // ── Web Push leg ──────────────────────────────────────────────
         const request = await buildPushRequest({
           subscription: { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth_secret },
           payload: body,
@@ -116,16 +154,16 @@ Deno.serve(async (req) => {
         const res = await fetch(request.url, {
           method: "POST", headers: request.headers, body: request.body,
         });
-        return { id: sub.id, status: res.status, ok: res.ok };
+        return { id: sub.id, status: res.status, ok: res.ok, apnsGone: false };
       } catch (e) {
         // A malformed stored subscription must not take down the fan-out
         // for the shop's other devices.
         console.error(`[sendPush] sub ${sub.id} threw:`, e instanceof Error ? e.message : e);
-        return { id: sub.id, status: 0, ok: false };
+        return { id: sub.id, status: 0, ok: false, apnsGone: false };
       }
     }));
 
-    const gone = results.filter((r) => isGoneStatus(r.status)).map((r) => r.id);
+    const gone = results.filter((r) => r.apnsGone || isGoneStatus(r.status)).map((r) => r.id);
     const delivered = results.filter((r) => r.ok).map((r) => r.id);
 
     // Retire endpoints the push service says are permanently dead. Only

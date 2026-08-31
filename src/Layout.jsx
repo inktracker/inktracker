@@ -1,5 +1,6 @@
 import { createPageUrl } from "@/utils";
 import { isNative } from "@/lib/mobile/native";
+import { refreshNativePushIfGranted } from "@/lib/push/nativePush";
 import { Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { base44 } from "@/api/supabaseClient";
@@ -251,6 +252,10 @@ export default function Layout({ children, currentPageName }) {
         setUser(currentUser);
         setShopName(currentUser.shop_name || "My Shop");
         setLogoUrl(currentUser.logo_url || "");
+
+        // Native shell: keep the APNs device token fresh (silent — only
+        // re-registers if the user already granted notifications).
+        if (isNative()) refreshNativePushIfGranted(currentUser);
 
         // Managers (and any team member whose tenant key isn't their own
         // email) should show the OWNER's branding, not their personal
