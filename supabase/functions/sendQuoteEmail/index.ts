@@ -174,6 +174,17 @@ Deno.serve(async (req) => {
       shopLogoUrl = ownerProfile?.logo_url || null;
       // Force Reply-To / Bcc target to the legitimate shop owner.
       shopOwnerEmail = quote.shop_owner;
+      // Force subject/body/CTA label to the server template. The gate here is
+      // only possession of the human quote_id (rendered in every quote email's
+      // subject, "Q-2026-XXXX") — no public_token — so any recipient of any
+      // quote could otherwise send a NEW email from the verified
+      // quotes@inktracker.app domain, under this shop's name and logo, with
+      // arbitrary subject/body text to the quote's customer (plaintext isn't
+      // HTML-injectable but a bare URL auto-linkifies). The wizard never sets
+      // these on the anon path, so nulling them changes nothing legitimate.
+      subject = undefined;
+      body = undefined;
+      buttonLabel = undefined;
     }
 
     // ── Authenticated-caller authorization ────────────────────────────
