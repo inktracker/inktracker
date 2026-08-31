@@ -71,3 +71,4 @@ storage-backup/
 /build/*.ipa
 /ios/DerivedData/
 *.xcuserstate
+build/sim/
