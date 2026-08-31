@@ -85,6 +85,13 @@ function getLineProof(order, li) {
   return all.find((a) => a.url || a.path) || null;
 }
 
+// Art for ONE imprint (multi-design jobs: front art vs back art vs sleeve).
+function getImprintArt(order, imp) {
+  const id = imp?.artwork_id || imp?.artwork_url || imp?.artwork_name;
+  if (!id) return null;
+  return getShopFloorArtwork(order).find((a) => a.id === id && (a.url || a.path)) || null;
+}
+
 // ShopFloor STEPS used to be its own copy of the order pipeline.
 // Consolidated to O_STATUSES on 2026-05-12 so all status lists in
 // the app come from a single source of truth.
@@ -1026,16 +1033,38 @@ export default function ShopFloor() {
                                 parsing "Front · 1c · Screen Print" three
                                 imprints at a time. */}
                             <div className="flex flex-wrap gap-2 mb-3">
-                              {imprints.map((imp, ii) => (
-                                <span key={ii} className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2 py-1">
-                                  {imp.title && (
-                                    <span className="text-slate-800">{imp.title} </span>
-                                  )}
-                                  <span className="text-slate-500">
-                                    {imp.title ? "· " : ""}{imp.location} · {imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · {imp.technique || "Screen Print"}
+                              {imprints.map((imp, ii) => {
+                                const impArt = getImprintArt(selected, imp);
+                                const chipBody = (
+                                  <>
+                                    {imp.title && (
+                                      <span className="text-slate-800">{imp.title} </span>
+                                    )}
+                                    <span className="text-slate-500">
+                                      {imp.title ? "· " : ""}{imp.location} · {imprintCountText(imp, getShopPricingConfig()?.embroidery?.stitchTiers)} · {imp.technique || "Screen Print"}
+                                    </span>
+                                  </>
+                                );
+                                // Multi-design jobs: each imprint that carries
+                                // its own artwork opens THAT design. Chips
+                                // without art stay inert text.
+                                return impArt ? (
+                                  <button
+                                    key={ii}
+                                    type="button"
+                                    onClick={() => setPreviewArt(impArt)}
+                                    title={`View design: ${impArt.name}`}
+                                    className="text-xs font-semibold bg-white border border-teal-300 rounded-lg px-2 py-1 inline-flex items-center gap-1.5 hover:bg-teal-50 transition"
+                                  >
+                                    <FileImage className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                    {chipBody}
+                                  </button>
+                                ) : (
+                                  <span key={ii} className="text-xs font-semibold bg-white border border-slate-200 rounded-lg px-2 py-1">
+                                    {chipBody}
                                   </span>
-                                </span>
-                              ))}
+                                );
+                              })}
                             </div>
 
                             {/* Sizes — interaction depends on stage */}
