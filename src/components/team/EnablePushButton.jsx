@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { isPushSupported, getPermissionState, isSubscribed, enablePush } from "@/lib/push/webPush";
+import { isNative } from "@/lib/mobile/native";
+import { enableNativePush } from "@/lib/push/nativePush";
 import { notify } from "@/lib/notify";
 import { BellRing, Loader2 } from "lucide-react";
 
@@ -14,6 +16,13 @@ export default function EnablePushButton({ user }) {
     let active = true;
     (async () => {
       try {
+        if (isNative()) {
+          // Native shell: web push APIs don't exist in WKWebView; offer the
+          // APNs path. checkPermissions-based hiding happens after a tap —
+          // the plugin import is deferred to keep web bundles clean.
+          if (active) setState("offer");
+          return;
+        }
         if (!isPushSupported() || getPermissionState() === "denied") {
           if (active) setState("hidden");
           return;
@@ -32,7 +41,7 @@ export default function EnablePushButton({ user }) {
   async function turnOn() {
     setState("busy");
     try {
-      const result = await enablePush(user);
+      const result = isNative() ? await enableNativePush(user) : await enablePush(user);
       if (result?.ok) {
         notify.success("Notifications on — @mentions will reach this device");
         setState("hidden");

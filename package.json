@@ -43,6 +43,7 @@
     "@capacitor/cli": "^8.5.0",
     "@capacitor/core": "^8.5.0",
     "@capacitor/ios": "^8.5.0",
+    "@capacitor/push-notifications": "^8.1.2",
     "@capacitor/status-bar": "^8.0.3",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-label": "^2.1.15",

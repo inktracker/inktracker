@@ -8,6 +8,8 @@ import {
   disablePush,
 } from "@/lib/push/webPush";
 import { notify } from "@/lib/notify";
+import { isNative } from "@/lib/mobile/native";
+import { enableNativePush } from "@/lib/push/nativePush";
 
 // Browser push for the events already collected in the notifications table.
 //
@@ -20,7 +22,9 @@ import { notify } from "@/lib/notify";
 // machine. The copy says so, because "I turned it on at the shop, why isn't
 // my phone buzzing" is otherwise the obvious confusion.
 export default function PushNotificationsSection({ user }) {
-  const [supported] = useState(() => isPushSupported());
+  // The native shell has no web-push APIs but DOES support APNs — treat it
+  // as supported and route enablement through the plugin below.
+  const [supported] = useState(() => isNative() || isPushSupported());
   const [permission, setPermission] = useState(() => getPermissionState());
   const [on, setOn] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -50,7 +54,7 @@ export default function PushNotificationsSection({ user }) {
         const res = await disablePush();
         if (!res.ok) notify.error("Couldn't turn notifications off");
       } else {
-        const res = await enablePush(user);
+        const res = isNative() ? await enableNativePush(user) : await enablePush(user);
         if (!res.ok) {
           const msg = {
             denied: "Your browser is blocking notifications for InkTracker. You'll need to allow them in your browser's site settings for this page.",
