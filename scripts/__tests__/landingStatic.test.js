@@ -52,15 +52,35 @@ describe("static landing snapshot — plumbing", () => {
   });
 
   it("self-heals when stale HTML references deleted asset hashes", () => {
-    // One guarded reload when an /assets/ script or stylesheet fails to load —
+    // A guarded reload when an /assets/ script or stylesheet fails to load —
     // without it, visitors holding a pre-deploy index.html are stranded on the
-    // snapshot forever (React can never boot). main.jsx clears the guard.
+    // snapshot forever (React can never boot).
     const html = indexHtml();
-    expect(html).toContain('sessionStorage.getItem("assetReloaded")');
+    expect(html).toContain('sessionStorage.getItem("assetReloads")');
     expect(html).toContain('indexOf("/assets/")');
     const mainSrc = readFileSync(join(ROOT, "src", "main.jsx"), "utf8");
-    expect(mainSrc).toContain("sessionStorage.removeItem('assetReloaded')");
+    expect(mainSrc).toContain("sessionStorage.removeItem('assetReloads')");
     expect(mainSrc).toContain("vite:preloadError");
+  });
+
+  it("cannot reload-loop when an /assets/ resource fails after boot", () => {
+    // Regression: the guard used to be a boolean that main.jsx cleared
+    // synchronously on boot. An /assets/ resource that failed AFTER React
+    // mounted therefore reloaded forever — boot, clear guard, fail, reload —
+    // and a single broken image took the whole site down at roughly six
+    // reloads a second, on every route. Two things keep that impossible: the
+    // guard counts within a window rather than latching once, and main.jsx
+    // clears it on a delay so a recurring failure still meets a live guard.
+    const html = indexHtml();
+    expect(html).toContain("state.n >= 2");
+    expect(html).toMatch(/state\.n \+= 1/);
+
+    const mainSrc = readFileSync(join(ROOT, "src", "main.jsx"), "utf8");
+    const clear = mainSrc.indexOf("sessionStorage.removeItem('assetReloads')");
+    const timer = mainSrc.lastIndexOf("setTimeout(", clear);
+    expect(timer).toBeGreaterThan(-1);
+    // The clear must be inside a delayed callback, not run at import time.
+    expect(mainSrc.slice(timer, clear)).not.toContain("}");
   });
 });
 

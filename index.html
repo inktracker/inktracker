@@ -98,19 +98,31 @@
       document.documentElement.setAttribute("data-js", "");
       // Self-heal for stale HTML: after a redeploy, previously-hashed /assets/
       // files 404 and React can never boot, stranding visitors on the snapshot
-      // (or a blank app route). Reload once — index.html is must-revalidate,
-      // so the retry fetches the current asset hashes. main.jsx clears the
-      // guard on successful boot.
+      // (or a blank app route). Reload — index.html is must-revalidate, so the
+      // retry fetches the current asset hashes.
+      //
+      // The guard is a COUNT inside a time window, not a boolean. It used to be
+      // a boolean that main.jsx cleared on every successful boot, which meant a
+      // /assets/ resource that failed AFTER boot reloaded forever: boot, clear
+      // the guard, fail, reload, repeat. A single broken image took the whole
+      // site down at roughly six reloads a second. Any failure that survives
+      // two reloads is not stale HTML and reloading will not fix it, so stop
+      // and let the page render degraded rather than loop.
       addEventListener("error", function (e) {
         var t = e.target;
         var src = (t && t !== window && (t.src || t.href)) || "";
         if (typeof src !== "string" || src.indexOf("/assets/") === -1) return;
-        var firstFailure = false;
         try {
-          firstFailure = !sessionStorage.getItem("assetReloaded");
-          if (firstFailure) sessionStorage.setItem("assetReloaded", "1");
-        } catch (err) { /* storage unavailable — never reload, avoids loops */ }
-        if (firstFailure) location.reload();
+          var now = Date.now();
+          var raw = sessionStorage.getItem("assetReloads");
+          var state = raw ? JSON.parse(raw) : { n: 0, t: now };
+          // Outside the window this is a fresh incident, not the same loop.
+          if (now - state.t > 60000) state = { n: 0, t: now };
+          if (state.n >= 2) return;
+          state.n += 1;
+          sessionStorage.setItem("assetReloads", JSON.stringify(state));
+        } catch (err) { return; /* storage unavailable — never reload */ }
+        location.reload();
       }, true);
     </script>
     <style>html[data-js] [data-landing-static] { display: none }</style>

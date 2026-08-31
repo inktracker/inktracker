@@ -37,10 +37,19 @@ class RootErrorBoundary extends React.Component {
 // Boot reached — clear the stale-asset reload guards (set by the self-heal
 // script in index.html and the vite:preloadError handler below) so a future
 // redeploy can heal again.
-try {
-  sessionStorage.removeItem('assetReloaded')
-  sessionStorage.removeItem('chunkReloaded')
-} catch { /* storage unavailable */ }
+//
+// Deliberately delayed. Clearing these synchronously on boot is what turned a
+// single broken /assets/ image into an infinite reload loop: the image fails
+// after React mounts, but the guard has already been wiped, so every reload
+// looks like the first one. Waiting means a failure that keeps recurring still
+// sees a live guard and stops, while a genuine post-redeploy heal — which
+// fails during boot, before this fires — is unaffected.
+setTimeout(() => {
+  try {
+    sessionStorage.removeItem('assetReloads')
+    sessionStorage.removeItem('chunkReloaded')
+  } catch { /* storage unavailable */ }
+}, 15000)
 
 // A tab opened before a redeploy requests lazy chunks that no longer exist
 // (hashed filenames changed). One guarded reload picks up the fresh
