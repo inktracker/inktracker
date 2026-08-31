@@ -29,19 +29,12 @@ const CORS = {
 //                          the user's own profile and use their creds.
 //   3. global env         — last-ditch fallback for platform admin tools.
 async function resolveSSAuth(accessToken?: string, shopOwner?: string): Promise<string> {
-  // Path 1 — shopOwner email lookup. Anonymous public wizard.
-  if (shopOwner && typeof shopOwner === "string") {
-    try {
-      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-      const profile = await loadProfileWithSecrets(admin, { email: shopOwner });
-      if (profile?.ss_account_number && profile?.ss_api_key) {
-        return btoa(`${profile.ss_account_number}:${profile.ss_api_key}`);
-      }
-    } catch (err) {
-      console.error("[ssLookupStyle] shopOwner lookup failed:", (err as Error).message);
-    }
-  }
-  // Path 2 — authenticated user.
+  const globalAuth = () => btoa(`${GLOBAL_SS_ACCOUNT}:${GLOBAL_SS_KEY}`);
+  // Path 1 — authenticated user takes PRECEDENCE over a client-supplied
+  // shopOwner: a logged-in caller's SS creds come from their own session, not
+  // from a shopOwner they name. Once a user is identified we return their
+  // creds (or the global env fallback), NEVER the requested shopOwner's —
+  // closing the cross-shop credential override.
   if (accessToken) {
     try {
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -54,13 +47,26 @@ async function resolveSSAuth(accessToken?: string, shopOwner?: string): Promise<
         if (profile?.ss_account_number && profile?.ss_api_key) {
           return btoa(`${profile.ss_account_number}:${profile.ss_api_key}`);
         }
+        return globalAuth();
       }
     } catch (err) {
       console.error("[ssLookupStyle] per-shop auth failed, using global:", (err as Error).message);
     }
   }
+  // Path 2 — anonymous public wizard: resolve by shopOwner email (no session).
+  if (shopOwner && typeof shopOwner === "string") {
+    try {
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const profile = await loadProfileWithSecrets(admin, { email: shopOwner });
+      if (profile?.ss_account_number && profile?.ss_api_key) {
+        return btoa(`${profile.ss_account_number}:${profile.ss_api_key}`);
+      }
+    } catch (err) {
+      console.error("[ssLookupStyle] shopOwner lookup failed:", (err as Error).message);
+    }
+  }
   // Path 3 — global env fallback.
-  return btoa(`${GLOBAL_SS_ACCOUNT}:${GLOBAL_SS_KEY}`);
+  return globalAuth();
 }
 
 // Per-request auth — passed through to ssFetch instead of module-level mutable state

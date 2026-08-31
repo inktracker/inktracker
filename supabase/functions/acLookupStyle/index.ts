@@ -29,18 +29,13 @@ import { sanitizeSupplierPrice } from "../_shared/supplierPrice.ts";
 //   2. authenticated user — in-app calls. Resolves broker → assigned shop too.
 //   3. platform env       — last-ditch fallback.
 async function resolveAcCredentials(accessToken?: string, shopOwner?: string): Promise<AcCreds | null> {
-  // Path 1 — shopOwner email lookup.
-  if (shopOwner && typeof shopOwner === "string") {
-    try {
-      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-      const profile = await loadProfileWithSecrets(admin, { email: shopOwner });
-      const perShop = credsFromProfile(profile);
-      if (perShop) return perShop;
-    } catch (err) {
-      console.error("[acLookupStyle] shopOwner lookup failed:", (err as Error).message);
-    }
-  }
-  // Path 2 — authenticated user.
+  // Path 1 — authenticated user takes PRECEDENCE over any client-supplied
+  // shopOwner. Resolving auth first (and never falling through to shopOwner
+  // once a user is identified) closes the override where a logged-in caller
+  // passed someone else's shopOwner to borrow that shop's supplier creds /
+  // negotiated pricing. Brokers resolve to their assigned shop via
+  // loadShopProfileForUser. A user with no per-shop creds gets env defaults,
+  // NOT the requested shopOwner's.
   if (accessToken) {
     try {
       const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -50,11 +45,23 @@ async function resolveAcCredentials(accessToken?: string, shopOwner?: string): P
       if (user) {
         const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
         const { profile } = await loadShopProfileForUser(admin, user.id);
-        const perShop = credsFromProfile(profile);
-        if (perShop) return perShop;
+        return credsFromProfile(profile) ?? credsFromProfile(null);
       }
+      // No user (e.g. the anon wizard sends the anon key here) → fall through
+      // to the shopOwner path below.
     } catch (err) {
-      console.error("[acLookupStyle] per-shop auth failed, falling back to env:", (err as Error).message);
+      console.error("[acLookupStyle] per-shop auth failed, falling back:", (err as Error).message);
+    }
+  }
+  // Path 2 — anonymous public wizard: resolve by shopOwner email (no session).
+  if (shopOwner && typeof shopOwner === "string") {
+    try {
+      const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      const profile = await loadProfileWithSecrets(admin, { email: shopOwner });
+      const perShop = credsFromProfile(profile);
+      if (perShop) return perShop;
+    } catch (err) {
+      console.error("[acLookupStyle] shopOwner lookup failed:", (err as Error).message);
     }
   }
   // Path 3 — env defaults.
@@ -71,11 +78,13 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get("Authorization")?.replace("Bearer ", "") || "";
     const hasShopOwner = typeof shopOwner === "string" && shopOwner.trim().length > 0;
 
-    // Per-shop hourly rate limit on the anonymous (public-wizard) path.
-    // Authenticated calls (the shop's own config editor + broker / quote
-    // editors) hit this function via Authorization header and are
-    // exempt — they already require a logged-in shop user.
-    if (hasShopOwner && !authHeader) {
+    // Rate-limit every shopOwner-driven request (the anonymous public-wizard
+    // path). Gating on `hasShopOwner` alone — not `&& !authHeader` — matters:
+    // a browser invoke attaches SOME Authorization header (the anon key even
+    // when logged out), so the old `!authHeader` exempted the very wizard
+    // traffic this cap exists for, and let an authed caller pass shopOwner to
+    // dodge both caps. Legit in-app calls pass NO shopOwner and stay exempt.
+    if (hasShopOwner) {
       const rateAdmin = createClient(
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,

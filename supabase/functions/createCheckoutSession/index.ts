@@ -137,11 +137,15 @@ async function handleGetQuote(quoteId: string, token?: string) {
 
   let customer = null;
   if (quote.customer_id) {
+    // Scope to the quote's own shop: a quote carrying another tenant's
+    // customer_id (e.g. one attached before createQuoteFromPayload validated
+    // ownership) must not surface that customer's name/company/email here.
     const { data: c } = await supabase
       .from("customers")
       .select("*")
       .eq("id", quote.customer_id)
-      .single();
+      .eq("shop_owner", quote.shop_owner)
+      .maybeSingle();
     customer = c ?? null;
   }
 
@@ -239,11 +243,13 @@ async function handleApproveQuote(quoteId: string, token?: string) {
 
   let customer = null;
   if (quote.customer_id) {
+    // Shop-scoped: see the getQuote read above — same cross-tenant guard.
     const { data: c } = await supabase
       .from("customers")
       .select("*")
       .eq("id", quote.customer_id)
-      .single();
+      .eq("shop_owner", quote.shop_owner)
+      .maybeSingle();
     customer = c ?? null;
   }
 
@@ -514,8 +520,11 @@ async function handleCreateSession(params: any) {
   const fullCents = Math.round(chargeBase * 100);
   let depositPct = Number(existing.deposit_pct) || 0;
   if (params.isDeposit && existing.customer_id) {
+    // Shop-scoped: this sets the deposit percentage actually charged, so a
+    // foreign customer_id must not steer it.
     const { data: cust } = await supabase
-      .from("customers").select("default_deposit_pct").eq("id", existing.customer_id).maybeSingle();
+      .from("customers").select("default_deposit_pct")
+      .eq("id", existing.customer_id).eq("shop_owner", existing.shop_owner).maybeSingle();
     if (cust?.default_deposit_pct != null) depositPct = Number(cust.default_deposit_pct) || 0;
   }
   const chargeCents = params.isDeposit ? Math.round(fullCents * (depositPct / 100)) : fullCents;

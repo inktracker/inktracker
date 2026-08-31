@@ -100,9 +100,26 @@ Deno.serve(async (req) => {
     if (profErr || !profile) return json({ error: "Profile not found" }, 404);
 
     // Optionally resolve customer_id by email if customer_id wasn't provided
-    let customerId: string | null = payload.customer_id || null;
+    let customerId: string | null = null;
     let customerName: string = payload.customer_name || "Quote Inquiry";
     let customerEmail: string = (payload.customer_email || "").toLowerCase();
+
+    // A directly-supplied customer_id must belong to THIS shop. The email/name
+    // fallbacks below are already shop-scoped, but a raw customer_id was
+    // written straight through — letting a caller attach another tenant's
+    // customer UUID to their own quote, which then surfaces that customer's
+    // name/company/email via the anon getQuote / checkout reads. Verify
+    // ownership; an unowned (or unknown) id is ignored and we fall through to
+    // matching below.
+    if (payload.customer_id) {
+      const { data: owned } = await admin
+        .from("customers")
+        .select("id")
+        .eq("id", payload.customer_id)
+        .eq("shop_owner", profile.email)
+        .maybeSingle();
+      if (owned) customerId = owned.id;
+    }
 
     if (!customerId && customerEmail) {
       const { data: cust } = await admin
